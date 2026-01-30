@@ -1,21 +1,26 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Search, Bell, User, Settings, PlusCircle } from 'lucide-react';
+import { Home, Search, Bell, User, Settings, PlusCircle, MessageCircle, Users } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useUnreadCount } from '@/hooks/useNotifications';
+import { useConversations } from '@/hooks/useMessages';
+import { useFriendships } from '@/hooks/useFriendships';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { path: '/feed', icon: Home, label: 'Accueil' },
   { path: '/search', icon: Search, label: 'Rechercher' },
   { path: '/create', icon: PlusCircle, label: 'Créer' },
-  { path: '/notifications', icon: Bell, label: 'Notifications' },
-  { path: '/profile', icon: User, label: 'Profil' },
+  { path: '/notifications', icon: Bell, label: 'Notifs' },
+  { path: '/messages', icon: MessageCircle, label: 'Messages' },
 ];
 
 export function MobileNav() {
   const location = useLocation();
   const { user } = useAuth();
   const { data: unreadCount } = useUnreadCount();
+  const { data: conversations } = useConversations();
+
+  const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
 
   if (!user) return null;
 
@@ -24,13 +29,15 @@ export function MobileNav() {
       <div className="flex items-center justify-around h-16">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path || 
-            (item.path === '/profile' && location.pathname.startsWith('/profile'));
-          const showBadge = item.path === '/notifications' && unreadCount && unreadCount > 0;
+            (item.path === '/profile' && location.pathname.startsWith('/profile')) ||
+            (item.path === '/messages' && location.pathname.startsWith('/messages'));
+          const showNotifBadge = item.path === '/notifications' && unreadCount && unreadCount > 0;
+          const showMsgBadge = item.path === '/messages' && unreadMessages > 0;
           
           return (
             <Link
               key={item.path}
-              to={item.path === '/profile' ? `/profile/${user.id}` : item.path}
+              to={item.path}
               className={cn(
                 'flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-xl transition-all duration-200',
                 isActive 
@@ -40,9 +47,14 @@ export function MobileNav() {
             >
               <div className="relative">
                 <item.icon className={cn('w-6 h-6', isActive && 'stroke-[2.5]')} />
-                {showBadge && (
+                {showNotifBadge && (
                   <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
                     {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+                {showMsgBadge && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                    {unreadMessages > 9 ? '9+' : unreadMessages}
                   </span>
                 )}
               </div>
@@ -59,13 +71,20 @@ export function DesktopSidebar() {
   const location = useLocation();
   const { user } = useAuth();
   const { data: unreadCount } = useUnreadCount();
+  const { data: conversations } = useConversations();
+  const { data: friendships } = useFriendships();
+
+  const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
+  const friendRequests = friendships?.requests.length || 0;
 
   if (!user) return null;
 
   const sidebarItems = [
     { path: '/feed', icon: Home, label: 'Accueil' },
     { path: '/search', icon: Search, label: 'Rechercher' },
-    { path: '/notifications', icon: Bell, label: 'Notifications' },
+    { path: '/notifications', icon: Bell, label: 'Notifications', badge: unreadCount },
+    { path: '/messages', icon: MessageCircle, label: 'Messages', badge: unreadMessages },
+    { path: '/friends', icon: Users, label: 'Amis', badge: friendRequests },
     { path: `/profile/${user.id}`, icon: User, label: 'Profil' },
     { path: '/settings', icon: Settings, label: 'Paramètres' },
   ];
@@ -79,8 +98,9 @@ export function DesktopSidebar() {
       <nav className="flex-1 space-y-1">
         {sidebarItems.map((item) => {
           const isActive = location.pathname === item.path ||
-            (item.path.startsWith('/profile') && location.pathname.startsWith('/profile'));
-          const showBadge = item.path === '/notifications' && unreadCount && unreadCount > 0;
+            (item.path.startsWith('/profile') && location.pathname.startsWith('/profile')) ||
+            (item.path === '/messages' && location.pathname.startsWith('/messages'));
+          const showBadge = item.badge && item.badge > 0;
 
           return (
             <Link
@@ -95,7 +115,7 @@ export function DesktopSidebar() {
                 <item.icon className="w-5 h-5" />
                 {showBadge && (
                   <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
-                    {unreadCount > 9 ? '9+' : unreadCount}
+                    {item.badge > 9 ? '9+' : item.badge}
                   </span>
                 )}
               </div>
