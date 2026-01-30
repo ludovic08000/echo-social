@@ -1,11 +1,12 @@
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Edit2 } from 'lucide-react';
-import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
+import { useProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
 import { AppLayout } from '@/components/AppLayout';
 import { UserAvatar } from '@/components/UserAvatar';
 import { PostCard } from '@/components/PostCard';
+import { FriendshipButton } from '@/components/FriendshipButton';
 import { Button } from '@/components/ui/button';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -26,11 +27,16 @@ export default function Profile() {
   const { data: stats } = useQuery({
     queryKey: ['profile-stats', userId],
     queryFn: async () => {
-      if (!userId) return { postsCount: 0, likesReceived: 0 };
+      if (!userId) return { postsCount: 0, likesReceived: 0, friendsCount: 0 };
 
-      const [{ count: postsCount }, { data: postIds }] = await Promise.all([
+      const [{ count: postsCount }, { data: postIds }, { count: friendsCount }] = await Promise.all([
         supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', userId),
         supabase.from('posts').select('id').eq('user_id', userId),
+        supabase
+          .from('friendships')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'accepted')
+          .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`),
       ]);
 
       let likesReceived = 0;
@@ -42,7 +48,7 @@ export default function Profile() {
         likesReceived = count || 0;
       }
 
-      return { postsCount: postsCount || 0, likesReceived };
+      return { postsCount: postsCount || 0, likesReceived, friendsCount: friendsCount || 0 };
     },
     enabled: !!userId,
   });
@@ -89,15 +95,17 @@ export default function Profile() {
           <UserAvatar src={profile.avatar_url} alt={profile.name} size="xl" />
           
           <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <h2 className="text-xl font-bold truncate">{profile.name}</h2>
-              {isOwnProfile && (
+              {isOwnProfile ? (
                 <Link to="/settings">
                   <Button variant="outline" size="sm" className="shrink-0">
                     <Edit2 className="w-4 h-4 mr-2" />
                     Modifier
                   </Button>
                 </Link>
+              ) : userId && (
+                <FriendshipButton userId={userId} />
               )}
             </div>
             
@@ -114,6 +122,10 @@ export default function Profile() {
                 <p className="text-xl font-bold">{stats?.likesReceived || 0}</p>
                 <p className="text-sm text-muted-foreground">Likes</p>
               </div>
+              <Link to="/friends" className="text-center hover:opacity-80">
+                <p className="text-xl font-bold">{stats?.friendsCount || 0}</p>
+                <p className="text-sm text-muted-foreground">Amis</p>
+              </Link>
             </div>
           </div>
         </div>

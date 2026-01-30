@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { ReactionType } from '@/hooks/useReactions';
 
 export interface Post {
   id: string;
@@ -15,6 +16,7 @@ export interface Post {
   likes_count: number;
   comments_count: number;
   is_liked: boolean;
+  user_reaction?: ReactionType | null;
 }
 
 const PAGE_SIZE = 10;
@@ -58,13 +60,13 @@ export function usePosts() {
         supabase.from('likes').select('post_id').in('post_id', postIds),
         supabase.from('comments').select('post_id').in('post_id', postIds),
         user 
-          ? supabase.from('likes').select('post_id').eq('user_id', user.id).in('post_id', postIds)
+          ? supabase.from('likes').select('post_id, reaction_type').eq('user_id', user.id).in('post_id', postIds)
           : Promise.resolve({ data: [] }),
       ]);
 
       const likesCount: Record<string, number> = {};
       const commentsCount: Record<string, number> = {};
-      const userLikes = new Set(userLikesRes.data?.map(l => l.post_id) || []);
+      const userReactions = new Map<string, ReactionType>();
 
       likesRes.data?.forEach(l => {
         likesCount[l.post_id] = (likesCount[l.post_id] || 0) + 1;
@@ -74,8 +76,13 @@ export function usePosts() {
         commentsCount[c.post_id] = (commentsCount[c.post_id] || 0) + 1;
       });
 
+      userLikesRes.data?.forEach((l: { post_id: string; reaction_type: ReactionType }) => {
+        userReactions.set(l.post_id, l.reaction_type);
+      });
+
       return posts.map(post => {
         const profile = profileMap.get(post.user_id);
+        const userReaction = userReactions.get(post.id);
         return {
           id: post.id,
           user_id: post.user_id,
@@ -88,7 +95,8 @@ export function usePosts() {
           },
           likes_count: likesCount[post.id] || 0,
           comments_count: commentsCount[post.id] || 0,
-          is_liked: userLikes.has(post.id),
+          is_liked: !!userReaction,
+          user_reaction: userReaction || null,
         };
       });
     },
@@ -133,13 +141,13 @@ export function useUserPosts(userId: string) {
         supabase.from('likes').select('post_id').in('post_id', postIds),
         supabase.from('comments').select('post_id').in('post_id', postIds),
         user 
-          ? supabase.from('likes').select('post_id').eq('user_id', user.id).in('post_id', postIds)
+          ? supabase.from('likes').select('post_id, reaction_type').eq('user_id', user.id).in('post_id', postIds)
           : Promise.resolve({ data: [] }),
       ]);
 
       const likesCount: Record<string, number> = {};
       const commentsCount: Record<string, number> = {};
-      const userLikes = new Set(userLikesRes.data?.map(l => l.post_id) || []);
+      const userReactions = new Map<string, ReactionType>();
 
       likesRes.data?.forEach(l => {
         likesCount[l.post_id] = (likesCount[l.post_id] || 0) + 1;
@@ -149,20 +157,28 @@ export function useUserPosts(userId: string) {
         commentsCount[c.post_id] = (commentsCount[c.post_id] || 0) + 1;
       });
 
-      return posts.map(post => ({
-        id: post.id,
-        user_id: post.user_id,
-        body: post.body,
-        image_url: post.image_url,
-        created_at: post.created_at,
-        profile: {
-          name: profileData?.name || 'Unknown',
-          avatar_url: profileData?.avatar_url || null,
-        },
-        likes_count: likesCount[post.id] || 0,
-        comments_count: commentsCount[post.id] || 0,
-        is_liked: userLikes.has(post.id),
-      }));
+      userLikesRes.data?.forEach((l: { post_id: string; reaction_type: ReactionType }) => {
+        userReactions.set(l.post_id, l.reaction_type);
+      });
+
+      return posts.map(post => {
+        const userReaction = userReactions.get(post.id);
+        return {
+          id: post.id,
+          user_id: post.user_id,
+          body: post.body,
+          image_url: post.image_url,
+          created_at: post.created_at,
+          profile: {
+            name: profileData?.name || 'Unknown',
+            avatar_url: profileData?.avatar_url || null,
+          },
+          likes_count: likesCount[post.id] || 0,
+          comments_count: commentsCount[post.id] || 0,
+          is_liked: !!userReaction,
+          user_reaction: userReaction || null,
+        };
+      });
     },
     enabled: !!userId,
   });
@@ -235,6 +251,7 @@ export function useToggleLike() {
           .insert({
             user_id: user.id,
             post_id: postId,
+            reaction_type: 'like',
           });
 
         if (error) throw error;

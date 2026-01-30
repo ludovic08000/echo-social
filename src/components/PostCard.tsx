@@ -1,36 +1,25 @@
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Heart, MessageCircle, Share2, Trash2 } from 'lucide-react';
+import { MessageCircle, Share2, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Post, useToggleLike, useDeletePost } from '@/hooks/usePosts';
+import { Post, useDeletePost } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
 import { UserAvatar } from './UserAvatar';
 import { Button } from '@/components/ui/button';
+import { ReactionButton } from './ReactionButton';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
+import { ReactionType } from '@/hooks/useReactions';
 
 interface PostCardProps {
-  post: Post;
+  post: Post & { user_reaction?: ReactionType | null };
   showActions?: boolean;
   onCommentClick?: () => void;
 }
 
 export function PostCard({ post, showActions = true, onCommentClick }: PostCardProps) {
   const { user } = useAuth();
-  const toggleLike = useToggleLike();
   const deletePost = useDeletePost();
-
-  const handleLike = () => {
-    if (!user) {
-      toast({
-        title: 'Connexion requise',
-        description: 'Connectez-vous pour aimer ce post',
-        variant: 'destructive',
-      });
-      return;
-    }
-    toggleLike.mutate({ postId: post.id, isLiked: post.is_liked });
-  };
 
   const handleShare = async () => {
     const url = `${window.location.origin}/post/${post.id}`;
@@ -100,20 +89,11 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
           
           {showActions && (
             <div className="flex items-center gap-1 mt-3 -ml-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleLike}
-                className={cn(
-                  'h-9 px-3 gap-2 text-muted-foreground hover:text-primary hover:bg-accent',
-                  post.is_liked && 'text-primary'
-                )}
-              >
-                <Heart 
-                  className={cn('w-4 h-4', post.is_liked && 'fill-current')} 
-                />
-                <span className="text-sm">{post.likes_count || ''}</span>
-              </Button>
+              <ReactionButton 
+                postId={post.id}
+                currentReaction={post.user_reaction}
+                reactionsCount={post.likes_count}
+              />
               
               <Button
                 variant="ghost"

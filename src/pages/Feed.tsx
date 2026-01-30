@@ -2,6 +2,7 @@ import { usePosts } from '@/hooks/usePosts';
 import { AppLayout } from '@/components/AppLayout';
 import { CreatePost } from '@/components/CreatePost';
 import { PostCard } from '@/components/PostCard';
+import { StoriesBar } from '@/components/StoriesBar';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 
@@ -18,6 +19,11 @@ export default function Feed() {
       </header>
 
       <div className="space-y-4">
+        {/* Stories Bar */}
+        <div className="pulse-card p-4">
+          <StoriesBar />
+        </div>
+
         <CreatePost />
 
         {isLoading ? (
