@@ -96,6 +96,65 @@ export type Database = {
         }
         Relationships: []
       }
+      friend_group_members: {
+        Row: {
+          added_at: string
+          friend_user_id: string
+          group_id: string
+          id: string
+        }
+        Insert: {
+          added_at?: string
+          friend_user_id: string
+          group_id: string
+          id?: string
+        }
+        Update: {
+          added_at?: string
+          friend_user_id?: string
+          group_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "friend_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "friend_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      friend_groups: {
+        Row: {
+          color: string | null
+          created_at: string
+          icon: string | null
+          id: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          icon?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          icon?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       friendships: {
         Row: {
           addressee_id: string
@@ -189,6 +248,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      notification_settings: {
+        Row: {
+          close_friends_posts_enabled: boolean
+          comments_enabled: boolean
+          created_at: string
+          email_notifications_enabled: boolean
+          friend_requests_enabled: boolean
+          id: string
+          likes_enabled: boolean
+          messages_enabled: boolean
+          story_views_enabled: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          close_friends_posts_enabled?: boolean
+          comments_enabled?: boolean
+          created_at?: string
+          email_notifications_enabled?: boolean
+          friend_requests_enabled?: boolean
+          id?: string
+          likes_enabled?: boolean
+          messages_enabled?: boolean
+          story_views_enabled?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          close_friends_posts_enabled?: boolean
+          comments_enabled?: boolean
+          created_at?: string
+          email_notifications_enabled?: boolean
+          friend_requests_enabled?: boolean
+          id?: string
+          likes_enabled?: boolean
+          messages_enabled?: boolean
+          story_views_enabled?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       notifications: {
         Row: {
