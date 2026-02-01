@@ -312,18 +312,28 @@ export default function Profile() {
               </div>
               
               {/* Mobile-friendly bottom action bar */}
-              <div className="absolute bottom-0 left-0 right-0 bg-background/95 backdrop-blur-sm border-t border-border p-3 flex gap-3 z-20">
+              <div 
+                className="absolute bottom-0 left-0 right-0 bg-background/95 backdrop-blur-sm border-t border-border p-3 flex gap-3 z-20"
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+              >
                 <Button 
                   variant="outline" 
                   className="flex-1"
-                  onClick={handleCancelReposition}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCancelReposition();
+                  }}
                 >
                   <X className="w-4 h-4 mr-2" />
                   Annuler
                 </Button>
                 <Button 
                   className="flex-1 bg-primary hover:bg-primary/90"
-                  onClick={handleSavePosition}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSavePosition();
+                  }}
                   disabled={updateProfile.isPending}
                 >
                   {updateProfile.isPending ? (
