@@ -1174,6 +1174,7 @@ export type Database = {
           avatar_url: string | null
           bio: string | null
           city: string | null
+          cover_position_y: number | null
           cover_url: string | null
           created_at: string
           date_of_birth: string | null
@@ -1188,6 +1189,7 @@ export type Database = {
           avatar_url?: string | null
           bio?: string | null
           city?: string | null
+          cover_position_y?: number | null
           cover_url?: string | null
           created_at?: string
           date_of_birth?: string | null
@@ -1202,6 +1204,7 @@ export type Database = {
           avatar_url?: string | null
           bio?: string | null
           city?: string | null
+          cover_position_y?: number | null
           cover_url?: string | null
           created_at?: string
           date_of_birth?: string | null

@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3 } from 'lucide-react';
+import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
@@ -13,7 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { generateProfileUrl } from '@/lib/urlUtils';
 import { useImageUpload } from '@/hooks/useImageUpload';
@@ -25,6 +25,14 @@ export default function Profile() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('all');
+  
+  // Cover repositioning state
+  const [isRepositioning, setIsRepositioning] = useState(false);
+  const [coverPositionY, setCoverPositionY] = useState<number>(50);
+  const [isDragging, setIsDragging] = useState(false);
+  const coverRef = useRef<HTMLDivElement>(null);
+  const startYRef = useRef<number>(0);
+  const startPositionRef = useRef<number>(50);
   
   const userId = id || user?.id;
   const isOwnProfile = userId === user?.id;
@@ -76,12 +84,75 @@ export default function Profile() {
     const file = e.target.files?.[0];
     if (file) {
       await coverUpload.upload(file);
+      // Reset position when new cover is uploaded
+      setCoverPositionY(50);
     }
     // Reset input
     if (coverInputRef.current) {
       coverInputRef.current.value = '';
     }
   };
+
+  // Cover repositioning handlers
+  const handleStartReposition = useCallback(() => {
+    setIsRepositioning(true);
+    setCoverPositionY(profile?.cover_position_y ?? 50);
+  }, [profile?.cover_position_y]);
+
+  const handleSavePosition = useCallback(() => {
+    updateProfile.mutate({ cover_position_y: coverPositionY }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['profile', userId] });
+        setIsRepositioning(false);
+      }
+    });
+  }, [coverPositionY, updateProfile, queryClient, userId]);
+
+  const handleCancelReposition = useCallback(() => {
+    setIsRepositioning(false);
+    setCoverPositionY(profile?.cover_position_y ?? 50);
+  }, [profile?.cover_position_y]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!isRepositioning) return;
+    e.preventDefault();
+    setIsDragging(true);
+    startYRef.current = e.clientY;
+    startPositionRef.current = coverPositionY;
+  }, [isRepositioning, coverPositionY]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging || !coverRef.current) return;
+    const deltaY = e.clientY - startYRef.current;
+    const containerHeight = coverRef.current.offsetHeight;
+    const deltaPercent = (deltaY / containerHeight) * 100;
+    const newPosition = Math.min(100, Math.max(0, startPositionRef.current + deltaPercent));
+    setCoverPositionY(newPosition);
+  }, [isDragging]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (!isRepositioning) return;
+    setIsDragging(true);
+    startYRef.current = e.touches[0].clientY;
+    startPositionRef.current = coverPositionY;
+  }, [isRepositioning, coverPositionY]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!isDragging || !coverRef.current) return;
+    const deltaY = e.touches[0].clientY - startYRef.current;
+    const containerHeight = coverRef.current.offsetHeight;
+    const deltaPercent = (deltaY / containerHeight) * 100;
+    const newPosition = Math.min(100, Math.max(0, startPositionRef.current + deltaPercent));
+    setCoverPositionY(newPosition);
+  }, [isDragging]);
+
+  const handleTouchEnd = useCallback(() => {
+    setIsDragging(false);
+  }, []);
 
   // Get stats
   const { data: stats } = useQuery({
@@ -192,13 +263,30 @@ export default function Profile() {
         />
 
         {/* Cover Photo */}
-        <div className="relative h-44 bg-gradient-to-br from-primary/30 via-primary/20 to-accent overflow-hidden">
+        <div 
+          ref={coverRef}
+          className={cn(
+            "relative h-44 bg-gradient-to-br from-primary/30 via-primary/20 to-accent overflow-hidden",
+            isRepositioning && "cursor-ns-resize"
+          )}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
           {/* Cover image or placeholder */}
           {profile.cover_url ? (
             <img 
               src={profile.cover_url} 
               alt="Couverture" 
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover select-none"
+              style={{ 
+                objectPosition: `center ${isRepositioning ? coverPositionY : (profile.cover_position_y ?? 50)}%` 
+              }}
+              draggable={false}
             />
           ) : (
             <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.08%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')] opacity-50" />
@@ -208,6 +296,16 @@ export default function Profile() {
           {coverUpload.isUploading && (
             <div className="absolute inset-0 bg-background/50 flex items-center justify-center">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          )}
+          
+          {/* Repositioning overlay */}
+          {isRepositioning && (
+            <div className="absolute inset-0 bg-background/30 flex items-center justify-center pointer-events-none">
+              <div className="bg-background/90 backdrop-blur-sm rounded-lg px-4 py-2 text-sm font-medium flex items-center gap-2">
+                <Move className="w-4 h-4" />
+                Glisse pour repositionner
+              </div>
             </div>
           )}
           
@@ -225,27 +323,65 @@ export default function Profile() {
             )}
             <div className="flex-1" />
             <div className="flex gap-2">
-              <ShareButton
-                url={generateProfileUrl(userId!)}
-                title={`Profil de ${profile?.name || 'utilisateur'}`}
-                text={profile?.bio || undefined}
-                variant="ghost"
-                className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
-              />
-              {isOwnProfile && (
-                <Button 
-                  variant="ghost" 
-                  size="icon"
-                  className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
-                  onClick={() => coverInputRef.current?.click()}
-                  disabled={coverUpload.isUploading}
-                >
-                  {coverUpload.isUploading ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <Camera className="w-5 h-5" />
+              {isRepositioning ? (
+                <>
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                    onClick={handleSavePosition}
+                    disabled={updateProfile.isPending}
+                  >
+                    {updateProfile.isPending ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Check className="w-5 h-5" />
+                    )}
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
+                    onClick={handleCancelReposition}
+                  >
+                    <X className="w-5 h-5" />
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <ShareButton
+                    url={generateProfileUrl(userId!)}
+                    title={`Profil de ${profile?.name || 'utilisateur'}`}
+                    text={profile?.bio || undefined}
+                    variant="ghost"
+                    className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
+                  />
+                  {isOwnProfile && profile.cover_url && (
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
+                      onClick={handleStartReposition}
+                    >
+                      <Move className="w-5 h-5" />
+                    </Button>
                   )}
-                </Button>
+                  {isOwnProfile && (
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
+                      onClick={() => coverInputRef.current?.click()}
+                      disabled={coverUpload.isUploading}
+                    >
+                      {coverUpload.isUploading ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <Camera className="w-5 h-5" />
+                      )}
+                    </Button>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -342,7 +478,11 @@ export default function Profile() {
                       Modifier le profil
                     </Button>
                   </Link>
-                  <Button variant="secondary" className="flex-1">
+                  <Button 
+                    variant="secondary" 
+                    className="flex-1"
+                    onClick={() => navigate('/settings')}
+                  >
                     <Grid3X3 className="w-4 h-4 mr-2" />
                     Tableau de bord
                   </Button>

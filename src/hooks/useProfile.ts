@@ -8,6 +8,7 @@ export interface Profile {
   name: string;
   avatar_url: string | null;
   cover_url: string | null;
+  cover_position_y: number | null;
   bio: string | null;
   city: string | null;
   website_url: string | null;
@@ -44,7 +45,7 @@ export function useUpdateProfile() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async (updates: Partial<Pick<Profile, 'name' | 'bio' | 'avatar_url' | 'cover_url' | 'city' | 'website_url'>>) => {
+    mutationFn: async (updates: Partial<Pick<Profile, 'name' | 'bio' | 'avatar_url' | 'cover_url' | 'cover_position_y' | 'city' | 'website_url'>>) => {
       if (!user) throw new Error('Not authenticated');
 
       const { data, error } = await supabase
