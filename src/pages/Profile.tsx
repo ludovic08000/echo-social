@@ -100,7 +100,8 @@ export default function Profile() {
   }, [profile?.cover_position_y]);
 
   const handleSavePosition = useCallback(() => {
-    updateProfile.mutate({ cover_position_y: coverPositionY }, {
+    // Round to integer as the database column is of type integer
+    updateProfile.mutate({ cover_position_y: Math.round(coverPositionY) }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ['profile', userId] });
         setIsRepositioning(false);
