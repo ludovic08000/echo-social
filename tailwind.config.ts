@@ -64,15 +64,17 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
-        // Premium luxury colors
-        gold: {
-          DEFAULT: "hsl(var(--gold))",
-          light: "hsl(var(--gold-light))",
-          dark: "hsl(var(--gold-dark))",
+        // French tricolor theme
+        bleu: {
+          DEFAULT: "hsl(var(--bleu))",
+          light: "hsl(var(--bleu-light))",
+          dark: "hsl(var(--bleu-dark))",
         },
-        champagne: "hsl(var(--champagne))",
-        ivory: "hsl(var(--ivory))",
-        obsidian: "hsl(var(--obsidian))",
+        blanc: "hsl(var(--blanc))",
+        rouge: {
+          DEFAULT: "hsl(var(--rouge))",
+          light: "hsl(var(--rouge-light))",
+        },
       },
       borderRadius: {
         "3xl": "1.5rem",
@@ -125,8 +127,8 @@ export default {
           "100%": { backgroundPosition: "200% 0" },
         },
         "glow": {
-          from: { boxShadow: "0 0 20px hsl(var(--gold) / 0.2)" },
-          to: { boxShadow: "0 0 40px hsl(var(--gold) / 0.4)" },
+          from: { boxShadow: "0 0 20px hsl(var(--bleu) / 0.2)" },
+          to: { boxShadow: "0 0 40px hsl(var(--bleu) / 0.4)" },
         },
         "pulse-slow": {
           "0%, 100%": { opacity: "1" },
