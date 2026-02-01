@@ -299,14 +299,42 @@ export default function Profile() {
             </div>
           )}
           
-          {/* Repositioning overlay */}
+          {/* Repositioning overlay - mobile friendly bottom bar */}
           {isRepositioning && (
-            <div className="absolute inset-0 bg-background/30 flex items-center justify-center pointer-events-none">
-              <div className="bg-background/90 backdrop-blur-sm rounded-lg px-4 py-2 text-sm font-medium flex items-center gap-2">
-                <Move className="w-4 h-4" />
-                Glisse pour repositionner
+            <>
+              {/* Instruction overlay */}
+              <div className="absolute inset-0 bg-background/20 flex items-center justify-center pointer-events-none">
+                <div className="bg-background/90 backdrop-blur-sm rounded-lg px-4 py-2 text-sm font-medium flex items-center gap-2 shadow-lg">
+                  <Move className="w-4 h-4" />
+                  <span className="hidden sm:inline">Glisse pour repositionner</span>
+                  <span className="sm:hidden">Glisse ↕</span>
+                </div>
               </div>
-            </div>
+              
+              {/* Mobile-friendly bottom action bar */}
+              <div className="absolute bottom-0 left-0 right-0 bg-background/95 backdrop-blur-sm border-t border-border p-3 flex gap-3 z-20">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={handleCancelReposition}
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Annuler
+                </Button>
+                <Button 
+                  className="flex-1 bg-primary hover:bg-primary/90"
+                  onClick={handleSavePosition}
+                  disabled={updateProfile.isPending}
+                >
+                  {updateProfile.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Check className="w-4 h-4 mr-2" />
+                  )}
+                  Enregistrer
+                </Button>
+              </div>
+            </>
           )}
           
           {/* Header buttons */}
@@ -322,68 +350,42 @@ export default function Profile() {
               </Button>
             )}
             <div className="flex-1" />
-            <div className="flex gap-2">
-              {isRepositioning ? (
-                <>
+            {!isRepositioning && (
+              <div className="flex gap-2">
+                <ShareButton
+                  url={generateProfileUrl(userId!)}
+                  title={`Profil de ${profile?.name || 'utilisateur'}`}
+                  text={profile?.bio || undefined}
+                  variant="ghost"
+                  className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
+                />
+                {isOwnProfile && profile.cover_url && (
                   <Button 
                     variant="ghost" 
                     size="icon"
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                    onClick={handleSavePosition}
-                    disabled={updateProfile.isPending}
+                    className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
+                    onClick={handleStartReposition}
                   >
-                    {updateProfile.isPending ? (
+                    <Move className="w-5 h-5" />
+                  </Button>
+                )}
+                {isOwnProfile && (
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
+                    onClick={() => coverInputRef.current?.click()}
+                    disabled={coverUpload.isUploading}
+                  >
+                    {coverUpload.isUploading ? (
                       <Loader2 className="w-5 h-5 animate-spin" />
                     ) : (
-                      <Check className="w-5 h-5" />
+                      <Camera className="w-5 h-5" />
                     )}
                   </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="icon"
-                    className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
-                    onClick={handleCancelReposition}
-                  >
-                    <X className="w-5 h-5" />
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <ShareButton
-                    url={generateProfileUrl(userId!)}
-                    title={`Profil de ${profile?.name || 'utilisateur'}`}
-                    text={profile?.bio || undefined}
-                    variant="ghost"
-                    className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
-                  />
-                  {isOwnProfile && profile.cover_url && (
-                    <Button 
-                      variant="ghost" 
-                      size="icon"
-                      className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
-                      onClick={handleStartReposition}
-                    >
-                      <Move className="w-5 h-5" />
-                    </Button>
-                  )}
-                  {isOwnProfile && (
-                    <Button 
-                      variant="ghost" 
-                      size="icon"
-                      className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
-                      onClick={() => coverInputRef.current?.click()}
-                      disabled={coverUpload.isUploading}
-                    >
-                      {coverUpload.isUploading ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <Camera className="w-5 h-5" />
-                      )}
-                    </Button>
-                  )}
-                </>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
