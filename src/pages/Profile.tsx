@@ -7,6 +7,7 @@ import { AppLayout } from '@/components/AppLayout';
 import { UserAvatar } from '@/components/UserAvatar';
 import { PostCard } from '@/components/PostCard';
 import { FriendshipButton } from '@/components/FriendshipButton';
+import { ShareButton } from '@/components/ShareButton';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQuery } from '@tanstack/react-query';
@@ -14,6 +15,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { generateProfileUrl } from '@/lib/urlUtils';
 
 export default function Profile() {
   const { id } = useParams<{ id: string }>();
@@ -138,6 +140,13 @@ export default function Profile() {
             )}
             <div className="flex-1" />
             <div className="flex gap-2">
+              <ShareButton
+                url={generateProfileUrl(userId!)}
+                title={`Profil de ${profile?.name || 'utilisateur'}`}
+                text={profile?.bio || undefined}
+                variant="ghost"
+                className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
+              />
               {isOwnProfile && (
                 <Button 
                   variant="ghost" 
@@ -147,13 +156,6 @@ export default function Profile() {
                   <Camera className="w-5 h-5" />
                 </Button>
               )}
-              <Button 
-                variant="ghost" 
-                size="icon"
-                className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
-              >
-                <ChevronDown className="w-5 h-5" />
-              </Button>
             </div>
           </div>
         </div>

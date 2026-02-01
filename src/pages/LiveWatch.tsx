@@ -1,15 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Heart, Gift, Share2, Users, Send, Radio, X } from 'lucide-react';
+import { ArrowLeft, Heart, Gift, Users, Send, Radio, X } from 'lucide-react';
 import { useLiveStream, useLiveChat, useSendLiveChatMessage, useJoinLive, useLeaveLive } from '@/hooks/useLiveStreams';
 import { LiveViewerPlayer } from '@/components/live/LiveViewerPlayer';
 import { HostLiveView } from '@/components/live/HostLiveView';
 import { UserAvatar } from '@/components/UserAvatar';
+import { ShareButton } from '@/components/ShareButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
+import { generateLiveUrl } from '@/lib/urlUtils';
 
 export default function LiveWatch() {
   const { id } = useParams<{ id: string }>();
@@ -58,21 +60,7 @@ export default function LiveWatch() {
     setMessage('');
   };
 
-  const handleShare = async () => {
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: live?.title || 'Live',
-          url: window.location.href,
-        });
-      } else {
-        await navigator.clipboard.writeText(window.location.href);
-        toast({ title: 'Lien copié !' });
-      }
-    } catch {
-      // User cancelled share or error
-    }
-  };
+  const liveUrl = id ? generateLiveUrl(id) : '';
 
   if (isLoading) {
     return (
@@ -177,10 +165,14 @@ export default function LiveWatch() {
               <Gift className="w-4 h-4 mr-1" />
               Cadeau
             </Button>
-            <Button size="sm" variant="secondary" className="bg-white/10 hover:bg-white/20 text-white" onClick={handleShare}>
-              <Share2 className="w-4 h-4 mr-1" />
-              Partager
-            </Button>
+            <ShareButton
+              url={liveUrl}
+              title={live.title}
+              variant="secondary"
+              size="sm"
+              showLabel
+              className="bg-white/10 hover:bg-white/20 text-white"
+            />
           </div>
         </div>
       </div>

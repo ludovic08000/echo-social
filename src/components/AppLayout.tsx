@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { Navigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { MobileNav, DesktopSidebar } from './Navigation';
 import { UserAvatar } from './UserAvatar';
@@ -43,6 +43,8 @@ function MobileHeader() {
 export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
   const { user, loading } = useAuth();
 
+  // Note: Auth check is now handled by ProtectedRoute wrapper
+  // This loading state is kept for smooth UX when auth state changes
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -52,10 +54,6 @@ export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
         </div>
       </div>
     );
-  }
-
-  if (requireAuth && !user) {
-    return <Navigate to="/" replace />;
   }
 
   return (
