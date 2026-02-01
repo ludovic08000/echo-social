@@ -15,9 +15,10 @@ interface ReactionButtonProps {
   postId: string;
   currentReaction?: ReactionType | null;
   reactionsCount: number;
+  variant?: 'default' | 'facebook';
 }
 
-export function ReactionButton({ postId, currentReaction, reactionsCount }: ReactionButtonProps) {
+export function ReactionButton({ postId, currentReaction, reactionsCount, variant = 'default' }: ReactionButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const { user } = useAuth();
   const addReaction = useAddReaction();
@@ -57,6 +58,55 @@ export function ReactionButton({ postId, currentReaction, reactionsCount }: Reac
       addReaction.mutate({ postId, reactionType: 'like' });
     }
   };
+
+  if (variant === 'facebook') {
+    return (
+      <Popover open={isOpen} onOpenChange={setIsOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              'flex-1 h-11 gap-2 text-muted-foreground hover:bg-secondary rounded-lg',
+              currentReaction && 'text-primary'
+            )}
+            onDoubleClick={handleQuickLike}
+          >
+            {currentReaction ? (
+              <span className="text-xl">{REACTION_EMOJIS[currentReaction]}</span>
+            ) : (
+              <ThumbsUp className="w-5 h-5" />
+            )}
+            <span className="text-sm font-medium">
+              {currentReaction ? REACTION_LABELS[currentReaction] : "J'aime"}
+            </span>
+          </Button>
+        </PopoverTrigger>
+        
+        <PopoverContent 
+          side="top" 
+          className="w-auto p-2 bg-card border border-border shadow-lg rounded-full"
+          sideOffset={5}
+        >
+          <div className="flex gap-1">
+            {(Object.keys(REACTION_EMOJIS) as ReactionType[]).map((type) => (
+              <button
+                key={type}
+                onClick={() => handleReaction(type)}
+                className={cn(
+                  'p-2 rounded-full transition-transform hover:scale-125 hover:bg-accent',
+                  currentReaction === type && 'bg-accent ring-2 ring-primary'
+                )}
+                title={REACTION_LABELS[type]}
+              >
+                <span className="text-2xl">{REACTION_EMOJIS[type]}</span>
+              </button>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+    );
+  }
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
