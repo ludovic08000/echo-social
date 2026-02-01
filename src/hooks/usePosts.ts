@@ -74,10 +74,26 @@ export function usePosts() {
   }, [queryClient]);
 
   return useInfiniteQuery({
-    queryKey: ['posts'],
+    queryKey: ['posts', 'friends-feed', user?.id],
     queryFn: async ({ pageParam = 0 }) => {
+      if (!user) return [];
+      
       const from = pageParam * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
+
+      // Get list of friend user IDs
+      const { data: friendships } = await supabase
+        .from('friendships')
+        .select('requester_id, addressee_id')
+        .eq('status', 'accepted')
+        .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`);
+
+      const friendIds = friendships?.map(f => 
+        f.requester_id === user.id ? f.addressee_id : f.requester_id
+      ) || [];
+
+      // Include current user + friends
+      const allowedUserIds = [user.id, ...friendIds];
 
       const { data: posts, error } = await supabase
         .from('posts')
@@ -88,6 +104,7 @@ export function usePosts() {
           image_url,
           created_at
         `)
+        .in('user_id', allowedUserIds)
         .order('created_at', { ascending: false })
         .range(from, to);
 
@@ -154,6 +171,7 @@ export function usePosts() {
       return pages.length;
     },
     initialPageParam: 0,
+    enabled: !!user,
   });
 }
 
