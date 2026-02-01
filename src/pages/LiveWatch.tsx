@@ -1,16 +1,20 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Heart, Gift, Share2, Users, Send, Radio, X } from 'lucide-react';
 import { useLiveStream, useLiveChat, useSendLiveChatMessage, useJoinLive, useLeaveLive } from '@/hooks/useLiveStreams';
+import { LiveViewerPlayer } from '@/components/live/LiveViewerPlayer';
+import { HostLiveView } from '@/components/live/HostLiveView';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/lib/auth';
 
 export default function LiveWatch() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { data: live, isLoading } = useLiveStream(id);
   const { data: chatMessages } = useLiveChat(id);
   const sendMessage = useSendLiveChatMessage();
@@ -22,20 +26,22 @@ export default function LiveWatch() {
   const chatRef = useRef<HTMLDivElement>(null);
   const joinTimeRef = useRef<number>(Date.now());
 
-  // Join live on mount
+  const isHost = user?.id === live?.user_id;
+
+  // Join live on mount (for viewers only)
   useEffect(() => {
-    if (id) {
+    if (id && !isHost) {
       joinLive.mutate(id);
       joinTimeRef.current = Date.now();
     }
 
     return () => {
-      if (id) {
+      if (id && !isHost) {
         const watchTime = Math.floor((Date.now() - joinTimeRef.current) / 1000);
         leaveLive.mutate({ liveId: id, watchTimeSeconds: watchTime });
       }
     };
-  }, [id]);
+  }, [id, isHost]);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -54,10 +60,17 @@ export default function LiveWatch() {
 
   const handleShare = async () => {
     try {
-      await navigator.clipboard.writeText(window.location.href);
-      toast({ title: 'Lien copié !' });
+      if (navigator.share) {
+        await navigator.share({
+          title: live?.title || 'Live',
+          url: window.location.href,
+        });
+      } else {
+        await navigator.clipboard.writeText(window.location.href);
+        toast({ title: 'Lien copié !' });
+      }
     } catch {
-      toast({ title: 'Erreur', variant: 'destructive' });
+      // User cancelled share or error
     }
   };
 
@@ -65,7 +78,7 @@ export default function LiveWatch() {
     return (
       <div className="fixed inset-0 bg-black flex items-center justify-center">
         <div className="flex flex-col items-center gap-4 text-white">
-          <Radio className="w-12 h-12 animate-pulse text-red-500" />
+          <Radio className="w-12 h-12 animate-pulse text-destructive" />
           <span>Connexion au live...</span>
         </div>
       </div>
@@ -98,21 +111,25 @@ export default function LiveWatch() {
     );
   }
 
+  // Host view with camera controls
+  if (isHost) {
+    return <HostLiveView live={live} />;
+  }
+
+  // Viewer view
   return (
     <div className="fixed inset-0 bg-black flex flex-col md:flex-row">
       {/* Video area */}
       <div className="flex-1 relative">
-        {/* Placeholder video (in real app, this would be a video player) */}
-        <div className="w-full h-full bg-gradient-to-br from-primary/20 via-black to-secondary/20 flex items-center justify-center">
-          <div className="text-center text-white">
-            <Radio className="w-20 h-20 mx-auto mb-4 text-red-500 animate-pulse" />
-            <p className="text-lg opacity-70">Stream en cours...</p>
-          </div>
-        </div>
+        <LiveViewerPlayer 
+          thumbnailUrl={live.thumbnail_url || undefined}
+          isLive={live.is_active}
+          className="w-full h-full"
+        />
 
         {/* Top overlay */}
-        <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/60 to-transparent">
-          <div className="flex items-center justify-between">
+        <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/60 to-transparent pointer-events-none">
+          <div className="flex items-center justify-between pointer-events-auto">
             <button 
               onClick={() => navigate('/lives')}
               className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white"
@@ -121,7 +138,7 @@ export default function LiveWatch() {
             </button>
 
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-500 text-white text-sm font-bold">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-destructive text-destructive-foreground text-sm font-bold">
                 <Radio className="w-3.5 h-3.5 animate-pulse" />
                 <span>LIVE</span>
               </div>
@@ -141,7 +158,7 @@ export default function LiveWatch() {
         </div>
 
         {/* Host info */}
-        <div className="absolute bottom-4 left-4 right-4 md:bottom-8 md:left-8">
+        <div className="absolute bottom-4 left-4 right-4 md:bottom-8 md:left-8 pointer-events-none">
           <div className="flex items-center gap-3 mb-2">
             <UserAvatar src={live.host?.avatar_url} alt={live.host?.name} size="md" />
             <div>
@@ -151,7 +168,7 @@ export default function LiveWatch() {
           </div>
 
           {/* Action buttons */}
-          <div className="flex gap-2 mt-3">
+          <div className="flex gap-2 mt-3 pointer-events-auto">
             <Button size="sm" variant="secondary" className="bg-white/10 hover:bg-white/20 text-white">
               <Heart className="w-4 h-4 mr-1" />
               J'aime
