@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_deletion_requests: {
+        Row: {
+          completed_at: string | null
+          confirmation_token: string | null
+          confirmed_at: string | null
+          created_at: string
+          id: string
+          reason: string | null
+          scheduled_deletion_at: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          confirmation_token?: string | null
+          confirmed_at?: string | null
+          created_at?: string
+          id?: string
+          reason?: string | null
+          scheduled_deletion_at?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          confirmation_token?: string | null
+          confirmed_at?: string | null
+          created_at?: string
+          id?: string
+          reason?: string | null
+          scheduled_deletion_at?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       comments: {
         Row: {
           body: string
@@ -93,6 +129,36 @@ export type Database = {
           created_at?: string
           id?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      data_export_requests: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          download_url: string | null
+          expires_at: string | null
+          id: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          download_url?: string | null
+          expires_at?: string | null
+          id?: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          download_url?: string | null
+          expires_at?: string | null
+          id?: string
+          status?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -349,6 +415,54 @@ export type Database = {
           created_at?: string
           id?: string
           image_url?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      privacy_settings: {
+        Row: {
+          analytics_enabled: boolean
+          comments_allowed: string
+          created_at: string
+          friends_list_visibility: string
+          id: string
+          likes_visibility: string
+          messages_allowed: string
+          online_status_visibility: string
+          posts_visibility: string
+          profile_visibility: string
+          search_engine_indexing: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          analytics_enabled?: boolean
+          comments_allowed?: string
+          created_at?: string
+          friends_list_visibility?: string
+          id?: string
+          likes_visibility?: string
+          messages_allowed?: string
+          online_status_visibility?: string
+          posts_visibility?: string
+          profile_visibility?: string
+          search_engine_indexing?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          analytics_enabled?: boolean
+          comments_allowed?: string
+          created_at?: string
+          friends_list_visibility?: string
+          id?: string
+          likes_visibility?: string
+          messages_allowed?: string
+          online_status_visibility?: string
+          posts_visibility?: string
+          profile_visibility?: string
+          search_engine_indexing?: boolean
+          updated_at?: string
           user_id?: string
         }
         Relationships: []

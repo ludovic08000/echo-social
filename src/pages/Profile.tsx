@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Edit2 } from 'lucide-react';
+import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, GraduationCap, Link2, Calendar, ChevronDown, Grid3X3, Film, Image } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
@@ -8,14 +8,18 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { PostCard } from '@/components/PostCard';
 import { FriendshipButton } from '@/components/FriendshipButton';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { cn } from '@/lib/utils';
 
 export default function Profile() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('all');
   
   const userId = id || user?.id;
   const isOwnProfile = userId === user?.id;
@@ -53,15 +57,48 @@ export default function Profile() {
     enabled: !!userId,
   });
 
+  // Get mutual friends (sample data for display)
+  const { data: mutualFriends } = useQuery({
+    queryKey: ['mutual-friends', userId],
+    queryFn: async () => {
+      if (!userId || isOwnProfile) return [];
+      
+      // Get some friends for display
+      const { data } = await supabase
+        .from('friendships')
+        .select('requester_id, addressee_id')
+        .eq('status', 'accepted')
+        .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
+        .limit(3);
+      
+      if (!data) return [];
+      
+      const friendIds = data.map(f => f.requester_id === userId ? f.addressee_id : f.requester_id);
+      
+      if (friendIds.length === 0) return [];
+      
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('user_id', friendIds)
+        .limit(3);
+      
+      return profiles || [];
+    },
+    enabled: !!userId && !isOwnProfile,
+  });
+
   if (profileLoading) {
     return (
       <AppLayout>
-        <div className="pulse-card p-6 animate-pulse">
-          <div className="flex items-center gap-4">
-            <div className="w-20 h-20 rounded-full bg-muted" />
-            <div className="space-y-2">
-              <div className="h-6 w-32 bg-muted rounded" />
-              <div className="h-4 w-48 bg-muted rounded" />
+        <div className="animate-pulse">
+          {/* Cover skeleton */}
+          <div className="h-40 bg-muted rounded-b-3xl" />
+          <div className="px-4 -mt-16">
+            <div className="w-28 h-28 rounded-full bg-muted border-4 border-background" />
+            <div className="mt-3 space-y-2">
+              <div className="h-6 w-48 bg-muted rounded" />
+              <div className="h-4 w-32 bg-muted rounded" />
             </div>
           </div>
         </div>
@@ -81,84 +118,254 @@ export default function Profile() {
 
   return (
     <AppLayout>
-      {!isOwnProfile && (
-        <header className="flex items-center gap-3 mb-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <h1 className="text-lg font-semibold">{profile.name}</h1>
-        </header>
-      )}
-
-      <div className="pulse-card p-6 mb-6">
-        <div className="flex items-start gap-4">
-          <UserAvatar src={profile.avatar_url} alt={profile.name} size="xl" />
+      <div className="-mx-4 -mt-4">
+        {/* Cover Photo */}
+        <div className="relative h-44 bg-gradient-to-br from-primary/30 via-primary/20 to-accent overflow-hidden">
+          {/* Placeholder pattern for cover */}
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.08%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')] opacity-50" />
           
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <h2 className="text-xl font-bold truncate">{profile.name}</h2>
-              {isOwnProfile ? (
-                <Link to="/settings">
-                  <Button variant="outline" size="sm" className="shrink-0">
-                    <Edit2 className="w-4 h-4 mr-2" />
-                    Modifier
-                  </Button>
-                </Link>
-              ) : userId && (
-                <FriendshipButton userId={userId} />
-              )}
-            </div>
-            
-            {profile.bio && (
-              <p className="mt-2 text-muted-foreground">{profile.bio}</p>
+          {/* Header buttons */}
+          <div className="absolute top-3 left-3 right-3 flex justify-between items-center z-10">
+            {!isOwnProfile && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => navigate(-1)}
+                className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
             )}
-            
-            <div className="flex items-center gap-6 mt-4">
-              <div className="text-center">
-                <p className="text-xl font-bold">{stats?.postsCount || 0}</p>
-                <p className="text-sm text-muted-foreground">Posts</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xl font-bold">{stats?.likesReceived || 0}</p>
-                <p className="text-sm text-muted-foreground">Likes</p>
-              </div>
-              <Link to="/friends" className="text-center hover:opacity-80">
-                <p className="text-xl font-bold">{stats?.friendsCount || 0}</p>
-                <p className="text-sm text-muted-foreground">Amis</p>
-              </Link>
+            <div className="flex-1" />
+            <div className="flex gap-2">
+              {isOwnProfile && (
+                <Button 
+                  variant="ghost" 
+                  size="icon"
+                  className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
+                >
+                  <Camera className="w-5 h-5" />
+                </Button>
+              )}
+              <Button 
+                variant="ghost" 
+                size="icon"
+                className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
+              >
+                <ChevronDown className="w-5 h-5" />
+              </Button>
             </div>
           </div>
         </div>
-      </div>
 
-      <h3 className="font-semibold text-muted-foreground mb-4">Publications</h3>
-
-      {postsLoading ? (
-        <div className="space-y-4">
-          {[1, 2].map((i) => (
-            <div key={i} className="pulse-card p-5 animate-pulse">
-              <div className="h-4 w-full bg-muted rounded" />
-              <div className="h-4 w-2/3 bg-muted rounded mt-2" />
+        {/* Profile Header */}
+        <div className="px-4 relative">
+          {/* Avatar */}
+          <div className="absolute -top-16 left-4">
+            <div className="relative">
+              <div className="w-28 h-28 rounded-full border-4 border-background overflow-hidden bg-background">
+                <UserAvatar src={profile.avatar_url} alt={profile.name} size="xl" className="w-full h-full" />
+              </div>
+              {isOwnProfile && (
+                <button className="absolute bottom-1 right-1 w-8 h-8 bg-secondary rounded-full flex items-center justify-center border-2 border-background hover:bg-secondary/80 transition-colors">
+                  <Camera className="w-4 h-4" />
+                </button>
+              )}
             </div>
-          ))}
+          </div>
+
+          {/* Name & Stats */}
+          <div className="pt-16 pb-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h1 className="text-2xl font-bold">{profile.name}</h1>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                  <span><strong className="text-foreground">{stats?.friendsCount || 0}</strong> amis</span>
+                  <span>•</span>
+                  <span><strong className="text-foreground">{stats?.postsCount || 0}</strong> publications</span>
+                </div>
+              </div>
+              <ChevronDown className="w-6 h-6 text-muted-foreground mt-2" />
+            </div>
+
+            {/* Bio */}
+            {profile.bio && (
+              <p className="text-muted-foreground mt-3 text-sm">{profile.bio}</p>
+            )}
+
+            {/* Quick info badges */}
+            <div className="flex flex-wrap gap-2 mt-4 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1.5">
+                <Briefcase className="w-4 h-4" />
+                <span>Création digitale</span>
+              </div>
+              <span>•</span>
+              <div className="flex items-center gap-1.5">
+                <MapPin className="w-4 h-4" />
+                <span>France</span>
+              </div>
+            </div>
+
+            {/* Mutual friends */}
+            {mutualFriends && mutualFriends.length > 0 && (
+              <div className="flex items-center gap-2 mt-4">
+                <div className="flex -space-x-2">
+                  {mutualFriends.slice(0, 3).map((friend, i) => (
+                    <div key={friend.id} className="w-8 h-8 rounded-full border-2 border-background overflow-hidden">
+                      <UserAvatar src={friend.avatar_url} alt={friend.name} size="sm" className="w-full h-full" />
+                    </div>
+                  ))}
+                  {mutualFriends.length > 3 && (
+                    <div className="w-8 h-8 rounded-full border-2 border-background bg-secondary flex items-center justify-center text-xs font-medium">
+                      ...
+                    </div>
+                  )}
+                </div>
+                <span className="text-sm text-muted-foreground">Ami(e)s avec des points communs</span>
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div className="flex gap-2 mt-5">
+              {isOwnProfile ? (
+                <>
+                  <Link to="/settings" className="flex-1">
+                    <Button className="w-full bg-primary hover:bg-primary/90">
+                      <Edit2 className="w-4 h-4 mr-2" />
+                      Modifier le profil
+                    </Button>
+                  </Link>
+                  <Button variant="secondary" className="flex-1">
+                    <Grid3X3 className="w-4 h-4 mr-2" />
+                    Tableau de bord
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div className="flex-1">
+                    <FriendshipButton userId={userId!} />
+                  </div>
+                  <Button variant="secondary" className="flex-1">
+                    Envoyer un message
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
         </div>
-      ) : posts?.length === 0 ? (
-        <div className="pulse-card p-8 text-center">
-          <p className="text-muted-foreground">
-            {isOwnProfile ? "Vous n'avez pas encore publié." : 'Aucune publication.'}
-          </p>
+
+        {/* Tabs */}
+        <div className="border-t border-border">
+          <div className="px-4">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="w-full justify-start bg-transparent h-12 p-0 gap-0">
+                <TabsTrigger 
+                  value="all" 
+                  className={cn(
+                    "rounded-full px-4 py-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none",
+                    "text-muted-foreground"
+                  )}
+                >
+                  Tout
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="reels"
+                  className={cn(
+                    "rounded-full px-4 py-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none",
+                    "text-muted-foreground"
+                  )}
+                >
+                  Reels
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="photos"
+                  className={cn(
+                    "rounded-full px-4 py-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none",
+                    "text-muted-foreground"
+                  )}
+                >
+                  Photos
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
         </div>
-      ) : (
-        <div className="space-y-4">
-          {posts?.map((post) => (
-            <PostCard
-              key={post.id}
-              post={post}
-              onCommentClick={() => navigate(`/post/${post.id}`)}
-            />
-          ))}
+
+        {/* Content sections */}
+        <div className="px-4 py-4 space-y-4">
+          {/* Personal Info Section */}
+          <div className="pulse-card p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold">Informations personnelles</h3>
+              {isOwnProfile && (
+                <Link to="/settings">
+                  <Edit2 className="w-5 h-5 text-muted-foreground hover:text-foreground transition-colors" />
+                </Link>
+              )}
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 text-sm">
+                <MapPin className="w-5 h-5 text-muted-foreground" />
+                <span>France</span>
+              </div>
+              <div className="flex items-center gap-3 text-sm">
+                <Calendar className="w-5 h-5 text-muted-foreground" />
+                <span>Membre depuis {new Date(profile.created_at).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Links Section */}
+          <div className="pulse-card p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold">Liens</h3>
+              {isOwnProfile && (
+                <Link to="/settings">
+                  <Edit2 className="w-5 h-5 text-muted-foreground hover:text-foreground transition-colors" />
+                </Link>
+              )}
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 text-sm">
+                <Link2 className="w-5 h-5 text-muted-foreground" />
+                <a href="#" className="text-primary hover:underline">pulse.app/{profile.name.toLowerCase().replace(/\s+/g, '')}</a>
+              </div>
+            </div>
+          </div>
+
+          {/* Publications */}
+          <div>
+            <h3 className="font-semibold text-muted-foreground mb-4">Publications</h3>
+
+            {postsLoading ? (
+              <div className="space-y-4">
+                {[1, 2].map((i) => (
+                  <div key={i} className="pulse-card p-5 animate-pulse">
+                    <div className="h-4 w-full bg-muted rounded" />
+                    <div className="h-4 w-2/3 bg-muted rounded mt-2" />
+                  </div>
+                ))}
+              </div>
+            ) : posts?.length === 0 ? (
+              <div className="pulse-card p-8 text-center">
+                <p className="text-muted-foreground">
+                  {isOwnProfile ? "Vous n'avez pas encore publié." : 'Aucune publication.'}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {posts?.map((post) => (
+                  <PostCard
+                    key={post.id}
+                    post={post}
+                    onCommentClick={() => navigate(`/post/${post.id}`)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      )}
+      </div>
     </AppLayout>
   );
 }
