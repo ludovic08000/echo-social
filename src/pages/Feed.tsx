@@ -14,8 +14,12 @@ export default function Feed() {
 
   return (
     <AppLayout>
-      <header className="flex items-center justify-between mb-6 sticky top-0 bg-background/95 backdrop-blur-lg z-10 py-3 -mx-4 px-4 border-b border-border/50 md:hidden">
-        <h1 className="text-xl font-bold text-gradient">Pulse</h1>
+      <header className="flex items-center justify-between mb-6 sticky top-0 bg-background/95 backdrop-blur-lg z-10 py-3 -mx-4 px-4 border-b border-gold/20 md:hidden">
+        <h1 className="text-xl font-display font-bold text-gradient-gold">Pulse</h1>
+        <div className="flex items-center gap-2 text-xs text-gold">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>En direct</span>
+        </div>
       </header>
 
       <div className="space-y-4">
