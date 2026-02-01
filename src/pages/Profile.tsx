@@ -1,6 +1,6 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, GraduationCap, Link2, Calendar, ChevronDown, Grid3X3, Film, Image } from 'lucide-react';
-import { useProfile } from '@/hooks/useProfile';
+import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3 } from 'lucide-react';
+import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
 import { AppLayout } from '@/components/AppLayout';
@@ -9,18 +9,21 @@ import { PostCard } from '@/components/PostCard';
 import { FriendshipButton } from '@/components/FriendshipButton';
 import { ShareButton } from '@/components/ShareButton';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useQuery } from '@tanstack/react-query';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { generateProfileUrl } from '@/lib/urlUtils';
+import { useImageUpload } from '@/hooks/useImageUpload';
+import { Loader2 } from 'lucide-react';
 
 export default function Profile() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('all');
   
   const userId = id || user?.id;
@@ -28,6 +31,57 @@ export default function Profile() {
 
   const { data: profile, isLoading: profileLoading } = useProfile(userId);
   const { data: posts, isLoading: postsLoading } = useUserPosts(userId || '');
+  const updateProfile = useUpdateProfile();
+
+  // File input refs
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+
+  // Image upload hooks
+  const avatarUpload = useImageUpload({
+    bucket: 'avatars',
+    onSuccess: (url) => {
+      updateProfile.mutate({ avatar_url: url }, {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ['profile', userId] });
+        }
+      });
+    },
+  });
+
+  const coverUpload = useImageUpload({
+    bucket: 'avatars', // Using avatars bucket for covers too
+    onSuccess: (url) => {
+      updateProfile.mutate({ cover_url: url }, {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ['profile', userId] });
+        }
+      });
+    },
+  });
+
+  // Handle file selection
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await avatarUpload.upload(file);
+    }
+    // Reset input
+    if (avatarInputRef.current) {
+      avatarInputRef.current.value = '';
+    }
+  };
+
+  const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await coverUpload.upload(file);
+    }
+    // Reset input
+    if (coverInputRef.current) {
+      coverInputRef.current.value = '';
+    }
+  };
 
   // Get stats
   const { data: stats } = useQuery({
@@ -121,10 +175,41 @@ export default function Profile() {
   return (
     <AppLayout>
       <div className="-mx-4 -mt-4">
+        {/* Hidden file inputs */}
+        <input
+          ref={avatarInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleAvatarChange}
+          className="hidden"
+        />
+        <input
+          ref={coverInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleCoverChange}
+          className="hidden"
+        />
+
         {/* Cover Photo */}
         <div className="relative h-44 bg-gradient-to-br from-primary/30 via-primary/20 to-accent overflow-hidden">
-          {/* Placeholder pattern for cover */}
-          <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.08%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')] opacity-50" />
+          {/* Cover image or placeholder */}
+          {profile.cover_url ? (
+            <img 
+              src={profile.cover_url} 
+              alt="Couverture" 
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.08%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')] opacity-50" />
+          )}
+          
+          {/* Upload overlay when uploading */}
+          {coverUpload.isUploading && (
+            <div className="absolute inset-0 bg-background/50 flex items-center justify-center">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          )}
           
           {/* Header buttons */}
           <div className="absolute top-3 left-3 right-3 flex justify-between items-center z-10">
@@ -152,8 +237,14 @@ export default function Profile() {
                   variant="ghost" 
                   size="icon"
                   className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
+                  onClick={() => coverInputRef.current?.click()}
+                  disabled={coverUpload.isUploading}
                 >
-                  <Camera className="w-5 h-5" />
+                  {coverUpload.isUploading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Camera className="w-5 h-5" />
+                  )}
                 </Button>
               )}
             </div>
@@ -166,11 +257,25 @@ export default function Profile() {
           <div className="absolute -top-16 left-4">
             <div className="relative">
               <div className="w-28 h-28 rounded-full border-4 border-background overflow-hidden bg-background">
-                <UserAvatar src={profile.avatar_url} alt={profile.name} size="xl" className="w-full h-full" />
+                {avatarUpload.isUploading ? (
+                  <div className="w-full h-full flex items-center justify-center bg-muted">
+                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                  </div>
+                ) : (
+                  <UserAvatar src={profile.avatar_url} alt={profile.name} size="xl" className="w-full h-full" />
+                )}
               </div>
               {isOwnProfile && (
-                <button className="absolute bottom-1 right-1 w-8 h-8 bg-secondary rounded-full flex items-center justify-center border-2 border-background hover:bg-secondary/80 transition-colors">
-                  <Camera className="w-4 h-4" />
+                <button 
+                  className="absolute bottom-1 right-1 w-8 h-8 bg-secondary rounded-full flex items-center justify-center border-2 border-background hover:bg-secondary/80 transition-colors disabled:opacity-50"
+                  onClick={() => avatarInputRef.current?.click()}
+                  disabled={avatarUpload.isUploading}
+                >
+                  {avatarUpload.isUploading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Camera className="w-4 h-4" />
+                  )}
                 </button>
               )}
             </div>
@@ -204,7 +309,7 @@ export default function Profile() {
               <span>•</span>
               <div className="flex items-center gap-1.5">
                 <MapPin className="w-4 h-4" />
-                <span>France</span>
+                <span>{profile.city || 'France'}</span>
               </div>
             </div>
 
@@ -212,7 +317,7 @@ export default function Profile() {
             {mutualFriends && mutualFriends.length > 0 && (
               <div className="flex items-center gap-2 mt-4">
                 <div className="flex -space-x-2">
-                  {mutualFriends.slice(0, 3).map((friend, i) => (
+                  {mutualFriends.slice(0, 3).map((friend) => (
                     <div key={friend.id} className="w-8 h-8 rounded-full border-2 border-background overflow-hidden">
                       <UserAvatar src={friend.avatar_url} alt={friend.name} size="sm" className="w-full h-full" />
                     </div>
@@ -308,7 +413,7 @@ export default function Profile() {
             <div className="space-y-3">
               <div className="flex items-center gap-3 text-sm">
                 <MapPin className="w-5 h-5 text-muted-foreground" />
-                <span>France</span>
+                <span>{profile.city || 'France'}</span>
               </div>
               <div className="flex items-center gap-3 text-sm">
                 <Calendar className="w-5 h-5 text-muted-foreground" />
@@ -330,7 +435,13 @@ export default function Profile() {
             <div className="space-y-3">
               <div className="flex items-center gap-3 text-sm">
                 <Link2 className="w-5 h-5 text-muted-foreground" />
-                <a href="#" className="text-primary hover:underline">pulse.app/{profile.name.toLowerCase().replace(/\s+/g, '')}</a>
+                {profile.website_url ? (
+                  <a href={profile.website_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                    {profile.website_url.replace(/^https?:\/\//, '')}
+                  </a>
+                ) : (
+                  <a href="#" className="text-primary hover:underline">pulse.app/{profile.name.toLowerCase().replace(/\s+/g, '')}</a>
+                )}
               </div>
             </div>
           </div>
