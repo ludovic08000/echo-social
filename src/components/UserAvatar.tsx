@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import { User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -16,26 +17,33 @@ const sizeClasses = {
   xl: 'w-20 h-20',
 };
 
-export function UserAvatar({ src, alt, size = 'md', className }: AvatarProps) {
-  if (!src) {
+export const UserAvatar = forwardRef<HTMLDivElement, AvatarProps>(
+  ({ src, alt, size = 'md', className }, ref) => {
+    if (!src) {
+      return (
+        <div 
+          ref={ref}
+          className={cn(
+            'pulse-avatar flex items-center justify-center bg-secondary text-muted-foreground',
+            sizeClasses[size],
+            className
+          )}
+        >
+          <User className={size === 'xs' ? 'w-3 h-3' : size === 'sm' ? 'w-4 h-4' : size === 'xl' ? 'w-10 h-10' : 'w-5 h-5'} />
+        </div>
+      );
+    }
+
     return (
-      <div 
-        className={cn(
-          'pulse-avatar flex items-center justify-center bg-secondary text-muted-foreground',
-          sizeClasses[size],
-          className
-        )}
-      >
-        <User className={size === 'xs' ? 'w-3 h-3' : size === 'sm' ? 'w-4 h-4' : size === 'xl' ? 'w-10 h-10' : 'w-5 h-5'} />
+      <div ref={ref} className={cn(sizeClasses[size], className)}>
+        <img
+          src={src}
+          alt={alt || 'Avatar'}
+          className={cn('pulse-avatar object-cover w-full h-full', className)}
+        />
       </div>
     );
   }
+);
 
-  return (
-    <img
-      src={src}
-      alt={alt || 'Avatar'}
-      className={cn('pulse-avatar object-cover', sizeClasses[size], className)}
-    />
-  );
-}
+UserAvatar.displayName = 'UserAvatar';
