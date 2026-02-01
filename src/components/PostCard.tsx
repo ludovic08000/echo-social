@@ -1,6 +1,6 @@
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { MessageCircle, Share2, Trash2, MoreHorizontal, ThumbsUp } from 'lucide-react';
+import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Post, useDeletePost } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
@@ -8,8 +8,9 @@ import { UserAvatar } from './UserAvatar';
 import { Button } from '@/components/ui/button';
 import { ReactionButton } from './ReactionButton';
 import { cn } from '@/lib/utils';
-import { toast } from '@/hooks/use-toast';
 import { ReactionType } from '@/hooks/useReactions';
+import { ShareButton } from './ShareButton';
+import { generatePostUrl } from '@/lib/urlUtils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,14 +28,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
   const { user } = useAuth();
   const deletePost = useDeletePost();
 
-  const handleShare = async () => {
-    const url = `${window.location.origin}/post/${post.id}`;
-    await navigator.clipboard.writeText(url);
-    toast({
-      title: 'Lien copié !',
-      description: 'Le lien du post a été copié dans le presse-papier',
-    });
-  };
+  const postUrl = generatePostUrl(post.id);
 
   const handleDelete = () => {
     if (confirm('Êtes-vous sûr de vouloir supprimer ce post ?')) {
@@ -75,9 +69,15 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={handleShare}>
-              <Share2 className="w-4 h-4 mr-2" />
-              Partager
+            <DropdownMenuItem asChild>
+              <ShareButton 
+                url={postUrl} 
+                title={`Post de ${post.profile.name}`}
+                text={post.body?.slice(0, 100)}
+                variant="ghost"
+                showLabel
+                className="w-full justify-start p-0"
+              />
             </DropdownMenuItem>
             {isOwner && (
               <DropdownMenuItem onClick={handleDelete} className="text-destructive">
@@ -149,15 +149,15 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
             <span className="text-sm font-medium">Commenter</span>
           </Button>
           
-          <Button
+          <ShareButton
+            url={postUrl}
+            title={`Post de ${post.profile.name}`}
+            text={post.body?.slice(0, 100)}
             variant="ghost"
             size="sm"
-            onClick={handleShare}
+            showLabel
             className="flex-1 h-11 gap-2 text-muted-foreground hover:bg-secondary rounded-lg"
-          >
-            <Share2 className="w-5 h-5" />
-            <span className="text-sm font-medium">Partager</span>
-          </Button>
+          />
         </div>
       )}
     </article>

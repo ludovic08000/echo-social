@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Heart, MessageCircle, Share2, Bookmark, Play, Pause, Volume2, VolumeX } from 'lucide-react';
+import { Heart, MessageCircle, Bookmark, Play, Pause, Volume2, VolumeX } from 'lucide-react';
 import { UserAvatar } from './UserAvatar';
 import { ShortVideo, useToggleVideoLike, useToggleVideoSave, useShareVideo, useRecordVideoView } from '@/hooks/useVideoFeed';
+import { ShareButton } from './ShareButton';
+import { generateVideoUrl } from '@/lib/urlUtils';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 
@@ -94,13 +96,13 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
 
   const handleShare = async () => {
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/video/${video.id}`);
       shareVideo.mutate({ videoId: video.id });
-      toast({ title: 'Lien copié !' });
     } catch {
-      toast({ title: 'Erreur lors du partage', variant: 'destructive' });
+      // Error handled by ShareButton
     }
   };
+
+  const videoUrl = generateVideoUrl(video.id);
 
   return (
     <div className="relative w-full h-full bg-black flex items-center justify-center">
@@ -199,12 +201,15 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
           </div>
         </button>
 
-        <button onClick={handleShare} className="flex flex-col items-center gap-1">
-          <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
-            <Share2 className="w-6 h-6 text-white" />
-          </div>
+        <div className="flex flex-col items-center gap-1" onClick={handleShare}>
+          <ShareButton
+            url={videoUrl}
+            title={video.caption || 'Vidéo Pulse'}
+            variant="ghost"
+            className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 text-white"
+          />
           <span className="text-white text-xs font-medium">{video.share_count}</span>
-        </button>
+        </div>
 
         <button onClick={toggleMute} className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
