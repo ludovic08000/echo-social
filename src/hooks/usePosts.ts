@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tansta
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { ReactionType } from '@/hooks/useReactions';
+import { useEffect } from 'react';
 
 export interface Post {
   id: string;
@@ -23,6 +24,54 @@ const PAGE_SIZE = 10;
 
 export function usePosts() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  // Subscribe to realtime changes
+  useEffect(() => {
+    const channel = supabase
+      .channel('posts-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'posts',
+        },
+        () => {
+          // Invalidate and refetch posts when any change occurs
+          queryClient.invalidateQueries({ queryKey: ['posts'] });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'likes',
+        },
+        () => {
+          // Refetch to update like counts
+          queryClient.invalidateQueries({ queryKey: ['posts'] });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'comments',
+        },
+        () => {
+          // Refetch to update comment counts
+          queryClient.invalidateQueries({ queryKey: ['posts'] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
   return useInfiniteQuery({
     queryKey: ['posts'],
