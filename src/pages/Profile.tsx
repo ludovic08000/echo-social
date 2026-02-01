@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import { generateProfileUrl } from '@/lib/urlUtils';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { Loader2 } from 'lucide-react';
+import { AvatarCropper } from '@/components/AvatarCropper';
 
 export default function Profile() {
   const { id } = useParams<{ id: string }>();
@@ -33,6 +34,10 @@ export default function Profile() {
   const coverRef = useRef<HTMLDivElement>(null);
   const startYRef = useRef<number>(0);
   const startPositionRef = useRef<number>(50);
+  
+  // Avatar cropping state
+  const [avatarToCrop, setAvatarToCrop] = useState<string | null>(null);
+  const [isCropperOpen, setIsCropperOpen] = useState(false);
   
   const userId = id || user?.id;
   const isOwnProfile = userId === user?.id;
@@ -52,6 +57,8 @@ export default function Profile() {
       updateProfile.mutate({ avatar_url: url }, {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: ['profile', userId] });
+          setIsCropperOpen(false);
+          setAvatarToCrop(null);
         }
       });
     },
@@ -68,11 +75,17 @@ export default function Profile() {
     },
   });
 
-  // Handle file selection
+  // Handle file selection - now opens cropper instead of direct upload
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      await avatarUpload.upload(file);
+      // Create a data URL from the file for the cropper
+      const reader = new FileReader();
+      reader.onload = () => {
+        setAvatarToCrop(reader.result as string);
+        setIsCropperOpen(true);
+      };
+      reader.readAsDataURL(file);
     }
     // Reset input
     if (avatarInputRef.current) {
@@ -113,6 +126,18 @@ export default function Profile() {
     setIsRepositioning(false);
     setCoverPositionY(profile?.cover_position_y ?? 50);
   }, [profile?.cover_position_y]);
+
+  // Handle cropped avatar upload
+  const handleCroppedAvatar = useCallback(async (croppedBlob: Blob) => {
+    // Convert blob to file for upload
+    const file = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
+    await avatarUpload.upload(file);
+  }, [avatarUpload]);
+
+  const handleCloseCropper = useCallback(() => {
+    setIsCropperOpen(false);
+    setAvatarToCrop(null);
+  }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (!isRepositioning) return;
@@ -632,6 +657,19 @@ export default function Profile() {
           </div>
         </div>
       </div>
+
+      {/* Avatar Cropper Dialog */}
+      {avatarToCrop && (
+        <AvatarCropper
+          isOpen={isCropperOpen}
+          onClose={handleCloseCropper}
+          imageSrc={avatarToCrop}
+          onCropComplete={handleCroppedAvatar}
+          isUploading={avatarUpload.isUploading}
+          aspectRatio={1}
+          title="Recadrer la photo de profil"
+        />
+      )}
     </AppLayout>
   );
 }
