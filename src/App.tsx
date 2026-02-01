@@ -18,6 +18,9 @@ import Messages from "./pages/Messages";
 import Friends from "./pages/Friends";
 import Groups from "./pages/Groups";
 import Pages from "./pages/Pages";
+import Videos from "./pages/Videos";
+import Lives from "./pages/Lives";
+import LiveWatch from "./pages/LiveWatch";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -46,6 +49,9 @@ const App = () => (
             <Route path="/friends" element={<Friends />} />
             <Route path="/groups" element={<Groups />} />
             <Route path="/pages" element={<Pages />} />
+            <Route path="/videos" element={<Videos />} />
+            <Route path="/lives" element={<Lives />} />
+            <Route path="/live/:id" element={<LiveWatch />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

@@ -380,6 +380,133 @@ export type Database = {
           },
         ]
       }
+      live_chat: {
+        Row: {
+          created_at: string
+          gift_type: string | null
+          id: string
+          is_gift: boolean
+          live_id: string
+          message: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          gift_type?: string | null
+          id?: string
+          is_gift?: boolean
+          live_id: string
+          message: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          gift_type?: string | null
+          id?: string
+          is_gift?: boolean
+          live_id?: string
+          message?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "live_chat_live_id_fkey"
+            columns: ["live_id"]
+            isOneToOne: false
+            referencedRelation: "live_streams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      live_streams: {
+        Row: {
+          category: string | null
+          created_at: string
+          description: string | null
+          ended_at: string | null
+          hashtags: string[] | null
+          id: string
+          is_active: boolean
+          peak_viewer_count: number
+          started_at: string | null
+          stream_key: string | null
+          thumbnail_url: string | null
+          title: string
+          total_views: number
+          user_id: string
+          viewer_count: number
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string
+          description?: string | null
+          ended_at?: string | null
+          hashtags?: string[] | null
+          id?: string
+          is_active?: boolean
+          peak_viewer_count?: number
+          started_at?: string | null
+          stream_key?: string | null
+          thumbnail_url?: string | null
+          title: string
+          total_views?: number
+          user_id: string
+          viewer_count?: number
+        }
+        Update: {
+          category?: string | null
+          created_at?: string
+          description?: string | null
+          ended_at?: string | null
+          hashtags?: string[] | null
+          id?: string
+          is_active?: boolean
+          peak_viewer_count?: number
+          started_at?: string | null
+          stream_key?: string | null
+          thumbnail_url?: string | null
+          title?: string
+          total_views?: number
+          user_id?: string
+          viewer_count?: number
+        }
+        Relationships: []
+      }
+      live_views: {
+        Row: {
+          id: string
+          joined_at: string
+          left_at: string | null
+          live_id: string
+          user_id: string
+          watch_time_seconds: number
+        }
+        Insert: {
+          id?: string
+          joined_at?: string
+          left_at?: string | null
+          live_id: string
+          user_id: string
+          watch_time_seconds?: number
+        }
+        Update: {
+          id?: string
+          joined_at?: string
+          left_at?: string | null
+          live_id?: string
+          user_id?: string
+          watch_time_seconds?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "live_views_live_id_fkey"
+            columns: ["live_id"]
+            isOneToOne: false
+            referencedRelation: "live_streams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           body: string
@@ -741,6 +868,63 @@ export type Database = {
         }
         Relationships: []
       }
+      short_videos: {
+        Row: {
+          caption: string | null
+          comment_count: number
+          created_at: string
+          duration_seconds: number
+          hashtags: string[] | null
+          id: string
+          is_public: boolean
+          like_count: number
+          share_count: number
+          sound_id: string | null
+          sound_name: string | null
+          thumbnail_url: string | null
+          updated_at: string
+          user_id: string
+          video_url: string
+          view_count: number
+        }
+        Insert: {
+          caption?: string | null
+          comment_count?: number
+          created_at?: string
+          duration_seconds?: number
+          hashtags?: string[] | null
+          id?: string
+          is_public?: boolean
+          like_count?: number
+          share_count?: number
+          sound_id?: string | null
+          sound_name?: string | null
+          thumbnail_url?: string | null
+          updated_at?: string
+          user_id: string
+          video_url: string
+          view_count?: number
+        }
+        Update: {
+          caption?: string | null
+          comment_count?: number
+          created_at?: string
+          duration_seconds?: number
+          hashtags?: string[] | null
+          id?: string
+          is_public?: boolean
+          like_count?: number
+          share_count?: number
+          sound_id?: string | null
+          sound_name?: string | null
+          thumbnail_url?: string | null
+          updated_at?: string
+          user_id?: string
+          video_url?: string
+          view_count?: number
+        }
+        Relationships: []
+      }
       stories: {
         Row: {
           caption: string | null
@@ -793,6 +977,215 @@ export type Database = {
             columns: ["story_id"]
             isOneToOne: false
             referencedRelation: "stories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_interests: {
+        Row: {
+          created_at: string
+          explicit: boolean
+          id: string
+          interest_type: string
+          interest_value: string
+          updated_at: string
+          user_id: string
+          weight: number
+        }
+        Insert: {
+          created_at?: string
+          explicit?: boolean
+          id?: string
+          interest_type: string
+          interest_value: string
+          updated_at?: string
+          user_id: string
+          weight?: number
+        }
+        Update: {
+          created_at?: string
+          explicit?: boolean
+          id?: string
+          interest_type?: string
+          interest_value?: string
+          updated_at?: string
+          user_id?: string
+          weight?: number
+        }
+        Relationships: []
+      }
+      video_comments: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          like_count: number
+          parent_id: string | null
+          user_id: string
+          video_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          like_count?: number
+          parent_id?: string | null
+          user_id: string
+          video_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          like_count?: number
+          parent_id?: string | null
+          user_id?: string
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_comments_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "video_comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "video_comments_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "short_videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      video_likes: {
+        Row: {
+          created_at: string
+          id: string
+          user_id: string
+          video_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          user_id: string
+          video_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          user_id?: string
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_likes_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "short_videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      video_saves: {
+        Row: {
+          created_at: string
+          id: string
+          user_id: string
+          video_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          user_id: string
+          video_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          user_id?: string
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_saves_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "short_videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      video_shares: {
+        Row: {
+          created_at: string
+          id: string
+          share_type: string | null
+          user_id: string
+          video_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          share_type?: string | null
+          user_id: string
+          video_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          share_type?: string | null
+          user_id?: string
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_shares_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "short_videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      video_views: {
+        Row: {
+          completion_rate: number
+          id: string
+          replayed: boolean
+          source: string | null
+          user_id: string
+          video_id: string
+          viewed_at: string
+          watch_time_seconds: number
+        }
+        Insert: {
+          completion_rate?: number
+          id?: string
+          replayed?: boolean
+          source?: string | null
+          user_id: string
+          video_id: string
+          viewed_at?: string
+          watch_time_seconds?: number
+        }
+        Update: {
+          completion_rate?: number
+          id?: string
+          replayed?: boolean
+          source?: string | null
+          user_id?: string
+          video_id?: string
+          viewed_at?: string
+          watch_time_seconds?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_views_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "short_videos"
             referencedColumns: ["id"]
           },
         ]

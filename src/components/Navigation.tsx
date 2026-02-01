@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Search, Bell, User, Settings, PlusCircle, MessageCircle, Users, FileText } from 'lucide-react';
+import { Home, Search, Bell, User, Settings, PlusCircle, MessageCircle, Users, FileText, Video, Radio } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
@@ -8,9 +8,9 @@ import { cn } from '@/lib/utils';
 
 const navItems = [
   { path: '/feed', icon: Home, label: 'Accueil' },
-  { path: '/search', icon: Search, label: 'Rechercher' },
+  { path: '/videos', icon: Video, label: 'Vidéos' },
   { path: '/create', icon: PlusCircle, label: 'Créer' },
-  { path: '/notifications', icon: Bell, label: 'Notifs' },
+  { path: '/lives', icon: Radio, label: 'Lives' },
   { path: '/settings', icon: Settings, label: 'Paramètres' },
 ];
 
@@ -81,6 +81,8 @@ export function DesktopSidebar() {
 
   const sidebarItems = [
     { path: '/feed', icon: Home, label: 'Accueil' },
+    { path: '/videos', icon: Video, label: 'Vidéos' },
+    { path: '/lives', icon: Radio, label: 'Lives' },
     { path: '/search', icon: Search, label: 'Rechercher' },
     { path: '/notifications', icon: Bell, label: 'Notifications', badge: unreadCount },
     { path: '/messages', icon: MessageCircle, label: 'Messages', badge: unreadMessages },
