@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Search, Bell, User, Settings, PlusCircle, MessageCircle, Users } from 'lucide-react';
+import { Home, Search, Bell, User, Settings, PlusCircle, MessageCircle, Users, FileText } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
@@ -85,6 +85,8 @@ export function DesktopSidebar() {
     { path: '/notifications', icon: Bell, label: 'Notifications', badge: unreadCount },
     { path: '/messages', icon: MessageCircle, label: 'Messages', badge: unreadMessages },
     { path: '/friends', icon: Users, label: 'Amis', badge: friendRequests },
+    { path: '/groups', icon: Users, label: 'Groupes' },
+    { path: '/pages', icon: FileText, label: 'Pages' },
     { path: `/profile/${user.id}`, icon: User, label: 'Profil' },
     { path: '/settings', icon: Settings, label: 'Paramètres' },
   ];

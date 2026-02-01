@@ -16,6 +16,8 @@ import Notifications from "./pages/Notifications";
 import Settings from "./pages/Settings";
 import Messages from "./pages/Messages";
 import Friends from "./pages/Friends";
+import Groups from "./pages/Groups";
+import Pages from "./pages/Pages";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -42,6 +44,8 @@ const App = () => (
             <Route path="/messages" element={<Messages />} />
             <Route path="/messages/:conversationId" element={<Messages />} />
             <Route path="/friends" element={<Friends />} />
+            <Route path="/groups" element={<Groups />} />
+            <Route path="/pages" element={<Pages />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
