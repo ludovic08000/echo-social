@@ -11,7 +11,7 @@ const navItems = [
   { path: '/search', icon: Search, label: 'Rechercher' },
   { path: '/create', icon: PlusCircle, label: 'Créer' },
   { path: '/notifications', icon: Bell, label: 'Notifs' },
-  { path: '/messages', icon: MessageCircle, label: 'Messages' },
+  { path: '/settings', icon: Settings, label: 'Paramètres' },
 ];
 
 export function MobileNav() {
