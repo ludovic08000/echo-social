@@ -1701,6 +1701,10 @@ export type Database = {
           user_id: string
         }[]
       }
+      is_conversation_participant: {
+        Args: { conv_id: string; uid: string }
+        Returns: boolean
+      }
     }
     Enums: {
       friendship_status: "pending" | "accepted" | "rejected"
