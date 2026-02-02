@@ -29,8 +29,8 @@ export default function Landing() {
     <div className="min-h-screen relative flex flex-col overflow-hidden">
       {/* Background image with fade overlay */}
       <div 
-        className="absolute inset-0 bg-contain bg-center bg-no-repeat animate-fade-in"
-        style={{ backgroundImage: `url(${loginBg})` }}
+        className="absolute inset-0 bg-no-repeat animate-fade-in"
+        style={{ backgroundImage: `url(${loginBg})`, backgroundSize: '100% 100%', backgroundPosition: 'center' }}
       />
       <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/40" />
 
