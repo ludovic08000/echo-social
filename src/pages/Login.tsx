@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
+import loginBg from '@/assets/login-bg.png';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -44,14 +45,22 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
+    <div className="min-h-screen relative flex items-center justify-center px-4 overflow-hidden">
+      {/* Background image with fade overlay */}
+      <div 
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat animate-fade-in"
+        style={{ backgroundImage: `url(${loginBg})` }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/40" />
+      
+      {/* Content */}
+      <div className="relative z-10 w-full max-w-sm animate-fade-in">
         <Link to="/" className="flex items-center justify-center gap-2 mb-8">
           <Zap className="w-8 h-8 text-primary" />
           <span className="text-2xl font-bold text-gradient">Pulse</span>
         </Link>
 
-        <div className="pulse-card p-6 sm:p-8">
+        <div className="backdrop-blur-xl bg-card/60 border border-border/50 rounded-2xl p-6 sm:p-8 shadow-2xl">
           <h1 className="text-2xl font-bold text-center mb-6">Connexion</h1>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -63,7 +72,7 @@ export default function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="vous@exemple.com"
-                className="pulse-input"
+                className="bg-background/50 border-border/50"
                 required
               />
             </div>
@@ -77,7 +86,7 @@ export default function Login() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="pulse-input pr-10"
+                  className="bg-background/50 border-border/50 pr-10"
                   required
                 />
                 <button
@@ -93,7 +102,7 @@ export default function Login() {
             <Button
               type="submit"
               disabled={isLoading}
-              className="pulse-button-gradient w-full"
+              className="w-full"
             >
               {isLoading ? 'Connexion...' : 'Se connecter'}
             </Button>
@@ -101,7 +110,7 @@ export default function Login() {
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
             Pas encore de compte ?{' '}
-            <Link to="/signup" className="pulse-link font-medium">
+            <Link to="/signup" className="text-primary hover:underline font-medium">
               S'inscrire
             </Link>
           </p>
