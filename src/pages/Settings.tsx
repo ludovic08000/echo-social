@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Moon, Sun, LogOut, Camera, ChevronRight, Users, FileText, Shield, Bell, User, Download, Trash2 } from 'lucide-react';
+import { ArrowLeft, LogOut, Camera, ChevronRight, Users, FileText, Shield, Bell, User, Download, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
-import { useTheme } from '@/hooks/useTheme';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/AppLayout';
 import { UserAvatar } from '@/components/UserAvatar';
@@ -25,7 +24,7 @@ export default function Settings() {
   const { user, signOut } = useAuth();
   const { data: profile } = useProfile();
   const updateProfile = useUpdateProfile();
-  const { theme, toggleTheme } = useTheme();
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState('');
@@ -210,29 +209,6 @@ export default function Settings() {
             </div>
           </section>
 
-          {/* Appearance Section */}
-          <section className="premium-card p-6">
-            <h2 className="font-display font-semibold mb-4">Apparence</h2>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                  {theme === 'dark' ? (
-                    <Moon className="w-5 h-5 text-primary" />
-                  ) : (
-                    <Sun className="w-5 h-5 text-primary" />
-                  )}
-                </div>
-                <div>
-                  <p className="font-medium">Mode sombre</p>
-                  <p className="text-sm text-muted-foreground">
-                    {theme === 'dark' ? 'Activé' : 'Désactivé'}
-                  </p>
-                </div>
-              </div>
-              <Switch checked={theme === 'dark'} onCheckedChange={toggleTheme} />
-            </div>
-          </section>
 
           {/* Account Section */}
           <section className="premium-card p-6">
