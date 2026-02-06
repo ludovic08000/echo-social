@@ -1,4 +1,4 @@
-import { Shield, Eye, MessageCircle, Heart, Search, BarChart3 } from 'lucide-react';
+import { Shield, Eye, MessageCircle, Heart, Search, BarChart3, Ghost } from 'lucide-react';
 import { usePrivacySettings, useUpdatePrivacySettings } from '@/hooks/usePrivacySettings';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -58,6 +58,28 @@ export function PrivacySettingsPanel() {
 
   return (
     <div className="space-y-8">
+      {/* Ghost Mode */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Ghost className="w-5 h-5 text-primary" />
+          <h3 className="font-semibold">Mode Fantôme</h3>
+        </div>
+        <div className="pl-7">
+          <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-primary/5 to-primary/10 border border-primary/20">
+            <div className="space-y-1">
+              <Label className="text-sm font-medium">Activer le mode fantôme</Label>
+              <p className="text-xs text-muted-foreground">
+                Naviguez de façon invisible : pas de « vu », pas de statut en ligne, aucune trace de lecture.
+              </p>
+            </div>
+            <Switch
+              checked={(settings as any).ghost_mode ?? false}
+              onCheckedChange={(v) => handleUpdate('ghost_mode', v)}
+            />
+          </div>
+        </div>
+      </section>
+
       {/* Profile Visibility */}
       <section className="space-y-4">
         <div className="flex items-center gap-2">

@@ -30,6 +30,10 @@ export interface Profile {
   relationship_status: string | null;
   interests: string[] | null;
   field_visibility: FieldVisibility | null;
+  mood_emoji: string | null;
+  mood_text: string | null;
+  mood_updated_at: string | null;
+  profile_music_url: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2 } from 'lucide-react';
+import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Post, useDeletePost } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
@@ -32,8 +32,26 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
   const { summarize, translate, summaryLoading, translateLoading, aiSummariesEnabled, autoTranslateEnabled } = useAIContent();
   const [summary, setSummary] = useState<string | null>(null);
   const [translation, setTranslation] = useState<string | null>(null);
+  const [timeLeft, setTimeLeft] = useState<string | null>(null);
 
   const postUrl = generatePostUrl(post.id);
+
+  // Ephemeral post countdown
+  useEffect(() => {
+    if (!post.expires_at) return;
+    const updateCountdown = () => {
+      const now = new Date().getTime();
+      const exp = new Date(post.expires_at!).getTime();
+      const diff = exp - now;
+      if (diff <= 0) { setTimeLeft('Expiré'); return; }
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      setTimeLeft(hours > 0 ? `${hours}h${mins.toString().padStart(2, '0')}` : `${mins}min`);
+    };
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 30000);
+    return () => clearInterval(interval);
+  }, [post.expires_at]);
 
   const handleSummarize = async () => {
     if (summary) { setSummary(null); return; }
@@ -61,7 +79,12 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
       <div className="flex items-center justify-between px-4 pt-4 pb-3">
         <div className="flex items-center gap-3">
           <Link to={`/profile/${post.user_id}`}>
-            <UserAvatar src={post.profile.avatar_url} alt={post.profile.name} size="md" />
+            <UserAvatar 
+              src={post.profile.avatar_url} 
+              alt={post.profile.name} 
+              size="md" 
+              moodEmoji={post.profile.mood_emoji}
+            />
           </Link>
           
           <div className="min-w-0">
@@ -71,11 +94,19 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
             >
               {post.profile.name}
             </Link>
-            <Link to={`/post/${post.id}`}>
-              <span className="text-muted-foreground text-xs">
-                {formatDistanceToNow(new Date(post.created_at), { addSuffix: true, locale: fr })}
-              </span>
-            </Link>
+            <div className="flex items-center gap-1.5">
+              <Link to={`/post/${post.id}`}>
+                <span className="text-muted-foreground text-xs">
+                  {formatDistanceToNow(new Date(post.created_at), { addSuffix: true, locale: fr })}
+                </span>
+              </Link>
+              {timeLeft && (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-medium">
+                  <Timer className="w-2.5 h-2.5" />
+                  {timeLeft}
+                </span>
+              )}
+            </div>
           </div>
         </div>
         
