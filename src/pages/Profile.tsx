@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, ImagePlus, Video } from 'lucide-react';
+import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
@@ -20,6 +20,9 @@ import { useImageUpload } from '@/hooks/useImageUpload';
 import { Loader2 } from 'lucide-react';
 import { AvatarCropper } from '@/components/AvatarCropper';
 import { ProfilePhotoGrid } from '@/components/profile/ProfilePhotoGrid';
+import { AlbumsList } from '@/components/profile/AlbumsList';
+import { AlbumDetail } from '@/components/profile/AlbumDetail';
+import { type Album } from '@/hooks/useAlbums';
 
 export default function Profile() {
   const { id } = useParams<{ id: string }>();
@@ -27,6 +30,7 @@ export default function Profile() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('all');
+  const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
   
   // Cover repositioning state
   const [isRepositioning, setIsRepositioning] = useState(false);
@@ -548,12 +552,18 @@ export default function Profile() {
             {/* Quick upload actions for own profile */}
             {isOwnProfile && (
               <div className="mt-3">
-                <Link to="/create" className="block">
-                  <Button variant="outline" size="sm" className="w-full">
-                    <ImagePlus className="w-4 h-4 mr-2" />
-                    Ajouter photo / vidéo
-                  </Button>
-                </Link>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="w-full"
+                  onClick={() => {
+                    setActiveTab('albums');
+                    setSelectedAlbum(null);
+                  }}
+                >
+                  <FolderOpen className="w-4 h-4 mr-2" />
+                  Mes albums photo / vidéo
+                </Button>
               </div>
             )}
           </div>
@@ -563,7 +573,7 @@ export default function Profile() {
         <div className="border-t border-border">
           <div className="px-4">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="w-full justify-start bg-transparent h-12 p-0 gap-0">
+              <TabsList className="w-full justify-start bg-transparent h-12 p-0 gap-0 overflow-x-auto">
                 <TabsTrigger 
                   value="all" 
                   className={cn(
@@ -572,6 +582,16 @@ export default function Profile() {
                   )}
                 >
                   Tout
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="albums"
+                  className={cn(
+                    "rounded-full px-4 py-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none",
+                    "text-muted-foreground"
+                  )}
+                  onClick={() => setSelectedAlbum(null)}
+                >
+                  Albums
                 </TabsTrigger>
                 <TabsTrigger 
                   value="reels"
@@ -601,6 +621,22 @@ export default function Profile() {
           {/* Photo/Video Grid */}
           {(activeTab === 'photos' || activeTab === 'reels') && (
             <ProfilePhotoGrid userId={userId!} activeTab={activeTab} />
+          )}
+          {/* Albums */}
+          {activeTab === 'albums' && (
+            selectedAlbum ? (
+              <AlbumDetail
+                album={selectedAlbum}
+                isOwnProfile={isOwnProfile}
+                onBack={() => setSelectedAlbum(null)}
+              />
+            ) : (
+              <AlbumsList
+                userId={userId!}
+                isOwnProfile={isOwnProfile}
+                onSelectAlbum={setSelectedAlbum}
+              />
+            )
           )}
           {/* Personal Info Section - only show on "all" tab */}
           {activeTab === 'all' && (
