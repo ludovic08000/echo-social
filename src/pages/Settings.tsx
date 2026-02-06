@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, LogOut, Camera, ChevronRight, Users, FileText, Shield, Bell, User, Download, Trash2 } from 'lucide-react';
+import { ArrowLeft, LogOut, Camera, ChevronRight, Users, FileText, Shield, Bell, User, Download, Trash2, Palette, Heart, Brain, Accessibility } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
@@ -10,6 +10,10 @@ import { NotificationSettingsPanel } from '@/components/NotificationSettingsPane
 import { PrivacySettingsPanel } from '@/components/settings/PrivacySettingsPanel';
 import { MyGroupsList } from '@/components/settings/MyGroupsList';
 import { MyPagesList } from '@/components/settings/MyPagesList';
+import { AppearanceSettingsPanel } from '@/components/settings/AppearanceSettingsPanel';
+import { WellbeingSettingsPanel } from '@/components/settings/WellbeingSettingsPanel';
+import { ContentPreferencesPanel } from '@/components/settings/ContentPreferencesPanel';
+import { AccessibilitySettingsPanel } from '@/components/settings/AccessibilitySettingsPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -78,6 +82,10 @@ export default function Settings() {
 
   const tabs = [
     { id: 'profile', label: 'Profil', icon: User },
+    { id: 'appearance', label: 'Apparence', icon: Palette },
+    { id: 'wellbeing', label: 'Bien-être', icon: Heart },
+    { id: 'content', label: 'Contenu & IA', icon: Brain },
+    { id: 'accessibility', label: 'Accès', icon: Accessibility },
     { id: 'groups', label: 'Groupes', icon: Users },
     { id: 'pages', label: 'Pages', icon: FileText },
     { id: 'privacy', label: 'Vie privée', icon: Shield },
@@ -213,6 +221,58 @@ export default function Settings() {
                   Supprimer mon compte
                 </Button>
               </div>
+            </section>
+          </div>
+        )}
+
+        {/* Appearance Tab */}
+        {activeTab === 'appearance' && (
+          <div className="animate-fade-in">
+            <section className="premium-card p-5">
+              <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                <Palette className="w-4 h-4 text-primary" />
+                Personnalisation visuelle
+              </h2>
+              <AppearanceSettingsPanel />
+            </section>
+          </div>
+        )}
+
+        {/* Wellbeing Tab */}
+        {activeTab === 'wellbeing' && (
+          <div className="animate-fade-in">
+            <section className="premium-card p-5">
+              <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                <Heart className="w-4 h-4 text-primary" />
+                Bien-être numérique
+              </h2>
+              <WellbeingSettingsPanel />
+            </section>
+          </div>
+        )}
+
+        {/* Content & AI Tab */}
+        {activeTab === 'content' && (
+          <div className="animate-fade-in">
+            <section className="premium-card p-5">
+              <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                <Brain className="w-4 h-4 text-primary" />
+                Contenu & Intelligence artificielle
+              </h2>
+              <ContentPreferencesPanel />
+            </section>
+          </div>
+        )}
+
+        {/* Accessibility Tab */}
+        {activeTab === 'accessibility' && (
+          <div className="animate-fade-in">
+            <section className="premium-card p-5">
+              <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                <Accessibility className="w-4 h-4 text-primary" />
+                Accessibilité & Raccourcis
+              </h2>
+              <AccessibilitySettingsPanel />
             </section>
           </div>
         )}
