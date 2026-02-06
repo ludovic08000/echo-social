@@ -490,15 +490,47 @@ export default function Profile() {
         </div>
 
         {/* Content sections */}
-        <div className="px-4 lg:px-6 py-5 space-y-4">
+        <div className="px-4 lg:px-6 py-5">
           {activeTab === 'overview' && (
-            <ProfileOverview
-              profile={profile}
-              isOwnProfile={isOwnProfile}
-              isFriend={friendshipData?.status === 'accepted'}
-              friendsCount={stats?.friendsCount || 0}
-              onNavigateToAbout={() => setActiveTab('about')}
-            />
+            <div className="flex flex-col lg:flex-row gap-4">
+              {/* Sidebar - infos & amis */}
+              <div className="lg:w-[340px] lg:flex-shrink-0 space-y-4">
+                <ProfileOverview
+                  profile={profile}
+                  isOwnProfile={isOwnProfile}
+                  isFriend={friendshipData?.status === 'accepted'}
+                  friendsCount={stats?.friendsCount || 0}
+                  onNavigateToAbout={() => setActiveTab('about')}
+                />
+              </div>
+
+              {/* Main - publications */}
+              <div className="flex-1 min-w-0 space-y-2">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Publications</h3>
+                {postsLoading ? (
+                  <div className="space-y-2">
+                    {[1, 2].map((i) => (
+                      <div key={i} className="bg-card rounded-xl p-4 animate-pulse">
+                        <div className="h-3 w-full bg-muted rounded-lg" />
+                        <div className="h-3 w-2/3 bg-muted rounded-lg mt-2" />
+                      </div>
+                    ))}
+                  </div>
+                ) : posts?.length === 0 ? (
+                  <div className="premium-card p-8 text-center">
+                    <p className="text-muted-foreground text-xs">
+                      {isOwnProfile ? "Vous n'avez pas encore publié." : 'Aucune publication.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {posts?.map((post) => (
+                      <PostCard key={post.id} post={post} onCommentClick={() => navigate(`/post/${post.id}`)} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           )}
 
           {(activeTab === 'photos' || activeTab === 'reels') && (
@@ -514,18 +546,18 @@ export default function Profile() {
           )}
           
           {activeTab === 'about' && (
-            <>
+            <div className="max-w-lg space-y-4">
               <ProfileAboutSection
                 profile={profile}
                 isOwnProfile={isOwnProfile}
                 isFriend={friendshipData?.status === 'accepted'}
               />
               <ProfileFriendsList userId={userId!} />
-            </>
+            </div>
           )}
 
           {activeTab === 'all' && (
-            <>
+            <div className="max-w-lg mx-auto space-y-2">
               {postsLoading ? (
                 <div className="space-y-2">
                   {[1, 2].map((i) => (
@@ -548,7 +580,7 @@ export default function Profile() {
                   ))}
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
       </div>
