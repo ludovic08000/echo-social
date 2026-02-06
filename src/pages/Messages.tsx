@@ -115,7 +115,7 @@ function ChatView({ conversationId }: { conversationId: string }) {
 
   return (
     <AppLayout>
-      <div className="flex flex-col h-[calc(100vh-140px)] md:h-[calc(100vh-40px)]">
+      <div className="flex flex-col h-[calc(100vh-140px)]">
         {/* Header */}
         <header className="flex items-center gap-3 pb-4 border-b border-border">
           <Link to="/messages">
