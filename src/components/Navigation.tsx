@@ -5,6 +5,7 @@ import { useTranslation } from '@/lib/i18n';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
 import { useFriendships } from '@/hooks/useFriendships';
+import { useScrollHideNav } from '@/hooks/useScrollHideNav';
 import { cn } from '@/lib/utils';
 
 export function MobileNav() {
@@ -13,6 +14,7 @@ export function MobileNav() {
   const { t } = useTranslation();
   const { data: unreadCount } = useUnreadCount();
   const { data: conversations } = useConversations();
+  const navHidden = useScrollHideNav();
 
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
 
@@ -27,7 +29,10 @@ export function MobileNav() {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 glass safe-area-pb">
+    <nav className={cn(
+      "fixed bottom-0 left-0 right-0 z-50 glass safe-area-pb transition-transform duration-300",
+      navHidden && "translate-y-full"
+    )}>
       <div className="flex items-center justify-around h-[60px] px-2">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path || 
