@@ -4,6 +4,7 @@ import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useTranslation, type SupportedLocale } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 interface AccessibilityPrefs {
@@ -63,6 +64,7 @@ const shortcuts = [
 ];
 
 export function AccessibilitySettingsPanel() {
+  const { locale, setLocale, t } = useTranslation();
   const [prefs, setPrefs] = useState<AccessibilityPrefs>(() => {
     try {
       const saved = localStorage.getItem('accessibility-prefs');
@@ -73,17 +75,22 @@ export function AccessibilitySettingsPanel() {
   });
 
   useEffect(() => {
-    localStorage.setItem('accessibility-prefs', JSON.stringify(prefs));
+    localStorage.setItem('accessibility-prefs', JSON.stringify({ ...prefs, language: locale }));
 
     const root = document.documentElement;
     root.classList.toggle('reduced-motion', prefs.reducedMotion);
     root.classList.toggle('high-contrast', prefs.highContrast);
     root.classList.toggle('large-targets', prefs.largeClickTargets);
     root.style.setProperty('--line-height-factor', String(prefs.lineSpacing));
-  }, [prefs]);
+  }, [prefs, locale]);
 
   const update = (patch: Partial<AccessibilityPrefs>) => {
     setPrefs(prev => ({ ...prev, ...patch }));
+  };
+
+  const handleLanguageChange = (v: string) => {
+    setLocale(v as SupportedLocale);
+    update({ language: v });
   };
 
   return (
@@ -92,9 +99,9 @@ export function AccessibilitySettingsPanel() {
       <div className="space-y-3">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
           <Languages className="w-3.5 h-3.5" />
-          Langue de l'interface
+          {t('access.language')}
         </h3>
-        <Select value={prefs.language} onValueChange={v => update({ language: v })}>
+        <Select value={locale} onValueChange={handleLanguageChange}>
           <SelectTrigger className="rounded-xl h-10 bg-secondary/40 border-border/30">
             <SelectValue />
           </SelectTrigger>

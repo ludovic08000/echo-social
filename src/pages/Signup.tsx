@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Zap, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+import { useTranslation } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,6 +11,7 @@ import { toast } from '@/hooks/use-toast';
 export default function Signup() {
   const navigate = useNavigate();
   const { signUp, user } = useAuth();
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,8 +28,8 @@ export default function Signup() {
     
     if (password.length < 6) {
       toast({
-        title: 'Mot de passe trop court',
-        description: '6 caractères minimum',
+        title: t('signup.passwordTooShort'),
+        description: t('signup.passwordMinLength'),
         variant: 'destructive',
       });
       return;
@@ -39,7 +41,7 @@ export default function Signup() {
 
     if (error) {
       toast({
-        title: 'Erreur',
+        title: t('common.error'),
         description: error.message,
         variant: 'destructive',
       });
@@ -48,8 +50,8 @@ export default function Signup() {
     }
 
     toast({
-      title: 'Bienvenue sur Pulse !',
-      description: 'Votre compte a été créé avec succès',
+      title: t('signup.welcome'),
+      description: t('signup.welcomeDesc'),
     });
     navigate('/feed');
   };
@@ -63,44 +65,44 @@ export default function Signup() {
         </Link>
 
         <div className="pulse-card p-6 sm:p-8">
-          <h1 className="text-2xl font-bold text-center mb-6">Créer un compte</h1>
+          <h1 className="text-2xl font-bold text-center mb-6">{t('signup.title')}</h1>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Nom</Label>
+              <Label htmlFor="name">{t('signup.name')}</Label>
               <Input
                 id="name"
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Votre nom"
+                placeholder={t('signup.namePlaceholder')}
                 className="pulse-input"
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('signup.email')}</Label>
               <Input
                 id="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="vous@exemple.com"
+                placeholder={t('signup.emailPlaceholder')}
                 className="pulse-input"
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Mot de passe</Label>
+              <Label htmlFor="password">{t('signup.password')}</Label>
               <div className="relative">
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="6 caractères minimum"
+                  placeholder={t('signup.passwordPlaceholder')}
                   className="pulse-input pr-10"
                   required
                   minLength={6}
@@ -120,14 +122,14 @@ export default function Signup() {
               disabled={isLoading}
               className="pulse-button-gradient w-full"
             >
-              {isLoading ? 'Création...' : 'Créer mon compte'}
+              {isLoading ? t('signup.submitting') : t('signup.submit')}
             </Button>
           </form>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            Déjà inscrit ?{' '}
+            {t('signup.hasAccount')}{' '}
             <Link to="/login" className="pulse-link font-medium">
-              Se connecter
+              {t('signup.loginLink')}
             </Link>
           </p>
         </div>

@@ -1,28 +1,30 @@
 import { Link, useLocation } from 'react-router-dom';
 import { Home, Search, User, Settings, PlusCircle, MessageCircle, Users, FileText, Video, Radio, Bell } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+import { useTranslation } from '@/lib/i18n';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
 import { useFriendships } from '@/hooks/useFriendships';
 import { cn } from '@/lib/utils';
 
-const navItems = [
-  { path: '/feed', icon: Home, label: 'Accueil' },
-  { path: '/videos', icon: Video, label: 'Vidéos' },
-  { path: '/create', icon: PlusCircle, label: 'Créer', isCreate: true },
-  { path: '/lives', icon: Radio, label: 'Lives' },
-  { path: '/settings', icon: Settings, label: 'Plus' },
-];
-
 export function MobileNav() {
   const location = useLocation();
   const { user } = useAuth();
+  const { t } = useTranslation();
   const { data: unreadCount } = useUnreadCount();
   const { data: conversations } = useConversations();
 
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
 
   if (!user) return null;
+
+  const navItems = [
+    { path: '/feed', icon: Home, label: t('nav.home') },
+    { path: '/videos', icon: Video, label: t('nav.videos') },
+    { path: '/create', icon: PlusCircle, label: t('nav.create'), isCreate: true },
+    { path: '/lives', icon: Radio, label: t('nav.lives') },
+    { path: '/settings', icon: Settings, label: t('nav.more') },
+  ];
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 glass safe-area-pb">
@@ -87,6 +89,7 @@ export function MobileNav() {
 export function DesktopSidebar() {
   const location = useLocation();
   const { user } = useAuth();
+  const { t } = useTranslation();
   const { data: unreadCount } = useUnreadCount();
   const { data: conversations } = useConversations();
   const { data: friendships } = useFriendships();
@@ -97,17 +100,17 @@ export function DesktopSidebar() {
   if (!user) return null;
 
   const sidebarItems = [
-    { path: '/feed', icon: Home, label: 'Accueil' },
-    { path: '/videos', icon: Video, label: 'Vidéos' },
-    { path: '/lives', icon: Radio, label: 'Lives' },
-    { path: '/search', icon: Search, label: 'Rechercher' },
-    { path: '/notifications', icon: Bell, label: 'Notifications', badge: unreadCount },
-    { path: '/messages', icon: MessageCircle, label: 'Messages', badge: unreadMessages },
-    { path: '/friends', icon: Users, label: 'Amis', badge: friendRequests },
-    { path: '/groups', icon: Users, label: 'Groupes' },
-    { path: '/pages', icon: FileText, label: 'Pages' },
-    { path: `/profile/${user.id}`, icon: User, label: 'Profil' },
-    { path: '/settings', icon: Settings, label: 'Paramètres' },
+    { path: '/feed', icon: Home, label: t('nav.home') },
+    { path: '/videos', icon: Video, label: t('nav.videos') },
+    { path: '/lives', icon: Radio, label: t('nav.lives') },
+    { path: '/search', icon: Search, label: t('nav.search') },
+    { path: '/notifications', icon: Bell, label: t('nav.notifications'), badge: unreadCount },
+    { path: '/messages', icon: MessageCircle, label: t('nav.messages'), badge: unreadMessages },
+    { path: '/friends', icon: Users, label: t('nav.friends'), badge: friendRequests },
+    { path: '/groups', icon: Users, label: t('nav.groups') },
+    { path: '/pages', icon: FileText, label: t('nav.pages') },
+    { path: `/profile/${user.id}`, icon: User, label: t('nav.profile') },
+    { path: '/settings', icon: Settings, label: t('nav.settings') },
   ];
 
   return (
@@ -151,7 +154,7 @@ export function DesktopSidebar() {
         className="premium-button flex items-center justify-center gap-2 w-full"
       >
         <PlusCircle className="w-5 h-5" />
-        <span>Nouveau post</span>
+        <span>{t('nav.newPost')}</span>
       </Link>
     </aside>
   );
