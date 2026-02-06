@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { 
   Home, Users, FileText, Video, Radio, Search, 
   Bell, MessageCircle, Settings, ShoppingBag, Bookmark,
-  User, PlusCircle, BookOpen, Trophy, Heart
+  User, PlusCircle, BookOpen, Trophy, Heart, Gamepad2
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useProfile } from '@/hooks/useProfile';
@@ -18,6 +18,7 @@ const mainLinks = [
   { path: '/friend-match', icon: Heart, label: 'Matchmaking' },
   { path: '/messages', icon: MessageCircle, label: 'Messenger' },
   { path: '/challenges', icon: Trophy, label: 'Défis' },
+  { path: '/games', icon: Gamepad2, label: 'Jeux' },
   { path: '/journal', icon: BookOpen, label: 'Journal privé' },
   { path: '/groups', icon: Users, label: 'Groupes' },
   { path: '/pages', icon: FileText, label: 'Pages' },

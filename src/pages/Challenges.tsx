@@ -29,6 +29,21 @@ const CHALLENGE_TYPES = [
   { value: 'sport', label: '💪 Sport' },
   { value: 'creative', label: '🎨 Créatif' },
   { value: 'social', label: '🤝 Social' },
+  { value: 'cooking', label: '🍳 Cuisine' },
+  { value: 'music', label: '🎵 Musique' },
+  { value: 'reading', label: '📚 Lecture' },
+  { value: 'fitness', label: '🏃 Fitness' },
+  { value: 'meditation', label: '🧘 Méditation' },
+  { value: 'diy', label: '🔨 DIY / Bricolage' },
+  { value: 'travel', label: '✈️ Voyage' },
+  { value: 'code', label: '💻 Code' },
+  { value: 'dance', label: '💃 Danse' },
+  { value: 'eco', label: '🌱 Écologie' },
+  { value: 'gaming', label: '🎮 Gaming' },
+  { value: 'art', label: '🖼️ Art' },
+  { value: 'writing', label: '✍️ Écriture' },
+  { value: 'language', label: '🗣️ Langues' },
+  { value: 'kindness', label: '💝 Gentillesse' },
 ];
 
 export default function Challenges() {
