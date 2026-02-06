@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { Camera, Download, Shield, ChevronRight, LogOut, Trash2 } from 'lucide-react';
+import { Camera, Download, Shield, ChevronRight, LogOut, Trash2, Music } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
@@ -22,12 +22,14 @@ export function SettingsProfileTab() {
 
   const [name, setName] = useState('');
   const [bio, setBio] = useState('');
+  const [musicUrl, setMusicUrl] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     if (profile) {
       setName(profile.name || '');
       setBio(profile.bio || '');
+      setMusicUrl(profile.profile_music_url || '');
     }
   }, [profile]);
 
@@ -58,7 +60,7 @@ export function SettingsProfileTab() {
 
   const handleSave = async () => {
     try {
-      await updateProfile.mutateAsync({ name, bio });
+      await updateProfile.mutateAsync({ name, bio, profile_music_url: musicUrl || null } as any);
       toast({ title: t('settings.profileUpdated') });
     } catch (error) {
       toast({ title: t('common.error'), variant: 'destructive' });
@@ -113,6 +115,17 @@ export function SettingsProfileTab() {
               placeholder={t('settings.bioPlaceholder')}
               className="rounded-xl text-sm min-h-[80px] resize-none bg-secondary/40 border-border/30 focus:bg-background"
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="music" className="text-xs flex items-center gap-1"><Music className="w-3 h-3" /> Playlist d'ambiance (URL)</Label>
+            <Input
+              id="music"
+              value={musicUrl}
+              onChange={(e) => setMusicUrl(e.target.value)}
+              placeholder="https://exemple.com/musique.mp3"
+              className="rounded-xl h-10 text-sm bg-secondary/40 border-border/30 focus:bg-background"
+            />
+            <p className="text-[10px] text-muted-foreground">Les visiteurs entendront cette musique sur votre profil</p>
           </div>
           <Button
             onClick={handleSave}

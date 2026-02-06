@@ -27,6 +27,8 @@ import { AlbumDetail } from '@/components/profile/AlbumDetail';
 import { ProfileFriendsList } from '@/components/profile/ProfileFriendsList';
 import { ProfileAboutSection } from '@/components/profile/ProfileAboutSection';
 import { ProfileOverview } from '@/components/profile/ProfileOverview';
+import { AnonymousWall } from '@/components/profile/AnonymousWall';
+import { ProfileMusicPlayer } from '@/components/profile/ProfileMusicPlayer';
 import { type Album } from '@/hooks/useAlbums';
 
 export default function Profile() {
@@ -503,6 +505,12 @@ export default function Profile() {
                   friendsCount={stats?.friendsCount || 0}
                   onNavigateToAbout={() => setActiveTab('about')}
                 />
+                {/* Profile Music */}
+                {profile.profile_music_url && (
+                  <ProfileMusicPlayer musicUrl={profile.profile_music_url} profileName={profile.name} />
+                )}
+                {/* Anonymous Wall */}
+                <AnonymousWall targetUserId={userId!} isOwnProfile={isOwnProfile} />
               </div>
 
               {/* Main - publications */}

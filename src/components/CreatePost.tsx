@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Image, Video, X, Send, Timer } from 'lucide-react';
+import { Image, Video, X, Send, Timer, Rocket } from 'lucide-react';
 import { useCreatePost } from '@/hooks/usePosts';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
@@ -21,6 +21,14 @@ const EXPIRY_OPTIONS = [
   { label: '24h', value: 24, description: '24 heures' },
 ];
 
+const CAPSULE_OPTIONS = [
+  { label: '1 semaine', value: 7 },
+  { label: '1 mois', value: 30 },
+  { label: '3 mois', value: 90 },
+  { label: '6 mois', value: 180 },
+  { label: '1 an', value: 365 },
+];
+
 export function CreatePost() {
   const { user } = useAuth();
   const { data: profile } = useProfile();
@@ -32,9 +40,14 @@ export function CreatePost() {
   const [mediaType, setMediaType] = useState<'image' | 'video' | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [expiryHours, setExpiryHours] = useState<number | null>(null);
+  const [capsuleDays, setCapsuleDays] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Capsule and ephemeral are mutually exclusive
+  const handleSetExpiry = (h: number) => { setExpiryHours(h); setCapsuleDays(null); };
+  const handleSetCapsule = (d: number) => { setCapsuleDays(d); setExpiryHours(null); };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video') => {
     const file = e.target.files?.[0];
@@ -98,18 +111,33 @@ export function CreatePost() {
         expiresAt = date.toISOString();
       }
 
-      await createPost.mutateAsync({ body: body.trim(), imageUrl, expiresAt });
+      // Calculate publish_at if capsule temporelle
+      let publishAt: string | undefined;
+      if (capsuleDays) {
+        const date = new Date();
+        date.setDate(date.getDate() + capsuleDays);
+        publishAt = date.toISOString();
+      }
+
+      await createPost.mutateAsync({ body: body.trim(), imageUrl, expiresAt, publishAt });
       
       setBody('');
       removeMedia();
       setExpanded(false);
       setExpiryHours(null);
+      setCapsuleDays(null);
       
       toast({
-        title: expiryHours ? `⏳ Post éphémère publié (${expiryHours}h)` : 'Post publié !',
-        description: expiryHours 
-          ? `Ce post disparaîtra dans ${expiryHours} heure${expiryHours > 1 ? 's' : ''}`
-          : 'Votre post a été partagé avec succès',
+        title: capsuleDays 
+          ? `🚀 Capsule temporelle programmée !`
+          : expiryHours 
+            ? `⏳ Post éphémère publié (${expiryHours}h)` 
+            : 'Post publié !',
+        description: capsuleDays
+          ? `Ce post apparaîtra dans ${capsuleDays} jours`
+          : expiryHours 
+            ? `Ce post disparaîtra dans ${expiryHours} heure${expiryHours > 1 ? 's' : ''}`
+            : 'Votre post a été partagé avec succès',
       });
     } catch (error) {
       toast({
@@ -174,7 +202,19 @@ export function CreatePost() {
                   </span>
                 </div>
               )}
-              
+
+              {/* Capsule badge */}
+              {capsuleDays && (
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-500/15 text-violet-600 dark:text-violet-400 text-[11px] font-medium border border-violet-500/20">
+                    <Rocket className="w-3 h-3" />
+                    Capsule · dans {capsuleDays}j
+                    <button onClick={() => setCapsuleDays(null)} className="ml-1 hover:text-foreground">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                </div>
+              )}
               {mediaPreview && (
                 <div className="relative mt-2 rounded-xl overflow-hidden">
                   {mediaType === 'video' ? (
@@ -253,6 +293,49 @@ export function CreatePost() {
                           className="w-full text-left px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-secondary/60"
                         >
                           Annuler le minuteur
+                        </button>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+
+                  {/* Capsule temporelle */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          "h-9 w-9 rounded-full",
+                          capsuleDays 
+                            ? "text-violet-500 bg-violet-500/10" 
+                            : "text-muted-foreground hover:text-violet-500 hover:bg-violet-500/10"
+                        )}
+                      >
+                        <Rocket className="w-[18px] h-[18px]" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="w-48 p-2 rounded-xl">
+                      <p className="text-xs font-semibold mb-2 px-2">Capsule temporelle 🚀</p>
+                      {CAPSULE_OPTIONS.map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => handleSetCapsule(opt.value)}
+                          className={cn(
+                            "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                            capsuleDays === opt.value 
+                              ? "bg-violet-500/15 text-violet-600 dark:text-violet-400 font-medium" 
+                              : "hover:bg-secondary/60 text-foreground"
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                      {capsuleDays && (
+                        <button
+                          onClick={() => setCapsuleDays(null)}
+                          className="w-full text-left px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-secondary/60"
+                        >
+                          Annuler la capsule
                         </button>
                       )}
                     </PopoverContent>
