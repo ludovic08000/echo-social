@@ -28,6 +28,7 @@ import Lives from "./pages/Lives";
 import LiveWatch from "./pages/LiveWatch";
 import Journal from "./pages/Journal";
 import Challenges from "./pages/Challenges";
+import Games from "./pages/Games";
 import FriendMatch from "./pages/FriendMatch";
 import NotFound from "./pages/NotFound";
 
@@ -68,6 +69,7 @@ function AppContent() {
             <Route path="/live/:id" element={<ProtectedRoute><LiveWatch /></ProtectedRoute>} />
             <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
             <Route path="/challenges" element={<ProtectedRoute><Challenges /></ProtectedRoute>} />
+            <Route path="/games" element={<ProtectedRoute><Games /></ProtectedRoute>} />
             <Route path="/friend-match" element={<ProtectedRoute><FriendMatch /></ProtectedRoute>} />
             
             {/* 404 */}

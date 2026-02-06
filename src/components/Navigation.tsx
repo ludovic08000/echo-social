@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Search, User, Settings, PlusCircle, MessageCircle, Users, FileText, Video, Radio, Bell, BookOpen, Trophy, Heart } from 'lucide-react';
+import { Home, Search, User, Settings, PlusCircle, MessageCircle, Users, FileText, Video, Radio, Bell, BookOpen, Trophy, Heart, Gamepad2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
 import { useUnreadCount } from '@/hooks/useNotifications';
@@ -114,6 +114,7 @@ export function DesktopSidebar() {
     { path: '/friends', icon: Users, label: t('nav.friends'), badge: friendRequests },
     { path: '/friend-match', icon: Heart, label: 'Matchmaking' },
     { path: '/challenges', icon: Trophy, label: 'Défis' },
+    { path: '/games', icon: Gamepad2, label: 'Jeux' },
     { path: '/journal', icon: BookOpen, label: 'Journal' },
     { path: '/groups', icon: Users, label: t('nav.groups') },
     { path: '/pages', icon: FileText, label: t('nav.pages') },
