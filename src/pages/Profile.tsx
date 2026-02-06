@@ -2,6 +2,7 @@ import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
+import { CreatePost } from '@/components/CreatePost';
 import { useAuth } from '@/lib/auth';
 import { AppLayout } from '@/components/AppLayout';
 import { UserAvatar } from '@/components/UserAvatar';
@@ -505,8 +506,8 @@ export default function Profile() {
               </div>
 
               {/* Main - publications */}
-              <div className="flex-1 min-w-0 space-y-2">
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Publications</h3>
+              <div className="flex-1 min-w-0 space-y-3">
+                {isOwnProfile && <CreatePost />}
                 {postsLoading ? (
                   <div className="space-y-2">
                     {[1, 2].map((i) => (
@@ -557,7 +558,8 @@ export default function Profile() {
           )}
 
           {activeTab === 'all' && (
-            <div className="max-w-lg mx-auto space-y-2">
+            <div className="max-w-lg mx-auto space-y-3">
+              {isOwnProfile && <CreatePost />}
               {postsLoading ? (
                 <div className="space-y-2">
                   {[1, 2].map((i) => (
