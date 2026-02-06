@@ -1,18 +1,19 @@
 import { useState, useCallback } from 'react';
-import { MapPin, Cake, GraduationCap, Briefcase, Calendar, Link2, Globe, Users, Lock, Pencil, Check, X } from 'lucide-react';
+import { MapPin, Cake, GraduationCap, Briefcase, Calendar, Link2, Globe, Users, Lock, Pencil, Check, X, ChevronRight } from 'lucide-react';
 import { Profile, FieldVisibility, useUpdateProfile } from '@/hooks/useProfile';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 type VisibilityLevel = 'public' | 'friends' | 'only_me';
 
-const visibilityLabels: Record<VisibilityLevel, { label: string; icon: React.ReactNode }> = {
-  public: { label: 'Public', icon: <Globe className="w-3.5 h-3.5" /> },
-  friends: { label: 'Amis', icon: <Users className="w-3.5 h-3.5" /> },
-  only_me: { label: 'Moi seul', icon: <Lock className="w-3.5 h-3.5" /> },
+const visibilityConfig: Record<VisibilityLevel, { label: string; icon: React.ReactNode; color: string }> = {
+  public: { label: 'Public', icon: <Globe className="w-3.5 h-3.5" />, color: 'text-emerald-400' },
+  friends: { label: 'Amis', icon: <Users className="w-3.5 h-3.5" />, color: 'text-blue-400' },
+  only_me: { label: 'Moi seul', icon: <Lock className="w-3.5 h-3.5" />, color: 'text-amber-400' },
 };
 
 interface AboutField {
@@ -28,7 +29,7 @@ const fields: AboutField[] = [
   {
     key: 'city',
     visibilityKey: 'city',
-    icon: <MapPin className="w-4 h-4 text-primary flex-shrink-0" />,
+    icon: <MapPin className="w-[18px] h-[18px]" />,
     label: 'Habite à',
     getValue: (p) => p.city || '',
     placeholder: 'Votre ville',
@@ -36,7 +37,7 @@ const fields: AboutField[] = [
   {
     key: 'date_of_birth',
     visibilityKey: 'date_of_birth',
-    icon: <Cake className="w-4 h-4 text-primary flex-shrink-0" />,
+    icon: <Cake className="w-[18px] h-[18px]" />,
     label: 'Date de naissance',
     getValue: (p) => p.date_of_birth || '',
     placeholder: 'AAAA-MM-JJ',
@@ -44,7 +45,7 @@ const fields: AboutField[] = [
   {
     key: 'work',
     visibilityKey: 'work',
-    icon: <Briefcase className="w-4 h-4 text-primary flex-shrink-0" />,
+    icon: <Briefcase className="w-[18px] h-[18px]" />,
     label: 'Travaille comme',
     getValue: (p) => p.work || '',
     placeholder: 'Votre métier',
@@ -52,7 +53,7 @@ const fields: AboutField[] = [
   {
     key: 'education',
     visibilityKey: 'education',
-    icon: <GraduationCap className="w-4 h-4 text-primary flex-shrink-0" />,
+    icon: <GraduationCap className="w-[18px] h-[18px]" />,
     label: 'A étudié',
     getValue: (p) => {
       const parts = [];
@@ -147,7 +148,7 @@ export function ProfileAboutSection({ profile, isOwnProfile, isFriend }: Profile
     try {
       await updateProfile.mutateAsync({ field_visibility: newVisibility });
       queryClient.invalidateQueries({ queryKey: ['profile'] });
-      toast({ title: `Visibilité : ${visibilityLabels[level].label}` });
+      toast({ title: `Visibilité : ${visibilityConfig[level].label}` });
     } catch {
       toast({ title: 'Erreur', variant: 'destructive' });
     }
@@ -169,39 +170,50 @@ export function ProfileAboutSection({ profile, isOwnProfile, isFriend }: Profile
   };
 
   return (
-    <div className="premium-card p-4">
-      <h3 className="font-semibold text-sm mb-3">À propos</h3>
-      <div className="space-y-3">
-        {fields.map(field => {
+    <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden">
+      {/* Header */}
+      <div className="px-5 pt-5 pb-3 flex items-center justify-between">
+        <h3 className="text-base font-bold tracking-tight">À propos</h3>
+        {isOwnProfile && !editingField && (
+          <span className="text-[11px] text-muted-foreground/60 font-medium">Survolez pour modifier</span>
+        )}
+      </div>
+
+      {/* Fields */}
+      <div className="px-2 pb-2">
+        {fields.map((field, index) => {
           const visible = canSeeField(field.visibilityKey);
           const displayValue = getDisplayValue(field);
           const isEditing = editingField === field.key;
           const currentVisLevel = visibility[field.visibilityKey] || 'public';
+          const hasValue = !!displayValue;
 
           if (!visible && !isOwnProfile) return null;
 
           return (
-            <div key={field.key} className="group">
+            <div key={field.key}>
               {isEditing ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                    {field.icon}
+                <div className="px-3 py-3 space-y-3 bg-secondary/30 rounded-xl mx-1 my-1">
+                  <div className="flex items-center gap-2.5 text-sm font-semibold">
+                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                      {field.icon}
+                    </div>
                     <span>{field.label}</span>
                   </div>
                   {field.key === 'education' ? (
-                    <div className="flex gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       <Input
                         value={editValues.education_level || ''}
                         onChange={e => setEditValues(v => ({ ...v, education_level: e.target.value }))}
                         placeholder="Niveau d'études"
-                        className="h-9 text-sm"
+                        className="h-10 text-sm rounded-xl bg-background/80 border-border/50 focus:border-primary/50"
                         maxLength={100}
                       />
                       <Input
                         value={editValues.education_city || ''}
                         onChange={e => setEditValues(v => ({ ...v, education_city: e.target.value }))}
                         placeholder="Ville d'études"
-                        className="h-9 text-sm"
+                        className="h-10 text-sm rounded-xl bg-background/80 border-border/50 focus:border-primary/50"
                         maxLength={100}
                       />
                     </div>
@@ -210,95 +222,152 @@ export function ProfileAboutSection({ profile, isOwnProfile, isFriend }: Profile
                       type="date"
                       value={editValues.date_of_birth || ''}
                       onChange={e => setEditValues(v => ({ ...v, date_of_birth: e.target.value }))}
-                      className="h-9 text-sm"
+                      className="h-10 text-sm rounded-xl bg-background/80 border-border/50 focus:border-primary/50"
                     />
                   ) : (
                     <Input
                       value={editValues[field.key] || ''}
                       onChange={e => setEditValues(v => ({ ...v, [field.key]: e.target.value }))}
                       placeholder={field.placeholder}
-                      className="h-9 text-sm"
+                      className="h-10 text-sm rounded-xl bg-background/80 border-border/50 focus:border-primary/50"
                       maxLength={100}
                     />
                   )}
                   <div className="flex gap-2">
-                    <Button size="sm" className="h-7 text-xs" onClick={() => saveField(field)} disabled={updateProfile.isPending}>
-                      <Check className="w-3 h-3 mr-1" /> Enregistrer
+                    <Button
+                      size="sm"
+                      className="h-8 text-xs rounded-lg px-4 gap-1.5"
+                      onClick={() => saveField(field)}
+                      disabled={updateProfile.isPending}
+                    >
+                      <Check className="w-3.5 h-3.5" /> Enregistrer
                     </Button>
-                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={cancelEditing}>
-                      <X className="w-3 h-3 mr-1" /> Annuler
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 text-xs rounded-lg px-4 gap-1.5 text-muted-foreground"
+                      onClick={cancelEditing}
+                    >
+                      <X className="w-3.5 h-3.5" /> Annuler
                     </Button>
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-3 text-sm">
-                  {field.icon}
-                  <span className="text-muted-foreground flex-1">
-                    {displayValue ? (
+                <div
+                  className={cn(
+                    "group flex items-center gap-3 px-3 py-3 rounded-xl mx-1 transition-all duration-200",
+                    isOwnProfile && "hover:bg-secondary/40 cursor-pointer",
+                    !hasValue && isOwnProfile && "opacity-60 hover:opacity-100"
+                  )}
+                  onClick={() => isOwnProfile && startEditing(field)}
+                >
+                  {/* Icon */}
+                  <div className={cn(
+                    "w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors",
+                    hasValue ? "bg-primary/10 text-primary" : "bg-muted/60 text-muted-foreground"
+                  )}>
+                    {field.icon}
+                  </div>
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    {hasValue ? (
                       <>
-                        {field.label}{' '}
-                        <span className="font-medium text-foreground">{displayValue}</span>
+                        <p className="text-sm font-medium text-foreground leading-tight">{displayValue}</p>
+                        <p className="text-[11px] text-muted-foreground/70 mt-0.5">{field.label}</p>
                       </>
                     ) : (
-                      <span className="italic">
-                        {isOwnProfile ? `Ajouter : ${field.label.toLowerCase()}` : 'Non renseigné'}
-                      </span>
+                      <p className="text-sm text-muted-foreground italic">
+                        {isOwnProfile ? `Ajouter ${field.label.toLowerCase()}` : 'Non renseigné'}
+                      </p>
                     )}
-                  </span>
+                  </div>
 
+                  {/* Actions (own profile only) */}
                   {isOwnProfile && (
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {/* Visibility toggle */}
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200" onClick={e => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" title={`Visible par : ${visibilityLabels[currentVisLevel].label}`}>
-                            {visibilityLabels[currentVisLevel].icon}
-                          </Button>
+                          <button
+                            className={cn(
+                              "h-7 w-7 rounded-full flex items-center justify-center transition-colors hover:bg-background/80",
+                              visibilityConfig[currentVisLevel].color
+                            )}
+                            title={`Visible par : ${visibilityConfig[currentVisLevel].label}`}
+                          >
+                            {visibilityConfig[currentVisLevel].icon}
+                          </button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="min-w-[140px]">
-                          {(Object.keys(visibilityLabels) as VisibilityLevel[]).map(level => (
+                        <DropdownMenuContent align="end" className="min-w-[160px] rounded-xl border-border/50 bg-card/95 backdrop-blur-lg">
+                          <p className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Qui peut voir</p>
+                          {(Object.keys(visibilityConfig) as VisibilityLevel[]).map(level => (
                             <DropdownMenuItem
                               key={level}
                               onClick={() => changeVisibility(field.visibilityKey, level)}
-                              className="gap-2 text-sm"
+                              className={cn(
+                                "gap-2.5 text-sm rounded-lg mx-1 cursor-pointer",
+                                currentVisLevel === level && "bg-primary/10"
+                              )}
                             >
-                              {visibilityLabels[level].icon}
-                              {visibilityLabels[level].label}
-                              {currentVisLevel === level && <Check className="w-3 h-3 ml-auto" />}
+                              <span className={visibilityConfig[level].color}>{visibilityConfig[level].icon}</span>
+                              <span className="flex-1">{visibilityConfig[level].label}</span>
+                              {currentVisLevel === level && <Check className="w-3.5 h-3.5 text-primary" />}
                             </DropdownMenuItem>
                           ))}
                         </DropdownMenuContent>
                       </DropdownMenu>
-
-                      {/* Edit button */}
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEditing(field)}>
+                      <button
+                        className="h-7 w-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-background/80 transition-colors"
+                        onClick={() => startEditing(field)}
+                      >
                         <Pencil className="w-3.5 h-3.5" />
-                      </Button>
+                      </button>
                     </div>
                   )}
+
+                  {/* Chevron for own profile */}
+                  {isOwnProfile && (
+                    <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors flex-shrink-0" />
+                  )}
                 </div>
+              )}
+
+              {/* Separator */}
+              {index < fields.length - 1 && !isEditing && (
+                <div className="mx-5 border-b border-border/20" />
               )}
             </div>
           );
         })}
 
-        {/* Always visible: member since + website */}
+        {/* Divider */}
+        <div className="mx-5 my-1 border-b border-border/30" />
+
+        {/* Static fields */}
         {profile.website_url && (
-          <div className="flex items-center gap-3 text-sm">
-            <Link2 className="w-4 h-4 text-primary flex-shrink-0" />
-            <a href={profile.website_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate">
-              {profile.website_url.replace(/^https?:\/\//, '')}
-            </a>
+          <div className="flex items-center gap-3 px-3 py-3 mx-1">
+            <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
+              <Link2 className="w-[18px] h-[18px]" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <a href={profile.website_url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-primary hover:underline truncate block">
+                {profile.website_url.replace(/^https?:\/\//, '')}
+              </a>
+              <p className="text-[11px] text-muted-foreground/70 mt-0.5">Site web</p>
+            </div>
           </div>
         )}
-        <div className="flex items-center gap-3 text-sm">
-          <Calendar className="w-4 h-4 text-primary flex-shrink-0" />
-          <span className="text-muted-foreground">
-            Membre depuis{' '}
-            <span className="font-medium text-foreground">
+
+        <div className="flex items-center gap-3 px-3 py-3 mx-1">
+          <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
+            <Calendar className="w-[18px] h-[18px]" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-foreground leading-tight">
               {new Date(profile.created_at).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
-            </span>
-          </span>
+            </p>
+            <p className="text-[11px] text-muted-foreground/70 mt-0.5">Membre depuis</p>
+          </div>
         </div>
       </div>
     </div>
