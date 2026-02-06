@@ -29,31 +29,31 @@ function MobileHeader() {
           <span className="text-xl font-bold text-gradient tracking-tight">Pulse</span>
         </Link>
         
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           <Link 
             to="/notifications" 
-            className="relative w-9 h-9 rounded-full bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200"
+            className="relative w-10 h-10 rounded-full bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200"
           >
-            <Bell className="w-[18px] h-[18px]" />
+            <Bell className="w-5 h-5" />
             {unreadCount && unreadCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center ring-2 ring-background">
+              <span className="absolute -top-0.5 -right-0.5 w-[18px] h-[18px] rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center ring-2 ring-background">
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
           </Link>
           <Link 
             to="/messages" 
-            className="relative w-9 h-9 rounded-full bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200"
+            className="relative w-10 h-10 rounded-full bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200"
           >
-            <MessageCircle className="w-[18px] h-[18px]" />
+            <MessageCircle className="w-5 h-5" />
             {unreadMessages > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center ring-2 ring-background">
+              <span className="absolute -top-0.5 -right-0.5 w-[18px] h-[18px] rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center ring-2 ring-background">
                 {unreadMessages > 9 ? '9+' : unreadMessages}
               </span>
             )}
           </Link>
-          <Link to={`/profile/${user.id}`}>
-            <UserAvatar src={profile?.avatar_url} alt={profile?.name} size="sm" />
+          <Link to={`/profile/${user.id}`} className="flex-shrink-0">
+            <UserAvatar src={profile?.avatar_url} alt={profile?.name} size="md" />
           </Link>
         </div>
       </div>
@@ -79,7 +79,7 @@ export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
     <div className="min-h-screen bg-background">
       <MobileHeader />
       <main className="pb-20">
-        <div className="mx-auto max-w-2xl lg:max-w-3xl lg:px-4">
+        <div className="mx-auto max-w-[680px] lg:max-w-[680px]">
           {children}
         </div>
       </main>
