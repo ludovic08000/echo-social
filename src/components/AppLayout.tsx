@@ -58,9 +58,7 @@ export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
     <div className="min-h-screen bg-background">
       <MobileHeader />
       <main className="pb-20">
-        <div className="max-w-2xl mx-auto px-4 py-4">
-          {children}
-        </div>
+        {children}
       </main>
       <MobileNav />
     </div>
