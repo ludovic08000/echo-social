@@ -548,13 +548,13 @@ export default function Profile() {
             {/* Quick upload actions for own profile */}
             {isOwnProfile && (
               <div className="flex gap-2 mt-3">
-                <Link to="/create-post" className="flex-1">
+                <Link to="/create" className="flex-1">
                   <Button variant="outline" size="sm" className="w-full">
                     <ImagePlus className="w-4 h-4 mr-2" />
                     Ajouter une photo
                   </Button>
                 </Link>
-                <Link to="/create-post" className="flex-1">
+                <Link to="/create" className="flex-1">
                   <Button variant="outline" size="sm" className="w-full">
                     <Video className="w-4 h-4 mr-2" />
                     Ajouter une vidéo
