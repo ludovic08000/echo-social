@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle } from 'lucide-react';
+import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
@@ -22,6 +22,7 @@ import { AvatarCropper } from '@/components/AvatarCropper';
 import { ProfilePhotoGrid } from '@/components/profile/ProfilePhotoGrid';
 import { AlbumsList } from '@/components/profile/AlbumsList';
 import { AlbumDetail } from '@/components/profile/AlbumDetail';
+import { ProfileFriendsList } from '@/components/profile/ProfileFriendsList';
 import { type Album } from '@/hooks/useAlbums';
 
 export default function Profile() {
@@ -390,6 +391,18 @@ export default function Profile() {
                 <MapPin className="w-4 h-4" />
                 <span>{profile.city || 'France'}</span>
               </div>
+              {profile.date_of_birth && (
+                <div className="flex items-center gap-1.5">
+                  <Cake className="w-4 h-4" />
+                  <span>{new Date(profile.date_of_birth).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                </div>
+              )}
+              {profile.education_level && (
+                <div className="flex items-center gap-1.5">
+                  <GraduationCap className="w-4 h-4" />
+                  <span>{profile.education_level}{profile.education_city ? ` à ${profile.education_city}` : ''}</span>
+                </div>
+              )}
               <div className="flex items-center gap-1.5">
                 <Calendar className="w-4 h-4" />
                 <span>Depuis {new Date(profile.created_at).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}</span>
@@ -486,25 +499,43 @@ export default function Profile() {
           
           {activeTab === 'all' && (
             <>
-              {/* Info cards */}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="premium-card p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <MapPin className="w-3.5 h-3.5 text-primary" />
-                    <span className="text-xs font-medium">Localisation</span>
+              {/* À propos */}
+              <div className="premium-card p-4">
+                <h3 className="font-semibold text-sm mb-3">À propos</h3>
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-center gap-3">
+                    <MapPin className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span className="text-muted-foreground">Habite à <span className="font-medium text-foreground">{profile.city || 'Non renseigné'}</span></span>
                   </div>
-                  <p className="text-xs text-muted-foreground">{profile.city || 'France'}</p>
-                </div>
-                <div className="premium-card p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Link2 className="w-3.5 h-3.5 text-primary" />
-                    <span className="text-xs font-medium">Lien</span>
+                  {profile.date_of_birth && (
+                    <div className="flex items-center gap-3">
+                      <Cake className="w-4 h-4 text-primary flex-shrink-0" />
+                      <span className="text-muted-foreground">Né(e) le <span className="font-medium text-foreground">{new Date(profile.date_of_birth).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</span></span>
+                    </div>
+                  )}
+                  {profile.education_level && (
+                    <div className="flex items-center gap-3">
+                      <GraduationCap className="w-4 h-4 text-primary flex-shrink-0" />
+                      <span className="text-muted-foreground">A étudié <span className="font-medium text-foreground">{profile.education_level}</span>{profile.education_city && <> à <span className="font-medium text-foreground">{profile.education_city}</span></>}</span>
+                    </div>
+                  )}
+                  {profile.website_url && (
+                    <div className="flex items-center gap-3">
+                      <Link2 className="w-4 h-4 text-primary flex-shrink-0" />
+                      <a href={profile.website_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate">
+                        {profile.website_url.replace(/^https?:\/\//, '')}
+                      </a>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <Calendar className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span className="text-muted-foreground">Membre depuis <span className="font-medium text-foreground">{new Date(profile.created_at).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</span></span>
                   </div>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {profile.website_url ? profile.website_url.replace(/^https?:\/\//, '') : 'pulse.app'}
-                  </p>
                 </div>
               </div>
+
+              {/* Friends list */}
+              <ProfileFriendsList userId={userId!} />
 
               {/* Publications */}
               <div>
