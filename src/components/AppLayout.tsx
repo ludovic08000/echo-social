@@ -4,7 +4,9 @@ import { useAuth } from '@/lib/auth';
 import { MobileNav } from './Navigation';
 import { UserAvatar } from './UserAvatar';
 import { useProfile } from '@/hooks/useProfile';
-import { Settings } from 'lucide-react';
+import { Settings, Bell, MessageCircle } from 'lucide-react';
+import { useUnreadCount } from '@/hooks/useNotifications';
+import { useConversations } from '@/hooks/useMessages';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -14,22 +16,41 @@ interface AppLayoutProps {
 function MobileHeader() {
   const { user } = useAuth();
   const { data: profile } = useProfile();
+  const { data: unreadCount } = useUnreadCount();
+  const { data: conversations } = useConversations();
+  const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
 
   if (!user) return null;
 
   return (
-    <header className="sticky top-0 z-40 bg-card/95 backdrop-blur-lg border-b border-border/50 safe-area-pt">
+    <header className="sticky top-0 z-40 glass safe-area-pt">
       <div className="flex items-center justify-between h-14 px-4">
         <Link to="/feed" className="flex items-center gap-2">
-          <span className="text-xl font-bold text-gradient">Pulse</span>
+          <span className="text-xl font-bold text-gradient tracking-tight">Pulse</span>
         </Link>
         
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5">
           <Link 
-            to="/settings" 
-            className="w-9 h-9 rounded-full bg-secondary/50 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+            to="/notifications" 
+            className="relative w-9 h-9 rounded-full bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200"
           >
-            <Settings className="w-5 h-5" />
+            <Bell className="w-[18px] h-[18px]" />
+            {unreadCount && unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center ring-2 ring-background">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </Link>
+          <Link 
+            to="/messages" 
+            className="relative w-9 h-9 rounded-full bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200"
+          >
+            <MessageCircle className="w-[18px] h-[18px]" />
+            {unreadMessages > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center ring-2 ring-background">
+                {unreadMessages > 9 ? '9+' : unreadMessages}
+              </span>
+            )}
           </Link>
           <Link to={`/profile/${user.id}`}>
             <UserAvatar src={profile?.avatar_url} alt={profile?.name} size="sm" />
@@ -47,8 +68,8 @@ export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" />
-          <span className="text-muted-foreground">Chargement...</span>
+          <div className="w-10 h-10 rounded-2xl bg-premium-gradient animate-pulse-slow" />
+          <span className="text-sm text-muted-foreground tracking-wide">Chargement…</span>
         </div>
       </div>
     );
@@ -58,7 +79,7 @@ export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
     <div className="min-h-screen bg-background">
       <MobileHeader />
       <main className="pb-20">
-        <div className="mx-auto max-w-4xl lg:px-6">
+        <div className="mx-auto max-w-2xl lg:max-w-3xl lg:px-4">
           {children}
         </div>
       </main>

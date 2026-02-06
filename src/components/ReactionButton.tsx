@@ -67,17 +67,17 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
             variant="ghost"
             size="sm"
             className={cn(
-              'flex-1 h-11 gap-2 text-muted-foreground hover:bg-secondary rounded-lg',
+              'flex-1 h-10 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/60 rounded-xl text-xs',
               currentReaction && 'text-primary'
             )}
             onDoubleClick={handleQuickLike}
           >
             {currentReaction ? (
-              <span className="text-xl">{REACTION_EMOJIS[currentReaction]}</span>
+              <span className="text-lg">{REACTION_EMOJIS[currentReaction]}</span>
             ) : (
-              <ThumbsUp className="w-5 h-5" />
+              <ThumbsUp className="w-[18px] h-[18px]" />
             )}
-            <span className="text-sm font-medium">
+            <span className="font-medium">
               {currentReaction ? REACTION_LABELS[currentReaction] : "J'aime"}
             </span>
           </Button>
