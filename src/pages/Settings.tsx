@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, LogOut, Camera, ChevronRight, Users, FileText, Shield, Bell, User, Download, Trash2, Palette, Heart, Brain, Accessibility } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
+import { useTranslation } from '@/lib/i18n';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/AppLayout';
@@ -24,6 +25,7 @@ import { cn } from '@/lib/utils';
 export default function Settings() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  const { t } = useTranslation();
   const { data: profile } = useProfile();
   const updateProfile = useUpdateProfile();
   
@@ -46,7 +48,7 @@ export default function Settings() {
     if (!file || !user) return;
 
     if (file.size > 2 * 1024 * 1024) {
-      toast({ title: 'Image trop volumineuse', description: 'Taille max : 2 Mo', variant: 'destructive' });
+      toast({ title: t('settings.imageTooLarge'), description: t('settings.maxSize'), variant: 'destructive' });
       return;
     }
 
@@ -58,9 +60,9 @@ export default function Settings() {
       if (uploadError) throw uploadError;
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
       await updateProfile.mutateAsync({ avatar_url: urlData.publicUrl + '?t=' + Date.now() });
-      toast({ title: 'Photo mise à jour !' });
+      toast({ title: t('settings.photoUpdated') });
     } catch (error) {
-      toast({ title: 'Erreur', description: 'Impossible de mettre à jour la photo', variant: 'destructive' });
+      toast({ title: t('common.error'), variant: 'destructive' });
     } finally {
       setIsUploading(false);
     }
@@ -69,9 +71,9 @@ export default function Settings() {
   const handleSave = async () => {
     try {
       await updateProfile.mutateAsync({ name, bio });
-      toast({ title: 'Profil mis à jour !' });
+      toast({ title: t('settings.profileUpdated') });
     } catch (error) {
-      toast({ title: 'Erreur', description: 'Impossible de mettre à jour le profil', variant: 'destructive' });
+      toast({ title: t('common.error'), variant: 'destructive' });
     }
   };
 
@@ -81,29 +83,27 @@ export default function Settings() {
   };
 
   const tabs = [
-    { id: 'profile', label: 'Profil', icon: User },
-    { id: 'appearance', label: 'Apparence', icon: Palette },
-    { id: 'wellbeing', label: 'Bien-être', icon: Heart },
-    { id: 'content', label: 'Contenu & IA', icon: Brain },
-    { id: 'accessibility', label: 'Accès', icon: Accessibility },
-    { id: 'groups', label: 'Groupes', icon: Users },
-    { id: 'pages', label: 'Pages', icon: FileText },
-    { id: 'privacy', label: 'Vie privée', icon: Shield },
-    { id: 'notifications', label: 'Notifs', icon: Bell },
+    { id: 'profile', label: t('settings.profile'), icon: User },
+    { id: 'appearance', label: t('settings.appearance'), icon: Palette },
+    { id: 'wellbeing', label: t('settings.wellbeing'), icon: Heart },
+    { id: 'content', label: t('settings.content'), icon: Brain },
+    { id: 'accessibility', label: t('settings.accessibility'), icon: Accessibility },
+    { id: 'groups', label: t('settings.groups'), icon: Users },
+    { id: 'pages', label: t('settings.pages'), icon: FileText },
+    { id: 'privacy', label: t('settings.privacy'), icon: Shield },
+    { id: 'notifications', label: t('settings.notifications'), icon: Bell },
   ];
 
   return (
     <AppLayout>
       <div className="px-4 py-2">
-        {/* Header */}
         <header className="flex items-center gap-3 mb-5">
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="h-8 w-8 rounded-full">
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <h1 className="text-lg font-bold tracking-tight">Paramètres</h1>
+          <h1 className="text-lg font-bold tracking-tight">{t('settings.title')}</h1>
         </header>
 
-        {/* Tab navigation - pill style */}
         <div className="flex gap-1.5 mb-5 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4">
           {tabs.map((tab) => (
             <button
@@ -122,10 +122,8 @@ export default function Settings() {
           ))}
         </div>
 
-        {/* Profile Tab */}
         {activeTab === 'profile' && (
           <div className="space-y-4 animate-fade-in">
-            {/* Profile Card */}
             <section className="premium-card p-5">
               <div className="flex items-center gap-4">
                 <div className="relative">
@@ -146,12 +144,11 @@ export default function Settings() {
               </div>
             </section>
 
-            {/* Edit Info */}
             <section className="premium-card p-5">
-              <h2 className="text-sm font-semibold mb-4">Informations</h2>
+              <h2 className="text-sm font-semibold mb-4">{t('settings.information')}</h2>
               <div className="space-y-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="name" className="text-xs">Nom</Label>
+                  <Label htmlFor="name" className="text-xs">{t('signup.name')}</Label>
                   <Input
                     id="name"
                     value={name}
@@ -160,12 +157,12 @@ export default function Settings() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="bio" className="text-xs">Bio</Label>
+                  <Label htmlFor="bio" className="text-xs">{t('settings.bio')}</Label>
                   <Textarea
                     id="bio"
                     value={bio}
                     onChange={(e) => setBio(e.target.value)}
-                    placeholder="Parlez-nous de vous…"
+                    placeholder={t('settings.bioPlaceholder')}
                     className="rounded-xl text-sm min-h-[80px] resize-none bg-secondary/40 border-border/30 focus:bg-background"
                   />
                 </div>
@@ -175,18 +172,17 @@ export default function Settings() {
                   size="sm"
                   className="premium-button h-9 text-xs w-full"
                 >
-                  {updateProfile.isPending ? 'Enregistrement…' : 'Enregistrer les modifications'}
+                  {updateProfile.isPending ? t('settings.saving') : t('settings.saveChanges')}
                 </Button>
               </div>
             </section>
 
-            {/* Account Actions */}
             <section className="premium-card overflow-hidden">
-              <h2 className="text-sm font-semibold px-5 pt-5 pb-3">Compte</h2>
+              <h2 className="text-sm font-semibold px-5 pt-5 pb-3">{t('settings.account')}</h2>
               <div className="divide-y divide-border/30">
                 {[
-                  { icon: Download, label: 'Télécharger mes données' },
-                  { icon: Shield, label: 'Changer le mot de passe' },
+                  { icon: Download, label: t('settings.downloadData') },
+                  { icon: Shield, label: t('settings.changePassword') },
                 ].map((item) => (
                   <button key={item.label} className="w-full flex items-center justify-between px-5 py-3.5 text-sm hover:bg-secondary/40 transition-colors">
                     <div className="flex items-center gap-3">
@@ -199,9 +195,8 @@ export default function Settings() {
               </div>
             </section>
 
-            {/* Danger Zone */}
             <section className="premium-card p-5 border-destructive/10">
-              <h2 className="text-sm font-semibold text-destructive mb-3">Zone de danger</h2>
+              <h2 className="text-sm font-semibold text-destructive mb-3">{t('settings.dangerZone')}</h2>
               <div className="space-y-2">
                 <Button
                   variant="outline"
@@ -210,7 +205,7 @@ export default function Settings() {
                   className="w-full h-9 rounded-xl text-xs border-destructive/30 text-destructive hover:bg-destructive hover:text-destructive-foreground"
                 >
                   <LogOut className="w-3.5 h-3.5 mr-1.5" />
-                  Se déconnecter
+                  {t('settings.logout')}
                 </Button>
                 <Button
                   variant="outline"
@@ -218,96 +213,88 @@ export default function Settings() {
                   className="w-full h-9 rounded-xl text-xs border-destructive/30 text-destructive hover:bg-destructive hover:text-destructive-foreground"
                 >
                   <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-                  Supprimer mon compte
+                  {t('settings.deleteAccount')}
                 </Button>
               </div>
             </section>
           </div>
         )}
 
-        {/* Appearance Tab */}
         {activeTab === 'appearance' && (
           <div className="animate-fade-in">
             <section className="premium-card p-5">
               <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
                 <Palette className="w-4 h-4 text-primary" />
-                Personnalisation visuelle
+                {t('appearance.title')}
               </h2>
               <AppearanceSettingsPanel />
             </section>
           </div>
         )}
 
-        {/* Wellbeing Tab */}
         {activeTab === 'wellbeing' && (
           <div className="animate-fade-in">
             <section className="premium-card p-5">
               <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
                 <Heart className="w-4 h-4 text-primary" />
-                Bien-être numérique
+                {t('wellbeing.title')}
               </h2>
               <WellbeingSettingsPanel />
             </section>
           </div>
         )}
 
-        {/* Content & AI Tab */}
         {activeTab === 'content' && (
           <div className="animate-fade-in">
             <section className="premium-card p-5">
               <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
                 <Brain className="w-4 h-4 text-primary" />
-                Contenu & Intelligence artificielle
+                {t('content.title')}
               </h2>
               <ContentPreferencesPanel />
             </section>
           </div>
         )}
 
-        {/* Accessibility Tab */}
         {activeTab === 'accessibility' && (
           <div className="animate-fade-in">
             <section className="premium-card p-5">
               <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
                 <Accessibility className="w-4 h-4 text-primary" />
-                Accessibilité & Raccourcis
+                {t('access.title')}
               </h2>
               <AccessibilitySettingsPanel />
             </section>
           </div>
         )}
 
-        {/* Groups Tab */}
         {activeTab === 'groups' && (
           <div className="animate-fade-in">
             <section className="premium-card p-5">
-              <h2 className="text-sm font-semibold mb-4">Mes groupes</h2>
+              <h2 className="text-sm font-semibold mb-4">{t('settings.myGroups')}</h2>
               <MyGroupsList />
             </section>
           </div>
         )}
 
-        {/* Pages Tab */}
         {activeTab === 'pages' && (
           <div className="animate-fade-in">
             <section className="premium-card p-5">
-              <h2 className="text-sm font-semibold mb-4">Mes pages</h2>
+              <h2 className="text-sm font-semibold mb-4">{t('settings.myPages')}</h2>
               <MyPagesList />
             </section>
           </div>
         )}
 
-        {/* Privacy Tab */}
         {activeTab === 'privacy' && (
           <div className="animate-fade-in">
             <section className="premium-card p-5">
-              <h2 className="text-sm font-semibold mb-4">Paramètres de confidentialité</h2>
+              <h2 className="text-sm font-semibold mb-4">{t('settings.privacySettings')}</h2>
               <PrivacySettingsPanel />
             </section>
           </div>
         )}
 
-        {/* Notifications Tab */}
         {activeTab === 'notifications' && (
           <div className="animate-fade-in">
             <section className="premium-card p-5">
