@@ -3,14 +3,12 @@ import fr from './locales/fr';
 import en from './locales/en';
 import es from './locales/es';
 import de from './locales/de';
-import ar from './locales/ar';
-import zh from './locales/zh';
 
-export type SupportedLocale = 'fr' | 'en' | 'es' | 'de' | 'ar' | 'zh';
+export type SupportedLocale = 'fr' | 'en' | 'es' | 'de';
 
 type TranslationMap = Record<string, string>;
 
-const locales: Record<SupportedLocale, TranslationMap> = { fr, en, es, de, ar, zh };
+const locales: Record<SupportedLocale, TranslationMap> = { fr, en, es, de };
 
 // French is the fallback
 const fallback = fr;
@@ -31,7 +29,6 @@ const I18nContext = createContext<I18nContextType>({
 
 function getInitialLocale(): SupportedLocale {
   try {
-    // Check accessibility prefs first (where the language select is)
     const accessPrefs = localStorage.getItem('accessibility-prefs');
     if (accessPrefs) {
       const parsed = JSON.parse(accessPrefs);
@@ -39,7 +36,6 @@ function getInitialLocale(): SupportedLocale {
         return parsed.language as SupportedLocale;
       }
     }
-    // Then check dedicated i18n key
     const saved = localStorage.getItem('app-locale');
     if (saved && saved in locales) {
       return saved as SupportedLocale;
@@ -55,7 +51,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     setLocaleState(newLocale);
     localStorage.setItem('app-locale', newLocale);
     
-    // Also sync with accessibility-prefs
     try {
       const accessPrefs = localStorage.getItem('accessibility-prefs');
       if (accessPrefs) {
@@ -66,7 +61,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, []);
 
-  const dir = locale === 'ar' ? 'rtl' : 'ltr';
+  const dir = 'ltr';
 
   useEffect(() => {
     document.documentElement.lang = locale;
