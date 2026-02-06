@@ -4,6 +4,7 @@ import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 interface WellbeingPrefs {
@@ -38,6 +39,7 @@ function formatMinutes(m: number) {
 }
 
 export function WellbeingSettingsPanel() {
+  const { t } = useTranslation();
   const [prefs, setPrefs] = useState<WellbeingPrefs>(() => {
     try {
       const saved = localStorage.getItem('wellbeing-prefs');
@@ -47,7 +49,6 @@ export function WellbeingSettingsPanel() {
     }
   });
 
-  // Simulated usage data
   const todayMinutes = useMemo(() => Math.floor(Math.random() * 45) + 10, []);
   const weekData = useMemo(() => [28, 45, 32, 52, 18, 40, todayMinutes], [todayMinutes]);
   const weekAvg = Math.round(weekData.reduce((a, b) => a + b, 0) / weekData.length);
@@ -62,23 +63,25 @@ export function WellbeingSettingsPanel() {
   };
 
   const usagePercent = Math.min(100, Math.round((todayMinutes / prefs.dailyLimitMinutes) * 100));
-  const daysOfWeek = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+  const daysOfWeek = [
+    t('wellbeing.mon'), t('wellbeing.tue'), t('wellbeing.wed'), t('wellbeing.thu'),
+    t('wellbeing.fri'), t('wellbeing.sat'), t('wellbeing.sun'),
+  ];
 
   return (
     <div className="space-y-6">
-      {/* Today's usage */}
       <div className="space-y-3">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
           <Clock className="w-3.5 h-3.5" />
-          Aujourd'hui
+          {t('wellbeing.today')}
         </h3>
         <div className="p-4 rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20">
           <div className="flex items-end justify-between mb-3">
             <div>
               <p className="text-2xl font-bold">{formatMinutes(todayMinutes)}</p>
-              <p className="text-[11px] text-muted-foreground">sur {formatMinutes(prefs.dailyLimitMinutes)} autorisés</p>
+              <p className="text-[11px] text-muted-foreground">{t('wellbeing.of')} {formatMinutes(prefs.dailyLimitMinutes)} {t('wellbeing.allowed')}</p>
             </div>
-          <div className={cn(
+            <div className={cn(
               "text-xs font-semibold px-2.5 py-1 rounded-full",
               usagePercent < 50 ? "bg-primary/15 text-primary" :
               usagePercent < 80 ? "bg-accent text-accent-foreground" :
@@ -91,11 +94,10 @@ export function WellbeingSettingsPanel() {
         </div>
       </div>
 
-      {/* Weekly chart */}
       <div className="space-y-3">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
           <TrendingDown className="w-3.5 h-3.5" />
-          Cette semaine — Moy. {formatMinutes(weekAvg)}/jour
+          {t('wellbeing.thisWeek')} — {t('wellbeing.avg')} {formatMinutes(weekAvg)}{t('wellbeing.avgPerDay')}
         </h3>
         <div className="flex items-end justify-between gap-1.5 h-24 px-2">
           {weekData.map((min, i) => (
@@ -115,37 +117,29 @@ export function WellbeingSettingsPanel() {
         </div>
       </div>
 
-      {/* Daily limit */}
       <div className="space-y-3">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
           <Timer className="w-3.5 h-3.5" />
-          Limite quotidienne
+          {t('wellbeing.dailyLimit')}
         </h3>
         <div className="px-1">
-          <Slider
-            value={[prefs.dailyLimitMinutes]}
-            onValueChange={([v]) => update({ dailyLimitMinutes: v })}
-            min={15}
-            max={180}
-            step={15}
-          />
+          <Slider value={[prefs.dailyLimitMinutes]} onValueChange={([v]) => update({ dailyLimitMinutes: v })} min={15} max={180} step={15} />
           <div className="flex justify-between mt-1.5">
-            <span className="text-[10px] text-muted-foreground">15 min</span>
+            <span className="text-[10px] text-muted-foreground">15 {t('wellbeing.min')}</span>
             <span className="text-xs font-semibold text-primary">{formatMinutes(prefs.dailyLimitMinutes)}</span>
             <span className="text-[10px] text-muted-foreground">3h</span>
           </div>
         </div>
       </div>
 
-      {/* Features */}
       <div className="space-y-1">
         <div className="flex items-center justify-between p-3 rounded-xl hover:bg-secondary/30 transition-colors">
           <div className="flex items-start gap-3">
             <Coffee className="w-4 h-4 text-primary mt-0.5" />
             <div>
-              <Label className="text-sm font-medium">Pause de défilement</Label>
+              <Label className="text-sm font-medium">{t('wellbeing.scrollPause')}</Label>
               <p className="text-[11px] text-muted-foreground/70 mt-0.5">
-                Rappel de faire une pause toutes les {prefs.scrollPauseMinutes} min
+                {t('wellbeing.scrollPauseDesc')} {prefs.scrollPauseMinutes} {t('wellbeing.min')}
               </p>
             </div>
           </div>
@@ -156,9 +150,9 @@ export function WellbeingSettingsPanel() {
           <div className="flex items-start gap-3">
             <Moon className="w-4 h-4 text-primary mt-0.5" />
             <div>
-              <Label className="text-sm font-medium">Rappel coucher</Label>
+              <Label className="text-sm font-medium">{t('wellbeing.bedtimeReminder')}</Label>
               <p className="text-[11px] text-muted-foreground/70 mt-0.5">
-                Notification à {prefs.bedtimeHour}h pour arrêter
+                {t('wellbeing.bedtimeDesc')} {prefs.bedtimeHour}h {t('wellbeing.bedtimeDescSuffix')}
               </p>
             </div>
           </div>
@@ -167,15 +161,9 @@ export function WellbeingSettingsPanel() {
 
         {prefs.bedtimeReminderEnabled && (
           <div className="px-10 pb-2">
-            <Slider
-              value={[prefs.bedtimeHour]}
-              onValueChange={([v]) => update({ bedtimeHour: v })}
-              min={20}
-              max={2}
-              step={1}
-            />
+            <Slider value={[prefs.bedtimeHour]} onValueChange={([v]) => update({ bedtimeHour: v })} min={20} max={2} step={1} />
             <p className="text-[10px] text-center text-muted-foreground mt-1">
-              Heure : {prefs.bedtimeHour}h00
+              {t('wellbeing.hour')} : {prefs.bedtimeHour}h00
             </p>
           </div>
         )}
@@ -184,10 +172,8 @@ export function WellbeingSettingsPanel() {
           <div className="flex items-start gap-3">
             <Zap className="w-4 h-4 text-primary mt-0.5" />
             <div>
-              <Label className="text-sm font-medium">Mode focus</Label>
-              <p className="text-[11px] text-muted-foreground/70 mt-0.5">
-                Masque les notifications et le fil pendant 25 min
-              </p>
+              <Label className="text-sm font-medium">{t('wellbeing.focusMode')}</Label>
+              <p className="text-[11px] text-muted-foreground/70 mt-0.5">{t('wellbeing.focusDesc')}</p>
             </div>
           </div>
           <Switch checked={prefs.focusModeEnabled} onCheckedChange={v => update({ focusModeEnabled: v })} />
@@ -197,10 +183,8 @@ export function WellbeingSettingsPanel() {
           <div className="flex items-start gap-3">
             <Eye className="w-4 h-4 text-primary mt-0.5" />
             <div>
-              <Label className="text-sm font-medium">Masquer les compteurs</Label>
-              <p className="text-[11px] text-muted-foreground/70 mt-0.5">
-                Cacher le nombre de likes et réactions
-              </p>
+              <Label className="text-sm font-medium">{t('wellbeing.hideCounts')}</Label>
+              <p className="text-[11px] text-muted-foreground/70 mt-0.5">{t('wellbeing.hideCountsDesc')}</p>
             </div>
           </div>
           <Switch checked={prefs.hideLikeCounts} onCheckedChange={v => update({ hideLikeCounts: v })} />
@@ -210,10 +194,8 @@ export function WellbeingSettingsPanel() {
           <div className="flex items-start gap-3">
             <TrendingDown className="w-4 h-4 text-primary mt-0.5" />
             <div>
-              <Label className="text-sm font-medium">Écran gris après limite</Label>
-              <p className="text-[11px] text-muted-foreground/70 mt-0.5">
-                L'app passe en niveaux de gris après la limite
-              </p>
+              <Label className="text-sm font-medium">{t('wellbeing.grayscale')}</Label>
+              <p className="text-[11px] text-muted-foreground/70 mt-0.5">{t('wellbeing.grayscaleDesc')}</p>
             </div>
           </div>
           <Switch checked={prefs.grayscaleAfterLimit} onCheckedChange={v => update({ grayscaleAfterLimit: v })} />
