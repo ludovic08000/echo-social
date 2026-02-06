@@ -7,6 +7,7 @@ import { AppLayout } from '@/components/AppLayout';
 import { UserAvatar } from '@/components/UserAvatar';
 import { PostCard } from '@/components/PostCard';
 import { FriendshipButton } from '@/components/FriendshipButton';
+import { useFriendshipStatus } from '@/hooks/useFriendships';
 import { ShareButton } from '@/components/ShareButton';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -23,6 +24,7 @@ import { ProfilePhotoGrid } from '@/components/profile/ProfilePhotoGrid';
 import { AlbumsList } from '@/components/profile/AlbumsList';
 import { AlbumDetail } from '@/components/profile/AlbumDetail';
 import { ProfileFriendsList } from '@/components/profile/ProfileFriendsList';
+import { ProfileAboutSection } from '@/components/profile/ProfileAboutSection';
 import { type Album } from '@/hooks/useAlbums';
 
 export default function Profile() {
@@ -48,6 +50,7 @@ export default function Profile() {
 
   const { data: profile, isLoading: profileLoading } = useProfile(userId);
   const { data: posts, isLoading: postsLoading } = useUserPosts(userId || '');
+  const { data: friendshipData } = useFriendshipStatus(userId || '');
   const updateProfile = useUpdateProfile();
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -499,40 +502,12 @@ export default function Profile() {
           
           {activeTab === 'all' && (
             <>
-              {/* À propos */}
-              <div className="premium-card p-4">
-                <h3 className="font-semibold text-sm mb-3">À propos</h3>
-                <div className="space-y-3 text-sm">
-                  <div className="flex items-center gap-3">
-                    <MapPin className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-muted-foreground">Habite à <span className="font-medium text-foreground">{profile.city || 'Non renseigné'}</span></span>
-                  </div>
-                  {profile.date_of_birth && (
-                    <div className="flex items-center gap-3">
-                      <Cake className="w-4 h-4 text-primary flex-shrink-0" />
-                      <span className="text-muted-foreground">Né(e) le <span className="font-medium text-foreground">{new Date(profile.date_of_birth).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</span></span>
-                    </div>
-                  )}
-                  {profile.education_level && (
-                    <div className="flex items-center gap-3">
-                      <GraduationCap className="w-4 h-4 text-primary flex-shrink-0" />
-                      <span className="text-muted-foreground">A étudié <span className="font-medium text-foreground">{profile.education_level}</span>{profile.education_city && <> à <span className="font-medium text-foreground">{profile.education_city}</span></>}</span>
-                    </div>
-                  )}
-                  {profile.website_url && (
-                    <div className="flex items-center gap-3">
-                      <Link2 className="w-4 h-4 text-primary flex-shrink-0" />
-                      <a href={profile.website_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate">
-                        {profile.website_url.replace(/^https?:\/\//, '')}
-                      </a>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-3">
-                    <Calendar className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-muted-foreground">Membre depuis <span className="font-medium text-foreground">{new Date(profile.created_at).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</span></span>
-                  </div>
-                </div>
-              </div>
+              {/* À propos - éditable */}
+              <ProfileAboutSection
+                profile={profile}
+                isOwnProfile={isOwnProfile}
+                isFriend={friendshipData?.status === 'accepted'}
+              />
 
               {/* Friends list */}
               <ProfileFriendsList userId={userId!} />

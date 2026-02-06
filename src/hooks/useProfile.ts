@@ -1,6 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import type { Json } from '@/integrations/supabase/types';
 import { useAuth } from '@/lib/auth';
+
+export interface FieldVisibility {
+  date_of_birth: 'public' | 'friends' | 'only_me';
+  city: 'public' | 'friends' | 'only_me';
+  education: 'public' | 'friends' | 'only_me';
+  work: 'public' | 'friends' | 'only_me';
+}
 
 export interface Profile {
   id: string;
@@ -16,6 +24,8 @@ export interface Profile {
   profile_type: string | null;
   education_level: string | null;
   education_city: string | null;
+  work: string | null;
+  field_visibility: FieldVisibility | null;
   created_at: string;
   updated_at: string;
 }
@@ -36,7 +46,11 @@ export function useProfile(userId?: string) {
         .maybeSingle();
 
       if (error) throw error;
-      return data as Profile | null;
+      if (!data) return null;
+      return {
+        ...data,
+        field_visibility: data.field_visibility as unknown as FieldVisibility | null,
+      } as Profile;
     },
     enabled: !!targetUserId,
   });
@@ -47,12 +61,18 @@ export function useUpdateProfile() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async (updates: Partial<Pick<Profile, 'name' | 'bio' | 'avatar_url' | 'cover_url' | 'cover_position_y' | 'city' | 'website_url' | 'education_level' | 'education_city' | 'date_of_birth'>>) => {
+    mutationFn: async (updates: Partial<Pick<Profile, 'name' | 'bio' | 'avatar_url' | 'cover_url' | 'cover_position_y' | 'city' | 'website_url' | 'education_level' | 'education_city' | 'date_of_birth' | 'work' | 'field_visibility'>>) => {
       if (!user) throw new Error('Not authenticated');
+
+      // Cast field_visibility for Supabase compatibility
+      const supabaseUpdates = {
+        ...updates,
+        field_visibility: updates.field_visibility ? (updates.field_visibility as unknown as Json) : undefined,
+      };
 
       const { data, error } = await supabase
         .from('profiles')
-        .update(updates)
+        .update(supabaseUpdates)
         .eq('user_id', user.id)
         .select()
         .single();

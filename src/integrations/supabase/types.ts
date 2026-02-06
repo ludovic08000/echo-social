@@ -1251,12 +1251,14 @@ export type Database = {
           date_of_birth: string | null
           education_city: string | null
           education_level: string | null
+          field_visibility: Json | null
           id: string
           name: string
           profile_type: string | null
           updated_at: string
           user_id: string
           website_url: string | null
+          work: string | null
         }
         Insert: {
           avatar_url?: string | null
@@ -1268,12 +1270,14 @@ export type Database = {
           date_of_birth?: string | null
           education_city?: string | null
           education_level?: string | null
+          field_visibility?: Json | null
           id?: string
           name: string
           profile_type?: string | null
           updated_at?: string
           user_id: string
           website_url?: string | null
+          work?: string | null
         }
         Update: {
           avatar_url?: string | null
@@ -1285,12 +1289,14 @@ export type Database = {
           date_of_birth?: string | null
           education_city?: string | null
           education_level?: string | null
+          field_visibility?: Json | null
           id?: string
           name?: string
           profile_type?: string | null
           updated_at?: string
           user_id?: string
           website_url?: string | null
+          work?: string | null
         }
         Relationships: []
       }
