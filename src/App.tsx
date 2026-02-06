@@ -26,6 +26,9 @@ import PageDetail from "./pages/PageDetail";
 import Videos from "./pages/Videos";
 import Lives from "./pages/Lives";
 import LiveWatch from "./pages/LiveWatch";
+import Journal from "./pages/Journal";
+import Challenges from "./pages/Challenges";
+import FriendMatch from "./pages/FriendMatch";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -63,6 +66,9 @@ function AppContent() {
             <Route path="/videos" element={<ProtectedRoute><Videos /></ProtectedRoute>} />
             <Route path="/lives" element={<ProtectedRoute><Lives /></ProtectedRoute>} />
             <Route path="/live/:id" element={<ProtectedRoute><LiveWatch /></ProtectedRoute>} />
+            <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
+            <Route path="/challenges" element={<ProtectedRoute><Challenges /></ProtectedRoute>} />
+            <Route path="/friend-match" element={<ProtectedRoute><FriendMatch /></ProtectedRoute>} />
             
             {/* 404 */}
             <Route path="*" element={<NotFound />} />

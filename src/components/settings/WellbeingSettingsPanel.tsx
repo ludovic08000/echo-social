@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Timer, Moon, Eye, TrendingDown, Clock, Coffee, Zap } from 'lucide-react';
+import { Timer, Moon, Eye, TrendingDown, Clock, Coffee, Zap, Shield } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { DetoxSchedulePanel } from './DetoxSchedulePanel';
 
 interface WellbeingPrefs {
   dailyLimitMinutes: number;
@@ -200,6 +201,15 @@ export function WellbeingSettingsPanel() {
           </div>
           <Switch checked={prefs.grayscaleAfterLimit} onCheckedChange={v => update({ grayscaleAfterLimit: v })} />
         </div>
+      </div>
+
+      {/* Detox Schedule */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+          <Shield className="w-3.5 h-3.5" />
+          Détox digitale programmée
+        </h3>
+        <DetoxSchedulePanel />
       </div>
     </div>
   );

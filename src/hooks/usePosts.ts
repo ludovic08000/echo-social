@@ -267,7 +267,7 @@ export function useCreatePost() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async ({ body, imageUrl, expiresAt }: { body: string; imageUrl?: string; expiresAt?: string }) => {
+    mutationFn: async ({ body, imageUrl, expiresAt, publishAt }: { body: string; imageUrl?: string; expiresAt?: string; publishAt?: string }) => {
       if (!user) throw new Error('Not authenticated');
 
       const insertData: any = {
@@ -276,6 +276,7 @@ export function useCreatePost() {
         image_url: imageUrl || null,
       };
       if (expiresAt) insertData.expires_at = expiresAt;
+      if (publishAt) insertData.publish_at = publishAt;
 
       const { data, error } = await supabase
         .from('posts')
