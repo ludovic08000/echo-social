@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/lib/auth";
 import { I18nProvider } from "@/lib/i18n";
 import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
+import { useSettingsInit } from "@/hooks/useSettingsInit";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -29,9 +30,9 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <I18nProvider>
+function AppContent() {
+  useSettingsInit();
+  return (
     <AuthProvider>
       <TooltipProvider>
         <Toaster />
@@ -69,6 +70,13 @@ const App = () => (
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>
+  );
+}
+
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <I18nProvider>
+      <AppContent />
     </I18nProvider>
   </QueryClientProvider>
 );
