@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
-import { UserPlus } from 'lucide-react';
+import { UserPlus, MapPin, Users } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { useProfile } from '@/hooks/useProfile';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { useSendFriendRequest } from '@/hooks/useFriendships';
@@ -19,6 +20,7 @@ interface Suggestion {
 
 export function FriendSuggestions() {
   const { user } = useAuth();
+  const { data: myProfile } = useProfile();
   const sendRequest = useSendFriendRequest();
 
   const { data: suggestions, isLoading } = useQuery({
@@ -37,6 +39,9 @@ export function FriendSuggestions() {
 
   if (isLoading || !suggestions || suggestions.length === 0) return null;
 
+  const isSameCity = (city: string | null) =>
+    !!myProfile?.city && !!city && city.toLowerCase().trim() === myProfile.city.toLowerCase().trim();
+
   return (
     <div className="px-4 py-3">
       <div className="flex items-center justify-between mb-3">
@@ -50,7 +55,7 @@ export function FriendSuggestions() {
           {suggestions.map((s) => (
             <div
               key={s.user_id}
-              className="flex-shrink-0 w-32 bg-card rounded-xl border border-border p-3 flex flex-col items-center gap-2 text-center"
+              className="flex-shrink-0 w-36 bg-card rounded-xl border border-border p-3 flex flex-col items-center gap-2 text-center"
             >
               <Link to={`/profile/${s.user_id}`}>
                 <UserAvatar src={s.avatar_url} alt={s.name} size="lg" />
@@ -58,11 +63,23 @@ export function FriendSuggestions() {
               <Link to={`/profile/${s.user_id}`} className="w-full">
                 <p className="text-xs font-medium truncate w-full">{s.name}</p>
               </Link>
-              {s.mutual_friends_count > 0 && (
-                <p className="text-[10px] text-muted-foreground">
-                  {s.mutual_friends_count} ami{s.mutual_friends_count > 1 ? 's' : ''} en commun
-                </p>
-              )}
+
+              {/* Reason tags */}
+              <div className="flex flex-col gap-0.5 w-full">
+                {s.mutual_friends_count > 0 && (
+                  <p className="text-[10px] text-muted-foreground flex items-center justify-center gap-1">
+                    <Users className="w-3 h-3" />
+                    {s.mutual_friends_count} ami{s.mutual_friends_count > 1 ? 's' : ''} en commun
+                  </p>
+                )}
+                {isSameCity(s.city) && (
+                  <p className="text-[10px] text-primary flex items-center justify-center gap-1">
+                    <MapPin className="w-3 h-3" />
+                    Même ville
+                  </p>
+                )}
+              </div>
+
               <Button
                 size="sm"
                 className="w-full h-7 text-xs"
