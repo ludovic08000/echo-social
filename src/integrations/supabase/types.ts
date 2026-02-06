@@ -1249,6 +1249,8 @@ export type Database = {
           cover_url: string | null
           created_at: string
           date_of_birth: string | null
+          education_city: string | null
+          education_level: string | null
           id: string
           name: string
           profile_type: string | null
@@ -1264,6 +1266,8 @@ export type Database = {
           cover_url?: string | null
           created_at?: string
           date_of_birth?: string | null
+          education_city?: string | null
+          education_level?: string | null
           id?: string
           name: string
           profile_type?: string | null
@@ -1279,6 +1283,8 @@ export type Database = {
           cover_url?: string | null
           created_at?: string
           date_of_birth?: string | null
+          education_city?: string | null
+          education_level?: string | null
           id?: string
           name?: string
           profile_type?: string | null

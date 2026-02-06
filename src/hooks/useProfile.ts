@@ -14,6 +14,8 @@ export interface Profile {
   website_url: string | null;
   date_of_birth: string | null;
   profile_type: string | null;
+  education_level: string | null;
+  education_city: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -45,7 +47,7 @@ export function useUpdateProfile() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async (updates: Partial<Pick<Profile, 'name' | 'bio' | 'avatar_url' | 'cover_url' | 'cover_position_y' | 'city' | 'website_url'>>) => {
+    mutationFn: async (updates: Partial<Pick<Profile, 'name' | 'bio' | 'avatar_url' | 'cover_url' | 'cover_position_y' | 'city' | 'website_url' | 'education_level' | 'education_city' | 'date_of_birth'>>) => {
       if (!user) throw new Error('Not authenticated');
 
       const { data, error } = await supabase
