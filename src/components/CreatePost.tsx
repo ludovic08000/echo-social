@@ -6,7 +6,6 @@ import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { UserAvatar } from './UserAvatar';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 
 export function CreatePost() {
@@ -14,12 +13,14 @@ export function CreatePost() {
   const { data: profile } = useProfile();
   const createPost = useCreatePost();
   const [body, setBody] = useState('');
+  const [expanded, setExpanded] = useState(false);
   const [media, setMedia] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video' | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video') => {
     const file = e.target.files?.[0];
@@ -36,6 +37,7 @@ export function CreatePost() {
       setMedia(file);
       setMediaType(type);
       setMediaPreview(URL.createObjectURL(file));
+      setExpanded(true);
     }
   };
 
@@ -78,6 +80,7 @@ export function CreatePost() {
       
       setBody('');
       removeMedia();
+      setExpanded(false);
       
       toast({
         title: 'Post publié !',
@@ -97,96 +100,116 @@ export function CreatePost() {
   if (!user) return null;
 
   return (
-    <div className="pulse-card p-4 sm:p-5">
-      <div className="flex gap-3">
+    <div className="premium-card p-4">
+      <div className="flex gap-3 items-start">
         <UserAvatar src={profile?.avatar_url} alt={profile?.name} size="md" />
         
-        <div className="flex-1">
-          <Textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Quoi de neuf ?"
-            className="pulse-input min-h-[80px] resize-none border-0 p-0 text-base focus:ring-0"
-          />
-          
-          {mediaPreview && (
-            <div className="relative mt-3 rounded-xl overflow-hidden">
-              {mediaType === 'video' ? (
-                <video
-                  src={mediaPreview}
-                  controls
-                  className="w-full max-h-64 object-cover"
-                />
-              ) : (
-                <img
-                  src={mediaPreview}
-                  alt="Aperçu"
-                  className="w-full max-h-64 object-cover"
-                />
-              )}
-              <Button
-                variant="secondary"
-                size="icon"
-                onClick={removeMedia}
-                className="absolute top-2 right-2 h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm"
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-          )}
-          
-          <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={(e) => handleFileChange(e, 'image')}
-              accept="image/*"
-              className="hidden"
-            />
-            <input
-              type="file"
-              ref={videoInputRef}
-              onChange={(e) => handleFileChange(e, 'video')}
-              accept="video/*"
-              className="hidden"
-            />
-            
-            <div className="flex gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-                className="text-muted-foreground hover:text-primary"
-              >
-                <Image className="w-5 h-5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => videoInputRef.current?.click()}
-                className="text-muted-foreground hover:text-primary"
-              >
-                <Video className="w-5 h-5" />
-              </Button>
-            </div>
-            
-            <Button
-              onClick={handleSubmit}
-              disabled={(!body.trim() && !media) || isUploading}
-              className="pulse-button-gradient h-9 px-4"
+        <div className="flex-1 min-w-0">
+          {/* Collapsed state — simple clickable input */}
+          {!expanded ? (
+            <button
+              onClick={() => {
+                setExpanded(true);
+                setTimeout(() => textareaRef.current?.focus(), 100);
+              }}
+              className="w-full text-left px-4 py-2.5 rounded-full bg-secondary/60 hover:bg-secondary text-sm text-muted-foreground transition-colors"
             >
-              {isUploading ? (
-                <span className="animate-pulse">Publication...</span>
-              ) : (
-                <>
-                  <Send className="w-4 h-4 mr-2" />
-                  Publier
-                </>
+              Quoi de neuf, {profile?.name?.split(' ')[0] || ''} ?
+            </button>
+          ) : (
+            <>
+              <textarea
+                ref={textareaRef}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder="Quoi de neuf ?"
+                className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none outline-none min-h-[80px] leading-relaxed"
+                autoFocus
+              />
+              
+              {mediaPreview && (
+                <div className="relative mt-2 rounded-xl overflow-hidden">
+                  {mediaType === 'video' ? (
+                    <video src={mediaPreview} controls className="w-full max-h-52 object-cover rounded-xl" />
+                  ) : (
+                    <img src={mediaPreview} alt="Aperçu" className="w-full max-h-52 object-cover rounded-xl" />
+                  )}
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    onClick={removeMedia}
+                    className="absolute top-2 right-2 h-7 w-7 rounded-full bg-background/80 backdrop-blur-sm"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
               )}
-            </Button>
-          </div>
+              
+              <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/30">
+                <input type="file" ref={fileInputRef} onChange={(e) => handleFileChange(e, 'image')} accept="image/*" className="hidden" />
+                <input type="file" ref={videoInputRef} onChange={(e) => handleFileChange(e, 'video')} accept="video/*" className="hidden" />
+                
+                <div className="flex gap-0.5">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="h-9 w-9 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10"
+                  >
+                    <Image className="w-[18px] h-[18px]" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => videoInputRef.current?.click()}
+                    className="h-9 w-9 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10"
+                  >
+                    <Video className="w-[18px] h-[18px]" />
+                  </Button>
+                </div>
+                
+                <Button
+                  onClick={handleSubmit}
+                  disabled={(!body.trim() && !media) || isUploading}
+                  size="sm"
+                  className="premium-button h-9 px-5 text-xs"
+                >
+                  {isUploading ? (
+                    <span className="animate-pulse">Publication…</span>
+                  ) : (
+                    <>
+                      <Send className="w-3.5 h-3.5 mr-1.5" />
+                      Publier
+                    </>
+                  )}
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </div>
+      
+      {/* Quick action row when collapsed */}
+      {!expanded && (
+        <div className="flex items-center justify-around mt-3 pt-3 border-t border-border/30">
+          <input type="file" ref={fileInputRef} onChange={(e) => handleFileChange(e, 'image')} accept="image/*" className="hidden" />
+          <input type="file" ref={videoInputRef} onChange={(e) => handleFileChange(e, 'video')} accept="video/*" className="hidden" />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors py-1"
+          >
+            <Image className="w-4 h-4 text-primary/70" />
+            <span>Photo</span>
+          </button>
+          <button
+            onClick={() => videoInputRef.current?.click()}
+            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors py-1"
+          >
+            <Video className="w-4 h-4 text-destructive/70" />
+            <span>Vidéo</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

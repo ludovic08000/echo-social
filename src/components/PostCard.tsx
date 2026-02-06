@@ -39,23 +39,23 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
   const isOwner = user?.id === post.user_id;
 
   return (
-    <article className="bg-card border-y border-border/50 animate-fade-in">
+    <article className="bg-card border-y border-border/30 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 pb-3">
+      <div className="flex items-center justify-between px-4 pt-4 pb-3">
         <div className="flex items-center gap-3">
           <Link to={`/profile/${post.user_id}`}>
             <UserAvatar src={post.profile.avatar_url} alt={post.profile.name} size="md" />
           </Link>
           
-          <div>
+          <div className="min-w-0">
             <Link 
               to={`/profile/${post.user_id}`}
-              className="font-semibold text-foreground hover:underline block"
+              className="font-semibold text-sm text-foreground hover:text-primary transition-colors block truncate"
             >
               {post.profile.name}
             </Link>
             <Link to={`/post/${post.id}`}>
-              <span className="text-muted-foreground text-sm">
+              <span className="text-muted-foreground text-xs">
                 {formatDistanceToNow(new Date(post.created_at), { addSuffix: true, locale: fr })}
               </span>
             </Link>
@@ -64,11 +64,11 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
         
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground">
-              <MoreHorizontal className="w-5 h-5" />
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground">
+              <MoreHorizontal className="w-4 h-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" className="rounded-xl">
             <DropdownMenuItem asChild>
               <ShareButton 
                 url={postUrl} 
@@ -92,7 +92,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
       {/* Content */}
       <Link to={`/post/${post.id}`}>
         {post.body && (
-          <p className="px-4 pb-3 text-foreground whitespace-pre-wrap break-words">
+          <p className="px-4 pb-3 text-sm text-foreground whitespace-pre-wrap break-words leading-relaxed">
             {post.body}
           </p>
         )}
@@ -102,7 +102,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
             <img
               src={post.image_url}
               alt="Post image"
-              className="w-full object-cover max-h-[500px]"
+              className="w-full object-cover max-h-[480px]"
             />
           </div>
         )}
@@ -110,19 +110,19 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
 
       {/* Reactions Count */}
       {(post.likes_count > 0 || post.comments_count > 0) && (
-        <div className="flex items-center justify-between px-4 py-2 text-sm text-muted-foreground">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center justify-between px-4 py-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5">
             {post.likes_count > 0 && (
               <>
-                <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                  <ThumbsUp className="w-3 h-3 text-primary-foreground" />
+                <div className="w-[18px] h-[18px] rounded-full bg-primary/90 flex items-center justify-center">
+                  <ThumbsUp className="w-2.5 h-2.5 text-primary-foreground" />
                 </div>
                 <span>{post.likes_count}</span>
               </>
             )}
           </div>
           {post.comments_count > 0 && (
-            <button onClick={onCommentClick} className="hover:underline">
+            <button onClick={onCommentClick} className="hover:text-foreground transition-colors">
               {post.comments_count} commentaire{post.comments_count > 1 ? 's' : ''}
             </button>
           )}
@@ -131,7 +131,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
       
       {/* Actions */}
       {showActions && (
-        <div className="flex items-center justify-around border-t border-border/50 px-2 py-1">
+        <div className="flex items-center border-t border-border/30 mx-4 py-1">
           <ReactionButton 
             postId={post.id}
             currentReaction={post.user_reaction}
@@ -143,10 +143,10 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
             variant="ghost"
             size="sm"
             onClick={onCommentClick}
-            className="flex-1 h-11 gap-2 text-muted-foreground hover:bg-secondary rounded-lg"
+            className="flex-1 h-10 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/60 rounded-xl text-xs"
           >
-            <MessageCircle className="w-5 h-5" />
-            <span className="text-sm font-medium">Commenter</span>
+            <MessageCircle className="w-[18px] h-[18px]" />
+            <span className="font-medium">Commenter</span>
           </Button>
           
           <ShareButton
@@ -156,7 +156,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
             variant="ghost"
             size="sm"
             showLabel
-            className="flex-1 h-11 gap-2 text-muted-foreground hover:bg-secondary rounded-lg"
+            className="flex-1 h-10 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/60 rounded-xl text-xs"
           />
         </div>
       )}
