@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen } from 'lucide-react';
+import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
@@ -199,14 +199,16 @@ export default function Profile() {
 
   if (profileLoading) {
     return (
-      <AppLayout>
-        <div className="animate-pulse">
-          <div className="h-44 bg-muted" />
-          <div className="px-4 -mt-14">
-            <div className="w-24 h-24 rounded-full bg-muted border-4 border-background" />
-            <div className="mt-3 space-y-2">
-              <div className="h-5 w-40 bg-muted rounded-lg" />
-              <div className="h-3 w-28 bg-muted rounded-lg" />
+      <AppLayout fullWidth>
+        <div className="mx-auto max-w-[900px]">
+          <div className="animate-pulse">
+            <div className="h-52 bg-muted rounded-b-2xl" />
+            <div className="px-6 -mt-14">
+              <div className="w-28 h-28 rounded-full bg-muted border-4 border-background" />
+              <div className="mt-3 space-y-2">
+                <div className="h-6 w-48 bg-muted rounded-lg" />
+                <div className="h-4 w-32 bg-muted rounded-lg" />
+              </div>
             </div>
           </div>
         </div>
@@ -216,9 +218,11 @@ export default function Profile() {
 
   if (!profile) {
     return (
-      <AppLayout>
-        <div className="premium-card p-10 text-center">
-          <p className="text-muted-foreground text-sm">Profil non trouvé</p>
+      <AppLayout fullWidth>
+        <div className="mx-auto max-w-[900px]">
+          <div className="premium-card p-10 text-center mt-8">
+            <p className="text-muted-foreground text-sm">Profil non trouvé</p>
+          </div>
         </div>
       </AppLayout>
     );
@@ -232,9 +236,9 @@ export default function Profile() {
   ];
 
   return (
-    <AppLayout>
-      <div className="-mx-4 -mt-4 lg:-mx-4">
-        {/* Hidden file inputs */}
+    <AppLayout fullWidth>
+      <div className="mx-auto max-w-[900px]">
+      <div className="-mt-2">
         <input ref={avatarInputRef} type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
         <input ref={coverInputRef} type="file" accept="image/*" onChange={handleCoverChange} className="hidden" />
 
@@ -242,7 +246,7 @@ export default function Profile() {
         <div 
           ref={coverRef}
           className={cn(
-            "relative h-48 bg-gradient-to-br from-primary/20 via-primary/10 to-accent/20 overflow-hidden",
+            "relative h-52 lg:h-72 bg-gradient-to-br from-primary/20 via-primary/10 to-accent/20 overflow-hidden lg:rounded-b-2xl",
             isRepositioning && "cursor-ns-resize"
           )}
           onMouseDown={handleMouseDown}
@@ -328,11 +332,11 @@ export default function Profile() {
         </div>
 
         {/* Profile Header */}
-        <div className="px-4 relative">
+        <div className="px-4 lg:px-6 relative">
           {/* Avatar */}
-          <div className="absolute -top-12 left-4">
+          <div className="absolute -top-14 lg:-top-16 left-4 lg:left-6">
             <div className="relative">
-              <div className="w-24 h-24 rounded-full border-[3px] border-background overflow-hidden bg-background shadow-premium-lg">
+              <div className="w-28 h-28 lg:w-32 lg:h-32 rounded-full border-4 border-background overflow-hidden bg-background shadow-xl">
                 {avatarUpload.isUploading ? (
                   <div className="w-full h-full flex items-center justify-center bg-muted">
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -343,35 +347,35 @@ export default function Profile() {
               </div>
               {isOwnProfile && (
                 <button 
-                  className="absolute bottom-0 right-0 w-7 h-7 bg-primary text-primary-foreground rounded-full flex items-center justify-center border-2 border-background hover:bg-primary/90 transition-all duration-200"
+                  className="absolute bottom-1 right-1 w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center border-2 border-background hover:bg-primary/90 transition-all duration-200"
                   onClick={() => avatarInputRef.current?.click()}
                   disabled={avatarUpload.isUploading}
                 >
-                  <Camera className="w-3 h-3" />
+                  <Camera className="w-4 h-4" />
                 </button>
               )}
             </div>
           </div>
 
           {/* Name & Stats */}
-          <div className="pt-14 pb-3">
-            <h1 className="text-xl font-bold tracking-tight">{profile.name}</h1>
+          <div className="pt-16 lg:pt-20 pb-4">
+            <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">{profile.name}</h1>
             
             {/* Stats row */}
-            <div className="flex items-center gap-4 mt-2">
+            <div className="flex items-center gap-5 mt-2">
               <Link to="/friends" className="text-center hover:opacity-80 transition-opacity">
-                <span className="text-sm font-bold text-foreground">{stats?.friendsCount || 0}</span>
-                <span className="text-xs text-muted-foreground ml-1">amis</span>
+                <span className="text-base font-bold text-foreground">{stats?.friendsCount || 0}</span>
+                <span className="text-sm text-muted-foreground ml-1">amis</span>
               </Link>
               <span className="text-border">•</span>
               <div className="text-center">
-                <span className="text-sm font-bold text-foreground">{stats?.postsCount || 0}</span>
-                <span className="text-xs text-muted-foreground ml-1">posts</span>
+                <span className="text-base font-bold text-foreground">{stats?.postsCount || 0}</span>
+                <span className="text-sm text-muted-foreground ml-1">posts</span>
               </div>
               <span className="text-border">•</span>
               <div className="text-center">
-                <span className="text-sm font-bold text-foreground">{stats?.likesReceived || 0}</span>
-                <span className="text-xs text-muted-foreground ml-1">j'aime</span>
+                <span className="text-base font-bold text-foreground">{stats?.likesReceived || 0}</span>
+                <span className="text-sm text-muted-foreground ml-1">j'aime</span>
               </div>
             </div>
 
@@ -381,13 +385,13 @@ export default function Profile() {
             )}
 
             {/* Quick info */}
-            <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5" />
+            <div className="flex flex-wrap items-center gap-4 mt-3 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1.5">
+                <MapPin className="w-4 h-4" />
                 <span>{profile.city || 'France'}</span>
               </div>
-              <div className="flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5" />
+              <div className="flex items-center gap-1.5">
+                <Calendar className="w-4 h-4" />
                 <span>Depuis {new Date(profile.created_at).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}</span>
               </div>
             </div>
@@ -407,25 +411,24 @@ export default function Profile() {
             )}
 
             {/* Action buttons */}
-            <div className="flex gap-2 mt-4">
+            <div className="flex gap-3 mt-5">
               {isOwnProfile ? (
                 <>
                   <Link to="/settings" className="flex-1">
-                    <Button size="sm" className="w-full rounded-xl h-9 text-xs">
-                      <Edit2 className="w-3.5 h-3.5 mr-1.5" />
+                    <Button className="w-full rounded-xl h-10 text-sm">
+                      <Edit2 className="w-4 h-4 mr-2" />
                       Modifier le profil
                     </Button>
                   </Link>
                   <Button 
                     variant="secondary" 
-                    size="sm"
-                    className="flex-1 rounded-xl h-9 text-xs"
+                    className="flex-1 rounded-xl h-10 text-sm"
                     onClick={() => {
                       setActiveTab('albums');
                       setSelectedAlbum(null);
                     }}
                   >
-                    <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
+                    <FolderOpen className="w-4 h-4 mr-2" />
                     Mes albums
                   </Button>
                 </>
@@ -434,7 +437,8 @@ export default function Profile() {
                   <div className="flex-1">
                     <FriendshipButton userId={userId!} />
                   </div>
-                  <Button variant="secondary" size="sm" className="flex-1 rounded-xl h-9 text-xs">
+                  <Button variant="secondary" className="flex-1 rounded-xl h-10 text-sm">
+                    <MessageCircle className="w-4 h-4 mr-2" />
                     Envoyer un message
                   </Button>
                 </>
@@ -444,8 +448,8 @@ export default function Profile() {
         </div>
 
         {/* Tabs */}
-        <div className="border-t border-border/30">
-          <div className="flex gap-0 overflow-x-auto scrollbar-hide">
+        <div className="border-t border-border/30 mt-2">
+          <div className="flex gap-0 overflow-x-auto scrollbar-hide px-2 lg:px-4">
             {tabItems.map((tab) => (
               <button
                 key={tab.value}
@@ -454,10 +458,10 @@ export default function Profile() {
                   if (tab.value === 'albums') setSelectedAlbum(null);
                 }}
                 className={cn(
-                  'flex-1 min-w-fit px-4 py-3 text-xs font-medium text-center transition-all duration-200 border-b-2 whitespace-nowrap',
+                  'flex-1 min-w-fit px-5 py-3.5 text-sm font-medium text-center transition-all duration-200 border-b-2 whitespace-nowrap',
                   activeTab === tab.value
                     ? 'text-primary border-primary'
-                    : 'text-muted-foreground border-transparent hover:text-foreground'
+                    : 'text-muted-foreground border-transparent hover:text-foreground hover:bg-secondary/40'
                 )}
               >
                 {tab.label}
@@ -467,7 +471,7 @@ export default function Profile() {
         </div>
 
         {/* Content sections */}
-        <div className="px-4 py-4 space-y-3">
+        <div className="px-4 lg:px-6 py-5 space-y-4">
           {(activeTab === 'photos' || activeTab === 'reels') && (
             <ProfilePhotoGrid userId={userId!} activeTab={activeTab} />
           )}
@@ -531,6 +535,7 @@ export default function Profile() {
             </>
           )}
         </div>
+      </div>
       </div>
 
       {avatarToCrop && (
