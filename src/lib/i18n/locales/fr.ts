@@ -101,6 +101,17 @@ const fr = {
   'settings.myPages': 'Mes pages',
   'settings.privacySettings': 'Paramètres de confidentialité',
 
+  // Settings descriptions
+  'settings.profileDesc': 'Photo, nom, bio et informations du compte',
+  'settings.appearanceDesc': 'Thème, couleurs et taille du texte',
+  'settings.wellbeingDesc': 'Temps d\'écran, pauses et mode focus',
+  'settings.contentDesc': 'Algorithme du fil, IA et filtres',
+  'settings.accessibilityDesc': 'Langue, contraste et raccourcis',
+  'settings.groupsDesc': 'Gérer vos groupes et communautés',
+  'settings.pagesDesc': 'Gérer vos pages professionnelles',
+  'settings.privacyDesc': 'Visibilité du profil et des données',
+  'settings.notificationsDesc': 'Sons, badges et alertes push',
+
   // Settings - Appearance
   'appearance.title': 'Personnalisation visuelle',
   'appearance.displayMode': 'Mode d\'affichage',
