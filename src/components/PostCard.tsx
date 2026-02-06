@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp } from 'lucide-react';
+import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Post, useDeletePost } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
@@ -11,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { ReactionType } from '@/hooks/useReactions';
 import { ShareButton } from './ShareButton';
 import { generatePostUrl } from '@/lib/urlUtils';
+import { useAIContent } from '@/hooks/useAIContent';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,8 +29,23 @@ interface PostCardProps {
 export function PostCard({ post, showActions = true, onCommentClick }: PostCardProps) {
   const { user } = useAuth();
   const deletePost = useDeletePost();
+  const { summarize, translate, summaryLoading, translateLoading, aiSummariesEnabled, autoTranslateEnabled } = useAIContent();
+  const [summary, setSummary] = useState<string | null>(null);
+  const [translation, setTranslation] = useState<string | null>(null);
 
   const postUrl = generatePostUrl(post.id);
+
+  const handleSummarize = async () => {
+    if (summary) { setSummary(null); return; }
+    const result = await summarize(post.body || '');
+    if (result) setSummary(result);
+  };
+
+  const handleTranslate = async () => {
+    if (translation) { setTranslation(null); return; }
+    const result = await translate(post.body || '');
+    if (result) setTranslation(result);
+  };
 
   const handleDelete = () => {
     if (confirm('Êtes-vous sûr de vouloir supprimer ce post ?')) {
@@ -107,6 +124,66 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
           </div>
         )}
       </Link>
+
+      {/* AI Actions */}
+      {post.body && (aiSummariesEnabled || autoTranslateEnabled) && (
+        <div className="px-4 pb-2 flex flex-wrap gap-1.5">
+          {aiSummariesEnabled && post.body.length >= 100 && (
+            <button
+              onClick={handleSummarize}
+              disabled={summaryLoading}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all border",
+                summary
+                  ? "bg-primary/10 text-primary border-primary/30"
+                  : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60"
+              )}
+            >
+              {summaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+              {summary ? 'Masquer résumé' : 'Résumer'}
+            </button>
+          )}
+          {autoTranslateEnabled && (
+            <button
+              onClick={handleTranslate}
+              disabled={translateLoading}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all border",
+                translation
+                  ? "bg-primary/10 text-primary border-primary/30"
+                  : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60"
+              )}
+            >
+              {translateLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3 h-3" />}
+              {translation ? 'Original' : 'Traduire'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* AI Results */}
+      {(summary || translation) && (
+        <div className="px-4 pb-3 space-y-2">
+          {summary && (
+            <div className="p-3 rounded-xl bg-primary/5 border border-primary/20">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Sparkles className="w-3 h-3 text-primary" />
+                <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Résumé IA</span>
+              </div>
+              <p className="text-sm text-foreground leading-relaxed">{summary}</p>
+            </div>
+          )}
+          {translation && (
+            <div className="p-3 rounded-xl bg-primary/5 border border-primary/20">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Languages className="w-3 h-3 text-primary" />
+                <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Traduction</span>
+              </div>
+              <p className="text-sm text-foreground leading-relaxed">{translation}</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Reactions Count */}
       {(post.likes_count > 0 || post.comments_count > 0) && (
