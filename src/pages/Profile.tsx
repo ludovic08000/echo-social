@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users } from 'lucide-react';
+import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, ImagePlus, Video } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
@@ -544,6 +544,24 @@ export default function Profile() {
                 </>
               )}
             </div>
+
+            {/* Quick upload actions for own profile */}
+            {isOwnProfile && (
+              <div className="flex gap-2 mt-3">
+                <Link to="/create-post" className="flex-1">
+                  <Button variant="outline" size="sm" className="w-full">
+                    <ImagePlus className="w-4 h-4 mr-2" />
+                    Ajouter une photo
+                  </Button>
+                </Link>
+                <Link to="/create-post" className="flex-1">
+                  <Button variant="outline" size="sm" className="w-full">
+                    <Video className="w-4 h-4 mr-2" />
+                    Ajouter une vidéo
+                  </Button>
+                </Link>
+              </div>
+            )}
           </div>
         </div>
 
