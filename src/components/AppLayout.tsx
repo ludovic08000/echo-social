@@ -11,6 +11,7 @@ import { useConversations } from '@/hooks/useMessages';
 interface AppLayoutProps {
   children: ReactNode;
   requireAuth?: boolean;
+  fullWidth?: boolean;
 }
 
 function MobileHeader() {
@@ -61,7 +62,7 @@ function MobileHeader() {
   );
 }
 
-export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
+export function AppLayout({ children, requireAuth = true, fullWidth = false }: AppLayoutProps) {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -78,10 +79,16 @@ export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
   return (
     <div className="min-h-screen bg-background">
       <MobileHeader />
-      <main className="pb-20">
-        <div className="mx-auto max-w-[680px] lg:max-w-[680px]">
-          {children}
-        </div>
+      <main className="pb-20 lg:pb-4">
+        {fullWidth ? (
+          <div className="mx-auto max-w-[1280px] px-4">
+            {children}
+          </div>
+        ) : (
+          <div className="mx-auto max-w-[680px]">
+            {children}
+          </div>
+        )}
       </main>
       <MobileNav />
     </div>
