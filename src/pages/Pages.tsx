@@ -129,8 +129,9 @@ export default function Pages() {
               </div>
             ) : (
               filteredDiscoverPages.map(page => (
-                <div
+                <Link
                   key={page.id}
+                  to={`/pages/${page.id}`}
                   className="flex items-start gap-4 p-4 rounded-xl bg-card hover:bg-card/80 transition-colors"
                 >
                   {/* Page avatar */}
@@ -161,7 +162,7 @@ export default function Pages() {
 
                   {/* Follow button */}
                   <Button
-                    onClick={() => handleFollow(page.id)}
+                    onClick={(e) => { e.preventDefault(); handleFollow(page.id); }}
                     disabled={followPage.isPending}
                     size="sm"
                     className="flex-shrink-0"
@@ -169,7 +170,7 @@ export default function Pages() {
                     <Heart className="w-4 h-4 mr-1" />
                     Suivre
                   </Button>
-                </div>
+                </Link>
               ))
             )}
           </TabsContent>
@@ -197,9 +198,10 @@ export default function Pages() {
               </div>
             ) : (
               filteredFollowedPages.map(page => (
-                <div
+                <Link
                   key={page.id}
-                  className="flex items-center gap-4 p-4 rounded-xl bg-card hover:bg-card/80 transition-colors cursor-pointer group"
+                  to={`/pages/${page.id}`}
+                  className="flex items-center gap-4 p-4 rounded-xl bg-card hover:bg-card/80 transition-colors group"
                 >
                   <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
                     {page.profile_image_url ? (
@@ -219,12 +221,12 @@ export default function Pages() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleUnfollow(page.id)}
+                    onClick={(e) => { e.preventDefault(); handleUnfollow(page.id); }}
                     className="text-muted-foreground hover:text-destructive"
                   >
                     Ne plus suivre
                   </Button>
-                </div>
+                </Link>
               ))
             )}
           </TabsContent>
@@ -258,9 +260,10 @@ export default function Pages() {
               </div>
             ) : (
               filteredMyPages.map(page => (
-                <div
+                <Link
                   key={page.id}
-                  className="flex items-center gap-4 p-4 rounded-xl bg-card hover:bg-card/80 transition-colors cursor-pointer group"
+                  to={`/pages/${page.id}`}
+                  className="flex items-center gap-4 p-4 rounded-xl bg-card hover:bg-card/80 transition-colors group"
                 >
                   <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
                     {page.profile_image_url ? (
@@ -283,7 +286,7 @@ export default function Pages() {
                   </div>
 
                   <ChevronRight className="w-5 h-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
+                </Link>
               ))
             )}
           </TabsContent>
