@@ -25,6 +25,7 @@ import { AlbumsList } from '@/components/profile/AlbumsList';
 import { AlbumDetail } from '@/components/profile/AlbumDetail';
 import { ProfileFriendsList } from '@/components/profile/ProfileFriendsList';
 import { ProfileAboutSection } from '@/components/profile/ProfileAboutSection';
+import { ProfileOverview } from '@/components/profile/ProfileOverview';
 import { type Album } from '@/hooks/useAlbums';
 
 export default function Profile() {
@@ -32,7 +33,7 @@ export default function Profile() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState('all');
+  const [activeTab, setActiveTab] = useState('overview');
   const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
   
   const [isRepositioning, setIsRepositioning] = useState(false);
@@ -233,6 +234,7 @@ export default function Profile() {
   }
 
   const tabItems = [
+    { value: 'overview', label: 'Tout' },
     { value: 'all', label: 'Publications' },
     { value: 'about', label: 'À propos' },
     { value: 'albums', label: 'Albums' },
@@ -489,6 +491,16 @@ export default function Profile() {
 
         {/* Content sections */}
         <div className="px-4 lg:px-6 py-5 space-y-4">
+          {activeTab === 'overview' && (
+            <ProfileOverview
+              profile={profile}
+              isOwnProfile={isOwnProfile}
+              isFriend={friendshipData?.status === 'accepted'}
+              friendsCount={stats?.friendsCount || 0}
+              onNavigateToAbout={() => setActiveTab('about')}
+            />
+          )}
+
           {(activeTab === 'photos' || activeTab === 'reels') && (
             <ProfilePhotoGrid userId={userId!} activeTab={activeTab} />
           )}
@@ -514,7 +526,6 @@ export default function Profile() {
 
           {activeTab === 'all' && (
             <>
-              {/* Publications */}
               {postsLoading ? (
                 <div className="space-y-2">
                   {[1, 2].map((i) => (
