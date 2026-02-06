@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Users, Lock, Globe, Image, X } from 'lucide-react';
 import { useCreateGroup } from '@/hooks/useGroups';
 import {
@@ -20,6 +21,7 @@ interface CreateGroupDialogProps {
 }
 
 export function CreateGroupDialog({ children }: CreateGroupDialogProps) {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -40,7 +42,7 @@ export function CreateGroupDialog({ children }: CreateGroupDialogProps) {
     }
 
     try {
-      await createGroup.mutateAsync({
+      const data = await createGroup.mutateAsync({
         name: name.trim(),
         description: description.trim() || undefined,
         privacy,
@@ -55,6 +57,7 @@ export function CreateGroupDialog({ children }: CreateGroupDialogProps) {
       setDescription('');
       setPrivacy('public');
       setOpen(false);
+      navigate(`/groups/${data.id}`);
     } catch (error) {
       toast({
         title: 'Erreur',

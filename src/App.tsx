@@ -18,7 +18,9 @@ import Settings from "./pages/Settings";
 import Messages from "./pages/Messages";
 import Friends from "./pages/Friends";
 import Groups from "./pages/Groups";
+import GroupDetail from "./pages/GroupDetail";
 import Pages from "./pages/Pages";
+import PageDetail from "./pages/PageDetail";
 import Videos from "./pages/Videos";
 import Lives from "./pages/Lives";
 import LiveWatch from "./pages/LiveWatch";
@@ -52,7 +54,9 @@ const App = () => (
             <Route path="/messages/:conversationId" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
             <Route path="/friends" element={<ProtectedRoute><Friends /></ProtectedRoute>} />
             <Route path="/groups" element={<ProtectedRoute><Groups /></ProtectedRoute>} />
+            <Route path="/groups/:id" element={<ProtectedRoute><GroupDetail /></ProtectedRoute>} />
             <Route path="/pages" element={<ProtectedRoute><Pages /></ProtectedRoute>} />
+            <Route path="/pages/:id" element={<ProtectedRoute><PageDetail /></ProtectedRoute>} />
             <Route path="/videos" element={<ProtectedRoute><Videos /></ProtectedRoute>} />
             <Route path="/lives" element={<ProtectedRoute><Lives /></ProtectedRoute>} />
             <Route path="/live/:id" element={<ProtectedRoute><LiveWatch /></ProtectedRoute>} />

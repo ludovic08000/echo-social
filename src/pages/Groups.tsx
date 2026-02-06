@@ -109,8 +109,9 @@ export default function Groups() {
               </div>
             ) : (
               filteredDiscoverGroups.map(group => (
-                <div
+                <Link
                   key={group.id}
+                  to={`/groups/${group.id}`}
                   className="flex items-start gap-4 p-4 rounded-xl bg-card hover:bg-card/80 transition-colors"
                 >
                   {/* Group cover/icon */}
@@ -144,14 +145,14 @@ export default function Groups() {
 
                   {/* Join button */}
                   <Button
-                    onClick={() => handleJoin(group.id)}
+                    onClick={(e) => { e.preventDefault(); handleJoin(group.id); }}
                     disabled={joinGroup.isPending}
                     size="sm"
                     className="flex-shrink-0"
                   >
                     Rejoindre
                   </Button>
-                </div>
+                </Link>
               ))
             )}
           </TabsContent>
@@ -185,9 +186,10 @@ export default function Groups() {
               </div>
             ) : (
               filteredMyGroups.map(group => (
-                <div
+                <Link
                   key={group.id}
-                  className="flex items-center gap-4 p-4 rounded-xl bg-card hover:bg-card/80 transition-colors cursor-pointer group"
+                  to={`/groups/${group.id}`}
+                  className="flex items-center gap-4 p-4 rounded-xl bg-card hover:bg-card/80 transition-colors group"
                 >
                   {/* Group icon */}
                   <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -219,7 +221,7 @@ export default function Groups() {
                   </div>
 
                   <ChevronRight className="w-5 h-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
+                </Link>
               ))
             )}
           </TabsContent>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { FileText, Image, Globe, Phone, Mail, MapPin, Building2 } from 'lucide-react';
 import { useCreatePage } from '@/hooks/usePages';
 import {
@@ -39,6 +40,7 @@ interface CreatePageDialogProps {
 }
 
 export function CreatePageDialog({ children }: CreatePageDialogProps) {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -63,7 +65,7 @@ export function CreatePageDialog({ children }: CreatePageDialogProps) {
     }
 
     try {
-      await createPage.mutateAsync({
+      const data = await createPage.mutateAsync({
         name: name.trim(),
         description: description.trim() || undefined,
         category,
@@ -87,6 +89,7 @@ export function CreatePageDialog({ children }: CreatePageDialogProps) {
       setEmail('');
       setAddress('');
       setOpen(false);
+      navigate(`/pages/${data.id}`);
     } catch (error) {
       toast({
         title: 'Erreur',
