@@ -234,6 +234,7 @@ export default function Profile() {
 
   const tabItems = [
     { value: 'all', label: 'Publications' },
+    { value: 'about', label: 'À propos' },
     { value: 'albums', label: 'Albums' },
     { value: 'photos', label: 'Photos' },
     { value: 'reels', label: 'Reels' },
@@ -500,44 +501,42 @@ export default function Profile() {
             )
           )}
           
-          {activeTab === 'all' && (
+          {activeTab === 'about' && (
             <>
-              {/* À propos - éditable */}
               <ProfileAboutSection
                 profile={profile}
                 isOwnProfile={isOwnProfile}
                 isFriend={friendshipData?.status === 'accepted'}
               />
-
-              {/* Friends list */}
               <ProfileFriendsList userId={userId!} />
+            </>
+          )}
 
+          {activeTab === 'all' && (
+            <>
               {/* Publications */}
-              <div>
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Publications</h3>
-                {postsLoading ? (
-                  <div className="space-y-2">
-                    {[1, 2].map((i) => (
-                      <div key={i} className="bg-card rounded-xl p-4 animate-pulse">
-                        <div className="h-3 w-full bg-muted rounded-lg" />
-                        <div className="h-3 w-2/3 bg-muted rounded-lg mt-2" />
-                      </div>
-                    ))}
-                  </div>
-                ) : posts?.length === 0 ? (
-                  <div className="premium-card p-8 text-center">
-                    <p className="text-muted-foreground text-xs">
-                      {isOwnProfile ? "Vous n'avez pas encore publié." : 'Aucune publication.'}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {posts?.map((post) => (
-                      <PostCard key={post.id} post={post} onCommentClick={() => navigate(`/post/${post.id}`)} />
-                    ))}
-                  </div>
-                )}
-              </div>
+              {postsLoading ? (
+                <div className="space-y-2">
+                  {[1, 2].map((i) => (
+                    <div key={i} className="bg-card rounded-xl p-4 animate-pulse">
+                      <div className="h-3 w-full bg-muted rounded-lg" />
+                      <div className="h-3 w-2/3 bg-muted rounded-lg mt-2" />
+                    </div>
+                  ))}
+                </div>
+              ) : posts?.length === 0 ? (
+                <div className="premium-card p-8 text-center">
+                  <p className="text-muted-foreground text-xs">
+                    {isOwnProfile ? "Vous n'avez pas encore publié." : 'Aucune publication.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {posts?.map((post) => (
+                    <PostCard key={post.id} post={post} onCommentClick={() => navigate(`/post/${post.id}`)} />
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>
