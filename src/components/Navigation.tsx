@@ -60,7 +60,7 @@ export function MobileNav() {
               )}
             >
               <div className="relative">
-                <item.icon className={cn('w-[22px] h-[22px]', isActive && 'stroke-[2.5]')} />
+                <item.icon className={cn('w-6 h-6', isActive && 'stroke-[2.5]')} />
                 {isActive && (
                   <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary" />
                 )}
