@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
-import { MobileNav, DesktopSidebar } from './Navigation';
+import { MobileNav } from './Navigation';
 import { UserAvatar } from './UserAvatar';
 import { useProfile } from '@/hooks/useProfile';
 import { Settings } from 'lucide-react';
@@ -18,7 +18,7 @@ function MobileHeader() {
   if (!user) return null;
 
   return (
-    <header className="md:hidden sticky top-0 z-40 bg-card/95 backdrop-blur-lg border-b border-border/50 safe-area-pt">
+    <header className="sticky top-0 z-40 bg-card/95 backdrop-blur-lg border-b border-border/50 safe-area-pt">
       <div className="flex items-center justify-between h-14 px-4">
         <Link to="/feed" className="flex items-center gap-2">
           <span className="text-xl font-bold text-gradient">Pulse</span>
@@ -43,8 +43,6 @@ function MobileHeader() {
 export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
   const { user, loading } = useAuth();
 
-  // Note: Auth check is now handled by ProtectedRoute wrapper
-  // This loading state is kept for smooth UX when auth state changes
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -58,9 +56,8 @@ export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      <DesktopSidebar />
       <MobileHeader />
-      <main className="md:ml-64 pb-20 md:pb-0">
+      <main className="pb-20">
         <div className="max-w-2xl mx-auto px-4 py-4">
           {children}
         </div>
