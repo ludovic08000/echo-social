@@ -7,6 +7,10 @@ import { Button } from '@/components/ui/button';
 import { useNavigate, Link } from 'react-router-dom';
 import { Plus, Search, MessageCircle, Menu } from 'lucide-react';
 import { useNotifications } from '@/hooks/useNotifications';
+import { FriendSuggestions } from '@/components/feed/FriendSuggestions';
+import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
+import { FeedReelsSection } from '@/components/feed/FeedReelsSection';
+import { FeedMediaSection } from '@/components/feed/FeedMediaSection';
 
 export default function Feed() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = usePosts();
@@ -63,6 +67,15 @@ export default function Feed() {
           <CreatePost />
         </div>
 
+        {/* Friend Suggestions */}
+        <FriendSuggestions />
+
+        {/* Live Streams */}
+        <FeedLiveSection />
+
+        {/* Reels */}
+        <FeedReelsSection />
+
         {isLoading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
@@ -96,12 +109,15 @@ export default function Feed() {
         ) : (
           <>
             <div className="space-y-3">
-              {posts.map((post) => (
-                <PostCard
-                  key={post.id}
-                  post={post}
-                  onCommentClick={() => navigate(`/post/${post.id}`)}
-                />
+              {posts.map((post, index) => (
+                <div key={post.id}>
+                  <PostCard
+                    post={post}
+                    onCommentClick={() => navigate(`/post/${post.id}`)}
+                  />
+                  {/* Insert media section after 3rd post */}
+                  {index === 2 && <FeedMediaSection />}
+                </div>
               ))}
             </div>
 
