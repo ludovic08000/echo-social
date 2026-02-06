@@ -8,6 +8,8 @@ export interface FieldVisibility {
   city: 'public' | 'friends' | 'only_me';
   education: 'public' | 'friends' | 'only_me';
   work: 'public' | 'friends' | 'only_me';
+  relationship_status: 'public' | 'friends' | 'only_me';
+  interests: 'public' | 'friends' | 'only_me';
 }
 
 export interface Profile {
@@ -25,6 +27,8 @@ export interface Profile {
   education_level: string | null;
   education_city: string | null;
   work: string | null;
+  relationship_status: string | null;
+  interests: string[] | null;
   field_visibility: FieldVisibility | null;
   created_at: string;
   updated_at: string;
@@ -61,7 +65,7 @@ export function useUpdateProfile() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async (updates: Partial<Pick<Profile, 'name' | 'bio' | 'avatar_url' | 'cover_url' | 'cover_position_y' | 'city' | 'website_url' | 'education_level' | 'education_city' | 'date_of_birth' | 'work' | 'field_visibility'>>) => {
+    mutationFn: async (updates: Partial<Pick<Profile, 'name' | 'bio' | 'avatar_url' | 'cover_url' | 'cover_position_y' | 'city' | 'website_url' | 'education_level' | 'education_city' | 'date_of_birth' | 'work' | 'relationship_status' | 'interests' | 'field_visibility'>>) => {
       if (!user) throw new Error('Not authenticated');
 
       // Cast field_visibility for Supabase compatibility

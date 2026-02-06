@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { MapPin, Cake, GraduationCap, Briefcase, Mail, Users, Globe, Lock, Check, ChevronRight } from 'lucide-react';
+import { MapPin, Cake, GraduationCap, Briefcase, Mail, Users, Globe, Lock, Check, ChevronRight, Heart, Sparkles } from 'lucide-react';
 import { Profile, FieldVisibility } from '@/hooks/useProfile';
 import { UserAvatar } from '@/components/UserAvatar';
 import { FriendshipButton } from '@/components/FriendshipButton';
@@ -95,6 +95,8 @@ export function ProfileOverview({ profile, isOwnProfile, isFriend, friendsCount,
     city: 'public',
     education: 'public',
     work: 'public',
+    relationship_status: 'public',
+    interests: 'public',
   };
 
   const canSeeField = useCallback((visKey: keyof FieldVisibility) => {
@@ -173,6 +175,20 @@ export function ProfileOverview({ profile, isOwnProfile, isFriend, friendsCount,
       value: profile.education_level
         ? `${profile.education_level}${profile.education_city ? ` à ${profile.education_city}` : ''}`
         : null,
+    },
+    {
+      key: 'relationship_status',
+      visKey: 'relationship_status' as keyof FieldVisibility,
+      icon: <Heart className="w-4 h-4" />,
+      label: 'Situation amoureuse',
+      value: profile.relationship_status,
+    },
+    {
+      key: 'interests',
+      visKey: 'interests' as keyof FieldVisibility,
+      icon: <Sparkles className="w-4 h-4" />,
+      label: 'Centres d\'intérêt',
+      value: profile.interests && profile.interests.length > 0 ? profile.interests.join(', ') : null,
     },
   ];
 

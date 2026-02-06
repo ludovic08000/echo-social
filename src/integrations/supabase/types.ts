@@ -1253,8 +1253,10 @@ export type Database = {
           education_level: string | null
           field_visibility: Json | null
           id: string
+          interests: string[] | null
           name: string
           profile_type: string | null
+          relationship_status: string | null
           updated_at: string
           user_id: string
           website_url: string | null
@@ -1272,8 +1274,10 @@ export type Database = {
           education_level?: string | null
           field_visibility?: Json | null
           id?: string
+          interests?: string[] | null
           name: string
           profile_type?: string | null
+          relationship_status?: string | null
           updated_at?: string
           user_id: string
           website_url?: string | null
@@ -1291,8 +1295,10 @@ export type Database = {
           education_level?: string | null
           field_visibility?: Json | null
           id?: string
+          interests?: string[] | null
           name?: string
           profile_type?: string | null
+          relationship_status?: string | null
           updated_at?: string
           user_id?: string
           website_url?: string | null

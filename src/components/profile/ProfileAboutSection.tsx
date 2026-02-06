@@ -1,9 +1,10 @@
 import { useState, useCallback } from 'react';
-import { MapPin, Cake, GraduationCap, Briefcase, Calendar, Link2, Globe, Users, Lock, Pencil, Check, X, ChevronRight } from 'lucide-react';
+import { MapPin, Cake, GraduationCap, Briefcase, Calendar, Link2, Globe, Users, Lock, Pencil, Check, X, ChevronRight, Heart, Sparkles } from 'lucide-react';
 import { Profile, FieldVisibility, useUpdateProfile } from '@/hooks/useProfile';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -63,6 +64,22 @@ const fields: AboutField[] = [
     },
     placeholder: 'Niveau d\'études',
   },
+  {
+    key: 'relationship_status',
+    visibilityKey: 'relationship_status',
+    icon: <Heart className="w-[18px] h-[18px]" />,
+    label: 'Situation amoureuse',
+    getValue: (p) => p.relationship_status || '',
+    placeholder: 'Votre statut',
+  },
+  {
+    key: 'interests',
+    visibilityKey: 'interests',
+    icon: <Sparkles className="w-[18px] h-[18px]" />,
+    label: 'Centres d\'intérêt',
+    getValue: (p) => (p.interests || []).join(', '),
+    placeholder: 'Ex: Sport, Musique, Cuisine',
+  },
 ];
 
 function formatDateDisplay(dateStr: string) {
@@ -85,11 +102,13 @@ export function ProfileAboutSection({ profile, isOwnProfile, isFriend }: Profile
   const updateProfile = useUpdateProfile();
   const queryClient = useQueryClient();
 
-  const visibility = profile.field_visibility || {
+  const visibility: FieldVisibility = profile.field_visibility || {
     date_of_birth: 'public',
     city: 'public',
     education: 'public',
     work: 'public',
+    relationship_status: 'public',
+    interests: 'public',
   };
 
   const canSeeField = useCallback((visKey: keyof FieldVisibility) => {
@@ -131,6 +150,10 @@ export function ProfileAboutSection({ profile, isOwnProfile, isFriend }: Profile
           return;
         }
         await updateProfile.mutateAsync({ date_of_birth: val } as any);
+      } else if (field.key === 'interests') {
+        const raw = editValues.interests?.trim() || '';
+        const arr = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
+        await updateProfile.mutateAsync({ interests: arr.length > 0 ? arr : null } as any);
       } else {
         await updateProfile.mutateAsync({ [field.key]: editValues[field.key]?.trim() || null } as any);
       }
@@ -166,6 +189,12 @@ export function ProfileAboutSection({ profile, isOwnProfile, isFriend }: Profile
     }
     if (field.key === 'work') return profile.work || null;
     if (field.key === 'city') return profile.city || null;
+    if (field.key === 'relationship_status') return profile.relationship_status || null;
+    if (field.key === 'interests') {
+      const arr = profile.interests;
+      if (!arr || arr.length === 0) return null;
+      return arr.join(', ');
+    }
     return null;
   };
 
@@ -224,6 +253,35 @@ export function ProfileAboutSection({ profile, isOwnProfile, isFriend }: Profile
                       onChange={e => setEditValues(v => ({ ...v, date_of_birth: e.target.value }))}
                       className="h-10 text-sm rounded-xl bg-background/80 border-border/50 focus:border-primary/50"
                     />
+                  ) : field.key === 'relationship_status' ? (
+                    <Select
+                      value={editValues.relationship_status || ''}
+                      onValueChange={val => setEditValues(v => ({ ...v, relationship_status: val }))}
+                    >
+                      <SelectTrigger className="h-10 text-sm rounded-xl bg-background/80 border-border/50">
+                        <SelectValue placeholder="Choisir un statut" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Célibataire">Célibataire</SelectItem>
+                        <SelectItem value="En couple">En couple</SelectItem>
+                        <SelectItem value="Marié(e)">Marié(e)</SelectItem>
+                        <SelectItem value="Fiancé(e)">Fiancé(e)</SelectItem>
+                        <SelectItem value="Divorcé(e)">Divorcé(e)</SelectItem>
+                        <SelectItem value="Veuf/Veuve">Veuf/Veuve</SelectItem>
+                        <SelectItem value="C'est compliqué">C'est compliqué</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : field.key === 'interests' ? (
+                    <div className="space-y-1.5">
+                      <Input
+                        value={editValues.interests || ''}
+                        onChange={e => setEditValues(v => ({ ...v, interests: e.target.value }))}
+                        placeholder="Sport, Musique, Cuisine, Voyage..."
+                        className="h-10 text-sm rounded-xl bg-background/80 border-border/50 focus:border-primary/50"
+                        maxLength={200}
+                      />
+                      <p className="text-[10px] text-muted-foreground/60">Séparez par des virgules</p>
+                    </div>
                   ) : (
                     <Input
                       value={editValues[field.key] || ''}
