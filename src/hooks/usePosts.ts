@@ -10,9 +10,11 @@ export interface Post {
   body: string;
   image_url: string | null;
   created_at: string;
+  expires_at?: string | null;
   profile: {
     name: string;
     avatar_url: string | null;
+    mood_emoji?: string | null;
   };
   likes_count: number;
   comments_count: number;
@@ -95,6 +97,8 @@ export function usePosts() {
       // Include current user + friends
       const allowedUserIds = [user.id, ...friendIds];
 
+      const now = new Date().toISOString();
+
       const { data: posts, error } = await supabase
         .from('posts')
         .select(`
@@ -102,9 +106,11 @@ export function usePosts() {
           user_id,
           body,
           image_url,
-          created_at
+          created_at,
+          expires_at
         `)
         .in('user_id', allowedUserIds)
+        .or(`expires_at.is.null,expires_at.gt.${now}`)
         .order('created_at', { ascending: false })
         .range(from, to);
 
@@ -114,7 +120,7 @@ export function usePosts() {
       const userIds = [...new Set(posts.map(p => p.user_id))];
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('user_id, name, avatar_url')
+        .select('user_id, name, avatar_url, mood_emoji')
         .in('user_id', userIds);
 
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
@@ -155,9 +161,11 @@ export function usePosts() {
           body: post.body,
           image_url: post.image_url,
           created_at: post.created_at,
+          expires_at: (post as any).expires_at || null,
           profile: {
             name: profile?.name || 'Unknown',
             avatar_url: profile?.avatar_url || null,
+            mood_emoji: (profile as any)?.mood_emoji || null,
           },
           likes_count: likesCount[post.id] || 0,
           comments_count: commentsCount[post.id] || 0,
@@ -188,7 +196,8 @@ export function useUserPosts(userId: string) {
           user_id,
           body,
           image_url,
-          created_at
+          created_at,
+          expires_at
         `)
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
@@ -198,7 +207,7 @@ export function useUserPosts(userId: string) {
       // Get profile info
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('user_id, name, avatar_url')
+        .select('user_id, name, avatar_url, mood_emoji')
         .eq('user_id', userId)
         .maybeSingle();
 
@@ -236,9 +245,11 @@ export function useUserPosts(userId: string) {
           body: post.body,
           image_url: post.image_url,
           created_at: post.created_at,
+          expires_at: (post as any).expires_at || null,
           profile: {
             name: profileData?.name || 'Unknown',
             avatar_url: profileData?.avatar_url || null,
+            mood_emoji: (profileData as any)?.mood_emoji || null,
           },
           likes_count: likesCount[post.id] || 0,
           comments_count: commentsCount[post.id] || 0,
@@ -256,16 +267,19 @@ export function useCreatePost() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async ({ body, imageUrl }: { body: string; imageUrl?: string }) => {
+    mutationFn: async ({ body, imageUrl, expiresAt }: { body: string; imageUrl?: string; expiresAt?: string }) => {
       if (!user) throw new Error('Not authenticated');
+
+      const insertData: any = {
+        user_id: user.id,
+        body,
+        image_url: imageUrl || null,
+      };
+      if (expiresAt) insertData.expires_at = expiresAt;
 
       const { data, error } = await supabase
         .from('posts')
-        .insert({
-          user_id: user.id,
-          body,
-          image_url: imageUrl || null,
-        })
+        .insert(insertData)
         .select()
         .single();
 

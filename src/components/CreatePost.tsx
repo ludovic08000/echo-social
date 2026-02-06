@@ -1,12 +1,25 @@
 import { useState, useRef } from 'react';
-import { Image, Video, X, Send } from 'lucide-react';
+import { Image, Video, X, Send, Timer } from 'lucide-react';
 import { useCreatePost } from '@/hooks/usePosts';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { UserAvatar } from './UserAvatar';
+import { MoodPicker } from './MoodPicker';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+
+const EXPIRY_OPTIONS = [
+  { label: '1h', value: 1, description: '1 heure' },
+  { label: '6h', value: 6, description: '6 heures' },
+  { label: '24h', value: 24, description: '24 heures' },
+];
 
 export function CreatePost() {
   const { user } = useAuth();
@@ -18,6 +31,7 @@ export function CreatePost() {
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video' | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [expiryHours, setExpiryHours] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -76,15 +90,26 @@ export function CreatePost() {
         imageUrl = urlData.publicUrl;
       }
 
-      await createPost.mutateAsync({ body: body.trim(), imageUrl });
+      // Calculate expires_at if ephemeral
+      let expiresAt: string | undefined;
+      if (expiryHours) {
+        const date = new Date();
+        date.setHours(date.getHours() + expiryHours);
+        expiresAt = date.toISOString();
+      }
+
+      await createPost.mutateAsync({ body: body.trim(), imageUrl, expiresAt });
       
       setBody('');
       removeMedia();
       setExpanded(false);
+      setExpiryHours(null);
       
       toast({
-        title: 'Post publié !',
-        description: 'Votre post a été partagé avec succès',
+        title: expiryHours ? `⏳ Post éphémère publié (${expiryHours}h)` : 'Post publié !',
+        description: expiryHours 
+          ? `Ce post disparaîtra dans ${expiryHours} heure${expiryHours > 1 ? 's' : ''}`
+          : 'Votre post a été partagé avec succès',
       });
     } catch (error) {
       toast({
@@ -102,10 +127,20 @@ export function CreatePost() {
   return (
     <div className="premium-card p-4">
       <div className="flex gap-3 items-start">
-        <UserAvatar src={profile?.avatar_url} alt={profile?.name} size="md" />
+        <UserAvatar 
+          src={profile?.avatar_url} 
+          alt={profile?.name} 
+          size="md" 
+          moodEmoji={(profile as any)?.mood_emoji}
+        />
         
         <div className="flex-1 min-w-0">
-          {/* Collapsed state — simple clickable input */}
+          {/* Mood picker + Name */}
+          <div className="flex items-center gap-2 mb-2">
+            <MoodPicker />
+          </div>
+
+          {/* Collapsed state */}
           {!expanded ? (
             <button
               onClick={() => {
@@ -126,6 +161,19 @@ export function CreatePost() {
                 className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none outline-none min-h-[80px] leading-relaxed"
                 autoFocus
               />
+
+              {/* Ephemeral badge */}
+              {expiryHours && (
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[11px] font-medium border border-amber-500/20">
+                    <Timer className="w-3 h-3" />
+                    Post éphémère · {expiryHours}h
+                    <button onClick={() => setExpiryHours(null)} className="ml-1 hover:text-foreground">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                </div>
+              )}
               
               {mediaPreview && (
                 <div className="relative mt-2 rounded-xl overflow-hidden">
@@ -166,6 +214,49 @@ export function CreatePost() {
                   >
                     <Video className="w-[18px] h-[18px]" />
                   </Button>
+                  
+                  {/* Ephemeral post timer */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          "h-9 w-9 rounded-full",
+                          expiryHours 
+                            ? "text-amber-500 bg-amber-500/10" 
+                            : "text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10"
+                        )}
+                      >
+                        <Timer className="w-[18px] h-[18px]" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="w-48 p-2 rounded-xl">
+                      <p className="text-xs font-semibold mb-2 px-2">Post éphémère ⏳</p>
+                      {EXPIRY_OPTIONS.map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => setExpiryHours(opt.value)}
+                          className={cn(
+                            "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                            expiryHours === opt.value 
+                              ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 font-medium" 
+                              : "hover:bg-secondary/60 text-foreground"
+                          )}
+                        >
+                          {opt.description}
+                        </button>
+                      ))}
+                      {expiryHours && (
+                        <button
+                          onClick={() => setExpiryHours(null)}
+                          className="w-full text-left px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-secondary/60"
+                        >
+                          Annuler le minuteur
+                        </button>
+                      )}
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 
                 <Button
@@ -207,6 +298,16 @@ export function CreatePost() {
           >
             <Video className="w-4 h-4 text-destructive/70" />
             <span>Vidéo</span>
+          </button>
+          <button
+            onClick={() => {
+              setExpanded(true);
+              setExpiryHours(1);
+            }}
+            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-amber-500 transition-colors py-1"
+          >
+            <Timer className="w-4 h-4 text-amber-500/70" />
+            <span>Éphémère</span>
           </button>
         </div>
       )}

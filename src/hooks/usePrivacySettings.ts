@@ -14,6 +14,9 @@ export interface PrivacySettings {
   likes_visibility: 'public' | 'friends' | 'private';
   search_engine_indexing: boolean;
   analytics_enabled: boolean;
+  ghost_mode: boolean;
+  detox_schedule: any | null;
+  daily_limit_minutes: number | null;
   created_at: string;
   updated_at: string;
 }

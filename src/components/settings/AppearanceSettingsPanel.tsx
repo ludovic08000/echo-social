@@ -41,6 +41,9 @@ export function AppearanceSettingsPanel() {
   const [animationsEnabled, setAnimationsEnabled] = useState(() => {
     return localStorage.getItem('animations-disabled') !== 'true';
   });
+  const [dynamicTheme, setDynamicTheme] = useState(() => {
+    return localStorage.getItem('dynamic-theme') === 'true';
+  });
 
   useEffect(() => {
     const root = document.documentElement;
@@ -78,6 +81,35 @@ export function AppearanceSettingsPanel() {
     document.documentElement.classList.toggle('no-animations', !animationsEnabled);
     localStorage.setItem('animations-disabled', String(!animationsEnabled));
   }, [animationsEnabled]);
+
+  // Dynamic theme - auto switch based on time of day
+  useEffect(() => {
+    localStorage.setItem('dynamic-theme', String(dynamicTheme));
+    if (!dynamicTheme) return;
+
+    const applyDynamicTheme = () => {
+      const hour = new Date().getHours();
+      const root = document.documentElement;
+      if (hour >= 6 && hour < 18) {
+        root.classList.remove('dark');
+        root.classList.add('light');
+      } else {
+        root.classList.remove('light');
+        root.classList.add('dark');
+      }
+    };
+
+    applyDynamicTheme();
+    const interval = setInterval(applyDynamicTheme, 60000); // check every minute
+    return () => clearInterval(interval);
+  }, [dynamicTheme]);
+
+  const handleDynamicThemeToggle = (enabled: boolean) => {
+    setDynamicTheme(enabled);
+    if (enabled) {
+      setThemeMode('system'); // reset manual mode
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -148,6 +180,13 @@ export function AppearanceSettingsPanel() {
       </div>
 
       <div className="space-y-1">
+        <div className="flex items-center justify-between p-3 rounded-xl hover:bg-secondary/30 transition-colors">
+          <div>
+            <Label className="text-sm font-medium">🌗 Thème dynamique</Label>
+            <p className="text-[11px] text-muted-foreground/70 mt-0.5">Change automatiquement selon l'heure (clair le jour, sombre la nuit)</p>
+          </div>
+          <Switch checked={dynamicTheme} onCheckedChange={handleDynamicThemeToggle} />
+        </div>
         <div className="flex items-center justify-between p-3 rounded-xl hover:bg-secondary/30 transition-colors">
           <div>
             <Label className="text-sm font-medium">{t('appearance.compactMode')}</Label>

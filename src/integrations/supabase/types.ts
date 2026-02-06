@@ -121,6 +121,33 @@ export type Database = {
         }
         Relationships: []
       }
+      anonymous_wall_messages: {
+        Row: {
+          author_id: string
+          created_at: string
+          id: string
+          is_approved: boolean
+          message: string
+          target_user_id: string
+        }
+        Insert: {
+          author_id: string
+          created_at?: string
+          id?: string
+          is_approved?: boolean
+          message: string
+          target_user_id: string
+        }
+        Update: {
+          author_id?: string
+          created_at?: string
+          id?: string
+          is_approved?: boolean
+          message?: string
+          target_user_id?: string
+        }
+        Relationships: []
+      }
       cart_items: {
         Row: {
           created_at: string
@@ -155,6 +182,109 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      challenge_participants: {
+        Row: {
+          challenge_id: string
+          id: string
+          joined_at: string
+          user_id: string
+        }
+        Insert: {
+          challenge_id: string
+          id?: string
+          joined_at?: string
+          user_id: string
+        }
+        Update: {
+          challenge_id?: string
+          id?: string
+          joined_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "challenge_participants_challenge_id_fkey"
+            columns: ["challenge_id"]
+            isOneToOne: false
+            referencedRelation: "challenges"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      challenge_submissions: {
+        Row: {
+          challenge_id: string
+          content: string | null
+          created_at: string
+          id: string
+          image_url: string | null
+          user_id: string
+          votes: number
+        }
+        Insert: {
+          challenge_id: string
+          content?: string | null
+          created_at?: string
+          id?: string
+          image_url?: string | null
+          user_id: string
+          votes?: number
+        }
+        Update: {
+          challenge_id?: string
+          content?: string | null
+          created_at?: string
+          id?: string
+          image_url?: string | null
+          user_id?: string
+          votes?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "challenge_submissions_challenge_id_fkey"
+            columns: ["challenge_id"]
+            isOneToOne: false
+            referencedRelation: "challenges"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      challenges: {
+        Row: {
+          challenge_type: string
+          created_at: string
+          creator_id: string
+          description: string | null
+          ends_at: string
+          id: string
+          image_url: string | null
+          starts_at: string
+          title: string
+        }
+        Insert: {
+          challenge_type?: string
+          created_at?: string
+          creator_id: string
+          description?: string | null
+          ends_at: string
+          id?: string
+          image_url?: string | null
+          starts_at?: string
+          title: string
+        }
+        Update: {
+          challenge_type?: string
+          created_at?: string
+          creator_id?: string
+          description?: string | null
+          ends_at?: string
+          id?: string
+          image_url?: string | null
+          starts_at?: string
+          title?: string
+        }
+        Relationships: []
       }
       comments: {
         Row: {
@@ -451,6 +581,36 @@ export type Database = {
           name?: string
           privacy?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      journal_entries: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          mood: string | null
+          title: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          mood?: string | null
+          title?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          mood?: string | null
+          title?: string | null
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -1003,22 +1163,28 @@ export type Database = {
         Row: {
           body: string
           created_at: string
+          expires_at: string | null
           id: string
           image_url: string | null
+          publish_at: string | null
           user_id: string
         }
         Insert: {
           body: string
           created_at?: string
+          expires_at?: string | null
           id?: string
           image_url?: string | null
+          publish_at?: string | null
           user_id: string
         }
         Update: {
           body?: string
           created_at?: string
+          expires_at?: string | null
           id?: string
           image_url?: string | null
+          publish_at?: string | null
           user_id?: string
         }
         Relationships: []
@@ -1028,7 +1194,10 @@ export type Database = {
           analytics_enabled: boolean
           comments_allowed: string
           created_at: string
+          daily_limit_minutes: number | null
+          detox_schedule: Json | null
           friends_list_visibility: string
+          ghost_mode: boolean
           id: string
           likes_visibility: string
           messages_allowed: string
@@ -1043,7 +1212,10 @@ export type Database = {
           analytics_enabled?: boolean
           comments_allowed?: string
           created_at?: string
+          daily_limit_minutes?: number | null
+          detox_schedule?: Json | null
           friends_list_visibility?: string
+          ghost_mode?: boolean
           id?: string
           likes_visibility?: string
           messages_allowed?: string
@@ -1058,7 +1230,10 @@ export type Database = {
           analytics_enabled?: boolean
           comments_allowed?: string
           created_at?: string
+          daily_limit_minutes?: number | null
+          detox_schedule?: Json | null
           friends_list_visibility?: string
+          ghost_mode?: boolean
           id?: string
           likes_visibility?: string
           messages_allowed?: string
@@ -1254,7 +1429,11 @@ export type Database = {
           field_visibility: Json | null
           id: string
           interests: string[] | null
+          mood_emoji: string | null
+          mood_text: string | null
+          mood_updated_at: string | null
           name: string
+          profile_music_url: string | null
           profile_type: string | null
           relationship_status: string | null
           updated_at: string
@@ -1275,7 +1454,11 @@ export type Database = {
           field_visibility?: Json | null
           id?: string
           interests?: string[] | null
+          mood_emoji?: string | null
+          mood_text?: string | null
+          mood_updated_at?: string | null
           name: string
+          profile_music_url?: string | null
           profile_type?: string | null
           relationship_status?: string | null
           updated_at?: string
@@ -1296,7 +1479,11 @@ export type Database = {
           field_visibility?: Json | null
           id?: string
           interests?: string[] | null
+          mood_emoji?: string | null
+          mood_text?: string | null
+          mood_updated_at?: string | null
           name?: string
+          profile_music_url?: string | null
           profile_type?: string | null
           relationship_status?: string | null
           updated_at?: string
