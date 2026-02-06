@@ -1,5 +1,7 @@
-import { User, Palette, Heart, Brain, Accessibility, Users, FileText, Shield, Bell, ChevronRight } from 'lucide-react';
+import { User, Palette, Heart, Brain, Accessibility, Users, FileText, Shield, Bell, ChevronRight, LogOut } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
+import { useAuth } from '@/lib/auth';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 
 interface SettingsMenuGridProps {
@@ -21,6 +23,13 @@ const iconColors: Record<string, string> = {
 
 export function SettingsMenuGrid({ activeTab, onTabChange }: SettingsMenuGridProps) {
   const { t } = useTranslation();
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/login');
+  };
 
   const tabs = [
     { id: 'profile', label: t('settings.profile'), desc: t('settings.profileDesc'), icon: User },
@@ -74,6 +83,21 @@ export function SettingsMenuGrid({ activeTab, onTabChange }: SettingsMenuGridPro
           )} />
         </button>
       ))}
+
+      {/* Sign out button */}
+      <button
+        onClick={handleSignOut}
+        className="group flex items-center gap-3.5 w-full p-3.5 rounded-2xl text-left transition-all duration-200 bg-card border border-destructive/20 hover:border-destructive/40 hover:shadow-md active:scale-[0.98] mt-4"
+      >
+        <div className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center bg-destructive/10 text-destructive">
+          <LogOut className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-destructive">Se déconnecter</p>
+          <p className="text-xs text-muted-foreground truncate mt-0.5">Quitter votre compte</p>
+        </div>
+        <ChevronRight className="w-4 h-4 text-destructive/50 group-hover:translate-x-0.5 transition-all duration-200 flex-shrink-0" />
+      </button>
     </div>
   );
 }
