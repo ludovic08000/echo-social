@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Image, X, Send } from 'lucide-react';
+import { Image, Video, X, Send } from 'lucide-react';
 import { useCreatePost } from '@/hooks/usePosts';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
@@ -14,37 +14,41 @@ export function CreatePost() {
   const { data: profile } = useProfile();
   const createPost = useCreatePost();
   const [body, setBody] = useState('');
-  const [image, setImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [media, setMedia] = useState<File | null>(null);
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+  const [mediaType, setMediaType] = useState<'image' | 'video' | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video') => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
+      const maxSize = type === 'video' ? 50 * 1024 * 1024 : 5 * 1024 * 1024;
+      if (file.size > maxSize) {
         toast({
-          title: 'Image trop volumineuse',
-          description: 'La taille maximale est de 5 Mo',
+          title: 'Fichier trop volumineux',
+          description: type === 'video' ? 'Taille max : 50 Mo' : 'Taille max : 5 Mo',
           variant: 'destructive',
         });
         return;
       }
-      setImage(file);
-      setImagePreview(URL.createObjectURL(file));
+      setMedia(file);
+      setMediaType(type);
+      setMediaPreview(URL.createObjectURL(file));
     }
   };
 
-  const removeImage = () => {
-    setImage(null);
-    setImagePreview(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+  const removeMedia = () => {
+    setMedia(null);
+    setMediaPreview(null);
+    setMediaType(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (videoInputRef.current) videoInputRef.current.value = '';
   };
 
   const handleSubmit = async () => {
-    if (!body.trim() && !image) return;
+    if (!body.trim() && !media) return;
     if (!user) return;
 
     setIsUploading(true);
@@ -52,18 +56,19 @@ export function CreatePost() {
     try {
       let imageUrl: string | undefined;
 
-      if (image) {
-        const fileExt = image.name.split('.').pop();
+      if (media) {
+        const fileExt = media.name.split('.').pop();
+        const bucket = mediaType === 'video' ? 'videos' : 'post-images';
         const filePath = `${user.id}/${Date.now()}.${fileExt}`;
 
         const { error: uploadError } = await supabase.storage
-          .from('post-images')
-          .upload(filePath, image);
+          .from(bucket)
+          .upload(filePath, media);
 
         if (uploadError) throw uploadError;
 
         const { data: urlData } = supabase.storage
-          .from('post-images')
+          .from(bucket)
           .getPublicUrl(filePath);
 
         imageUrl = urlData.publicUrl;
@@ -72,7 +77,7 @@ export function CreatePost() {
       await createPost.mutateAsync({ body: body.trim(), imageUrl });
       
       setBody('');
-      removeImage();
+      removeMedia();
       
       toast({
         title: 'Post publié !',
@@ -104,17 +109,25 @@ export function CreatePost() {
             className="pulse-input min-h-[80px] resize-none border-0 p-0 text-base focus:ring-0"
           />
           
-          {imagePreview && (
+          {mediaPreview && (
             <div className="relative mt-3 rounded-xl overflow-hidden">
-              <img
-                src={imagePreview}
-                alt="Aperçu"
-                className="w-full max-h-64 object-cover"
-              />
+              {mediaType === 'video' ? (
+                <video
+                  src={mediaPreview}
+                  controls
+                  className="w-full max-h-64 object-cover"
+                />
+              ) : (
+                <img
+                  src={mediaPreview}
+                  alt="Aperçu"
+                  className="w-full max-h-64 object-cover"
+                />
+              )}
               <Button
                 variant="secondary"
                 size="icon"
-                onClick={removeImage}
+                onClick={removeMedia}
                 className="absolute top-2 right-2 h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm"
               >
                 <X className="w-4 h-4" />
@@ -126,23 +139,40 @@ export function CreatePost() {
             <input
               type="file"
               ref={fileInputRef}
-              onChange={handleImageChange}
+              onChange={(e) => handleFileChange(e, 'image')}
               accept="image/*"
               className="hidden"
             />
+            <input
+              type="file"
+              ref={videoInputRef}
+              onChange={(e) => handleFileChange(e, 'video')}
+              accept="video/*"
+              className="hidden"
+            />
             
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-              className="text-muted-foreground hover:text-primary"
-            >
-              <Image className="w-5 h-5" />
-            </Button>
+            <div className="flex gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                className="text-muted-foreground hover:text-primary"
+              >
+                <Image className="w-5 h-5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => videoInputRef.current?.click()}
+                className="text-muted-foreground hover:text-primary"
+              >
+                <Video className="w-5 h-5" />
+              </Button>
+            </div>
             
             <Button
               onClick={handleSubmit}
-              disabled={(!body.trim() && !image) || isUploading}
+              disabled={(!body.trim() && !media) || isUploading}
               className="pulse-button-gradient h-9 px-4"
             >
               {isUploading ? (
