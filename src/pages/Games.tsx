@@ -13,7 +13,7 @@ const GAMES = [
   { id: 'chess', label: '♟️ Échecs', component: ChessGame },
   { id: 'checkers', label: '🔴 Dames', component: CheckersGame },
   { id: 'tictactoe', label: '❌ Morpion', component: TicTacToeGame },
-  { id: 'connect4', label: '🟡 Puissance 4', component: Connect4Game },
+  { id: 'connect4', label: '🟡 P4', component: Connect4Game },
 ];
 
 export default function Games() {
@@ -34,15 +34,19 @@ export default function Games() {
         </header>
 
         <Tabs value={activeGame} onValueChange={setActiveGame}>
-          <TabsList className="w-full grid grid-cols-4 mb-4 h-auto p-1 rounded-xl">
+          <TabsList className="w-full grid grid-cols-4 mb-4 h-auto p-1 rounded-xl bg-muted/50">
             {GAMES.map(g => (
-              <TabsTrigger key={g.id} value={g.id} className="text-xs py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <TabsTrigger
+                key={g.id}
+                value={g.id}
+                className="text-xs py-2.5 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all"
+              >
                 {g.label}
               </TabsTrigger>
             ))}
           </TabsList>
           {GAMES.map(g => (
-            <TabsContent key={g.id} value={g.id}>
+            <TabsContent key={g.id} value={g.id} className="mt-0">
               <g.component />
             </TabsContent>
           ))}
