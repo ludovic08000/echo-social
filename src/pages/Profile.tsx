@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X } from 'lucide-react';
+import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
@@ -19,6 +19,7 @@ import { generateProfileUrl } from '@/lib/urlUtils';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { Loader2 } from 'lucide-react';
 import { AvatarCropper } from '@/components/AvatarCropper';
+import { ProfilePhotoGrid } from '@/components/profile/ProfilePhotoGrid';
 
 export default function Profile() {
   const { id } = useParams<{ id: string }>();
@@ -461,9 +462,16 @@ export default function Profile() {
               <div>
                 <h1 className="text-2xl font-bold">{profile.name}</h1>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-                  <span><strong className="text-foreground">{stats?.friendsCount || 0}</strong> amis</span>
+                  <Link to="/friends" className="hover:underline">
+                    <span className="flex items-center gap-1">
+                      <Users className="w-3.5 h-3.5" />
+                      <strong className="text-foreground">{stats?.friendsCount || 0}</strong> amis
+                    </span>
+                  </Link>
                   <span>•</span>
                   <span><strong className="text-foreground">{stats?.postsCount || 0}</strong> publications</span>
+                  <span>•</span>
+                  <span><strong className="text-foreground">{stats?.likesReceived || 0}</strong> j'aime</span>
                 </div>
               </div>
               <ChevronDown className="w-6 h-6 text-muted-foreground mt-2" />
@@ -578,83 +586,91 @@ export default function Profile() {
 
         {/* Content sections */}
         <div className="px-4 py-4 space-y-4">
-          {/* Personal Info Section */}
-          <div className="pulse-card p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold">Informations personnelles</h3>
-              {isOwnProfile && (
-                <Link to="/settings">
-                  <Edit2 className="w-5 h-5 text-muted-foreground hover:text-foreground transition-colors" />
-                </Link>
-              )}
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 text-sm">
-                <MapPin className="w-5 h-5 text-muted-foreground" />
-                <span>{profile.city || 'France'}</span>
+          {/* Photo/Video Grid */}
+          {(activeTab === 'photos' || activeTab === 'reels') && (
+            <ProfilePhotoGrid userId={userId!} activeTab={activeTab} />
+          )}
+          {/* Personal Info Section - only show on "all" tab */}
+          {activeTab === 'all' && (
+            <>
+              <div className="pulse-card p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold">Informations personnelles</h3>
+                  {isOwnProfile && (
+                    <Link to="/settings">
+                      <Edit2 className="w-5 h-5 text-muted-foreground hover:text-foreground transition-colors" />
+                    </Link>
+                  )}
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 text-sm">
+                    <MapPin className="w-5 h-5 text-muted-foreground" />
+                    <span>{profile.city || 'France'}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm">
+                    <Calendar className="w-5 h-5 text-muted-foreground" />
+                    <span>Membre depuis {new Date(profile.created_at).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-3 text-sm">
-                <Calendar className="w-5 h-5 text-muted-foreground" />
-                <span>Membre depuis {new Date(profile.created_at).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</span>
-              </div>
-            </div>
-          </div>
 
-          {/* Links Section */}
-          <div className="pulse-card p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold">Liens</h3>
-              {isOwnProfile && (
-                <Link to="/settings">
-                  <Edit2 className="w-5 h-5 text-muted-foreground hover:text-foreground transition-colors" />
-                </Link>
-              )}
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 text-sm">
-                <Link2 className="w-5 h-5 text-muted-foreground" />
-                {profile.website_url ? (
-                  <a href={profile.website_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                    {profile.website_url.replace(/^https?:\/\//, '')}
-                  </a>
+              {/* Links Section */}
+              <div className="pulse-card p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold">Liens</h3>
+                  {isOwnProfile && (
+                    <Link to="/settings">
+                      <Edit2 className="w-5 h-5 text-muted-foreground hover:text-foreground transition-colors" />
+                    </Link>
+                  )}
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 text-sm">
+                    <Link2 className="w-5 h-5 text-muted-foreground" />
+                    {profile.website_url ? (
+                      <a href={profile.website_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                        {profile.website_url.replace(/^https?:\/\//, '')}
+                      </a>
+                    ) : (
+                      <a href="#" className="text-primary hover:underline">pulse.app/{profile.name.toLowerCase().replace(/\s+/g, '')}</a>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Publications */}
+              <div>
+                <h3 className="font-semibold text-muted-foreground mb-4">Publications</h3>
+
+                {postsLoading ? (
+                  <div className="space-y-4">
+                    {[1, 2].map((i) => (
+                      <div key={i} className="pulse-card p-5 animate-pulse">
+                        <div className="h-4 w-full bg-muted rounded" />
+                        <div className="h-4 w-2/3 bg-muted rounded mt-2" />
+                      </div>
+                    ))}
+                  </div>
+                ) : posts?.length === 0 ? (
+                  <div className="pulse-card p-8 text-center">
+                    <p className="text-muted-foreground">
+                      {isOwnProfile ? "Vous n'avez pas encore publié." : 'Aucune publication.'}
+                    </p>
+                  </div>
                 ) : (
-                  <a href="#" className="text-primary hover:underline">pulse.app/{profile.name.toLowerCase().replace(/\s+/g, '')}</a>
+                  <div className="space-y-4">
+                    {posts?.map((post) => (
+                      <PostCard
+                        key={post.id}
+                        post={post}
+                        onCommentClick={() => navigate(`/post/${post.id}`)}
+                      />
+                    ))}
+                  </div>
                 )}
               </div>
-            </div>
-          </div>
-
-          {/* Publications */}
-          <div>
-            <h3 className="font-semibold text-muted-foreground mb-4">Publications</h3>
-
-            {postsLoading ? (
-              <div className="space-y-4">
-                {[1, 2].map((i) => (
-                  <div key={i} className="pulse-card p-5 animate-pulse">
-                    <div className="h-4 w-full bg-muted rounded" />
-                    <div className="h-4 w-2/3 bg-muted rounded mt-2" />
-                  </div>
-                ))}
-              </div>
-            ) : posts?.length === 0 ? (
-              <div className="pulse-card p-8 text-center">
-                <p className="text-muted-foreground">
-                  {isOwnProfile ? "Vous n'avez pas encore publié." : 'Aucune publication.'}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {posts?.map((post) => (
-                  <PostCard
-                    key={post.id}
-                    post={post}
-                    onCommentClick={() => navigate(`/post/${post.id}`)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+            </>
+          )}
         </div>
       </div>
 
