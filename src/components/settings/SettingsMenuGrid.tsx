@@ -1,8 +1,12 @@
-import { User, Palette, Heart, Brain, Accessibility, Users, FileText, Shield, Bell, ChevronRight, LogOut } from 'lucide-react';
+import { User, Palette, Heart, Brain, Accessibility, Users, FileText, Shield, Bell, ChevronRight, LogOut, Gamepad2, Trophy, BookOpen, Search, MessageCircle } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { useAuth } from '@/lib/auth';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { useUnreadCount } from '@/hooks/useNotifications';
+import { useConversations } from '@/hooks/useMessages';
+import { useFriendships } from '@/hooks/useFriendships';
 
 interface SettingsMenuGridProps {
   activeTab: string;
@@ -21,10 +25,33 @@ const iconColors: Record<string, string> = {
   notifications: 'bg-orange-500/10 text-orange-500',
 };
 
+const quickLinks = [
+  { path: '/friends', icon: Users, label: 'Amis', color: 'bg-sky-500/10 text-sky-500' },
+  { path: '/search', icon: Search, label: 'Rechercher', color: 'bg-violet-500/10 text-violet-500' },
+  { path: '/messages', icon: MessageCircle, label: 'Messages', color: 'bg-primary/10 text-primary' },
+  { path: '/games', icon: Gamepad2, label: 'Jeux', color: 'bg-emerald-500/10 text-emerald-500' },
+  { path: '/challenges', icon: Trophy, label: 'Défis', color: 'bg-amber-500/10 text-amber-500' },
+  { path: '/journal', icon: BookOpen, label: 'Journal', color: 'bg-rose-500/10 text-rose-500' },
+  { path: '/friend-match', icon: Heart, label: 'Match', color: 'bg-pink-500/10 text-pink-500' },
+];
+
 export function SettingsMenuGrid({ activeTab, onTabChange }: SettingsMenuGridProps) {
   const { t } = useTranslation();
   const { signOut } = useAuth();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
+  const { data: unreadCount } = useUnreadCount();
+  const { data: conversations } = useConversations();
+  const { data: friendships } = useFriendships();
+
+  const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
+  const friendRequests = friendships?.requests.length || 0;
+
+  const getBadge = (path: string) => {
+    if (path === '/messages' && unreadMessages > 0) return unreadMessages;
+    if (path === '/friends' && friendRequests > 0) return friendRequests;
+    return 0;
+  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -45,6 +72,44 @@ export function SettingsMenuGrid({ activeTab, onTabChange }: SettingsMenuGridPro
 
   return (
     <div className="grid grid-cols-1 gap-2 animate-fade-in">
+      {/* Quick navigation links - mobile only */}
+      {isMobile && (
+        <div className="mb-4">
+          <p className="px-1 mb-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            Accès rapide
+          </p>
+          <div className="grid grid-cols-4 gap-2">
+            {quickLinks.map((link) => {
+              const badge = getBadge(link.path);
+              return (
+                <Link
+                  key={link.path}
+                  to={link.path}
+                  className="flex flex-col items-center gap-1.5 p-3 rounded-2xl bg-card border border-border/40 hover:border-primary/20 hover:shadow-md active:scale-95 transition-all duration-200"
+                >
+                  <div className={cn('relative w-10 h-10 rounded-xl flex items-center justify-center', link.color)}>
+                    <link.icon className="w-5 h-5" />
+                    {badge > 0 && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center">
+                        {badge > 9 ? '9+' : badge}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[11px] font-medium text-foreground truncate">{link.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Settings heading */}
+      {isMobile && (
+        <p className="px-1 mb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          Paramètres
+        </p>
+      )}
+
       {tabs.map((tab) => (
         <button
           key={tab.id}
