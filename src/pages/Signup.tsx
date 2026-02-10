@@ -6,6 +6,7 @@ import { useTranslation } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/hooks/use-toast';
 
 export default function Signup() {
@@ -17,6 +18,8 @@ export default function Signup() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
 
   if (user) {
     navigate('/feed');
@@ -25,6 +28,15 @@ export default function Signup() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!acceptedTerms || !acceptedPrivacy) {
+      toast({
+        title: 'Conditions requises',
+        description: 'Veuillez accepter les CGU et la politique de confidentialité pour continuer.',
+        variant: 'destructive',
+      });
+      return;
+    }
     
     if (password.length < 6) {
       toast({
@@ -61,7 +73,7 @@ export default function Signup() {
       <div className="w-full max-w-sm">
         <Link to="/" className="flex items-center justify-center gap-2 mb-8">
           <Zap className="w-8 h-8 text-primary" />
-          <span className="text-2xl font-bold text-gradient">Pulse</span>
+          <span className="text-2xl font-bold text-gradient">Forsure.fans</span>
         </Link>
 
         <div className="pulse-card p-6 sm:p-8">
@@ -117,9 +129,42 @@ export default function Signup() {
               </div>
             </div>
 
+            {/* Legal checkboxes */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="terms"
+                  checked={acceptedTerms}
+                  onCheckedChange={(v) => setAcceptedTerms(v === true)}
+                  className="mt-0.5"
+                />
+                <label htmlFor="terms" className="text-sm text-muted-foreground leading-tight cursor-pointer">
+                  J'ai lu et j'accepte les{' '}
+                  <Link to="/legal/terms" className="text-primary hover:underline" target="_blank">
+                    Conditions Générales d'Utilisation
+                  </Link>
+                </label>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="privacy"
+                  checked={acceptedPrivacy}
+                  onCheckedChange={(v) => setAcceptedPrivacy(v === true)}
+                  className="mt-0.5"
+                />
+                <label htmlFor="privacy" className="text-sm text-muted-foreground leading-tight cursor-pointer">
+                  J'ai lu et j'accepte la{' '}
+                  <Link to="/legal/privacy" className="text-primary hover:underline" target="_blank">
+                    Politique de Confidentialité
+                  </Link>
+                </label>
+              </div>
+            </div>
+
             <Button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || !acceptedTerms || !acceptedPrivacy}
               className="pulse-button-gradient w-full"
             >
               {isLoading ? t('signup.submitting') : t('signup.submit')}

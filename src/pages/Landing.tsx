@@ -40,7 +40,7 @@ export default function Landing() {
           {/* Logo */}
           <div className="flex items-center justify-center gap-2 mb-8">
             <Zap className="w-12 h-12 text-gold" />
-            <span className="text-4xl font-display font-bold text-gradient-gold">Pulse</span>
+            <span className="text-4xl font-display font-bold text-gradient-gold">Forsure.fans</span>
           </div>
           
           <h1 className="text-3xl sm:text-4xl font-display font-bold tracking-tight text-foreground mb-4">
@@ -50,7 +50,7 @@ export default function Landing() {
           </h1>
           
           <p className="text-muted-foreground mb-10 max-w-sm mx-auto">
-            Un réseau social épuré et élégant, sans distractions.
+            Le réseau social éthique, sans tracking. Créez vos canaux TV.
           </p>
           
           <div className="flex flex-col gap-3 max-w-xs mx-auto">

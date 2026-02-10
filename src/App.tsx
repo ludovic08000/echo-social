@@ -30,6 +30,9 @@ import Journal from "./pages/Journal";
 import Challenges from "./pages/Challenges";
 import Games from "./pages/Games";
 import FriendMatch from "./pages/FriendMatch";
+import Channels from "./pages/Channels";
+import LegalTerms from "./pages/LegalTerms";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -47,6 +50,8 @@ function AppContent() {
             <Route path="/" element={<PublicOnlyRoute><Landing /></PublicOnlyRoute>} />
             <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
             <Route path="/signup" element={<PublicOnlyRoute><Signup /></PublicOnlyRoute>} />
+            <Route path="/legal/terms" element={<LegalTerms />} />
+            <Route path="/legal/privacy" element={<PrivacyPolicy />} />
             
             {/* Protected routes */}
             <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
@@ -71,6 +76,7 @@ function AppContent() {
             <Route path="/challenges" element={<ProtectedRoute><Challenges /></ProtectedRoute>} />
             <Route path="/games" element={<ProtectedRoute><Games /></ProtectedRoute>} />
             <Route path="/friend-match" element={<ProtectedRoute><FriendMatch /></ProtectedRoute>} />
+            <Route path="/channels" element={<ProtectedRoute><Channels /></ProtectedRoute>} />
             
             {/* 404 */}
             <Route path="*" element={<NotFound />} />
