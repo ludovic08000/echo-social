@@ -1750,6 +1750,45 @@ export type Database = {
           },
         ]
       }
+      tv_channels: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          theme: string
+          thumbnail_url: string | null
+          updated_at: string
+          user_id: string
+          viewer_count: number
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          theme?: string
+          thumbnail_url?: string | null
+          updated_at?: string
+          user_id: string
+          viewer_count?: number
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          theme?: string
+          thumbnail_url?: string | null
+          updated_at?: string
+          user_id?: string
+          viewer_count?: number
+        }
+        Relationships: []
+      }
       user_interests: {
         Row: {
           created_at: string

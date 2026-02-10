@@ -57,7 +57,7 @@ export default function Login() {
       <div className="relative z-10 w-full max-w-sm animate-fade-in">
         <Link to="/" className="flex items-center justify-center gap-2 mb-8">
           <Zap className="w-8 h-8 text-primary" />
-          <span className="text-2xl font-bold text-gradient">Pulse</span>
+          <span className="text-2xl font-bold text-gradient">Forsure.fans</span>
         </Link>
 
         <div className="backdrop-blur-xl bg-card/60 border border-border/50 rounded-2xl p-6 sm:p-8 shadow-2xl">
