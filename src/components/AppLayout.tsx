@@ -5,6 +5,7 @@ import { MobileNav } from './Navigation';
 import { UserAvatar } from './UserAvatar';
 import { useProfile } from '@/hooks/useProfile';
 import { Settings, Bell, MessageCircle } from 'lucide-react';
+import forsureLogo from '@/assets/forsure-logo.png';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
 
@@ -27,7 +28,8 @@ function MobileHeader() {
     <header className="sticky top-0 z-40 glass safe-area-pt">
       <div className="flex items-center justify-between h-14 px-4">
         <Link to="/feed" className="flex items-center gap-2">
-          <span className="text-xl font-bold text-gradient tracking-tight">Pulse</span>
+          <img src={forsureLogo} alt="Forsure.fans" className="w-7 h-7 rounded-lg" />
+          <span className="text-xl font-bold text-gradient tracking-tight">Forsure.fans</span>
         </Link>
         
         <div className="flex items-center gap-2">

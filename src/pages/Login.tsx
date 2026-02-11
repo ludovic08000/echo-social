@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Zap, Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
+import forsureLogo from '@/assets/forsure-logo.png';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
@@ -56,7 +57,7 @@ export default function Login() {
       
       <div className="relative z-10 w-full max-w-sm animate-fade-in">
         <Link to="/" className="flex items-center justify-center gap-2 mb-8">
-          <Zap className="w-8 h-8 text-primary" />
+          <img src={forsureLogo} alt="Forsure.fans" className="w-10 h-10 rounded-xl" />
           <span className="text-2xl font-bold text-gradient">Forsure.fans</span>
         </Link>
 
