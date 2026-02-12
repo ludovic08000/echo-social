@@ -18,12 +18,12 @@ export default function PrivacyPolicy() {
         <div className="prose prose-invert max-w-none space-y-6 text-foreground/90">
           <section>
             <h2 className="text-xl font-semibold text-foreground">1. Responsable du traitement</h2>
-            <p>Le responsable du traitement des données est l'éditeur de <strong>Forsure.fans</strong>. Contact DPO : <strong>dpo@forsure.fans</strong></p>
+            <p>Le responsable du traitement des données est l'éditeur de <strong>Forsure</strong>. Contact DPO : <strong>dpo@forsure.fans</strong></p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-foreground">2. Engagement éthique</h2>
-            <p>Forsure.fans est un réseau social <strong>anti-surveillance</strong>. Nous nous engageons formellement à :</p>
+            <p>Forsure est un réseau social <strong>anti-surveillance</strong>. Nous nous engageons formellement à :</p>
             <ul className="list-disc pl-6 space-y-1">
               <li>🚫 <strong>Aucune revente de données</strong> à des tiers</li>
               <li>🚫 <strong>Aucun tracking publicitaire</strong></li>

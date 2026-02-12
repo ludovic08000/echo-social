@@ -18,12 +18,12 @@ export default function LegalTerms() {
         <div className="prose prose-invert max-w-none space-y-6 text-foreground/90">
           <section>
             <h2 className="text-xl font-semibold text-foreground">Article 1 — Mentions légales</h2>
-            <p>Le site <strong>Forsure.fans</strong> est édité conformément à la loi française. Conformément à l'article 6 de la loi n° 2004-575 du 21 juin 2004 pour la confiance dans l'économie numérique (LCEN), les informations relatives à l'éditeur sont disponibles sur cette page.</p>
+            <p>Le site <strong>Forsure</strong> est édité conformément à la loi française. Conformément à l'article 6 de la loi n° 2004-575 du 21 juin 2004 pour la confiance dans l'économie numérique (LCEN), les informations relatives à l'éditeur sont disponibles sur cette page.</p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-foreground">Article 2 — Objet</h2>
-            <p>Les présentes CGU ont pour objet de définir les conditions d'accès et d'utilisation de la plateforme Forsure.fans, réseau social accessible via le web et les applications mobiles.</p>
+            <p>Les présentes CGU ont pour objet de définir les conditions d'accès et d'utilisation de la plateforme Forsure, réseau social accessible via le web et les applications mobiles.</p>
           </section>
 
           <section>
@@ -33,7 +33,7 @@ export default function LegalTerms() {
 
           <section>
             <h2 className="text-xl font-semibold text-foreground">Article 4 — Protection des données personnelles (RGPD)</h2>
-            <p>Conformément au RGPD (Règlement UE 2016/679) et à la loi Informatique et Libertés, Forsure.fans s'engage à :</p>
+            <p>Conformément au RGPD (Règlement UE 2016/679) et à la loi Informatique et Libertés, Forsure s'engage à :</p>
             <ul className="list-disc pl-6 space-y-1">
               <li>Ne collecter que les données strictement nécessaires au fonctionnement du service</li>
               <li><strong>Ne jamais vendre ni transmettre vos données à des tiers</strong> à des fins commerciales ou publicitaires</li>
@@ -57,12 +57,12 @@ export default function LegalTerms() {
 
           <section>
             <h2 className="text-xl font-semibold text-foreground">Article 6 — Cookies</h2>
-            <p>Forsure.fans utilise uniquement des cookies techniques strictement nécessaires au fonctionnement du service (authentification, session). Aucun cookie publicitaire ou de traçage n'est utilisé, conformément à la directive ePrivacy et aux recommandations de la CNIL.</p>
+            <p>Forsure utilise uniquement des cookies techniques strictement nécessaires au fonctionnement du service (authentification, session). Aucun cookie publicitaire ou de traçage n'est utilisé, conformément à la directive ePrivacy et aux recommandations de la CNIL.</p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-foreground">Article 7 — Contenu utilisateur</h2>
-            <p>L'utilisateur reste propriétaire de ses contenus. En publiant sur Forsure.fans, il accorde une licence non-exclusive et révocable d'affichage sur la plateforme. Tout contenu illicite au regard de la loi française (incitation à la haine, diffamation, contenu à caractère pédopornographique, etc.) est strictement interdit et sera signalé aux autorités compétentes conformément à l'article 6-I-7 de la LCEN.</p>
+            <p>L'utilisateur reste propriétaire de ses contenus. En publiant sur Forsure, il accorde une licence non-exclusive et révocable d'affichage sur la plateforme. Tout contenu illicite au regard de la loi française (incitation à la haine, diffamation, contenu à caractère pédopornographique, etc.) est strictement interdit et sera signalé aux autorités compétentes conformément à l'article 6-I-7 de la LCEN.</p>
           </section>
 
           <section>
@@ -77,7 +77,7 @@ export default function LegalTerms() {
 
           <section>
             <h2 className="text-xl font-semibold text-foreground">Article 10 — Responsabilité</h2>
-            <p>Forsure.fans ne saurait être tenu responsable des contenus publiés par les utilisateurs, conformément au régime de responsabilité des hébergeurs prévu par la LCEN (Art. 6-I-2). La plateforme agit promptement pour retirer les contenus manifestement illicites dès notification.</p>
+            <p>Forsure ne saurait être tenu responsable des contenus publiés par les utilisateurs, conformément au régime de responsabilité des hébergeurs prévu par la LCEN (Art. 6-I-2). La plateforme agit promptement pour retirer les contenus manifestement illicites dès notification.</p>
           </section>
 
           <section>

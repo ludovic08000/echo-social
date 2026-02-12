@@ -19,7 +19,7 @@ export default function Landing() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <img src={forsureLogo} alt="Forsure.fans" className="w-12 h-12 rounded-2xl animate-pulse" />
+          <img src={forsureLogo} alt="Forsure" className="w-12 h-12 rounded-2xl animate-pulse" />
           <p className="text-muted-foreground">Chargement...</p>
         </div>
       </div>
@@ -40,8 +40,8 @@ export default function Landing() {
         <div className="max-w-md mx-auto text-center animate-fade-in">
           {/* Logo */}
           <div className="flex items-center justify-center gap-3 mb-8">
-            <img src={forsureLogo} alt="Forsure.fans" className="w-14 h-14 rounded-2xl" />
-            <span className="text-4xl font-display font-bold text-gradient-gold">Forsure.fans</span>
+            <img src={forsureLogo} alt="Forsure" className="w-14 h-14 rounded-2xl" />
+            <span className="text-4xl font-display font-bold text-gradient-gold">Forsure</span>
           </div>
           
           <h1 className="text-3xl sm:text-4xl font-display font-bold tracking-tight text-foreground mb-4">
