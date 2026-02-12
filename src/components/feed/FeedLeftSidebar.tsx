@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
 import { useFriendships } from '@/hooks/useFriendships';
+import { useScreenSize } from '@/hooks/useScreenSize';
 
 const mainLinks = [
   { path: '/feed', icon: Home, label: 'Fil d\'actualité' },
@@ -39,11 +40,12 @@ export function FeedLeftSidebar() {
   const { data: unreadCount } = useUnreadCount();
   const { data: conversations } = useConversations();
   const { data: friendships } = useFriendships();
+  const { isMobile } = useScreenSize();
 
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
   const friendRequests = friendships?.requests.length || 0;
 
-  if (!user) return null;
+  if (!user || isMobile) return null;
 
   const getBadge = (path: string) => {
     if (path === '/notifications' && unreadCount && unreadCount > 0) return unreadCount;
@@ -53,7 +55,7 @@ export function FeedLeftSidebar() {
   };
 
   return (
-    <aside className="hidden lg:block w-[280px] flex-shrink-0">
+    <aside className="hidden md:block w-[240px] lg:w-[280px] flex-shrink-0">
       <div className="sticky top-16 space-y-1 pr-2 max-h-[calc(100vh-80px)] overflow-y-auto scrollbar-thin">
         {/* Profile link */}
         <Link
