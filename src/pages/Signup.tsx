@@ -73,8 +73,8 @@ export default function Signup() {
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <Link to="/" className="flex items-center justify-center gap-2 mb-8">
-          <img src={forsureLogo} alt="Forsure.fans" className="w-10 h-10 rounded-xl" />
-          <span className="text-2xl font-bold text-gradient">Forsure.fans</span>
+          <img src={forsureLogo} alt="Forsure" className="w-10 h-10 rounded-xl" />
+          <span className="text-2xl font-bold text-gradient">Forsure</span>
         </Link>
 
         <div className="pulse-card p-6 sm:p-8">

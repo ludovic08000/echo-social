@@ -15,7 +15,7 @@ interface SEOHeadProps {
  */
 export function SEOHead({ title, description, image, url, type = 'website', username }: SEOHeadProps) {
   useEffect(() => {
-    const siteName = 'Forsure.fans';
+    const siteName = 'Forsure';
     const fullTitle = title ? `${title} — ${siteName}` : siteName;
     const desc = description || 'Le réseau social éthique, sans tracking publicitaire.';
 
