@@ -1,13 +1,14 @@
 import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
-import { MobileNav } from './Navigation';
+import { MobileNav, DesktopSidebar } from './Navigation';
 import { UserAvatar } from './UserAvatar';
 import { useProfile } from '@/hooks/useProfile';
 import { Settings, Bell, MessageCircle } from 'lucide-react';
 import forsureLogo from '@/assets/forsure-logo.png';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
+import { useScreenSize } from '@/hooks/useScreenSize';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -20,9 +21,10 @@ function MobileHeader() {
   const { data: profile } = useProfile();
   const { data: unreadCount } = useUnreadCount();
   const { data: conversations } = useConversations();
+  const { isDesktop } = useScreenSize();
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
 
-  if (!user) return null;
+  if (!user || isDesktop) return null;
 
   return (
     <header className="sticky top-0 z-40 glass safe-area-pt">
@@ -66,6 +68,7 @@ function MobileHeader() {
 
 export function AppLayout({ children, requireAuth = true, fullWidth = false }: AppLayoutProps) {
   const { user, loading } = useAuth();
+  const { isMobile, isTablet, isDesktop } = useScreenSize();
 
   if (loading) {
     return (
@@ -80,19 +83,26 @@ export function AppLayout({ children, requireAuth = true, fullWidth = false }: A
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Desktop: sidebar navigation, Mobile/Tablet: top header */}
+      {isDesktop && <DesktopSidebar />}
       <MobileHeader />
-      <main className="pb-20 lg:pb-4">
+      
+      <main className={`
+        ${isMobile ? 'pb-20' : isTablet ? 'pb-20' : 'pb-4 pl-64'}
+      `}>
         {fullWidth ? (
-          <div className="mx-auto max-w-[1280px] px-4">
+          <div className={`mx-auto px-4 ${isDesktop ? 'max-w-[1280px]' : isTablet ? 'max-w-[900px]' : 'max-w-full'}`}>
             {children}
           </div>
         ) : (
-          <div className="mx-auto max-w-[680px]">
+          <div className={`mx-auto ${isTablet ? 'max-w-[600px] px-4' : 'max-w-[680px]'}`}>
             {children}
           </div>
         )}
       </main>
-      <MobileNav />
+      
+      {/* Mobile & Tablet: bottom nav */}
+      {!isDesktop && <MobileNav />}
     </div>
   );
 }

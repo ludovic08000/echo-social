@@ -6,6 +6,7 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { useAuth } from '@/lib/auth';
 import { useState, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useScreenSize } from '@/hooks/useScreenSize';
 
 export function FeedRightSidebar() {
   const { user } = useAuth();
@@ -13,6 +14,7 @@ export function FeedRightSidebar() {
   const { data: conversations } = useConversations();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const { isDesktop } = useScreenSize();
 
   const friends = friendships?.friends || [];
   const requests = friendships?.requests || [];
@@ -54,7 +56,7 @@ export function FeedRightSidebar() {
     navigate(`/messages/${conv.id}`);
   };
 
-  if (!user) return null;
+  if (!user || !isDesktop) return null;
 
   return (
     <aside className="hidden lg:block w-[280px] flex-shrink-0">
