@@ -31,7 +31,7 @@ function MobileHeader() {
       <div className="flex items-center justify-between h-14 px-4">
         <Link to="/feed" className="flex items-center gap-2">
           <img src={forsureLogo} alt="Forsure" className="w-7 h-7 rounded-lg" />
-          <span className="text-xl font-bold text-gradient tracking-tight">Forsure</span>
+          <span className="text-xl font-bold text-gradient-brand tracking-tight" style={{ fontFamily: "'Playfair Display', serif" }}>Forsure</span>
         </Link>
         
         <div className="flex items-center gap-2">
