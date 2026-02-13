@@ -58,7 +58,7 @@ export default function Login() {
       <div className="relative z-10 w-full max-w-sm animate-fade-in">
         <Link to="/" className="flex items-center justify-center gap-2 mb-8">
           <img src={forsureLogo} alt="Forsure" className="w-10 h-10 rounded-xl" />
-          <span className="text-2xl font-bold text-gradient">Forsure</span>
+          <span className="text-2xl font-bold text-gradient-brand tracking-tight" style={{ fontFamily: "'Playfair Display', serif" }}>Forsure</span>
         </Link>
 
         <div className="backdrop-blur-xl bg-card/60 border border-border/50 rounded-2xl p-6 sm:p-8 shadow-2xl">
