@@ -128,7 +128,7 @@ export function DesktopSidebar() {
     <aside className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-64 bg-sidebar border-r border-sidebar-border p-4">
       <Link to="/feed" className="flex items-center gap-2 px-4 py-3 mb-6">
         <img src={forsureLogo} alt="Forsure" className="w-8 h-8 rounded-lg" />
-        <span className="text-2xl font-bold text-gradient tracking-tight">Forsure</span>
+        <span className="text-2xl font-bold text-gradient-brand tracking-tight" style={{ fontFamily: "'Playfair Display', serif" }}>Forsure</span>
       </Link>
 
       <nav className="flex-1 space-y-0.5">
