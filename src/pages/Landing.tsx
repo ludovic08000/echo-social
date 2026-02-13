@@ -41,7 +41,7 @@ export default function Landing() {
           {/* Logo */}
           <div className="flex items-center justify-center gap-3 mb-8">
             <img src={forsureLogo} alt="Forsure" className="w-14 h-14 rounded-2xl" />
-            <span className="text-4xl font-display font-bold text-gradient-gold">Forsure</span>
+            <span className="text-4xl font-bold text-gradient-brand tracking-tight" style={{ fontFamily: "'Playfair Display', serif" }}>Forsure</span>
           </div>
           
           <h1 className="text-3xl sm:text-4xl font-display font-bold tracking-tight text-foreground mb-4">
