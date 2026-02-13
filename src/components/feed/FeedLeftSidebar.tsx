@@ -40,12 +40,12 @@ export function FeedLeftSidebar() {
   const { data: unreadCount } = useUnreadCount();
   const { data: conversations } = useConversations();
   const { data: friendships } = useFriendships();
-  const { isMobile } = useScreenSize();
+  const { isMobile, isDesktop } = useScreenSize();
 
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
   const friendRequests = friendships?.requests.length || 0;
 
-  if (!user || isMobile) return null;
+  if (!user || isMobile || isDesktop) return null;
 
   const getBadge = (path: string) => {
     if (path === '/notifications' && unreadCount && unreadCount > 0) return unreadCount;
