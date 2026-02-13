@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { Home, Search, User, Settings, PlusCircle, MessageCircle, Users, FileText, Video, Radio, Bell, BookOpen, Trophy, Heart, Gamepad2, Tv } from 'lucide-react';
-import forsureLogo from '@/assets/forsure-logo.png';
+import forsureWordmark from '@/assets/forsure-wordmark.png';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
 import { useUnreadCount } from '@/hooks/useNotifications';
@@ -126,9 +126,8 @@ export function DesktopSidebar() {
 
   return (
     <aside className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-64 bg-sidebar border-r border-sidebar-border p-4">
-      <Link to="/feed" className="flex items-center gap-2 px-4 py-3 mb-6">
-        <img src={forsureLogo} alt="Forsure" className="w-8 h-8 rounded-lg" />
-        <span className="text-2xl font-bold text-gradient-brand tracking-tight" style={{ fontFamily: "'Playfair Display', serif" }}>Forsure</span>
+      <Link to="/feed" className="flex items-center px-4 py-3 mb-6">
+        <img src={forsureWordmark} alt="Forsure" className="h-8 w-auto mix-blend-lighten drop-shadow-[0_0_15px_hsl(220,70%,50%,0.3)]" />
       </Link>
 
       <nav className="flex-1 space-y-0.5">
