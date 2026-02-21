@@ -20,6 +20,7 @@ export default function Landing() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <BrandLogo className="h-10 w-auto animate-pulse" />
+          <p className="text-muted-foreground">Chargement...</p>
         </div>
       </div>
     );
