@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Sparkles } from 'lucide-react';
-import forsureLogo from '@/assets/forsure-logo.png';
-import forsureWordmark from '@/assets/forsure-wordmark.png';
+import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import Feed from './Feed';
@@ -20,8 +19,7 @@ export default function Landing() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <img src={forsureWordmark} alt="Forsure" className="h-10 w-auto mix-blend-lighten animate-pulse" />
-          <p className="text-muted-foreground">Chargement...</p>
+          <BrandLogo className="h-10 w-auto animate-pulse" />
         </div>
       </div>
     );
@@ -41,7 +39,7 @@ export default function Landing() {
         <div className="max-w-md mx-auto text-center animate-fade-in">
           {/* Logo */}
           <div className="flex items-center justify-center mb-10">
-            <img src={forsureWordmark} alt="Forsure" className="h-20 sm:h-28 md:h-32 w-auto mix-blend-lighten drop-shadow-[0_0_40px_hsl(220,70%,50%,0.5)]" />
+            <BrandLogo className="h-20 sm:h-28 md:h-32 w-auto drop-shadow-[0_0_40px_hsl(220,70%,50%,0.5)]" />
           </div>
           
           <h1 className="text-3xl sm:text-4xl font-display font-bold tracking-tight text-foreground mb-4">

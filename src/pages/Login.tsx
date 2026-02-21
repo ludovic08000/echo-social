@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
-import forsureWordmark from '@/assets/forsure-wordmark.png';
+import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
@@ -57,7 +57,7 @@ export default function Login() {
       
       <div className="relative z-10 w-full max-w-sm animate-fade-in">
         <Link to="/" className="flex items-center justify-center mb-8">
-          <img src={forsureWordmark} alt="Forsure" className="h-12 sm:h-14 w-auto mix-blend-lighten drop-shadow-[0_0_20px_hsl(220,70%,50%,0.3)]" />
+          <BrandLogo className="h-12 sm:h-14 w-auto drop-shadow-[0_0_20px_hsl(220,70%,50%,0.3)]" />
         </Link>
 
         <div className="backdrop-blur-xl bg-card/60 border border-border/50 rounded-2xl p-6 sm:p-8 shadow-2xl">
