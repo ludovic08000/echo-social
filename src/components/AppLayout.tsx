@@ -5,7 +5,7 @@ import { MobileNav, DesktopSidebar } from './Navigation';
 import { UserAvatar } from './UserAvatar';
 import { useProfile } from '@/hooks/useProfile';
 import { Settings, Bell, MessageCircle } from 'lucide-react';
-import forsureWordmark from '@/assets/forsure-wordmark.png';
+import BrandLogo from '@/components/BrandLogo';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
 import { useScreenSize } from '@/hooks/useScreenSize';
@@ -30,7 +30,7 @@ function MobileHeader() {
     <header className="sticky top-0 z-40 glass safe-area-pt">
       <div className="flex items-center justify-between h-14 px-4">
          <Link to="/feed" className="flex items-center">
-           <img src={forsureWordmark} alt="Forsure" className="h-7 w-auto mix-blend-lighten drop-shadow-[0_0_12px_hsl(220,70%,50%,0.3)]" />
+           <BrandLogo className="h-7 w-auto drop-shadow-[0_0_12px_hsl(220,70%,50%,0.3)]" />
          </Link>
         
         <div className="flex items-center gap-2">
