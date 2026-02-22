@@ -31,6 +31,8 @@ import Challenges from "./pages/Challenges";
 import Games from "./pages/Games";
 import FriendMatch from "./pages/FriendMatch";
 import Channels from "./pages/Channels";
+import Marketplace from "./pages/Marketplace";
+import ProductDetailPage from "./pages/ProductDetail";
 import LegalTerms from "./pages/LegalTerms";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import NotFound from "./pages/NotFound";
@@ -77,6 +79,8 @@ function AppContent() {
             <Route path="/games" element={<ProtectedRoute><Games /></ProtectedRoute>} />
             <Route path="/friend-match" element={<ProtectedRoute><FriendMatch /></ProtectedRoute>} />
             <Route path="/channels" element={<ProtectedRoute><Channels /></ProtectedRoute>} />
+            <Route path="/marketplace" element={<ProtectedRoute><Marketplace /></ProtectedRoute>} />
+            <Route path="/marketplace/product/:id" element={<ProtectedRoute><ProductDetailPage /></ProtectedRoute>} />
             
             {/* 404 */}
             <Route path="*" element={<NotFound />} />

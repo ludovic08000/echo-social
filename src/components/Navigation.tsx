@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Search, User, Settings, PlusCircle, MessageCircle, Users, FileText, Video, Radio, Bell, BookOpen, Trophy, Heart, Gamepad2, Tv } from 'lucide-react';
+import { Home, Search, User, Settings, PlusCircle, MessageCircle, Users, FileText, Video, Radio, Bell, BookOpen, Trophy, Heart, Gamepad2, Tv, ShoppingBag } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
@@ -120,6 +120,7 @@ export function DesktopSidebar() {
     { path: '/groups', icon: Users, label: t('nav.groups') },
     { path: '/pages', icon: FileText, label: t('nav.pages') },
     { path: '/channels', icon: Tv, label: 'Canaux TV' },
+    { path: '/marketplace', icon: ShoppingBag, label: 'Marketplace' },
     { path: `/profile/${user.id}`, icon: User, label: t('nav.profile') },
     { path: '/settings', icon: Settings, label: t('nav.settings') },
   ];
