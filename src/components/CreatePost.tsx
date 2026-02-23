@@ -1,9 +1,10 @@
 import { useState, useRef } from 'react';
-import { Image, Video, X, Send, Timer, Rocket } from 'lucide-react';
+import { Image, Video, X, Send, Timer, Rocket, ShoppingBag } from 'lucide-react';
 import { useCreatePost } from '@/hooks/usePosts';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
+import { useNavigate } from 'react-router-dom';
 import { UserAvatar } from './UserAvatar';
 import { MoodPicker } from './MoodPicker';
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,7 @@ const CAPSULE_OPTIONS = [
 
 export function CreatePost() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { data: profile } = useProfile();
   const createPost = useCreatePost();
   const [body, setBody] = useState('');
@@ -391,6 +393,13 @@ export function CreatePost() {
           >
             <Timer className="w-4 h-4 text-amber-500/70" />
             <span>Éphémère</span>
+          </button>
+          <button
+            onClick={() => navigate('/marketplace?tab=seller')}
+            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors py-1"
+          >
+            <ShoppingBag className="w-4 h-4 text-primary/70" />
+            <span>Vendre</span>
           </button>
         </div>
       )}

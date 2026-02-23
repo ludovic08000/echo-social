@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { useProducts } from '@/hooks/useMarketplace';
 import { ProductCard } from '@/components/marketplace/ProductCard';
@@ -6,9 +7,11 @@ import { CartSheet } from '@/components/marketplace/CartSheet';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Store, SlidersHorizontal } from 'lucide-react';
+import { Search, Store, Plus } from 'lucide-react';
 import { SellerDashboard } from '@/components/marketplace/SellerDashboard';
 import { SEOHead } from '@/components/SEOHead';
+import { CreateProductDialog } from '@/components/marketplace/CreateProductDialog';
+import { useSellerProfile } from '@/hooks/useMarketplace';
 
 const CATEGORIES = [
   { value: 'all', label: 'Tout' },
@@ -23,10 +26,17 @@ const CATEGORIES = [
 ];
 
 export default function Marketplace() {
+  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('all');
-  const [activeTab, setActiveTab] = useState('browse');
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'browse');
   const { data: products = [], isLoading } = useProducts(category, search);
+  const { data: seller } = useSellerProfile();
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'seller') setActiveTab('seller');
+  }, [searchParams]);
 
   return (
     <AppLayout fullWidth>
@@ -103,6 +113,21 @@ export default function Marketplace() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Floating add product button on mobile */}
+      {seller && (
+        <CreateProductDialog
+          sellerId={seller.id}
+          trigger={
+            <Button
+              size="icon"
+              className="fixed bottom-20 right-4 z-50 md:hidden h-14 w-14 rounded-full shadow-lg premium-button"
+            >
+              <Plus className="w-6 h-6" />
+            </Button>
+          }
+        />
+      )}
     </AppLayout>
   );
 }

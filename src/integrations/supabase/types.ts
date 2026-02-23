@@ -1338,6 +1338,7 @@ export type Database = {
       products: {
         Row: {
           category: string
+          color: string | null
           compare_at_price: number | null
           created_at: string
           description: string | null
@@ -1352,6 +1353,9 @@ export type Database = {
           rating_average: number | null
           rating_count: number
           seller_id: string
+          shipping_price: number | null
+          shipping_type: string
+          size: string | null
           stock_quantity: number | null
           tags: string[] | null
           thumbnail_url: string | null
@@ -1361,6 +1365,7 @@ export type Database = {
         }
         Insert: {
           category?: string
+          color?: string | null
           compare_at_price?: number | null
           created_at?: string
           description?: string | null
@@ -1375,6 +1380,9 @@ export type Database = {
           rating_average?: number | null
           rating_count?: number
           seller_id: string
+          shipping_price?: number | null
+          shipping_type?: string
+          size?: string | null
           stock_quantity?: number | null
           tags?: string[] | null
           thumbnail_url?: string | null
@@ -1384,6 +1392,7 @@ export type Database = {
         }
         Update: {
           category?: string
+          color?: string | null
           compare_at_price?: number | null
           created_at?: string
           description?: string | null
@@ -1398,6 +1407,9 @@ export type Database = {
           rating_average?: number | null
           rating_count?: number
           seller_id?: string
+          shipping_price?: number | null
+          shipping_type?: string
+          size?: string | null
           stock_quantity?: number | null
           tags?: string[] | null
           thumbnail_url?: string | null

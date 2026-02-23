@@ -118,6 +118,10 @@ export function useCreateProduct() {
       images?: string[];
       thumbnail_url?: string;
       stock_quantity?: number;
+      size?: string;
+      color?: string;
+      shipping_type?: string;
+      shipping_price?: number;
     }) => {
       const { data, error } = await supabase
         .from('products')
