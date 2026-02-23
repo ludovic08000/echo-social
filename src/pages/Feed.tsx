@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { FriendSuggestions } from '@/components/feed/FriendSuggestions';
 import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
 import { FeedReelsSection } from '@/components/feed/FeedReelsSection';
+import { FeedMarketplaceSection } from '@/components/feed/FeedMarketplaceSection';
 import { FeedMediaSection } from '@/components/feed/FeedMediaSection';
 import { FeedLeftSidebar } from '@/components/feed/FeedLeftSidebar';
 import { FeedRightSidebar } from '@/components/feed/FeedRightSidebar';
@@ -45,6 +46,9 @@ export default function Feed() {
 
             {/* Reels */}
             <FeedReelsSection />
+
+            {/* Marketplace */}
+            <FeedMarketplaceSection />
 
             {isLoading ? (
               <div className="space-y-2 px-4 lg:px-0">
