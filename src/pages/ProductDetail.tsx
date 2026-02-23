@@ -1,11 +1,15 @@
+import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { useProduct, useAddToCart } from '@/hooks/useMarketplace';
+import { useProductFavorites, useToggleFavorite } from '@/hooks/useProductFavorites';
+import { ProductReviews } from '@/components/marketplace/ProductReviews';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { ShoppingCart, BadgeCheck, Star, ArrowLeft, Package, Zap, Wrench } from 'lucide-react';
+import { ShoppingCart, BadgeCheck, Star, ArrowLeft, Package, Zap, Wrench, Heart, Store, ChevronLeft, ChevronRight, Truck, MapPin, Download } from 'lucide-react';
 import { SEOHead } from '@/components/SEOHead';
+import { cn } from '@/lib/utils';
 
 const TYPE_LABELS: Record<string, { label: string; icon: any }> = {
   physical: { label: 'Produit physique', icon: Package },
@@ -13,10 +17,21 @@ const TYPE_LABELS: Record<string, { label: string; icon: any }> = {
   service: { label: 'Service', icon: Wrench },
 };
 
+const SHIPPING_LABELS: Record<string, { label: string; icon: any }> = {
+  standard: { label: 'Standard (3-5j)', icon: Truck },
+  express: { label: 'Express (1-2j)', icon: Truck },
+  pickup: { label: 'Retrait en main propre', icon: MapPin },
+  digital: { label: 'Livraison numérique', icon: Download },
+  free: { label: 'Livraison gratuite', icon: Truck },
+};
+
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: product, isLoading } = useProduct(id);
   const addToCart = useAddToCart();
+  const { data: favorites = [] } = useProductFavorites();
+  const toggleFav = useToggleFavorite();
+  const [imgIndex, setImgIndex] = useState(0);
 
   if (isLoading) {
     return (
@@ -46,6 +61,9 @@ export default function ProductDetailPage() {
   const typeInfo = TYPE_LABELS[product.product_type] || TYPE_LABELS.physical;
   const TypeIcon = typeInfo.icon;
   const hasDiscount = product.compare_at_price && product.compare_at_price > product.price;
+  const isFav = favorites.includes(product.id);
+  const shippingInfo = SHIPPING_LABELS[product.shipping_type] || SHIPPING_LABELS.standard;
+  const ShippingIcon = shippingInfo.icon;
 
   return (
     <AppLayout>
@@ -57,9 +75,41 @@ export default function ProductDetailPage() {
           Marketplace
         </Link>
 
-        {/* Image */}
-        <div className="aspect-square rounded-2xl overflow-hidden bg-muted">
-          <img src={images[0]} alt={product.title} className="w-full h-full object-cover" />
+        {/* Image gallery */}
+        <div className="relative aspect-square rounded-2xl overflow-hidden bg-muted">
+          <img src={images[imgIndex]} alt={product.title} className="w-full h-full object-cover" />
+          {images.length > 1 && (
+            <>
+              <button
+                onClick={() => setImgIndex((i) => (i - 1 + images.length) % images.length)}
+                className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-background/70 backdrop-blur-sm flex items-center justify-center"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setImgIndex((i) => (i + 1) % images.length)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-background/70 backdrop-blur-sm flex items-center justify-center"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+                {images.map((_: string, i: number) => (
+                  <button
+                    key={i}
+                    onClick={() => setImgIndex(i)}
+                    className={cn("w-2 h-2 rounded-full transition-colors", i === imgIndex ? "bg-primary" : "bg-background/60")}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+          {/* Favorite */}
+          <button
+            onClick={() => toggleFav.mutate(product.id)}
+            className="absolute top-3 right-3 w-10 h-10 rounded-full bg-background/70 backdrop-blur-sm flex items-center justify-center"
+          >
+            <Heart className={cn("w-5 h-5", isFav ? "fill-destructive text-destructive" : "text-foreground")} />
+          </button>
         </div>
 
         {/* Info */}
@@ -87,11 +137,27 @@ export default function ProductDetailPage() {
             </div>
           )}
 
+          {/* Size & Color */}
+          {(product.size || product.color) && (
+            <div className="flex gap-2">
+              {product.size && <Badge variant="secondary">Taille: {product.size}</Badge>}
+              {product.color && <Badge variant="secondary">Couleur: {product.color}</Badge>}
+            </div>
+          )}
+
+          {/* Stock */}
           {product.stock_quantity !== null && (
-            <p className="text-sm text-muted-foreground">
+            <p className={cn("text-sm", product.stock_quantity > 0 ? "text-muted-foreground" : "text-destructive font-medium")}>
               {product.stock_quantity > 0 ? `${product.stock_quantity} en stock` : 'Rupture de stock'}
             </p>
           )}
+
+          {/* Shipping info */}
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <ShippingIcon className="w-4 h-4" />
+            <span>{shippingInfo.label}</span>
+            {product.shipping_price > 0 && <span className="font-medium text-foreground">+{product.shipping_price.toFixed(2)}€</span>}
+          </div>
 
           <Button
             className="w-full premium-button"
@@ -120,31 +186,39 @@ export default function ProductDetailPage() {
           <div className="premium-card p-4">
             <div className="flex items-center gap-3">
               {seller.store_logo_url ? (
-                <img src={seller.store_logo_url} alt={seller.store_name} className="w-10 h-10 rounded-full object-cover" />
+                <img src={seller.store_logo_url} alt={seller.store_name} className="w-12 h-12 rounded-full object-cover" />
               ) : (
-                <div className="w-10 h-10 rounded-full bg-premium-gradient flex items-center justify-center">
-                  <Store className="w-5 h-5 text-primary-foreground" />
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Store className="w-6 h-6 text-primary" />
                 </div>
               )}
               <div className="flex-1">
                 <div className="flex items-center gap-1.5">
-                  <span className="font-semibold text-sm">{seller.store_name}</span>
+                  <span className="font-semibold">{seller.store_name}</span>
                   {seller.is_verified && <BadgeCheck className="w-4 h-4 text-primary" />}
                 </div>
-                <p className="text-xs text-muted-foreground">{seller.total_sales} ventes</p>
+                {seller.store_description && (
+                  <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{seller.store_description}</p>
+                )}
+                <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                  <span>{seller.total_sales} ventes</span>
+                  {seller.rating_average && (
+                    <span className="flex items-center gap-0.5">
+                      <Star className="w-3 h-3 fill-primary text-primary" />
+                      {seller.rating_average.toFixed(1)} ({seller.rating_count})
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         )}
+
+        <Separator />
+
+        {/* Reviews */}
+        <ProductReviews productId={product.id} />
       </div>
     </AppLayout>
-  );
-}
-
-function Store(props: any) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" /><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4" /><path d="M2 7h20" /><path d="M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7" />
-    </svg>
   );
 }
