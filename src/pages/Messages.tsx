@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Send, Search, Plus, ImageIcon, Smile, Check, CheckCheck, X } from 'lucide-react';
+import { ArrowLeft, Send, Search, Plus, ImageIcon, Smile, Check, CheckCheck, X, Phone, Video } from 'lucide-react';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { AppLayout } from '@/components/AppLayout';
@@ -11,6 +11,8 @@ import { useConversations, useMessages, useSendMessage, useMarkConversationRead,
 import { useFriendships } from '@/hooks/useFriendships';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
+import { useCall } from '@/hooks/useCall';
+import { CallOverlay } from '@/components/CallOverlay';
 
 function formatMessageTime(dateStr: string) {
   const date = new Date(dateStr);
@@ -251,6 +253,21 @@ function ChatView({ conversationId }: { conversationId: string }) {
 
   const conversation = conversations?.find(c => c.id === conversationId);
 
+  const {
+    callState,
+    callType,
+    isMuted,
+    isCameraOff,
+    duration,
+    localVideoRef,
+    remoteVideoRef,
+    startCall,
+    endCall,
+    toggleMute,
+    toggleCamera,
+    switchToVideo,
+  } = useCall();
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -319,6 +336,27 @@ function ChatView({ conversationId }: { conversationId: string }) {
               </div>
             </Link>
           )}
+          {/* Call buttons */}
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-full text-primary"
+              onClick={() => startCall(conversationId, 'audio')}
+              disabled={callState !== 'idle'}
+            >
+              <Phone className="w-4.5 h-4.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-full text-primary"
+              onClick={() => startCall(conversationId, 'video')}
+              disabled={callState !== 'idle'}
+            >
+              <Video className="w-4.5 h-4.5" />
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -454,6 +492,22 @@ function ChatView({ conversationId }: { conversationId: string }) {
           </Button>
         </form>
       </div>
+      {/* Call overlay */}
+      <CallOverlay
+        callState={callState}
+        callType={callType}
+        isMuted={isMuted}
+        isCameraOff={isCameraOff}
+        duration={duration}
+        participantName={conversation?.participant.name || ''}
+        participantAvatar={conversation?.participant.avatar_url}
+        localVideoRef={localVideoRef}
+        remoteVideoRef={remoteVideoRef}
+        onEndCall={endCall}
+        onToggleMute={toggleMute}
+        onToggleCamera={toggleCamera}
+        onSwitchToVideo={switchToVideo}
+      />
     </div>
   );
 }
