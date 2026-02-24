@@ -110,6 +110,7 @@ export default function LiveWatch() {
       {/* Video area */}
       <div className="flex-1 relative">
         <LiveViewerPlayer 
+          roomName={`live-${live.id}`}
           thumbnailUrl={live.thumbnail_url || undefined}
           isLive={live.is_active}
           className="w-full h-full"

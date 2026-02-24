@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Radio, Plus, Users, TrendingUp } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { LiveCard } from '@/components/LiveCard';
@@ -24,6 +25,7 @@ const CATEGORIES = [
 ];
 
 export default function Lives() {
+  const navigate = useNavigate();
   const { data: lives, isLoading } = useLiveStreams();
   const startLive = useStartLive();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -40,7 +42,7 @@ export default function Lives() {
     }
 
     try {
-      await startLive.mutateAsync({
+      const data = await startLive.mutateAsync({
         title,
         description,
         category,
@@ -54,6 +56,11 @@ export default function Lives() {
       setHashtags('');
 
       toast({ title: 'Live démarré ! 🔴' });
+      
+      // Navigate to the live page
+      if (data?.id) {
+        navigate(`/live/${data.id}`);
+      }
     } catch (error) {
       toast({ title: 'Erreur lors du démarrage', variant: 'destructive' });
     }
