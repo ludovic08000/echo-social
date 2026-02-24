@@ -63,6 +63,7 @@ export function HostLiveView({ live }: HostLiveViewProps) {
         <LiveStreamPlayer 
           ref={playerRef}
           isHost={true}
+          roomName={`live-${live.id}`}
           className="w-full h-full"
         />
 
