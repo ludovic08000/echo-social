@@ -4,6 +4,7 @@ import { Room, RoomEvent, Track, RemoteTrackPublication, RemoteParticipant } fro
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { getLiveKitToken } from '@/lib/livekit';
+import { acquireWakeLock, releaseWakeLock } from '@/lib/platformPermissions';
 
 interface LiveViewerPlayerProps {
   roomName?: string;
@@ -124,9 +125,11 @@ export function LiveViewerPlayer({
 
         room.on(RoomEvent.Disconnected, () => {
           setIsConnected(false);
+          releaseWakeLock();
         });
 
         await room.connect(url, token);
+        await acquireWakeLock();
         setIsLoading(false);
         setIsConnected(true);
 
@@ -158,6 +161,7 @@ export function LiveViewerPlayer({
       if (videoRef.current) {
         videoRef.current.innerHTML = '';
       }
+      releaseWakeLock();
     };
   }, [roomName]);
 
