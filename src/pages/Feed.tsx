@@ -10,8 +10,6 @@ import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
 import { FeedReelsSection } from '@/components/feed/FeedReelsSection';
 import { FeedMarketplaceSection } from '@/components/feed/FeedMarketplaceSection';
 import { FeedMediaSection } from '@/components/feed/FeedMediaSection';
-import { FeedLeftSidebar } from '@/components/feed/FeedLeftSidebar';
-import { FeedRightSidebar } from '@/components/feed/FeedRightSidebar';
 
 export default function Feed() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = usePosts();
@@ -21,20 +19,17 @@ export default function Feed() {
 
   return (
     <AppLayout fullWidth>
-      <div className="flex gap-6 justify-center">
-        {/* Left Sidebar - Desktop only */}
-        <FeedLeftSidebar />
-
+      <div className="flex justify-center">
         {/* Main Feed */}
         <div className="flex-1 max-w-[680px] min-w-0">
           <div className="space-y-2 py-2">
             {/* Stories Bar */}
-            <div className="px-4 lg:px-0">
+            <div className="px-4">
               <StoriesBar />
             </div>
 
             {/* Create Post */}
-            <div className="px-4 lg:px-0">
+            <div className="px-4">
               <CreatePost />
             </div>
 
@@ -51,7 +46,7 @@ export default function Feed() {
             <FeedMarketplaceSection />
 
             {isLoading ? (
-              <div className="space-y-2 px-4 lg:px-0">
+              <div className="space-y-2 px-4">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="rounded-2xl overflow-hidden bg-card border border-border/30">
                     <div className="p-4 flex gap-3">
@@ -71,7 +66,7 @@ export default function Feed() {
                 ))}
               </div>
             ) : posts.length === 0 ? (
-              <div className="px-4 lg:px-0">
+              <div className="px-4">
                 <div className="premium-card p-10 text-center">
                   <p className="text-muted-foreground text-sm">
                     Aucun post pour le moment.
@@ -95,7 +90,7 @@ export default function Feed() {
                 </div>
 
                 {hasNextPage && (
-                  <div className="flex justify-center py-4 px-4 lg:px-0">
+                  <div className="flex justify-center py-4 px-4">
                     <Button
                       variant="ghost"
                       onClick={() => fetchNextPage()}
@@ -110,9 +105,6 @@ export default function Feed() {
             )}
           </div>
         </div>
-
-        {/* Right Sidebar - Desktop only */}
-        <FeedRightSidebar />
       </div>
     </AppLayout>
   );
