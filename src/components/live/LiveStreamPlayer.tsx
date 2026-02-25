@@ -4,6 +4,7 @@ import { Room, RoomEvent, Track, VideoPresets, LocalTrack, createLocalTracks } f
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { getLiveKitToken } from '@/lib/livekit';
+import { requestMediaPermissions, acquireWakeLock, releaseWakeLock, isNative } from '@/lib/platformPermissions';
 
 interface LiveStreamPlayerProps {
   isHost?: boolean;
@@ -41,6 +42,17 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
       setError(null);
 
       try {
+        // Request permissions first (handles native + web)
+        const perms = await requestMediaPermissions({ audio: true, video: true });
+        if (!perms.granted) {
+          setError(perms.error || "Autorisez l'accès à la caméra et au micro");
+          setIsLoading(false);
+          return;
+        }
+
+        // Keep screen awake during live
+        await acquireWakeLock();
+
         const { token, url } = await getLiveKitToken(roomName, true);
 
         const room = new Room({
@@ -55,6 +67,7 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
 
         room.on(RoomEvent.Disconnected, () => {
           setIsStreaming(false);
+          releaseWakeLock();
           onStreamEnd?.();
         });
 
@@ -81,11 +94,14 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
         console.error('LiveKit stream error:', err);
         let errorMessage = "Impossible de démarrer le stream";
         if (err.name === 'NotAllowedError') {
-          errorMessage = "Autorisez l'accès à la caméra et au micro";
+          errorMessage = isNative()
+            ? "Autorisez la caméra et le micro dans les réglages de votre appareil"
+            : "Autorisez l'accès à la caméra et au micro dans votre navigateur";
         } else if (err.name === 'NotFoundError') {
           errorMessage = 'Aucune caméra détectée';
         }
         setError(errorMessage);
+        releaseWakeLock();
       } finally {
         setIsLoading(false);
       }
@@ -100,6 +116,7 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
         videoRef.current.innerHTML = '';
       }
       setIsStreaming(false);
+      releaseWakeLock();
       onStreamEnd?.();
     };
 
@@ -215,7 +232,7 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
         )}
 
         {isHost && isStreaming && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2">
+          <div className="absolute bottom-[env(safe-area-inset-bottom,16px)] left-1/2 -translate-x-1/2 flex items-center gap-2 pb-4">
             <Button
               size="icon"
               variant="secondary"
