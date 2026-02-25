@@ -266,6 +266,7 @@ function ChatView({ conversationId }: { conversationId: string }) {
     toggleMute,
     toggleCamera,
     switchToVideo,
+    switchCamera,
   } = useCall();
 
   useEffect(() => {
@@ -507,6 +508,7 @@ function ChatView({ conversationId }: { conversationId: string }) {
         onToggleMute={toggleMute}
         onToggleCamera={toggleCamera}
         onSwitchToVideo={switchToVideo}
+        onSwitchCamera={switchCamera}
       />
     </div>
   );

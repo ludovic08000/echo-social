@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Room, RoomEvent, Track, RemoteTrackPublication } from 'livekit-client';
 import { getLiveKitToken } from '@/lib/livekit';
+import { requestMediaPermissions, acquireWakeLock, releaseWakeLock } from '@/lib/platformPermissions';
 
 export type CallType = 'audio' | 'video';
 export type CallState = 'idle' | 'connecting' | 'connected' | 'ended';
@@ -38,6 +39,18 @@ export function useCall(options?: UseCallOptions) {
   }, [callState]);
 
   const startCall = useCallback(async (conversationId: string, type: CallType) => {
+    // Request permissions before connecting
+    const perms = await requestMediaPermissions({
+      audio: true,
+      video: type === 'video',
+    });
+
+    if (!perms.granted) {
+      console.error('Permissions denied:', perms.error);
+      // Could show a toast here
+      return;
+    }
+
     setCallType(type);
     setCallState('connecting');
     setDuration(0);
@@ -45,6 +58,9 @@ export function useCall(options?: UseCallOptions) {
     setIsCameraOff(false);
 
     try {
+      // Keep screen awake during call
+      await acquireWakeLock();
+
       const roomName = `call-${conversationId}`;
       const { token, url } = await getLiveKitToken(roomName, true);
 
@@ -75,6 +91,7 @@ export function useCall(options?: UseCallOptions) {
 
       room.on(RoomEvent.Disconnected, () => {
         setCallState('ended');
+        releaseWakeLock();
         options?.onCallEnded?.();
       });
 
@@ -113,6 +130,7 @@ export function useCall(options?: UseCallOptions) {
     } catch (err) {
       console.error('Call error:', err);
       setCallState('ended');
+      releaseWakeLock();
     }
   }, [options]);
 
@@ -125,6 +143,7 @@ export function useCall(options?: UseCallOptions) {
     if (remoteVideoRef.current) remoteVideoRef.current.innerHTML = '';
     setCallState('idle');
     setDuration(0);
+    releaseWakeLock();
   }, []);
 
   const toggleMute = useCallback(() => {
@@ -162,12 +181,39 @@ export function useCall(options?: UseCallOptions) {
     }
   }, [callType]);
 
+  const switchCamera = useCallback(async () => {
+    const room = roomRef.current;
+    if (!room) return;
+    const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+    if (camPub?.track) {
+      const currentSettings = (camPub.track as any).mediaStreamTrack?.getSettings?.();
+      const newFacingMode = currentSettings?.facingMode === 'user' ? 'environment' : 'user';
+
+      await room.localParticipant.setCameraEnabled(false);
+      await room.localParticipant.setCameraEnabled(true, {
+        facingMode: newFacingMode,
+      });
+
+      const newCamPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+      if (newCamPub?.track && localVideoRef.current) {
+        const el = newCamPub.track.attach();
+        el.style.width = '100%';
+        el.style.height = '100%';
+        el.style.objectFit = 'cover';
+        el.style.transform = newFacingMode === 'user' ? 'scaleX(-1)' : '';
+        localVideoRef.current.innerHTML = '';
+        localVideoRef.current.appendChild(el);
+      }
+    }
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (roomRef.current) {
         roomRef.current.disconnect();
       }
+      releaseWakeLock();
     };
   }, []);
 
@@ -184,6 +230,7 @@ export function useCall(options?: UseCallOptions) {
     toggleMute,
     toggleCamera,
     switchToVideo,
+    switchCamera,
   };
 }
 
