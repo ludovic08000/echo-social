@@ -1,9 +1,10 @@
-import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X } from 'lucide-react';
+import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/UserAvatar';
 import { cn } from '@/lib/utils';
 import { CallState, CallType, formatCallDuration } from '@/hooks/useCall';
 import { RefObject } from 'react';
+import { getPlatform } from '@/lib/platformPermissions';
 
 interface CallOverlayProps {
   callState: CallState;
@@ -19,6 +20,7 @@ interface CallOverlayProps {
   onToggleMute: () => void;
   onToggleCamera: () => void;
   onSwitchToVideo?: () => void;
+  onSwitchCamera?: () => void;
 }
 
 export function CallOverlay({
@@ -35,11 +37,13 @@ export function CallOverlay({
   onToggleMute,
   onToggleCamera,
   onSwitchToVideo,
+  onSwitchCamera,
 }: CallOverlayProps) {
   if (callState === 'idle') return null;
 
   const isVideo = callType === 'video';
   const isConnecting = callState === 'connecting';
+  const platform = getPlatform();
 
   return (
     <div className="fixed inset-0 z-[100] bg-black flex flex-col">
@@ -111,8 +115,8 @@ export function CallOverlay({
       )}
 
       {/* Bottom controls */}
-      <div className="relative z-10 pb-safe-area-bottom pb-8">
-        <div className="flex items-center justify-center gap-4">
+      <div className="relative z-10 pb-[env(safe-area-inset-bottom,0px)] pb-8">
+        <div className="flex items-center justify-center gap-3">
           {/* Mute */}
           <Button
             size="icon"
@@ -151,6 +155,18 @@ export function CallOverlay({
               className="w-14 h-14 rounded-full bg-white/20 hover:bg-white/30 text-white"
             >
               <Video className="w-6 h-6" />
+            </Button>
+          )}
+
+          {/* Switch camera (mobile only, video calls) */}
+          {isVideo && onSwitchCamera && platform !== 'web' && (
+            <Button
+              size="icon"
+              variant="secondary"
+              onClick={onSwitchCamera}
+              className="w-14 h-14 rounded-full bg-white/20 hover:bg-white/30 text-white"
+            >
+              <RotateCcw className="w-6 h-6" />
             </Button>
           )}
 
