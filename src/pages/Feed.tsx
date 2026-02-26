@@ -1,29 +1,87 @@
+import { useEffect, useRef, useCallback } from 'react';
 import { usePosts } from '@/hooks/usePosts';
 import { AppLayout } from '@/components/AppLayout';
 import { CreatePost } from '@/components/CreatePost';
 import { PostCard } from '@/components/PostCard';
 import { StoriesBar } from '@/components/StoriesBar';
-import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { FriendSuggestions } from '@/components/feed/FriendSuggestions';
 import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
 import { FeedReelsSection } from '@/components/feed/FeedReelsSection';
 import { FeedMarketplaceSection } from '@/components/feed/FeedMarketplaceSection';
 import { FeedMediaSection } from '@/components/feed/FeedMediaSection';
+import { Loader2 } from 'lucide-react';
+
+// Positions stratégiques d'injection de contenu entre les posts
+// Optimisées pour maximiser l'engagement et le temps passé
+const INJECTION_MAP: Record<number, 'suggestions' | 'reels' | 'live' | 'media' | 'marketplace'> = {
+  1: 'live',          // Après 2 posts: FOMO avec les lives
+  3: 'reels',         // Après 4 posts: contenu vidéo addictif
+  5: 'suggestions',   // Après 6 posts: étendre le réseau
+  8: 'media',         // Après 9 posts: galerie visuelle
+  11: 'marketplace',  // Après 12 posts: shopping
+  14: 'reels',        // Boucle: plus de reels
+  18: 'live',         // Boucle: plus de lives
+  22: 'suggestions',  // Boucle: plus de suggestions
+};
 
 export default function Feed() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = usePosts();
   const navigate = useNavigate();
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
 
   const posts = data?.pages.flat() || [];
+
+  // Auto-infinite scroll — pas de bouton, chargement automatique
+  const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
+    const target = entries[0];
+    if (target.isIntersecting && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+
+  useEffect(() => {
+    observerRef.current = new IntersectionObserver(handleObserver, {
+      root: null,
+      rootMargin: '400px', // Préchargement agressif — commence à charger 400px avant la fin
+      threshold: 0,
+    });
+
+    if (loadMoreRef.current) {
+      observerRef.current.observe(loadMoreRef.current);
+    }
+
+    return () => observerRef.current?.disconnect();
+  }, [handleObserver]);
+
+  // Re-observe when loadMoreRef changes
+  useEffect(() => {
+    if (loadMoreRef.current && observerRef.current) {
+      observerRef.current.observe(loadMoreRef.current);
+    }
+  }, [posts.length]);
+
+  const renderInjection = (index: number) => {
+    const type = INJECTION_MAP[index];
+    if (!type) return null;
+
+    switch (type) {
+      case 'live': return <FeedLiveSection key={`inject-live-${index}`} />;
+      case 'reels': return <FeedReelsSection key={`inject-reels-${index}`} />;
+      case 'suggestions': return <FriendSuggestions key={`inject-sug-${index}`} />;
+      case 'media': return <FeedMediaSection key={`inject-media-${index}`} />;
+      case 'marketplace': return <FeedMarketplaceSection key={`inject-mp-${index}`} />;
+      default: return null;
+    }
+  };
 
   return (
     <AppLayout fullWidth>
       <div className="flex justify-center">
-        {/* Main Feed */}
         <div className="flex-1 max-w-[680px] min-w-0">
           <div className="space-y-2 py-2">
-            {/* Stories Bar */}
+            {/* Stories — premier point d'engagement */}
             <div className="px-4">
               <StoriesBar />
             </div>
@@ -32,18 +90,6 @@ export default function Feed() {
             <div className="px-4">
               <CreatePost />
             </div>
-
-            {/* Friend Suggestions */}
-            <FriendSuggestions />
-
-            {/* Live Streams */}
-            <FeedLiveSection />
-
-            {/* Reels */}
-            <FeedReelsSection />
-
-            {/* Marketplace */}
-            <FeedMarketplaceSection />
 
             {isLoading ? (
               <div className="space-y-2 px-4">
@@ -74,6 +120,13 @@ export default function Feed() {
                     <span className="text-primary font-medium">Soyez le premier à partager !</span>
                   </p>
                 </div>
+                {/* Même sans posts, injecter du contenu pour retenir l'utilisateur */}
+                <div className="mt-4 space-y-2">
+                  <FeedLiveSection />
+                  <FeedReelsSection />
+                  <FriendSuggestions />
+                  <FeedMarketplaceSection />
+                </div>
               </div>
             ) : (
               <>
@@ -84,21 +137,17 @@ export default function Feed() {
                         post={post}
                         onCommentClick={() => navigate(`/post/${post.id}`)}
                       />
-                      {index === 2 && <FeedMediaSection />}
+                      {renderInjection(index)}
                     </div>
                   ))}
                 </div>
 
-                {hasNextPage && (
-                  <div className="flex justify-center py-4 px-4">
-                    <Button
-                      variant="ghost"
-                      onClick={() => fetchNextPage()}
-                      disabled={isFetchingNextPage}
-                      className="w-full h-11 rounded-2xl text-sm font-medium"
-                    >
-                      {isFetchingNextPage ? 'Chargement…' : 'Voir plus de posts'}
-                    </Button>
+                {/* Auto-load trigger zone — invisible */}
+                <div ref={loadMoreRef} className="h-1" />
+                
+                {isFetchingNextPage && (
+                  <div className="flex justify-center py-6">
+                    <Loader2 className="w-6 h-6 text-primary animate-spin" />
                   </div>
                 )}
               </>
