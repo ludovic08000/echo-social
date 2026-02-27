@@ -3,10 +3,17 @@ import { Link } from 'react-router-dom';
 import { ShoppingBag, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ProductCard } from '@/components/marketplace/ProductCard';
+import { rotateMarketplaceProducts } from '@/lib/feedAlgorithm';
+import { useMemo } from 'react';
 
 export function FeedMarketplaceSection() {
   const { data: products = [] } = useProducts();
-  const featured = products.slice(0, 4);
+  
+  // Fair rotation: different sellers get exposure at different times
+  const featured = useMemo(() => {
+    const rotated = rotateMarketplaceProducts(products as any);
+    return rotated.slice(0, 4);
+  }, [products]);
 
   if (featured.length === 0) return null;
 
@@ -27,7 +34,7 @@ export function FeedMarketplaceSection() {
           </Link>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          {featured.map((product) => (
+          {featured.map((product: any) => (
             <ProductCard key={product.id} product={product} compact />
           ))}
         </div>

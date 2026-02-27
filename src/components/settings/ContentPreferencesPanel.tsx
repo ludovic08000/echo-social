@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Brain, Shuffle, Users, Clock, EyeOff, Sparkles, Hash } from 'lucide-react';
+import { Brain, Shuffle, Users, Clock, EyeOff, Sparkles, Hash, Sliders } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { loadFeedWeights, type FeedWeights } from '@/lib/feedAlgorithm';
 
 type FeedAlgorithm = 'smart' | 'chronological' | 'friends_first';
 
@@ -57,11 +58,16 @@ export function ContentPreferencesPanel() {
       return defaultPrefs;
     }
   });
+  const [feedWeights, setFeedWeights] = useState<FeedWeights>(loadFeedWeights);
   const [newKeyword, setNewKeyword] = useState('');
 
   useEffect(() => {
     localStorage.setItem('content-prefs', JSON.stringify(prefs));
   }, [prefs]);
+
+  useEffect(() => {
+    localStorage.setItem('feed-weights', JSON.stringify(feedWeights));
+  }, [feedWeights]);
 
   const update = (patch: Partial<ContentPrefs>) => {
     setPrefs(prev => ({ ...prev, ...patch }));
@@ -157,6 +163,38 @@ export function ContentPreferencesPanel() {
            prefs.diversityBoost < 70 ? t('content.diversityMid') :
            t('content.diversityHigh')}
         </p>
+      </div>
+
+      {/* Feed Weights — Configurable scoring */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+          <Sliders className="w-3.5 h-3.5" />
+          Pondération du fil
+        </h3>
+        <div className="space-y-4">
+          <div>
+            <div className="flex justify-between mb-1.5">
+              <Label className="text-xs">Amis proches</Label>
+              <span className="text-xs font-semibold text-primary">{feedWeights.friends}%</span>
+            </div>
+            <Slider value={[feedWeights.friends]} onValueChange={([v]) => setFeedWeights(w => ({ ...w, friends: v }))} min={0} max={100} step={5} />
+          </div>
+          <div>
+            <div className="flex justify-between mb-1.5">
+              <Label className="text-xs">Découverte</Label>
+              <span className="text-xs font-semibold text-primary">{feedWeights.discovery}%</span>
+            </div>
+            <Slider value={[feedWeights.discovery]} onValueChange={([v]) => setFeedWeights(w => ({ ...w, discovery: v }))} min={0} max={100} step={5} />
+          </div>
+          <div>
+            <div className="flex justify-between mb-1.5">
+              <Label className="text-xs">Marketplace</Label>
+              <span className="text-xs font-semibold text-primary">{feedWeights.marketplace}%</span>
+            </div>
+            <Slider value={[feedWeights.marketplace]} onValueChange={([v]) => setFeedWeights(w => ({ ...w, marketplace: v }))} min={0} max={100} step={5} />
+          </div>
+        </div>
+        <p className="text-[10px] text-muted-foreground/50">Ajustez l'importance de chaque type de contenu dans votre fil.</p>
       </div>
 
       <div className="space-y-3">
