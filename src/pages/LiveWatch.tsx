@@ -104,10 +104,10 @@ export default function LiveWatch() {
     return <HostLiveView live={live} />;
   }
 
-  // Viewer view
+  // Viewer view — chat overlay at bottom
   return (
-    <div className="fixed inset-0 bg-black flex flex-col md:flex-row">
-      {/* Video area */}
+    <div className="fixed inset-0 bg-black flex flex-col">
+      {/* Video area — fills the entire screen */}
       <div className="flex-1 relative">
         <LiveViewerPlayer 
           roomName={`live-${live.id}`}
@@ -117,7 +117,7 @@ export default function LiveWatch() {
         />
 
         {/* Top overlay */}
-        <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/60 to-transparent pointer-events-none">
+        <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/60 to-transparent pointer-events-none z-10">
           <div className="flex items-center justify-between pointer-events-auto">
             <button 
               onClick={() => navigate('/lives')}
@@ -139,98 +139,80 @@ export default function LiveWatch() {
 
             <button 
               onClick={() => setShowChat(!showChat)}
-              className="md:hidden w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white"
+              className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white"
             >
               {showChat ? <X className="w-5 h-5" /> : <span>💬</span>}
             </button>
           </div>
         </div>
 
-        {/* Host info */}
-        <div className="absolute bottom-4 left-4 right-4 md:bottom-8 md:left-8 pointer-events-none">
-          <div className="flex items-center gap-3 mb-2">
-            <UserAvatar src={live.host?.avatar_url} alt={live.host?.name} size="md" />
-            <div>
-              <p className="text-white font-semibold">{live.host?.name}</p>
-              <p className="text-white/70 text-sm">{live.title}</p>
-            </div>
-          </div>
-
-          {/* Action buttons */}
-          <div className="flex gap-2 mt-3 pointer-events-auto">
-            <Button size="sm" variant="secondary" className="bg-white/10 hover:bg-white/20 text-white">
-              <Heart className="w-4 h-4 mr-1" />
-              J'aime
-            </Button>
-            <Button size="sm" variant="secondary" className="bg-white/10 hover:bg-white/20 text-white">
-              <Gift className="w-4 h-4 mr-1" />
-              Cadeau
-            </Button>
-            <ShareButton
-              url={liveUrl}
-              title={live.title}
-              variant="secondary"
-              size="sm"
-              showLabel
-              className="bg-white/10 hover:bg-white/20 text-white"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Chat sidebar */}
-      <div className={cn(
-        "w-full md:w-80 bg-card/95 backdrop-blur-lg flex flex-col",
-        "absolute md:relative inset-0 md:inset-auto",
-        !showChat && "hidden md:flex"
-      )}>
-        {/* Chat header */}
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <h3 className="font-semibold">Chat en direct</h3>
-          <button 
-            onClick={() => setShowChat(false)}
-            className="md:hidden w-8 h-8 rounded-full bg-secondary flex items-center justify-center"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Messages */}
-        <div 
-          ref={chatRef}
-          className="flex-1 overflow-y-auto p-4 space-y-3"
-        >
-          {chatMessages?.map(msg => (
-            <div key={msg.id} className="flex gap-2">
-              <UserAvatar src={msg.sender?.avatar_url} alt={msg.sender?.name} size="xs" />
-              <div>
-                <span className="text-sm font-medium text-primary">{msg.sender?.name}</span>
-                <p className="text-sm text-foreground">{msg.message}</p>
+        {/* Bottom overlay: host info + actions + chat */}
+        <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
+          {/* Chat messages — scrollable, overlaid on video */}
+          {showChat && (
+            <div className="pointer-events-auto px-3">
+              <div
+                ref={chatRef}
+                className="max-h-48 overflow-y-auto space-y-1.5 mb-2 scrollbar-none"
+              >
+                {chatMessages?.map(msg => (
+                  <div key={msg.id} className="flex gap-2 items-start">
+                    <UserAvatar src={msg.sender?.avatar_url} alt={msg.sender?.name} size="xs" />
+                    <p className="text-sm text-white drop-shadow-lg">
+                      <span className="font-semibold text-primary mr-1">{msg.sender?.name}</span>
+                      {msg.message}
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
-
-          {(!chatMessages || chatMessages.length === 0) && (
-            <p className="text-center text-muted-foreground text-sm py-8">
-              Sois le premier à envoyer un message !
-            </p>
           )}
-        </div>
 
-        {/* Message input */}
-        <form onSubmit={handleSendMessage} className="p-4 border-t border-border">
-          <div className="flex gap-2">
-            <Input
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Envoie un message..."
-              className="flex-1"
-            />
-            <Button type="submit" size="icon" disabled={!message.trim()}>
-              <Send className="w-4 h-4" />
-            </Button>
+          {/* Host info + actions */}
+          <div className="px-3 pb-2 pointer-events-auto">
+            <div className="flex items-center gap-3 mb-2">
+              <UserAvatar src={live.host?.avatar_url} alt={live.host?.name} size="md" />
+              <div>
+                <p className="text-white font-semibold drop-shadow-lg">{live.host?.name}</p>
+                <p className="text-white/70 text-sm drop-shadow-lg">{live.title}</p>
+              </div>
+            </div>
+
+            <div className="flex gap-2 mb-2">
+              <Button size="sm" variant="secondary" className="bg-white/10 hover:bg-white/20 text-white border-0">
+                <Heart className="w-4 h-4 mr-1" />
+                J'aime
+              </Button>
+              <Button size="sm" variant="secondary" className="bg-white/10 hover:bg-white/20 text-white border-0">
+                <Gift className="w-4 h-4 mr-1" />
+                Cadeau
+              </Button>
+              <ShareButton
+                url={liveUrl}
+                title={live.title}
+                variant="secondary"
+                size="sm"
+                showLabel
+                className="bg-white/10 hover:bg-white/20 text-white border-0"
+              />
+            </div>
           </div>
-        </form>
+
+          {/* Chat input — pinned at very bottom */}
+          <form onSubmit={handleSendMessage} className="px-3 pb-4 pt-2 bg-gradient-to-t from-black/80 to-transparent pointer-events-auto">
+            <div className="flex gap-2">
+              <Input
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Envoie un message..."
+                className="flex-1 bg-white/10 border-white/20 text-white placeholder:text-white/50"
+              />
+              <Button type="submit" size="icon" disabled={!message.trim()} className="bg-primary text-primary-foreground">
+                <Send className="w-4 h-4" />
+              </Button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );
