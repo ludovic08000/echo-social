@@ -232,7 +232,15 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
         )}
 
         {isHost && isStreaming && (
-          <div className="absolute bottom-[env(safe-area-inset-bottom,16px)] left-1/2 -translate-x-1/2 flex items-center gap-2 pb-4">
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 z-20" style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 280px)' }}>
+            <Button
+              size="icon"
+              variant="secondary"
+              onClick={switchCamera}
+              className="rounded-full w-12 h-12"
+            >
+              <RotateCcw className="w-5 h-5" />
+            </Button>
             <Button
               size="icon"
               variant="secondary"
@@ -254,14 +262,6 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
               )}
             >
               {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
-            </Button>
-            <Button
-              size="icon"
-              variant="secondary"
-              onClick={switchCamera}
-              className="rounded-full w-12 h-12"
-            >
-              <RotateCcw className="w-5 h-5" />
             </Button>
           </div>
         )}
