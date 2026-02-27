@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { groupNotifications, type GroupedNotification } from '@/lib/feedAlgorithm';
 
 export interface Notification {
   id: string;
@@ -122,4 +123,10 @@ export function useMarkAsRead() {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
+}
+
+export function useGroupedNotifications() {
+  const { data: notifications = [], ...rest } = useNotifications();
+  const grouped = groupNotifications(notifications);
+  return { data: grouped, ...rest };
 }

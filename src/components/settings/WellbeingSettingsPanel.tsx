@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Timer, Moon, Eye, TrendingDown, Clock, Coffee, Zap, Shield } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
@@ -7,6 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { DetoxSchedulePanel } from './DetoxSchedulePanel';
+import { getTodayMinutes, getWeeklyUsage } from '@/lib/feedAlgorithm';
 
 interface WellbeingPrefs {
   dailyLimitMinutes: number;
@@ -50,10 +51,10 @@ export function WellbeingSettingsPanel() {
     }
   });
 
-  const todayMinutes = useMemo(() => Math.floor(Math.random() * 45) + 10, []);
-  const weekData = useMemo(() => [28, 45, 32, 52, 18, 40, todayMinutes], [todayMinutes]);
+  const todayMinutes = getTodayMinutes();
+  const weekData = getWeeklyUsage();
   const weekAvg = Math.round(weekData.reduce((a, b) => a + b, 0) / weekData.length);
-  const maxWeek = Math.max(...weekData);
+  const maxWeek = Math.max(1, ...weekData);
 
   useEffect(() => {
     localStorage.setItem('wellbeing-prefs', JSON.stringify(prefs));

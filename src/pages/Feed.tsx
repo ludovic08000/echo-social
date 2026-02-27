@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { usePosts } from '@/hooks/usePosts';
 import { AppLayout } from '@/components/AppLayout';
 import { CreatePost } from '@/components/CreatePost';
@@ -10,19 +10,20 @@ import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
 import { FeedReelsSection } from '@/components/feed/FeedReelsSection';
 import { FeedMarketplaceSection } from '@/components/feed/FeedMarketplaceSection';
 import { FeedMediaSection } from '@/components/feed/FeedMediaSection';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Coffee, X } from 'lucide-react';
+import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgorithm';
+import { Button } from '@/components/ui/button';
 
-// Positions stratégiques d'injection de contenu entre les posts
-// Optimisées pour maximiser l'engagement et le temps passé
+// Injection positions for content between posts
 const INJECTION_MAP: Record<number, 'suggestions' | 'reels' | 'live' | 'media' | 'marketplace'> = {
-  1: 'live',          // Après 2 posts: FOMO avec les lives
-  3: 'reels',         // Après 4 posts: contenu vidéo addictif
-  5: 'suggestions',   // Après 6 posts: étendre le réseau
-  8: 'media',         // Après 9 posts: galerie visuelle
-  11: 'marketplace',  // Après 12 posts: shopping
-  14: 'reels',        // Boucle: plus de reels
-  18: 'live',         // Boucle: plus de lives
-  22: 'suggestions',  // Boucle: plus de suggestions
+  1: 'live',
+  3: 'reels',
+  5: 'suggestions',
+  8: 'media',
+  11: 'marketplace',
+  14: 'reels',
+  18: 'live',
+  22: 'suggestions',
 };
 
 export default function Feed() {
@@ -30,10 +31,43 @@ export default function Feed() {
   const navigate = useNavigate();
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const [showPauseReminder, setShowPauseReminder] = useState(false);
+  const [pauseDismissed, setPauseDismissed] = useState(false);
 
   const posts = data?.pages.flat() || [];
 
-  // Auto-infinite scroll — pas de bouton, chargement automatique
+  // ── Wellbeing: track usage & scroll pause ──
+  useEffect(() => {
+    const interval = setInterval(() => {
+      trackMinute();
+      
+      // Check scroll pause setting
+      if (pauseDismissed) return;
+      try {
+        const wellbeingPrefs = JSON.parse(localStorage.getItem('wellbeing-prefs') || '{}');
+        if (wellbeingPrefs.scrollPauseEnabled) {
+          const sessionMin = getSessionMinutes();
+          if (sessionMin >= (wellbeingPrefs.scrollPauseMinutes || 15)) {
+            setShowPauseReminder(true);
+          }
+        }
+        // Check daily limit
+        if (wellbeingPrefs.dailyLimitMinutes) {
+          const todayMin = getTodayMinutes();
+          if (todayMin >= wellbeingPrefs.dailyLimitMinutes && wellbeingPrefs.grayscaleAfterLimit) {
+            document.documentElement.style.filter = 'grayscale(100%)';
+          }
+        }
+      } catch {}
+    }, 60000); // Every minute
+
+    return () => {
+      clearInterval(interval);
+      document.documentElement.style.filter = '';
+    };
+  }, [pauseDismissed]);
+
+  // Auto-infinite scroll
   const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
     const target = entries[0];
     if (target.isIntersecting && hasNextPage && !isFetchingNextPage) {
@@ -44,18 +78,15 @@ export default function Feed() {
   useEffect(() => {
     observerRef.current = new IntersectionObserver(handleObserver, {
       root: null,
-      rootMargin: '400px', // Préchargement agressif — commence à charger 400px avant la fin
+      rootMargin: '400px',
       threshold: 0,
     });
-
     if (loadMoreRef.current) {
       observerRef.current.observe(loadMoreRef.current);
     }
-
     return () => observerRef.current?.disconnect();
   }, [handleObserver]);
 
-  // Re-observe when loadMoreRef changes
   useEffect(() => {
     if (loadMoreRef.current && observerRef.current) {
       observerRef.current.observe(loadMoreRef.current);
@@ -65,7 +96,6 @@ export default function Feed() {
   const renderInjection = (index: number) => {
     const type = INJECTION_MAP[index];
     if (!type) return null;
-
     switch (type) {
       case 'live': return <FeedLiveSection key={`inject-live-${index}`} />;
       case 'reels': return <FeedReelsSection key={`inject-reels-${index}`} />;
@@ -76,17 +106,46 @@ export default function Feed() {
     }
   };
 
+  const dismissPause = () => {
+    setShowPauseReminder(false);
+    setPauseDismissed(true);
+    // Reset session timer
+    sessionStorage.setItem('forsure-session-start', Date.now().toString());
+  };
+
   return (
     <AppLayout fullWidth>
       <div className="flex justify-center">
         <div className="flex-1 max-w-[680px] min-w-0">
           <div className="space-y-2 py-2">
-            {/* Stories — premier point d'engagement */}
+            {/* Scroll pause reminder */}
+            {showPauseReminder && (
+              <div className="px-4">
+                <div className="relative p-4 rounded-2xl bg-gradient-to-br from-primary/10 to-accent/10 border border-primary/20 text-center space-y-2">
+                  <button onClick={dismissPause} className="absolute top-2 right-2 p-1 rounded-full hover:bg-secondary/50">
+                    <X className="w-4 h-4 text-muted-foreground" />
+                  </button>
+                  <Coffee className="w-8 h-8 text-primary mx-auto" />
+                  <p className="text-sm font-semibold">Petite pause ? ☕</p>
+                  <p className="text-xs text-muted-foreground">
+                    Vous scrollez depuis {getSessionMinutes()} minutes. Prenez un moment pour vous.
+                  </p>
+                  <div className="flex gap-2 justify-center pt-1">
+                    <Button size="sm" variant="outline" className="text-xs rounded-xl" onClick={dismissPause}>
+                      Continuer
+                    </Button>
+                    <Button size="sm" className="text-xs rounded-xl" onClick={() => navigate('/journal')}>
+                      Écrire dans le journal
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="px-4">
               <StoriesBar />
             </div>
 
-            {/* Create Post */}
             <div className="px-4">
               <CreatePost />
             </div>
@@ -120,7 +179,6 @@ export default function Feed() {
                     <span className="text-primary font-medium">Soyez le premier à partager !</span>
                   </p>
                 </div>
-                {/* Même sans posts, injecter du contenu pour retenir l'utilisateur */}
                 <div className="mt-4 space-y-2">
                   <FeedLiveSection />
                   <FeedReelsSection />
@@ -142,7 +200,6 @@ export default function Feed() {
                   ))}
                 </div>
 
-                {/* Auto-load trigger zone — invisible */}
                 <div ref={loadMoreRef} className="h-1" />
                 
                 {isFetchingNextPage && (

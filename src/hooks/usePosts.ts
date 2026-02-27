@@ -3,6 +3,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { ReactionType } from '@/hooks/useReactions';
 import { useEffect } from 'react';
+import {
+  scorePost,
+  loadContentPrefs,
+  loadFeedWeights,
+  containsMutedKeyword,
+  type ScoringContext,
+} from '@/lib/feedAlgorithm';
 
 export interface Post {
   id: string;
@@ -24,74 +31,10 @@ export interface Post {
 
 const PAGE_SIZE = 10;
 
-// ────────────────────────────────────────────────────────
-// Algorithme d'engagement agressif
-// Score chaque post pour maximiser le temps passé sur le feed
-// ────────────────────────────────────────────────────────
-
-interface ScoringContext {
-  friendInteractionCounts: Map<string, number>; // userId -> nb interactions mutuelles
-  userId: string;
-}
-
-function scorePost(
-  post: { 
-    id: string; 
-    user_id: string; 
-    body: string; 
-    image_url: string | null; 
-    created_at: string;
-    likes_count: number;
-    comments_count: number;
-  },
-  ctx: ScoringContext
-): number {
-  let score = 0;
-
-  // 1. ENGAGEMENT VIRAL — les posts populaires attirent plus
-  const engagementRatio = (post.likes_count * 1.0 + post.comments_count * 2.5);
-  score += Math.min(40, engagementRatio * 2);
-
-  // 2. PROXIMITÉ SOCIALE — amis proches en priorité
-  const interactionCount = ctx.friendInteractionCounts.get(post.user_id) || 0;
-  score += Math.min(30, interactionCount * 5);
-
-  // 3. CONTENU RICHE — les images captent plus l'attention
-  if (post.image_url) {
-    score += 15;
-  }
-
-  // 4. LONGUEUR DU TEXTE — les posts moyens engagent plus (ni trop courts, ni trop longs)
-  const textLen = post.body.length;
-  if (textLen > 50 && textLen < 500) score += 8;
-  else if (textLen >= 500) score += 4;
-
-  // 5. RÉCENCE avec décroissance exponentielle — favorise le contenu frais
-  const ageMs = Date.now() - new Date(post.created_at).getTime();
-  const ageHours = ageMs / (1000 * 60 * 60);
-  const recencyBoost = Math.max(0, 25 * Math.exp(-ageHours / 12)); // demi-vie de 12h
-  score += recencyBoost;
-
-  // 6. POST PROPRE DE L'UTILISATEUR — boost léger pour voir ses propres posts
-  if (post.user_id === ctx.userId) {
-    score += 5;
-  }
-
-  // 7. RANDOMISATION CONTRÔLÉE — empêche le feed d'être trop prévisible
-  score += Math.random() * 8;
-
-  // 8. ÉMOJI / RÉACTIONS — posts avec émojis = plus d'émotions
-  const hasEmoji = /[\u{1F300}-\u{1F9FF}]/u.test(post.body);
-  if (hasEmoji) score += 3;
-
-  return score;
-}
-
 export function usePosts() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  // Subscribe to realtime changes
   useEffect(() => {
     const channel = supabase
       .channel('posts-realtime')
@@ -114,10 +57,12 @@ export function usePosts() {
     queryFn: async ({ pageParam = 0 }) => {
       if (!user) return [];
       
+      const prefs = loadContentPrefs();
+      const weights = loadFeedWeights();
       const from = pageParam * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
 
-      // Get list of friend user IDs
+      // Get friends
       const { data: friendships } = await supabase
         .from('friendships')
         .select('requester_id, addressee_id')
@@ -131,7 +76,7 @@ export function usePosts() {
       const allowedUserIds = [user.id, ...friendIds];
       const now = new Date().toISOString();
 
-      // Fetch a larger pool for scoring (3x page size)
+      // Fetch larger pool for scoring
       const poolSize = PAGE_SIZE * 3;
       const { data: posts, error } = await supabase
         .from('posts')
@@ -144,19 +89,18 @@ export function usePosts() {
       if (error) throw error;
       if (!posts || posts.length === 0) return [];
 
-      // Get profiles, likes, comments in parallel
-      const userIds = [...new Set(posts.map(p => p.user_id))];
-      const postIds = posts.map(p => p.id);
+      // ── ANTI-SPAM: Filter muted keywords ──
+      const filteredPosts = posts.filter(p => !containsMutedKeyword(p.body, prefs.mutedKeywords));
+
+      const userIds = [...new Set(filteredPosts.map(p => p.user_id))];
+      const postIds = filteredPosts.map(p => p.id);
       
       const [profilesRes, likesRes, commentsRes, userLikesRes, interactionsRes] = await Promise.all([
         supabase.from('profiles').select('user_id, name, avatar_url, mood_emoji').in('user_id', userIds),
         supabase.from('likes').select('post_id').in('post_id', postIds),
         supabase.from('comments').select('post_id').in('post_id', postIds),
         supabase.from('likes').select('post_id, reaction_type').eq('user_id', user.id).in('post_id', postIds),
-        // Fetch user's interaction history with friends (likes they gave on friends' posts)
-        supabase.from('likes').select('post_id')
-          .eq('user_id', user.id)
-          .limit(200),
+        supabase.from('likes').select('post_id').eq('user_id', user.id).limit(200),
       ]);
 
       const profileMap = new Map(profilesRes.data?.map(p => [p.user_id, p]) || []);
@@ -171,9 +115,8 @@ export function usePosts() {
         userReactions.set(l.post_id, l.reaction_type);
       });
 
-      // Build friend interaction map (how much user interacts with each friend)
+      // Build friend interaction map
       const friendInteractionCounts = new Map<string, number>();
-      // Count likes the user gave, grouped by post author
       if (interactionsRes.data) {
         const likedPostIds = interactionsRes.data.map(l => l.post_id);
         if (likedPostIds.length > 0) {
@@ -187,15 +130,32 @@ export function usePosts() {
         }
       }
 
-      // Score and sort posts
-      const ctx: ScoringContext = { friendInteractionCounts, userId: user.id };
-      
-      const enrichedPosts = posts.map(post => {
+      // ── SCORING with anti-bias diversity tracking ──
+      const seenAuthors = new Set<string>();
+      const ctx: ScoringContext = {
+        friendInteractionCounts,
+        userId: user.id,
+        prefs,
+        weights,
+        seenAuthors,
+        postIndex: 0,
+      };
+
+      const enrichedPosts = filteredPosts.map((post, index) => {
         const profile = profileMap.get(post.user_id);
         const userReaction = userReactions.get(post.id);
         const lc = likesCount[post.id] || 0;
         const cc = commentsCount[post.id] || 0;
+
+        ctx.postIndex = index;
+        const _score = scorePost(
+          { ...post, likes_count: lc, comments_count: cc },
+          ctx
+        );
         
+        // Track author for diversity
+        seenAuthors.add(post.user_id);
+
         return {
           id: post.id,
           user_id: post.user_id,
@@ -212,19 +172,34 @@ export function usePosts() {
           comments_count: cc,
           is_liked: !!userReaction,
           user_reaction: userReaction || null,
-          _score: scorePost(
-            { ...post, likes_count: lc, comments_count: cc },
-            ctx
-          ),
+          _score,
         };
       });
 
-      // Sort by engagement score (not chronological!)
+      // Sort by score
       enrichedPosts.sort((a, b) => b._score - a._score);
 
-      // Paginate from the scored results
-      const paged = enrichedPosts.slice(from, to + 1);
+      // ── ANTI-BIAS: Enforce max consecutive posts from same author ──
+      const diversified: typeof enrichedPosts = [];
+      const authorConsecutive = new Map<string, number>();
+      const maxConsecutive = 2;
+      const deferred: typeof enrichedPosts = [];
 
+      for (const post of enrichedPosts) {
+        const consecutive = authorConsecutive.get(post.user_id) || 0;
+        if (consecutive >= maxConsecutive) {
+          deferred.push(post);
+        } else {
+          diversified.push(post);
+          // Reset other authors, increment this one
+          authorConsecutive.clear();
+          authorConsecutive.set(post.user_id, consecutive + 1);
+        }
+      }
+      // Append deferred at end
+      diversified.push(...deferred);
+
+      const paged = diversified.slice(from, to + 1);
       return paged.map(({ _score, ...post }) => post);
     },
     getNextPageParam: (lastPage, pages) => {
@@ -233,8 +208,8 @@ export function usePosts() {
     },
     initialPageParam: 0,
     enabled: !!user,
-    staleTime: 15000, // Refresh toutes les 15s pour du contenu frais
-    refetchInterval: 60000, // Auto-refresh toutes les 60s
+    staleTime: 15000,
+    refetchInterval: 60000,
   });
 }
 
