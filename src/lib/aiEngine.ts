@@ -14,7 +14,7 @@ export interface AIModule {
   capabilities: string[];
 }
 
-export type AICategory = 'content' | 'social' | 'games' | 'wellbeing' | 'commerce';
+export type AICategory = 'content' | 'social' | 'games' | 'wellbeing' | 'commerce' | 'moderation';
 
 export interface AIModuleMetrics {
   totalCalls: number;
@@ -32,6 +32,7 @@ export interface AIEngineStats {
 
 // ── Registry of all AI modules in the platform ──
 const AI_MODULE_REGISTRY: Omit<AIModule, 'metrics'>[] = [
+  // ── CONTENT INTELLIGENCE ──
   {
     id: 'content-summarizer',
     name: 'Résumé Intelligent',
@@ -51,6 +52,55 @@ const AI_MODULE_REGISTRY: Omit<AIModule, 'metrics'>[] = [
     capabilities: ['Multi-langue', 'Préservation du ton', 'Détection automatique'],
   },
   {
+    id: 'content-enhancer',
+    name: 'Optimiseur de Contenu',
+    description: 'Améliore la rédaction, suggère des hashtags et prédit l\'engagement avant publication.',
+    category: 'content',
+    status: 'active',
+    icon: 'Wand2',
+    capabilities: ['Réécriture IA', 'Hashtags auto', 'Score lisibilité', 'Prédiction engagement'],
+  },
+
+  // ── MODERATION INTELLIGENCE ──
+  {
+    id: 'ai-moderator',
+    name: 'Modération Auto-Apprenante',
+    description: 'IA de modération qui apprend des décisions humaines pour s\'améliorer continuellement. Détecte toxicité, spam, harcèlement et désinformation.',
+    category: 'moderation',
+    status: 'active',
+    icon: 'ShieldCheck',
+    capabilities: ['Détection toxicité', 'Anti-harcèlement', 'Anti-désinformation', 'Auto-apprentissage', 'Feedback loop', 'Confiance culturelle'],
+  },
+  {
+    id: 'sentiment-analyzer',
+    name: 'Analyse de Sentiment',
+    description: 'Détecte les émotions, le sentiment et prédit la viralité de chaque contenu en temps réel.',
+    category: 'moderation',
+    status: 'active',
+    icon: 'HeartPulse',
+    capabilities: ['8 émotions', '5 niveaux sentiment', 'Prédiction viralité', 'Détection thèmes', 'Intensité émotionnelle'],
+  },
+  {
+    id: 'risk-assessor',
+    name: 'Évaluation de Risque Profil',
+    description: 'Analyse comportementale des profils pour détecter les comptes à risque et les comportements suspects.',
+    category: 'moderation',
+    status: 'active',
+    icon: 'UserSearch',
+    capabilities: ['Score de confiance', 'Détection bots', 'Patterns comportementaux', 'Actions automatiques'],
+  },
+  {
+    id: 'self-learning',
+    name: 'Auto-Apprentissage',
+    description: 'Moteur d\'apprentissage continu qui dérive de nouvelles règles à partir du feedback humain pour affiner la modération.',
+    category: 'moderation',
+    status: 'active',
+    icon: 'GraduationCap',
+    capabilities: ['Feedback loop', 'Dérivation de règles', 'Reconnaissance de patterns', 'Amélioration continue'],
+  },
+
+  // ── SOCIAL INTELLIGENCE ──
+  {
     id: 'feed-algorithm',
     name: 'Algorithme de Feed',
     description: 'Moteur de scoring dynamique avec anti-spam, anti-biais et diversité de contenu.',
@@ -69,6 +119,26 @@ const AI_MODULE_REGISTRY: Omit<AIModule, 'metrics'>[] = [
     capabilities: ['Groupement par type', 'Déduplication', 'Prioritisation'],
   },
   {
+    id: 'smart-reply',
+    name: 'Réponses Intelligentes',
+    description: 'Génère 3 suggestions de réponses contextuelles adaptées au ton de la conversation.',
+    category: 'social',
+    status: 'active',
+    icon: 'MessageSquareText',
+    capabilities: ['3 suggestions', 'Détection du ton', 'Multi-langue', 'Contextuel'],
+  },
+  {
+    id: 'recommendation-engine',
+    name: 'Moteur de Recommandations',
+    description: 'Recommande du contenu adapté aux centres d\'intérêt avec diversité intégrée et détection de fatigue.',
+    category: 'social',
+    status: 'active',
+    icon: 'Compass',
+    capabilities: ['Profil personnalité', 'Anti-fatigue', 'Diversité forcée', 'Créneaux optimaux'],
+  },
+
+  // ── COMMERCE INTELLIGENCE ──
+  {
     id: 'marketplace-rotation',
     name: 'Rotation Marketplace',
     description: 'Algorithme d\'exposition équitable des vendeurs avec rotation temporelle.',
@@ -77,6 +147,8 @@ const AI_MODULE_REGISTRY: Omit<AIModule, 'metrics'>[] = [
     icon: 'ShoppingBag',
     capabilities: ['Round-robin vendeurs', 'Rotation horaire', 'Équité d\'exposition'],
   },
+
+  // ── GAME INTELLIGENCE ──
   {
     id: 'chess-ai',
     name: 'IA Échecs',
@@ -113,6 +185,8 @@ const AI_MODULE_REGISTRY: Omit<AIModule, 'metrics'>[] = [
     icon: 'Hash',
     capabilities: ['3 niveaux', 'Minimax pur', 'Jeu parfait (difficile)', 'Aléatoire (facile)'],
   },
+
+  // ── WELLBEING INTELLIGENCE ──
   {
     id: 'wellbeing-tracker',
     name: 'Bien-être Digital',
@@ -206,6 +280,7 @@ export function getCategoryLabel(cat: AICategory): string {
     games: 'Jeux',
     wellbeing: 'Bien-être',
     commerce: 'Commerce',
+    moderation: 'Modération',
   };
   return labels[cat];
 }
@@ -217,6 +292,7 @@ export function getCategoryColor(cat: AICategory): string {
     games: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
     wellbeing: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
     commerce: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
+    moderation: 'bg-red-500/20 text-red-400 border-red-500/30',
   };
   return colors[cat];
 }
