@@ -3,5 +3,8 @@ project_id = "vkpmoqfzrihcijjochks"
 [functions.ai-content]
 verify_jwt = false
 
+[functions.ai-engine]
+verify_jwt = false
+
 [functions.livekit-token]
 verify_jwt = false
