@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { AppLayout } from '@/components/AppLayout';
 import { SEOHead } from '@/components/SEOHead';
 import {
@@ -322,7 +322,11 @@ function AIPlayground() {
 
 // ── Learning Dashboard ──
 function LearningDashboard() {
-  const { feedbackHistory, learnedRules } = useAIEngine();
+  const { feedbackHistory, learnedRules, loadFeedbackHistory } = useAIEngine();
+
+  useEffect(() => {
+    loadFeedbackHistory();
+  }, [loadFeedbackHistory]);
 
   return (
     <div className="space-y-4">
@@ -344,7 +348,7 @@ function LearningDashboard() {
             {learnedRules.map((rule, i) => (
               <div key={i} className="flex items-start gap-2 text-xs p-2 rounded-lg bg-accent/30 border border-border">
                 <BookOpen className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                <span className="text-muted-foreground">{rule}</span>
+                <span className="text-muted-foreground">{typeof rule === 'string' ? rule : rule.rule}</span>
               </div>
             ))}
           </div>
@@ -372,7 +376,7 @@ function LearningDashboard() {
                   <Badge variant="outline" className="text-[10px]">{fb.aiDecision}</Badge>
                   <span className="text-muted-foreground">→</span>
                   <Badge variant="outline" className="text-[10px] border-primary/30 text-primary">{fb.humanDecision}</Badge>
-                  <span className="text-[10px] text-muted-foreground ml-auto">{new Date(fb.timestamp).toLocaleDateString('fr')}</span>
+                  <span className="text-[10px] text-muted-foreground ml-auto">{fb.created_at ? new Date(fb.created_at).toLocaleDateString('fr') : ''}</span>
                 </div>
                 <p className="text-muted-foreground line-clamp-1">{fb.originalText}</p>
               </div>

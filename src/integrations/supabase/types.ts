@@ -50,6 +50,92 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_feedback: {
+        Row: {
+          ai_decision: string
+          created_at: string
+          human_decision: string
+          id: string
+          original_text: string
+          reason: string | null
+          user_id: string
+        }
+        Insert: {
+          ai_decision: string
+          created_at?: string
+          human_decision: string
+          id?: string
+          original_text: string
+          reason?: string | null
+          user_id: string
+        }
+        Update: {
+          ai_decision?: string
+          created_at?: string
+          human_decision?: string
+          id?: string
+          original_text?: string
+          reason?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      ai_learned_rules: {
+        Row: {
+          created_at: string
+          id: string
+          pattern: string | null
+          rule: string
+          source_feedback_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          pattern?: string | null
+          rule: string
+          source_feedback_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          pattern?: string | null
+          rule?: string
+          source_feedback_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_learned_rules_source_feedback_id_fkey"
+            columns: ["source_feedback_id"]
+            isOneToOne: false
+            referencedRelation: "ai_feedback"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_moderation_cache: {
+        Row: {
+          content_hash: string
+          created_at: string
+          expires_at: string
+          id: string
+          result: Json
+        }
+        Insert: {
+          content_hash: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          result: Json
+        }
+        Update: {
+          content_hash?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          result?: Json
+        }
+        Relationships: []
+      }
       album_media: {
         Row: {
           album_id: string
@@ -2015,6 +2101,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cleanup_ai_cache: { Args: never; Returns: undefined }
       generate_order_number: { Args: never; Returns: string }
       get_friend_suggestions: {
         Args: { limit_count?: number; target_user_id: string }

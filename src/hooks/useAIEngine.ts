@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { trackAICall } from '@/lib/aiEngine';
+import { useAuth } from '@/lib/auth';
 
 // ── Types ──
 export interface ModerationResult {
@@ -49,71 +50,27 @@ export interface ContentEnhanceResult {
 }
 
 export interface FeedbackEntry {
+  id?: string;
   originalText: string;
   aiDecision: string;
   humanDecision: string;
   reason: string;
-  timestamp: string;
+  created_at?: string;
 }
 
-// ── Self-learning store ──
-const FEEDBACK_KEY = 'forsure-ai-feedback';
-const MODERATION_CACHE_KEY = 'forsure-ai-mod-cache';
-const LEARNED_RULES_KEY = 'forsure-ai-learned-rules';
-
-function loadFeedback(): FeedbackEntry[] {
-  try { return JSON.parse(localStorage.getItem(FEEDBACK_KEY) || '[]'); } catch { return []; }
-}
-
-function saveFeedback(entries: FeedbackEntry[]) {
-  // Keep last 200 entries
-  localStorage.setItem(FEEDBACK_KEY, JSON.stringify(entries.slice(-200)));
-}
-
-function loadLearnedRules(): string[] {
-  try { return JSON.parse(localStorage.getItem(LEARNED_RULES_KEY) || '[]'); } catch { return []; }
-}
-
-function saveLearnedRules(rules: string[]) {
-  localStorage.setItem(LEARNED_RULES_KEY, JSON.stringify(rules.slice(-50)));
-}
-
-// Simple content hash for cache
-function hashContent(text: string): string {
-  let h = 0;
-  for (let i = 0; i < text.length; i++) {
-    h = ((h << 5) - h + text.charCodeAt(i)) | 0;
-  }
-  return h.toString(36);
-}
-
-function getCachedModeration(text: string): ModerationResult | null {
-  try {
-    const cache = JSON.parse(localStorage.getItem(MODERATION_CACHE_KEY) || '{}');
-    const key = hashContent(text);
-    const entry = cache[key];
-    if (entry && Date.now() - entry.ts < 3600000) return entry.result; // 1h cache
-    return null;
-  } catch { return null; }
-}
-
-function setCachedModeration(text: string, result: ModerationResult) {
-  try {
-    const cache = JSON.parse(localStorage.getItem(MODERATION_CACHE_KEY) || '{}');
-    const keys = Object.keys(cache);
-    // Evict oldest if over 500
-    if (keys.length > 500) {
-      const sorted = keys.sort((a, b) => (cache[a].ts || 0) - (cache[b].ts || 0));
-      sorted.slice(0, 100).forEach(k => delete cache[k]);
-    }
-    cache[hashContent(text)] = { result, ts: Date.now() };
-    localStorage.setItem(MODERATION_CACHE_KEY, JSON.stringify(cache));
-  } catch { }
+export interface LearnedRule {
+  id: string;
+  rule: string;
+  pattern: string | null;
+  created_at: string;
 }
 
 // ── Hook ──
 export function useAIEngine() {
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [feedbackHistory, setFeedbackHistory] = useState<FeedbackEntry[]>([]);
+  const [learnedRules, setLearnedRules] = useState<LearnedRule[]>([]);
+  const { user } = useAuth();
 
   const setModuleLoading = (module: string, val: boolean) => {
     setLoading(prev => ({ ...prev, [module]: val }));
@@ -124,7 +81,7 @@ export function useAIEngine() {
     const start = performance.now();
     try {
       const { data, error } = await supabase.functions.invoke('ai-engine', {
-        body: { action, ...body },
+        body: { action, user_id: user?.id, ...body },
       });
       const elapsed = Math.round(performance.now() - start);
       const success = !error && !data?.error && data?.result;
@@ -144,22 +101,14 @@ export function useAIEngine() {
     } finally {
       setModuleLoading(moduleId, false);
     }
-  }, []);
+  }, [user?.id]);
 
-  // ── Moderation with cache + self-learning ──
+  // ── Moderation (cache géré côté serveur) ──
   const moderate = useCallback(async (text: string): Promise<ModerationResult | null> => {
-    if (!text || text.trim().length < 3) return { safe: true, score: 0, categories: [], sentiment: 'neutral', emotion: 'trust', confidence: 100, suggestion: '', auto_action: 'allow' };
-
-    // Check cache
-    const cached = getCachedModeration(text);
-    if (cached) {
-      trackAICall('ai-moderator', 1, true);
-      return cached;
+    if (!text || text.trim().length < 3) {
+      return { safe: true, score: 0, categories: [], sentiment: 'neutral', emotion: 'trust', confidence: 100, suggestion: '', auto_action: 'allow' };
     }
-
-    const result = await callEngine<ModerationResult>('moderate', 'ai-moderator', { text });
-    if (result) setCachedModeration(text, result);
-    return result;
+    return callEngine<ModerationResult>('moderate', 'ai-moderator', { text });
   }, [callEngine]);
 
   // ── Sentiment analysis ──
@@ -185,27 +134,35 @@ export function useAIEngine() {
     return callEngine<ContentEnhanceResult>('content_enhance', 'content-enhancer', { text });
   }, [callEngine]);
 
-  // ── Self-learning feedback ──
-  const submitFeedback = useCallback(async (entry: Omit<FeedbackEntry, 'timestamp'>) => {
-    const feedback: FeedbackEntry = { ...entry, timestamp: new Date().toISOString() };
-    const all = loadFeedback();
-    all.push(feedback);
-    saveFeedback(all);
-
-    // Send to AI for learning
-    const result = await callEngine<{ new_rules: string[]; pattern: string }>('learn_feedback', 'self-learning', { feedback });
-    if (result?.new_rules) {
-      const existing = loadLearnedRules();
-      saveLearnedRules([...existing, ...result.new_rules]);
+  // ── Self-learning feedback (stocké en DB) ──
+  const submitFeedback = useCallback(async (entry: Omit<FeedbackEntry, 'created_at' | 'id'>) => {
+    if (!user?.id) {
+      toast({ title: 'Erreur', description: 'Vous devez être connecté pour soumettre un feedback.', variant: 'destructive' });
+      return;
     }
 
-    // Invalidate cache for similar content
-    try {
-      localStorage.removeItem(MODERATION_CACHE_KEY);
-    } catch { }
+    const result = await callEngine<{ new_rules: string[]; pattern: string }>('learn_feedback', 'self-learning', {
+      feedback: entry,
+    });
 
-    toast({ title: '✨ IA améliorée', description: 'Le feedback a été intégré au modèle d\'apprentissage.' });
-  }, [callEngine]);
+    if (result) {
+      toast({ title: '✨ IA améliorée', description: 'Le feedback a été intégré au modèle d\'apprentissage côté serveur.' });
+      // Refresh history
+      loadFeedbackHistory();
+    }
+  }, [callEngine, user?.id]);
+
+  // ── Load feedback & rules from server ──
+  const loadFeedbackHistory = useCallback(async () => {
+    if (!user?.id) return;
+    const result = await callEngine<{ feedback: FeedbackEntry[]; rules: LearnedRule[] }>(
+      'get_feedback_history', 'feedback-loader', { }
+    );
+    if (result) {
+      setFeedbackHistory(result.feedback || []);
+      setLearnedRules(result.rules || []);
+    }
+  }, [callEngine, user?.id]);
 
   // ── Profile risk assessment ──
   const assessProfileRisk = useCallback(async (context: Record<string, unknown>) => {
@@ -220,8 +177,9 @@ export function useAIEngine() {
     enhanceContent,
     submitFeedback,
     assessProfileRisk,
+    loadFeedbackHistory,
     loading,
-    feedbackHistory: loadFeedback(),
-    learnedRules: loadLearnedRules(),
+    feedbackHistory,
+    learnedRules,
   };
 }
