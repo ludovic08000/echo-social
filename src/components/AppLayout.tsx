@@ -83,11 +83,11 @@ export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
       
       <main className="pb-20">
         {fullWidth ? (
-          <div className="mx-auto px-4 max-w-[680px]">
+          <div className="mx-auto px-4 max-w-[680px] md:max-w-full">
             {children}
           </div>
         ) : (
-          <div className="mx-auto max-w-[680px]">
+          <div className="mx-auto max-w-[680px] md:max-w-full md:px-6 lg:px-10">
             {children}
           </div>
         )}
