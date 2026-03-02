@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      abuse_reports: {
+        Row: {
+          created_at: string
+          description: string | null
+          evidence_urls: string[] | null
+          id: string
+          report_type: string
+          reported_user_id: string
+          reporter_id: string
+          resolution: string | null
+          reviewed_at: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          evidence_urls?: string[] | null
+          id?: string
+          report_type?: string
+          reported_user_id: string
+          reporter_id: string
+          resolution?: string | null
+          reviewed_at?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          evidence_urls?: string[] | null
+          id?: string
+          report_type?: string
+          reported_user_id?: string
+          reporter_id?: string
+          resolution?: string | null
+          reviewed_at?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
       account_deletion_requests: {
         Row: {
           completed_at: string | null
@@ -483,6 +522,80 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      device_fingerprints: {
+        Row: {
+          created_at: string
+          fingerprint_hash: string
+          id: string
+          ip_address: string | null
+          language: string | null
+          last_seen_at: string
+          screen_resolution: string | null
+          timezone: string | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          fingerprint_hash: string
+          id?: string
+          ip_address?: string | null
+          language?: string | null
+          last_seen_at?: string
+          screen_resolution?: string | null
+          timezone?: string | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          fingerprint_hash?: string
+          id?: string
+          ip_address?: string | null
+          language?: string | null
+          last_seen_at?: string
+          screen_resolution?: string | null
+          timezone?: string | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      feed_score_cache: {
+        Row: {
+          computed_at: string
+          id: string
+          post_id: string
+          score: number
+          scoring_factors: Json | null
+          user_id: string
+        }
+        Insert: {
+          computed_at?: string
+          id?: string
+          post_id: string
+          score?: number
+          scoring_factors?: Json | null
+          user_id: string
+        }
+        Update: {
+          computed_at?: string
+          id?: string
+          post_id?: string
+          score?: number
+          scoring_factors?: Json | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feed_score_cache_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       friend_group_members: {
         Row: {
@@ -1591,6 +1704,39 @@ export type Database = {
         }
         Relationships: []
       }
+      rate_limits: {
+        Row: {
+          action_count: number
+          action_type: string
+          created_at: string
+          id: string
+          is_blocked: boolean
+          user_id: string
+          window_end: string
+          window_start: string
+        }
+        Insert: {
+          action_count?: number
+          action_type: string
+          created_at?: string
+          id?: string
+          is_blocked?: boolean
+          user_id: string
+          window_end?: string
+          window_start?: string
+        }
+        Update: {
+          action_count?: number
+          action_type?: string
+          created_at?: string
+          id?: string
+          is_blocked?: boolean
+          user_id?: string
+          window_end?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       seller_payouts: {
         Row: {
           amount: number
@@ -1847,6 +1993,69 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      trust_scores: {
+        Row: {
+          account_age_score: number
+          created_at: string
+          disputes_lost: number
+          disputes_opened: number
+          flag_reason: string | null
+          id: string
+          is_flagged: boolean
+          is_verified_identity: boolean
+          reports_confirmed: number
+          reports_received: number
+          social_score: number
+          successful_purchases: number
+          successful_sales: number
+          transaction_score: number
+          trust_score: number
+          updated_at: string
+          user_id: string
+          verification_score: number
+        }
+        Insert: {
+          account_age_score?: number
+          created_at?: string
+          disputes_lost?: number
+          disputes_opened?: number
+          flag_reason?: string | null
+          id?: string
+          is_flagged?: boolean
+          is_verified_identity?: boolean
+          reports_confirmed?: number
+          reports_received?: number
+          social_score?: number
+          successful_purchases?: number
+          successful_sales?: number
+          transaction_score?: number
+          trust_score?: number
+          updated_at?: string
+          user_id: string
+          verification_score?: number
+        }
+        Update: {
+          account_age_score?: number
+          created_at?: string
+          disputes_lost?: number
+          disputes_opened?: number
+          flag_reason?: string | null
+          id?: string
+          is_flagged?: boolean
+          is_verified_identity?: boolean
+          reports_confirmed?: number
+          reports_received?: number
+          social_score?: number
+          successful_purchases?: number
+          successful_sales?: number
+          transaction_score?: number
+          trust_score?: number
+          updated_at?: string
+          user_id?: string
+          verification_score?: number
+        }
+        Relationships: []
       }
       tv_channels: {
         Row: {

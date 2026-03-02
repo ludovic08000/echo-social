@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { generateFingerprint } from '@/hooks/useTrustAndSafety';
 
 interface AuthContextType {
   user: User | null;
@@ -24,6 +25,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
+
+        // Register fingerprint on sign in
+        if (event === 'SIGNED_IN' && session?.user) {
+          setTimeout(() => {
+            const fp = generateFingerprint();
+            supabase.functions.invoke('anti-abuse', {
+              body: {
+                action: 'register_fingerprint',
+                fingerprintHash: fp,
+                screenResolution: `${screen.width}x${screen.height}`,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                language: navigator.language,
+              },
+            }).catch(() => {});
+
+            // Compute trust score
+            supabase.functions.invoke('trust-score', {
+              body: { action: 'compute', userId: session.user.id },
+            }).catch(() => {});
+          }, 2000);
+        }
       }
     );
 
