@@ -3,6 +3,7 @@ import { ShoppingCart, Star, BadgeCheck, Heart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAddToCart } from '@/hooks/useMarketplace';
 import { useProductFavorites, useToggleFavorite } from '@/hooks/useProductFavorites';
+import { TrustBadge } from '@/components/TrustBadge';
 import { cn } from '@/lib/utils';
 
 interface ProductCardProps {

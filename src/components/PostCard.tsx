@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import { Post, useDeletePost } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
 import { UserAvatar } from './UserAvatar';
+import { TrustBadge } from './TrustBadge';
 import { Button } from '@/components/ui/button';
 import { ReactionButton } from './ReactionButton';
 import { cn } from '@/lib/utils';
@@ -88,12 +89,15 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
           </Link>
           
           <div className="min-w-0">
-            <Link 
-              to={`/profile/${post.user_id}`}
-              className="font-semibold text-sm text-foreground hover:text-primary transition-colors block truncate"
-            >
-              {post.profile.name}
-            </Link>
+              <div className="flex items-center gap-1">
+                <Link 
+                  to={`/profile/${post.user_id}`}
+                  className="font-semibold text-sm text-foreground hover:text-primary transition-colors block truncate"
+                >
+                  {post.profile.name}
+                </Link>
+                <TrustBadge userId={post.user_id} size="sm" />
+              </div>
             <div className="flex items-center gap-1.5">
               <Link to={`/post/${post.id}`}>
                 <span className="text-muted-foreground text-xs">

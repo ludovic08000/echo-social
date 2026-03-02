@@ -8,3 +8,12 @@ verify_jwt = false
 
 [functions.livekit-token]
 verify_jwt = false
+
+[functions.feed-scoring]
+verify_jwt = false
+
+[functions.trust-score]
+verify_jwt = false
+
+[functions.anti-abuse]
+verify_jwt = false
