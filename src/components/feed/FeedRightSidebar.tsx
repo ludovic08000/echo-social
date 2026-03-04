@@ -39,21 +39,23 @@ export function FeedRightSidebar() {
       return;
     }
 
-    // Create new conversation
-    const { data: conv, error: convError } = await supabase
+    // Create new conversation without selecting it first
+    const conversationId = crypto.randomUUID();
+
+    const { error: convError } = await supabase
       .from('conversations')
-      .insert({})
-      .select()
-      .single();
+      .insert({ id: conversationId });
 
-    if (convError || !conv) return;
+    if (convError) return;
 
-    await supabase.from('conversation_participants').insert([
-      { conversation_id: conv.id, user_id: user.id },
-      { conversation_id: conv.id, user_id: friendUserId },
+    const { error: partError } = await supabase.from('conversation_participants').insert([
+      { conversation_id: conversationId, user_id: user.id },
+      { conversation_id: conversationId, user_id: friendUserId },
     ]);
 
-    navigate(`/messages/${conv.id}`);
+    if (partError) return;
+
+    navigate(`/messages/${conversationId}`);
   };
 
   if (!user || !isDesktop) return null;
