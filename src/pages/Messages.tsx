@@ -248,6 +248,7 @@ function ChatView({ conversationId }: { conversationId: string }) {
   const sendMessage = useSendMessage();
   const markRead = useMarkConversationRead();
   const [newMessage, setNewMessage] = useState('');
+  const [showEmojis, setShowEmojis] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -466,14 +467,63 @@ function ChatView({ conversationId }: { conversationId: string }) {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Emoji Picker */}
+      {showEmojis && (
+        <div className="sticky bottom-14 z-30 glass border-t border-border/20 animate-in slide-in-from-bottom-4 duration-200">
+          <div className="px-2 py-3 max-h-[220px] overflow-y-auto scrollbar-thin">
+            {[
+              { label: '😀 Visages', emojis: ['😀','😂','🤣','😍','🥰','😘','😎','🤩','🥳','😇','🤗','🤭','😏','😌','🥺','😢','😭','😡','🤯','🫠','😴','🤑','🫡','🫶'] },
+              { label: '❤️ Cœurs', emojis: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','💖','💝','💘','💕','💗','💓','❤️‍🔥','💔','🫀'] },
+              { label: '👋 Gestes', emojis: ['👋','👍','👎','👏','🙌','🤝','✌️','🤞','🤟','🤙','💪','🫰','👊','✊','🤌','🫶','🙏'] },
+              { label: '🎉 Fête', emojis: ['🎉','🎊','🎈','🎁','🏆','🥇','⭐','🌟','✨','🔥','💥','💫','🎵','🎶','🎤','🎸'] },
+              { label: '🍕 Nourriture', emojis: ['🍕','🍔','🍟','🌮','🍣','🍩','🍰','🧁','☕','🍷','🍺','🥂','🧋','🍓','🍑','🥑'] },
+              { label: '🐱 Animaux', emojis: ['🐱','🐶','🐻','🦊','🐼','🐨','🦁','🐸','🐵','🦋','🐝','🌸','🌺','🌻','🌈','☀️'] },
+              { label: '💎 Premium', emojis: ['💎','👑','🦄','🌙','⚡','🪐','🔮','🎭','🗝️','🧿','🪬','💐','🦚','🎪','🏰','🚀','🛸','🧬'] },
+            ].map((cat) => (
+              <div key={cat.label} className="mb-2">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-2 mb-1.5">{cat.label}</p>
+                <div className="flex flex-wrap gap-0.5">
+                  {cat.emojis.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => {
+                        setNewMessage(prev => prev + emoji);
+                        inputRef.current?.focus();
+                      }}
+                      className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/80 active:scale-90 transition-all text-lg"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Input bar */}
       <div className="sticky bottom-0 glass border-t border-border/30 safe-area-pb">
         <form onSubmit={handleSend} className="flex items-center gap-2 px-3 py-2.5">
           <div className="flex-1 flex items-center gap-2 bg-secondary/60 rounded-full px-4 py-2 focus-within:bg-secondary transition-colors">
+            <button
+              type="button"
+              onClick={() => setShowEmojis(v => !v)}
+              className={cn(
+                "w-7 h-7 rounded-full flex items-center justify-center transition-all flex-shrink-0",
+                showEmojis
+                  ? "bg-primary/15 text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Smile className="w-5 h-5" />
+            </button>
             <input
               ref={inputRef}
               value={newMessage}
               onChange={e => setNewMessage(e.target.value)}
+              onFocus={() => setShowEmojis(false)}
               placeholder="Votre message…"
               className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground min-w-0"
             />
