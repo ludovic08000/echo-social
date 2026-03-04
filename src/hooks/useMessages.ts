@@ -268,12 +268,12 @@ export function useCreateConversation() {
         }
       }
 
-      // Create new conversation
-      const { data: conv, error: convError } = await supabase
+      // Create new conversation without selecting it yet (SELECT policy requires participation)
+      const conversationId = crypto.randomUUID();
+
+      const { error: convError } = await supabase
         .from('conversations')
-        .insert({})
-        .select()
-        .single();
+        .insert({ id: conversationId });
 
       if (convError) throw convError;
 
@@ -281,13 +281,16 @@ export function useCreateConversation() {
       const { error: partError } = await supabase
         .from('conversation_participants')
         .insert([
-          { conversation_id: conv.id, user_id: user.id },
-          { conversation_id: conv.id, user_id: otherUserId },
+          { conversation_id: conversationId, user_id: user.id },
+          { conversation_id: conversationId, user_id: otherUserId },
         ]);
 
-      if (partError) throw partError;
+      if (partError) {
+        await supabase.from('conversations').delete().eq('id', conversationId);
+        throw partError;
+      }
 
-      return conv;
+      return { id: conversationId };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
