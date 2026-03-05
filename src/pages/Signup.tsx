@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, CalendarIcon } from 'lucide-react';
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
@@ -8,13 +10,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 export default function Signup() {
   const navigate = useNavigate();
   const { signUp, user } = useAuth();
   const { t } = useTranslation();
-  const [name, setName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState<Date>();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -29,6 +36,36 @@ export default function Signup() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!lastName.trim() || !firstName.trim()) {
+      toast({
+        title: 'Champs requis',
+        description: 'Le nom et le prénom sont obligatoires.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!dateOfBirth) {
+      toast({
+        title: 'Date de naissance requise',
+        description: 'Veuillez indiquer votre date de naissance.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Check minimum age (13 years)
+    const today = new Date();
+    const minDate = new Date(today.getFullYear() - 13, today.getMonth(), today.getDate());
+    if (dateOfBirth > minDate) {
+      toast({
+        title: 'Âge minimum requis',
+        description: 'Vous devez avoir au moins 13 ans pour vous inscrire.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     if (!acceptedTerms || !acceptedPrivacy) {
       toast({
@@ -50,7 +87,9 @@ export default function Signup() {
 
     setIsLoading(true);
 
-    const { error } = await signUp(email, password, name);
+    const fullName = `${firstName.trim()} ${lastName.trim()}`;
+    const dobString = format(dateOfBirth, 'yyyy-MM-dd');
+    const { error } = await signUp(email, password, fullName, dobString);
 
     if (error) {
       toast({
@@ -80,21 +119,68 @@ export default function Signup() {
           <h1 className="text-2xl font-bold text-center mb-6">{t('signup.title')}</h1>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">{t('signup.name')}</Label>
-              <Input
-                id="name"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t('signup.namePlaceholder')}
-                className="pulse-input"
-                required
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="lastName">Nom *</Label>
+                <Input
+                  id="lastName"
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="Dupont"
+                  className="pulse-input"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="firstName">Prénom *</Label>
+                <Input
+                  id="firstName"
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="Jean"
+                  className="pulse-input"
+                  required
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="email">{t('signup.email')}</Label>
+              <Label>Date de naissance *</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal pulse-input",
+                      !dateOfBirth && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateOfBirth ? format(dateOfBirth, "d MMMM yyyy", { locale: fr }) : "Sélectionner une date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={dateOfBirth}
+                    onSelect={setDateOfBirth}
+                    disabled={(date) =>
+                      date > new Date() || date < new Date("1900-01-01")
+                    }
+                    defaultMonth={new Date(2000, 0)}
+                    captionLayout="dropdown-buttons"
+                    fromYear={1920}
+                    toYear={new Date().getFullYear()}
+                    className={cn("p-3 pointer-events-auto")}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="email">{t('signup.email')} *</Label>
               <Input
                 id="email"
                 type="email"
@@ -107,7 +193,7 @@ export default function Signup() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">{t('signup.password')}</Label>
+              <Label htmlFor="password">{t('signup.password')} *</Label>
               <div className="relative">
                 <Input
                   id="password"
