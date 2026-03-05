@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { useState, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useScreenSize } from '@/hooks/useScreenSize';
+import { useChatWidget } from '@/components/ChatWidgetContext';
 
 export function FeedRightSidebar() {
   const { user } = useAuth();
@@ -26,6 +27,8 @@ export function FeedRightSidebar() {
     );
   }, [friends, search]);
 
+  const { openConversation, openChat } = useChatWidget();
+
   const handleMessage = async (friendUserId: string) => {
     if (!user) return;
 
@@ -35,11 +38,11 @@ export function FeedRightSidebar() {
     );
 
     if (existing) {
-      navigate(`/messages/${existing.id}`);
+      openConversation(existing.id);
       return;
     }
 
-    // Create new conversation without selecting it first
+    // Create new conversation
     const conversationId = crypto.randomUUID();
 
     const { error: convError } = await supabase
@@ -55,7 +58,7 @@ export function FeedRightSidebar() {
 
     if (partError) return;
 
-    navigate(`/messages/${conversationId}`);
+    openConversation(conversationId);
   };
 
   if (!user || !isDesktop) return null;

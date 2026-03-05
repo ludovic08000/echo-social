@@ -7,6 +7,7 @@ import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
 import { useFriendships } from '@/hooks/useFriendships';
 import { useScrollHideNav } from '@/hooks/useScrollHideNav';
+import { useChatWidget } from '@/components/ChatWidgetContext';
 import { cn } from '@/lib/utils';
 
 export function MobileNav() {
@@ -16,6 +17,7 @@ export function MobileNav() {
   const { data: unreadCount } = useUnreadCount();
   const { data: conversations } = useConversations();
   const navHidden = useScrollHideNav();
+  const { openChat } = useChatWidget();
 
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
 
@@ -99,6 +101,7 @@ export function DesktopSidebar() {
   const { data: unreadCount } = useUnreadCount();
   const { data: conversations } = useConversations();
   const { data: friendships } = useFriendships();
+  const { openChat } = useChatWidget();
 
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
   const friendRequests = friendships?.requests.length || 0;
@@ -111,7 +114,7 @@ export function DesktopSidebar() {
     { path: '/lives', icon: Radio, label: t('nav.lives') },
     { path: '/search', icon: Search, label: t('nav.search') },
     { path: '/notifications', icon: Bell, label: t('nav.notifications'), badge: unreadCount },
-    { path: '/messages', icon: MessageCircle, label: t('nav.messages'), badge: unreadMessages },
+    { path: '/messages', icon: MessageCircle, label: t('nav.messages'), badge: unreadMessages, isChat: true },
     { path: '/friends', icon: Users, label: t('nav.friends'), badge: friendRequests },
     { path: '/friend-match', icon: Heart, label: 'Matchmaking' },
     { path: '/challenges', icon: Trophy, label: 'Défis' },
@@ -138,6 +141,27 @@ export function DesktopSidebar() {
             (item.path.startsWith('/profile') && location.pathname.startsWith('/profile')) ||
             (item.path === '/messages' && location.pathname.startsWith('/messages'));
           const showBadge = item.badge && item.badge > 0;
+
+          // Messages opens chat widget instead of navigating
+          if (item.isChat) {
+            return (
+              <button
+                key={item.path}
+                onClick={() => openChat()}
+                className={cn('premium-nav-item w-full text-left')}
+              >
+                <div className="relative">
+                  <item.icon className="w-5 h-5" />
+                  {showBadge && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                      {item.badge > 9 ? '9+' : item.badge}
+                    </span>
+                  )}
+                </div>
+                <span>{item.label}</span>
+              </button>
+            );
+          }
 
           return (
             <Link
