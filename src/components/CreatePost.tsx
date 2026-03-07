@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Image, Video, X, Send, Timer, Rocket, ShoppingBag } from 'lucide-react';
 import { useCreatePost } from '@/hooks/usePosts';
 import { useProfile } from '@/hooks/useProfile';
@@ -47,7 +48,6 @@ export function CreatePost() {
   const videoInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Capsule and ephemeral are mutually exclusive
   const handleSetExpiry = (h: number) => { setExpiryHours(h); setCapsuleDays(null); };
   const handleSetCapsule = (d: number) => { setCapsuleDays(d); setExpiryHours(null); };
 
@@ -105,7 +105,6 @@ export function CreatePost() {
         imageUrl = urlData.publicUrl;
       }
 
-      // Calculate expires_at if ephemeral
       let expiresAt: string | undefined;
       if (expiryHours) {
         const date = new Date();
@@ -113,7 +112,6 @@ export function CreatePost() {
         expiresAt = date.toISOString();
       }
 
-      // Calculate publish_at if capsule temporelle
       let publishAt: string | undefined;
       if (capsuleDays) {
         const date = new Date();
@@ -155,254 +153,283 @@ export function CreatePost() {
   if (!user) return null;
 
   return (
-    <div className="premium-card p-4">
-      <div className="flex gap-3 items-start">
-        <UserAvatar 
-          src={profile?.avatar_url} 
-          alt={profile?.name} 
-          size="md" 
-          moodEmoji={(profile as any)?.mood_emoji}
-        />
-        
-        <div className="flex-1 min-w-0">
-          {/* Mood picker + Name */}
-          <div className="flex items-center gap-2 mb-2">
-            <MoodPicker />
-          </div>
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="relative rounded-2xl border border-border/30 bg-card overflow-hidden transition-all duration-500 hover:border-primary/15 hover:shadow-[0_8px_30px_-8px_hsl(220_70%_50%/0.1)]"
+      style={{ boxShadow: 'var(--shadow-md)' }}
+    >
+      {/* Top accent bar */}
+      <div className="h-[2px] w-full" style={{ background: 'var(--premium-gradient)' }} />
+      
+      <div className="p-4">
+        <div className="flex gap-3 items-start">
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            <UserAvatar 
+              src={profile?.avatar_url} 
+              alt={profile?.name} 
+              size="md" 
+              moodEmoji={(profile as any)?.mood_emoji}
+            />
+          </motion.div>
+          
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-2">
+              <MoodPicker />
+            </div>
 
-          {/* Collapsed state */}
-          {!expanded ? (
-            <button
-              onClick={() => {
-                setExpanded(true);
-                setTimeout(() => textareaRef.current?.focus(), 100);
-              }}
-              className="w-full text-left px-4 py-2.5 rounded-full bg-secondary/60 hover:bg-secondary text-sm text-muted-foreground transition-colors"
-            >
-              Quoi de neuf, {profile?.name?.split(' ')[0] || ''} ?
-            </button>
-          ) : (
-            <>
-              <textarea
-                ref={textareaRef}
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                placeholder="Quoi de neuf ?"
-                className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none outline-none min-h-[80px] leading-relaxed"
-                autoFocus
-              />
-
-              {/* Ephemeral badge */}
-              {expiryHours && (
-                <div className="flex items-center gap-1.5 mb-2">
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[11px] font-medium border border-amber-500/20">
-                    <Timer className="w-3 h-3" />
-                    Post éphémère · {expiryHours}h
-                    <button onClick={() => setExpiryHours(null)} className="ml-1 hover:text-foreground">
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                </div>
-              )}
-
-              {/* Capsule badge */}
-              {capsuleDays && (
-                <div className="flex items-center gap-1.5 mb-2">
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-500/15 text-violet-600 dark:text-violet-400 text-[11px] font-medium border border-violet-500/20">
-                    <Rocket className="w-3 h-3" />
-                    Capsule · dans {capsuleDays}j
-                    <button onClick={() => setCapsuleDays(null)} className="ml-1 hover:text-foreground">
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                </div>
-              )}
-              {mediaPreview && (
-                <div className="relative mt-2 rounded-xl overflow-hidden">
-                  {mediaType === 'video' ? (
-                    <video src={mediaPreview} controls className="w-full max-h-52 object-cover rounded-xl" />
-                  ) : (
-                    <img src={mediaPreview} alt="Aperçu" className="w-full max-h-52 object-cover rounded-xl" />
-                  )}
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    onClick={removeMedia}
-                    className="absolute top-2 right-2 h-7 w-7 rounded-full bg-background/80 backdrop-blur-sm"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              )}
-              
-              <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/30">
-                <input type="file" ref={fileInputRef} onChange={(e) => handleFileChange(e, 'image')} accept="image/*" className="hidden" />
-                <input type="file" ref={videoInputRef} onChange={(e) => handleFileChange(e, 'video')} accept="video/*" className="hidden" />
-                
-                <div className="flex gap-0.5">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="h-9 w-9 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10"
-                  >
-                    <Image className="w-[18px] h-[18px]" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => videoInputRef.current?.click()}
-                    className="h-9 w-9 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10"
-                  >
-                    <Video className="w-[18px] h-[18px]" />
-                  </Button>
-                  
-                  {/* Ephemeral post timer */}
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn(
-                          "h-9 w-9 rounded-full",
-                          expiryHours 
-                            ? "text-amber-500 bg-amber-500/10" 
-                            : "text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10"
-                        )}
-                      >
-                        <Timer className="w-[18px] h-[18px]" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="start" className="w-48 p-2 rounded-xl">
-                      <p className="text-xs font-semibold mb-2 px-2">Post éphémère ⏳</p>
-                      {EXPIRY_OPTIONS.map(opt => (
-                        <button
-                          key={opt.value}
-                          onClick={() => setExpiryHours(opt.value)}
-                          className={cn(
-                            "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
-                            expiryHours === opt.value 
-                              ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 font-medium" 
-                              : "hover:bg-secondary/60 text-foreground"
-                          )}
-                        >
-                          {opt.description}
-                        </button>
-                      ))}
-                      {expiryHours && (
-                        <button
-                          onClick={() => setExpiryHours(null)}
-                          className="w-full text-left px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-secondary/60"
-                        >
-                          Annuler le minuteur
-                        </button>
-                      )}
-                    </PopoverContent>
-                  </Popover>
-
-                  {/* Capsule temporelle */}
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn(
-                          "h-9 w-9 rounded-full",
-                          capsuleDays 
-                            ? "text-violet-500 bg-violet-500/10" 
-                            : "text-muted-foreground hover:text-violet-500 hover:bg-violet-500/10"
-                        )}
-                      >
-                        <Rocket className="w-[18px] h-[18px]" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="start" className="w-48 p-2 rounded-xl">
-                      <p className="text-xs font-semibold mb-2 px-2">Capsule temporelle 🚀</p>
-                      {CAPSULE_OPTIONS.map(opt => (
-                        <button
-                          key={opt.value}
-                          onClick={() => handleSetCapsule(opt.value)}
-                          className={cn(
-                            "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
-                            capsuleDays === opt.value 
-                              ? "bg-violet-500/15 text-violet-600 dark:text-violet-400 font-medium" 
-                              : "hover:bg-secondary/60 text-foreground"
-                          )}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                      {capsuleDays && (
-                        <button
-                          onClick={() => setCapsuleDays(null)}
-                          className="w-full text-left px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-secondary/60"
-                        >
-                          Annuler la capsule
-                        </button>
-                      )}
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                
-                <Button
-                  onClick={handleSubmit}
-                  disabled={(!body.trim() && !media) || isUploading}
-                  size="sm"
-                  className="premium-button h-9 px-5 text-xs"
+            <AnimatePresence mode="wait">
+              {!expanded ? (
+                <motion.button
+                  key="collapsed"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0, scale: 0.98 }}
+                  onClick={() => {
+                    setExpanded(true);
+                    setTimeout(() => textareaRef.current?.focus(), 100);
+                  }}
+                  className="w-full text-left px-4 py-3 rounded-xl bg-secondary/40 hover:bg-secondary/60 text-sm text-muted-foreground transition-all duration-300 border border-transparent hover:border-primary/10 hover:shadow-[0_2px_10px_hsl(220_70%_50%/0.06)]"
                 >
-                  {isUploading ? (
-                    <span className="animate-pulse">Publication…</span>
-                  ) : (
-                    <>
-                      <Send className="w-3.5 h-3.5 mr-1.5" />
-                      Publier
-                    </>
+                  Quoi de neuf, {profile?.name?.split(' ')[0] || ''} ?
+                </motion.button>
+              ) : (
+                <motion.div
+                  key="expanded"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                >
+                  <textarea
+                    ref={textareaRef}
+                    value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                    placeholder="Quoi de neuf ?"
+                    className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none outline-none min-h-[80px] leading-relaxed"
+                    autoFocus
+                  />
+
+                  {expiryHours && (
+                    <motion.div 
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="flex items-center gap-1.5 mb-2"
+                    >
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[11px] font-medium border border-amber-500/20 shadow-[0_2px_8px_hsl(40_90%_50%/0.1)]">
+                        <Timer className="w-3 h-3" />
+                        Post éphémère · {expiryHours}h
+                        <button onClick={() => setExpiryHours(null)} className="ml-1 hover:text-foreground transition-colors">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    </motion.div>
                   )}
-                </Button>
-              </div>
-            </>
-          )}
+
+                  {capsuleDays && (
+                    <motion.div 
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="flex items-center gap-1.5 mb-2"
+                    >
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-400 text-[11px] font-medium border border-violet-500/20 shadow-[0_2px_8px_hsl(270_80%_50%/0.1)]">
+                        <Rocket className="w-3 h-3" />
+                        Capsule · dans {capsuleDays}j
+                        <button onClick={() => setCapsuleDays(null)} className="ml-1 hover:text-foreground transition-colors">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    </motion.div>
+                  )}
+
+                  {mediaPreview && (
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="relative mt-2 rounded-xl overflow-hidden shadow-[var(--shadow-md)]"
+                    >
+                      {mediaType === 'video' ? (
+                        <video src={mediaPreview} controls className="w-full max-h-52 object-cover rounded-xl" />
+                      ) : (
+                        <img src={mediaPreview} alt="Aperçu" className="w-full max-h-52 object-cover rounded-xl" />
+                      )}
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        onClick={removeMedia}
+                        className="absolute top-2 right-2 h-7 w-7 rounded-xl bg-background/80 backdrop-blur-sm hover:bg-destructive/10 hover:text-destructive transition-all"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </motion.div>
+                  )}
+                  
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/20">
+                    <input type="file" ref={fileInputRef} onChange={(e) => handleFileChange(e, 'image')} accept="image/*" className="hidden" />
+                    <input type="file" ref={videoInputRef} onChange={(e) => handleFileChange(e, 'video')} accept="video/*" className="hidden" />
+                    
+                    <div className="flex gap-0.5">
+                      {[
+                        { ref: fileInputRef, icon: Image, color: 'text-primary', hoverBg: 'hover:bg-primary/10 hover:text-primary' },
+                        { ref: videoInputRef, icon: Video, color: 'text-destructive', hoverBg: 'hover:bg-destructive/10 hover:text-destructive' },
+                      ].map((item, i) => (
+                        <motion.div key={i} whileHover={{ scale: 1.1, y: -1 }} whileTap={{ scale: 0.9 }}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => item.ref.current?.click()}
+                            className={cn("h-9 w-9 rounded-xl text-muted-foreground transition-all duration-300", item.hoverBg)}
+                          >
+                            <item.icon className="w-[18px] h-[18px]" />
+                          </Button>
+                        </motion.div>
+                      ))}
+                      
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <motion.div whileHover={{ scale: 1.1, y: -1 }} whileTap={{ scale: 0.9 }}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={cn(
+                                "h-9 w-9 rounded-xl transition-all duration-300",
+                                expiryHours 
+                                  ? "text-amber-500 bg-amber-500/10 shadow-[0_0_8px_hsl(40_90%_50%/0.15)]" 
+                                  : "text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10"
+                              )}
+                            >
+                              <Timer className="w-[18px] h-[18px]" />
+                            </Button>
+                          </motion.div>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="w-48 p-2 rounded-xl glass border-border/30 shadow-[var(--shadow-lg)]">
+                          <p className="text-xs font-semibold mb-2 px-2">Post éphémère ⏳</p>
+                          {EXPIRY_OPTIONS.map(opt => (
+                            <motion.button
+                              key={opt.value}
+                              whileHover={{ x: 2 }}
+                              onClick={() => setExpiryHours(opt.value)}
+                              className={cn(
+                                "w-full text-left px-3 py-2 rounded-lg text-sm transition-all duration-200",
+                                expiryHours === opt.value 
+                                  ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 font-medium shadow-[inset_0_0_0_1px_hsl(40_90%_50%/0.2)]" 
+                                  : "hover:bg-secondary/60 text-foreground"
+                              )}
+                            >
+                              {opt.description}
+                            </motion.button>
+                          ))}
+                          {expiryHours && (
+                            <button
+                              onClick={() => setExpiryHours(null)}
+                              className="w-full text-left px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-secondary/60 transition-colors"
+                            >
+                              Annuler le minuteur
+                            </button>
+                          )}
+                        </PopoverContent>
+                      </Popover>
+
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <motion.div whileHover={{ scale: 1.1, y: -1 }} whileTap={{ scale: 0.9 }}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={cn(
+                                "h-9 w-9 rounded-xl transition-all duration-300",
+                                capsuleDays 
+                                  ? "text-violet-500 bg-violet-500/10 shadow-[0_0_8px_hsl(270_80%_50%/0.15)]" 
+                                  : "text-muted-foreground hover:text-violet-500 hover:bg-violet-500/10"
+                              )}
+                            >
+                              <Rocket className="w-[18px] h-[18px]" />
+                            </Button>
+                          </motion.div>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="w-48 p-2 rounded-xl glass border-border/30 shadow-[var(--shadow-lg)]">
+                          <p className="text-xs font-semibold mb-2 px-2">Capsule temporelle 🚀</p>
+                          {CAPSULE_OPTIONS.map(opt => (
+                            <motion.button
+                              key={opt.value}
+                              whileHover={{ x: 2 }}
+                              onClick={() => handleSetCapsule(opt.value)}
+                              className={cn(
+                                "w-full text-left px-3 py-2 rounded-lg text-sm transition-all duration-200",
+                                capsuleDays === opt.value 
+                                  ? "bg-violet-500/15 text-violet-600 dark:text-violet-400 font-medium shadow-[inset_0_0_0_1px_hsl(270_80%_50%/0.2)]" 
+                                  : "hover:bg-secondary/60 text-foreground"
+                              )}
+                            >
+                              {opt.label}
+                            </motion.button>
+                          ))}
+                          {capsuleDays && (
+                            <button
+                              onClick={() => setCapsuleDays(null)}
+                              className="w-full text-left px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-secondary/60 transition-colors"
+                            >
+                              Annuler la capsule
+                            </button>
+                          )}
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                    
+                    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                      <Button
+                        onClick={handleSubmit}
+                        disabled={(!body.trim() && !media) || isUploading}
+                        size="sm"
+                        className="h-9 px-5 text-xs rounded-xl bg-primary text-primary-foreground shadow-[0_2px_12px_hsl(220_70%_50%/0.3)] hover:shadow-[0_4px_20px_hsl(220_70%_50%/0.4)] hover:-translate-y-0.5 transition-all duration-300 btn-shine"
+                      >
+                        {isUploading ? (
+                          <span className="animate-pulse">Publication…</span>
+                        ) : (
+                          <>
+                            <Send className="w-3.5 h-3.5 mr-1.5" />
+                            Publier
+                          </>
+                        )}
+                      </Button>
+                    </motion.div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
       
       {/* Quick action row when collapsed */}
-      {!expanded && (
-        <div className="flex items-center justify-around mt-3 pt-3 border-t border-border/30">
-          <input type="file" ref={fileInputRef} onChange={(e) => handleFileChange(e, 'image')} accept="image/*" className="hidden" />
-          <input type="file" ref={videoInputRef} onChange={(e) => handleFileChange(e, 'video')} accept="video/*" className="hidden" />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors py-1"
+      <AnimatePresence>
+        {!expanded && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex items-center justify-around px-4 py-2.5 border-t border-border/20"
           >
-            <Image className="w-4 h-4 text-primary/70" />
-            <span>Photo</span>
-          </button>
-          <button
-            onClick={() => videoInputRef.current?.click()}
-            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors py-1"
-          >
-            <Video className="w-4 h-4 text-destructive/70" />
-            <span>Vidéo</span>
-          </button>
-          <button
-            onClick={() => {
-              setExpanded(true);
-              setExpiryHours(1);
-            }}
-            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-amber-500 transition-colors py-1"
-          >
-            <Timer className="w-4 h-4 text-amber-500/70" />
-            <span>Éphémère</span>
-          </button>
-          <button
-            onClick={() => navigate('/marketplace?tab=seller')}
-            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors py-1"
-          >
-            <ShoppingBag className="w-4 h-4 text-primary/70" />
-            <span>Vendre</span>
-          </button>
-        </div>
-      )}
-    </div>
+            <input type="file" ref={fileInputRef} onChange={(e) => handleFileChange(e, 'image')} accept="image/*" className="hidden" />
+            <input type="file" ref={videoInputRef} onChange={(e) => handleFileChange(e, 'video')} accept="video/*" className="hidden" />
+            {[
+              { onClick: () => fileInputRef.current?.click(), icon: Image, label: 'Photo', iconColor: 'text-primary/70', hoverColor: 'hover:text-primary' },
+              { onClick: () => videoInputRef.current?.click(), icon: Video, label: 'Vidéo', iconColor: 'text-destructive/70', hoverColor: 'hover:text-destructive' },
+              { onClick: () => { setExpanded(true); setExpiryHours(1); }, icon: Timer, label: 'Éphémère', iconColor: 'text-amber-500/70', hoverColor: 'hover:text-amber-500' },
+              { onClick: () => navigate('/marketplace?tab=seller'), icon: ShoppingBag, label: 'Vendre', iconColor: 'text-primary/70', hoverColor: 'hover:text-primary' },
+            ].map((item, i) => (
+              <motion.button
+                key={i}
+                whileHover={{ scale: 1.05, y: -1 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={item.onClick}
+                className={cn("flex items-center gap-2 text-xs text-muted-foreground transition-all duration-300 py-1.5 px-3 rounded-xl hover:bg-secondary/50", item.hoverColor)}
+              >
+                <item.icon className={cn("w-4 h-4", item.iconColor)} />
+                <span className="font-medium">{item.label}</span>
+              </motion.button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }
