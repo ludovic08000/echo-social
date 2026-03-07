@@ -132,6 +132,50 @@ export default function Profile() {
   const { data: friendshipData } = useFriendshipStatus(userId || '');
   const updateProfile = useUpdateProfile();
 
+  // Check if own profile has pending identity verification
+  const { data: pendingVerification } = useQuery({
+    queryKey: ['my-verification', user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data } = await supabase
+        .from('identity_verifications')
+        .select('id, status, deadline_at, reason')
+        .eq('reported_user_id', user.id)
+        .eq('status', 'pending_verification')
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!user && isOwnProfile,
+  });
+
+  const [idFile, setIdFile] = useState<File | null>(null);
+  const [uploadingId, setUploadingId] = useState(false);
+  const idInputRef = useRef<HTMLInputElement>(null);
+
+  const handleIdUpload = async () => {
+    if (!idFile || !user || !pendingVerification) return;
+    setUploadingId(true);
+    try {
+      const ext = idFile.name.split('.').pop();
+      const path = `${user.id}/${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from('id-documents').upload(path, idFile);
+      if (uploadError) throw uploadError;
+      const { data: { publicUrl } } = supabase.storage.from('id-documents').getPublicUrl(path);
+      await supabase.from('identity_verifications').update({
+        id_document_url: publicUrl,
+        status: 'document_submitted',
+        updated_at: new Date().toISOString(),
+      }).eq('id', pendingVerification.id);
+      toast({ title: '✅ Document envoyé', description: 'Votre pièce d\'identité est en cours de vérification.' });
+      setIdFile(null);
+      queryClient.invalidateQueries({ queryKey: ['my-verification'] });
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    } finally {
+      setUploadingId(false);
+    }
+  };
+
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
