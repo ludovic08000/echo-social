@@ -255,6 +255,159 @@ export type Database = {
           },
         ]
       }
+      ai_agent_conversations: {
+        Row: {
+          agent_id: string
+          created_at: string
+          id: string
+          title: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string
+          id?: string
+          title?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string
+          id?: string
+          title?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_agent_conversations_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_agent_messages: {
+        Row: {
+          content: string
+          conversation_id: string
+          created_at: string
+          id: string
+          role: string
+        }
+        Insert: {
+          content: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          role?: string
+        }
+        Update: {
+          content?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_agent_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agent_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_agent_usage: {
+        Row: {
+          agent_id: string
+          created_at: string
+          id: string
+          message_count: number
+          usage_date: string
+          user_id: string
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string
+          id?: string
+          message_count?: number
+          usage_date?: string
+          user_id: string
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string
+          id?: string
+          message_count?: number
+          usage_date?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_agent_usage_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_agents: {
+        Row: {
+          category: string
+          created_at: string
+          description: string | null
+          free_messages_per_day: number
+          icon: string
+          id: string
+          is_active: boolean
+          is_premium: boolean
+          name: string
+          slug: string
+          sort_order: number
+          system_prompt: string
+          updated_at: string
+          welcome_message: string | null
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          free_messages_per_day?: number
+          icon?: string
+          id?: string
+          is_active?: boolean
+          is_premium?: boolean
+          name: string
+          slug: string
+          sort_order?: number
+          system_prompt: string
+          updated_at?: string
+          welcome_message?: string | null
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          free_messages_per_day?: number
+          icon?: string
+          id?: string
+          is_active?: boolean
+          is_premium?: boolean
+          name?: string
+          slug?: string
+          sort_order?: number
+          system_prompt?: string
+          updated_at?: string
+          welcome_message?: string | null
+        }
+        Relationships: []
+      }
       ai_feedback: {
         Row: {
           ai_decision: string
