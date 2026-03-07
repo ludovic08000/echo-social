@@ -16,6 +16,8 @@ import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { useChatWidget } from './ChatWidgetContext';
 import { useImageUpload } from '@/hooks/useImageUpload';
+import { useCall } from '@/hooks/useCall';
+import { CallOverlay } from '@/components/CallOverlay';
 import { toast } from 'sonner';
 
 // ─── Utils ───────────────────────────────────────────────
