@@ -23,10 +23,9 @@ function MobileHeader() {
   const { data: unreadCount } = useUnreadCount();
   const { data: conversations } = useConversations();
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
-  const { isDesktop } = useScreenSize();
   const { openChat } = useChatWidget();
 
-  if (!user || isDesktop) return null;
+  if (!user) return null;
 
   return (
     <header className="sticky top-0 z-40 glass safe-area-pt">
@@ -84,27 +83,20 @@ export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
   return (
     <div className="min-h-screen bg-background">
       <MobileHeader />
-      
-      {/* Desktop sidebar */}
-      <DesktopSidebar />
 
-      {/* Main content - offset for desktop sidebar */}
-      <main className="pb-20 md:pb-0 md:pl-64">
+      <main className="pb-20">
         {fullWidth ? (
-          <div className="mx-auto px-4 max-w-[680px] md:max-w-full">
+          <div className="mx-auto px-4 max-w-[680px]">
             {children}
           </div>
         ) : (
-          <div className="mx-auto max-w-[680px] md:max-w-full md:px-6 lg:px-10">
+          <div className="mx-auto max-w-[680px]">
             {children}
           </div>
         )}
       </main>
       
-      {/* Bottom nav on mobile only */}
-      <div className="md:hidden">
-        <MobileNav />
-      </div>
+      <MobileNav />
     </div>
   );
 }
