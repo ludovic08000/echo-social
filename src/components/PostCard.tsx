@@ -77,23 +77,21 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
   const isOwner = user?.id === post.user_id;
 
   return (
-    <article className="group relative bg-card border border-border/20 rounded-2xl overflow-hidden transition-all duration-500 hover:border-primary/15 hover:shadow-[0_8px_30px_-8px_hsl(220_70%_50%/0.12)] btn-shine">
+    <article className="group relative bg-card border border-border/20 rounded-2xl overflow-hidden">
       {/* Subtle gradient overlay on hover */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.02] via-transparent to-accent/[0.02] opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+      
       
       {/* Header */}
       <div className="relative flex items-center justify-between px-4 pt-4 pb-3">
         <div className="flex items-center gap-3">
           <Link to={`/profile/${post.user_id}`} className="relative">
-            <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }} transition={{ type: 'spring' as const, stiffness: 400 }}>
               <UserAvatar 
                 src={post.profile.avatar_url} 
                 alt={post.profile.name} 
                 size="md" 
                 moodEmoji={post.profile.mood_emoji}
               />
-            </motion.div>
-            <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-card shadow-[0_0_6px_hsl(145,80%,42%,0.5)]" />
+            <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-card" />
           </Link>
           
           <div className="min-w-0">
@@ -127,17 +125,15 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
         </div>
         
         <div className="flex items-center gap-1">
-          <motion.button
-            whileHover={{ scale: 1.15, rotate: saved ? 0 : -10 }}
-            whileTap={{ scale: 0.85 }}
+          <button
             onClick={() => setSaved(!saved)}
             className={cn(
-              "h-8 w-8 rounded-xl flex items-center justify-center transition-all duration-300",
-              saved ? "text-primary bg-primary/10 shadow-[0_0_12px_hsl(220_70%_50%/0.15)]" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+              "h-8 w-8 rounded-xl flex items-center justify-center transition-colors",
+              saved ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
             )}
           >
-            <Bookmark className={cn("w-4 h-4 transition-transform", saved && "fill-current")} />
-          </motion.button>
+            <Bookmark className={cn("w-4 h-4", saved && "fill-current")} />
+          </button>
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -180,21 +176,15 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
             {!imageLoaded && (
               <div className="w-full h-64 skeleton" />
             )}
-            <motion.img
+            <img
               src={post.image_url}
               alt="Post image"
               className={cn(
-                "w-full object-cover max-h-[520px] transition-all duration-700",
+                "w-full object-cover max-h-[520px]",
                 imageLoaded ? "opacity-100" : "opacity-0 h-0"
               )}
               onLoad={() => setImageLoaded(true)}
-              whileHover={{ scale: 1.015 }}
-              transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
             />
-            {/* Image gradient overlay */}
-            {imageLoaded && (
-              <div className="absolute inset-0 bg-gradient-to-t from-card/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
-            )}
           </div>
         )}
       </Link>
