@@ -20,3 +20,9 @@ verify_jwt = false
 
 [functions.ad-assistant]
 verify_jwt = false
+
+[functions.post-assistant]
+verify_jwt = false
+
+[functions.agent-chat]
+verify_jwt = false
