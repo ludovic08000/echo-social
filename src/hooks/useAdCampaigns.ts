@@ -136,6 +136,7 @@ export function useCreateAdCampaign() {
       target_age_max?: number;
       target_gender?: string;
       target_interests?: string[];
+      target_location?: { type: string; values: string[] };
       duration_type: DurationType;
     }) => {
       // First moderate
@@ -174,7 +175,7 @@ export function useCreateAdCampaign() {
           target_age_max: input.target_age_max || 65,
           target_gender: input.target_gender || 'all',
           target_interests: input.target_interests || [],
-          budget: pricing.price,
+          target_location: input.target_location || { type: 'france', values: [] },
           duration_type: input.duration_type,
           ends_at: endsAt.toISOString(),
           status: 'active',
