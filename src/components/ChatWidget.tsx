@@ -643,27 +643,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               <div className="flex items-center gap-0">
                 <button
                   type="button"
-                  onClick={async () => {
-                    // Pre-check mic availability before showing recorder
-                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                      toast.error('Votre navigateur ne supporte pas le micro. Essayez Chrome ou Safari.');
-                      return;
-                    }
-                    try {
-                      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                      stream.getTracks().forEach(t => t.stop());
-                      setShowVoiceRecorder(true);
-                    } catch (err: any) {
-                      console.error('Mic pre-check failed:', err.name, err.message);
-                      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                        toast.error('Autorisez le micro dans les paramètres de votre navigateur');
-                      } else if (err.name === 'NotFoundError') {
-                        toast.error('Aucun microphone détecté');
-                      } else {
-                        toast.error('Impossible d\'accéder au micro : ' + (err.message || err.name));
-                      }
-                    }
-                  }}
+                  onClick={() => setShowVoiceRecorder(true)}
                   className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors"
                 >
                   <Mic className="w-4 h-4" />
