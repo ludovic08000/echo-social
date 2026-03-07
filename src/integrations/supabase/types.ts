@@ -1162,6 +1162,51 @@ export type Database = {
         }
         Relationships: []
       }
+      identity_verifications: {
+        Row: {
+          admin_note: string | null
+          auto_deleted: boolean
+          created_at: string
+          deadline_at: string
+          id: string
+          id_document_url: string | null
+          reason: string | null
+          reported_user_id: string
+          reporter_id: string
+          status: string
+          updated_at: string
+          verified_at: string | null
+        }
+        Insert: {
+          admin_note?: string | null
+          auto_deleted?: boolean
+          created_at?: string
+          deadline_at?: string
+          id?: string
+          id_document_url?: string | null
+          reason?: string | null
+          reported_user_id: string
+          reporter_id: string
+          status?: string
+          updated_at?: string
+          verified_at?: string | null
+        }
+        Update: {
+          admin_note?: string | null
+          auto_deleted?: boolean
+          created_at?: string
+          deadline_at?: string
+          id?: string
+          id_document_url?: string | null
+          reason?: string | null
+          reported_user_id?: string
+          reporter_id?: string
+          status?: string
+          updated_at?: string
+          verified_at?: string | null
+        }
+        Relationships: []
+      }
       journal_entries: {
         Row: {
           body: string
