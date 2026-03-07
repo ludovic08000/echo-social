@@ -20,7 +20,7 @@ import { useCall } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
 import { GifPicker } from '@/components/chat/GifPicker';
 import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
-import { toast } from 'sonner';
+
 
 // ─── Utils ───────────────────────────────────────────────
 function formatMessageTime(dateStr: string) {

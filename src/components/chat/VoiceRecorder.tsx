@@ -108,9 +108,13 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
       setDuration(0);
       timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
     } catch (err: any) {
+      const inPreviewIframe = window.self !== window.top;
       let msg = 'Impossible d\'accéder au micro';
+
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        msg = 'Autorisez l\'accès au micro dans les réglages de votre navigateur';
+        msg = inPreviewIframe
+          ? 'Le micro est bloqué en mode preview. Ouvrez la version publiée et autorisez le micro.'
+          : 'Micro bloqué. Cliquez sur l’icône cadenas (barre d’adresse) puis autorisez le micro.';
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
         msg = 'Aucun microphone détecté sur cet appareil';
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
@@ -118,8 +122,11 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
       } else if (err.name === 'OverconstrainedError') {
         msg = 'Impossible de trouver un micro compatible';
       } else if (err.name === 'SecurityError') {
-        msg = 'Accès au micro bloqué (HTTPS requis)';
+        msg = inPreviewIframe
+          ? 'Le micro est bloqué en preview. Testez depuis la version publiée.'
+          : 'Accès au micro bloqué (HTTPS requis).';
       }
+
       setPermError(msg);
       toast.error(msg);
       console.error('Microphone access error:', err.name, err.message);
@@ -201,6 +208,14 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
       <div className="flex items-center gap-2 px-2.5 py-2 border-t border-border/30 bg-destructive/5">
         <div className="flex-1 text-[11px] text-destructive">{permError}</div>
         <button
+          type="button"
+          onClick={startRecording}
+          className="text-[11px] px-2 py-1 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
+        >
+          Réessayer
+        </button>
+        <button
+          type="button"
           onClick={handleDiscard}
           className="text-[11px] text-muted-foreground hover:text-foreground px-2 py-1"
         >
