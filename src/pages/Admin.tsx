@@ -912,6 +912,8 @@ function AISection() {
 // ─── VÉRIFICATIONS D'IDENTITÉ ───
 function VerificationsSection() {
   const queryClient = useQueryClient();
+  const [analyzing, setAnalyzing] = useState<string | null>(null);
+  const [analysisResults, setAnalysisResults] = useState<Record<string, any>>({});
 
   const { data: verifications, isLoading } = useQuery({
     queryKey: ['admin-verifications'],
@@ -930,6 +932,7 @@ function VerificationsSection() {
         ...v,
         reportedName: profiles?.find(p => p.user_id === v.reported_user_id)?.name || v.reported_user_id.slice(0, 8),
         reporterName: profiles?.find(p => p.user_id === v.reporter_id)?.name || v.reporter_id.slice(0, 8),
+        reportedAvatar: profiles?.find(p => p.user_id === v.reported_user_id)?.avatar_url,
       })) || [];
     },
   });
@@ -950,9 +953,7 @@ function VerificationsSection() {
 
   const deleteAccount = useMutation({
     mutationFn: async ({ id, userId }: { id: string; userId: string }) => {
-      // Mark as auto-deleted
       await supabase.from('identity_verifications').update({ status: 'deleted', auto_deleted: true, updated_at: new Date().toISOString() }).eq('id', id);
-      // Ban user
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         await supabase.from('banned_users').insert({ user_id: userId, reason: 'Faux compte non vérifié', banned_by: user.id });
@@ -964,6 +965,31 @@ function VerificationsSection() {
     },
   });
 
+  const analyzePhoto = async (userId: string, avatarUrl: string) => {
+    if (!avatarUrl) {
+      toast({ title: 'Pas de photo', description: 'Cet utilisateur n\'a pas de photo de profil.', variant: 'destructive' });
+      return;
+    }
+    setAnalyzing(userId);
+    try {
+      const [analyzeRes, compareRes] = await Promise.all([
+        supabase.functions.invoke('photo-guard', { body: { action: 'analyze_photo', userId, imageUrl: avatarUrl } }),
+        supabase.functions.invoke('photo-guard', { body: { action: 'compare_photos', userId, imageUrl: avatarUrl } }),
+      ]);
+      setAnalysisResults(prev => ({
+        ...prev,
+        [userId]: {
+          analysis: analyzeRes.data?.analysis,
+          comparison: compareRes.data,
+        },
+      }));
+    } catch (e: any) {
+      toast({ title: 'Erreur analyse', description: e.message, variant: 'destructive' });
+    } finally {
+      setAnalyzing(null);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'pending_verification': return <Badge variant="destructive" className="text-[10px]">En attente</Badge>;
@@ -974,16 +1000,33 @@ function VerificationsSection() {
     }
   };
 
+  const getRiskBadge = (score: number) => {
+    if (score >= 70) return <Badge variant="destructive" className="text-[10px]">Risque élevé ({score}%)</Badge>;
+    if (score >= 40) return <Badge className="text-[10px] bg-amber-500/10 text-amber-700">Risque moyen ({score}%)</Badge>;
+    return <Badge className="text-[10px] bg-emerald-500/10 text-emerald-700">Faible risque ({score}%)</Badge>;
+  };
+
   const isExpired = (deadline: string) => new Date(deadline) < new Date();
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-foreground">Vérifications d'identité</h2>
+        <h2 className="text-lg font-bold text-foreground">Vérifications d'identité & Détection de faux profils</h2>
         <Badge variant="secondary">
           {verifications?.filter(v => v.status === 'pending_verification').length || 0} en attente
         </Badge>
       </div>
+
+      {/* AI Protection Info */}
+      <Card className="border-primary/20 bg-primary/5">
+        <CardContent className="p-4 flex items-start gap-3">
+          <Cpu className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+          <div className="text-xs space-y-1">
+            <p className="font-semibold text-foreground">Protection IA active</p>
+            <p className="text-muted-foreground">L'IA analyse les photos de profil pour détecter les images volées, les photos stock, les générations IA et les doublons entre utilisateurs. Cliquez "🔍 Scanner" sur chaque vérification pour lancer l'analyse.</p>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Expired - auto delete candidates */}
       {verifications?.filter(v => v.status === 'pending_verification' && isExpired(v.deadline_at)).map(v => (
@@ -1006,56 +1049,151 @@ function VerificationsSection() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>Photo</TableHead>
               <TableHead>Compte signalé</TableHead>
               <TableHead>Signalé par</TableHead>
-              <TableHead>Raison</TableHead>
               <TableHead>Statut</TableHead>
               <TableHead>Deadline</TableHead>
               <TableHead>Document</TableHead>
+              <TableHead>Analyse IA</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Chargement...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Chargement...</TableCell></TableRow>
             ) : !verifications?.length ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Aucune vérification en cours</TableCell></TableRow>
-            ) : verifications.map(v => (
-              <TableRow key={v.id}>
-                <TableCell className="font-medium text-sm">{v.reportedName}</TableCell>
-                <TableCell className="text-sm">{v.reporterName}</TableCell>
-                <TableCell className="text-xs max-w-[150px] truncate">{v.reason || 'Faux compte'}</TableCell>
-                <TableCell>{getStatusBadge(v.status)}</TableCell>
-                <TableCell className={cn('text-xs', isExpired(v.deadline_at) && v.status === 'pending_verification' ? 'text-destructive font-semibold' : 'text-muted-foreground')}>
-                  {format(new Date(v.deadline_at), 'dd/MM HH:mm', { locale: fr })}
-                  {isExpired(v.deadline_at) && v.status === 'pending_verification' && ' ⚠️'}
-                </TableCell>
-                <TableCell>
-                  {v.id_document_url ? (
-                    <a href={v.id_document_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline">Voir</a>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">-</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {v.status !== 'verified' && v.status !== 'deleted' && (
-                    <div className="flex gap-1">
-                      {v.status === 'document_submitted' && (
-                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateVerification.mutate({ id: v.id, status: 'verified' })}>
-                          ✅ Valider
-                        </Button>
-                      )}
-                      <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => deleteAccount.mutate({ id: v.id, userId: v.reported_user_id })}>
-                        Supprimer
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Aucune vérification en cours</TableCell></TableRow>
+            ) : verifications.map(v => {
+              const result = analysisResults[v.reported_user_id];
+              return (
+                <TableRow key={v.id}>
+                  <TableCell>
+                    {v.reportedAvatar ? (
+                      <img src={v.reportedAvatar} alt="" className="w-10 h-10 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                        <Users className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="font-medium text-sm">{v.reportedName}</TableCell>
+                  <TableCell className="text-sm">{v.reporterName}</TableCell>
+                  <TableCell>{getStatusBadge(v.status)}</TableCell>
+                  <TableCell className={cn('text-xs', isExpired(v.deadline_at) && v.status === 'pending_verification' ? 'text-destructive font-semibold' : 'text-muted-foreground')}>
+                    {format(new Date(v.deadline_at), 'dd/MM HH:mm', { locale: fr })}
+                    {isExpired(v.deadline_at) && v.status === 'pending_verification' && ' ⚠️'}
+                  </TableCell>
+                  <TableCell>
+                    {v.id_document_url ? (
+                      <a href={v.id_document_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline">Voir</a>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {result ? (
+                      <div className="space-y-1">
+                        {result.analysis && getRiskBadge(result.analysis.risk_score || 0)}
+                        {result.comparison?.has_duplicates && (
+                          <Badge variant="destructive" className="text-[10px] block w-fit">
+                            ⚠️ Doublon détecté
+                          </Badge>
+                        )}
+                        {result.analysis?.details && (
+                          <p className="text-[10px] text-muted-foreground max-w-[200px] truncate" title={result.analysis.details}>
+                            {result.analysis.details}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        disabled={analyzing === v.reported_user_id}
+                        onClick={() => analyzePhoto(v.reported_user_id, v.reportedAvatar)}
+                      >
+                        {analyzing === v.reported_user_id ? (
+                          <><RefreshCw className="w-3 h-3 mr-1 animate-spin" /> Analyse...</>
+                        ) : (
+                          <>🔍 Scanner</>
+                        )}
                       </Button>
-                    </div>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {v.status !== 'verified' && v.status !== 'deleted' && (
+                      <div className="flex gap-1">
+                        {v.status === 'document_submitted' && (
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateVerification.mutate({ id: v.id, status: 'verified' })}>
+                            ✅ Valider
+                          </Button>
+                        )}
+                        <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => deleteAccount.mutate({ id: v.id, userId: v.reported_user_id })}>
+                          Supprimer
+                        </Button>
+                      </div>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>
+
+      {/* Detailed AI results */}
+      {Object.entries(analysisResults).length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-foreground">Résultats d'analyse IA détaillés</h3>
+          {Object.entries(analysisResults).map(([userId, result]) => {
+            const v = verifications?.find(v => v.reported_user_id === userId);
+            if (!v || !result) return null;
+            return (
+              <Card key={userId} className="border-border">
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center gap-3">
+                    {v.reportedAvatar && <img src={v.reportedAvatar} alt="" className="w-12 h-12 rounded-full object-cover" />}
+                    <div>
+                      <p className="text-sm font-semibold">{v.reportedName}</p>
+                      {result.analysis && getRiskBadge(result.analysis.risk_score || 0)}
+                    </div>
+                  </div>
+                  {result.analysis && (
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">{result.analysis.details}</p>
+                      {result.analysis.reasons?.length > 0 && (
+                        <ul className="text-xs text-muted-foreground list-disc pl-4">
+                          {result.analysis.reasons.map((r: string, i: number) => <li key={i}>{r}</li>)}
+                        </ul>
+                      )}
+                      <p className="text-xs">
+                        Recommandation : <Badge variant={result.analysis.recommendation === 'reject' ? 'destructive' : result.analysis.recommendation === 'flag' ? 'secondary' : 'default'} className="text-[10px]">
+                          {result.analysis.recommendation === 'reject' ? '❌ Rejeter' : result.analysis.recommendation === 'flag' ? '⚠️ À surveiller' : '✅ Approuver'}
+                        </Badge>
+                      </p>
+                    </div>
+                  )}
+                  {result.comparison?.has_duplicates && (
+                    <div className="bg-destructive/5 border border-destructive/20 rounded-lg p-3 space-y-2">
+                      <p className="text-xs font-semibold text-destructive">⚠️ Photos en double détectées</p>
+                      <p className="text-xs text-muted-foreground">{result.comparison.summary}</p>
+                      {result.comparison.matches?.map((m: any, i: number) => (
+                        <div key={i} className="flex items-center gap-2 text-xs">
+                          {m.matched_user?.avatar_url && <img src={m.matched_user.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover" />}
+                          <span>{m.matched_user?.name || 'Inconnu'}</span>
+                          <Badge className="text-[10px]">{m.confidence}% - {m.match_type}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
