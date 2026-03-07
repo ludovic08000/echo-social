@@ -82,7 +82,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
       <div className="flex items-center justify-between px-4 pt-4 pb-3">
         <div className="flex items-center gap-3">
           <Link to={`/profile/${post.user_id}`} className="relative">
-            <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }} transition={{ type: 'spring', stiffness: 400 }}>
+            <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }} transition={{ type: 'spring' as const, stiffness: 400 }}>
               <UserAvatar 
                 src={post.profile.avatar_url} 
                 alt={post.profile.name} 
