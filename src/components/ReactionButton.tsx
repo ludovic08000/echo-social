@@ -55,9 +55,9 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     visible: (i: number) => ({
       scale: 1,
       y: 0,
-      transition: { delay: i * 0.04, type: 'spring', stiffness: 500, damping: 15 },
+      transition: { delay: i * 0.04, type: 'spring' as const, stiffness: 500, damping: 15 },
     }),
-    hover: { scale: 1.4, y: -8, transition: { type: 'spring', stiffness: 400 } },
+    hover: { scale: 1.4, y: -8, transition: { type: 'spring' as const, stiffness: 400 } },
   };
 
   if (variant === 'facebook') {
