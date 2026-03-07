@@ -25,47 +25,62 @@ export function MobileNav() {
 
   const { openChat } = useChatWidget();
 
-  const navItems = [
+  const leftItems = [
     { path: '/feed', icon: Home, label: t('nav.home') },
     { path: '/lives', icon: Radio, label: t('nav.lives') },
+  ];
+
+  const rightItems = [
     { path: '/groups', icon: Users, label: t('nav.groups') },
-    { path: '/pages', icon: FileText, label: t('nav.pages') },
     { path: '/marketplace', icon: ShoppingBag, label: 'Market' },
   ];
+
+  const renderNavItem = (item: { path: string; icon: any; label: string }) => {
+    const isActive = location.pathname === item.path ||
+      (item.path === '/groups' && location.pathname.startsWith('/group')) ||
+      (item.path === '/marketplace' && location.pathname.startsWith('/marketplace'));
+
+    return (
+      <Link
+        key={item.path}
+        to={item.path}
+        className={cn(
+          'flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-2xl transition-all duration-200 flex-1',
+          isActive
+            ? 'text-primary'
+            : 'text-muted-foreground active:text-foreground'
+        )}
+      >
+        <div className="relative">
+          <item.icon className={cn('w-[22px] h-[22px]', isActive && 'stroke-[2.5]')} />
+          {isActive && (
+            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-[3px] rounded-full bg-primary" />
+          )}
+        </div>
+        <span className={cn('text-[10px] leading-tight', isActive ? 'font-bold' : 'font-medium')}>{item.label}</span>
+      </Link>
+    );
+  };
 
   return (
     <nav className={cn(
       "fixed bottom-0 left-0 right-0 z-50 glass safe-area-pb transition-transform duration-300",
       navHidden && "translate-y-full"
     )}>
-      <div className="flex items-center justify-around h-[60px] px-2">
-        {navItems.map((item) => {
-          const isActive = location.pathname === item.path || 
-            (item.path === '/groups' && location.pathname.startsWith('/group')) ||
-            (item.path === '/pages' && location.pathname.startsWith('/page')) ||
-            (item.path === '/marketplace' && location.pathname.startsWith('/marketplace'));
-          
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={cn(
-                'flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-2xl transition-all duration-200 min-w-[56px]',
-                isActive 
-                  ? 'text-primary' 
-                  : 'text-muted-foreground active:text-foreground'
-              )}
-            >
-              <div className="relative">
-                <item.icon className={cn('w-6 h-6', isActive && 'stroke-[2.5]')} />
-                {isActive && (
-                  <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary" />
-                )}
-              </div>
-              <span className={cn('text-[10px]', isActive ? 'font-semibold' : 'font-medium')}>{item.label}</span>
-            </Link>
-          );
-        })}
+      <div className="flex items-center justify-around h-[64px] px-1">
+        {leftItems.map(renderNavItem)}
+
+        {/* Bouton central + */}
+        <div className="flex flex-col items-center justify-center flex-1">
+          <Link
+            to="/create"
+            className="w-12 h-12 rounded-2xl flex items-center justify-center bg-primary text-primary-foreground shadow-[0_4px_16px_hsl(var(--primary)/0.4)] active:scale-90 transition-all duration-200 -mt-5 hover:shadow-[0_6px_24px_hsl(var(--primary)/0.5)]"
+          >
+            <PlusCircle className="w-6 h-6 stroke-[2.5]" />
+          </Link>
+        </div>
+
+        {rightItems.map(renderNavItem)}
       </div>
     </nav>
   );
