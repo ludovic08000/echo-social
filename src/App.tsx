@@ -38,6 +38,7 @@ import ProductDetailPage from "./pages/ProductDetail";
 import LegalTerms from "./pages/LegalTerms";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import AIEngine from "./pages/AIEngine";
+import AdsManager from "./pages/AdsManager";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -86,6 +87,7 @@ function AppContent() {
               <Route path="/marketplace" element={<ProtectedRoute><Marketplace /></ProtectedRoute>} />
               <Route path="/marketplace/product/:id" element={<ProtectedRoute><ProductDetailPage /></ProtectedRoute>} />
               <Route path="/ai-engine" element={<ProtectedRoute><AIEngine /></ProtectedRoute>} />
+              <Route path="/ads" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
               
               {/* 404 */}
               <Route path="*" element={<NotFound />} />
