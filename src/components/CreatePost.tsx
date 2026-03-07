@@ -23,6 +23,10 @@ const EXPIRY_OPTIONS = [
   { label: '24h', value: 24, description: '24 heures' },
 ];
 
+const LANG_LABELS: Record<string, string> = {
+  fr: 'Français', en: 'English', es: 'Español', de: 'Deutsch', it: 'Italiano', pt: 'Português', nl: 'Nederlands', pl: 'Polski', ar: 'العربية',
+};
+
 const CAPSULE_OPTIONS = [
   { label: '1 semaine', value: 7 },
   { label: '1 mois', value: 30 },
