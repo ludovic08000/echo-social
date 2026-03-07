@@ -35,7 +35,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
   const [summary, setSummary] = useState<string | null>(null);
   const [translation, setTranslation] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
-  const [imageLoaded, setImageLoaded] = useState(false);
+  const [mediaLoaded, setMediaLoaded] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const postUrl = generatePostUrl(post.id);
@@ -173,18 +173,32 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
         
         {post.image_url && (
           <div className="relative w-full overflow-hidden">
-            {!imageLoaded && (
+            {!mediaLoaded && (
               <div className="w-full h-64 skeleton" />
             )}
-            <img
-              src={post.image_url}
-              alt="Post image"
-              className={cn(
-                "w-full object-cover max-h-[520px]",
-                imageLoaded ? "opacity-100" : "opacity-0 h-0"
-              )}
-              onLoad={() => setImageLoaded(true)}
-            />
+            {/\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url) ? (
+              <video
+                src={post.image_url}
+                controls
+                playsInline
+                preload="metadata"
+                className={cn(
+                  "w-full max-h-[520px] bg-muted",
+                  mediaLoaded ? "opacity-100" : "opacity-0 h-0"
+                )}
+                onLoadedData={() => setMediaLoaded(true)}
+              />
+            ) : (
+              <img
+                src={post.image_url}
+                alt="Post image"
+                className={cn(
+                  "w-full object-cover max-h-[520px]",
+                  mediaLoaded ? "opacity-100" : "opacity-0 h-0"
+                )}
+                onLoad={() => setMediaLoaded(true)}
+              />
+            )}
           </div>
         )}
       </Link>
