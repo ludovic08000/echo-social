@@ -40,21 +40,25 @@ export default function Friends() {
       </header>
 
       <Tabs defaultValue="friends" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="friends" className="gap-2">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="friends" className="gap-1 text-xs sm:text-sm">
             <Users className="w-4 h-4" />
             <span className="hidden sm:inline">Amis</span>
             {data?.friends.length ? ` (${data.friends.length})` : ''}
           </TabsTrigger>
-          <TabsTrigger value="requests" className="gap-2">
+          <TabsTrigger value="requests" className="gap-1 text-xs sm:text-sm">
             <UserCheck className="w-4 h-4" />
             <span className="hidden sm:inline">Demandes</span>
             {data?.requests.length ? ` (${data.requests.length})` : ''}
           </TabsTrigger>
-          <TabsTrigger value="pending" className="gap-2">
+          <TabsTrigger value="pending" className="gap-1 text-xs sm:text-sm">
             <Clock className="w-4 h-4" />
             <span className="hidden sm:inline">En attente</span>
             {data?.pending.length ? ` (${data.pending.length})` : ''}
+          </TabsTrigger>
+          <TabsTrigger value="invite" className="gap-1 text-xs sm:text-sm">
+            <UserPlus className="w-4 h-4" />
+            <span className="hidden sm:inline">Inviter</span>
           </TabsTrigger>
         </TabsList>
 
