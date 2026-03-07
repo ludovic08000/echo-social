@@ -49,7 +49,7 @@ function generateChartData(campaigns: AdCampaign[]) {
   });
 }
 
-interface ChatMessage {
+  const [generatingImage, setGeneratingImage] = useState(false);
   role: 'user' | 'assistant';
   content: string;
   adData?: any;
