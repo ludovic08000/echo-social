@@ -370,6 +370,38 @@ export default function Profile() {
       <div className="-mt-2">
         <input ref={avatarInputRef} type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
         <input ref={coverInputRef} type="file" accept="image/*" onChange={handleCoverChange} className="hidden" />
+        <input ref={idInputRef} type="file" accept="image/*,.pdf" onChange={e => setIdFile(e.target.files?.[0] || null)} className="hidden" />
+
+        {/* Identity verification banner */}
+        {isOwnProfile && pendingVerification && (
+          <div className="mx-4 mt-2 mb-2 p-4 rounded-xl bg-destructive/10 border border-destructive/30">
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-2">
+                <p className="text-sm font-semibold text-destructive">Vérification d'identité requise</p>
+                <p className="text-xs text-muted-foreground">
+                  Votre compte a été signalé. Veuillez fournir une pièce d'identité avant le{' '}
+                  <strong>{format(new Date(pendingVerification.deadline_at), 'dd/MM/yyyy à HH:mm', { locale: fr })}</strong>.
+                  Sans vérification, votre compte sera supprimé automatiquement.
+                </p>
+                <div className="flex items-center gap-2">
+                  {idFile ? (
+                    <>
+                      <span className="text-xs text-foreground">{idFile.name}</span>
+                      <Button size="sm" className="h-7 text-xs" onClick={handleIdUpload} disabled={uploadingId}>
+                        {uploadingId ? 'Envoi...' : 'Envoyer le document'}
+                      </Button>
+                    </>
+                  ) : (
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => idInputRef.current?.click()}>
+                      📎 Joindre ma pièce d'identité
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Cover Photo */}
         <div 
