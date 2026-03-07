@@ -118,8 +118,8 @@ export function HostLiveView({ live }: HostLiveViewProps) {
 
   const handleStreamReady = () => {
     // Get the video element's stream for recording
-    const videoEl = document.querySelector('.live-host-video video') as HTMLVideoElement;
-    if (videoEl && videoEl.captureStream) {
+    const videoEl = document.querySelector('.live-host-video video') as HTMLVideoElement & { captureStream?: () => MediaStream };
+    if (videoEl && typeof videoEl.captureStream === 'function') {
       const stream = videoEl.captureStream();
       startRecording(stream);
     } else {
