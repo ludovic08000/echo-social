@@ -12,9 +12,11 @@ import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
 import { FeedReelsSection } from '@/components/feed/FeedReelsSection';
 import { FeedMarketplaceSection } from '@/components/feed/FeedMarketplaceSection';
 import { FeedMediaSection } from '@/components/feed/FeedMediaSection';
+import { SponsoredPostCard } from '@/components/feed/SponsoredPostCard';
 import { Coffee, X, Sparkles } from 'lucide-react';
 import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgorithm';
 import { Button } from '@/components/ui/button';
+import { useActiveAds } from '@/hooks/useAdCampaigns';
 
 const INJECTION_MAP: Record<number, 'suggestions' | 'reels' | 'live' | 'media' | 'marketplace'> = {
   1: 'live',
@@ -48,6 +50,7 @@ export default function Feed() {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [showPauseReminder, setShowPauseReminder] = useState(false);
   const [pauseDismissed, setPauseDismissed] = useState(false);
+  const { data: activeAds } = useActiveAds();
 
   const posts = data?.pages.flat() || [];
 
@@ -100,6 +103,26 @@ export default function Feed() {
 
   const renderInjection = (index: number) => {
     const type = INJECTION_MAP[index];
+    
+    // Inject sponsored post every ~6 posts
+    if (activeAds?.length && index > 0 && index % 6 === 0) {
+      const adIndex = Math.floor(index / 6) % activeAds.length;
+      const ad = activeAds[adIndex];
+      if (ad) {
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: '-50px' }}
+            transition={{ duration: 0.5, ease: 'easeOut' }}
+            className="px-4"
+          >
+            <SponsoredPostCard ad={ad} />
+          </motion.div>
+        );
+      }
+    }
+    
     if (!type) return null;
     return (
       <motion.div

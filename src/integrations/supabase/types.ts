@@ -89,6 +89,107 @@ export type Database = {
         }
         Relationships: []
       }
+      ad_campaigns: {
+        Row: {
+          advertiser_id: string
+          body: string
+          budget: number
+          clicks: number
+          created_at: string
+          cta_text: string | null
+          cta_url: string | null
+          daily_budget: number | null
+          duration_type: string
+          ends_at: string
+          id: string
+          image_url: string | null
+          impressions: number
+          reach: number
+          spent: number
+          starts_at: string
+          status: string
+          target_audience: Json | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          advertiser_id: string
+          body: string
+          budget?: number
+          clicks?: number
+          created_at?: string
+          cta_text?: string | null
+          cta_url?: string | null
+          daily_budget?: number | null
+          duration_type?: string
+          ends_at: string
+          id?: string
+          image_url?: string | null
+          impressions?: number
+          reach?: number
+          spent?: number
+          starts_at?: string
+          status?: string
+          target_audience?: Json | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          advertiser_id?: string
+          body?: string
+          budget?: number
+          clicks?: number
+          created_at?: string
+          cta_text?: string | null
+          cta_url?: string | null
+          daily_budget?: number | null
+          duration_type?: string
+          ends_at?: string
+          id?: string
+          image_url?: string | null
+          impressions?: number
+          reach?: number
+          spent?: number
+          starts_at?: string
+          status?: string
+          target_audience?: Json | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      ad_interactions: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          id: string
+          interaction_type: string
+          user_id: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          id?: string
+          interaction_type?: string
+          user_id: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          id?: string
+          interaction_type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_interactions_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "ad_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_feedback: {
         Row: {
           ai_decision: string
