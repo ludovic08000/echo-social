@@ -1,3 +1,4 @@
+import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Home, Search, User, Settings, Plus, PlusCircle, MessageCircle, Users, FileText, Video, Radio, Bell, BookOpen, Trophy, Heart, Gamepad2, Tv, ShoppingBag, Brain, Compass, Sparkles } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
@@ -21,9 +22,10 @@ export function MobileNav() {
 
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
 
-  if (!user) return null;
-
   const { openChat } = useChatWidget();
+  const [showMore, setShowMore] = React.useState(false);
+
+  if (!user) return null;
 
   const active = (path: string) => {
     if (path === '/feed') return location.pathname === '/feed' || location.pathname === '/';
