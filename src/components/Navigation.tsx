@@ -27,10 +27,10 @@ export function MobileNav() {
 
   const navItems = [
     { path: '/feed', icon: Home, label: t('nav.home') },
-    { path: '/videos', icon: Video, label: t('nav.videos') },
-    { path: '/create', icon: PlusCircle, label: t('nav.create'), isCreate: true },
     { path: '/lives', icon: Radio, label: t('nav.lives') },
-    { path: '/settings', icon: Settings, label: t('nav.more') },
+    { path: '/groups', icon: Users, label: t('nav.groups') },
+    { path: '/pages', icon: FileText, label: t('nav.pages') },
+    { path: '/marketplace', icon: ShoppingBag, label: 'Market' },
   ];
 
   return (
