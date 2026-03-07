@@ -212,7 +212,7 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
           <div className="absolute inset-0 flex items-center justify-center bg-black/80">
             <div className="text-center text-white">
               <Radio className="w-12 h-12 mx-auto mb-4 animate-pulse text-destructive" />
-              <p>Connexion à LiveKit...</p>
+              <p>Démarrage du live...</p>
             </div>
           </div>
         )}
