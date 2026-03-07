@@ -108,9 +108,13 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
       setDuration(0);
       timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
     } catch (err: any) {
+      const inPreviewIframe = window.self !== window.top;
       let msg = 'Impossible d\'accéder au micro';
+
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        msg = 'Autorisez l\'accès au micro dans les réglages de votre navigateur';
+        msg = inPreviewIframe
+          ? 'Le micro est bloqué en mode preview. Ouvrez la version publiée et autorisez le micro.'
+          : 'Micro bloqué. Cliquez sur l’icône cadenas (barre d’adresse) puis autorisez le micro.';
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
         msg = 'Aucun microphone détecté sur cet appareil';
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
@@ -118,8 +122,11 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
       } else if (err.name === 'OverconstrainedError') {
         msg = 'Impossible de trouver un micro compatible';
       } else if (err.name === 'SecurityError') {
-        msg = 'Accès au micro bloqué (HTTPS requis)';
+        msg = inPreviewIframe
+          ? 'Le micro est bloqué en preview. Testez depuis la version publiée.'
+          : 'Accès au micro bloqué (HTTPS requis).';
       }
+
       setPermError(msg);
       toast.error(msg);
       console.error('Microphone access error:', err.name, err.message);
