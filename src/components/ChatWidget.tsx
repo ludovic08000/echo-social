@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   ArrowLeft, Send, Search, Plus, X, Phone, Video, Mic, MicOff,
   Smile, Check, CheckCheck, Minus, Camera, Reply, Copy, Trash2,
-  ChevronDown, Sparkles, MoreVertical, ThumbsUp
+  ChevronDown, Sparkles, MoreVertical, ThumbsUp, ImageIcon
 } from 'lucide-react';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -18,6 +18,8 @@ import { useChatWidget } from './ChatWidgetContext';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { useCall } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
+import { GifPicker } from '@/components/chat/GifPicker';
+import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { toast } from 'sonner';
 
 // ─── Utils ───────────────────────────────────────────────
