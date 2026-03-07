@@ -7,11 +7,11 @@ import { PostCard } from '@/components/PostCard';
 import { StoriesBar } from '@/components/StoriesBar';
 import { useNavigate } from 'react-router-dom';
 import { FriendSuggestions } from '@/components/feed/FriendSuggestions';
+import { FeedRightSidebar } from '@/components/feed/FeedRightSidebar';
 import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
 import { FeedReelsSection } from '@/components/feed/FeedReelsSection';
 import { FeedMarketplaceSection } from '@/components/feed/FeedMarketplaceSection';
 import { FeedMediaSection } from '@/components/feed/FeedMediaSection';
-import { Loader2, Coffee, X, Sparkles } from 'lucide-react';
 import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgorithm';
 import { Button } from '@/components/ui/button';
 
