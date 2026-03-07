@@ -46,6 +46,7 @@ const NAV_ITEMS = [
   { key: 'posts', label: 'Publications', icon: FileText },
   { key: 'reports', label: 'Signalements', icon: Flag },
   { key: 'verifications', label: 'Vérifications ID', icon: Shield },
+  { key: 'archives', label: 'Archives Usurpation', icon: Archive },
   { key: 'stats', label: 'Statistiques', icon: BarChart3 },
   { key: 'subscriptions', label: 'Abonnements', icon: CreditCard },
   { key: 'ai', label: 'Intelligence Artificielle', icon: Brain },
