@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,7 @@ import { Plus, Upload, ShoppingBag } from 'lucide-react';
 import { useCreateProduct } from '@/hooks/useMarketplace';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { COUNTRIES, GEO_DATA } from '@/lib/geoData';
 
 const CATEGORIES = [
   { value: 'general', label: 'Général' },
@@ -57,7 +58,20 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
   const [color, setColor] = useState('');
   const [shippingType, setShippingType] = useState('standard');
   const [shippingPrice, setShippingPrice] = useState('');
+  const [country, setCountry] = useState('FR');
+  const [region, setRegion] = useState('');
+  const [city, setCity] = useState('');
 
+  const regions = useMemo(() => {
+    const data = GEO_DATA[country];
+    return data ? Object.keys(data).sort() : [];
+  }, [country]);
+
+  const cities = useMemo(() => {
+    const data = GEO_DATA[country];
+    if (!data || !region) return [];
+    return (data[region] || []).map(v => v.nom).sort();
+  }, [country, region]);
   const createProduct = useCreateProduct();
   const { upload, isUploading } = useImageUpload({
     bucket: 'products',
