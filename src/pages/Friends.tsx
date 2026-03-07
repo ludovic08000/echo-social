@@ -167,6 +167,12 @@ export default function Friends() {
             )}
           </div>
         </TabsContent>
+
+        <TabsContent value="invite" className="mt-4">
+          <div className="pulse-card overflow-hidden min-h-[300px]">
+            <InviteContacts />
+          </div>
+        </TabsContent>
       </Tabs>
     </AppLayout>
   );
