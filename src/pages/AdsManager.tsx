@@ -454,42 +454,57 @@ function AdChatCreator() {
               <label className="text-sm font-medium text-foreground flex items-center gap-2">
                 <Target className="w-4 h-4 text-primary" /> Zone géographique
               </label>
-              <div className="flex gap-2">
-                {([
-                  { value: 'france' as const, label: 'Toute la France' },
-                  { value: 'regions' as const, label: 'Régions' },
-                  { value: 'villes' as const, label: 'Villes' },
-                ] as const).map(opt => (
-                  <button key={opt.value} onClick={() => { setLocationType(opt.value); setSelectedLocations([]); }}
-                    className={cn("flex-1 py-2 rounded-xl text-xs font-medium transition-all border",
-                      locationType === opt.value ? "bg-primary/10 text-primary border-primary/30" : "bg-secondary/30 text-muted-foreground border-border/30"
+              {/* Region selector */}
+              <div>
+                <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Région</label>
+                <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                  <button onClick={() => { setSelectedRegion(''); setSelectedVilles([]); }}
+                    className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border",
+                      !selectedRegion ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
                     )}>
-                    {opt.label}
+                    Toute la France
                   </button>
-                ))}
+                  {REGION_NAMES.map(r => (
+                    <button key={r} onClick={() => { setSelectedRegion(r); setSelectedVilles([]); }}
+                      className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border",
+                        selectedRegion === r ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
+                      )}>
+                      {r}
+                    </button>
+                  ))}
+                </div>
               </div>
-              {locationType !== 'france' && (
+              {/* Villes in selected region */}
+              {selectedRegion && (
                 <div className="space-y-2">
-                  <Input
-                    value={locationSearch}
-                    onChange={(e) => setLocationSearch(e.target.value)}
-                    placeholder={locationType === 'regions' ? 'Rechercher une région...' : 'Rechercher une ville...'}
-                    className="rounded-xl text-sm h-9"
-                  />
-                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
-                    {(locationType === 'regions' ? REGIONS_FRANCE : VILLES_FRANCE)
-                      .filter(l => l.toLowerCase().includes(locationSearch.toLowerCase()))
-                      .map(loc => (
-                        <button key={loc} onClick={() => setSelectedLocations(prev => prev.includes(loc) ? prev.filter(l => l !== loc) : [...prev, loc])}
+                  <label className="text-[11px] font-medium text-muted-foreground block">Villes — {selectedRegion}</label>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {POPULATION_FILTERS.map((f, i) => (
+                      <button key={i} onClick={() => setPopFilter(i)}
+                        className={cn("px-2 py-0.5 rounded-lg text-[10px] font-medium border transition-all",
+                          popFilter === i ? "bg-primary/10 text-primary border-primary/30" : "bg-secondary/30 text-muted-foreground border-border/30"
+                        )}>
+                        {f.label} hab.
+                      </button>
+                    ))}
+                  </div>
+                  <Input value={locationSearch} onChange={(e) => setLocationSearch(e.target.value)}
+                    placeholder="Rechercher une ville..." className="rounded-xl text-sm h-9" />
+                  <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                    {(REGIONS_VILLES[selectedRegion] || [])
+                      .filter(v => v.population >= POPULATION_FILTERS[popFilter].min && v.population < POPULATION_FILTERS[popFilter].max)
+                      .filter(v => v.nom.toLowerCase().includes(locationSearch.toLowerCase()))
+                      .map(v => (
+                        <button key={v.nom} onClick={() => setSelectedVilles(prev => prev.includes(v.nom) ? prev.filter(n => n !== v.nom) : [...prev, v.nom])}
                           className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border",
-                            selectedLocations.includes(loc) ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
+                            selectedVilles.includes(v.nom) ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
                           )}>
-                          {loc}
+                          {v.nom} <span className="text-muted-foreground/60 ml-0.5">({(v.population / 1000).toFixed(0)}k)</span>
                         </button>
                       ))}
                   </div>
-                  {selectedLocations.length > 0 && (
-                    <p className="text-[10px] text-primary font-medium">{selectedLocations.length} sélection(s)</p>
+                  {selectedVilles.length > 0 && (
+                    <p className="text-[10px] text-primary font-medium">{selectedVilles.length} ville(s) sélectionnée(s)</p>
                   )}
                 </div>
               )}
