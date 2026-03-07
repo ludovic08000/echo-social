@@ -303,16 +303,28 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
   const [progress, setProgress] = useState(0);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  const togglePlay = () => {
+  const togglePlay = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     if (!audioRef.current) return;
-    if (playing) {
-      audioRef.current.pause();
-    } else {
-      audioRef.current.play().catch(() => {
+
+    const audio = audioRef.current;
+
+    if (audio.paused) {
+      // If playback reached the end, restart from beginning
+      if (audio.duration && audio.currentTime >= audio.duration - 0.05) {
+        audio.currentTime = 0;
+      }
+
+      audio.muted = false;
+      audio.volume = 1;
+
+      audio.play().catch(() => {
         toast.error('Impossible de lire l\'audio');
       });
+      return;
     }
-    setPlaying(!playing);
+
+    audio.pause();
   };
 
   useEffect(() => {
@@ -320,13 +332,21 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
     if (!audio) return;
 
     const onTime = () => setProgress(audio.currentTime / (audio.duration || 1));
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
     const onEnd = () => { setPlaying(false); setProgress(0); };
     const onError = () => { setPlaying(false); };
+
     audio.addEventListener('timeupdate', onTime);
+    audio.addEventListener('play', onPlay);
+    audio.addEventListener('pause', onPause);
     audio.addEventListener('ended', onEnd);
     audio.addEventListener('error', onError);
+
     return () => {
       audio.removeEventListener('timeupdate', onTime);
+      audio.removeEventListener('play', onPlay);
+      audio.removeEventListener('pause', onPause);
       audio.removeEventListener('ended', onEnd);
       audio.removeEventListener('error', onError);
     };
