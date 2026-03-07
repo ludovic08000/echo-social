@@ -208,6 +208,14 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
       <div className="flex items-center gap-2 px-2.5 py-2 border-t border-border/30 bg-destructive/5">
         <div className="flex-1 text-[11px] text-destructive">{permError}</div>
         <button
+          type="button"
+          onClick={startRecording}
+          className="text-[11px] px-2 py-1 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
+        >
+          Réessayer
+        </button>
+        <button
+          type="button"
           onClick={handleDiscard}
           className="text-[11px] text-muted-foreground hover:text-foreground px-2 py-1"
         >
