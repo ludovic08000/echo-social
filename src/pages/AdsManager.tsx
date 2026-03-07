@@ -83,6 +83,9 @@ function AdChatCreator() {
   const [videoUrl, setVideoUrl] = useState('');
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
   const [generatingImage, setGeneratingImage] = useState(false);
+  const [locationType, setLocationType] = useState<'france' | 'regions' | 'villes'>('france');
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+  const [locationSearch, setLocationSearch] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const createCampaign = useCreateAdCampaign();
   const { upload, isUploading } = useImageUpload({ bucket: 'post-images' });
@@ -396,6 +399,9 @@ export default function AdsManager() {
   const [manualAgeRange, setManualAgeRange] = useState([18, 45]);
   const [manualGender, setManualGender] = useState('all');
   const [manualInterests, setManualInterests] = useState<string[]>([]);
+  const [manualLocationType, setManualLocationType] = useState<'france' | 'regions' | 'villes'>('france');
+  const [manualSelectedLocations, setManualSelectedLocations] = useState<string[]>([]);
+  const [manualLocationSearch, setManualLocationSearch] = useState('');
 
   const chartData = generateChartData(campaigns || []);
 
