@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   ArrowLeft, Send, Search, Plus, X, Phone, Video, Mic, MicOff,
   Smile, Check, CheckCheck, Minus, Camera, Reply, Copy, Trash2,
-  ChevronDown, Sparkles, MoreVertical, ThumbsUp
+  ChevronDown, Sparkles, MoreVertical, ThumbsUp, ImageIcon
 } from 'lucide-react';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -18,6 +18,8 @@ import { useChatWidget } from './ChatWidgetContext';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { useCall } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
+import { GifPicker } from '@/components/chat/GifPicker';
+import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { toast } from 'sonner';
 
 // ─── Utils ───────────────────────────────────────────────
@@ -57,41 +59,23 @@ const EMOJI_CATEGORIES = [
   { label: '💎 Premium', emojis: ['💎','👑','🦄','🌙','⚡','🪐','🔮','🎭','🗝️','🧿','🪬','💐','🦚','🎪','🏰','🚀','🛸','🧬'] },
 ];
 
-// ─── Voice Record Button ─────────────────────────────────
-function VoiceRecordButton({ onSend }: { onSend: (text: string) => void }) {
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordDuration, setRecordDuration] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setInterval>>();
+// Helper to detect voice messages and GIFs
+function isVoiceMessage(body: string): boolean {
+  return body.startsWith('🎙️ ') && body.includes('voice:');
+}
 
-  const toggleRecording = () => {
-    if (isRecording) {
-      clearInterval(timerRef.current);
-      onSend(`🎙️ Message vocal (${recordDuration}s)`);
-      setRecordDuration(0);
-      setIsRecording(false);
-    } else {
-      setIsRecording(true);
-      setRecordDuration(0);
-      timerRef.current = setInterval(() => setRecordDuration(d => d + 1), 1000);
-    }
-  };
+function getVoiceData(body: string): { url: string; duration: number } | null {
+  const match = body.match(/voice:(.*?)(?:\|dur:(\d+))?$/);
+  if (!match) return null;
+  return { url: match[1], duration: parseInt(match[2] || '0', 10) };
+}
 
-  useEffect(() => () => clearInterval(timerRef.current), []);
+function isGifMessage(body: string): boolean {
+  return body.startsWith('GIF:');
+}
 
-  return (
-    <button
-      type="button"
-      onClick={toggleRecording}
-      className={cn(
-        "h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all",
-        isRecording
-          ? "bg-destructive text-destructive-foreground animate-pulse"
-          : "text-muted-foreground hover:text-primary"
-      )}
-    >
-      {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-    </button>
-  );
+function getGifUrl(body: string): string {
+  return body.replace('GIF:', '');
 }
 
 // ─── New Conversation Dialog ─────────────────────────────
@@ -288,6 +272,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const markRead = useMarkConversationRead();
   const [newMessage, setNewMessage] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
+  const [showGifs, setShowGifs] = useState(false);
+  const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({});
@@ -492,30 +478,53 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                           </div>
                         )}
 
-                        <div
-                          onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
-                          className={cn(
-                            'cursor-pointer select-none transition-all',
-                            isBigEmoji
-                              ? 'text-2xl leading-none py-0.5'
-                              : cn(
-                                  'px-3 py-1.5 text-xs break-words leading-relaxed',
-                                  isMe
-                                    ? cn('bg-primary text-primary-foreground',
-                                        isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-br-md',
-                                        isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-br-sm',
-                                        !isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-tr-sm rounded-br-md',
-                                        !isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-tr-sm rounded-br-sm')
-                                    : cn('bg-secondary',
-                                        isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-bl-md',
-                                        isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-bl-sm',
-                                        !isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-tl-sm rounded-bl-md',
-                                        !isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-tl-sm rounded-bl-sm')
-                                )
-                          )}
-                        >
-                          {msg.body}
-                        </div>
+                        {/* GIF message */}
+                        {isGifMessage(msg.body) ? (
+                          <div
+                            onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
+                            className="cursor-pointer rounded-xl overflow-hidden"
+                          >
+                            <img src={getGifUrl(msg.body)} alt="GIF" className="max-w-full max-h-[150px] object-cover rounded-xl" />
+                          </div>
+                        ) : isVoiceMessage(msg.body) ? (
+                          <div onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)} className="cursor-pointer">
+                            {(() => {
+                              const vd = getVoiceData(msg.body);
+                              return vd ? (
+                                <VoiceMessagePlayer audioUrl={vd.url} duration={vd.duration} isMe={isMe} />
+                              ) : (
+                                <div className={cn('px-3 py-1.5 text-xs rounded-2xl', isMe ? 'bg-primary text-primary-foreground' : 'bg-secondary')}>
+                                  🎙️ Message vocal
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
+                            className={cn(
+                              'cursor-pointer select-none transition-all',
+                              isBigEmoji
+                                ? 'text-2xl leading-none py-0.5'
+                                : cn(
+                                    'px-3 py-1.5 text-xs break-words leading-relaxed',
+                                    isMe
+                                      ? cn('bg-primary text-primary-foreground',
+                                          isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-br-md',
+                                          isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-br-sm',
+                                          !isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-tr-sm rounded-br-md',
+                                          !isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-tr-sm rounded-br-sm')
+                                      : cn('bg-secondary',
+                                          isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-bl-md',
+                                          isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-bl-sm',
+                                          !isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-tl-sm rounded-bl-md',
+                                          !isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-tl-sm rounded-bl-sm')
+                                  )
+                            )}
+                          >
+                            {msg.body}
+                          </div>
+                        )}
 
                         {reactions.length > 0 && (
                           <div className={cn("flex items-center -mt-1 px-0.5", isMe ? "flex-row-reverse" : "")}>
@@ -555,7 +564,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       )}
 
       {/* Emoji picker */}
-      {showEmojis && (
+      {showEmojis && !showGifs && !showVoiceRecorder && (
         <div className="border-t border-border/20 bg-background">
           <div className="px-1.5 py-2 max-h-[130px] overflow-y-auto scrollbar-thin">
             {EMOJI_CATEGORIES.map((cat) => (
@@ -579,38 +588,70 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       )}
 
+      {/* GIF picker */}
+      {showGifs && !showVoiceRecorder && (
+        <GifPicker
+          onSelect={(gifUrl) => {
+            sendMessage.mutate({ conversationId, body: `GIF:${gifUrl}` });
+            setShowGifs(false);
+          }}
+          onClose={() => setShowGifs(false)}
+        />
+      )}
+
+      {/* Voice recorder */}
+      {showVoiceRecorder && (
+        <VoiceRecorder
+          onSend={(audioUrl, duration) => {
+            sendMessage.mutate({ conversationId, body: `🎙️ voice:${audioUrl}|dur:${duration}` });
+            setShowVoiceRecorder(false);
+          }}
+          onCancel={() => setShowVoiceRecorder(false)}
+        />
+      )}
+
       {/* Input bar */}
-      <div className="border-t border-border/30 bg-background">
-        <form onSubmit={handleSend} className="flex items-center gap-1.5 px-2 py-1.5">
-          <div className="flex items-center gap-0">
-            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
-              {isUploading ? <div className="w-3.5 h-3.5 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Camera className="w-4 h-4" />}
-            </button>
-            <button type="button" onClick={() => setShowEmojis(v => !v)} className={cn("w-7 h-7 rounded-full flex items-center justify-center transition-colors", showEmojis ? "text-primary" : "text-muted-foreground hover:text-primary")}>
-              <Smile className="w-4 h-4" />
-            </button>
-          </div>
+      {!showVoiceRecorder && (
+        <div className="border-t border-border/30 bg-background">
+          <form onSubmit={handleSend} className="flex items-center gap-1 px-2 py-1.5">
+            <div className="flex items-center gap-0">
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+                {isUploading ? <div className="w-3.5 h-3.5 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Camera className="w-4 h-4" />}
+              </button>
+              <button type="button" onClick={() => { setShowGifs(v => !v); setShowEmojis(false); }} className={cn("w-7 h-7 rounded-full flex items-center justify-center transition-colors text-[11px] font-bold", showGifs ? "text-primary" : "text-muted-foreground hover:text-primary")}>
+                GIF
+              </button>
+              <button type="button" onClick={() => { setShowEmojis(v => !v); setShowGifs(false); }} className={cn("w-7 h-7 rounded-full flex items-center justify-center transition-colors", showEmojis ? "text-primary" : "text-muted-foreground hover:text-primary")}>
+                <Smile className="w-4 h-4" />
+              </button>
+            </div>
 
-          <input
-            ref={inputRef}
-            value={newMessage}
-            onChange={e => setNewMessage(e.target.value)}
-            onFocus={() => setShowEmojis(false)}
-            placeholder="Aa"
-            className="flex-1 bg-secondary/60 rounded-full px-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors min-w-0"
-          />
+            <input
+              ref={inputRef}
+              value={newMessage}
+              onChange={e => setNewMessage(e.target.value)}
+              onFocus={() => { setShowEmojis(false); setShowGifs(false); }}
+              placeholder="Aa"
+              className="flex-1 bg-secondary/60 rounded-full px-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors min-w-0"
+            />
 
-          {newMessage.trim() ? (
-            <button type="submit" disabled={sendMessage.isPending} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors">
-              <Send className="w-3.5 h-3.5" />
-            </button>
-          ) : (
-            <button type="button" className="w-7 h-7 rounded-full flex items-center justify-center text-primary flex-shrink-0 hover:bg-primary/10 transition-colors">
-              <ThumbsUp className="w-4 h-4" fill="currentColor" />
-            </button>
-          )}
-        </form>
-      </div>
+            {newMessage.trim() ? (
+              <button type="submit" disabled={sendMessage.isPending} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors">
+                <Send className="w-3.5 h-3.5" />
+              </button>
+            ) : (
+              <div className="flex items-center gap-0">
+                <button type="button" onClick={() => setShowVoiceRecorder(true)} className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+                  <Mic className="w-4 h-4" />
+                </button>
+                <button type="button" className="w-7 h-7 rounded-full flex items-center justify-center text-primary flex-shrink-0 hover:bg-primary/10 transition-colors">
+                  <ThumbsUp className="w-4 h-4" fill="currentColor" />
+                </button>
+              </div>
+            )}
+          </form>
+        </div>
+      )}
     </div>
   );
 }
