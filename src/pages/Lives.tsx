@@ -187,11 +187,11 @@ export default function Lives() {
         </button>
       </div>
 
-      {/* Lives grid */}
+      {/* Lives grid — TikTok style */}
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           {[1, 2, 3, 4].map(i => (
-            <div key={i} className="aspect-video rounded-2xl bg-secondary animate-pulse" />
+            <div key={i} className="aspect-[9/16] rounded-2xl bg-secondary animate-pulse" />
           ))}
         </div>
       ) : filteredLives.length === 0 ? (
@@ -207,7 +207,7 @@ export default function Lives() {
           </Button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {filteredLives.map(live => (
             <LiveCard key={live.id} live={live} />
           ))}
