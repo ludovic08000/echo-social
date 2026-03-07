@@ -181,7 +181,6 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
   };
 
   useEffect(() => {
-    startRecording();
     return () => {
       clearInterval(timerRef.current);
       streamRef.current?.getTracks().forEach(t => t.stop());
@@ -189,7 +188,7 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
         try { mediaRecorderRef.current.stop(); } catch {}
       }
     };
-  }, [startRecording]);
+  }, []);
 
   const formatDuration = (s: number) => {
     const m = Math.floor(s / 60);
@@ -247,7 +246,13 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
             <audio src={audioUrl} controls className="h-7 flex-1" style={{ maxWidth: '150px' }} />
           </div>
         ) : (
-          <span className="text-[11px] text-muted-foreground">Préparation…</span>
+          <button
+            type="button"
+            onClick={startRecording}
+            className="text-[11px] px-2 py-1 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
+          >
+            Appuyer pour autoriser le micro
+          </button>
         )}
       </div>
 
