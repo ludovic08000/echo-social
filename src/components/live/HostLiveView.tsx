@@ -150,11 +150,23 @@ export function HostLiveView({ live }: HostLiveViewProps) {
 
       playerRef.current?.stopStream();
       await endLive.mutateAsync(live.id);
+
+      // Auto-publish a post with the recording in the feed
+      if (recordingUrl && user) {
+        const hashtagsText = live.hashtags?.length 
+          ? '\n' + live.hashtags.map(t => `#${t}`).join(' ') 
+          : '';
+        await supabase.from('posts').insert({
+          user_id: user.id,
+          body: `🔴 Replay de mon live : ${live.title}${hashtagsText}`,
+          image_url: recordingUrl,
+        });
+      }
       
       toast({ 
-        title: recordingUrl ? 'Live terminé et enregistré ! 🎬' : 'Live terminé !' 
+        title: recordingUrl ? 'Live terminé et publié dans le feed ! 🎬' : 'Live terminé !' 
       });
-      navigate('/lives');
+      navigate('/feed');
     } catch (error) {
       toast({ title: 'Erreur', variant: 'destructive' });
       setIsEnding(false);
