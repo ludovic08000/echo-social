@@ -1130,7 +1130,7 @@ function VerificationsSection() {
       await supabase.from('banned_users').insert({ user_id: v.reported_user_id, reason: `Usurpation d'identité - Dossier ${caseNumber}`, banned_by: currentUser.id });
       // Ban IPs
       for (const ip of ips) {
-        await supabase.from('banned_ips').insert({ ip_address: ip, reason: `Usurpation - ${caseNumber}`, banned_by: currentUser.id }).then(() => {}).catch(() => {});
+        try { await supabase.from('banned_ips').insert({ ip_address: ip, reason: `Usurpation - ${caseNumber}`, banned_by: currentUser.id }); } catch {}
       }
 
       // Update verification status
