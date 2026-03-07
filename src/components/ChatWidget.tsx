@@ -272,6 +272,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const markRead = useMarkConversationRead();
   const [newMessage, setNewMessage] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
+  const [showGifs, setShowGifs] = useState(false);
+  const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({});
