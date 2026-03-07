@@ -342,7 +342,17 @@ export default function AdsManager() {
   const { data: campaigns, isLoading } = useAdCampaigns();
   const { upload, isUploading } = useImageUpload({ bucket: 'post-images' });
 
-  const [tab, setTab] = useState<'campaigns' | 'create' | 'analytics' | 'pricing'>('campaigns');
+  const [tab, setTab] = useState<'campaigns' | 'create' | 'manual' | 'analytics' | 'pricing'>('campaigns');
+  const createCampaign = useCreateAdCampaign();
+  const [manualTitle, setManualTitle] = useState('');
+  const [manualBody, setManualBody] = useState('');
+  const [manualCtaText, setManualCtaText] = useState('En savoir plus');
+  const [manualCtaUrl, setManualCtaUrl] = useState('');
+  const [manualImageUrl, setManualImageUrl] = useState('');
+  const [manualDuration, setManualDuration] = useState<DurationType>('1_week');
+  const [manualAgeRange, setManualAgeRange] = useState([18, 45]);
+  const [manualGender, setManualGender] = useState('all');
+  const [manualInterests, setManualInterests] = useState<string[]>([]);
 
   const chartData = generateChartData(campaigns || []);
 
@@ -400,6 +410,7 @@ export default function AdsManager() {
           {[
             { id: 'campaigns' as const, label: 'Campagnes', icon: BarChart3 },
             { id: 'create' as const, label: 'Créer avec l\'IA', icon: Sparkles },
+            { id: 'manual' as const, label: 'Créer manuellement', icon: Plus },
             { id: 'analytics' as const, label: 'Analytics', icon: TrendingUp },
             { id: 'pricing' as const, label: 'Tarifs', icon: Crown },
           ].map(t => (
@@ -516,7 +527,143 @@ export default function AdsManager() {
             </motion.div>
           )}
 
-          {/* ====== CAMPAIGNS TAB ====== */}
+          {/* ====== MANUAL CREATE TAB ====== */}
+          {tab === 'manual' && (
+            <motion.div key="manual" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-4">
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">Titre de la pub</label>
+                  <Input value={manualTitle} onChange={(e) => setManualTitle(e.target.value)} placeholder="Ex: Découvrez notre nouvelle collection" className="rounded-xl" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">Texte publicitaire</label>
+                  <Textarea value={manualBody} onChange={(e) => setManualBody(e.target.value)} placeholder="Décrivez votre offre..." className="rounded-xl min-h-[100px]" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-foreground mb-1.5 block">Bouton CTA</label>
+                    <Input value={manualCtaText} onChange={(e) => setManualCtaText(e.target.value)} placeholder="En savoir plus" className="rounded-xl" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-foreground mb-1.5 block">Lien CTA</label>
+                    <Input value={manualCtaUrl} onChange={(e) => setManualCtaUrl(e.target.value)} placeholder="https://..." className="rounded-xl" />
+                  </div>
+                </div>
+
+                {/* Ciblage */}
+                <div className="p-4 rounded-2xl bg-secondary/20 border border-border/30 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Target className="w-4 h-4 text-primary" />
+                    <h4 className="font-semibold text-foreground text-sm">Ciblage</h4>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-medium text-muted-foreground">Tranche d'âge</label>
+                      <span className="text-xs font-bold text-primary">{manualAgeRange[0]} — {manualAgeRange[1]} ans</span>
+                    </div>
+                    <Slider value={manualAgeRange} onValueChange={setManualAgeRange} min={13} max={75} step={1} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-2 block">Genre</label>
+                    <div className="flex gap-2">
+                      {GENDER_OPTIONS.map(g => (
+                        <button key={g.value} onClick={() => setManualGender(g.value)}
+                          className={cn("flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-medium transition-all border",
+                            manualGender === g.value ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
+                          )}>
+                          <g.icon className="w-3.5 h-3.5" />{g.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-2 block">Centres d'intérêt</label>
+                    <div className="flex flex-wrap gap-2">
+                      {INTEREST_OPTIONS.map(interest => (
+                        <button key={interest} onClick={() => setManualInterests(prev => prev.includes(interest) ? prev.filter(i => i !== interest) : [...prev, interest])}
+                          className={cn("px-3 py-1.5 rounded-xl text-xs font-medium transition-all border",
+                            manualInterests.includes(interest) ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
+                          )}>
+                          {interest}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Image */}
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">Image publicitaire</label>
+                  {manualImageUrl ? (
+                    <div className="relative rounded-xl overflow-hidden">
+                      <img src={manualImageUrl} alt="Ad" className="w-full h-48 object-cover" />
+                      <button onClick={() => setManualImageUrl('')} className="absolute top-2 right-2 px-2 py-1 rounded-lg bg-background/80 backdrop-blur-sm text-xs border border-border/30">✕</button>
+                    </div>
+                  ) : (
+                    <label className="flex items-center justify-center h-28 rounded-xl border-2 border-dashed border-border/50 cursor-pointer hover:border-primary/50 transition-colors">
+                      <div className="text-center">
+                        <ImagePlus className="w-6 h-6 text-muted-foreground mx-auto mb-1" />
+                        <span className="text-xs text-muted-foreground">{isUploading ? 'Upload...' : 'Ajouter une image'}</span>
+                      </div>
+                      <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const url = await upload(file);
+                        if (url) setManualImageUrl(url);
+                      }} />
+                    </label>
+                  )}
+                </div>
+
+                {/* Durée */}
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-primary" /> Durée
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(Object.entries(PRICING) as [DurationType, typeof PRICING[DurationType]][]).map(([key, plan]) => (
+                      <button key={key} onClick={() => setManualDuration(key)}
+                        className={cn("p-3 rounded-xl border-2 text-center transition-all",
+                          manualDuration === key ? "border-primary bg-primary/5" : "border-border/30 bg-card hover:border-primary/30"
+                        )}>
+                        <p className="text-xs font-semibold text-foreground">{plan.label}</p>
+                        <p className="text-lg font-black text-primary">{plan.price}€</p>
+                        <p className="text-[9px] text-muted-foreground">{plan.reach}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <Button
+                  onClick={async () => {
+                    if (!manualTitle.trim() || !manualBody.trim()) return;
+                    await createCampaign.mutateAsync({
+                      title: manualTitle,
+                      body: manualBody,
+                      image_url: manualImageUrl || undefined,
+                      cta_text: manualCtaText,
+                      cta_url: manualCtaUrl || undefined,
+                      target_age_min: manualAgeRange[0],
+                      target_age_max: manualAgeRange[1],
+                      target_gender: manualGender,
+                      target_interests: manualInterests,
+                      duration_type: manualDuration,
+                    });
+                    setManualTitle(''); setManualBody(''); setManualCtaText('En savoir plus');
+                    setManualCtaUrl(''); setManualImageUrl(''); setManualInterests([]);
+                    setTab('campaigns');
+                  }}
+                  disabled={!manualTitle.trim() || !manualBody.trim() || createCampaign.isPending}
+                  className="w-full h-12 rounded-xl text-base font-semibold gap-2 bg-gradient-to-r from-primary to-primary/80 shadow-[0_4px_16px_hsl(var(--primary)/0.3)]"
+                >
+                  {createCampaign.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Megaphone className="w-5 h-5" />}
+                  Lancer — {PRICING[manualDuration].price}€
+                </Button>
+              </div>
+            </motion.div>
+          )}
+
+
           {tab === 'campaigns' && (
             <motion.div key="campaigns" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-4">
               {isLoading ? (
