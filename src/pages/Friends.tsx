@@ -1,4 +1,4 @@
-import { Users, Clock, UserCheck } from 'lucide-react';
+import { Users, Clock, UserCheck, UserPlus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { useFriendships, useRespondToFriendRequest, useRemoveFriend } from '@/hooks/useFriendships';
@@ -6,6 +6,7 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/hooks/use-toast';
+import { InviteContacts } from '@/components/InviteContacts';
 
 export default function Friends() {
   const { data, isLoading } = useFriendships();
