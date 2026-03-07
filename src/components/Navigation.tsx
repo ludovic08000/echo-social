@@ -100,7 +100,7 @@ export function DesktopSidebar() {
   const { data: unreadCount } = useUnreadCount();
   const { data: conversations } = useConversations();
   const { data: friendships } = useFriendships();
-  const { openChat } = useChatWidget();
+  
 
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
   const friendRequests = friendships?.requests.length || 0;
