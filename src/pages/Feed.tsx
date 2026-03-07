@@ -271,6 +271,7 @@ export default function Feed() {
               </>
             )}
           </div>
+          <FeedRightSidebar />
         </div>
       </div>
     </AppLayout>
