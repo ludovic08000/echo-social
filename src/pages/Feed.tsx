@@ -126,8 +126,8 @@ export default function Feed() {
   return (
     <AppLayout fullWidth>
       <div className="flex justify-center">
-        <div className="flex-1 max-w-[680px] min-w-0">
-          <div className="space-y-3 py-3">
+        <div className="w-full flex justify-center gap-6 xl:gap-10">
+          <div className="flex-1 max-w-[680px] min-w-0">
             {/* Scroll pause reminder */}
             <AnimatePresence>
               {showPauseReminder && (

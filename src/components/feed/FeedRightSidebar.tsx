@@ -62,22 +62,29 @@ export function FeedRightSidebar() {
       <div className="sticky top-16 space-y-4 pl-2 max-h-[calc(100vh-80px)] overflow-y-auto scrollbar-thin">
 
         {/* New friend requests with accept/reject */}
-        {requests.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between px-2">
-              <div className="flex items-center gap-2">
-                <div className="relative">
-                  <UserPlus className="w-4 h-4 text-primary" />
+        <div className="space-y-2">
+          <div className="flex items-center justify-between px-2">
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <UserPlus className="w-4 h-4 text-primary" />
+                {requests.length > 0 && (
                   <span className="absolute -top-1 -right-1.5 w-3.5 h-3.5 rounded-full bg-primary text-primary-foreground text-[8px] font-bold flex items-center justify-center">
                     {requests.length}
                   </span>
-                </div>
-                <h3 className="text-sm font-semibold text-foreground ml-1">Demandes d'amis</h3>
+                )}
               </div>
-              <Link to="/friends" className="text-xs text-primary font-medium hover:underline">
-                Tout voir
-              </Link>
+              <h3 className="text-sm font-semibold text-foreground ml-1">Demandes d'amis</h3>
             </div>
+            <Link to="/friends" className="text-xs text-primary font-medium hover:underline">
+              Tout voir
+            </Link>
+          </div>
+
+          {requests.length === 0 ? (
+            <div className="px-3 py-3 rounded-xl bg-secondary/30 text-xs text-muted-foreground">
+              Aucune nouvelle demande pour le moment.
+            </div>
+          ) : (
             <div className="space-y-1">
               {requests.slice(0, 4).map((req) => (
                 <div
@@ -116,9 +123,9 @@ export function FeedRightSidebar() {
                 </div>
               ))}
             </div>
-            <div className="premium-divider" />
-          </div>
-        )}
+          )}
+          <div className="premium-divider" />
+        </div>
 
         {/* Contacts with online status */}
         <div className="space-y-2">
