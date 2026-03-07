@@ -158,7 +158,11 @@ Deno.serve(async (req) => {
         .upsert(
           {
             user_id: userId,
-            ...scores,
+            trust_score: scores.trustScore,
+            transaction_score: scores.transactionScore,
+            social_score: scores.socialScore,
+            account_age_score: scores.accountAgeScore,
+            verification_score: scores.verificationScore,
             successful_sales: seller?.total_sales || 0,
             reports_received: reportsReceived || 0,
             reports_confirmed: reportsConfirmed || 0,
