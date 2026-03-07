@@ -7,7 +7,7 @@ import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
 import { useFriendships } from '@/hooks/useFriendships';
 import { useScrollHideNav } from '@/hooks/useScrollHideNav';
-import { useChatWidget } from '@/components/ChatWidgetContext';
+
 import { cn } from '@/lib/utils';
 
 export function MobileNav() {
