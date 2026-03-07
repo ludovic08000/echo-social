@@ -1,13 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
-import { useProducts } from '@/hooks/useMarketplace';
+import { useProducts, LocationFilter } from '@/hooks/useMarketplace';
 import { ProductCard } from '@/components/marketplace/ProductCard';
 import { CartSheet } from '@/components/marketplace/CartSheet';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Store, Plus, ShoppingBag, Sparkles, Flame, Clock, SlidersHorizontal, X, Heart, TrendingUp, Tag } from 'lucide-react';
+import { Search, Store, Plus, ShoppingBag, Sparkles, Flame, Clock, SlidersHorizontal, X, Heart, TrendingUp, Tag, MapPin, Globe } from 'lucide-react';
 import { SellerDashboard } from '@/components/marketplace/SellerDashboard';
 import { SEOHead } from '@/components/SEOHead';
 import { CreateProductDialog } from '@/components/marketplace/CreateProductDialog';
@@ -15,6 +15,8 @@ import { useSellerProfile } from '@/hooks/useMarketplace';
 import { useProductFavorites } from '@/hooks/useProductFavorites';
 import { cn } from '@/lib/utils';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { COUNTRIES, GEO_DATA } from '@/lib/geoData';
 
 const CATEGORIES = [
   { value: 'all', label: 'Tout', icon: '🔥' },
@@ -36,6 +38,13 @@ const SORT_OPTIONS = [
   { value: 'price-desc', label: 'Prix ↓', icon: Tag },
 ];
 
+const LOCATION_SCOPES = [
+  { value: 'europe', label: 'Europe', icon: '🌍' },
+  { value: 'country', label: 'Pays', icon: '🏳️' },
+  { value: 'region', label: 'Région', icon: '📍' },
+  { value: 'local', label: 'Ville', icon: '🏘️' },
+];
+
 export default function Marketplace() {
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState('');
@@ -43,7 +52,31 @@ export default function Marketplace() {
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'browse');
   const [sortBy, setSortBy] = useState('recent');
   const [showSearch, setShowSearch] = useState(false);
-  const { data: products = [], isLoading } = useProducts(category, search);
+  const [showLocationFilter, setShowLocationFilter] = useState(false);
+  const [locationScope, setLocationScope] = useState<'local' | 'region' | 'country' | 'europe'>('country');
+  const [selectedCountry, setSelectedCountry] = useState('FR');
+  const [selectedRegion, setSelectedRegion] = useState('');
+  const [selectedCity, setSelectedCity] = useState('');
+
+  const locationFilter: LocationFilter = useMemo(() => ({
+    scope: locationScope,
+    country: locationScope !== 'europe' ? selectedCountry : undefined,
+    region: (locationScope === 'region' || locationScope === 'local') ? selectedRegion || undefined : undefined,
+    city: locationScope === 'local' ? selectedCity || undefined : undefined,
+  }), [locationScope, selectedCountry, selectedRegion, selectedCity]);
+
+  const regions = useMemo(() => {
+    const data = GEO_DATA[selectedCountry];
+    return data ? Object.keys(data).sort() : [];
+  }, [selectedCountry]);
+
+  const cities = useMemo(() => {
+    const data = GEO_DATA[selectedCountry];
+    if (!data || !selectedRegion) return [];
+    return (data[selectedRegion] || []).map(v => v.nom).sort();
+  }, [selectedCountry, selectedRegion]);
+
+  const { data: products = [], isLoading } = useProducts(category, search, locationFilter);
   const { data: seller } = useSellerProfile();
   const { data: favorites = [] } = useProductFavorites();
 
@@ -81,6 +114,12 @@ export default function Marketplace() {
                 <p className="text-primary-foreground/70 text-xs mt-0.5">Achetez, vendez, échangez</p>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowLocationFilter(!showLocationFilter)}
+                  className="w-9 h-9 rounded-xl bg-primary-foreground/15 backdrop-blur-sm flex items-center justify-center text-primary-foreground hover:bg-primary-foreground/25 transition-colors"
+                >
+                  {showLocationFilter ? <X className="w-4 h-4" /> : <MapPin className="w-4 h-4" />}
+                </button>
                 <Link to="/marketplace?tab=browse" onClick={() => setShowSearch(false)}>
                   <button
                     onClick={(e) => { e.preventDefault(); setShowSearch(!showSearch); }}
@@ -118,6 +157,75 @@ export default function Marketplace() {
                   <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2">
                     <X className="w-4 h-4 text-muted-foreground" />
                   </button>
+                )}
+              </div>
+            )}
+
+            {/* Location filter */}
+            {showLocationFilter && (
+              <div className="space-y-2 animate-slide-up">
+                {/* Scope selector */}
+                <div className="flex gap-1.5">
+                  {LOCATION_SCOPES.map((s) => (
+                    <button
+                      key={s.value}
+                      onClick={() => {
+                        setLocationScope(s.value as any);
+                        if (s.value === 'europe') { setSelectedRegion(''); setSelectedCity(''); }
+                      }}
+                      className={cn(
+                        'flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all flex-shrink-0 border',
+                        locationScope === s.value
+                          ? 'border-primary/30 bg-primary/10 text-primary'
+                          : 'border-primary-foreground/20 text-primary-foreground/70 hover:border-primary-foreground/40'
+                      )}
+                    >
+                      <span>{s.icon}</span>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Dropdowns */}
+                {locationScope !== 'europe' && (
+                  <div className="flex gap-2">
+                    <Select value={selectedCountry} onValueChange={(v) => { setSelectedCountry(v); setSelectedRegion(''); setSelectedCity(''); }}>
+                      <SelectTrigger className="h-9 bg-primary-foreground/95 border-0 rounded-xl text-foreground text-xs flex-1">
+                        <SelectValue placeholder="Pays" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COUNTRIES.map((c) => (
+                          <SelectItem key={c.code} value={c.code}>{c.flag} {c.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {(locationScope === 'region' || locationScope === 'local') && regions.length > 0 && (
+                      <Select value={selectedRegion} onValueChange={(v) => { setSelectedRegion(v); setSelectedCity(''); }}>
+                        <SelectTrigger className="h-9 bg-primary-foreground/95 border-0 rounded-xl text-foreground text-xs flex-1">
+                          <SelectValue placeholder="Région" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {regions.map((r) => (
+                            <SelectItem key={r} value={r}>{r}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+
+                    {locationScope === 'local' && selectedRegion && cities.length > 0 && (
+                      <Select value={selectedCity} onValueChange={setSelectedCity}>
+                        <SelectTrigger className="h-9 bg-primary-foreground/95 border-0 rounded-xl text-foreground text-xs flex-1">
+                          <SelectValue placeholder="Ville" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {cities.map((c) => (
+                            <SelectItem key={c} value={c}>{c}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
                 )}
               </div>
             )}

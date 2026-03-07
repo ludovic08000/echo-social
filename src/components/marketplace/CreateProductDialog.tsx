@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,7 @@ import { Plus, Upload, ShoppingBag } from 'lucide-react';
 import { useCreateProduct } from '@/hooks/useMarketplace';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { COUNTRIES, GEO_DATA } from '@/lib/geoData';
 
 const CATEGORIES = [
   { value: 'general', label: 'Général' },
@@ -57,7 +58,20 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
   const [color, setColor] = useState('');
   const [shippingType, setShippingType] = useState('standard');
   const [shippingPrice, setShippingPrice] = useState('');
+  const [country, setCountry] = useState('FR');
+  const [region, setRegion] = useState('');
+  const [city, setCity] = useState('');
 
+  const regions = useMemo(() => {
+    const data = GEO_DATA[country];
+    return data ? Object.keys(data).sort() : [];
+  }, [country]);
+
+  const cities = useMemo(() => {
+    const data = GEO_DATA[country];
+    if (!data || !region) return [];
+    return (data[region] || []).map(v => v.nom).sort();
+  }, [country, region]);
   const createProduct = useCreateProduct();
   const { upload, isUploading } = useImageUpload({
     bucket: 'products',
@@ -81,6 +95,9 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
         color: color || undefined,
         shipping_type: shippingType,
         shipping_price: shippingPrice ? parseFloat(shippingPrice) : 0,
+        country,
+        region: region || undefined,
+        city: city || undefined,
       },
       {
         onSuccess: () => {
@@ -103,6 +120,9 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
     setColor('');
     setShippingType('standard');
     setShippingPrice('');
+    setCountry('FR');
+    setRegion('');
+    setCity('');
   };
 
   return (
@@ -239,6 +259,41 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
                   <Input type="number" min="0" step="0.01" value={shippingPrice} onChange={(e) => setShippingPrice(e.target.value)} placeholder="0.00" className="mt-1" />
                 </div>
               )}
+            </div>
+
+            {/* Location */}
+            <div className="space-y-2">
+              <Label>Localisation</Label>
+              <div className="grid grid-cols-3 gap-2">
+                <Select value={country} onValueChange={(v) => { setCountry(v); setRegion(''); setCity(''); }}>
+                  <SelectTrigger className="text-xs"><SelectValue placeholder="Pays" /></SelectTrigger>
+                  <SelectContent>
+                    {COUNTRIES.map((c) => (
+                      <SelectItem key={c.code} value={c.code}>{c.flag} {c.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {regions.length > 0 && (
+                  <Select value={region} onValueChange={(v) => { setRegion(v); setCity(''); }}>
+                    <SelectTrigger className="text-xs"><SelectValue placeholder="Région" /></SelectTrigger>
+                    <SelectContent>
+                      {regions.map((r) => (
+                        <SelectItem key={r} value={r}>{r}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {cities.length > 0 && (
+                  <Select value={city} onValueChange={setCity}>
+                    <SelectTrigger className="text-xs"><SelectValue placeholder="Ville" /></SelectTrigger>
+                    <SelectContent>
+                      {cities.map((c) => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
             </div>
 
             <Button onClick={handleSubmit} disabled={!title.trim() || !price || createProduct.isPending} className="w-full">

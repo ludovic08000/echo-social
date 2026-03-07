@@ -2116,8 +2116,10 @@ export type Database = {
       products: {
         Row: {
           category: string
+          city: string | null
           color: string | null
           compare_at_price: number | null
+          country: string | null
           created_at: string
           description: string | null
           digital_file_url: string | null
@@ -2130,6 +2132,7 @@ export type Database = {
           product_type: Database["public"]["Enums"]["product_type"]
           rating_average: number | null
           rating_count: number
+          region: string | null
           seller_id: string
           shipping_price: number | null
           shipping_type: string
@@ -2143,8 +2146,10 @@ export type Database = {
         }
         Insert: {
           category?: string
+          city?: string | null
           color?: string | null
           compare_at_price?: number | null
+          country?: string | null
           created_at?: string
           description?: string | null
           digital_file_url?: string | null
@@ -2157,6 +2162,7 @@ export type Database = {
           product_type?: Database["public"]["Enums"]["product_type"]
           rating_average?: number | null
           rating_count?: number
+          region?: string | null
           seller_id: string
           shipping_price?: number | null
           shipping_type?: string
@@ -2170,8 +2176,10 @@ export type Database = {
         }
         Update: {
           category?: string
+          city?: string | null
           color?: string | null
           compare_at_price?: number | null
+          country?: string | null
           created_at?: string
           description?: string | null
           digital_file_url?: string | null
@@ -2184,6 +2192,7 @@ export type Database = {
           product_type?: Database["public"]["Enums"]["product_type"]
           rating_average?: number | null
           rating_count?: number
+          region?: string | null
           seller_id?: string
           shipping_price?: number | null
           shipping_type?: string
