@@ -14,8 +14,9 @@ import {
   Shield, Users, Ban, Activity, DollarSign, AlertTriangle, 
   Search, RefreshCw, Eye, UserX, Globe, Clock, TrendingUp,
   LayoutDashboard, FileText, Flag, BarChart3, CreditCard, Lock, Settings,
-  ChevronRight, MessageSquare
+  ChevronRight, MessageSquare, Brain, Bot, Cpu, Zap
 } from 'lucide-react';
+import { getAIModules, getAIEngineStats, getCategoryLabel, getCategoryColor } from '@/lib/aiEngine';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { motion } from 'framer-motion';
