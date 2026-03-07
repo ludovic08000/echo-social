@@ -49,16 +49,13 @@ function generateChartData(campaigns: AdCampaign[]) {
   });
 }
 
-  const [generatingImage, setGeneratingImage] = useState(false);
-  role: 'user' | 'assistant';
-  content: string;
-  adData?: any;
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   adData?: any;
 }
 
+function AdChatCreator() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', content: "👋 Bonjour ! Je suis votre assistant publicitaire IA. Décrivez-moi ce que vous voulez promouvoir et je m'occupe de tout !\n\nExemple : *\"Je vends des sneakers personnalisées pour les 18-30 ans\"*" }
   ]);
