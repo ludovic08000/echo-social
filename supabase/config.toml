@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.anti-abuse]
 verify_jwt = false
+
+[functions.ad-assistant]
+verify_jwt = false
