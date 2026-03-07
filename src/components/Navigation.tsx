@@ -71,8 +71,9 @@ export function MobileNav() {
                   { path: '/ads', icon: Megaphone, label: 'Pub Ads' },
                   { path: '/friends', icon: Heart, label: 'Amis' },
                   { path: '/games', icon: Gamepad2, label: 'Jeux' },
-                  { path: '/notifications', icon: Bell, label: 'Notifs', badge: unreadCount },
-                  { path: '/settings', icon: Settings, label: 'Réglages' },
+                   { path: '/ai-agents', icon: Bot, label: 'Agents IA' },
+                   { path: '/notifications', icon: Bell, label: 'Notifs', badge: unreadCount },
+                   { path: '/settings', icon: Settings, label: 'Réglages' },
                  ].map((item) => (
                   <Link
                     key={item.path}
