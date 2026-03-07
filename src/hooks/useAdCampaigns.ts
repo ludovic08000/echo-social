@@ -167,6 +167,7 @@ export function useCreateAdCampaign() {
           body: input.body,
           image_url: input.image_url || null,
           video_url: input.video_url || null,
+          cta_text: input.cta_text || 'En savoir plus',
           cta_url: input.cta_url || null,
           target_audience: input.target_audience || {},
           target_age_min: input.target_age_min || 18,
