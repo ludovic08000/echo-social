@@ -158,7 +158,7 @@ export function HostLiveView({ live }: HostLiveViewProps) {
           : '';
         await supabase.from('posts').insert({
           user_id: user.id,
-          body: `🔴 Replay de mon live : ${live.title}${hashtagsText}`,
+          body: `🔴 ${live.title}${hashtagsText}`,
           image_url: recordingUrl,
         });
       }
