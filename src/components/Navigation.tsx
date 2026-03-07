@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Search, User, Settings, Plus, PlusCircle, MessageCircle, Users, FileText, Video, Radio, Bell, BookOpen, Trophy, Heart, Gamepad2, Tv, ShoppingBag, Brain, Compass, Sparkles } from 'lucide-react';
+import { Home, Search, User, Settings, Plus, PlusCircle, MessageCircle, Users, FileText, Video, Radio, Bell, BookOpen, Trophy, Heart, Gamepad2, Tv, ShoppingBag, Brain, Compass, Sparkles, Megaphone } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
@@ -69,6 +69,7 @@ export function MobileNav() {
                   { path: '/pages', icon: FileText, label: 'Pages' },
                   { path: '/marketplace', icon: ShoppingBag, label: 'Market' },
                   { path: '/marketplace?tab=seller', icon: Brain, label: 'Business' },
+                  { path: '/ads', icon: Megaphone, label: 'Pub Ads' },
                   { path: '/friends', icon: Heart, label: 'Amis' },
                   { path: '/games', icon: Gamepad2, label: 'Jeux' },
                   { path: '/notifications', icon: Bell, label: 'Notifs', badge: unreadCount },
