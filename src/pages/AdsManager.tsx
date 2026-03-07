@@ -618,27 +618,50 @@ export default function AdsManager() {
                   </div>
                 </div>
 
-                {/* Image */}
+                {/* Média (Image ou Vidéo) */}
                 <div>
-                  <label className="text-sm font-medium text-foreground mb-1.5 block">Image publicitaire</label>
-                  {manualImageUrl ? (
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">Média publicitaire</label>
+                  {(manualImageUrl || manualVideoUrl) ? (
                     <div className="relative rounded-xl overflow-hidden">
-                      <img src={manualImageUrl} alt="Ad" className="w-full h-48 object-cover" />
-                      <button onClick={() => setManualImageUrl('')} className="absolute top-2 right-2 px-2 py-1 rounded-lg bg-background/80 backdrop-blur-sm text-xs border border-border/30">✕</button>
+                      {manualVideoUrl ? (
+                        <video src={manualVideoUrl} className="w-full h-48 object-cover" controls />
+                      ) : (
+                        <img src={manualImageUrl} alt="Ad" className="w-full h-48 object-cover" />
+                      )}
+                      <button onClick={() => { setManualImageUrl(''); setManualVideoUrl(''); }} className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-background/80 backdrop-blur-sm flex items-center justify-center border border-border/30">
+                        <X className="w-4 h-4" />
+                      </button>
+                      <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-primary/80 text-primary-foreground text-[9px] font-bold flex items-center gap-1">
+                        {manualVideoUrl ? <><Film className="w-2.5 h-2.5" /> Vidéo</> : <><ImagePlus className="w-2.5 h-2.5" /> Image</>}
+                      </div>
                     </div>
                   ) : (
-                    <label className="flex items-center justify-center h-28 rounded-xl border-2 border-dashed border-border/50 cursor-pointer hover:border-primary/50 transition-colors">
-                      <div className="text-center">
-                        <ImagePlus className="w-6 h-6 text-muted-foreground mx-auto mb-1" />
-                        <span className="text-xs text-muted-foreground">{isUploading ? 'Upload...' : 'Ajouter une image'}</span>
-                      </div>
-                      <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        const url = await upload(file);
-                        if (url) setManualImageUrl(url);
-                      }} />
-                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="flex items-center justify-center h-24 rounded-xl border-2 border-dashed border-border/50 cursor-pointer hover:border-primary/50 transition-colors">
+                        <div className="text-center">
+                          <ImagePlus className="w-6 h-6 text-muted-foreground mx-auto mb-1" />
+                          <span className="text-xs text-muted-foreground">{isUploading ? 'Upload...' : 'Image'}</span>
+                        </div>
+                        <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const url = await upload(file);
+                          if (url) { setManualImageUrl(url); setManualVideoUrl(''); }
+                        }} />
+                      </label>
+                      <label className="flex items-center justify-center h-24 rounded-xl border-2 border-dashed border-border/50 cursor-pointer hover:border-primary/50 transition-colors">
+                        <div className="text-center">
+                          <Video className="w-6 h-6 text-muted-foreground mx-auto mb-1" />
+                          <span className="text-xs text-muted-foreground">{isUploadingManualVideo ? 'Upload...' : 'Vidéo'}</span>
+                        </div>
+                        <input type="file" accept="video/*" className="hidden" onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const url = await uploadManualVideo(file);
+                          if (url) { setManualVideoUrl(url); setManualImageUrl(''); }
+                        }} />
+                      </label>
+                    </div>
                   )}
                 </div>
 
@@ -668,6 +691,7 @@ export default function AdsManager() {
                       title: manualTitle,
                       body: manualBody,
                       image_url: manualImageUrl || undefined,
+                      video_url: manualVideoUrl || undefined,
                       cta_text: manualCtaText,
                       cta_url: manualCtaUrl || undefined,
                       target_age_min: manualAgeRange[0],
@@ -677,7 +701,7 @@ export default function AdsManager() {
                       duration_type: manualDuration,
                     });
                     setManualTitle(''); setManualBody(''); setManualCtaText('En savoir plus');
-                    setManualCtaUrl(''); setManualImageUrl(''); setManualInterests([]);
+                    setManualCtaUrl(''); setManualImageUrl(''); setManualVideoUrl(''); setManualInterests([]);
                     setTab('campaigns');
                   }}
                   disabled={!manualTitle.trim() || !manualBody.trim() || createCampaign.isPending}
