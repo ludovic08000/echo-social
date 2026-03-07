@@ -374,6 +374,8 @@ export default function AdsManager() {
   const [manualCtaText, setManualCtaText] = useState('En savoir plus');
   const [manualCtaUrl, setManualCtaUrl] = useState('');
   const [manualImageUrl, setManualImageUrl] = useState('');
+  const [manualVideoUrl, setManualVideoUrl] = useState('');
+  const { upload: uploadManualVideo, isUploading: isUploadingManualVideo } = useImageUpload({ bucket: 'videos' });
   const [manualDuration, setManualDuration] = useState<DurationType>('1_week');
   const [manualAgeRange, setManualAgeRange] = useState([18, 45]);
   const [manualGender, setManualGender] = useState('all');
