@@ -34,6 +34,22 @@ const INTEREST_OPTIONS = [
   'Santé', 'Business', 'Éducation', 'Beauté', 'Auto', 'Immobilier',
 ];
 
+const REGIONS_FRANCE = [
+  'Île-de-France', 'Auvergne-Rhône-Alpes', 'Nouvelle-Aquitaine', 'Occitanie',
+  'Hauts-de-France', 'Provence-Alpes-Côte d\'Azur', 'Grand Est', 'Pays de la Loire',
+  'Bretagne', 'Normandie', 'Bourgogne-Franche-Comté', 'Centre-Val de Loire',
+  'Corse', 'Outre-mer',
+];
+
+const VILLES_FRANCE = [
+  'Paris', 'Marseille', 'Lyon', 'Toulouse', 'Nice', 'Nantes', 'Montpellier',
+  'Strasbourg', 'Bordeaux', 'Lille', 'Rennes', 'Reims', 'Saint-Étienne',
+  'Le Havre', 'Toulon', 'Grenoble', 'Dijon', 'Angers', 'Nîmes', 'Clermont-Ferrand',
+  'Aix-en-Provence', 'Brest', 'Tours', 'Limoges', 'Amiens', 'Perpignan',
+  'Metz', 'Besançon', 'Orléans', 'Rouen', 'Mulhouse', 'Caen', 'Nancy',
+  'Avignon', 'Cannes', 'Antibes', 'Pau', 'La Rochelle', 'Poitiers', 'Versailles',
+];
+
 function generateChartData(campaigns: AdCampaign[]) {
   const days = eachDayOfInterval({ start: subDays(new Date(), 13), end: new Date() });
   return days.map(day => {
