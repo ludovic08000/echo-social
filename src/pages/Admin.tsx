@@ -1378,6 +1378,244 @@ function VerificationsSection() {
   );
 }
 
+// ─── ARCHIVES USURPATION D'IDENTITÉ ───
+function ArchivesSection() {
+  const queryClient = useQueryClient();
+
+  const { data: archives, isLoading } = useQuery({
+    queryKey: ['admin-archives'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('identity_theft_archives')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const updateArchive = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Record<string, any> }) => {
+      const { error } = await supabase.from('identity_theft_archives').update(updates).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: 'Dossier mis à jour' });
+      queryClient.invalidateQueries({ queryKey: ['admin-archives'] });
+    },
+  });
+
+  const generateReport = (archive: any) => {
+    const report = `
+═══════════════════════════════════════════════
+   DOSSIER USURPATION D'IDENTITÉ
+   Réf: ${archive.case_number}
+   Date: ${new Date(archive.archived_at).toLocaleDateString('fr-FR')}
+═══════════════════════════════════════════════
+
+▸ USURPATEUR
+  Nom utilisé : ${archive.usurper_name || 'Non renseigné'}
+  Email : ${archive.usurper_email || 'Non renseigné'}
+  ID utilisateur : ${archive.usurper_user_id}
+
+▸ VICTIME
+  Nom : ${archive.victim_name || 'Non renseigné'}
+  ID utilisateur : ${archive.victim_user_id || 'Non renseigné'}
+
+▸ PREUVES NUMÉRIQUES
+
+  Adresses IP utilisées :
+${(archive.ip_addresses || []).map((ip: string) => `    • ${ip}`).join('\n') || '    Aucune IP collectée'}
+
+  Empreintes numériques (Device Fingerprints) :
+${(archive.device_fingerprints || []).map((f: any, i: number) => 
+  `    [${i + 1}] Hash: ${f.fingerprint_hash || '-'} | Résolution: ${f.screen_resolution || '-'} | Timezone: ${f.timezone || '-'} | Langue: ${f.language || '-'} | Agent: ${f.user_agent || '-'} | Dernière connexion: ${f.last_seen_at || '-'}`
+).join('\n') || '    Aucune empreinte collectée'}
+
+  Logs de connexion (${(archive.connection_logs || []).length} entrées) :
+${(archive.connection_logs || []).slice(0, 20).map((l: any) => 
+  `    [${new Date(l.created_at).toLocaleString('fr-FR')}] ${l.event_type || '-'} | IP: ${l.ip_address || '-'} | ${JSON.stringify(l.details || {})}`
+).join('\n') || '    Aucun log collecté'}
+
+▸ SNAPSHOT DU PROFIL
+${archive.profile_snapshot ? `    Nom : ${archive.profile_snapshot.name || '-'}
+    Bio : ${archive.profile_snapshot.bio || '-'}
+    Ville : ${archive.profile_snapshot.city || '-'}
+    Créé le : ${archive.profile_snapshot.created_at || '-'}` : '    Non disponible'}
+
+▸ NOTES ADMINISTRATEUR
+  ${archive.admin_notes || 'Aucune note'}
+
+▸ STATUT JURIDIQUE
+  Plainte déposée : ${archive.legal_complaint_filed ? 'Oui' : 'Non'}
+  ${archive.legal_complaint_date ? `Date de plainte : ${new Date(archive.legal_complaint_date).toLocaleDateString('fr-FR')}` : ''}
+  ${archive.legal_reference ? `Référence : ${archive.legal_reference}` : ''}
+
+═══════════════════════════════════════════════
+  Généré par ForSure — ${new Date().toLocaleString('fr-FR')}
+  Ce document peut être utilisé comme preuve
+  dans le cadre d'une procédure judiciaire.
+═══════════════════════════════════════════════
+`.trim();
+
+    const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `dossier-usurpation-${archive.case_number}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: '📄 Rapport téléchargé', description: `Dossier ${archive.case_number}` });
+  };
+
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [legalRef, setLegalRef] = useState('');
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-foreground">Archives Usurpation d'Identité</h2>
+        <Badge variant="secondary">{archives?.length || 0} dossier(s)</Badge>
+      </div>
+
+      <Card className="border-primary/20 bg-primary/5">
+        <CardContent className="p-4 flex items-start gap-3">
+          <Archive className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+          <div className="text-xs space-y-1">
+            <p className="font-semibold text-foreground">Dossiers juridiques</p>
+            <p className="text-muted-foreground">Chaque archive contient les preuves complètes (IPs, logs de connexion, empreintes numériques, snapshot du profil) pouvant être utilisées en cas de dépôt de plainte pour usurpation d'identité. Téléchargez le rapport complet en cliquant sur "📄 Rapport".</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground py-8 text-center">Chargement...</p>
+      ) : !archives?.length ? (
+        <p className="text-sm text-muted-foreground py-8 text-center">Aucun dossier archivé</p>
+      ) : archives.map(archive => (
+        <Card key={archive.id} className="border-border">
+          <CardContent className="p-4 space-y-3">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {archive.usurper_avatar_url && <img src={archive.usurper_avatar_url} alt="" className="w-10 h-10 rounded-full object-cover border-2 border-destructive/30" />}
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{archive.usurper_name || 'Inconnu'}</p>
+                  <p className="text-[10px] text-muted-foreground font-mono">{archive.case_number}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {archive.legal_complaint_filed && <Badge className="text-[10px] bg-emerald-500/10 text-emerald-700">⚖️ Plainte déposée</Badge>}
+                <Badge variant="secondary" className="text-[10px]">{format(new Date(archive.archived_at), 'dd/MM/yyyy', { locale: fr })}</Badge>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => generateReport(archive)}>
+                  <Download className="w-3 h-3 mr-1" /> Rapport
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setExpandedId(expandedId === archive.id ? null : archive.id)}>
+                  <Eye className="w-3 h-3 mr-1" /> {expandedId === archive.id ? 'Masquer' : 'Détails'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Summary */}
+            <div className="flex gap-4 text-xs text-muted-foreground">
+              <span>🎯 Victime : <strong className="text-foreground">{archive.victim_name || '-'}</strong></span>
+              <span>🌐 {(archive.ip_addresses || []).length} IP(s)</span>
+              <span>📱 {(archive.device_fingerprints || []).length} empreinte(s)</span>
+              <span>📋 {(archive.connection_logs || []).length} log(s)</span>
+              {archive.usurper_email && <span><Mail className="w-3 h-3 inline mr-1" />{archive.usurper_email}</span>}
+            </div>
+
+            {/* Expanded details */}
+            {expandedId === archive.id && (
+              <div className="space-y-3 pt-2 border-t border-border">
+                {/* IPs */}
+                <div>
+                  <p className="text-xs font-semibold text-foreground mb-1">Adresses IP</p>
+                  <div className="flex flex-wrap gap-1">
+                    {(archive.ip_addresses || []).length > 0 ? (archive.ip_addresses as string[]).map((ip: string) => (
+                      <Badge key={ip} variant="secondary" className="text-[10px] font-mono">{ip}</Badge>
+                    )) : <span className="text-xs text-muted-foreground">Aucune</span>}
+                  </div>
+                </div>
+
+                {/* Fingerprints */}
+                <div>
+                  <p className="text-xs font-semibold text-foreground mb-1">Empreintes numériques</p>
+                  <div className="space-y-1 max-h-40 overflow-auto">
+                    {(archive.device_fingerprints as any[] || []).map((f: any, i: number) => (
+                      <div key={i} className="text-[10px] bg-secondary/30 rounded-lg p-2 font-mono">
+                        Hash: {f.fingerprint_hash || '-'} · {f.screen_resolution || '-'} · {f.timezone || '-'} · {f.language || '-'}
+                        <br />Agent: {(f.user_agent || '-').slice(0, 80)}...
+                      </div>
+                    ))}
+                    {(archive.device_fingerprints as any[] || []).length === 0 && <span className="text-xs text-muted-foreground">Aucune</span>}
+                  </div>
+                </div>
+
+                {/* Connection logs */}
+                <div>
+                  <p className="text-xs font-semibold text-foreground mb-1">Logs de connexion ({(archive.connection_logs as any[] || []).length})</p>
+                  <div className="space-y-1 max-h-48 overflow-auto">
+                    {(archive.connection_logs as any[] || []).slice(0, 15).map((l: any, i: number) => (
+                      <div key={i} className="text-[10px] bg-secondary/30 rounded-lg px-2 py-1 flex items-center gap-2">
+                        <Badge variant="secondary" className="text-[9px] shrink-0">{l.event_type || '-'}</Badge>
+                        <span className="font-mono">{l.ip_address || '-'}</span>
+                        <span className="text-muted-foreground ml-auto">{l.created_at ? format(new Date(l.created_at), 'dd/MM HH:mm', { locale: fr }) : '-'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Profile snapshot */}
+                {archive.profile_snapshot && (
+                  <div>
+                    <p className="text-xs font-semibold text-foreground mb-1">Snapshot du profil</p>
+                    <div className="text-[10px] bg-secondary/30 rounded-lg p-2 space-y-0.5">
+                      <p>Nom : {(archive.profile_snapshot as any).name || '-'}</p>
+                      <p>Bio : {(archive.profile_snapshot as any).bio || '-'}</p>
+                      <p>Ville : {(archive.profile_snapshot as any).city || '-'}</p>
+                      <p>Créé le : {(archive.profile_snapshot as any).created_at ? format(new Date((archive.profile_snapshot as any).created_at), 'dd/MM/yyyy HH:mm', { locale: fr }) : '-'}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Legal section */}
+                <div className="bg-muted/30 rounded-lg p-3 space-y-2">
+                  <p className="text-xs font-semibold text-foreground">⚖️ Suivi juridique</p>
+                  {!archive.legal_complaint_filed ? (
+                    <div className="flex gap-2">
+                      <Input placeholder="Référence de la plainte" value={legalRef} onChange={e => setLegalRef(e.target.value)} className="flex-1 h-8 text-xs" />
+                      <Button size="sm" className="h-8 text-xs" onClick={() => {
+                        updateArchive.mutate({ id: archive.id, updates: { legal_complaint_filed: true, legal_complaint_date: new Date().toISOString(), legal_reference: legalRef || null } });
+                        setLegalRef('');
+                      }}>
+                        Marquer plainte déposée
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <p>✅ Plainte déposée le {archive.legal_complaint_date ? format(new Date(archive.legal_complaint_date), 'dd/MM/yyyy', { locale: fr }) : '-'}</p>
+                      {archive.legal_reference && <p>Référence : <strong className="text-foreground">{archive.legal_reference}</strong></p>}
+                    </div>
+                  )}
+                </div>
+
+                {/* Admin notes */}
+                {archive.admin_notes && (
+                  <div className="text-xs text-muted-foreground">
+                    <strong>Notes :</strong> {archive.admin_notes}
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 // ─── MAIN ADMIN PAGE ───
 export default function Admin() {
   const [section, setSection] = useState<AdminSection>('dashboard');
@@ -1402,6 +1640,7 @@ export default function Admin() {
       case 'posts': return <PostsSection />;
       case 'reports': return <ReportsSection />;
       case 'verifications': return <VerificationsSection />;
+      case 'archives': return <ArchivesSection />;
       case 'stats': return <StatsSection />;
       case 'subscriptions': return <SubscriptionsSection />;
       case 'ai': return <AISection />;
