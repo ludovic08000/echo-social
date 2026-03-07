@@ -7,11 +7,12 @@ import { PostCard } from '@/components/PostCard';
 import { StoriesBar } from '@/components/StoriesBar';
 import { useNavigate } from 'react-router-dom';
 import { FriendSuggestions } from '@/components/feed/FriendSuggestions';
+import { FeedRightSidebar } from '@/components/feed/FeedRightSidebar';
 import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
 import { FeedReelsSection } from '@/components/feed/FeedReelsSection';
 import { FeedMarketplaceSection } from '@/components/feed/FeedMarketplaceSection';
 import { FeedMediaSection } from '@/components/feed/FeedMediaSection';
-import { Loader2, Coffee, X, Sparkles } from 'lucide-react';
+import { Coffee, X, Sparkles } from 'lucide-react';
 import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgorithm';
 import { Button } from '@/components/ui/button';
 
@@ -125,8 +126,8 @@ export default function Feed() {
   return (
     <AppLayout fullWidth>
       <div className="flex justify-center">
-        <div className="flex-1 max-w-[680px] min-w-0">
-          <div className="space-y-3 py-3">
+        <div className="w-full flex justify-center gap-6 xl:gap-10">
+          <div className="flex-1 max-w-[680px] min-w-0">
             {/* Scroll pause reminder */}
             <AnimatePresence>
               {showPauseReminder && (
@@ -270,6 +271,7 @@ export default function Feed() {
               </>
             )}
           </div>
+          <FeedRightSidebar />
         </div>
       </div>
     </AppLayout>
