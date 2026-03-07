@@ -9,7 +9,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { action, product_name, product_description, target_audience, duration, budget } = await req.json();
+    const { action, product_name, product_description, target_audience, duration, budget, ad_title, ad_body } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
@@ -26,6 +26,21 @@ serve(async (req) => {
 - Budget: ${budget || "Non spécifié"}€
 
 Génère un titre accrocheur (max 60 chars), un texte publicitaire engageant (max 200 chars), un CTA percutant, des conseils de ciblage, et une estimation de portée.`;
+    } else if (action === "moderate_ad") {
+      systemPrompt = `Tu es un modérateur de contenu publicitaire. Tu dois vérifier que la publicité respecte les règles suivantes:
+1. Pas de contenu haineux, discriminatoire ou violent
+2. Pas de fausses promesses ou publicité mensongère
+3. Pas de contenu sexuellement explicite
+4. Pas de promotion de produits illégaux (drogues, armes, etc.)
+5. Pas de spam ou contenu trompeur
+6. Pas de ciblage discriminatoire basé sur la race, religion, orientation sexuelle
+7. Le texte doit être cohérent et professionnel
+
+Réponds TOUJOURS en JSON valide avec: approved (boolean), score (1-10, 10 étant parfait), reasons (array de strings expliquant les problèmes), suggestions (array de strings pour améliorer).`;
+      userPrompt = `Modère cette publicité:
+- Titre: ${ad_title || product_name}
+- Texte: ${ad_body || product_description}
+- Audience cible: ${target_audience || "Non spécifié"}`;
     } else if (action === "optimize_ad") {
       systemPrompt = `Tu es un expert en optimisation publicitaire. Analyse la publicité et donne des conseils d'amélioration. Réponds en JSON avec: score (1-10), improvements (array de strings), optimized_title, optimized_body.`;
       userPrompt = `Optimise cette publicité:
@@ -71,7 +86,6 @@ Génère un titre accrocheur (max 60 chars), un texte publicitaire engageant (ma
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || "";
     
-    // Try to extract JSON from the response
     let parsed;
     try {
       const jsonMatch = content.match(/\{[\s\S]*\}/);
