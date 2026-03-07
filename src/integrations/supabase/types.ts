@@ -117,6 +117,7 @@ export type Database = {
           target_interests: string[] | null
           title: string
           updated_at: string
+          video_url: string | null
         }
         Insert: {
           advertiser_id: string
@@ -145,6 +146,7 @@ export type Database = {
           target_interests?: string[] | null
           title: string
           updated_at?: string
+          video_url?: string | null
         }
         Update: {
           advertiser_id?: string
@@ -173,6 +175,7 @@ export type Database = {
           target_interests?: string[] | null
           title?: string
           updated_at?: string
+          video_url?: string | null
         }
         Relationships: []
       }

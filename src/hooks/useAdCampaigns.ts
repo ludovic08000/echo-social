@@ -128,6 +128,7 @@ export function useCreateAdCampaign() {
       title: string;
       body: string;
       image_url?: string;
+      video_url?: string;
       cta_text?: string;
       cta_url?: string;
       target_audience?: any;
@@ -165,6 +166,7 @@ export function useCreateAdCampaign() {
           title: input.title,
           body: input.body,
           image_url: input.image_url || null,
+          video_url: input.video_url || null,
           cta_text: input.cta_text || 'En savoir plus',
           cta_url: input.cta_url || null,
           target_audience: input.target_audience || {},

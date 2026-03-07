@@ -10,7 +10,7 @@ import {
   Megaphone, Plus, Sparkles, Loader2, Eye, MousePointerClick, 
   DollarSign, Calendar, Target, Zap, BarChart3, CheckCircle2, ArrowRight,
   Users, Clock, Crown, Shield, ShieldCheck, ShieldX, TrendingUp,
-  UserCheck, Send, Bot, User, ImagePlus
+  UserCheck, Send, Bot, User, ImagePlus, Video, Film, X
 } from 'lucide-react';
 import { useAdCampaigns, useCreateAdCampaign, useAdAIAssistant, useAdDailyStats, getAdPricing, DurationType, AdCampaign } from '@/hooks/useAdCampaigns';
 import { cn } from '@/lib/utils';
@@ -64,10 +64,13 @@ function AdChatCreator() {
   const [generatedAd, setGeneratedAd] = useState<any>(null);
   const [selectedDuration, setSelectedDuration] = useState<DurationType>('1_week');
   const [imageUrl, setImageUrl] = useState('');
+  const [videoUrl, setVideoUrl] = useState('');
+  const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
   const [generatingImage, setGeneratingImage] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const createCampaign = useCreateAdCampaign();
   const { upload, isUploading } = useImageUpload({ bucket: 'post-images' });
+  const { upload: uploadVideo, isUploading: isUploadingVideo } = useImageUpload({ bucket: 'videos' });
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -115,7 +118,14 @@ function AdChatCreator() {
     const file = e.target.files?.[0];
     if (!file) return;
     const url = await upload(file);
-    if (url) setImageUrl(url);
+    if (url) { setImageUrl(url); setVideoUrl(''); setMediaType('image'); }
+  };
+
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const url = await uploadVideo(file);
+    if (url) { setVideoUrl(url); setImageUrl(''); setMediaType('video'); }
   };
 
   const handleLaunch = async () => {
@@ -124,6 +134,7 @@ function AdChatCreator() {
       title: generatedAd.title,
       body: generatedAd.body,
       image_url: imageUrl || undefined,
+      video_url: videoUrl || undefined,
       cta_text: generatedAd.cta_text || 'En savoir plus',
       target_age_min: generatedAd.target_age_min || 18,
       target_age_max: generatedAd.target_age_max || 65,
@@ -134,6 +145,7 @@ function AdChatCreator() {
     setGeneratedAd(null);
     setMessages([{ role: 'assistant', content: "🎉 Campagne lancée avec succès ! Décrivez une nouvelle pub ou consultez vos campagnes." }]);
     setImageUrl('');
+    setVideoUrl('');
   };
 
   return (
@@ -234,36 +246,42 @@ function AdChatCreator() {
                 <h3 className="font-bold text-foreground">{generatedAd.title}</h3>
                 <p className="text-sm text-muted-foreground mt-1">{generatedAd.body}</p>
                 
-                {/* Image - AI generated or manual upload */}
-                {imageUrl ? (
+                {/* Media - Image or Video */}
+                {(imageUrl || videoUrl) ? (
                   <div className="relative mt-3 rounded-xl overflow-hidden group">
-                    <img src={imageUrl} alt="Ad" className="w-full h-48 object-cover" />
+                    {videoUrl ? (
+                      <video src={videoUrl} className="w-full h-48 object-cover" controls />
+                    ) : (
+                      <img src={imageUrl} alt="Ad" className="w-full h-48 object-cover" />
+                    )}
                     <div className="absolute inset-0 bg-background/0 group-hover:bg-background/40 transition-all flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
-                      <button
-                        onClick={async () => {
-                          if (!generatedAd) return;
-                          setGeneratingImage(true);
-                          try {
-                            const { data, error } = await supabase.functions.invoke('ad-assistant', {
-                              body: { action: 'generate_image', title: generatedAd.title, description: generatedAd.body },
-                            });
-                            if (data?.image_url) setImageUrl(data.image_url);
-                            else toast.error("Échec de la génération");
-                          } catch { toast.error("Erreur de génération"); }
-                          finally { setGeneratingImage(false); }
-                        }}
-                        disabled={generatingImage}
-                        className="px-3 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1.5 shadow-lg"
-                      >
-                        {generatingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                        Régénérer
-                      </button>
-                      <button onClick={() => setImageUrl('')} className="px-3 py-2 rounded-xl bg-background/90 text-foreground text-xs font-medium border border-border/30">
+                      {!videoUrl && (
+                        <button
+                          onClick={async () => {
+                            if (!generatedAd) return;
+                            setGeneratingImage(true);
+                            try {
+                              const { data } = await supabase.functions.invoke('ad-assistant', {
+                                body: { action: 'generate_image', title: generatedAd.title, description: generatedAd.body },
+                              });
+                              if (data?.image_url) { setImageUrl(data.image_url); setVideoUrl(''); }
+                              else toast.error("Échec de la génération");
+                            } catch { toast.error("Erreur de génération"); }
+                            finally { setGeneratingImage(false); }
+                          }}
+                          disabled={generatingImage}
+                          className="px-3 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1.5 shadow-lg"
+                        >
+                          {generatingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                          Régénérer
+                        </button>
+                      )}
+                      <button onClick={() => { setImageUrl(''); setVideoUrl(''); }} className="px-3 py-2 rounded-xl bg-background/90 text-foreground text-xs font-medium border border-border/30">
                         Supprimer
                       </button>
                     </div>
                     <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-primary/80 text-primary-foreground text-[9px] font-bold flex items-center gap-1">
-                      <Sparkles className="w-2.5 h-2.5" /> IA
+                      {videoUrl ? <><Film className="w-2.5 h-2.5" /> Vidéo</> : <><Sparkles className="w-2.5 h-2.5" /> IA</>}
                     </div>
                   </div>
                 ) : (
@@ -273,7 +291,7 @@ function AdChatCreator() {
                         if (!generatedAd) return;
                         setGeneratingImage(true);
                         try {
-                          const { data, error } = await supabase.functions.invoke('ad-assistant', {
+                          const { data } = await supabase.functions.invoke('ad-assistant', {
                             body: { action: 'generate_image', title: generatedAd.title, description: generatedAd.body },
                           });
                           if (data?.image_url) setImageUrl(data.image_url);
@@ -290,11 +308,18 @@ function AdChatCreator() {
                         <><Sparkles className="w-5 h-5 text-primary" /><span className="text-xs text-primary font-medium">Générer une image IA</span></>
                       )}
                     </button>
-                    <label className="flex items-center justify-center gap-2 h-12 rounded-xl border border-border/30 cursor-pointer hover:bg-secondary/30 transition-colors">
-                      <ImagePlus className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-[11px] text-muted-foreground">{isUploading ? 'Upload...' : 'ou uploader votre image'}</span>
-                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="flex items-center justify-center gap-2 h-12 rounded-xl border border-border/30 cursor-pointer hover:bg-secondary/30 transition-colors">
+                        <ImagePlus className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-[11px] text-muted-foreground">{isUploading ? 'Upload...' : 'Image'}</span>
+                        <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                      </label>
+                      <label className="flex items-center justify-center gap-2 h-12 rounded-xl border border-border/30 cursor-pointer hover:bg-secondary/30 transition-colors">
+                        <Video className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-[11px] text-muted-foreground">{isUploadingVideo ? 'Upload...' : 'Vidéo'}</span>
+                        <input type="file" accept="video/*" className="hidden" onChange={handleVideoUpload} />
+                      </label>
+                    </div>
                   </div>
                 )}
 
@@ -349,6 +374,8 @@ export default function AdsManager() {
   const [manualCtaText, setManualCtaText] = useState('En savoir plus');
   const [manualCtaUrl, setManualCtaUrl] = useState('');
   const [manualImageUrl, setManualImageUrl] = useState('');
+  const [manualVideoUrl, setManualVideoUrl] = useState('');
+  const { upload: uploadManualVideo, isUploading: isUploadingManualVideo } = useImageUpload({ bucket: 'videos' });
   const [manualDuration, setManualDuration] = useState<DurationType>('1_week');
   const [manualAgeRange, setManualAgeRange] = useState([18, 45]);
   const [manualGender, setManualGender] = useState('all');
@@ -591,27 +618,50 @@ export default function AdsManager() {
                   </div>
                 </div>
 
-                {/* Image */}
+                {/* Média (Image ou Vidéo) */}
                 <div>
-                  <label className="text-sm font-medium text-foreground mb-1.5 block">Image publicitaire</label>
-                  {manualImageUrl ? (
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">Média publicitaire</label>
+                  {(manualImageUrl || manualVideoUrl) ? (
                     <div className="relative rounded-xl overflow-hidden">
-                      <img src={manualImageUrl} alt="Ad" className="w-full h-48 object-cover" />
-                      <button onClick={() => setManualImageUrl('')} className="absolute top-2 right-2 px-2 py-1 rounded-lg bg-background/80 backdrop-blur-sm text-xs border border-border/30">✕</button>
+                      {manualVideoUrl ? (
+                        <video src={manualVideoUrl} className="w-full h-48 object-cover" controls />
+                      ) : (
+                        <img src={manualImageUrl} alt="Ad" className="w-full h-48 object-cover" />
+                      )}
+                      <button onClick={() => { setManualImageUrl(''); setManualVideoUrl(''); }} className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-background/80 backdrop-blur-sm flex items-center justify-center border border-border/30">
+                        <X className="w-4 h-4" />
+                      </button>
+                      <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-primary/80 text-primary-foreground text-[9px] font-bold flex items-center gap-1">
+                        {manualVideoUrl ? <><Film className="w-2.5 h-2.5" /> Vidéo</> : <><ImagePlus className="w-2.5 h-2.5" /> Image</>}
+                      </div>
                     </div>
                   ) : (
-                    <label className="flex items-center justify-center h-28 rounded-xl border-2 border-dashed border-border/50 cursor-pointer hover:border-primary/50 transition-colors">
-                      <div className="text-center">
-                        <ImagePlus className="w-6 h-6 text-muted-foreground mx-auto mb-1" />
-                        <span className="text-xs text-muted-foreground">{isUploading ? 'Upload...' : 'Ajouter une image'}</span>
-                      </div>
-                      <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        const url = await upload(file);
-                        if (url) setManualImageUrl(url);
-                      }} />
-                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="flex items-center justify-center h-24 rounded-xl border-2 border-dashed border-border/50 cursor-pointer hover:border-primary/50 transition-colors">
+                        <div className="text-center">
+                          <ImagePlus className="w-6 h-6 text-muted-foreground mx-auto mb-1" />
+                          <span className="text-xs text-muted-foreground">{isUploading ? 'Upload...' : 'Image'}</span>
+                        </div>
+                        <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const url = await upload(file);
+                          if (url) { setManualImageUrl(url); setManualVideoUrl(''); }
+                        }} />
+                      </label>
+                      <label className="flex items-center justify-center h-24 rounded-xl border-2 border-dashed border-border/50 cursor-pointer hover:border-primary/50 transition-colors">
+                        <div className="text-center">
+                          <Video className="w-6 h-6 text-muted-foreground mx-auto mb-1" />
+                          <span className="text-xs text-muted-foreground">{isUploadingManualVideo ? 'Upload...' : 'Vidéo'}</span>
+                        </div>
+                        <input type="file" accept="video/*" className="hidden" onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const url = await uploadManualVideo(file);
+                          if (url) { setManualVideoUrl(url); setManualImageUrl(''); }
+                        }} />
+                      </label>
+                    </div>
                   )}
                 </div>
 
@@ -641,6 +691,7 @@ export default function AdsManager() {
                       title: manualTitle,
                       body: manualBody,
                       image_url: manualImageUrl || undefined,
+                      video_url: manualVideoUrl || undefined,
                       cta_text: manualCtaText,
                       cta_url: manualCtaUrl || undefined,
                       target_age_min: manualAgeRange[0],
@@ -650,7 +701,7 @@ export default function AdsManager() {
                       duration_type: manualDuration,
                     });
                     setManualTitle(''); setManualBody(''); setManualCtaText('En savoir plus');
-                    setManualCtaUrl(''); setManualImageUrl(''); setManualInterests([]);
+                    setManualCtaUrl(''); setManualImageUrl(''); setManualVideoUrl(''); setManualInterests([]);
                     setTab('campaigns');
                   }}
                   disabled={!manualTitle.trim() || !manualBody.trim() || createCampaign.isPending}
