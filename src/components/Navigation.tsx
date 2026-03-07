@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Search, User, Settings, Plus, PlusCircle, MessageCircle, Users, FileText, Video, Radio, Bell, BookOpen, Trophy, Heart, Gamepad2, Tv, ShoppingBag, Brain, Compass, Sparkles, Megaphone } from 'lucide-react';
+import { Home, Search, User, Settings, Plus, PlusCircle, MessageCircle, Users, FileText, Video, Radio, Bell, BookOpen, Trophy, Heart, Gamepad2, Tv, ShoppingBag, Brain, Compass, Sparkles, Megaphone, Bot } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
