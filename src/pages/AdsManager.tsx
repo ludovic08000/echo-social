@@ -559,8 +559,9 @@ export default function AdsManager() {
   const [manualAgeRange, setManualAgeRange] = useState([18, 45]);
   const [manualGender, setManualGender] = useState('all');
   const [manualInterests, setManualInterests] = useState<string[]>([]);
-  const [manualLocationType, setManualLocationType] = useState<'france' | 'regions' | 'villes'>('france');
-  const [manualSelectedLocations, setManualSelectedLocations] = useState<string[]>([]);
+  const [manualSelectedRegion, setManualSelectedRegion] = useState('');
+  const [manualSelectedVilles, setManualSelectedVilles] = useState<string[]>([]);
+  const [manualPopFilter, setManualPopFilter] = useState(0);
   const [manualLocationSearch, setManualLocationSearch] = useState('');
 
   const chartData = generateChartData(campaigns || []);
