@@ -337,64 +337,8 @@ function AdChatCreator() {
             </div>
 
             {/* Location selector */}
-            <div className="p-4 rounded-2xl border border-border/30 bg-card space-y-3">
-              <label className="text-sm font-medium text-foreground flex items-center gap-2">
-                <Target className="w-4 h-4 text-primary" /> Zone géographique
-              </label>
-              {/* Region selector */}
-              <div>
-                <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Région</label>
-                <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
-                  <button onClick={() => { setSelectedRegion(''); setSelectedVilles([]); }}
-                    className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border",
-                      !selectedRegion ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
-                    )}>
-                    Toute la France
-                  </button>
-                  {REGION_NAMES.map(r => (
-                    <button key={r} onClick={() => { setSelectedRegion(r); setSelectedVilles([]); }}
-                      className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border",
-                        selectedRegion === r ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
-                      )}>
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {/* Villes in selected region */}
-              {selectedRegion && (
-                <div className="space-y-2">
-                  <label className="text-[11px] font-medium text-muted-foreground block">Villes — {selectedRegion}</label>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {POPULATION_FILTERS.map((f, i) => (
-                      <button key={i} onClick={() => setPopFilter(i)}
-                        className={cn("px-2 py-0.5 rounded-lg text-[10px] font-medium border transition-all",
-                          popFilter === i ? "bg-primary/10 text-primary border-primary/30" : "bg-secondary/30 text-muted-foreground border-border/30"
-                        )}>
-                        {f.label} hab.
-                      </button>
-                    ))}
-                  </div>
-                  <Input value={locationSearch} onChange={(e) => setLocationSearch(e.target.value)}
-                    placeholder="Rechercher une ville..." className="rounded-xl text-sm h-9" />
-                  <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
-                    {(REGIONS_VILLES[selectedRegion] || [])
-                      .filter(v => v.population >= POPULATION_FILTERS[popFilter].min && v.population < POPULATION_FILTERS[popFilter].max)
-                      .filter(v => v.nom.toLowerCase().includes(locationSearch.toLowerCase()))
-                      .map(v => (
-                        <button key={v.nom} onClick={() => setSelectedVilles(prev => prev.includes(v.nom) ? prev.filter(n => n !== v.nom) : [...prev, v.nom])}
-                          className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border",
-                            selectedVilles.includes(v.nom) ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
-                          )}>
-                          {v.nom} <span className="text-muted-foreground/60 ml-0.5">({(v.population / 1000).toFixed(0)}k)</span>
-                        </button>
-                      ))}
-                  </div>
-                  {selectedVilles.length > 0 && (
-                    <p className="text-[10px] text-primary font-medium">{selectedVilles.length} ville(s) sélectionnée(s)</p>
-                  )}
-                </div>
-              )}
+            <div className="p-4 rounded-2xl border border-border/30 bg-card">
+              <LocationSelector value={location} onChange={setLocation} />
             </div>
 
             {/* Duration selector */}
@@ -446,10 +390,7 @@ export default function AdsManager() {
   const [manualAgeRange, setManualAgeRange] = useState([18, 45]);
   const [manualGender, setManualGender] = useState('all');
   const [manualInterests, setManualInterests] = useState<string[]>([]);
-  const [manualSelectedRegion, setManualSelectedRegion] = useState('');
-  const [manualSelectedVilles, setManualSelectedVilles] = useState<string[]>([]);
-  const [manualPopFilter, setManualPopFilter] = useState(0);
-  const [manualLocationSearch, setManualLocationSearch] = useState('');
+  const [manualLocation, setManualLocation] = useState<TargetLocation>(getDefaultLocation());
 
   const chartData = generateChartData(campaigns || []);
 
