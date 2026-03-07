@@ -406,7 +406,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-0.5">
+      <div className="flex-1 overflow-y-auto overflow-x-visible px-3 py-2 space-y-0.5 relative">
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <div className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
@@ -478,19 +478,25 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                           </>
                         )}
 
-                        {/* Delete menu */}
+                        {/* Delete menu - use fixed positioning */}
                         {deleteMenuMsgId === msg.id && (
                           <>
-                            <div className="fixed inset-0 z-50" onClick={() => setDeleteMenuMsgId(null)} />
-                            <div className={cn("absolute z-50 flex flex-col gap-0.5 p-1.5 rounded-xl bg-background shadow-lg border border-border/40 min-w-[160px]", isMe ? "right-0 -top-20" : "left-6 -top-20")}>
+                            <div className="fixed inset-0 z-[100]" onClick={() => setDeleteMenuMsgId(null)} />
+                            <div className="fixed z-[101] flex flex-col gap-0.5 p-1.5 rounded-xl bg-background shadow-lg border border-border/40 min-w-[180px]"
+                              style={{ 
+                                top: '50%', left: '50%', 
+                                transform: 'translate(-50%, -50%)'
+                              }}
+                            >
+                              <p className="px-3 py-1 text-[10px] font-semibold text-muted-foreground uppercase">Supprimer le message</p>
                               <button
                                 onClick={() => {
                                   deleteForMe.mutate({ messageId: msg.id, conversationId });
                                   setDeleteMenuMsgId(null);
                                 }}
-                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs hover:bg-secondary transition-colors text-left"
+                                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs hover:bg-secondary transition-colors text-left"
                               >
-                                <Trash2 className="w-3 h-3 text-muted-foreground" />
+                                <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
                                 Supprimer pour moi
                               </button>
                               {isMe && (
@@ -499,15 +505,15 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                                     deleteForEveryone.mutate({ messageId: msg.id, conversationId });
                                     setDeleteMenuMsgId(null);
                                   }}
-                                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs hover:bg-destructive/10 transition-colors text-left text-destructive"
+                                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs hover:bg-destructive/10 transition-colors text-left text-destructive"
                                 >
-                                  <Trash2 className="w-3 h-3" />
-                                  Supprimer pour tout le monde
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Supprimer pour tous
                                 </button>
                               )}
                               <button
                                 onClick={() => setDeleteMenuMsgId(null)}
-                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs hover:bg-secondary transition-colors text-left text-muted-foreground"
+                                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs hover:bg-secondary transition-colors text-left text-muted-foreground"
                               >
                                 Annuler
                               </button>
