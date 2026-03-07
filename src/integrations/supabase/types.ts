@@ -592,6 +592,36 @@ export type Database = {
         }
         Relationships: []
       }
+      banned_emails: {
+        Row: {
+          associated_user_id: string | null
+          banned_at: string
+          banned_by: string
+          email: string
+          id: string
+          is_active: boolean
+          reason: string | null
+        }
+        Insert: {
+          associated_user_id?: string | null
+          banned_at?: string
+          banned_by: string
+          email: string
+          id?: string
+          is_active?: boolean
+          reason?: string | null
+        }
+        Update: {
+          associated_user_id?: string | null
+          banned_at?: string
+          banned_by?: string
+          email?: string
+          id?: string
+          is_active?: boolean
+          reason?: string | null
+        }
+        Relationships: []
+      }
       banned_ips: {
         Row: {
           banned_at: string
@@ -1165,12 +1195,16 @@ export type Database = {
       identity_verifications: {
         Row: {
           admin_note: string | null
+          auto_ban_email: boolean
+          auto_ban_ip: boolean
           auto_deleted: boolean
           created_at: string
           deadline_at: string
           id: string
           id_document_url: string | null
           reason: string | null
+          reported_email: string | null
+          reported_ip: string | null
           reported_user_id: string
           reporter_id: string
           status: string
@@ -1179,12 +1213,16 @@ export type Database = {
         }
         Insert: {
           admin_note?: string | null
+          auto_ban_email?: boolean
+          auto_ban_ip?: boolean
           auto_deleted?: boolean
           created_at?: string
           deadline_at?: string
           id?: string
           id_document_url?: string | null
           reason?: string | null
+          reported_email?: string | null
+          reported_ip?: string | null
           reported_user_id: string
           reporter_id: string
           status?: string
@@ -1193,12 +1231,16 @@ export type Database = {
         }
         Update: {
           admin_note?: string | null
+          auto_ban_email?: boolean
+          auto_ban_ip?: boolean
           auto_deleted?: boolean
           created_at?: string
           deadline_at?: string
           id?: string
           id_document_url?: string | null
           reason?: string | null
+          reported_email?: string | null
+          reported_ip?: string | null
           reported_user_id?: string
           reporter_id?: string
           status?: string
