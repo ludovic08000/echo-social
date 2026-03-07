@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake } from 'lucide-react';
+import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake, ShieldAlert } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
 import { CreatePost } from '@/components/CreatePost';
@@ -19,6 +19,8 @@ import { useState, useRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { generateProfileUrl } from '@/lib/urlUtils';
 import { useImageUpload } from '@/hooks/useImageUpload';
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
 import { Loader2 } from 'lucide-react';
 import { AvatarCropper } from '@/components/AvatarCropper';
 import { ProfilePhotoGrid } from '@/components/profile/ProfilePhotoGrid';
@@ -30,6 +32,81 @@ import { ProfileOverview } from '@/components/profile/ProfileOverview';
 import { AnonymousWall } from '@/components/profile/AnonymousWall';
 import { ProfileMusicPlayer } from '@/components/profile/ProfileMusicPlayer';
 import { type Album } from '@/hooks/useAlbums';
+import { toast } from '@/hooks/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+
+function ReportFakeAccountButton({ reportedUserId }: { reportedUserId: string }) {
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleReport = async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      // Check if already reported
+      const { data: existing } = await supabase
+        .from('identity_verifications')
+        .select('id')
+        .eq('reported_user_id', reportedUserId)
+        .eq('reporter_id', user.id)
+        .maybeSingle();
+
+      if (existing) {
+        toast({ title: 'Déjà signalé', description: 'Vous avez déjà signalé ce compte.' });
+        setOpen(false);
+        return;
+      }
+
+      const { error } = await supabase.from('identity_verifications').insert({
+        reported_user_id: reportedUserId,
+        reporter_id: user.id,
+        reason: reason.trim() || 'fake_account',
+      });
+      if (error) throw error;
+
+      toast({ title: '✅ Signalement envoyé', description: 'Ce compte devra vérifier son identité sous 72h.' });
+      setOpen(false);
+      setReason('');
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <Button variant="outline" size="icon" className="rounded-xl h-10 w-10 shrink-0 text-destructive hover:bg-destructive/10" onClick={() => setOpen(true)}>
+        <ShieldAlert className="w-4 h-4" />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Signaler un faux compte</DialogTitle>
+            <DialogDescription>
+              Ce compte sera invité à vérifier son identité avec une pièce d'identité. Sans vérification sous 72h, le compte sera supprimé automatiquement.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            placeholder="Pourquoi pensez-vous que c'est un faux compte ? (optionnel)"
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            rows={3}
+          />
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => setOpen(false)}>Annuler</Button>
+            <Button variant="destructive" onClick={handleReport} disabled={loading}>
+              {loading ? 'Envoi...' : 'Signaler comme faux compte'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
 export default function Profile() {
   const { id } = useParams<{ id: string }>();
@@ -56,6 +133,50 @@ export default function Profile() {
   const { data: posts, isLoading: postsLoading } = useUserPosts(userId || '');
   const { data: friendshipData } = useFriendshipStatus(userId || '');
   const updateProfile = useUpdateProfile();
+
+  // Check if own profile has pending identity verification
+  const { data: pendingVerification } = useQuery({
+    queryKey: ['my-verification', user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data } = await supabase
+        .from('identity_verifications')
+        .select('id, status, deadline_at, reason')
+        .eq('reported_user_id', user.id)
+        .eq('status', 'pending_verification')
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!user && isOwnProfile,
+  });
+
+  const [idFile, setIdFile] = useState<File | null>(null);
+  const [uploadingId, setUploadingId] = useState(false);
+  const idInputRef = useRef<HTMLInputElement>(null);
+
+  const handleIdUpload = async () => {
+    if (!idFile || !user || !pendingVerification) return;
+    setUploadingId(true);
+    try {
+      const ext = idFile.name.split('.').pop();
+      const path = `${user.id}/${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from('id-documents').upload(path, idFile);
+      if (uploadError) throw uploadError;
+      const { data: { publicUrl } } = supabase.storage.from('id-documents').getPublicUrl(path);
+      await supabase.from('identity_verifications').update({
+        id_document_url: publicUrl,
+        status: 'document_submitted',
+        updated_at: new Date().toISOString(),
+      }).eq('id', pendingVerification.id);
+      toast({ title: '✅ Document envoyé', description: 'Votre pièce d\'identité est en cours de vérification.' });
+      setIdFile(null);
+      queryClient.invalidateQueries({ queryKey: ['my-verification'] });
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    } finally {
+      setUploadingId(false);
+    }
+  };
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -251,6 +372,38 @@ export default function Profile() {
       <div className="-mt-2">
         <input ref={avatarInputRef} type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
         <input ref={coverInputRef} type="file" accept="image/*" onChange={handleCoverChange} className="hidden" />
+        <input ref={idInputRef} type="file" accept="image/*,.pdf" onChange={e => setIdFile(e.target.files?.[0] || null)} className="hidden" />
+
+        {/* Identity verification banner */}
+        {isOwnProfile && pendingVerification && (
+          <div className="mx-4 mt-2 mb-2 p-4 rounded-xl bg-destructive/10 border border-destructive/30">
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-2">
+                <p className="text-sm font-semibold text-destructive">Vérification d'identité requise</p>
+                <p className="text-xs text-muted-foreground">
+                  Votre compte a été signalé. Veuillez fournir une pièce d'identité avant le{' '}
+                  <strong>{format(new Date(pendingVerification.deadline_at), 'dd/MM/yyyy à HH:mm', { locale: fr })}</strong>.
+                  Sans vérification, votre compte sera supprimé automatiquement.
+                </p>
+                <div className="flex items-center gap-2">
+                  {idFile ? (
+                    <>
+                      <span className="text-xs text-foreground">{idFile.name}</span>
+                      <Button size="sm" className="h-7 text-xs" onClick={handleIdUpload} disabled={uploadingId}>
+                        {uploadingId ? 'Envoi...' : 'Envoyer le document'}
+                      </Button>
+                    </>
+                  ) : (
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => idInputRef.current?.click()}>
+                      📎 Joindre ma pièce d'identité
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Cover Photo */}
         <div 
@@ -463,6 +616,7 @@ export default function Profile() {
                     <MessageCircle className="w-4 h-4 mr-2" />
                     Envoyer un message
                   </Button>
+                  <ReportFakeAccountButton reportedUserId={userId!} />
                 </>
               )}
             </div>

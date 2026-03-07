@@ -45,6 +45,7 @@ const NAV_ITEMS = [
   { key: 'users', label: 'Utilisateurs', icon: Users },
   { key: 'posts', label: 'Publications', icon: FileText },
   { key: 'reports', label: 'Signalements', icon: Flag },
+  { key: 'verifications', label: 'Vérifications ID', icon: Shield },
   { key: 'stats', label: 'Statistiques', icon: BarChart3 },
   { key: 'subscriptions', label: 'Abonnements', icon: CreditCard },
   { key: 'ai', label: 'Intelligence Artificielle', icon: Brain },
@@ -908,6 +909,157 @@ function AISection() {
   );
 }
 
+// ─── VÉRIFICATIONS D'IDENTITÉ ───
+function VerificationsSection() {
+  const queryClient = useQueryClient();
+
+  const { data: verifications, isLoading } = useQuery({
+    queryKey: ['admin-verifications'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('identity_verifications')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      const userIds = [...new Set([...(data?.map(v => v.reported_user_id) || []), ...(data?.map(v => v.reporter_id) || [])])];
+      const { data: profiles } = userIds.length > 0
+        ? await supabase.from('profiles').select('user_id, name, avatar_url').in('user_id', userIds)
+        : { data: [] };
+      return data?.map(v => ({
+        ...v,
+        reportedName: profiles?.find(p => p.user_id === v.reported_user_id)?.name || v.reported_user_id.slice(0, 8),
+        reporterName: profiles?.find(p => p.user_id === v.reporter_id)?.name || v.reporter_id.slice(0, 8),
+      })) || [];
+    },
+  });
+
+  const updateVerification = useMutation({
+    mutationFn: async ({ id, status, note }: { id: string; status: string; note?: string }) => {
+      const updates: any = { status, updated_at: new Date().toISOString() };
+      if (status === 'verified') updates.verified_at = new Date().toISOString();
+      if (note) updates.admin_note = note;
+      const { error } = await supabase.from('identity_verifications').update(updates).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: 'Vérification mise à jour' });
+      queryClient.invalidateQueries({ queryKey: ['admin-verifications'] });
+    },
+  });
+
+  const deleteAccount = useMutation({
+    mutationFn: async ({ id, userId }: { id: string; userId: string }) => {
+      // Mark as auto-deleted
+      await supabase.from('identity_verifications').update({ status: 'deleted', auto_deleted: true, updated_at: new Date().toISOString() }).eq('id', id);
+      // Ban user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('banned_users').insert({ user_id: userId, reason: 'Faux compte non vérifié', banned_by: user.id });
+      }
+    },
+    onSuccess: () => {
+      toast({ title: '🚫 Compte supprimé/banni', description: 'Le faux compte a été banni.' });
+      queryClient.invalidateQueries({ queryKey: ['admin-verifications'] });
+    },
+  });
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'pending_verification': return <Badge variant="destructive" className="text-[10px]">En attente</Badge>;
+      case 'document_submitted': return <Badge className="text-[10px] bg-amber-500/10 text-amber-700">Document soumis</Badge>;
+      case 'verified': return <Badge className="text-[10px] bg-emerald-500/10 text-emerald-700">Vérifié ✅</Badge>;
+      case 'deleted': return <Badge variant="secondary" className="text-[10px]">Supprimé</Badge>;
+      default: return <Badge variant="secondary" className="text-[10px]">{status}</Badge>;
+    }
+  };
+
+  const isExpired = (deadline: string) => new Date(deadline) < new Date();
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-foreground">Vérifications d'identité</h2>
+        <Badge variant="secondary">
+          {verifications?.filter(v => v.status === 'pending_verification').length || 0} en attente
+        </Badge>
+      </div>
+
+      {/* Expired - auto delete candidates */}
+      {verifications?.filter(v => v.status === 'pending_verification' && isExpired(v.deadline_at)).map(v => (
+        <Card key={`expired-${v.id}`} className="border-destructive/30 bg-destructive/5">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-destructive">⏰ Délai expiré — {v.reportedName}</p>
+                <p className="text-xs text-muted-foreground">Signalé par {v.reporterName} · Délai : {format(new Date(v.deadline_at), 'dd/MM/yyyy HH:mm', { locale: fr })}</p>
+              </div>
+              <Button variant="destructive" size="sm" className="h-8 text-xs" onClick={() => deleteAccount.mutate({ id: v.id, userId: v.reported_user_id })}>
+                <Ban className="w-3 h-3 mr-1" /> Supprimer le compte
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+
+      <div className="rounded-xl border border-border overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Compte signalé</TableHead>
+              <TableHead>Signalé par</TableHead>
+              <TableHead>Raison</TableHead>
+              <TableHead>Statut</TableHead>
+              <TableHead>Deadline</TableHead>
+              <TableHead>Document</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Chargement...</TableCell></TableRow>
+            ) : !verifications?.length ? (
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Aucune vérification en cours</TableCell></TableRow>
+            ) : verifications.map(v => (
+              <TableRow key={v.id}>
+                <TableCell className="font-medium text-sm">{v.reportedName}</TableCell>
+                <TableCell className="text-sm">{v.reporterName}</TableCell>
+                <TableCell className="text-xs max-w-[150px] truncate">{v.reason || 'Faux compte'}</TableCell>
+                <TableCell>{getStatusBadge(v.status)}</TableCell>
+                <TableCell className={cn('text-xs', isExpired(v.deadline_at) && v.status === 'pending_verification' ? 'text-destructive font-semibold' : 'text-muted-foreground')}>
+                  {format(new Date(v.deadline_at), 'dd/MM HH:mm', { locale: fr })}
+                  {isExpired(v.deadline_at) && v.status === 'pending_verification' && ' ⚠️'}
+                </TableCell>
+                <TableCell>
+                  {v.id_document_url ? (
+                    <a href={v.id_document_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline">Voir</a>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">-</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {v.status !== 'verified' && v.status !== 'deleted' && (
+                    <div className="flex gap-1">
+                      {v.status === 'document_submitted' && (
+                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateVerification.mutate({ id: v.id, status: 'verified' })}>
+                          ✅ Valider
+                        </Button>
+                      )}
+                      <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => deleteAccount.mutate({ id: v.id, userId: v.reported_user_id })}>
+                        Supprimer
+                      </Button>
+                    </div>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN ADMIN PAGE ───
 export default function Admin() {
   const [section, setSection] = useState<AdminSection>('dashboard');
@@ -931,6 +1083,7 @@ export default function Admin() {
       case 'users': return <UsersSection />;
       case 'posts': return <PostsSection />;
       case 'reports': return <ReportsSection />;
+      case 'verifications': return <VerificationsSection />;
       case 'stats': return <StatsSection />;
       case 'subscriptions': return <SubscriptionsSection />;
       case 'ai': return <AISection />;
