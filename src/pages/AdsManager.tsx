@@ -118,7 +118,14 @@ function AdChatCreator() {
     const file = e.target.files?.[0];
     if (!file) return;
     const url = await upload(file);
-    if (url) setImageUrl(url);
+    if (url) { setImageUrl(url); setVideoUrl(''); setMediaType('image'); }
+  };
+
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const url = await uploadVideo(file);
+    if (url) { setVideoUrl(url); setImageUrl(''); setMediaType('video'); }
   };
 
   const handleLaunch = async () => {
