@@ -1049,6 +1049,8 @@ export type Database = {
           id: string
           likes_enabled: boolean
           messages_enabled: boolean
+          sound_enabled: boolean
+          sound_type: string
           story_views_enabled: boolean
           updated_at: string
           user_id: string
@@ -1062,6 +1064,8 @@ export type Database = {
           id?: string
           likes_enabled?: boolean
           messages_enabled?: boolean
+          sound_enabled?: boolean
+          sound_type?: string
           story_views_enabled?: boolean
           updated_at?: string
           user_id: string
@@ -1075,6 +1079,8 @@ export type Database = {
           id?: string
           likes_enabled?: boolean
           messages_enabled?: boolean
+          sound_enabled?: boolean
+          sound_type?: string
           story_views_enabled?: boolean
           updated_at?: string
           user_id?: string
