@@ -592,6 +592,66 @@ export type Database = {
         }
         Relationships: []
       }
+      banned_ips: {
+        Row: {
+          banned_at: string
+          banned_by: string
+          expires_at: string | null
+          id: string
+          ip_address: string
+          is_active: boolean
+          reason: string | null
+        }
+        Insert: {
+          banned_at?: string
+          banned_by: string
+          expires_at?: string | null
+          id?: string
+          ip_address: string
+          is_active?: boolean
+          reason?: string | null
+        }
+        Update: {
+          banned_at?: string
+          banned_by?: string
+          expires_at?: string | null
+          id?: string
+          ip_address?: string
+          is_active?: boolean
+          reason?: string | null
+        }
+        Relationships: []
+      }
+      banned_users: {
+        Row: {
+          banned_at: string
+          banned_by: string
+          expires_at: string | null
+          id: string
+          is_active: boolean
+          reason: string | null
+          user_id: string
+        }
+        Insert: {
+          banned_at?: string
+          banned_by: string
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          reason?: string | null
+          user_id: string
+        }
+        Update: {
+          banned_at?: string
+          banned_by?: string
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          reason?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       cart_items: {
         Row: {
           created_at: string
@@ -2094,6 +2154,36 @@ export type Database = {
         }
         Relationships: []
       }
+      security_logs: {
+        Row: {
+          created_at: string
+          details: Json | null
+          event_type: string
+          id: string
+          ip_address: string | null
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          details?: Json | null
+          event_type: string
+          id?: string
+          ip_address?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          details?: Json | null
+          event_type?: string
+          id?: string
+          ip_address?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       seller_payouts: {
         Row: {
           amount: number
@@ -2486,6 +2576,24 @@ export type Database = {
         }
         Relationships: []
       }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       video_comments: {
         Row: {
           body: string
@@ -2681,12 +2789,20 @@ export type Database = {
           user_id: string
         }[]
       }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
       is_conversation_participant: {
         Args: { conv_id: string; uid: string }
         Returns: boolean
       }
     }
     Enums: {
+      app_role: "admin" | "moderator" | "user"
       friendship_status: "pending" | "accepted" | "rejected"
       notification_type:
         | "like"
@@ -2833,6 +2949,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      app_role: ["admin", "moderator", "user"],
       friendship_status: ["pending", "accepted", "rejected"],
       notification_type: [
         "like",
