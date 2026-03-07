@@ -480,7 +480,9 @@ function SubscriptionsSection() {
 function SecuritySection() {
   const [search, setSearch] = useState('');
   const [newIp, setNewIp] = useState('');
+  const [newEmail, setNewEmail] = useState('');
   const [reason, setReason] = useState('');
+  const [emailReason, setEmailReason] = useState('');
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
@@ -497,6 +499,15 @@ function SecuritySection() {
     queryKey: ['banned-ips'],
     queryFn: async () => {
       const { data, error } = await supabase.from('banned_ips').select('*').eq('is_active', true).order('banned_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: bannedEmails } = useQuery({
+    queryKey: ['banned-emails'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('banned_emails').select('*').eq('is_active', true).order('banned_at', { ascending: false });
       if (error) throw error;
       return data;
     },
@@ -566,12 +577,37 @@ function SecuritySection() {
     onError: (e: any) => toast({ title: 'Erreur', description: e.message, variant: 'destructive' }),
   });
 
+  const banEmail = useMutation({
+    mutationFn: async () => {
+      if (!newEmail.trim() || !user) throw new Error('Email requis');
+      const { error } = await supabase.from('banned_emails').insert({ 
+        email: newEmail.trim().toLowerCase(), 
+        reason: emailReason.trim() || 'Usurpation d\'identité', 
+        banned_by: user.id 
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: '🚫 Email banni' }); setNewEmail(''); setEmailReason('');
+      queryClient.invalidateQueries({ queryKey: ['banned-emails'] });
+    },
+    onError: (e: any) => toast({ title: 'Erreur', description: e.message, variant: 'destructive' }),
+  });
+
   const unbanIp = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('banned_ips').update({ is_active: false }).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => { toast({ title: 'IP débannie' }); queryClient.invalidateQueries({ queryKey: ['banned-ips'] }); },
+  });
+
+  const unbanEmail = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('banned_emails').update({ is_active: false }).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => { toast({ title: 'Email débanni' }); queryClient.invalidateQueries({ queryKey: ['banned-emails'] }); },
   });
 
   const unbanUser = useMutation({
@@ -582,6 +618,30 @@ function SecuritySection() {
     onSuccess: () => { toast({ title: 'Utilisateur débanni' }); queryClient.invalidateQueries({ queryKey: ['banned-users-security'] }); },
   });
 
+  // Full block: ban user + IP + email simultaneously
+  const fullBlock = useMutation({
+    mutationFn: async ({ userId, ipAddress, email }: { userId: string; ipAddress?: string; email?: string }) => {
+      if (!user) throw new Error('Non connecté');
+      const promises: Promise<any>[] = [
+        supabase.from('banned_users').insert({ user_id: userId, reason: 'Usurpation d\'identité - blocage complet', banned_by: user.id }),
+      ];
+      if (ipAddress) {
+        promises.push(supabase.from('banned_ips').insert({ ip_address: ipAddress, reason: 'Usurpation d\'identité', banned_by: user.id }));
+      }
+      if (email) {
+        promises.push(supabase.from('banned_emails').upsert({ email: email.toLowerCase(), reason: 'Usurpation d\'identité', banned_by: user.id }, { onConflict: 'email' }));
+      }
+      await Promise.all(promises);
+    },
+    onSuccess: () => {
+      toast({ title: '🔒 Blocage complet', description: 'Compte, IP et email bannis.' });
+      queryClient.invalidateQueries({ queryKey: ['banned-users-security'] });
+      queryClient.invalidateQueries({ queryKey: ['banned-ips'] });
+      queryClient.invalidateQueries({ queryKey: ['banned-emails'] });
+    },
+    onError: (e: any) => toast({ title: 'Erreur', description: e.message, variant: 'destructive' }),
+  });
+
   const filteredLogs = logs?.filter(l =>
     !search.trim() ||
     l.event_type?.toLowerCase().includes(search.toLowerCase()) ||
@@ -590,7 +650,33 @@ function SecuritySection() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-bold text-foreground">Sécurité</h2>
+      <h2 className="text-lg font-bold text-foreground">Sécurité & Anti-Usurpation</h2>
+
+      {/* Protection summary */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { label: 'IPs bannies', value: bannedIps?.length || 0, icon: Globe, color: 'text-red-600 bg-red-500/10' },
+          { label: 'Emails bannis', value: bannedEmails?.length || 0, icon: Lock, color: 'text-orange-600 bg-orange-500/10' },
+          { label: 'Comptes bannis', value: bannedUsers?.length || 0, icon: UserX, color: 'text-destructive bg-destructive/10' },
+          { label: 'IPs suspectes', value: suspiciousActivity?.suspiciousIps.length || 0, icon: AlertTriangle, color: 'text-amber-600 bg-amber-500/10' },
+        ].map((card, i) => (
+          <motion.div key={card.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', card.color)}>
+                    <card.icon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-foreground">{card.value}</p>
+                    <p className="text-[10px] text-muted-foreground">{card.label}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
 
       {/* Suspicious IPs */}
       {suspiciousActivity && suspiciousActivity.suspiciousIps.length > 0 && (
@@ -606,7 +692,15 @@ function SecuritySection() {
                     <span className="font-mono text-sm">{ip}</span>
                     <span className="text-xs text-muted-foreground ml-2">{users.length} comptes</span>
                   </div>
-                  <Badge variant="destructive" className="text-[10px]">Suspect</Badge>
+                  <div className="flex gap-1">
+                    <Badge variant="destructive" className="text-[10px]">Suspect</Badge>
+                    <Button size="sm" variant="destructive" className="h-6 text-[10px]" onClick={() => {
+                      setNewIp(ip); setReason('Multi-comptes détectés');
+                      banIp.mutate();
+                    }}>
+                      <Ban className="w-3 h-3 mr-1" /> Bannir IP
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -614,11 +708,11 @@ function SecuritySection() {
         </Card>
       )}
 
-      {/* Flagged users */}
+      {/* Flagged users with full block */}
       {suspiciousActivity && suspiciousActivity.flaggedUsers.length > 0 && (
         <Card className="border-red-500/30">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm flex items-center gap-2"><Shield className="w-4 h-4 text-red-500" /> Utilisateurs signalés</CardTitle>
+            <CardTitle className="text-sm flex items-center gap-2"><Shield className="w-4 h-4 text-red-500" /> Utilisateurs signalés — Usurpation potentielle</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -629,7 +723,12 @@ function SecuritySection() {
                     <span className="text-xs text-muted-foreground ml-2">Score: {u.trust_score}/100</span>
                     <span className="text-xs text-destructive ml-2">{u.flag_reason}</span>
                   </div>
-                  <Badge variant="secondary" className="text-[10px]">{u.reports_received} signalement(s)</Badge>
+                  <div className="flex gap-1">
+                    <Badge variant="secondary" className="text-[10px]">{u.reports_received} signalement(s)</Badge>
+                    <Button size="sm" variant="destructive" className="h-6 text-[10px]" onClick={() => fullBlock.mutate({ userId: u.user_id })}>
+                      <Lock className="w-3 h-3 mr-1" /> Blocage total
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -657,6 +756,33 @@ function SecuritySection() {
                     <span className="text-xs text-muted-foreground ml-2">{ip.reason || '-'}</span>
                   </div>
                   <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => unbanIp.mutate(ip.id)}>Débannir</Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Ban Email */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2"><Lock className="w-4 h-4" /> Bannir une adresse email</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex gap-2">
+            <Input placeholder="email@example.com" value={newEmail} onChange={e => setNewEmail(e.target.value)} className="flex-1" />
+            <Input placeholder="Raison" value={emailReason} onChange={e => setEmailReason(e.target.value)} className="flex-1" />
+            <Button onClick={() => banEmail.mutate()} disabled={!newEmail.trim()}><Ban className="w-4 h-4 mr-1" /> Bannir</Button>
+          </div>
+          {bannedEmails && bannedEmails.length > 0 && (
+            <div className="space-y-1">
+              {bannedEmails.map(e => (
+                <div key={e.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-secondary/30">
+                  <div>
+                    <span className="text-sm">{e.email}</span>
+                    <span className="text-xs text-muted-foreground ml-2">{e.reason || '-'}</span>
+                  </div>
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => unbanEmail.mutate(e.id)}>Débannir</Button>
                 </div>
               ))}
             </div>
