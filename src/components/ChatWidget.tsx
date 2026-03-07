@@ -59,41 +59,23 @@ const EMOJI_CATEGORIES = [
   { label: '💎 Premium', emojis: ['💎','👑','🦄','🌙','⚡','🪐','🔮','🎭','🗝️','🧿','🪬','💐','🦚','🎪','🏰','🚀','🛸','🧬'] },
 ];
 
-// ─── Voice Record Button ─────────────────────────────────
-function VoiceRecordButton({ onSend }: { onSend: (text: string) => void }) {
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordDuration, setRecordDuration] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setInterval>>();
+// Helper to detect voice messages and GIFs
+function isVoiceMessage(body: string): boolean {
+  return body.startsWith('🎙️ ') && body.includes('voice:');
+}
 
-  const toggleRecording = () => {
-    if (isRecording) {
-      clearInterval(timerRef.current);
-      onSend(`🎙️ Message vocal (${recordDuration}s)`);
-      setRecordDuration(0);
-      setIsRecording(false);
-    } else {
-      setIsRecording(true);
-      setRecordDuration(0);
-      timerRef.current = setInterval(() => setRecordDuration(d => d + 1), 1000);
-    }
-  };
+function getVoiceData(body: string): { url: string; duration: number } | null {
+  const match = body.match(/voice:(.*?)(?:\|dur:(\d+))?$/);
+  if (!match) return null;
+  return { url: match[1], duration: parseInt(match[2] || '0', 10) };
+}
 
-  useEffect(() => () => clearInterval(timerRef.current), []);
+function isGifMessage(body: string): boolean {
+  return body.startsWith('GIF:');
+}
 
-  return (
-    <button
-      type="button"
-      onClick={toggleRecording}
-      className={cn(
-        "h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all",
-        isRecording
-          ? "bg-destructive text-destructive-foreground animate-pulse"
-          : "text-muted-foreground hover:text-primary"
-      )}
-    >
-      {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-    </button>
-  );
+function getGifUrl(body: string): string {
+  return body.replace('GIF:', '');
 }
 
 // ─── New Conversation Dialog ─────────────────────────────
