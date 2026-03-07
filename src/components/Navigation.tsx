@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Search, User, Settings, PlusCircle, MessageCircle, Users, FileText, Video, Radio, Bell, BookOpen, Trophy, Heart, Gamepad2, Tv, ShoppingBag, Brain } from 'lucide-react';
+import { Home, Search, User, Settings, Plus, PlusCircle, MessageCircle, Users, FileText, Video, Radio, Bell, BookOpen, Trophy, Heart, Gamepad2, Tv, ShoppingBag, Brain, Compass, Sparkles } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
@@ -25,59 +25,56 @@ export function MobileNav() {
 
   const { openChat } = useChatWidget();
 
-  const navItems = [
-    { path: '/feed', icon: Home, label: t('nav.home') },
-    { path: '/lives', icon: Radio, label: t('nav.lives') },
-    { path: '__create__', icon: PlusCircle, label: '' },
-    { path: '/groups', icon: Users, label: t('nav.groups') },
-    { path: '/settings', icon: Settings, label: t('nav.settings') },
-  ];
+  const active = (path: string) => {
+    if (path === '/feed') return location.pathname === '/feed' || location.pathname === '/';
+    if (path === '/groups') return location.pathname.startsWith('/group');
+    if (path === '/lives') return location.pathname.startsWith('/live');
+    return location.pathname === path;
+  };
 
-  const items = [
-    { path: '/feed', icon: Home, label: t('nav.home') },
-    { path: '/lives', icon: Radio, label: t('nav.lives') },
-    { path: '/create', icon: PlusCircle, label: 'Créer', isCreate: true },
-    { path: '/groups', icon: Users, label: t('nav.groups') },
-    { path: '/settings', icon: Settings, label: t('nav.settings') },
-  ];
+  const NavItem = ({ path, icon: Icon, label, badge }: { path: string; icon: any; label: string; badge?: number }) => (
+    <Link to={path} className={cn(
+      'flex flex-col items-center gap-[3px] pt-2 w-[52px] transition-all duration-300',
+      active(path) ? 'text-primary' : 'text-muted-foreground'
+    )}>
+      <div className={cn(
+        'relative p-1.5 rounded-2xl transition-all duration-300',
+        active(path) && 'bg-primary/12 shadow-[0_0_12px_hsl(var(--primary)/0.15)]'
+      )}>
+        <Icon className={cn('w-[21px] h-[21px] transition-all', active(path) && 'stroke-[2.5]')} />
+        {(badge ?? 0) > 0 && (
+          <span className="absolute -top-0.5 -right-1 min-w-[15px] h-[15px] rounded-full bg-destructive text-destructive-foreground text-[8px] font-bold flex items-center justify-center px-[3px] shadow-[0_2px_6px_hsl(var(--destructive)/0.4)]">
+            {(badge ?? 0) > 9 ? '9+' : badge}
+          </span>
+        )}
+      </div>
+      <span className={cn('text-[9px] leading-none tracking-wide', active(path) ? 'font-bold' : 'font-medium opacity-80')}>{label}</span>
+    </Link>
+  );
 
   return (
     <nav className={cn(
       "fixed bottom-0 left-0 right-0 z-50 safe-area-pb transition-transform duration-300",
-      "bg-background/95 backdrop-blur-xl border-t border-border/40",
+      "bg-card/85 backdrop-blur-2xl border-t border-border/15",
+      "shadow-[0_-8px_40px_hsl(var(--background)/0.6)]",
       navHidden && "translate-y-full"
     )}>
-      <div className="flex items-center justify-center gap-0 h-[54px] max-w-sm mx-auto">
-        {items.map((item) => {
-          const isActive = location.pathname === item.path ||
-            (item.path === '/groups' && location.pathname.startsWith('/group'));
+      <div className="flex items-end justify-evenly h-[60px] pb-1">
+        <NavItem path="/feed" icon={Home} label="Accueil" />
+        <NavItem path="/search" icon={Compass} label="Explorer" />
 
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={cn(
-                'flex flex-col items-center justify-center gap-[2px] w-[60px] py-1.5 transition-colors duration-200',
-                (item as any).isCreate
-                  ? 'text-primary'
-                  : isActive
-                    ? 'text-primary'
-                    : 'text-muted-foreground active:text-foreground'
-              )}
-            >
-              {(item as any).isCreate ? (
-                <div className="w-9 h-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-[0_2px_10px_hsl(var(--primary)/0.35)] active:scale-90 transition-transform duration-150">
-                  <item.icon className="w-5 h-5 stroke-[2.5]" />
-                </div>
-              ) : (
-                <>
-                  <item.icon className={cn('w-[21px] h-[21px]', isActive && 'stroke-[2.5]')} />
-                  <span className={cn('text-[10px] leading-none', isActive ? 'font-bold' : 'font-medium')}>{item.label}</span>
-                </>
-              )}
-            </Link>
-          );
-        })}
+        {/* Bouton Créer — premium central */}
+        <Link to="/create" className="flex flex-col items-center -mt-4 w-[56px]">
+          <div className="relative">
+            <div className="absolute inset-[-4px] rounded-2xl bg-primary/25 blur-lg animate-pulse" />
+            <div className="relative w-[46px] h-[46px] rounded-2xl bg-[image:var(--premium-gradient)] text-primary-foreground flex items-center justify-center shadow-[var(--shadow-gold)] active:scale-90 transition-all duration-200 border border-primary-foreground/10">
+              <Plus className="w-6 h-6 stroke-[3]" />
+            </div>
+          </div>
+        </Link>
+
+        <NavItem path="/lives" icon={Radio} label="Live" badge={0} />
+        <NavItem path={`/profile/${user.id}`} icon={User} label="Profil" badge={unreadCount} />
       </div>
     </nav>
   );
