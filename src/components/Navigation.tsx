@@ -25,62 +25,56 @@ export function MobileNav() {
 
   const { openChat } = useChatWidget();
 
-  const leftItems = [
+  const navItems = [
     { path: '/feed', icon: Home, label: t('nav.home') },
     { path: '/lives', icon: Radio, label: t('nav.lives') },
-  ];
-
-  const rightItems = [
+    { path: '__create__', icon: PlusCircle, label: '' },
     { path: '/groups', icon: Users, label: t('nav.groups') },
-    { path: '/marketplace', icon: ShoppingBag, label: 'Market' },
+    { path: '/settings', icon: Settings, label: t('nav.settings') },
   ];
-
-  const renderNavItem = (item: { path: string; icon: any; label: string }) => {
-    const isActive = location.pathname === item.path ||
-      (item.path === '/groups' && location.pathname.startsWith('/group')) ||
-      (item.path === '/marketplace' && location.pathname.startsWith('/marketplace'));
-
-    return (
-      <Link
-        key={item.path}
-        to={item.path}
-        className={cn(
-          'flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-2xl transition-all duration-200 flex-1',
-          isActive
-            ? 'text-primary'
-            : 'text-muted-foreground active:text-foreground'
-        )}
-      >
-        <div className="relative">
-          <item.icon className={cn('w-[22px] h-[22px]', isActive && 'stroke-[2.5]')} />
-          {isActive && (
-            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-[3px] rounded-full bg-primary" />
-          )}
-        </div>
-        <span className={cn('text-[10px] leading-tight', isActive ? 'font-bold' : 'font-medium')}>{item.label}</span>
-      </Link>
-    );
-  };
 
   return (
     <nav className={cn(
-      "fixed bottom-0 left-0 right-0 z-50 glass safe-area-pb transition-transform duration-300",
+      "fixed bottom-0 left-0 right-0 z-50 safe-area-pb transition-transform duration-300",
+      "bg-background/95 backdrop-blur-xl border-t border-border/40",
       navHidden && "translate-y-full"
     )}>
-      <div className="flex items-center justify-around h-[64px] px-1">
-        {leftItems.map(renderNavItem)}
+      <div className="flex items-center h-[56px]">
+        {navItems.map((item) => {
+          if (item.path === '__create__') {
+            return (
+              <Link
+                key="create"
+                to="/create"
+                className="flex items-center justify-center flex-1 -mt-4"
+              >
+                <div className="w-11 h-11 rounded-full flex items-center justify-center bg-primary text-primary-foreground shadow-[0_2px_12px_hsl(var(--primary)/0.4)] active:scale-90 transition-all duration-200">
+                  <PlusCircle className="w-5 h-5 stroke-[2.5]" />
+                </div>
+              </Link>
+            );
+          }
 
-        {/* Bouton central + */}
-        <div className="flex flex-col items-center justify-center flex-1">
-          <Link
-            to="/create"
-            className="w-12 h-12 rounded-2xl flex items-center justify-center bg-primary text-primary-foreground shadow-[0_4px_16px_hsl(var(--primary)/0.4)] active:scale-90 transition-all duration-200 -mt-5 hover:shadow-[0_6px_24px_hsl(var(--primary)/0.5)]"
-          >
-            <PlusCircle className="w-6 h-6 stroke-[2.5]" />
-          </Link>
-        </div>
+          const isActive = location.pathname === item.path ||
+            (item.path === '/groups' && location.pathname.startsWith('/group')) ||
+            (item.path === '/marketplace' && location.pathname.startsWith('/marketplace'));
 
-        {rightItems.map(renderNavItem)}
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={cn(
+                'flex flex-col items-center justify-center gap-[2px] flex-1 py-1 transition-colors duration-200',
+                isActive
+                  ? 'text-primary'
+                  : 'text-muted-foreground active:text-foreground'
+              )}
+            >
+              <item.icon className={cn('w-[21px] h-[21px]', isActive && 'stroke-[2.5]')} />
+              <span className={cn('text-[10px] leading-none', isActive ? 'font-bold' : 'font-medium')}>{item.label}</span>
+            </Link>
+          );
+        })}
       </div>
     </nav>
   );
