@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer } from 'lucide-react';
+import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Post, useDeletePost } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
@@ -34,10 +35,11 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
   const [summary, setSummary] = useState<string | null>(null);
   const [translation, setTranslation] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const postUrl = generatePostUrl(post.id);
 
-  // Ephemeral post countdown
   useEffect(() => {
     if (!post.expires_at) return;
     const updateCountdown = () => {
@@ -75,74 +77,95 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
   const isOwner = user?.id === post.user_id;
 
   return (
-    <article className="bg-card border-y border-border/30 animate-fade-in">
+    <article className="group bg-card border border-border/20 rounded-2xl overflow-hidden transition-all duration-300 hover:border-border/40 hover:shadow-premium-md">
       {/* Header */}
       <div className="flex items-center justify-between px-4 pt-4 pb-3">
         <div className="flex items-center gap-3">
-          <Link to={`/profile/${post.user_id}`}>
-            <UserAvatar 
-              src={post.profile.avatar_url} 
-              alt={post.profile.name} 
-              size="md" 
-              moodEmoji={post.profile.mood_emoji}
-            />
+          <Link to={`/profile/${post.user_id}`} className="relative">
+            <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }} transition={{ type: 'spring' as const, stiffness: 400 }}>
+              <UserAvatar 
+                src={post.profile.avatar_url} 
+                alt={post.profile.name} 
+                size="md" 
+                moodEmoji={post.profile.mood_emoji}
+              />
+            </motion.div>
+            <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-card" />
           </Link>
           
           <div className="min-w-0">
-              <div className="flex items-center gap-1">
-                <Link 
-                  to={`/profile/${post.user_id}`}
-                  className="font-semibold text-sm text-foreground hover:text-primary transition-colors block truncate"
-                >
-                  {post.profile.name}
-                </Link>
-                <TrustBadge userId={post.user_id} size="sm" />
-              </div>
+            <div className="flex items-center gap-1.5">
+              <Link 
+                to={`/profile/${post.user_id}`}
+                className="font-semibold text-sm text-foreground hover:text-primary transition-colors block truncate"
+              >
+                {post.profile.name}
+              </Link>
+              <TrustBadge userId={post.user_id} size="sm" />
+            </div>
             <div className="flex items-center gap-1.5">
               <Link to={`/post/${post.id}`}>
-                <span className="text-muted-foreground text-xs">
+                <span className="text-muted-foreground text-xs hover:text-foreground transition-colors">
                   {formatDistanceToNow(new Date(post.created_at), { addSuffix: true, locale: fr })}
                 </span>
               </Link>
               {timeLeft && (
-                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-medium">
+                <motion.span
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-medium"
+                >
                   <Timer className="w-2.5 h-2.5" />
                   {timeLeft}
-                </span>
+                </motion.span>
               )}
             </div>
           </div>
         </div>
         
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground">
-              <MoreHorizontal className="w-4 h-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="rounded-xl">
-            <DropdownMenuItem asChild>
-              <ShareButton 
-                url={postUrl} 
-                title={`Post de ${post.profile.name}`}
-                text={post.body?.slice(0, 100)}
-                variant="ghost"
-                showLabel
-                className="w-full justify-start p-0"
-              />
-            </DropdownMenuItem>
-            {isOwner && (
-              <DropdownMenuItem onClick={handleDelete} className="text-destructive">
-                <Trash2 className="w-4 h-4 mr-2" />
-                Supprimer
-              </DropdownMenuItem>
+        <div className="flex items-center gap-1">
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => setSaved(!saved)}
+            className={cn(
+              "h-8 w-8 rounded-full flex items-center justify-center transition-colors",
+              saved ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
             )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          >
+            <Bookmark className={cn("w-4 h-4", saved && "fill-current")} />
+          </motion.button>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground">
+                <MoreHorizontal className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="rounded-xl glass border-border/30">
+              <DropdownMenuItem asChild>
+                <ShareButton 
+                  url={postUrl} 
+                  title={`Post de ${post.profile.name}`}
+                  text={post.body?.slice(0, 100)}
+                  variant="ghost"
+                  showLabel
+                  className="w-full justify-start p-0"
+                />
+              </DropdownMenuItem>
+              {isOwner && (
+                <DropdownMenuItem onClick={handleDelete} className="text-destructive">
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Supprimer
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Content */}
-      <Link to={`/post/${post.id}`}>
+      <Link to={`/post/${post.id}`} className="block">
         {post.body && (
           <p className="px-4 pb-3 text-sm text-foreground whitespace-pre-wrap break-words leading-relaxed">
             {post.body}
@@ -150,91 +173,117 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
         )}
         
         {post.image_url && (
-          <div className="w-full">
-            <img
+          <div className="relative w-full overflow-hidden">
+            {!imageLoaded && (
+              <div className="w-full h-64 skeleton" />
+            )}
+            <motion.img
               src={post.image_url}
               alt="Post image"
-              className="w-full object-cover max-h-[480px]"
+              className={cn(
+                "w-full object-cover max-h-[520px] transition-opacity duration-500",
+                imageLoaded ? "opacity-100" : "opacity-0 h-0"
+              )}
+              onLoad={() => setImageLoaded(true)}
+              whileHover={{ scale: 1.01 }}
+              transition={{ duration: 0.4 }}
             />
           </div>
         )}
       </Link>
 
       {/* AI Actions */}
-      {post.body && (aiSummariesEnabled || autoTranslateEnabled) && (
-        <div className="px-4 pb-2 flex flex-wrap gap-1.5">
-          {aiSummariesEnabled && post.body.length >= 100 && (
-            <button
-              onClick={handleSummarize}
-              disabled={summaryLoading}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all border",
-                summary
-                  ? "bg-primary/10 text-primary border-primary/30"
-                  : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60"
-              )}
-            >
-              {summaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-              {summary ? 'Masquer résumé' : 'Résumer'}
-            </button>
-          )}
-          {autoTranslateEnabled && (
-            <button
-              onClick={handleTranslate}
-              disabled={translateLoading}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all border",
-                translation
-                  ? "bg-primary/10 text-primary border-primary/30"
-                  : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60"
-              )}
-            >
-              {translateLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3 h-3" />}
-              {translation ? 'Original' : 'Traduire'}
-            </button>
-          )}
-        </div>
-      )}
+      <AnimatePresence>
+        {post.body && (aiSummariesEnabled || autoTranslateEnabled) && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="px-4 pb-2 flex flex-wrap gap-1.5"
+          >
+            {aiSummariesEnabled && post.body.length >= 100 && (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleSummarize}
+                disabled={summaryLoading}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all border backdrop-blur-sm",
+                  summary
+                    ? "bg-primary/10 text-primary border-primary/30 shadow-sm"
+                    : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60 hover:border-border/50"
+                )}
+              >
+                {summaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                {summary ? 'Masquer résumé' : 'Résumer'}
+              </motion.button>
+            )}
+            {autoTranslateEnabled && (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleTranslate}
+                disabled={translateLoading}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all border backdrop-blur-sm",
+                  translation
+                    ? "bg-primary/10 text-primary border-primary/30 shadow-sm"
+                    : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60 hover:border-border/50"
+                )}
+              >
+                {translateLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3 h-3" />}
+                {translation ? 'Original' : 'Traduire'}
+              </motion.button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* AI Results */}
-      {(summary || translation) && (
-        <div className="px-4 pb-3 space-y-2">
-          {summary && (
-            <div className="p-3 rounded-xl bg-primary/5 border border-primary/20">
-              <div className="flex items-center gap-1.5 mb-1">
-                <Sparkles className="w-3 h-3 text-primary" />
-                <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Résumé IA</span>
+      <AnimatePresence>
+        {(summary || translation) && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="px-4 pb-3 space-y-2"
+          >
+            {summary && (
+              <div className="p-3 rounded-xl glass border-primary/20">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Sparkles className="w-3 h-3 text-primary" />
+                  <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Résumé IA</span>
+                </div>
+                <p className="text-sm text-foreground leading-relaxed">{summary}</p>
               </div>
-              <p className="text-sm text-foreground leading-relaxed">{summary}</p>
-            </div>
-          )}
-          {translation && (
-            <div className="p-3 rounded-xl bg-primary/5 border border-primary/20">
-              <div className="flex items-center gap-1.5 mb-1">
-                <Languages className="w-3 h-3 text-primary" />
-                <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Traduction</span>
+            )}
+            {translation && (
+              <div className="p-3 rounded-xl glass border-primary/20">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Languages className="w-3 h-3 text-primary" />
+                  <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Traduction</span>
+                </div>
+                <p className="text-sm text-foreground leading-relaxed">{translation}</p>
               </div>
-              <p className="text-sm text-foreground leading-relaxed">{translation}</p>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Reactions Count */}
       {(post.likes_count > 0 || post.comments_count > 0) && (
         <div className="flex items-center justify-between px-4 py-2 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
             {post.likes_count > 0 && (
-              <>
-                <div className="w-[18px] h-[18px] rounded-full bg-primary/90 flex items-center justify-center">
+              <motion.div className="flex items-center gap-1" initial={{ scale: 0 }} animate={{ scale: 1 }}>
+                <div className="w-[18px] h-[18px] rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-sm">
                   <ThumbsUp className="w-2.5 h-2.5 text-primary-foreground" />
                 </div>
-                <span>{post.likes_count}</span>
-              </>
+                <span className="font-medium">{post.likes_count}</span>
+              </motion.div>
             )}
           </div>
           {post.comments_count > 0 && (
-            <button onClick={onCommentClick} className="hover:text-foreground transition-colors">
+            <button onClick={onCommentClick} className="hover:text-foreground transition-colors hover:underline">
               {post.comments_count} commentaire{post.comments_count > 1 ? 's' : ''}
             </button>
           )}
@@ -243,7 +292,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
       
       {/* Actions */}
       {showActions && (
-        <div className="flex items-center border-t border-border/30 mx-4 py-1">
+        <div className="flex items-center border-t border-border/20 mx-4 py-1">
           <ReactionButton 
             postId={post.id}
             currentReaction={post.user_reaction}
@@ -251,25 +300,29 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
             variant="facebook"
           />
           
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onCommentClick}
-            className="flex-1 h-10 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/60 rounded-xl text-xs"
-          >
-            <MessageCircle className="w-[18px] h-[18px]" />
-            <span className="font-medium">Commenter</span>
-          </Button>
+          <motion.div className="flex-1" whileTap={{ scale: 0.95 }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onCommentClick}
+              className="w-full h-11 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs transition-all"
+            >
+              <MessageCircle className="w-[18px] h-[18px]" />
+              <span className="font-medium">Commenter</span>
+            </Button>
+          </motion.div>
           
-          <ShareButton
-            url={postUrl}
-            title={`Post de ${post.profile.name}`}
-            text={post.body?.slice(0, 100)}
-            variant="ghost"
-            size="sm"
-            showLabel
-            className="flex-1 h-10 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/60 rounded-xl text-xs"
-          />
+          <motion.div className="flex-1" whileTap={{ scale: 0.95 }}>
+            <ShareButton
+              url={postUrl}
+              title={`Post de ${post.profile.name}`}
+              text={post.body?.slice(0, 100)}
+              variant="ghost"
+              size="sm"
+              showLabel
+              className="w-full h-11 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs"
+            />
+          </motion.div>
         </div>
       )}
     </article>
