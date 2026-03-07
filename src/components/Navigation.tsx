@@ -114,8 +114,6 @@ export function DesktopSidebar() {
 
   const sidebarItems = [
     { path: '/feed', icon: Home, label: t('nav.home') },
-    { path: '/videos', icon: Video, label: t('nav.videos') },
-    { path: '/lives', icon: Radio, label: t('nav.lives') },
     { path: '/search', icon: Search, label: t('nav.search') },
     { path: '/notifications', icon: Bell, label: t('nav.notifications'), badge: unreadCount },
     { path: '/messages', icon: MessageCircle, label: t('nav.messages'), badge: unreadMessages, isChat: true },

@@ -9,7 +9,7 @@ import { requestMediaPermissions, acquireWakeLock, releaseWakeLock, isNative } f
 interface LiveStreamPlayerProps {
   isHost?: boolean;
   roomName?: string;
-  onStreamReady?: () => void;
+  onStreamReady?: (stream?: MediaStream) => void;
   onStreamEnd?: () => void;
   className?: string;
 }
@@ -89,7 +89,15 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
         }
 
         setIsStreaming(true);
-        onStreamReady?.();
+
+        // Build a MediaStream from LiveKit local tracks for recording
+        const mediaStream = new MediaStream();
+        const camTrack = room.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
+        const micTrack = room.localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
+        if (camTrack?.mediaStreamTrack) mediaStream.addTrack(camTrack.mediaStreamTrack);
+        if (micTrack?.mediaStreamTrack) mediaStream.addTrack(micTrack.mediaStreamTrack);
+
+        onStreamReady?.(mediaStream);
       } catch (err: any) {
         console.error('LiveKit stream error:', err);
         let errorMessage = "Impossible de démarrer le stream";

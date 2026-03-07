@@ -116,17 +116,11 @@ export function HostLiveView({ live }: HostLiveViewProps) {
     }
   }, [chatMessages]);
 
-  const handleStreamReady = () => {
-    // Get the video element's stream for recording
-    const videoEl = document.querySelector('.live-host-video video') as HTMLVideoElement & { captureStream?: () => MediaStream };
-    if (videoEl && typeof videoEl.captureStream === 'function') {
-      const stream = videoEl.captureStream();
+  const handleStreamReady = (stream?: MediaStream) => {
+    if (stream && stream.getTracks().length > 0) {
       startRecording(stream);
     } else {
-      // Fallback: try to get stream from getUserMedia
-      navigator.mediaDevices.getUserMedia({ audio: true, video: true })
-        .then(stream => startRecording(stream))
-        .catch(err => console.error('Could not capture for recording:', err));
+      console.warn('No MediaStream provided for recording');
     }
   };
 
