@@ -77,9 +77,12 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
   const isOwner = user?.id === post.user_id;
 
   return (
-    <article className="group bg-card border border-border/20 rounded-2xl overflow-hidden transition-all duration-300 hover:border-border/40 hover:shadow-premium-md">
+    <article className="group relative bg-card border border-border/20 rounded-2xl overflow-hidden transition-all duration-500 hover:border-primary/15 hover:shadow-[0_8px_30px_-8px_hsl(220_70%_50%/0.12)] btn-shine">
+      {/* Subtle gradient overlay on hover */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.02] via-transparent to-accent/[0.02] opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+      
       {/* Header */}
-      <div className="flex items-center justify-between px-4 pt-4 pb-3">
+      <div className="relative flex items-center justify-between px-4 pt-4 pb-3">
         <div className="flex items-center gap-3">
           <Link to={`/profile/${post.user_id}`} className="relative">
             <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }} transition={{ type: 'spring' as const, stiffness: 400 }}>
@@ -90,7 +93,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
                 moodEmoji={post.profile.mood_emoji}
               />
             </motion.div>
-            <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-card" />
+            <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-card shadow-[0_0_6px_hsl(145,80%,42%,0.5)]" />
           </Link>
           
           <div className="min-w-0">
@@ -113,7 +116,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
                 <motion.span
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
-                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-medium"
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-medium backdrop-blur-sm"
                 >
                   <Timer className="w-2.5 h-2.5" />
                   {timeLeft}
@@ -125,24 +128,24 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
         
         <div className="flex items-center gap-1">
           <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
+            whileHover={{ scale: 1.15, rotate: saved ? 0 : -10 }}
+            whileTap={{ scale: 0.85 }}
             onClick={() => setSaved(!saved)}
             className={cn(
-              "h-8 w-8 rounded-full flex items-center justify-center transition-colors",
-              saved ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+              "h-8 w-8 rounded-xl flex items-center justify-center transition-all duration-300",
+              saved ? "text-primary bg-primary/10 shadow-[0_0_12px_hsl(220_70%_50%/0.15)]" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
             )}
           >
-            <Bookmark className={cn("w-4 h-4", saved && "fill-current")} />
+            <Bookmark className={cn("w-4 h-4 transition-transform", saved && "fill-current")} />
           </motion.button>
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground">
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl text-muted-foreground hover:text-foreground">
                 <MoreHorizontal className="w-4 h-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="rounded-xl glass border-border/30">
+            <DropdownMenuContent align="end" className="rounded-xl glass border-border/30 shadow-[var(--shadow-lg)]">
               <DropdownMenuItem asChild>
                 <ShareButton 
                   url={postUrl} 
@@ -165,7 +168,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
       </div>
 
       {/* Content */}
-      <Link to={`/post/${post.id}`} className="block">
+      <Link to={`/post/${post.id}`} className="block relative">
         {post.body && (
           <p className="px-4 pb-3 text-sm text-foreground whitespace-pre-wrap break-words leading-relaxed">
             {post.body}
@@ -181,13 +184,17 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
               src={post.image_url}
               alt="Post image"
               className={cn(
-                "w-full object-cover max-h-[520px] transition-opacity duration-500",
+                "w-full object-cover max-h-[520px] transition-all duration-700",
                 imageLoaded ? "opacity-100" : "opacity-0 h-0"
               )}
               onLoad={() => setImageLoaded(true)}
-              whileHover={{ scale: 1.01 }}
-              transition={{ duration: 0.4 }}
+              whileHover={{ scale: 1.015 }}
+              transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
             />
+            {/* Image gradient overlay */}
+            {imageLoaded && (
+              <div className="absolute inset-0 bg-gradient-to-t from-card/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+            )}
           </div>
         )}
       </Link>
@@ -198,19 +205,19 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
-            className="px-4 pb-2 flex flex-wrap gap-1.5"
+            className="relative px-4 pb-2 flex flex-wrap gap-1.5"
           >
             {aiSummariesEnabled && post.body.length >= 100 && (
               <motion.button
-                whileHover={{ scale: 1.05 }}
+                whileHover={{ scale: 1.05, y: -1 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleSummarize}
                 disabled={summaryLoading}
                 className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all border backdrop-blur-sm",
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-medium transition-all border backdrop-blur-sm",
                   summary
-                    ? "bg-primary/10 text-primary border-primary/30 shadow-sm"
-                    : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60 hover:border-border/50"
+                    ? "bg-primary/10 text-primary border-primary/30 shadow-[0_2px_8px_hsl(220_70%_50%/0.12)]"
+                    : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60 hover:border-primary/20 hover:shadow-[0_2px_8px_hsl(220_70%_50%/0.08)]"
                 )}
               >
                 {summaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
@@ -219,15 +226,15 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
             )}
             {autoTranslateEnabled && (
               <motion.button
-                whileHover={{ scale: 1.05 }}
+                whileHover={{ scale: 1.05, y: -1 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleTranslate}
                 disabled={translateLoading}
                 className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all border backdrop-blur-sm",
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-medium transition-all border backdrop-blur-sm",
                   translation
-                    ? "bg-primary/10 text-primary border-primary/30 shadow-sm"
-                    : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60 hover:border-border/50"
+                    ? "bg-primary/10 text-primary border-primary/30 shadow-[0_2px_8px_hsl(220_70%_50%/0.12)]"
+                    : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60 hover:border-primary/20 hover:shadow-[0_2px_8px_hsl(220_70%_50%/0.08)]"
                 )}
               >
                 {translateLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3 h-3" />}
@@ -245,10 +252,10 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="px-4 pb-3 space-y-2"
+            className="relative px-4 pb-3 space-y-2"
           >
             {summary && (
-              <div className="p-3 rounded-xl glass border-primary/20">
+              <div className="p-3 rounded-xl glass border-primary/20 shadow-[0_2px_12px_hsl(220_70%_50%/0.06)]">
                 <div className="flex items-center gap-1.5 mb-1.5">
                   <Sparkles className="w-3 h-3 text-primary" />
                   <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Résumé IA</span>
@@ -257,7 +264,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
               </div>
             )}
             {translation && (
-              <div className="p-3 rounded-xl glass border-primary/20">
+              <div className="p-3 rounded-xl glass border-primary/20 shadow-[0_2px_12px_hsl(220_70%_50%/0.06)]">
                 <div className="flex items-center gap-1.5 mb-1.5">
                   <Languages className="w-3 h-3 text-primary" />
                   <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Traduction</span>
@@ -271,11 +278,11 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
 
       {/* Reactions Count */}
       {(post.likes_count > 0 || post.comments_count > 0) && (
-        <div className="flex items-center justify-between px-4 py-2 text-xs text-muted-foreground">
+        <div className="relative flex items-center justify-between px-4 py-2 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
             {post.likes_count > 0 && (
               <motion.div className="flex items-center gap-1" initial={{ scale: 0 }} animate={{ scale: 1 }}>
-                <div className="w-[18px] h-[18px] rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-sm">
+                <div className="w-[18px] h-[18px] rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-[0_2px_6px_hsl(220_70%_50%/0.3)]">
                   <ThumbsUp className="w-2.5 h-2.5 text-primary-foreground" />
                 </div>
                 <span className="font-medium">{post.likes_count}</span>
@@ -292,7 +299,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
       
       {/* Actions */}
       {showActions && (
-        <div className="flex items-center border-t border-border/20 mx-4 py-1">
+        <div className="relative flex items-center border-t border-border/20 mx-4 py-1">
           <ReactionButton 
             postId={post.id}
             currentReaction={post.user_reaction}

@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, Eye } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -64,7 +65,6 @@ export function StoriesBar() {
 
   const nextStory = () => {
     if (!selectedGroup) return;
-    
     if (currentStoryIndex < selectedGroup.stories.length - 1) {
       const nextIndex = currentStoryIndex + 1;
       setCurrentStoryIndex(nextIndex);
@@ -121,9 +121,15 @@ export function StoriesBar() {
     return (
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="flex-shrink-0 w-[72px]">
-            <div className="w-[72px] h-[72px] rounded-2xl bg-muted animate-pulse" />
-          </div>
+          <motion.div 
+            key={i} 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: i * 0.08 }}
+            className="flex-shrink-0 w-[72px]"
+          >
+            <div className="w-[72px] h-[72px] rounded-2xl skeleton" />
+          </motion.div>
         ))}
       </div>
     );
@@ -133,14 +139,22 @@ export function StoriesBar() {
     <>
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
         {/* Add Story Button */}
-        <div className="flex-shrink-0 flex flex-col items-center gap-1">
-          <button
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex-shrink-0 flex flex-col items-center gap-1"
+        >
+          <motion.button
+            whileHover={{ scale: 1.08, y: -2 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => fileInputRef.current?.click()}
             disabled={isCreating}
-            className="relative w-[68px] h-[68px] rounded-2xl bg-secondary/60 border border-dashed border-primary/40 flex items-center justify-center hover:bg-secondary hover:border-primary/60 transition-all duration-200"
+            className="relative w-[68px] h-[68px] rounded-2xl bg-secondary/40 border border-dashed border-primary/30 flex items-center justify-center transition-all duration-300 hover:bg-primary/5 hover:border-primary/50 hover:shadow-[0_4px_16px_hsl(220_70%_50%/0.12)] group"
           >
-            <Plus className={cn("w-5 h-5 text-primary", isCreating && "animate-spin")} />
-          </button>
+            <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+              <Plus className={cn("w-5 h-5 text-primary", isCreating && "animate-spin")} />
+            </div>
+          </motion.button>
           <span className="text-[10px] text-muted-foreground font-medium">Story</span>
           <input
             ref={fileInputRef}
@@ -149,25 +163,30 @@ export function StoriesBar() {
             className="hidden"
             onChange={handleFileSelect}
           />
-        </div>
+        </motion.div>
 
         {/* Stories */}
-        {groupedStories?.map((group) => (
-          <button
+        {groupedStories?.map((group, i) => (
+          <motion.button
             key={group.user_id}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: (i + 1) * 0.05 }}
+            whileHover={{ scale: 1.06, y: -2 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => openStory(group)}
             className="flex-shrink-0 flex flex-col items-center gap-1"
           >
             <div className={cn(
-              "p-[2px] rounded-2xl transition-all duration-200",
+              "p-[2px] rounded-2xl transition-all duration-300",
               group.has_unviewed 
-                ? "bg-premium-gradient shadow-premium-gold" 
+                ? "bg-[image:var(--premium-gradient)] shadow-[0_2px_12px_hsl(220_70%_50%/0.25)]" 
                 : "bg-border/60"
             )}>
               <div className="p-[2px] rounded-[14px] bg-background">
                 <div className="w-[60px] h-[60px] rounded-xl overflow-hidden">
                   {group.profile.avatar_url ? (
-                    <img src={group.profile.avatar_url} alt={group.profile.name} className="w-full h-full object-cover" />
+                    <img src={group.profile.avatar_url} alt={group.profile.name} className="w-full h-full object-cover transition-transform duration-300 hover:scale-110" />
                   ) : (
                     <UserAvatar src={null} alt={group.profile.name} size="lg" />
                   )}
@@ -177,7 +196,7 @@ export function StoriesBar() {
             <span className="text-[10px] text-muted-foreground truncate w-[68px] text-center font-medium">
               {group.user_id === user?.id ? 'Ma story' : group.profile.name.split(' ')[0]}
             </span>
-          </button>
+          </motion.button>
         ))}
       </div>
 
@@ -192,9 +211,9 @@ export function StoriesBar() {
                   <div 
                     key={i}
                     className={cn(
-                      "h-[3px] flex-1 rounded-full transition-all",
+                      "h-[3px] flex-1 rounded-full transition-all duration-300",
                       i < currentStoryIndex ? "bg-white" : 
-                      i === currentStoryIndex ? "bg-white/90" : "bg-white/25"
+                      i === currentStoryIndex ? "bg-white/90 shadow-[0_0_6px_rgba(255,255,255,0.5)]" : "bg-white/25"
                     )}
                   />
                 ))}
@@ -202,7 +221,7 @@ export function StoriesBar() {
 
               {/* Header */}
               <div className="absolute top-8 left-3 right-3 flex items-center justify-between z-10">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 backdrop-blur-sm bg-black/20 rounded-xl px-2 py-1.5">
                   <UserAvatar 
                     src={currentStory.profile.avatar_url} 
                     alt={currentStory.profile.name}
@@ -218,7 +237,7 @@ export function StoriesBar() {
                 <div className="flex items-center gap-2">
                   {isOwner && (
                     <>
-                      <div className="flex items-center gap-1 text-white/70 text-xs">
+                      <div className="flex items-center gap-1 text-white/70 text-xs backdrop-blur-sm bg-black/20 rounded-lg px-2 py-1">
                         <Eye className="w-3.5 h-3.5" />
                         {currentStory.views_count}
                       </div>
@@ -226,7 +245,7 @@ export function StoriesBar() {
                         variant="ghost" 
                         size="icon" 
                         onClick={handleDelete}
-                        className="h-8 w-8 text-white hover:bg-white/20 rounded-full"
+                        className="h-8 w-8 text-white hover:bg-white/20 rounded-xl backdrop-blur-sm"
                       >
                         <X className="w-4 h-4" />
                       </Button>
@@ -236,7 +255,10 @@ export function StoriesBar() {
               </div>
 
               {/* Image */}
-              <img
+              <motion.img
+                initial={{ scale: 1.05, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.4 }}
                 src={currentStory.image_url}
                 alt="Story"
                 className="w-full h-full object-cover"
@@ -244,9 +266,13 @@ export function StoriesBar() {
 
               {/* Caption */}
               {currentStory.caption && (
-                <div className="absolute bottom-4 left-3 right-3 text-white text-center text-sm bg-black/40 backdrop-blur-md rounded-xl p-3">
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="absolute bottom-4 left-3 right-3 text-white text-center text-sm bg-black/40 backdrop-blur-xl rounded-xl p-3 border border-white/10"
+                >
                   {currentStory.caption}
-                </div>
+                </motion.div>
               )}
 
               {/* Navigation */}
