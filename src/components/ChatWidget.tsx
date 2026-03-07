@@ -478,30 +478,53 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                           </div>
                         )}
 
-                        <div
-                          onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
-                          className={cn(
-                            'cursor-pointer select-none transition-all',
-                            isBigEmoji
-                              ? 'text-2xl leading-none py-0.5'
-                              : cn(
-                                  'px-3 py-1.5 text-xs break-words leading-relaxed',
-                                  isMe
-                                    ? cn('bg-primary text-primary-foreground',
-                                        isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-br-md',
-                                        isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-br-sm',
-                                        !isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-tr-sm rounded-br-md',
-                                        !isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-tr-sm rounded-br-sm')
-                                    : cn('bg-secondary',
-                                        isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-bl-md',
-                                        isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-bl-sm',
-                                        !isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-tl-sm rounded-bl-md',
-                                        !isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-tl-sm rounded-bl-sm')
-                                )
-                          )}
-                        >
-                          {msg.body}
-                        </div>
+                        {/* GIF message */}
+                        {isGifMessage(msg.body) ? (
+                          <div
+                            onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
+                            className="cursor-pointer rounded-xl overflow-hidden"
+                          >
+                            <img src={getGifUrl(msg.body)} alt="GIF" className="max-w-full max-h-[150px] object-cover rounded-xl" />
+                          </div>
+                        ) : isVoiceMessage(msg.body) ? (
+                          <div onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)} className="cursor-pointer">
+                            {(() => {
+                              const vd = getVoiceData(msg.body);
+                              return vd ? (
+                                <VoiceMessagePlayer audioUrl={vd.url} duration={vd.duration} isMe={isMe} />
+                              ) : (
+                                <div className={cn('px-3 py-1.5 text-xs rounded-2xl', isMe ? 'bg-primary text-primary-foreground' : 'bg-secondary')}>
+                                  🎙️ Message vocal
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
+                            className={cn(
+                              'cursor-pointer select-none transition-all',
+                              isBigEmoji
+                                ? 'text-2xl leading-none py-0.5'
+                                : cn(
+                                    'px-3 py-1.5 text-xs break-words leading-relaxed',
+                                    isMe
+                                      ? cn('bg-primary text-primary-foreground',
+                                          isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-br-md',
+                                          isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-br-sm',
+                                          !isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-tr-sm rounded-br-md',
+                                          !isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-tr-sm rounded-br-sm')
+                                      : cn('bg-secondary',
+                                          isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-bl-md',
+                                          isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-bl-sm',
+                                          !isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-tl-sm rounded-bl-md',
+                                          !isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-tl-sm rounded-bl-sm')
+                                  )
+                            )}
+                          >
+                            {msg.body}
+                          </div>
+                        )}
 
                         {reactions.length > 0 && (
                           <div className={cn("flex items-center -mt-1 px-0.5", isMe ? "flex-row-reverse" : "")}>
