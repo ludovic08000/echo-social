@@ -134,6 +134,7 @@ function AdChatCreator() {
       title: generatedAd.title,
       body: generatedAd.body,
       image_url: imageUrl || undefined,
+      video_url: videoUrl || undefined,
       cta_text: generatedAd.cta_text || 'En savoir plus',
       target_age_min: generatedAd.target_age_min || 18,
       target_age_max: generatedAd.target_age_max || 65,
@@ -144,6 +145,7 @@ function AdChatCreator() {
     setGeneratedAd(null);
     setMessages([{ role: 'assistant', content: "🎉 Campagne lancée avec succès ! Décrivez une nouvelle pub ou consultez vos campagnes." }]);
     setImageUrl('');
+    setVideoUrl('');
   };
 
   return (
