@@ -34,6 +34,22 @@ const INTEREST_OPTIONS = [
   'Santé', 'Business', 'Éducation', 'Beauté', 'Auto', 'Immobilier',
 ];
 
+const REGIONS_FRANCE = [
+  'Île-de-France', 'Auvergne-Rhône-Alpes', 'Nouvelle-Aquitaine', 'Occitanie',
+  'Hauts-de-France', 'Provence-Alpes-Côte d\'Azur', 'Grand Est', 'Pays de la Loire',
+  'Bretagne', 'Normandie', 'Bourgogne-Franche-Comté', 'Centre-Val de Loire',
+  'Corse', 'Outre-mer',
+];
+
+const VILLES_FRANCE = [
+  'Paris', 'Marseille', 'Lyon', 'Toulouse', 'Nice', 'Nantes', 'Montpellier',
+  'Strasbourg', 'Bordeaux', 'Lille', 'Rennes', 'Reims', 'Saint-Étienne',
+  'Le Havre', 'Toulon', 'Grenoble', 'Dijon', 'Angers', 'Nîmes', 'Clermont-Ferrand',
+  'Aix-en-Provence', 'Brest', 'Tours', 'Limoges', 'Amiens', 'Perpignan',
+  'Metz', 'Besançon', 'Orléans', 'Rouen', 'Mulhouse', 'Caen', 'Nancy',
+  'Avignon', 'Cannes', 'Antibes', 'Pau', 'La Rochelle', 'Poitiers', 'Versailles',
+];
+
 function generateChartData(campaigns: AdCampaign[]) {
   const days = eachDayOfInterval({ start: subDays(new Date(), 13), end: new Date() });
   return days.map(day => {
@@ -67,6 +83,9 @@ function AdChatCreator() {
   const [videoUrl, setVideoUrl] = useState('');
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
   const [generatingImage, setGeneratingImage] = useState(false);
+  const [locationType, setLocationType] = useState<'france' | 'regions' | 'villes'>('france');
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+  const [locationSearch, setLocationSearch] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const createCampaign = useCreateAdCampaign();
   const { upload, isUploading } = useImageUpload({ bucket: 'post-images' });
@@ -140,6 +159,7 @@ function AdChatCreator() {
       target_age_max: generatedAd.target_age_max || 65,
       target_gender: generatedAd.target_gender || 'all',
       target_interests: generatedAd.target_interests || [],
+      target_location: { type: locationType, values: selectedLocations },
       duration_type: selectedDuration,
     });
     setGeneratedAd(null);
@@ -331,6 +351,52 @@ function AdChatCreator() {
               </div>
             </div>
 
+            {/* Location selector */}
+            <div className="p-4 rounded-2xl border border-border/30 bg-card space-y-3">
+              <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                <Target className="w-4 h-4 text-primary" /> Zone géographique
+              </label>
+              <div className="flex gap-2">
+                {([
+                  { value: 'france' as const, label: 'Toute la France' },
+                  { value: 'regions' as const, label: 'Régions' },
+                  { value: 'villes' as const, label: 'Villes' },
+                ] as const).map(opt => (
+                  <button key={opt.value} onClick={() => { setLocationType(opt.value); setSelectedLocations([]); }}
+                    className={cn("flex-1 py-2 rounded-xl text-xs font-medium transition-all border",
+                      locationType === opt.value ? "bg-primary/10 text-primary border-primary/30" : "bg-secondary/30 text-muted-foreground border-border/30"
+                    )}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {locationType !== 'france' && (
+                <div className="space-y-2">
+                  <Input
+                    value={locationSearch}
+                    onChange={(e) => setLocationSearch(e.target.value)}
+                    placeholder={locationType === 'regions' ? 'Rechercher une région...' : 'Rechercher une ville...'}
+                    className="rounded-xl text-sm h-9"
+                  />
+                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                    {(locationType === 'regions' ? REGIONS_FRANCE : VILLES_FRANCE)
+                      .filter(l => l.toLowerCase().includes(locationSearch.toLowerCase()))
+                      .map(loc => (
+                        <button key={loc} onClick={() => setSelectedLocations(prev => prev.includes(loc) ? prev.filter(l => l !== loc) : [...prev, loc])}
+                          className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border",
+                            selectedLocations.includes(loc) ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
+                          )}>
+                          {loc}
+                        </button>
+                      ))}
+                  </div>
+                  {selectedLocations.length > 0 && (
+                    <p className="text-[10px] text-primary font-medium">{selectedLocations.length} sélection(s)</p>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Duration selector */}
             <div>
               <label className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
@@ -380,6 +446,9 @@ export default function AdsManager() {
   const [manualAgeRange, setManualAgeRange] = useState([18, 45]);
   const [manualGender, setManualGender] = useState('all');
   const [manualInterests, setManualInterests] = useState<string[]>([]);
+  const [manualLocationType, setManualLocationType] = useState<'france' | 'regions' | 'villes'>('france');
+  const [manualSelectedLocations, setManualSelectedLocations] = useState<string[]>([]);
+  const [manualLocationSearch, setManualLocationSearch] = useState('');
 
   const chartData = generateChartData(campaigns || []);
 
@@ -618,6 +687,50 @@ export default function AdsManager() {
                   </div>
                 </div>
 
+                  {/* Localisation */}
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-2 block">Zone géographique</label>
+                    <div className="flex gap-2 mb-2">
+                      {([
+                        { value: 'france' as const, label: 'Toute la France' },
+                        { value: 'regions' as const, label: 'Régions' },
+                        { value: 'villes' as const, label: 'Villes' },
+                      ] as const).map(opt => (
+                        <button key={opt.value} onClick={() => { setManualLocationType(opt.value); setManualSelectedLocations([]); }}
+                          className={cn("flex-1 py-2 rounded-xl text-xs font-medium transition-all border",
+                            manualLocationType === opt.value ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
+                          )}>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    {manualLocationType !== 'france' && (
+                      <div className="space-y-2">
+                        <Input
+                          value={manualLocationSearch}
+                          onChange={(e) => setManualLocationSearch(e.target.value)}
+                          placeholder={manualLocationType === 'regions' ? 'Rechercher une région...' : 'Rechercher une ville...'}
+                          className="rounded-xl text-sm h-9"
+                        />
+                        <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                          {(manualLocationType === 'regions' ? REGIONS_FRANCE : VILLES_FRANCE)
+                            .filter(l => l.toLowerCase().includes(manualLocationSearch.toLowerCase()))
+                            .map(loc => (
+                              <button key={loc} onClick={() => setManualSelectedLocations(prev => prev.includes(loc) ? prev.filter(l => l !== loc) : [...prev, loc])}
+                                className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border",
+                                  manualSelectedLocations.includes(loc) ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
+                                )}>
+                                {loc}
+                              </button>
+                            ))}
+                        </div>
+                        {manualSelectedLocations.length > 0 && (
+                          <p className="text-[10px] text-primary font-medium">{manualSelectedLocations.length} sélection(s)</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                 {/* Média (Image ou Vidéo) */}
                 <div>
                   <label className="text-sm font-medium text-foreground mb-1.5 block">Média publicitaire</label>
@@ -698,10 +811,12 @@ export default function AdsManager() {
                       target_age_max: manualAgeRange[1],
                       target_gender: manualGender,
                       target_interests: manualInterests,
+                      target_location: { type: manualLocationType, values: manualSelectedLocations },
                       duration_type: manualDuration,
                     });
                     setManualTitle(''); setManualBody(''); setManualCtaText('En savoir plus');
                     setManualCtaUrl(''); setManualImageUrl(''); setManualVideoUrl(''); setManualInterests([]);
+                    setManualLocationType('france'); setManualSelectedLocations([]);
                     setTab('campaigns');
                   }}
                   disabled={!manualTitle.trim() || !manualBody.trim() || createCampaign.isPending}
