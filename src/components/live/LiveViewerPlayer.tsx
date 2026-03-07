@@ -192,7 +192,7 @@ export function LiveViewerPlayer({
             </div>
           </div>
           <p className="mt-6 text-lg font-medium">Stream en direct</p>
-          <p className="text-sm text-white/60 mt-1">Connexion en cours...</p>
+          <p className="text-sm text-white/60 mt-1">Chargement...</p>
         </div>
       </div>
     );
@@ -212,7 +212,7 @@ export function LiveViewerPlayer({
         <div className="absolute inset-0 flex items-center justify-center bg-black/50">
           <div className="text-center text-white">
             <Radio className="w-12 h-12 mx-auto animate-pulse text-destructive" />
-            <p className="mt-2">Connexion au stream...</p>
+            <p className="mt-2">Chargement du stream...</p>
           </div>
         </div>
       )}
