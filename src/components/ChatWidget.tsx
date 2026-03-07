@@ -10,7 +10,7 @@ import { fr } from 'date-fns/locale';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, type Message } from '@/hooks/useMessages';
+import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, useDeleteMessageForMe, useDeleteMessageForEveryone, type Message } from '@/hooks/useMessages';
 import { useFriendships } from '@/hooks/useFriendships';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -269,6 +269,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const { data: conversations } = useConversations();
   const { data: messages, isLoading } = useMessages(conversationId);
   const sendMessage = useSendMessage();
+  const deleteForMe = useDeleteMessageForMe();
+  const deleteForEveryone = useDeleteMessageForEveryone();
   const markRead = useMarkConversationRead();
   const [newMessage, setNewMessage] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
@@ -276,6 +278,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
+  const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -456,7 +459,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                       )}
                       <div className={cn('max-w-[80%] flex flex-col', isMe ? 'items-end' : 'items-start')}>
                         {/* Reactions on hover */}
-                        {activeMessageId === msg.id && (
+                        {activeMessageId === msg.id && !deleteMenuMsgId && (
                           <>
                             <div className="fixed inset-0 z-50" onClick={() => setActiveMessageId(null)} />
                             <div className={cn("absolute z-50 flex items-center gap-0 px-1 py-0.5 rounded-full bg-background shadow-lg border border-border/40", isMe ? "right-0 -top-8" : "left-6 -top-8")}>
@@ -467,6 +470,46 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                               ))}
                               <button onClick={() => { setReplyTo(msg); setActiveMessageId(null); }} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-secondary transition-all">
                                 <Reply className="w-3 h-3 text-muted-foreground" />
+                              </button>
+                              <button onClick={() => { setDeleteMenuMsgId(msg.id); setActiveMessageId(null); }} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-destructive/10 transition-all">
+                                <Trash2 className="w-3 h-3 text-destructive" />
+                              </button>
+                            </div>
+                          </>
+                        )}
+
+                        {/* Delete menu */}
+                        {deleteMenuMsgId === msg.id && (
+                          <>
+                            <div className="fixed inset-0 z-50" onClick={() => setDeleteMenuMsgId(null)} />
+                            <div className={cn("absolute z-50 flex flex-col gap-0.5 p-1.5 rounded-xl bg-background shadow-lg border border-border/40 min-w-[160px]", isMe ? "right-0 -top-20" : "left-6 -top-20")}>
+                              <button
+                                onClick={() => {
+                                  deleteForMe.mutate({ messageId: msg.id, conversationId });
+                                  setDeleteMenuMsgId(null);
+                                }}
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs hover:bg-secondary transition-colors text-left"
+                              >
+                                <Trash2 className="w-3 h-3 text-muted-foreground" />
+                                Supprimer pour moi
+                              </button>
+                              {isMe && (
+                                <button
+                                  onClick={() => {
+                                    deleteForEveryone.mutate({ messageId: msg.id, conversationId });
+                                    setDeleteMenuMsgId(null);
+                                  }}
+                                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs hover:bg-destructive/10 transition-colors text-left text-destructive"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  Supprimer pour tout le monde
+                                </button>
+                              )}
+                              <button
+                                onClick={() => setDeleteMenuMsgId(null)}
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs hover:bg-secondary transition-colors text-left text-muted-foreground"
+                              >
+                                Annuler
                               </button>
                             </div>
                           </>

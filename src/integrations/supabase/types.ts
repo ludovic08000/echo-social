@@ -893,6 +893,7 @@ export type Database = {
           id: string
           is_active: boolean
           peak_viewer_count: number
+          recording_url: string | null
           started_at: string | null
           stream_key: string | null
           thumbnail_url: string | null
@@ -910,6 +911,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           peak_viewer_count?: number
+          recording_url?: string | null
           started_at?: string | null
           stream_key?: string | null
           thumbnail_url?: string | null
@@ -927,6 +929,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           peak_viewer_count?: number
+          recording_url?: string | null
           started_at?: string | null
           stream_key?: string | null
           thumbnail_url?: string | null
@@ -968,6 +971,35 @@ export type Database = {
             columns: ["live_id"]
             isOneToOne: false
             referencedRelation: "live_streams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_deletions: {
+        Row: {
+          created_at: string
+          id: string
+          message_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_deletions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
             referencedColumns: ["id"]
           },
         ]
