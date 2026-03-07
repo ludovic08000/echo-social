@@ -384,10 +384,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           )}
         </div>
         <div className="flex items-center gap-0">
-          <button className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
+          <button onClick={() => call.startCall(conversationId, 'audio')} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
             <Phone className="w-3.5 h-3.5" />
           </button>
-          <button className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
+          <button onClick={() => call.startCall(conversationId, 'video')} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
             <Video className="w-3.5 h-3.5" />
           </button>
           <button onClick={minimizeChat} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
