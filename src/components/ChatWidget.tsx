@@ -604,15 +604,15 @@ export function ChatWidget() {
     return (
       <button
         onClick={restoreChat}
-        className="fixed bottom-20 right-4 z-[60] w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-xl shadow-primary/30 flex items-center justify-center hover:scale-105 active:scale-95 transition-all animate-in zoom-in-75"
+        className="fixed bottom-0 right-[90px] z-[60] w-12 h-12 rounded-t-lg bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-all animate-in zoom-in-75"
       >
-        <Send className="w-6 h-6" />
+        <Send className="w-5 h-5" />
       </button>
     );
   }
 
   return (
-    <div className="fixed bottom-20 right-4 z-[60] w-[340px] h-[450px] bg-background border border-border/40 rounded-xl shadow-2xl shadow-black/20 flex flex-col animate-in slide-in-from-bottom-4 zoom-in-95 duration-200 overflow-hidden">
+    <div className="fixed bottom-0 right-[80px] z-[60] w-[328px] h-[455px] bg-background border border-border/40 rounded-t-lg shadow-2xl shadow-black/20 flex flex-col animate-in slide-in-from-bottom-4 duration-200 overflow-hidden">
       {state.conversationId ? (
         <WidgetChatView conversationId={state.conversationId} />
       ) : (
