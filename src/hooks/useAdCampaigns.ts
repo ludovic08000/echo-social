@@ -136,7 +136,7 @@ export function useCreateAdCampaign() {
       target_age_max?: number;
       target_gender?: string;
       target_interests?: string[];
-      target_location?: { type: string; values: string[] };
+      target_location?: any;
       duration_type: DurationType;
     }) => {
       // First moderate
