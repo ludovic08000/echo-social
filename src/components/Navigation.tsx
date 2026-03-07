@@ -54,7 +54,6 @@ export function MobileNav() {
     </Link>
   );
 
-  const [showMore, setShowMore] = React.useState(false);
 
   return (
     <>
