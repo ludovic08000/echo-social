@@ -1192,6 +1192,81 @@ export type Database = {
         }
         Relationships: []
       }
+      identity_theft_archives: {
+        Row: {
+          admin_notes: string | null
+          archived_at: string
+          archived_by: string
+          case_number: string
+          connection_logs: Json
+          created_at: string
+          device_fingerprints: Json
+          id: string
+          ip_addresses: string[]
+          legal_complaint_date: string | null
+          legal_complaint_filed: boolean
+          legal_reference: string | null
+          profile_snapshot: Json | null
+          screenshots_urls: string[]
+          status: string
+          usurper_avatar_url: string | null
+          usurper_bio: string | null
+          usurper_email: string | null
+          usurper_name: string | null
+          usurper_user_id: string
+          victim_name: string | null
+          victim_user_id: string | null
+        }
+        Insert: {
+          admin_notes?: string | null
+          archived_at?: string
+          archived_by: string
+          case_number: string
+          connection_logs?: Json
+          created_at?: string
+          device_fingerprints?: Json
+          id?: string
+          ip_addresses?: string[]
+          legal_complaint_date?: string | null
+          legal_complaint_filed?: boolean
+          legal_reference?: string | null
+          profile_snapshot?: Json | null
+          screenshots_urls?: string[]
+          status?: string
+          usurper_avatar_url?: string | null
+          usurper_bio?: string | null
+          usurper_email?: string | null
+          usurper_name?: string | null
+          usurper_user_id: string
+          victim_name?: string | null
+          victim_user_id?: string | null
+        }
+        Update: {
+          admin_notes?: string | null
+          archived_at?: string
+          archived_by?: string
+          case_number?: string
+          connection_logs?: Json
+          created_at?: string
+          device_fingerprints?: Json
+          id?: string
+          ip_addresses?: string[]
+          legal_complaint_date?: string | null
+          legal_complaint_filed?: boolean
+          legal_reference?: string | null
+          profile_snapshot?: Json | null
+          screenshots_urls?: string[]
+          status?: string
+          usurper_avatar_url?: string | null
+          usurper_bio?: string | null
+          usurper_email?: string | null
+          usurper_name?: string | null
+          usurper_user_id?: string
+          victim_name?: string | null
+          victim_user_id?: string | null
+        }
+        Relationships: []
+      }
       identity_verifications: {
         Row: {
           admin_note: string | null
