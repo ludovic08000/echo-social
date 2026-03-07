@@ -351,6 +351,52 @@ function AdChatCreator() {
               </div>
             </div>
 
+            {/* Location selector */}
+            <div className="p-4 rounded-2xl border border-border/30 bg-card space-y-3">
+              <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                <Target className="w-4 h-4 text-primary" /> Zone géographique
+              </label>
+              <div className="flex gap-2">
+                {([
+                  { value: 'france' as const, label: 'Toute la France' },
+                  { value: 'regions' as const, label: 'Régions' },
+                  { value: 'villes' as const, label: 'Villes' },
+                ] as const).map(opt => (
+                  <button key={opt.value} onClick={() => { setLocationType(opt.value); setSelectedLocations([]); }}
+                    className={cn("flex-1 py-2 rounded-xl text-xs font-medium transition-all border",
+                      locationType === opt.value ? "bg-primary/10 text-primary border-primary/30" : "bg-secondary/30 text-muted-foreground border-border/30"
+                    )}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {locationType !== 'france' && (
+                <div className="space-y-2">
+                  <Input
+                    value={locationSearch}
+                    onChange={(e) => setLocationSearch(e.target.value)}
+                    placeholder={locationType === 'regions' ? 'Rechercher une région...' : 'Rechercher une ville...'}
+                    className="rounded-xl text-sm h-9"
+                  />
+                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                    {(locationType === 'regions' ? REGIONS_FRANCE : VILLES_FRANCE)
+                      .filter(l => l.toLowerCase().includes(locationSearch.toLowerCase()))
+                      .map(loc => (
+                        <button key={loc} onClick={() => setSelectedLocations(prev => prev.includes(loc) ? prev.filter(l => l !== loc) : [...prev, loc])}
+                          className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border",
+                            selectedLocations.includes(loc) ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
+                          )}>
+                          {loc}
+                        </button>
+                      ))}
+                  </div>
+                  {selectedLocations.length > 0 && (
+                    <p className="text-[10px] text-primary font-medium">{selectedLocations.length} sélection(s)</p>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Duration selector */}
             <div>
               <label className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
@@ -640,6 +686,50 @@ export default function AdsManager() {
                     </div>
                   </div>
                 </div>
+
+                  {/* Localisation */}
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-2 block">Zone géographique</label>
+                    <div className="flex gap-2 mb-2">
+                      {([
+                        { value: 'france' as const, label: 'Toute la France' },
+                        { value: 'regions' as const, label: 'Régions' },
+                        { value: 'villes' as const, label: 'Villes' },
+                      ] as const).map(opt => (
+                        <button key={opt.value} onClick={() => { setManualLocationType(opt.value); setManualSelectedLocations([]); }}
+                          className={cn("flex-1 py-2 rounded-xl text-xs font-medium transition-all border",
+                            manualLocationType === opt.value ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
+                          )}>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    {manualLocationType !== 'france' && (
+                      <div className="space-y-2">
+                        <Input
+                          value={manualLocationSearch}
+                          onChange={(e) => setManualLocationSearch(e.target.value)}
+                          placeholder={manualLocationType === 'regions' ? 'Rechercher une région...' : 'Rechercher une ville...'}
+                          className="rounded-xl text-sm h-9"
+                        />
+                        <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                          {(manualLocationType === 'regions' ? REGIONS_FRANCE : VILLES_FRANCE)
+                            .filter(l => l.toLowerCase().includes(manualLocationSearch.toLowerCase()))
+                            .map(loc => (
+                              <button key={loc} onClick={() => setManualSelectedLocations(prev => prev.includes(loc) ? prev.filter(l => l !== loc) : [...prev, loc])}
+                                className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border",
+                                  manualSelectedLocations.includes(loc) ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
+                                )}>
+                                {loc}
+                              </button>
+                            ))}
+                        </div>
+                        {manualSelectedLocations.length > 0 && (
+                          <p className="text-[10px] text-primary font-medium">{manualSelectedLocations.length} sélection(s)</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                 {/* Média (Image ou Vidéo) */}
                 <div>
