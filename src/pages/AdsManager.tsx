@@ -410,6 +410,7 @@ export default function AdsManager() {
           {[
             { id: 'campaigns' as const, label: 'Campagnes', icon: BarChart3 },
             { id: 'create' as const, label: 'Créer avec l\'IA', icon: Sparkles },
+            { id: 'manual' as const, label: 'Créer manuellement', icon: Plus },
             { id: 'analytics' as const, label: 'Analytics', icon: TrendingUp },
             { id: 'pricing' as const, label: 'Tarifs', icon: Crown },
           ].map(t => (
