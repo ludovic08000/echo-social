@@ -181,7 +181,6 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
   };
 
   useEffect(() => {
-    startRecording();
     return () => {
       clearInterval(timerRef.current);
       streamRef.current?.getTracks().forEach(t => t.stop());
@@ -189,7 +188,7 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
         try { mediaRecorderRef.current.stop(); } catch {}
       }
     };
-  }, [startRecording]);
+  }, []);
 
   const formatDuration = (s: number) => {
     const m = Math.floor(s / 60);
