@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake, ShieldAlert, Crown } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
 import { CreatePost } from '@/components/CreatePost';
@@ -33,6 +33,8 @@ import { AnonymousWall } from '@/components/profile/AnonymousWall';
 import { ProfileMusicPlayer } from '@/components/profile/ProfileMusicPlayer';
 import { type Album } from '@/hooks/useAlbums';
 import { toast } from '@/hooks/use-toast';
+import { CreatorBadge } from '@/components/CreatorBadge';
+import { useIsCreator } from '@/hooks/useCreator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -132,6 +134,7 @@ export default function Profile() {
   const { data: profile, isLoading: profileLoading } = useProfile(userId);
   const { data: posts, isLoading: postsLoading } = useUserPosts(userId || '');
   const { data: friendshipData } = useFriendshipStatus(userId || '');
+  const { data: isCreator } = useIsCreator(userId);
   const updateProfile = useUpdateProfile();
 
   // Check if own profile has pending identity verification
@@ -522,7 +525,10 @@ export default function Profile() {
 
           {/* Name & Stats */}
           <div className="pt-16 lg:pt-20 pb-4">
-            <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">{profile.name}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">{profile.name}</h1>
+              {isCreator && <CreatorBadge size="lg" />}
+            </div>
             
             {/* Stats row */}
             <div className="flex items-center gap-5 mt-2">
@@ -595,6 +601,17 @@ export default function Profile() {
                       Modifier le profil
                     </Button>
                   </Link>
+                  {!isCreator && (
+                    <Link to="/creator">
+                      <Button 
+                        variant="outline" 
+                        className="rounded-xl h-10 text-sm border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
+                      >
+                        <Crown className="w-4 h-4 mr-1" />
+                        Créateur
+                      </Button>
+                    </Link>
+                  )}
                   <Button 
                     variant="secondary" 
                     className="flex-1 rounded-xl h-10 text-sm"

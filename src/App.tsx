@@ -41,6 +41,7 @@ import AIEngine from "./pages/AIEngine";
 import AdsManager from "./pages/AdsManager";
 import AIAgents from "./pages/AIAgents";
 import Admin from "./pages/Admin";
+import CreatorUpgrade from "./pages/CreatorUpgrade";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -92,6 +93,7 @@ function AppContent() {
               <Route path="/ads" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
               <Route path="/ai-agents" element={<ProtectedRoute><AIAgents /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+              <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />
               
               {/* 404 */}
               <Route path="*" element={<NotFound />} />

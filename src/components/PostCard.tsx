@@ -8,6 +8,8 @@ import { Post, useDeletePost } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
 import { UserAvatar } from './UserAvatar';
 import { TrustBadge } from './TrustBadge';
+import { CreatorBadge } from './CreatorBadge';
+import { useIsCreator } from '@/hooks/useCreator';
 import { Button } from '@/components/ui/button';
 import { ReactionButton } from './ReactionButton';
 import { cn } from '@/lib/utils';
@@ -31,6 +33,7 @@ interface PostCardProps {
 export function PostCard({ post, showActions = true, onCommentClick }: PostCardProps) {
   const { user } = useAuth();
   const deletePost = useDeletePost();
+  const { data: isPostAuthorCreator } = useIsCreator(post.user_id);
   const { summarize, translate, summaryLoading, translateLoading, aiSummariesEnabled, autoTranslateEnabled } = useAIContent();
   const [summary, setSummary] = useState<string | null>(null);
   const [translation, setTranslation] = useState<string | null>(null);
@@ -103,6 +106,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
                 {post.profile.name}
               </Link>
               <TrustBadge userId={post.user_id} size="sm" />
+              {isPostAuthorCreator && <CreatorBadge size="sm" />}
             </div>
             <div className="flex items-center gap-1.5">
               <Link to={`/post/${post.id}`}>

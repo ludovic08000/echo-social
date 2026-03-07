@@ -34,6 +34,9 @@ export interface Profile {
   mood_text: string | null;
   mood_updated_at: string | null;
   profile_music_url: string | null;
+  is_creator: boolean;
+  creator_since: string | null;
+  creator_tier: string | null;
   created_at: string;
   updated_at: string;
 }

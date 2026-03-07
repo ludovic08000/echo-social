@@ -902,6 +902,54 @@ export type Database = {
         }
         Relationships: []
       }
+      creator_subscriptions: {
+        Row: {
+          cancelled_at: string | null
+          created_at: string
+          currency: string
+          current_period_end: string | null
+          current_period_start: string | null
+          id: string
+          plan: string
+          price_cents: number
+          status: string
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          created_at?: string
+          currency?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          id?: string
+          plan?: string
+          price_cents?: number
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          created_at?: string
+          currency?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          id?: string
+          plan?: string
+          price_cents?: number
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       data_export_requests: {
         Row: {
           completed_at: string | null
@@ -2222,12 +2270,15 @@ export type Database = {
           cover_position_y: number | null
           cover_url: string | null
           created_at: string
+          creator_since: string | null
+          creator_tier: string | null
           date_of_birth: string | null
           education_city: string | null
           education_level: string | null
           field_visibility: Json | null
           id: string
           interests: string[] | null
+          is_creator: boolean
           mood_emoji: string | null
           mood_text: string | null
           mood_updated_at: string | null
@@ -2247,12 +2298,15 @@ export type Database = {
           cover_position_y?: number | null
           cover_url?: string | null
           created_at?: string
+          creator_since?: string | null
+          creator_tier?: string | null
           date_of_birth?: string | null
           education_city?: string | null
           education_level?: string | null
           field_visibility?: Json | null
           id?: string
           interests?: string[] | null
+          is_creator?: boolean
           mood_emoji?: string | null
           mood_text?: string | null
           mood_updated_at?: string | null
@@ -2272,12 +2326,15 @@ export type Database = {
           cover_position_y?: number | null
           cover_url?: string | null
           created_at?: string
+          creator_since?: string | null
+          creator_tier?: string | null
           date_of_birth?: string | null
           education_city?: string | null
           education_level?: string | null
           field_visibility?: Json | null
           id?: string
           interests?: string[] | null
+          is_creator?: boolean
           mood_emoji?: string | null
           mood_text?: string | null
           mood_updated_at?: string | null
