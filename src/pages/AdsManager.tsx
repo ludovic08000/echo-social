@@ -811,10 +811,12 @@ export default function AdsManager() {
                       target_age_max: manualAgeRange[1],
                       target_gender: manualGender,
                       target_interests: manualInterests,
+                      target_location: { type: manualLocationType, values: manualSelectedLocations },
                       duration_type: manualDuration,
                     });
                     setManualTitle(''); setManualBody(''); setManualCtaText('En savoir plus');
                     setManualCtaUrl(''); setManualImageUrl(''); setManualVideoUrl(''); setManualInterests([]);
+                    setManualLocationType('france'); setManualSelectedLocations([]);
                     setTab('campaigns');
                   }}
                   disabled={!manualTitle.trim() || !manualBody.trim() || createCampaign.isPending}
