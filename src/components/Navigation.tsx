@@ -170,6 +170,7 @@ export function DesktopSidebar() {
     { path: '/channels', icon: Tv, label: 'Canaux TV' },
     { path: '/marketplace', icon: ShoppingBag, label: 'Marketplace' },
     { path: '/ai-engine', icon: Brain, label: 'Moteur IA' },
+    { path: '/ai-agents', icon: Bot, label: 'Agents IA' },
     { path: `/profile/${user.id}`, icon: User, label: t('nav.profile') },
     { path: '/settings', icon: Settings, label: t('nav.settings') },
   ];
