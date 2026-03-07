@@ -630,61 +630,7 @@ export default function AdsManager() {
                 </div>
 
                   {/* Localisation */}
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-2 block">Zone géographique</label>
-                    <div>
-                      <label className="text-[10px] font-medium text-muted-foreground/70 mb-1 block">Région</label>
-                      <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto mb-2">
-                        <button onClick={() => { setManualSelectedRegion(''); setManualSelectedVilles([]); }}
-                          className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border",
-                            !manualSelectedRegion ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
-                          )}>
-                          Toute la France
-                        </button>
-                        {REGION_NAMES.map(r => (
-                          <button key={r} onClick={() => { setManualSelectedRegion(r); setManualSelectedVilles([]); }}
-                            className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border",
-                              manualSelectedRegion === r ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
-                            )}>
-                            {r}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    {manualSelectedRegion && (
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-medium text-muted-foreground/70 block">Villes — {manualSelectedRegion}</label>
-                        <div className="flex gap-1.5 flex-wrap">
-                          {POPULATION_FILTERS.map((f, i) => (
-                            <button key={i} onClick={() => setManualPopFilter(i)}
-                              className={cn("px-2 py-0.5 rounded-lg text-[10px] font-medium border transition-all",
-                                manualPopFilter === i ? "bg-primary/10 text-primary border-primary/30" : "bg-secondary/30 text-muted-foreground border-border/30"
-                              )}>
-                              {f.label} hab.
-                            </button>
-                          ))}
-                        </div>
-                        <Input value={manualLocationSearch} onChange={(e) => setManualLocationSearch(e.target.value)}
-                          placeholder="Rechercher une ville..." className="rounded-xl text-sm h-9" />
-                        <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
-                          {(REGIONS_VILLES[manualSelectedRegion] || [])
-                            .filter(v => v.population >= POPULATION_FILTERS[manualPopFilter].min && v.population < POPULATION_FILTERS[manualPopFilter].max)
-                            .filter(v => v.nom.toLowerCase().includes(manualLocationSearch.toLowerCase()))
-                            .map(v => (
-                              <button key={v.nom} onClick={() => setManualSelectedVilles(prev => prev.includes(v.nom) ? prev.filter(n => n !== v.nom) : [...prev, v.nom])}
-                                className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border",
-                                  manualSelectedVilles.includes(v.nom) ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30"
-                                )}>
-                                {v.nom} <span className="text-muted-foreground/60 ml-0.5">({(v.population / 1000).toFixed(0)}k)</span>
-                              </button>
-                            ))}
-                        </div>
-                        {manualSelectedVilles.length > 0 && (
-                          <p className="text-[10px] text-primary font-medium">{manualSelectedVilles.length} ville(s) sélectionnée(s)</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <LocationSelector value={manualLocation} onChange={setManualLocation} compact />
 
                 {/* Média (Image ou Vidéo) */}
                 <div>
@@ -766,12 +712,12 @@ export default function AdsManager() {
                       target_age_max: manualAgeRange[1],
                       target_gender: manualGender,
                       target_interests: manualInterests,
-                      target_location: { region: manualSelectedRegion || null, villes: manualSelectedVilles },
+                      target_location: manualLocation,
                       duration_type: manualDuration,
                     });
                     setManualTitle(''); setManualBody(''); setManualCtaText('En savoir plus');
                     setManualCtaUrl(''); setManualImageUrl(''); setManualVideoUrl(''); setManualInterests([]);
-                    setManualSelectedRegion(''); setManualSelectedVilles([]);
+                    setManualLocation(getDefaultLocation());
                     setTab('campaigns');
                   }}
                   disabled={!manualTitle.trim() || !manualBody.trim() || createCampaign.isPending}
