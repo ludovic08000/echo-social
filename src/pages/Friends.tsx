@@ -1,4 +1,4 @@
-import { Users, Clock, UserCheck } from 'lucide-react';
+import { Users, Clock, UserCheck, UserPlus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { useFriendships, useRespondToFriendRequest, useRemoveFriend } from '@/hooks/useFriendships';
@@ -6,6 +6,7 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/hooks/use-toast';
+import { InviteContacts } from '@/components/InviteContacts';
 
 export default function Friends() {
   const { data, isLoading } = useFriendships();
@@ -39,21 +40,25 @@ export default function Friends() {
       </header>
 
       <Tabs defaultValue="friends" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="friends" className="gap-2">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="friends" className="gap-1 text-xs sm:text-sm">
             <Users className="w-4 h-4" />
             <span className="hidden sm:inline">Amis</span>
             {data?.friends.length ? ` (${data.friends.length})` : ''}
           </TabsTrigger>
-          <TabsTrigger value="requests" className="gap-2">
+          <TabsTrigger value="requests" className="gap-1 text-xs sm:text-sm">
             <UserCheck className="w-4 h-4" />
             <span className="hidden sm:inline">Demandes</span>
             {data?.requests.length ? ` (${data.requests.length})` : ''}
           </TabsTrigger>
-          <TabsTrigger value="pending" className="gap-2">
+          <TabsTrigger value="pending" className="gap-1 text-xs sm:text-sm">
             <Clock className="w-4 h-4" />
             <span className="hidden sm:inline">En attente</span>
             {data?.pending.length ? ` (${data.pending.length})` : ''}
+          </TabsTrigger>
+          <TabsTrigger value="invite" className="gap-1 text-xs sm:text-sm">
+            <UserPlus className="w-4 h-4" />
+            <span className="hidden sm:inline">Inviter</span>
           </TabsTrigger>
         </TabsList>
 
@@ -160,6 +165,12 @@ export default function Friends() {
                 </div>
               ))
             )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="invite" className="mt-4">
+          <div className="pulse-card overflow-hidden min-h-[300px]">
+            <InviteContacts />
           </div>
         </TabsContent>
       </Tabs>
