@@ -93,9 +93,10 @@ function AdChatCreator() {
       if (data.type === 'ad_generated') {
         setGeneratedAd(data.ad);
         if (data.ad.recommended_duration) setSelectedDuration(data.ad.recommended_duration);
+        if (data.ad.generated_image_url) setImageUrl(data.ad.generated_image_url);
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: data.message + "\n\n✅ **Votre publicité est prête !** Vérifiez l'aperçu ci-dessous et lancez votre campagne.",
+          content: data.message + "\n\n✅ **Votre publicité est prête !** " + (data.ad.generated_image_url ? "L'image a été générée par l'IA. " : "") + "Vérifiez l'aperçu ci-dessous et lancez votre campagne.",
           adData: data.ad,
         }]);
       } else {
