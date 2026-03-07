@@ -6,6 +6,57 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const ACTION_SYSTEM_PROMPT = `
+
+## CAPACITÉS D'ACTION
+Tu peux exécuter des actions concrètes pour l'utilisateur. Quand l'utilisateur demande de publier, programmer, ou créer du contenu, tu DOIS inclure un bloc d'action JSON dans ta réponse.
+
+### Format d'action
+Quand tu détectes une intention d'action, inclus un bloc comme ceci dans ta réponse :
+
+\`\`\`forsure-action
+{
+  "type": "publish_post",
+  "body": "Le texte du post",
+  "image_prompt": "Description pour générer une image (optionnel, null si pas d'image)"
+}
+\`\`\`
+
+\`\`\`forsure-action
+{
+  "type": "schedule_post",
+  "body": "Le texte du post programmé",
+  "publish_at": "2026-03-15T14:00:00Z",
+  "image_prompt": "Description pour générer une image (optionnel, null si pas d'image)"
+}
+\`\`\`
+
+\`\`\`forsure-action
+{
+  "type": "create_story",
+  "caption": "Légende de la story",
+  "image_prompt": "Description de l'image pour la story (obligatoire)"
+}
+\`\`\`
+
+\`\`\`forsure-action
+{
+  "type": "generate_image",
+  "prompt": "Description détaillée de l'image à générer"
+}
+\`\`\`
+
+### Règles importantes :
+- Propose TOUJOURS un aperçu du contenu avant de l'inclure dans un bloc d'action
+- Demande confirmation implicitement : "Voici ce que je propose, le contenu sera publié après votre validation dans l'aperçu ci-dessous"
+- Pour les dates, utilise le format ISO 8601 (UTC)
+- Si l'utilisateur donne une date en français (ex: "demain à 14h", "lundi prochain"), convertis-la en date UTC
+- La date actuelle est : ${new Date().toISOString()}
+- Pour les images, décris en détail ce que l'image devrait montrer dans image_prompt
+- Un seul bloc d'action par message maximum
+- Si l'utilisateur n'a pas donné assez d'informations, pose des questions avant de créer le bloc d'action
+`;
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -18,7 +69,6 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get user from auth
     let userId: string | null = null;
     if (authHeader) {
       const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!);
@@ -38,7 +88,6 @@ serve(async (req) => {
       });
     }
 
-    // Fetch agent
     const { data: agent, error: agentErr } = await supabase
       .from("ai_agents").select("*").eq("id", agent_id).eq("is_active", true).single();
     if (agentErr || !agent) {
@@ -47,7 +96,6 @@ serve(async (req) => {
       });
     }
 
-    // Check freemium usage
     const today = new Date().toISOString().split("T")[0];
     const { data: usage } = await supabase
       .from("ai_agent_usage")
@@ -68,7 +116,6 @@ serve(async (req) => {
       });
     }
 
-    // Get or create conversation
     let convId = conversation_id;
     if (!convId) {
       const { data: conv } = await supabase
@@ -78,12 +125,10 @@ serve(async (req) => {
       convId = conv?.id;
     }
 
-    // Save user message
     await supabase.from("ai_agent_messages").insert({
       conversation_id: convId, role: "user", content: message,
     });
 
-    // Fetch conversation history (last 20 messages)
     const { data: history } = await supabase
       .from("ai_agent_messages")
       .select("role, content")
@@ -91,12 +136,14 @@ serve(async (req) => {
       .order("created_at", { ascending: true })
       .limit(20);
 
+    // Combine agent's own system prompt with action capabilities
+    const fullSystemPrompt = agent.system_prompt + "\n\n" + ACTION_SYSTEM_PROMPT;
+
     const messages = [
-      { role: "system", content: agent.system_prompt },
+      { role: "system", content: fullSystemPrompt },
       ...(history || []).map((m: any) => ({ role: m.role, content: m.content })),
     ];
 
-    // Call AI
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -124,7 +171,6 @@ serve(async (req) => {
       throw new Error("AI gateway error");
     }
 
-    // Update usage count
     if (usage) {
       await supabase.from("ai_agent_usage").update({ message_count: currentCount + 1 }).eq("id", usage.id);
     } else {
@@ -133,7 +179,6 @@ serve(async (req) => {
       });
     }
 
-    // Stream response back, and collect full response to save
     const reader = response.body!.getReader();
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
@@ -153,7 +198,6 @@ serve(async (req) => {
             buffer = buffer.slice(newlineIndex + 1);
             if (!line.startsWith("data: ") || line === "data: [DONE]") {
               if (line === "data: [DONE]") {
-                // Save assistant message
                 await supabase.from("ai_agent_messages").insert({
                   conversation_id: convId, role: "assistant", content: fullResponse,
                 });
@@ -169,7 +213,6 @@ serve(async (req) => {
             controller.enqueue(encoder.encode(line + "\n\n"));
           }
         }
-        // Save if not already saved
         if (fullResponse && !buffer.includes("[DONE]")) {
           await supabase.from("ai_agent_messages").insert({
             conversation_id: convId, role: "assistant", content: fullResponse,
