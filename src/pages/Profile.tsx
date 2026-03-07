@@ -19,6 +19,8 @@ import { useState, useRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { generateProfileUrl } from '@/lib/urlUtils';
 import { useImageUpload } from '@/hooks/useImageUpload';
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
 import { Loader2 } from 'lucide-react';
 import { AvatarCropper } from '@/components/AvatarCropper';
 import { ProfilePhotoGrid } from '@/components/profile/ProfilePhotoGrid';
