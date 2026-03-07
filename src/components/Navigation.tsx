@@ -7,6 +7,7 @@ import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
 import { useFriendships } from '@/hooks/useFriendships';
 import { useScrollHideNav } from '@/hooks/useScrollHideNav';
+import { useChatWidget } from '@/components/ChatWidgetContext';
 
 import { cn } from '@/lib/utils';
 
@@ -21,6 +22,8 @@ export function MobileNav() {
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
 
   if (!user) return null;
+
+  const { openChat } = useChatWidget();
 
   const navItems = [
     { path: '/feed', icon: Home, label: t('nav.home') },
@@ -107,13 +110,15 @@ export function DesktopSidebar() {
 
   if (!user) return null;
 
+  const { openChat } = useChatWidget();
+
   const sidebarItems = [
     { path: '/feed', icon: Home, label: t('nav.home') },
     { path: '/videos', icon: Video, label: t('nav.videos') },
     { path: '/lives', icon: Radio, label: t('nav.lives') },
     { path: '/search', icon: Search, label: t('nav.search') },
     { path: '/notifications', icon: Bell, label: t('nav.notifications'), badge: unreadCount },
-    { path: '/messages', icon: MessageCircle, label: t('nav.messages'), badge: unreadMessages },
+    { path: '/messages', icon: MessageCircle, label: t('nav.messages'), badge: unreadMessages, isChat: true },
     { path: '/friends', icon: Users, label: t('nav.friends'), badge: friendRequests },
     { path: '/friend-match', icon: Heart, label: 'Matchmaking' },
     { path: '/challenges', icon: Trophy, label: 'Défis' },
@@ -141,6 +146,25 @@ export function DesktopSidebar() {
             (item.path === '/messages' && location.pathname.startsWith('/messages'));
           const showBadge = item.badge && item.badge > 0;
 
+          if ((item as any).isChat) {
+            return (
+              <button
+                key={item.path}
+                onClick={() => openChat()}
+                className={cn('premium-nav-item w-full')}
+              >
+                <div className="relative">
+                  <item.icon className="w-5 h-5" />
+                  {showBadge && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                      {item.badge > 9 ? '9+' : item.badge}
+                    </span>
+                  )}
+                </div>
+                <span>{item.label}</span>
+              </button>
+            );
+          }
           
           return (
             <Link
