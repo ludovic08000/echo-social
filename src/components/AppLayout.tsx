@@ -1,13 +1,14 @@
 import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
-import { MobileNav } from './Navigation';
+import { MobileNav, DesktopSidebar } from './Navigation';
 import { UserAvatar } from './UserAvatar';
 import { useProfile } from '@/hooks/useProfile';
 import { Bell, MessageCircle } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
+import { useScreenSize } from '@/hooks/useScreenSize';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -21,8 +22,9 @@ function MobileHeader() {
   const { data: unreadCount } = useUnreadCount();
   const { data: conversations } = useConversations();
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
+  const { isDesktop } = useScreenSize();
 
-  if (!user) return null;
+  if (!user || isDesktop) return null;
 
   return (
     <header className="sticky top-0 z-40 glass safe-area-pt">
@@ -81,7 +83,11 @@ export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
     <div className="min-h-screen bg-background">
       <MobileHeader />
       
-      <main className="pb-20">
+      {/* Desktop sidebar */}
+      <DesktopSidebar />
+
+      {/* Main content - offset for desktop sidebar */}
+      <main className="pb-20 md:pb-0 md:pl-64">
         {fullWidth ? (
           <div className="mx-auto px-4 max-w-[680px] md:max-w-full">
             {children}
@@ -93,8 +99,10 @@ export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
         )}
       </main>
       
-      {/* Bottom nav on all screen sizes */}
-      <MobileNav />
+      {/* Bottom nav on mobile only */}
+      <div className="md:hidden">
+        <MobileNav />
+      </div>
     </div>
   );
 }
