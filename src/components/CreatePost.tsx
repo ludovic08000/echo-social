@@ -44,9 +44,45 @@ export function CreatePost() {
   const [isUploading, setIsUploading] = useState(false);
   const [expiryHours, setExpiryHours] = useState<number | null>(null);
   const [capsuleDays, setCapsuleDays] = useState<number | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<{ improved_text: string; detected_language: string; corrections: string[]; tone: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const AI_ACTIONS = [
+    { action: 'improve', label: 'Améliorer', icon: Sparkles, desc: 'Corrige & améliore' },
+    { action: 'formal', label: 'Formel', icon: Briefcase, desc: 'Plus professionnel' },
+    { action: 'casual', label: 'Décontracté', icon: SmilePlus, desc: 'Plus amical' },
+    { action: 'shorter', label: 'Raccourcir', icon: ArrowDownRight, desc: 'Plus court' },
+    { action: 'longer', label: 'Développer', icon: ArrowUpRight, desc: 'Plus détaillé' },
+  ];
+
+  const handleAiImprove = async (action = 'improve') => {
+    if (!body.trim()) return;
+    setAiLoading(true);
+    setAiResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('post-assistant', {
+        body: { text: body, action },
+      });
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+      setAiResult(data);
+    } catch (e: any) {
+      toast({ title: 'Erreur IA', description: e.message || 'Impossible d\'améliorer le texte', variant: 'destructive' });
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const applyAiResult = () => {
+    if (aiResult) {
+      setBody(aiResult.improved_text);
+      setAiResult(null);
+      toast({ title: '✨ Texte amélioré', description: `Langue détectée : ${LANG_LABELS[aiResult.detected_language] || aiResult.detected_language}` });
+    }
+  };
 
   const handleSetExpiry = (h: number) => { setExpiryHours(h); setCapsuleDays(null); };
   const handleSetCapsule = (d: number) => { setCapsuleDays(d); setExpiryHours(null); };
