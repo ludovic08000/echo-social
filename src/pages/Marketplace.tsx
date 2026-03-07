@@ -114,6 +114,12 @@ export default function Marketplace() {
                 <p className="text-primary-foreground/70 text-xs mt-0.5">Achetez, vendez, échangez</p>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowLocationFilter(!showLocationFilter)}
+                  className="w-9 h-9 rounded-xl bg-primary-foreground/15 backdrop-blur-sm flex items-center justify-center text-primary-foreground hover:bg-primary-foreground/25 transition-colors"
+                >
+                  {showLocationFilter ? <X className="w-4 h-4" /> : <MapPin className="w-4 h-4" />}
+                </button>
                 <Link to="/marketplace?tab=browse" onClick={() => setShowSearch(false)}>
                   <button
                     onClick={(e) => { e.preventDefault(); setShowSearch(!showSearch); }}
@@ -151,6 +157,75 @@ export default function Marketplace() {
                   <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2">
                     <X className="w-4 h-4 text-muted-foreground" />
                   </button>
+                )}
+              </div>
+            )}
+
+            {/* Location filter */}
+            {showLocationFilter && (
+              <div className="space-y-2 animate-slide-up">
+                {/* Scope selector */}
+                <div className="flex gap-1.5">
+                  {LOCATION_SCOPES.map((s) => (
+                    <button
+                      key={s.value}
+                      onClick={() => {
+                        setLocationScope(s.value as any);
+                        if (s.value === 'europe') { setSelectedRegion(''); setSelectedCity(''); }
+                      }}
+                      className={cn(
+                        'flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all flex-shrink-0 border',
+                        locationScope === s.value
+                          ? 'border-primary/30 bg-primary/10 text-primary'
+                          : 'border-primary-foreground/20 text-primary-foreground/70 hover:border-primary-foreground/40'
+                      )}
+                    >
+                      <span>{s.icon}</span>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Dropdowns */}
+                {locationScope !== 'europe' && (
+                  <div className="flex gap-2">
+                    <Select value={selectedCountry} onValueChange={(v) => { setSelectedCountry(v); setSelectedRegion(''); setSelectedCity(''); }}>
+                      <SelectTrigger className="h-9 bg-primary-foreground/95 border-0 rounded-xl text-foreground text-xs flex-1">
+                        <SelectValue placeholder="Pays" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COUNTRIES.map((c) => (
+                          <SelectItem key={c.code} value={c.code}>{c.flag} {c.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {(locationScope === 'region' || locationScope === 'local') && regions.length > 0 && (
+                      <Select value={selectedRegion} onValueChange={(v) => { setSelectedRegion(v); setSelectedCity(''); }}>
+                        <SelectTrigger className="h-9 bg-primary-foreground/95 border-0 rounded-xl text-foreground text-xs flex-1">
+                          <SelectValue placeholder="Région" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {regions.map((r) => (
+                            <SelectItem key={r} value={r}>{r}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+
+                    {locationScope === 'local' && selectedRegion && cities.length > 0 && (
+                      <Select value={selectedCity} onValueChange={setSelectedCity}>
+                        <SelectTrigger className="h-9 bg-primary-foreground/95 border-0 rounded-xl text-foreground text-xs flex-1">
+                          <SelectValue placeholder="Ville" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {cities.map((c) => (
+                            <SelectItem key={c} value={c}>{c}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
                 )}
               </div>
             )}
