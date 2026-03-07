@@ -17,7 +17,6 @@ export function MobileNav() {
   const { data: unreadCount } = useUnreadCount();
   const { data: conversations } = useConversations();
   const navHidden = useScrollHideNav();
-  const { openChat } = useChatWidget();
 
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
 
