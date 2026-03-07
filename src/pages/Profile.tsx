@@ -601,6 +601,17 @@ export default function Profile() {
                       Modifier le profil
                     </Button>
                   </Link>
+                  {!isCreator && (
+                    <Link to="/creator">
+                      <Button 
+                        variant="outline" 
+                        className="rounded-xl h-10 text-sm border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
+                      >
+                        <Crown className="w-4 h-4 mr-1" />
+                        Créateur
+                      </Button>
+                    </Link>
+                  )}
                   <Button 
                     variant="secondary" 
                     className="flex-1 rounded-xl h-10 text-sm"
