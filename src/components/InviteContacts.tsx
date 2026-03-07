@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Contact, Contacts } from '@capacitor-community/contacts';
+import { Contacts } from '@capacitor-community/contacts';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
 import { UserPlus, Search, Check, Send, Phone } from 'lucide-react';
