@@ -33,45 +33,48 @@ export function MobileNav() {
     { path: '/settings', icon: Settings, label: t('nav.settings') },
   ];
 
+  const items = [
+    { path: '/feed', icon: Home, label: t('nav.home') },
+    { path: '/lives', icon: Radio, label: t('nav.lives') },
+    { path: '/create', icon: PlusCircle, label: 'Créer', isCreate: true },
+    { path: '/groups', icon: Users, label: t('nav.groups') },
+    { path: '/settings', icon: Settings, label: t('nav.settings') },
+  ];
+
   return (
     <nav className={cn(
       "fixed bottom-0 left-0 right-0 z-50 safe-area-pb transition-transform duration-300",
       "bg-background/95 backdrop-blur-xl border-t border-border/40",
       navHidden && "translate-y-full"
     )}>
-      <div className="flex items-center h-[56px]">
-        {navItems.map((item) => {
-          if (item.path === '__create__') {
-            return (
-              <Link
-                key="create"
-                to="/create"
-                className="flex items-center justify-center flex-1 -mt-4"
-              >
-                <div className="w-11 h-11 rounded-full flex items-center justify-center bg-primary text-primary-foreground shadow-[0_2px_12px_hsl(var(--primary)/0.4)] active:scale-90 transition-all duration-200">
-                  <PlusCircle className="w-5 h-5 stroke-[2.5]" />
-                </div>
-              </Link>
-            );
-          }
-
+      <div className="flex items-center justify-center gap-0 h-[54px] max-w-sm mx-auto">
+        {items.map((item) => {
           const isActive = location.pathname === item.path ||
-            (item.path === '/groups' && location.pathname.startsWith('/group')) ||
-            (item.path === '/marketplace' && location.pathname.startsWith('/marketplace'));
+            (item.path === '/groups' && location.pathname.startsWith('/group'));
 
           return (
             <Link
               key={item.path}
               to={item.path}
               className={cn(
-                'flex flex-col items-center justify-center gap-[2px] flex-1 py-1 transition-colors duration-200',
-                isActive
+                'flex flex-col items-center justify-center gap-[2px] w-[60px] py-1.5 transition-colors duration-200',
+                (item as any).isCreate
                   ? 'text-primary'
-                  : 'text-muted-foreground active:text-foreground'
+                  : isActive
+                    ? 'text-primary'
+                    : 'text-muted-foreground active:text-foreground'
               )}
             >
-              <item.icon className={cn('w-[21px] h-[21px]', isActive && 'stroke-[2.5]')} />
-              <span className={cn('text-[10px] leading-none', isActive ? 'font-bold' : 'font-medium')}>{item.label}</span>
+              {(item as any).isCreate ? (
+                <div className="w-9 h-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-[0_2px_10px_hsl(var(--primary)/0.35)] active:scale-90 transition-transform duration-150">
+                  <item.icon className="w-5 h-5 stroke-[2.5]" />
+                </div>
+              ) : (
+                <>
+                  <item.icon className={cn('w-[21px] h-[21px]', isActive && 'stroke-[2.5]')} />
+                  <span className={cn('text-[10px] leading-none', isActive ? 'font-bold' : 'font-medium')}>{item.label}</span>
+                </>
+              )}
             </Link>
           );
         })}
