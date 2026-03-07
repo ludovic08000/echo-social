@@ -9,6 +9,7 @@ import BrandLogo from '@/components/BrandLogo';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
 import { useScreenSize } from '@/hooks/useScreenSize';
+import { useChatWidget } from '@/components/ChatWidgetContext';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -23,6 +24,7 @@ function MobileHeader() {
   const { data: conversations } = useConversations();
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
   const { isDesktop } = useScreenSize();
+  const { openChat } = useChatWidget();
 
   if (!user || isDesktop) return null;
 
@@ -45,8 +47,8 @@ function MobileHeader() {
               </span>
             )}
           </Link>
-          <Link 
-            to="/messages" 
+          <button 
+            onClick={() => openChat()}
             className="relative w-10 h-10 rounded-full bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200"
           >
             <MessageCircle className="w-5 h-5" />
@@ -55,7 +57,7 @@ function MobileHeader() {
                 {unreadMessages > 9 ? '9+' : unreadMessages}
               </span>
             )}
-          </Link>
+          </button>
           <Link to={`/profile/${user.id}`} className="flex-shrink-0">
             <UserAvatar src={profile?.avatar_url} alt={profile?.name} size="md" />
           </Link>
