@@ -1,21 +1,21 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { MessageCircle, Search, Users } from 'lucide-react';
 import { useFriendships } from '@/hooks/useFriendships';
 import { useConversations } from '@/hooks/useMessages';
 import { UserAvatar } from '@/components/UserAvatar';
 import { useAuth } from '@/lib/auth';
 import { useState, useMemo } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useScreenSize } from '@/hooks/useScreenSize';
+import { useChatWidget } from '@/components/ChatWidgetContext';
 
 
 export function FeedRightSidebar() {
   const { user } = useAuth();
   const { data: friendships } = useFriendships();
   const { data: conversations } = useConversations();
-  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const { isDesktop } = useScreenSize();
+  const { openConversation } = useChatWidget();
 
   const friends = friendships?.friends || [];
   const requests = friendships?.requests || [];
@@ -29,7 +29,7 @@ export function FeedRightSidebar() {
 
   
 
-  const handleMessage = async (friendUserId: string) => {
+  const handleMessage = (friendUserId: string) => {
     if (!user) return;
 
     // Check if conversation exists
@@ -38,27 +38,11 @@ export function FeedRightSidebar() {
     );
 
     if (existing) {
-      navigate(`/messages/${existing.id}`);
-      return;
+      openConversation(existing.id);
+    } else {
+      // Just open the chat widget - user can start new conversation from there
+      openConversation('');
     }
-
-    // Create new conversation
-    const conversationId = crypto.randomUUID();
-
-    const { error: convError } = await supabase
-      .from('conversations')
-      .insert({ id: conversationId });
-
-    if (convError) return;
-
-    const { error: partError } = await supabase.from('conversation_participants').insert([
-      { conversation_id: conversationId, user_id: user.id },
-      { conversation_id: conversationId, user_id: friendUserId },
-    ]);
-
-    if (partError) return;
-
-    navigate(`/messages/${conversationId}`);
   };
 
   if (!user || !isDesktop) return null;
