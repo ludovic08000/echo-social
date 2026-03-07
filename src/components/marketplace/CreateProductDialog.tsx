@@ -261,6 +261,41 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
               )}
             </div>
 
+            {/* Location */}
+            <div className="space-y-2">
+              <Label>Localisation</Label>
+              <div className="grid grid-cols-3 gap-2">
+                <Select value={country} onValueChange={(v) => { setCountry(v); setRegion(''); setCity(''); }}>
+                  <SelectTrigger className="text-xs"><SelectValue placeholder="Pays" /></SelectTrigger>
+                  <SelectContent>
+                    {COUNTRIES.map((c) => (
+                      <SelectItem key={c.code} value={c.code}>{c.flag} {c.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {regions.length > 0 && (
+                  <Select value={region} onValueChange={(v) => { setRegion(v); setCity(''); }}>
+                    <SelectTrigger className="text-xs"><SelectValue placeholder="Région" /></SelectTrigger>
+                    <SelectContent>
+                      {regions.map((r) => (
+                        <SelectItem key={r} value={r}>{r}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {cities.length > 0 && (
+                  <Select value={city} onValueChange={setCity}>
+                    <SelectTrigger className="text-xs"><SelectValue placeholder="Ville" /></SelectTrigger>
+                    <SelectContent>
+                      {cities.map((c) => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            </div>
+
             <Button onClick={handleSubmit} disabled={!title.trim() || !price || createProduct.isPending} className="w-full">
               {createProduct.isPending ? 'Création...' : 'Publier le produit'}
             </Button>
