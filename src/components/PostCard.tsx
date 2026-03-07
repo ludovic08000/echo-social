@@ -35,7 +35,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
   const [summary, setSummary] = useState<string | null>(null);
   const [translation, setTranslation] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
-  const [imageLoaded, setImageLoaded] = useState(false);
+  const [mediaLoaded, setMediaLoaded] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const postUrl = generatePostUrl(post.id);
