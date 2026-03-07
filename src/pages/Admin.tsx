@@ -622,16 +622,13 @@ function SecuritySection() {
   const fullBlock = useMutation({
     mutationFn: async ({ userId, ipAddress, email }: { userId: string; ipAddress?: string; email?: string }) => {
       if (!user) throw new Error('Non connecté');
-      const promises: Promise<any>[] = [
-        supabase.from('banned_users').insert({ user_id: userId, reason: 'Usurpation d\'identité - blocage complet', banned_by: user.id }),
-      ];
+      await supabase.from('banned_users').insert({ user_id: userId, reason: 'Usurpation d\'identité - blocage complet', banned_by: user.id });
       if (ipAddress) {
-        promises.push(supabase.from('banned_ips').insert({ ip_address: ipAddress, reason: 'Usurpation d\'identité', banned_by: user.id }));
+        await supabase.from('banned_ips').insert({ ip_address: ipAddress, reason: 'Usurpation d\'identité', banned_by: user.id });
       }
       if (email) {
-        promises.push(supabase.from('banned_emails').upsert({ email: email.toLowerCase(), reason: 'Usurpation d\'identité', banned_by: user.id }, { onConflict: 'email' }));
+        await supabase.from('banned_emails').insert({ email: email.toLowerCase(), reason: 'Usurpation d\'identité', banned_by: user.id });
       }
-      await Promise.all(promises);
     },
     onSuccess: () => {
       toast({ title: '🔒 Blocage complet', description: 'Compte, IP et email bannis.' });
