@@ -358,6 +358,23 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Call overlay */}
+      <CallOverlay
+        callState={call.callState}
+        callType={call.callType}
+        isMuted={call.isMuted}
+        isCameraOff={call.isCameraOff}
+        duration={call.duration}
+        participantName={conversation?.participant.name || ''}
+        participantAvatar={conversation?.participant.avatar_url}
+        localVideoRef={call.localVideoRef}
+        remoteVideoRef={call.remoteVideoRef}
+        onEndCall={call.endCall}
+        onToggleMute={call.toggleMute}
+        onToggleCamera={call.toggleCamera}
+        onSwitchToVideo={call.switchToVideo}
+        onSwitchCamera={call.switchCamera}
+      />
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
         const file = e.target.files?.[0];
         if (file) upload(file);
