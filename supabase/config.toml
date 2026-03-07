@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.agent-actions]
 verify_jwt = false
+
+[functions.photo-guard]
+verify_jwt = false
