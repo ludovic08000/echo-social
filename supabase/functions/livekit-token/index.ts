@@ -13,7 +13,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Auth check
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -28,19 +27,16 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } =
-      await supabase.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const userId = claimsData.claims.sub as string;
+    const userId = user.id;
 
-    // Get request body
     const { roomName, isHost } = await req.json();
 
     if (!roomName) {
@@ -53,7 +49,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get user profile for identity
     const { data: profile } = await supabase
       .from("profiles")
       .select("name, avatar_url")
@@ -72,16 +67,18 @@ Deno.serve(async (req) => {
       metadata: JSON.stringify({ avatar_url: profile?.avatar_url }),
     });
 
+    // For private calls (room starts with "call-"), both parties can publish
+    const isPrivateCall = roomName.startsWith("call-");
+
     at.addGrant({
       roomJoin: true,
       room: roomName,
-      canPublish: !!isHost,
+      canPublish: isPrivateCall ? true : !!isHost,
       canSubscribe: true,
       canPublishData: true,
     });
 
     const jwt = await at.toJwt();
-
     const livekitUrl = Deno.env.get("LIVEKIT_URL")!;
 
     return new Response(
@@ -94,7 +91,7 @@ Deno.serve(async (req) => {
   } catch (err) {
     console.error("LiveKit token error:", err);
     return new Response(
-      JSON.stringify({ error: "Internal server error" }),
+      JSON.stringify({ error: "Internal server error", details: String(err) }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -16,6 +16,8 @@ import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { useChatWidget } from './ChatWidgetContext';
 import { useImageUpload } from '@/hooks/useImageUpload';
+import { useCall } from '@/hooks/useCall';
+import { CallOverlay } from '@/components/CallOverlay';
 import { toast } from 'sonner';
 
 // ─── Utils ───────────────────────────────────────────────
@@ -296,6 +298,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const { goBack, closeChat, minimizeChat } = useChatWidget();
   const conversation = conversations?.find(c => c.id === conversationId);
 
+  // Call hook
+  const call = useCall();
+
+
   const { upload, isUploading } = useImageUpload({
     bucket: 'post-images',
     onSuccess: (url) => {
@@ -352,6 +358,23 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Call overlay */}
+      <CallOverlay
+        callState={call.callState}
+        callType={call.callType}
+        isMuted={call.isMuted}
+        isCameraOff={call.isCameraOff}
+        duration={call.duration}
+        participantName={conversation?.participant.name || ''}
+        participantAvatar={conversation?.participant.avatar_url}
+        localVideoRef={call.localVideoRef}
+        remoteVideoRef={call.remoteVideoRef}
+        onEndCall={call.endCall}
+        onToggleMute={call.toggleMute}
+        onToggleCamera={call.toggleCamera}
+        onSwitchToVideo={call.switchToVideo}
+        onSwitchCamera={call.switchCamera}
+      />
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
         const file = e.target.files?.[0];
         if (file) upload(file);
@@ -378,10 +401,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           )}
         </div>
         <div className="flex items-center gap-0">
-          <button className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
+          <button onClick={() => call.startCall(conversationId, 'audio')} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
             <Phone className="w-3.5 h-3.5" />
           </button>
-          <button className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
+          <button onClick={() => call.startCall(conversationId, 'video')} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
             <Video className="w-3.5 h-3.5" />
           </button>
           <button onClick={minimizeChat} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
