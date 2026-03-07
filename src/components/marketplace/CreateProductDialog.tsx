@@ -95,6 +95,9 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
         color: color || undefined,
         shipping_type: shippingType,
         shipping_price: shippingPrice ? parseFloat(shippingPrice) : 0,
+        country,
+        region: region || undefined,
+        city: city || undefined,
       },
       {
         onSuccess: () => {
@@ -117,6 +120,9 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
     setColor('');
     setShippingType('standard');
     setShippingPrice('');
+    setCountry('FR');
+    setRegion('');
+    setCity('');
   };
 
   return (
