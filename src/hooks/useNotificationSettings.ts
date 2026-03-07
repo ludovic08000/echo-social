@@ -12,6 +12,8 @@ export interface NotificationSettings {
   story_views_enabled: boolean;
   close_friends_posts_enabled: boolean;
   email_notifications_enabled: boolean;
+  sound_enabled: boolean;
+  sound_type: string;
   created_at: string;
   updated_at: string;
 }
@@ -24,6 +26,8 @@ const defaultSettings: Omit<NotificationSettings, 'id' | 'user_id' | 'created_at
   story_views_enabled: true,
   close_friends_posts_enabled: true,
   email_notifications_enabled: false,
+  sound_enabled: true,
+  sound_type: 'default',
 };
 
 export function useNotificationSettings() {

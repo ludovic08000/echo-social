@@ -1,7 +1,9 @@
-import { Bell, Heart, MessageCircle, UserPlus, Mail, Eye, Users } from 'lucide-react';
+import { Bell, Heart, MessageCircle, UserPlus, Mail, Eye, Users, Volume2, VolumeX } from 'lucide-react';
 import { useNotificationSettings, useUpdateNotificationSettings } from '@/hooks/useNotificationSettings';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/hooks/use-toast';
+import { SOUND_OPTIONS } from '@/hooks/useNotificationSounds';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface SettingItemProps {
   icon: React.ElementType;
@@ -30,6 +32,33 @@ function SettingItem({ icon: Icon, label, description, checked, onCheckedChange,
       />
     </div>
   );
+}
+
+// Preview sound function
+function previewSound(soundType: string) {
+  try {
+    const ctx = new AudioContext();
+    const configs: Record<string, { freq: number; freq2?: number; dur: number; type: OscillatorType }> = {
+      default: { freq: 880, freq2: 1100, dur: 0.15, type: 'sine' },
+      soft: { freq: 523, dur: 0.2, type: 'sine' },
+      bright: { freq: 1200, freq2: 1600, dur: 0.12, type: 'triangle' },
+      bubble: { freq: 600, freq2: 900, dur: 0.18, type: 'sine' },
+      chime: { freq: 1047, freq2: 1319, dur: 0.25, type: 'sine' },
+    };
+    const c = configs[soundType] || configs.default;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = c.type;
+    osc.frequency.setValueAtTime(c.freq, now);
+    if (c.freq2) osc.frequency.linearRampToValueAtTime(c.freq2, now + c.dur * 0.5);
+    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + c.dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + c.dur);
+  } catch {}
 }
 
 export function NotificationSettingsPanel() {
@@ -67,6 +96,56 @@ export function NotificationSettingsPanel() {
 
   return (
     <div className="space-y-6">
+      {/* Sound settings */}
+      <div>
+        <h3 className="font-display text-lg font-semibold mb-4">🔊 Sons de notification</h3>
+        <div className="divide-y divide-border/50">
+          <SettingItem
+            icon={settings.sound_enabled ? Volume2 : VolumeX}
+            label="Activer les sons"
+            description="Jouer un son à chaque nouvelle notification"
+            checked={settings.sound_enabled}
+            onCheckedChange={(v) => handleToggle('sound_enabled', v)}
+            disabled={updateSettings.isPending}
+          />
+          {settings.sound_enabled && (
+            <div className="flex items-start gap-4 py-4">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                <Bell className="w-5 h-5 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium">Type de son</p>
+                <p className="text-sm text-muted-foreground mt-0.5">Choisissez la sonnerie qui vous plaît</p>
+                <div className="mt-2">
+                  <Select
+                    value={settings.sound_type || 'default'}
+                    onValueChange={async (v) => {
+                      previewSound(v);
+                      try {
+                        await updateSettings.mutateAsync({ sound_type: v });
+                      } catch {}
+                    }}
+                  >
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SOUND_OPTIONS.map(opt => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="premium-divider" />
+
       <div>
         <h3 className="font-display text-lg font-semibold mb-4">Notifications push</h3>
         <div className="divide-y divide-border/50">
