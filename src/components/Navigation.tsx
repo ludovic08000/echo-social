@@ -68,13 +68,12 @@ export function MobileNav() {
                   { path: '/groups', icon: Users, label: 'Groupes' },
                   { path: '/pages', icon: FileText, label: 'Pages' },
                   { path: '/marketplace', icon: ShoppingBag, label: 'Market' },
-                  { path: '/marketplace?tab=seller', icon: Brain, label: 'Business' },
                   { path: '/ads', icon: Megaphone, label: 'Pub Ads' },
                   { path: '/friends', icon: Heart, label: 'Amis' },
                   { path: '/games', icon: Gamepad2, label: 'Jeux' },
                   { path: '/notifications', icon: Bell, label: 'Notifs', badge: unreadCount },
                   { path: '/settings', icon: Settings, label: 'Réglages' },
-                ].map((item) => (
+                 ].map((item) => (
                   <Link
                     key={item.path}
                     to={item.path}
