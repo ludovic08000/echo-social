@@ -99,6 +99,8 @@ export function useFriendshipStatus(otherUserId: string) {
   });
 }
 
+export const MAX_FRIENDS_PER_USER = 5000;
+
 export function useSendFriendRequest() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -106,6 +108,28 @@ export function useSendFriendRequest() {
   return useMutation({
     mutationFn: async (addresseeId: string) => {
       if (!user) throw new Error('Not authenticated');
+
+      // Check friend count for requester
+      const { count: requesterCount } = await supabase
+        .from('friendships')
+        .select('*', { count: 'exact', head: true })
+        .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
+        .eq('status', 'accepted');
+
+      if ((requesterCount ?? 0) >= MAX_FRIENDS_PER_USER) {
+        throw new Error(`Vous avez atteint la limite de ${MAX_FRIENDS_PER_USER} amis.`);
+      }
+
+      // Check friend count for addressee
+      const { count: addresseeCount } = await supabase
+        .from('friendships')
+        .select('*', { count: 'exact', head: true })
+        .or(`requester_id.eq.${addresseeId},addressee_id.eq.${addresseeId}`)
+        .eq('status', 'accepted');
+
+      if ((addresseeCount ?? 0) >= MAX_FRIENDS_PER_USER) {
+        throw new Error('Cet utilisateur a atteint sa limite d\'amis.');
+      }
 
       const { data, error } = await supabase
         .from('friendships')
@@ -141,6 +165,19 @@ export function useRespondToFriendRequest() {
   return useMutation({
     mutationFn: async ({ friendshipId, accept }: { friendshipId: string; accept: boolean }) => {
       if (!user) throw new Error('Not authenticated');
+
+      // If accepting, check both users' friend limits
+      if (accept) {
+        const { count: myCount } = await supabase
+          .from('friendships')
+          .select('*', { count: 'exact', head: true })
+          .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
+          .eq('status', 'accepted');
+
+        if ((myCount ?? 0) >= MAX_FRIENDS_PER_USER) {
+          throw new Error(`Vous avez atteint la limite de ${MAX_FRIENDS_PER_USER} amis.`);
+        }
+      }
 
       const { data, error } = await supabase
         .from('friendships')
