@@ -64,6 +64,7 @@ function AdChatCreator() {
   const [generatedAd, setGeneratedAd] = useState<any>(null);
   const [selectedDuration, setSelectedDuration] = useState<DurationType>('1_week');
   const [imageUrl, setImageUrl] = useState('');
+  const [generatingImage, setGeneratingImage] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const createCampaign = useCreateAdCampaign();
   const { upload, isUploading } = useImageUpload({ bucket: 'post-images' });
@@ -93,9 +94,10 @@ function AdChatCreator() {
       if (data.type === 'ad_generated') {
         setGeneratedAd(data.ad);
         if (data.ad.recommended_duration) setSelectedDuration(data.ad.recommended_duration);
+        if (data.ad.generated_image_url) setImageUrl(data.ad.generated_image_url);
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: data.message + "\n\n✅ **Votre publicité est prête !** Vérifiez l'aperçu ci-dessous et lancez votre campagne.",
+          content: data.message + "\n\n✅ **Votre publicité est prête !** " + (data.ad.generated_image_url ? "L'image a été générée par l'IA. " : "") + "Vérifiez l'aperçu ci-dessous et lancez votre campagne.",
           adData: data.ad,
         }]);
       } else {
@@ -232,18 +234,68 @@ function AdChatCreator() {
                 <h3 className="font-bold text-foreground">{generatedAd.title}</h3>
                 <p className="text-sm text-muted-foreground mt-1">{generatedAd.body}</p>
                 
-                {/* Image upload */}
+                {/* Image - AI generated or manual upload */}
                 {imageUrl ? (
-                  <div className="relative mt-3 rounded-xl overflow-hidden">
-                    <img src={imageUrl} alt="Ad" className="w-full h-40 object-cover" />
-                    <button onClick={() => setImageUrl('')} className="absolute top-2 right-2 px-2 py-1 rounded-lg bg-background/80 backdrop-blur-sm text-xs border border-border/30">✕</button>
+                  <div className="relative mt-3 rounded-xl overflow-hidden group">
+                    <img src={imageUrl} alt="Ad" className="w-full h-48 object-cover" />
+                    <div className="absolute inset-0 bg-background/0 group-hover:bg-background/40 transition-all flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                      <button
+                        onClick={async () => {
+                          if (!generatedAd) return;
+                          setGeneratingImage(true);
+                          try {
+                            const { data, error } = await supabase.functions.invoke('ad-assistant', {
+                              body: { action: 'generate_image', title: generatedAd.title, description: generatedAd.body },
+                            });
+                            if (data?.image_url) setImageUrl(data.image_url);
+                            else toast.error("Échec de la génération");
+                          } catch { toast.error("Erreur de génération"); }
+                          finally { setGeneratingImage(false); }
+                        }}
+                        disabled={generatingImage}
+                        className="px-3 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1.5 shadow-lg"
+                      >
+                        {generatingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                        Régénérer
+                      </button>
+                      <button onClick={() => setImageUrl('')} className="px-3 py-2 rounded-xl bg-background/90 text-foreground text-xs font-medium border border-border/30">
+                        Supprimer
+                      </button>
+                    </div>
+                    <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-primary/80 text-primary-foreground text-[9px] font-bold flex items-center gap-1">
+                      <Sparkles className="w-2.5 h-2.5" /> IA
+                    </div>
                   </div>
                 ) : (
-                  <label className="flex items-center justify-center gap-2 mt-3 h-24 rounded-xl border-2 border-dashed border-border/40 cursor-pointer hover:border-primary/40 transition-colors">
-                    <ImagePlus className="w-5 h-5 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">{isUploading ? 'Upload...' : 'Ajouter une image (optionnel)'}</span>
-                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                  </label>
+                  <div className="mt-3 space-y-2">
+                    <button
+                      onClick={async () => {
+                        if (!generatedAd) return;
+                        setGeneratingImage(true);
+                        try {
+                          const { data, error } = await supabase.functions.invoke('ad-assistant', {
+                            body: { action: 'generate_image', title: generatedAd.title, description: generatedAd.body },
+                          });
+                          if (data?.image_url) setImageUrl(data.image_url);
+                          else toast.error("Échec de la génération");
+                        } catch { toast.error("Erreur de génération"); }
+                        finally { setGeneratingImage(false); }
+                      }}
+                      disabled={generatingImage}
+                      className="w-full flex items-center justify-center gap-2 h-20 rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer"
+                    >
+                      {generatingImage ? (
+                        <><Loader2 className="w-5 h-5 animate-spin text-primary" /><span className="text-xs text-primary font-medium">Génération en cours...</span></>
+                      ) : (
+                        <><Sparkles className="w-5 h-5 text-primary" /><span className="text-xs text-primary font-medium">Générer une image IA</span></>
+                      )}
+                    </button>
+                    <label className="flex items-center justify-center gap-2 h-12 rounded-xl border border-border/30 cursor-pointer hover:bg-secondary/30 transition-colors">
+                      <ImagePlus className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-[11px] text-muted-foreground">{isUploading ? 'Upload...' : 'ou uploader votre image'}</span>
+                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                    </label>
+                  </div>
                 )}
 
                 <div className="mt-3 pt-3 border-t border-border/20">
