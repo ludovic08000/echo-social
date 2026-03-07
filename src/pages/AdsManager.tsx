@@ -21,7 +21,7 @@ export default function AdsManager() {
   const { data: campaigns, isLoading } = useAdCampaigns();
   const createCampaign = useCreateAdCampaign();
   const aiAssistant = useAdAIAssistant();
-  const { uploading, uploadImage } = useImageUpload();
+  const { upload, isUploading } = useImageUpload({ bucket: 'post-images' });
 
   const [showCreate, setShowCreate] = useState(false);
   const [tab, setTab] = useState<'campaigns' | 'create' | 'stats'>('campaigns');
