@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Image, Video, X, Send, Timer, Rocket, ShoppingBag } from 'lucide-react';
+import { Image, Video, X, Send, Timer, Rocket, ShoppingBag, Sparkles, Loader2, Check, Globe, Type, ArrowDownRight, ArrowUpRight, Briefcase, SmilePlus } from 'lucide-react';
 import { useCreatePost } from '@/hooks/usePosts';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
@@ -23,6 +23,10 @@ const EXPIRY_OPTIONS = [
   { label: '24h', value: 24, description: '24 heures' },
 ];
 
+const LANG_LABELS: Record<string, string> = {
+  fr: 'Français', en: 'English', es: 'Español', de: 'Deutsch', it: 'Italiano', pt: 'Português', nl: 'Nederlands', pl: 'Polski', ar: 'العربية',
+};
+
 const CAPSULE_OPTIONS = [
   { label: '1 semaine', value: 7 },
   { label: '1 mois', value: 30 },
@@ -44,9 +48,45 @@ export function CreatePost() {
   const [isUploading, setIsUploading] = useState(false);
   const [expiryHours, setExpiryHours] = useState<number | null>(null);
   const [capsuleDays, setCapsuleDays] = useState<number | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<{ improved_text: string; detected_language: string; corrections: string[]; tone: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const AI_ACTIONS = [
+    { action: 'improve', label: 'Améliorer', icon: Sparkles, desc: 'Corrige & améliore' },
+    { action: 'formal', label: 'Formel', icon: Briefcase, desc: 'Plus professionnel' },
+    { action: 'casual', label: 'Décontracté', icon: SmilePlus, desc: 'Plus amical' },
+    { action: 'shorter', label: 'Raccourcir', icon: ArrowDownRight, desc: 'Plus court' },
+    { action: 'longer', label: 'Développer', icon: ArrowUpRight, desc: 'Plus détaillé' },
+  ];
+
+  const handleAiImprove = async (action = 'improve') => {
+    if (!body.trim()) return;
+    setAiLoading(true);
+    setAiResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('post-assistant', {
+        body: { text: body, action },
+      });
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+      setAiResult(data);
+    } catch (e: any) {
+      toast({ title: 'Erreur IA', description: e.message || 'Impossible d\'améliorer le texte', variant: 'destructive' });
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const applyAiResult = () => {
+    if (aiResult) {
+      setBody(aiResult.improved_text);
+      setAiResult(null);
+      toast({ title: '✨ Texte amélioré', description: `Langue détectée : ${LANG_LABELS[aiResult.detected_language] || aiResult.detected_language}` });
+    }
+  };
 
   const handleSetExpiry = (h: number) => { setExpiryHours(h); setCapsuleDays(null); };
   const handleSetCapsule = (d: number) => { setCapsuleDays(d); setExpiryHours(null); };
@@ -208,6 +248,84 @@ export function CreatePost() {
                     className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none outline-none min-h-[80px] leading-relaxed"
                     autoFocus
                   />
+
+                  {/* AI Enhance */}
+                  {body.trim().length > 5 && !aiResult && (
+                    <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="mb-2">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button
+                            disabled={aiLoading}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 text-primary text-[11px] font-medium border border-primary/20 hover:bg-primary/15 transition-all"
+                          >
+                            {aiLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                            Améliorer avec l'IA
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="w-52 p-2 rounded-xl border-border/30">
+                          <p className="text-[11px] font-semibold mb-2 px-2 text-foreground">✨ Assistant IA</p>
+                          {AI_ACTIONS.map(a => (
+                            <button
+                              key={a.action}
+                              onClick={() => { handleAiImprove(a.action); }}
+                              disabled={aiLoading}
+                              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-secondary/60 text-foreground transition-colors"
+                            >
+                              <a.icon className="w-3.5 h-3.5 text-primary" />
+                              <div className="text-left">
+                                <p className="text-xs font-medium">{a.label}</p>
+                                <p className="text-[10px] text-muted-foreground">{a.desc}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </PopoverContent>
+                      </Popover>
+                    </motion.div>
+                  )}
+
+                  {/* AI Result */}
+                  <AnimatePresence>
+                    {aiResult && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        className="mb-3 p-3 rounded-xl border border-primary/20 bg-primary/5 space-y-2"
+                      >
+                        <div className="flex items-center gap-2 justify-between">
+                          <span className="text-[11px] font-semibold text-primary flex items-center gap-1">
+                            <Sparkles className="w-3 h-3" /> Suggestion IA
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] px-2 py-0.5 rounded-md bg-secondary/50 text-muted-foreground flex items-center gap-1">
+                              <Globe className="w-2.5 h-2.5" />
+                              {LANG_LABELS[aiResult.detected_language] || aiResult.detected_language}
+                            </span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-md bg-secondary/50 text-muted-foreground flex items-center gap-1">
+                              <Type className="w-2.5 h-2.5" />
+                              {aiResult.tone}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{aiResult.improved_text}</p>
+                        {aiResult.corrections.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {aiResult.corrections.map((c, i) => (
+                              <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-primary/10 text-primary">{c}</span>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex gap-2 pt-1">
+                          <Button size="sm" onClick={applyAiResult} className="h-7 px-3 text-[11px] rounded-lg gap-1">
+                            <Check className="w-3 h-3" /> Appliquer
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setAiResult(null)} className="h-7 px-3 text-[11px] rounded-lg">
+                            Ignorer
+                          </Button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
                   {expiryHours && (
                     <motion.div 
