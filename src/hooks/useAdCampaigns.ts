@@ -12,17 +12,33 @@ export interface AdCampaign {
   cta_text: string;
   cta_url: string | null;
   target_audience: any;
+  target_age_min: number;
+  target_age_max: number;
+  target_gender: string;
+  target_interests: string[];
   budget: number;
   daily_budget: number | null;
   duration_type: string;
   starts_at: string;
   ends_at: string;
   status: string;
+  moderation_status: string;
+  moderation_reason: string | null;
   impressions: number;
   clicks: number;
   reach: number;
   spent: number;
   created_at: string;
+}
+
+export interface AdDailyStat {
+  id: string;
+  campaign_id: string;
+  stat_date: string;
+  impressions: number;
+  clicks: number;
+  reach: number;
+  spent: number;
 }
 
 const PRICING = {
@@ -55,7 +71,6 @@ function getEndDate(durationType: DurationType, startDate: Date = new Date()): D
 
 export function useAdCampaigns() {
   const { user } = useAuth();
-
   return useQuery({
     queryKey: ['ad-campaigns', user?.id],
     queryFn: async () => {
@@ -71,6 +86,20 @@ export function useAdCampaigns() {
   });
 }
 
+export function useAdDailyStats(campaignId?: string) {
+  return useQuery({
+    queryKey: ['ad-daily-stats', campaignId],
+    queryFn: async () => {
+      let query = supabase.from('ad_daily_stats').select('*').order('stat_date', { ascending: true });
+      if (campaignId) query = query.eq('campaign_id', campaignId);
+      const { data, error } = await query;
+      if (error) throw error;
+      return data as AdDailyStat[];
+    },
+    enabled: true,
+  });
+}
+
 export function useActiveAds() {
   return useQuery({
     queryKey: ['active-ads'],
@@ -79,6 +108,7 @@ export function useActiveAds() {
         .from('ad_campaigns')
         .select('*')
         .eq('status', 'active')
+        .eq('moderation_status', 'approved')
         .lte('starts_at', new Date().toISOString())
         .gt('ends_at', new Date().toISOString())
         .order('budget', { ascending: false })
@@ -101,8 +131,30 @@ export function useCreateAdCampaign() {
       cta_text?: string;
       cta_url?: string;
       target_audience?: any;
+      target_age_min?: number;
+      target_age_max?: number;
+      target_gender?: string;
+      target_interests?: string[];
       duration_type: DurationType;
     }) => {
+      // First moderate
+      const { data: modResult } = await supabase.functions.invoke('ad-assistant', {
+        body: {
+          action: 'moderate_ad',
+          ad_title: input.title,
+          ad_body: input.body,
+          target_audience: input.target_audience?.description,
+        },
+      });
+
+      const isApproved = modResult?.approved !== false;
+      const moderationStatus = isApproved ? 'approved' : 'rejected';
+      const moderationReason = modResult?.reasons?.join(', ') || null;
+
+      if (!isApproved) {
+        throw new Error(`Publicité refusée : ${moderationReason || 'Contenu non conforme'}`);
+      }
+
       const pricing = PRICING[input.duration_type];
       const endsAt = getEndDate(input.duration_type);
       
@@ -116,11 +168,17 @@ export function useCreateAdCampaign() {
           cta_text: input.cta_text || 'En savoir plus',
           cta_url: input.cta_url || null,
           target_audience: input.target_audience || {},
+          target_age_min: input.target_age_min || 18,
+          target_age_max: input.target_age_max || 65,
+          target_gender: input.target_gender || 'all',
+          target_interests: input.target_interests || [],
           budget: pricing.price,
           duration_type: input.duration_type,
           ends_at: endsAt.toISOString(),
           status: 'active',
-        })
+          moderation_status: moderationStatus,
+          moderation_reason: moderationReason,
+        } as any)
         .select()
         .single();
       if (error) throw error;
@@ -129,7 +187,7 @@ export function useCreateAdCampaign() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ad-campaigns'] });
       queryClient.invalidateQueries({ queryKey: ['active-ads'] });
-      toast.success('Campagne publicitaire créée !');
+      toast.success('Campagne publicitaire approuvée et lancée ! ✅');
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -138,12 +196,14 @@ export function useCreateAdCampaign() {
 export function useAdAIAssistant() {
   return useMutation({
     mutationFn: async (input: {
-      action: 'generate_ad' | 'optimize_ad' | 'recommend_strategy';
-      product_name: string;
+      action: 'generate_ad' | 'optimize_ad' | 'recommend_strategy' | 'moderate_ad';
+      product_name?: string;
       product_description?: string;
       target_audience?: string;
       duration?: string;
       budget?: number;
+      ad_title?: string;
+      ad_body?: string;
     }) => {
       const { data, error } = await supabase.functions.invoke('ad-assistant', {
         body: input,

@@ -104,11 +104,17 @@ export type Database = {
           id: string
           image_url: string | null
           impressions: number
+          moderation_reason: string | null
+          moderation_status: string | null
           reach: number
           spent: number
           starts_at: string
           status: string
+          target_age_max: number | null
+          target_age_min: number | null
           target_audience: Json | null
+          target_gender: string | null
+          target_interests: string[] | null
           title: string
           updated_at: string
         }
@@ -126,11 +132,17 @@ export type Database = {
           id?: string
           image_url?: string | null
           impressions?: number
+          moderation_reason?: string | null
+          moderation_status?: string | null
           reach?: number
           spent?: number
           starts_at?: string
           status?: string
+          target_age_max?: number | null
+          target_age_min?: number | null
           target_audience?: Json | null
+          target_gender?: string | null
+          target_interests?: string[] | null
           title: string
           updated_at?: string
         }
@@ -148,15 +160,62 @@ export type Database = {
           id?: string
           image_url?: string | null
           impressions?: number
+          moderation_reason?: string | null
+          moderation_status?: string | null
           reach?: number
           spent?: number
           starts_at?: string
           status?: string
+          target_age_max?: number | null
+          target_age_min?: number | null
           target_audience?: Json | null
+          target_gender?: string | null
+          target_interests?: string[] | null
           title?: string
           updated_at?: string
         }
         Relationships: []
+      }
+      ad_daily_stats: {
+        Row: {
+          campaign_id: string
+          clicks: number
+          created_at: string
+          id: string
+          impressions: number
+          reach: number
+          spent: number
+          stat_date: string
+        }
+        Insert: {
+          campaign_id: string
+          clicks?: number
+          created_at?: string
+          id?: string
+          impressions?: number
+          reach?: number
+          spent?: number
+          stat_date?: string
+        }
+        Update: {
+          campaign_id?: string
+          clicks?: number
+          created_at?: string
+          id?: string
+          impressions?: number
+          reach?: number
+          spent?: number
+          stat_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_daily_stats_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "ad_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ad_interactions: {
         Row: {
