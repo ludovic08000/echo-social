@@ -3,6 +3,29 @@ import { Mic, Square, Trash2, Send, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { toast } from 'sonner';
+
+// Detect best supported audio mimeType across browsers
+function getSupportedMimeType(): { mimeType: string; ext: string } {
+  if (typeof MediaRecorder === 'undefined') {
+    return { mimeType: '', ext: 'webm' };
+  }
+  const types = [
+    { mimeType: 'audio/webm;codecs=opus', ext: 'webm' },
+    { mimeType: 'audio/webm', ext: 'webm' },
+    { mimeType: 'audio/mp4', ext: 'mp4' },
+    { mimeType: 'audio/ogg;codecs=opus', ext: 'ogg' },
+    { mimeType: 'audio/ogg', ext: 'ogg' },
+    { mimeType: 'audio/wav', ext: 'wav' },
+    { mimeType: '', ext: 'webm' }, // fallback: let browser choose
+  ];
+  for (const t of types) {
+    if (t.mimeType === '' || MediaRecorder.isTypeSupported(t.mimeType)) {
+      return t;
+    }
+  }
+  return types[types.length - 1];
+}
 
 interface VoiceRecorderProps {
   onSend: (audioUrl: string, duration: number) => void;
@@ -16,47 +39,98 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [permError, setPermError] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval>>();
   const streamRef = useRef<MediaStream | null>(null);
 
   const startRecording = useCallback(async () => {
+    // Check API availability
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      const msg = 'Votre navigateur ne supporte pas l\'enregistrement audio. Utilisez Chrome, Safari ou Edge.';
+      setPermError(msg);
+      toast.error(msg);
+      return;
+    }
+
+    if (typeof MediaRecorder === 'undefined') {
+      const msg = 'MediaRecorder non disponible sur ce navigateur.';
+      setPermError(msg);
+      toast.error(msg);
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-          ? 'audio/webm;codecs=opus'
-          : 'audio/webm',
-      });
+      const { mimeType, ext } = getSupportedMimeType();
+
+      const recorderOptions: MediaRecorderOptions = {};
+      if (mimeType) {
+        recorderOptions.mimeType = mimeType;
+      }
+
+      let mediaRecorder: MediaRecorder;
+      try {
+        mediaRecorder = new MediaRecorder(stream, recorderOptions);
+      } catch {
+        // Fallback: no options
+        mediaRecorder = new MediaRecorder(stream);
+      }
+
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
       };
 
       mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const actualMime = mediaRecorder.mimeType || mimeType || 'audio/webm';
+        const blob = new Blob(chunksRef.current, { type: actualMime });
         setAudioBlob(blob);
         setAudioUrl(URL.createObjectURL(blob));
         stream.getTracks().forEach(t => t.stop());
       };
 
-      mediaRecorder.start(100);
+      mediaRecorder.onerror = () => {
+        toast.error('Erreur pendant l\'enregistrement');
+        setIsRecording(false);
+        stream.getTracks().forEach(t => t.stop());
+      };
+
+      // Safari sometimes needs a larger timeslice
+      mediaRecorder.start(250);
       setIsRecording(true);
+      setPermError(null);
       setDuration(0);
       timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
-    } catch (err) {
-      console.error('Microphone access denied:', err);
+    } catch (err: any) {
+      let msg = 'Impossible d\'accéder au micro';
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        msg = 'Autorisez l\'accès au micro dans les réglages de votre navigateur';
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        msg = 'Aucun microphone détecté sur cet appareil';
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        msg = 'Le micro est utilisé par une autre application';
+      } else if (err.name === 'OverconstrainedError') {
+        msg = 'Impossible de trouver un micro compatible';
+      } else if (err.name === 'SecurityError') {
+        msg = 'Accès au micro bloqué (HTTPS requis)';
+      }
+      setPermError(msg);
+      toast.error(msg);
+      console.error('Microphone access error:', err.name, err.message);
     }
   }, []);
 
   const stopRecording = useCallback(() => {
     clearInterval(timerRef.current);
-    mediaRecorderRef.current?.stop();
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
     setIsRecording(false);
   }, []);
 
@@ -64,10 +138,16 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
     if (!audioBlob || !user) return;
     setUploading(true);
     try {
-      const fileName = `${user.id}/voice-${Date.now()}.webm`;
+      // Determine extension from blob type
+      let ext = 'webm';
+      if (audioBlob.type.includes('mp4')) ext = 'mp4';
+      else if (audioBlob.type.includes('ogg')) ext = 'ogg';
+      else if (audioBlob.type.includes('wav')) ext = 'wav';
+
+      const fileName = `${user.id}/voice-${Date.now()}.${ext}`;
       const { error: uploadError } = await supabase.storage
         .from('post-images')
-        .upload(fileName, audioBlob, { contentType: 'audio/webm' });
+        .upload(fileName, audioBlob, { contentType: audioBlob.type || 'audio/webm' });
 
       if (uploadError) throw uploadError;
 
@@ -78,6 +158,7 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
       onSend(urlData.publicUrl, duration);
     } catch (err) {
       console.error('Voice upload error:', err);
+      toast.error('Erreur lors de l\'envoi du vocal');
     } finally {
       setUploading(false);
     }
@@ -85,20 +166,30 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
 
   const handleDiscard = () => {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
+    clearInterval(timerRef.current);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
     setAudioBlob(null);
     setAudioUrl(null);
     setDuration(0);
+    setIsRecording(false);
     onCancel();
   };
 
   useEffect(() => {
-    // Auto-start recording on mount
     startRecording();
     return () => {
       clearInterval(timerRef.current);
       streamRef.current?.getTracks().forEach(t => t.stop());
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        try { mediaRecorderRef.current.stop(); } catch {}
+      }
     };
-  }, []);
+  }, [startRecording]);
 
   const formatDuration = (s: number) => {
     const m = Math.floor(s / 60);
@@ -106,9 +197,22 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
     return `${m}:${sec.toString().padStart(2, '0')}`;
   };
 
+  if (permError) {
+    return (
+      <div className="flex items-center gap-2 px-2.5 py-2 border-t border-border/30 bg-destructive/5">
+        <div className="flex-1 text-[11px] text-destructive">{permError}</div>
+        <button
+          onClick={handleDiscard}
+          className="text-[11px] text-muted-foreground hover:text-foreground px-2 py-1"
+        >
+          Fermer
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center gap-2 px-2.5 py-2 border-t border-border/30 bg-destructive/5">
-      {/* Discard */}
       <button
         onClick={handleDiscard}
         className="w-7 h-7 rounded-full flex items-center justify-center text-destructive hover:bg-destructive/10 transition-colors"
@@ -116,7 +220,6 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
         <Trash2 className="w-3.5 h-3.5" />
       </button>
 
-      {/* Waveform / status */}
       <div className="flex-1 flex items-center gap-2">
         {isRecording ? (
           <>
@@ -124,7 +227,6 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
               <div className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
               <span className="text-[11px] font-mono font-medium text-destructive">{formatDuration(duration)}</span>
             </div>
-            {/* Fake waveform animation */}
             <div className="flex items-center gap-[2px] flex-1">
               {Array.from({ length: 20 }).map((_, i) => (
                 <div
@@ -149,7 +251,6 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
         )}
       </div>
 
-      {/* Stop / Send */}
       {isRecording ? (
         <button
           onClick={stopRecording}
@@ -170,7 +271,7 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
   );
 }
 
-// Voice message player component for displaying in messages
+// ─── Voice Message Player ───────────────────────────────
 interface VoiceMessagePlayerProps {
   audioUrl: string;
   duration?: number;
@@ -187,7 +288,9 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
     if (playing) {
       audioRef.current.pause();
     } else {
-      audioRef.current.play();
+      audioRef.current.play().catch(() => {
+        toast.error('Impossible de lire l\'audio');
+      });
     }
     setPlaying(!playing);
   };
@@ -198,11 +301,14 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
 
     const onTime = () => setProgress(audio.currentTime / (audio.duration || 1));
     const onEnd = () => { setPlaying(false); setProgress(0); };
+    const onError = () => { setPlaying(false); };
     audio.addEventListener('timeupdate', onTime);
     audio.addEventListener('ended', onEnd);
+    audio.addEventListener('error', onError);
     return () => {
       audio.removeEventListener('timeupdate', onTime);
       audio.removeEventListener('ended', onEnd);
+      audio.removeEventListener('error', onError);
     };
   }, []);
 
@@ -235,7 +341,6 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
         )}
       </button>
 
-      {/* Progress bar */}
       <div className="flex-1 flex flex-col gap-0.5">
         <div className={cn("h-1 rounded-full overflow-hidden", isMe ? "bg-primary-foreground/20" : "bg-border")}>
           <div
@@ -248,7 +353,6 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
         </span>
       </div>
 
-      {/* Mic icon */}
       <Mic className={cn("w-3 h-3 flex-shrink-0", isMe ? "text-primary-foreground/50" : "text-muted-foreground/50")} />
     </div>
   );
