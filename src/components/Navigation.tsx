@@ -1,3 +1,4 @@
+import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Home, Search, User, Settings, Plus, PlusCircle, MessageCircle, Users, FileText, Video, Radio, Bell, BookOpen, Trophy, Heart, Gamepad2, Tv, ShoppingBag, Brain, Compass, Sparkles } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
@@ -21,9 +22,10 @@ export function MobileNav() {
 
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
 
-  if (!user) return null;
-
   const { openChat } = useChatWidget();
+  const [showMore, setShowMore] = React.useState(false);
+
+  if (!user) return null;
 
   const active = (path: string) => {
     if (path === '/feed') return location.pathname === '/feed' || location.pathname === '/';
@@ -52,31 +54,87 @@ export function MobileNav() {
     </Link>
   );
 
-  return (
-    <nav className={cn(
-      "fixed bottom-0 left-0 right-0 z-50 safe-area-pb transition-transform duration-300",
-      "bg-card/85 backdrop-blur-2xl border-t border-border/15",
-      "shadow-[0_-8px_40px_hsl(var(--background)/0.6)]",
-      navHidden && "translate-y-full"
-    )}>
-      <div className="flex items-end justify-evenly h-[60px] pb-1">
-        <NavItem path="/feed" icon={Home} label="Accueil" />
-        <NavItem path="/search" icon={Compass} label="Explorer" />
 
-        {/* Bouton Créer — premium central */}
-        <Link to="/create" className="flex flex-col items-center -mt-4 w-[56px]">
-          <div className="relative">
-            <div className="absolute inset-[-4px] rounded-2xl bg-primary/25 blur-lg animate-pulse" />
-            <div className="relative w-[46px] h-[46px] rounded-2xl bg-[image:var(--premium-gradient)] text-primary-foreground flex items-center justify-center shadow-[var(--shadow-gold)] active:scale-90 transition-all duration-200 border border-primary-foreground/10">
-              <Plus className="w-6 h-6 stroke-[3]" />
+  return (
+    <>
+      {/* Menu étendu */}
+      {showMore && (
+        <div className="fixed inset-0 z-[60]" onClick={() => setShowMore(false)}>
+          <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
+          <div className="absolute bottom-[68px] left-3 right-3 safe-area-pb z-[61] animate-slide-up">
+            <div className="bg-card/95 backdrop-blur-2xl rounded-3xl border border-border/30 shadow-[var(--shadow-xl)] p-4">
+              <div className="grid grid-cols-4 gap-3">
+                {[
+                  { path: '/groups', icon: Users, label: 'Groupes' },
+                  { path: '/pages', icon: FileText, label: 'Pages' },
+                  { path: '/marketplace', icon: ShoppingBag, label: 'Market' },
+                  { path: '/marketplace?tab=seller', icon: Brain, label: 'Business' },
+                  { path: '/friends', icon: Heart, label: 'Amis' },
+                  { path: '/games', icon: Gamepad2, label: 'Jeux' },
+                  { path: '/notifications', icon: Bell, label: 'Notifs', badge: unreadCount },
+                  { path: '/settings', icon: Settings, label: 'Réglages' },
+                ].map((item) => (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    onClick={() => setShowMore(false)}
+                    className="flex flex-col items-center gap-1.5 py-3 rounded-2xl text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all duration-200"
+                  >
+                    <div className="relative w-10 h-10 rounded-xl bg-secondary/80 flex items-center justify-center">
+                      <item.icon className="w-5 h-5" />
+                      {((item as any).badge ?? 0) > 0 && (
+                        <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center px-1">
+                          {(item as any).badge > 9 ? '9+' : (item as any).badge}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] font-medium">{item.label}</span>
+                  </Link>
+                ))}
+              </div>
             </div>
           </div>
-        </Link>
+        </div>
+      )}
 
-        <NavItem path="/lives" icon={Radio} label="Live" badge={0} />
-        <NavItem path={`/profile/${user.id}`} icon={User} label="Profil" badge={unreadCount} />
-      </div>
-    </nav>
+      <nav className={cn(
+        "fixed bottom-0 left-0 right-0 z-50 safe-area-pb transition-transform duration-300",
+        "bg-card/85 backdrop-blur-2xl border-t border-border/15",
+        "shadow-[0_-8px_40px_hsl(var(--background)/0.6)]",
+        navHidden && "translate-y-full"
+      )}>
+        <div className="flex items-end justify-evenly h-[60px] pb-1">
+          <NavItem path="/feed" icon={Home} label="Accueil" />
+          <NavItem path="/search" icon={Compass} label="Explorer" />
+
+          {/* Bouton Créer — premium central */}
+          <Link to="/create" className="flex flex-col items-center -mt-4 w-[56px]">
+            <div className="relative">
+              <div className="absolute inset-[-4px] rounded-2xl bg-primary/25 blur-lg animate-pulse" />
+              <div className="relative w-[46px] h-[46px] rounded-2xl bg-[image:var(--premium-gradient)] text-primary-foreground flex items-center justify-center shadow-[var(--shadow-gold)] active:scale-90 transition-all duration-200 border border-primary-foreground/10">
+                <Plus className="w-6 h-6 stroke-[3]" />
+              </div>
+            </div>
+          </Link>
+
+          <NavItem path="/lives" icon={Radio} label="Live" />
+
+          {/* Bouton Menu */}
+          <button
+            onClick={() => setShowMore(!showMore)}
+            className={cn(
+              'flex flex-col items-center gap-[3px] pt-2 w-[52px] transition-all duration-300',
+              showMore ? 'text-primary' : 'text-muted-foreground'
+            )}
+          >
+            <div className={cn('relative p-1.5 rounded-2xl transition-all duration-300', showMore && 'bg-primary/12')}>
+              <Sparkles className={cn('w-[21px] h-[21px]', showMore && 'stroke-[2.5]')} />
+            </div>
+            <span className={cn('text-[9px] leading-none tracking-wide', showMore ? 'font-bold' : 'font-medium opacity-80')}>Plus</span>
+          </button>
+        </div>
+      </nav>
+    </>
   );
 }
 
