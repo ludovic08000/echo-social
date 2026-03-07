@@ -7,6 +7,7 @@ import { PostCard } from '@/components/PostCard';
 import { StoriesBar } from '@/components/StoriesBar';
 import { useNavigate } from 'react-router-dom';
 import { FriendSuggestions } from '@/components/feed/FriendSuggestions';
+import { FriendSuggestionsByCity } from '@/components/feed/FriendSuggestionsByCity';
 import { FeedRightSidebar } from '@/components/feed/FeedRightSidebar';
 import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
 import { FeedReelsSection } from '@/components/feed/FeedReelsSection';
@@ -18,9 +19,9 @@ import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgor
 import { Button } from '@/components/ui/button';
 import { useActiveAds } from '@/hooks/useAdCampaigns';
 
-const INJECTION_MAP: Record<number, 'suggestions' | 'reels' | 'live' | 'media' | 'marketplace'> = {
+const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'live' | 'media' | 'marketplace'> = {
   1: 'live',
-  3: 'reels',
+  3: 'suggestions_city',
   5: 'suggestions',
   8: 'media',
   11: 'marketplace',
@@ -134,6 +135,7 @@ export default function Feed() {
         {type === 'live' && <FeedLiveSection />}
         {type === 'reels' && <FeedReelsSection />}
         {type === 'suggestions' && <FriendSuggestions />}
+        {type === 'suggestions_city' && <FriendSuggestionsByCity />}
         {type === 'media' && <FeedMediaSection />}
         {type === 'marketplace' && <FeedMarketplaceSection />}
       </motion.div>

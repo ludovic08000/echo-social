@@ -40,6 +40,7 @@ import PrivacyPolicy from "./pages/PrivacyPolicy";
 import AIEngine from "./pages/AIEngine";
 import AdsManager from "./pages/AdsManager";
 import AIAgents from "./pages/AIAgents";
+import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -90,6 +91,7 @@ function AppContent() {
               <Route path="/ai-engine" element={<ProtectedRoute><AIEngine /></ProtectedRoute>} />
               <Route path="/ads" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
               <Route path="/ai-agents" element={<ProtectedRoute><AIAgents /></ProtectedRoute>} />
+              <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
               
               {/* 404 */}
               <Route path="*" element={<NotFound />} />
