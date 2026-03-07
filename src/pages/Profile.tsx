@@ -30,6 +30,81 @@ import { ProfileOverview } from '@/components/profile/ProfileOverview';
 import { AnonymousWall } from '@/components/profile/AnonymousWall';
 import { ProfileMusicPlayer } from '@/components/profile/ProfileMusicPlayer';
 import { type Album } from '@/hooks/useAlbums';
+import { toast } from '@/hooks/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+
+function ReportFakeAccountButton({ reportedUserId }: { reportedUserId: string }) {
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleReport = async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      // Check if already reported
+      const { data: existing } = await supabase
+        .from('identity_verifications')
+        .select('id')
+        .eq('reported_user_id', reportedUserId)
+        .eq('reporter_id', user.id)
+        .maybeSingle();
+
+      if (existing) {
+        toast({ title: 'Déjà signalé', description: 'Vous avez déjà signalé ce compte.' });
+        setOpen(false);
+        return;
+      }
+
+      const { error } = await supabase.from('identity_verifications').insert({
+        reported_user_id: reportedUserId,
+        reporter_id: user.id,
+        reason: reason.trim() || 'fake_account',
+      });
+      if (error) throw error;
+
+      toast({ title: '✅ Signalement envoyé', description: 'Ce compte devra vérifier son identité sous 72h.' });
+      setOpen(false);
+      setReason('');
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <Button variant="outline" size="icon" className="rounded-xl h-10 w-10 shrink-0 text-destructive hover:bg-destructive/10" onClick={() => setOpen(true)}>
+        <ShieldAlert className="w-4 h-4" />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Signaler un faux compte</DialogTitle>
+            <DialogDescription>
+              Ce compte sera invité à vérifier son identité avec une pièce d'identité. Sans vérification sous 72h, le compte sera supprimé automatiquement.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            placeholder="Pourquoi pensez-vous que c'est un faux compte ? (optionnel)"
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            rows={3}
+          />
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => setOpen(false)}>Annuler</Button>
+            <Button variant="destructive" onClick={handleReport} disabled={loading}>
+              {loading ? 'Envoi...' : 'Signaler comme faux compte'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
 export default function Profile() {
   const { id } = useParams<{ id: string }>();
