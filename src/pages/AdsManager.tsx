@@ -70,10 +70,7 @@ function AdChatCreator() {
   const [videoUrl, setVideoUrl] = useState('');
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
   const [generatingImage, setGeneratingImage] = useState(false);
-  const [selectedRegion, setSelectedRegion] = useState('');
-  const [selectedVilles, setSelectedVilles] = useState<string[]>([]);
-  const [popFilter, setPopFilter] = useState(0);
-  const [locationSearch, setLocationSearch] = useState('');
+  const [location, setLocation] = useState<TargetLocation>(getDefaultLocation());
   const scrollRef = useRef<HTMLDivElement>(null);
   const createCampaign = useCreateAdCampaign();
   const { upload, isUploading } = useImageUpload({ bucket: 'post-images' });
