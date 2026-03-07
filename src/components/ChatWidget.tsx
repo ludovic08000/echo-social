@@ -492,45 +492,67 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                           </>
                         )}
 
-                        {/* Delete menu - use fixed positioning */}
+                        {/* Premium Delete Dialog */}
                         {deleteMenuMsgId === msg.id && (
                           <>
-                            <div className="fixed inset-0 z-[100]" onClick={() => setDeleteMenuMsgId(null)} />
-                            <div className="fixed z-[101] flex flex-col gap-0.5 p-1.5 rounded-xl bg-background shadow-lg border border-border/40 min-w-[180px]"
-                              style={{ 
-                                top: '50%', left: '50%', 
-                                transform: 'translate(-50%, -50%)'
-                              }}
+                            <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm" onClick={() => setDeleteMenuMsgId(null)} />
+                            <div className="fixed z-[101] w-[260px] rounded-2xl bg-background shadow-2xl border border-border/30 overflow-hidden"
+                              style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
                             >
-                              <p className="px-3 py-1 text-[10px] font-semibold text-muted-foreground uppercase">Supprimer le message</p>
-                              <button
-                                onClick={() => {
-                                  deleteForMe.mutate({ messageId: msg.id, conversationId });
-                                  setDeleteMenuMsgId(null);
-                                }}
-                                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs hover:bg-secondary transition-colors text-left"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
-                                Supprimer pour moi
-                              </button>
-                              {isMe && (
+                              {/* Preview of the message */}
+                              <div className="px-4 pt-4 pb-3 bg-secondary/30">
+                                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Message sélectionné</p>
+                                <div className={cn(
+                                  'px-3 py-2 rounded-xl text-xs max-w-full truncate',
+                                  isMe ? 'bg-primary text-primary-foreground' : 'bg-secondary'
+                                )}>
+                                  {isVoiceMessage(msg.body) ? '🎙️ Message vocal' : 
+                                   isGifMessage(msg.body) ? '🎬 GIF' : 
+                                   msg.body.length > 50 ? msg.body.slice(0, 50) + '…' : msg.body}
+                                </div>
+                              </div>
+                              <div className="p-2 space-y-0.5">
                                 <button
                                   onClick={() => {
-                                    deleteForEveryone.mutate({ messageId: msg.id, conversationId });
+                                    deleteForMe.mutate({ messageId: msg.id, conversationId });
                                     setDeleteMenuMsgId(null);
                                   }}
-                                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs hover:bg-destructive/10 transition-colors text-left text-destructive"
+                                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs hover:bg-secondary transition-all text-left group/btn"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  Supprimer pour tous
+                                  <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center group-hover/btn:bg-muted-foreground/10 transition-colors">
+                                    <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
+                                  </div>
+                                  <div>
+                                    <p className="font-medium">Supprimer pour moi</p>
+                                    <p className="text-[10px] text-muted-foreground">Ce message disparaîtra de votre vue</p>
+                                  </div>
                                 </button>
-                              )}
-                              <button
-                                onClick={() => setDeleteMenuMsgId(null)}
-                                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs hover:bg-secondary transition-colors text-left text-muted-foreground"
-                              >
-                                Annuler
-                              </button>
+                                {isMe && (
+                                  <button
+                                    onClick={() => {
+                                      deleteForEveryone.mutate({ messageId: msg.id, conversationId });
+                                      setDeleteMenuMsgId(null);
+                                    }}
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs hover:bg-destructive/5 transition-all text-left group/btn"
+                                  >
+                                    <div className="w-8 h-8 rounded-full bg-destructive/10 flex items-center justify-center group-hover/btn:bg-destructive/20 transition-colors">
+                                      <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                                    </div>
+                                    <div>
+                                      <p className="font-medium text-destructive">Supprimer pour tous</p>
+                                      <p className="text-[10px] text-muted-foreground">Plus personne ne verra ce message</p>
+                                    </div>
+                                  </button>
+                                )}
+                              </div>
+                              <div className="px-2 pb-2">
+                                <button
+                                  onClick={() => setDeleteMenuMsgId(null)}
+                                  className="w-full py-2 rounded-xl text-xs font-medium text-muted-foreground hover:bg-secondary transition-all"
+                                >
+                                  Annuler
+                                </button>
+                              </div>
                             </div>
                           </>
                         )}
