@@ -159,6 +159,7 @@ function AdChatCreator() {
       target_age_max: generatedAd.target_age_max || 65,
       target_gender: generatedAd.target_gender || 'all',
       target_interests: generatedAd.target_interests || [],
+      target_location: { type: locationType, values: selectedLocations },
       duration_type: selectedDuration,
     });
     setGeneratedAd(null);
