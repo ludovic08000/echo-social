@@ -1143,6 +1143,7 @@ function VerificationsSection() {
     }
   };
 
+  const analyzePhoto = async (userId: string, avatarUrl: string) => {
     if (!avatarUrl) {
       toast({ title: 'Pas de photo', description: 'Cet utilisateur n\'a pas de photo de profil.', variant: 'destructive' });
       return;
