@@ -41,24 +41,9 @@ export function MobileNav() {
       <div className="flex items-center justify-around h-[60px] px-2">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path || 
-            (item.path === '/profile' && location.pathname.startsWith('/profile')) ||
-            (item.path === '/messages' && location.pathname.startsWith('/messages'));
-          const showNotifBadge = item.path === '/notifications' && unreadCount && unreadCount > 0;
-          const showMsgBadge = item.path === '/messages' && unreadMessages > 0;
-          
-          if (item.isCreate) {
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                className="flex flex-col items-center justify-center gap-0.5"
-              >
-                <div className="w-11 h-11 rounded-2xl bg-premium-gradient flex items-center justify-center shadow-premium-gold transition-transform duration-200 active:scale-95">
-                  <PlusCircle className="w-5 h-5 text-primary-foreground" />
-                </div>
-              </Link>
-            );
-          }
+            (item.path === '/groups' && location.pathname.startsWith('/group')) ||
+            (item.path === '/pages' && location.pathname.startsWith('/page')) ||
+            (item.path === '/marketplace' && location.pathname.startsWith('/marketplace'));
           
           return (
             <Link
