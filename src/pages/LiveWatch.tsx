@@ -67,7 +67,7 @@ export default function LiveWatch() {
       <div className="fixed inset-0 bg-black flex items-center justify-center">
         <div className="flex flex-col items-center gap-4 text-white">
           <Radio className="w-12 h-12 animate-pulse text-destructive" />
-          <span>Connexion au live...</span>
+          <span>Chargement du live...</span>
         </div>
       </div>
     );
