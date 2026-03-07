@@ -288,9 +288,22 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const { goBack, closeChat, minimizeChat } = useChatWidget();
   const conversation = conversations?.find(c => c.id === conversationId);
 
-  // Call hook
+  // Call hook & sound
   const call = useCall();
+  const playSound = useRealtimeNotificationSound();
+  const prevMsgCountRef = useRef(0);
 
+  // Play sound on new incoming message
+  useEffect(() => {
+    if (!messages?.length) return;
+    if (prevMsgCountRef.current > 0 && messages.length > prevMsgCountRef.current) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg.sender_id !== user?.id) {
+        playSound('message');
+      }
+    }
+    prevMsgCountRef.current = messages.length;
+  }, [messages?.length]);
 
   const { upload, isUploading } = useImageUpload({
     bucket: 'post-images',
