@@ -16,11 +16,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 
 const EXPIRY_OPTIONS = [
   { label: '1h', value: 1, description: '1 heure' },
