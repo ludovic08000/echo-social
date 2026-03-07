@@ -1248,7 +1248,7 @@ function VerificationsSection() {
                   </TableCell>
                   <TableCell>
                     {v.status !== 'verified' && v.status !== 'deleted' && (
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 flex-wrap">
                         {v.status === 'document_submitted' && (
                           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateVerification.mutate({ id: v.id, status: 'verified' })}>
                             ✅ Valider
@@ -1256,6 +1256,9 @@ function VerificationsSection() {
                         )}
                         <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => deleteAccount.mutate({ id: v.id, userId: v.reported_user_id })}>
                           Supprimer
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-7 text-xs border-primary/30 text-primary" onClick={() => archiveUsurper(v)}>
+                          <Archive className="w-3 h-3 mr-1" /> Archiver
                         </Button>
                       </div>
                     )}
