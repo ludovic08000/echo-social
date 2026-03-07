@@ -1130,7 +1130,7 @@ function VerificationsSection() {
       await supabase.from('banned_users').insert({ user_id: v.reported_user_id, reason: `Usurpation d'identité - Dossier ${caseNumber}`, banned_by: currentUser.id });
       // Ban IPs
       for (const ip of ips) {
-        await supabase.from('banned_ips').insert({ ip_address: ip, reason: `Usurpation - ${caseNumber}`, banned_by: currentUser.id }).catch(() => {});
+        await supabase.from('banned_ips').insert({ ip_address: ip, reason: `Usurpation - ${caseNumber}`, banned_by: currentUser.id }).then(() => {}).catch(() => {});
       }
 
       // Update verification status
@@ -1521,9 +1521,9 @@ ${archive.profile_snapshot ? `    Nom : ${archive.profile_snapshot.name || '-'}
             {/* Summary */}
             <div className="flex gap-4 text-xs text-muted-foreground">
               <span>🎯 Victime : <strong className="text-foreground">{archive.victim_name || '-'}</strong></span>
-              <span>🌐 {(archive.ip_addresses || []).length} IP(s)</span>
-              <span>📱 {(archive.device_fingerprints || []).length} empreinte(s)</span>
-              <span>📋 {(archive.connection_logs || []).length} log(s)</span>
+              <span>🌐 {(archive.ip_addresses as string[] || []).length} IP(s)</span>
+              <span>📱 {Array.isArray(archive.device_fingerprints) ? archive.device_fingerprints.length : 0} empreinte(s)</span>
+              <span>📋 {Array.isArray(archive.connection_logs) ? archive.connection_logs.length : 0} log(s)</span>
               {archive.usurper_email && <span><Mail className="w-3 h-3 inline mr-1" />{archive.usurper_email}</span>}
             </div>
 
