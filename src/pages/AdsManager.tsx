@@ -52,7 +52,7 @@ export default function AdsManager() {
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = await uploadImage(file, 'post-images');
+    const url = await upload(file);
     if (url) setImageUrl(url);
   };
 
