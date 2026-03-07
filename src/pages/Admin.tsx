@@ -1089,7 +1089,60 @@ function VerificationsSection() {
     },
   });
 
-  const analyzePhoto = async (userId: string, avatarUrl: string) => {
+  const archiveUsurper = async (v: any) => {
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) return;
+
+      // Gather evidence: profile snapshot
+      const { data: profile } = await supabase.from('profiles').select('*').eq('user_id', v.reported_user_id).maybeSingle();
+      
+      // Gather IPs from device fingerprints
+      const { data: fingerprints } = await supabase.from('device_fingerprints').select('*').eq('user_id', v.reported_user_id);
+      const ips = [...new Set((fingerprints || []).map(f => f.ip_address).filter(Boolean))] as string[];
+      
+      // Gather connection logs
+      const { data: connLogs } = await supabase.from('security_logs').select('*').or(`details->>user_id.eq.${v.reported_user_id},ip_address.in.(${ips.join(',')})`).order('created_at', { ascending: false }).limit(50);
+
+      // Generate case number
+      const caseNumber = `USR-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+      const { error } = await supabase.from('identity_theft_archives').insert({
+        usurper_user_id: v.reported_user_id,
+        usurper_name: v.reportedName || profile?.name,
+        usurper_email: v.reported_email || null,
+        usurper_avatar_url: v.reportedAvatar || profile?.avatar_url,
+        usurper_bio: profile?.bio,
+        victim_user_id: v.reporter_id,
+        victim_name: v.reporterName,
+        ip_addresses: ips,
+        device_fingerprints: fingerprints || [],
+        connection_logs: connLogs || [],
+        profile_snapshot: profile || {},
+        archived_by: currentUser.id,
+        case_number: caseNumber,
+        admin_notes: `Archivé depuis vérification ID #${v.id}`,
+      });
+
+      if (error) throw error;
+
+      // Also ban the account
+      await supabase.from('banned_users').insert({ user_id: v.reported_user_id, reason: `Usurpation d'identité - Dossier ${caseNumber}`, banned_by: currentUser.id });
+      // Ban IPs
+      for (const ip of ips) {
+        await supabase.from('banned_ips').insert({ ip_address: ip, reason: `Usurpation - ${caseNumber}`, banned_by: currentUser.id }).catch(() => {});
+      }
+
+      // Update verification status
+      await supabase.from('identity_verifications').update({ status: 'deleted', auto_deleted: true, updated_at: new Date().toISOString() }).eq('id', v.id);
+
+      toast({ title: '📁 Profil archivé', description: `Dossier ${caseNumber} créé avec toutes les preuves (IPs, logs, fingerprints).` });
+      queryClient.invalidateQueries({ queryKey: ['admin-verifications'] });
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    }
+  };
+
     if (!avatarUrl) {
       toast({ title: 'Pas de photo', description: 'Cet utilisateur n\'a pas de photo de profil.', variant: 'destructive' });
       return;
