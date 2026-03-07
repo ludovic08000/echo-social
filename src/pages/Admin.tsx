@@ -47,6 +47,7 @@ const NAV_ITEMS = [
   { key: 'reports', label: 'Signalements', icon: Flag },
   { key: 'stats', label: 'Statistiques', icon: BarChart3 },
   { key: 'subscriptions', label: 'Abonnements', icon: CreditCard },
+  { key: 'ai', label: 'Intelligence Artificielle', icon: Brain },
   { key: 'security', label: 'Sécurité', icon: Lock },
   { key: 'settings', label: 'Paramètres', icon: Settings },
 ] as const;
