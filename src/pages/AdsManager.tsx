@@ -1,15 +1,16 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
   Megaphone, Plus, Sparkles, Loader2, Eye, MousePointerClick, 
   DollarSign, Calendar, Target, Zap, BarChart3, CheckCircle2, ArrowRight,
   Users, Clock, Crown, Shield, ShieldCheck, ShieldX, TrendingUp,
-  UserCheck
+  UserCheck, Send, Bot, User, ImagePlus
 } from 'lucide-react';
 import { useAdCampaigns, useCreateAdCampaign, useAdAIAssistant, useAdDailyStats, getAdPricing, DurationType, AdCampaign } from '@/hooks/useAdCampaigns';
 import { cn } from '@/lib/utils';
@@ -17,6 +18,8 @@ import { useImageUpload } from '@/hooks/useImageUpload';
 import { format, subDays, eachDayOfInterval } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 const PRICING = getAdPricing();
 
@@ -31,7 +34,6 @@ const INTEREST_OPTIONS = [
   'Santé', 'Business', 'Éducation', 'Beauté', 'Auto', 'Immobilier',
 ];
 
-// Generate mock chart data based on campaigns
 function generateChartData(campaigns: AdCampaign[]) {
   const days = eachDayOfInterval({ start: subDays(new Date(), 13), end: new Date() });
   return days.map(day => {
@@ -47,56 +49,63 @@ function generateChartData(campaigns: AdCampaign[]) {
   });
 }
 
-export default function AdsManager() {
-  const { data: campaigns, isLoading } = useAdCampaigns();
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  adData?: any;
+}
+
+function AdChatCreator() {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: 'assistant', content: "👋 Bonjour ! Je suis votre assistant publicitaire IA. Décrivez-moi ce que vous voulez promouvoir et je m'occupe de tout !\n\nExemple : *\"Je vends des sneakers personnalisées pour les 18-30 ans\"*" }
+  ]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [generatedAd, setGeneratedAd] = useState<any>(null);
+  const [selectedDuration, setSelectedDuration] = useState<DurationType>('1_week');
+  const [imageUrl, setImageUrl] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
   const createCampaign = useCreateAdCampaign();
-  const aiAssistant = useAdAIAssistant();
   const { upload, isUploading } = useImageUpload({ bucket: 'post-images' });
 
-  const [tab, setTab] = useState<'campaigns' | 'create' | 'analytics' | 'pricing'>('campaigns');
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [ctaText, setCtaText] = useState('En savoir plus');
-  const [ctaUrl, setCtaUrl] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [duration, setDuration] = useState<DurationType>('1_week');
-  const [targetAudience, setTargetAudience] = useState('');
-  const [ageRange, setAgeRange] = useState([18, 45]);
-  const [gender, setGender] = useState('all');
-  const [interests, setInterests] = useState<string[]>([]);
-  const [moderationResult, setModerationResult] = useState<any>(null);
-  const [moderating, setModerating] = useState(false);
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+  }, [messages]);
 
-  const chartData = generateChartData(campaigns || []);
+  const sendMessage = async () => {
+    if (!input.trim() || isLoading) return;
+    const userMsg: ChatMessage = { role: 'user', content: input.trim() };
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+    setInput('');
+    setIsLoading(true);
 
-  const handleAIGenerate = async () => {
-    const result = await aiAssistant.mutateAsync({
-      action: 'generate_ad',
-      product_name: title || 'Mon produit',
-      product_description: body,
-      target_audience: targetAudience,
-      duration: PRICING[duration].label,
-      budget: PRICING[duration].price,
-    });
-    if (result) {
-      if (result.title) setTitle(result.title);
-      if (result.body) setBody(result.body);
-      if (result.cta_text) setCtaText(result.cta_text);
-    }
-  };
-
-  const handleModerate = async () => {
-    setModerating(true);
     try {
-      const result = await aiAssistant.mutateAsync({
-        action: 'moderate_ad',
-        ad_title: title,
-        ad_body: body,
-        target_audience: targetAudience,
+      const { data, error } = await supabase.functions.invoke('ad-assistant', {
+        body: {
+          action: 'chat',
+          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+        },
       });
-      setModerationResult(result);
+
+      if (error) throw error;
+
+      if (data.type === 'ad_generated') {
+        setGeneratedAd(data.ad);
+        if (data.ad.recommended_duration) setSelectedDuration(data.ad.recommended_duration);
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: data.message + "\n\n✅ **Votre publicité est prête !** Vérifiez l'aperçu ci-dessous et lancez votre campagne.",
+          adData: data.ad,
+        }]);
+      } else {
+        setMessages(prev => [...prev, { role: 'assistant', content: data.message }]);
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'Erreur de communication avec l\'IA');
+      setMessages(prev => [...prev, { role: 'assistant', content: "❌ Désolé, une erreur est survenue. Réessayez." }]);
     } finally {
-      setModerating(false);
+      setIsLoading(false);
     }
   };
 
@@ -107,25 +116,183 @@ export default function AdsManager() {
     if (url) setImageUrl(url);
   };
 
-  const handleCreate = async () => {
-    if (!title.trim() || !body.trim()) return;
+  const handleLaunch = async () => {
+    if (!generatedAd) return;
     await createCampaign.mutateAsync({
-      title,
-      body,
+      title: generatedAd.title,
+      body: generatedAd.body,
       image_url: imageUrl || undefined,
-      cta_text: ctaText,
-      cta_url: ctaUrl || undefined,
-      target_audience: targetAudience ? { description: targetAudience } : undefined,
-      target_age_min: ageRange[0],
-      target_age_max: ageRange[1],
-      target_gender: gender,
-      target_interests: interests,
-      duration_type: duration,
+      cta_text: generatedAd.cta_text || 'En savoir plus',
+      target_age_min: generatedAd.target_age_min || 18,
+      target_age_max: generatedAd.target_age_max || 65,
+      target_gender: generatedAd.target_gender || 'all',
+      target_interests: generatedAd.target_interests || [],
+      duration_type: selectedDuration,
     });
-    setTitle(''); setBody(''); setCtaText('En savoir plus'); setCtaUrl('');
-    setImageUrl(''); setModerationResult(null); setInterests([]);
-    setTab('campaigns');
+    setGeneratedAd(null);
+    setMessages([{ role: 'assistant', content: "🎉 Campagne lancée avec succès ! Décrivez une nouvelle pub ou consultez vos campagnes." }]);
+    setImageUrl('');
   };
+
+  return (
+    <div className="space-y-4">
+      {/* Chat area */}
+      <div className="rounded-2xl border border-border/30 bg-card overflow-hidden" style={{ height: generatedAd ? '300px' : '420px' }}>
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border/20 bg-gradient-to-r from-primary/5 to-transparent">
+          <div className="w-8 h-8 rounded-xl bg-primary/15 flex items-center justify-center">
+            <Bot className="w-4 h-4 text-primary" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-foreground">Assistant Pub IA</p>
+            <p className="text-[10px] text-muted-foreground">Décrivez votre pub, je la crée pour vous</p>
+          </div>
+          {isLoading && <Loader2 className="w-4 h-4 animate-spin text-primary ml-auto" />}
+        </div>
+
+        <div ref={scrollRef} className="overflow-y-auto p-4 space-y-3" style={{ height: 'calc(100% - 110px)' }}>
+          {messages.map((msg, i) => (
+            <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              className={cn("flex gap-2", msg.role === 'user' ? 'justify-end' : 'justify-start')}
+            >
+              {msg.role === 'assistant' && (
+                <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                  <Sparkles className="w-3.5 h-3.5 text-primary" />
+                </div>
+              )}
+              <div className={cn(
+                "max-w-[80%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap",
+                msg.role === 'user'
+                  ? 'bg-primary text-primary-foreground rounded-br-md'
+                  : 'bg-secondary/60 text-foreground rounded-bl-md'
+              )}>
+                {msg.content.split(/(\*\*.*?\*\*|\*.*?\*)/g).map((part, j) => {
+                  if (part.startsWith('**') && part.endsWith('**')) return <strong key={j}>{part.slice(2, -2)}</strong>;
+                  if (part.startsWith('*') && part.endsWith('*')) return <em key={j}>{part.slice(1, -1)}</em>;
+                  return <span key={j}>{part}</span>;
+                })}
+              </div>
+              {msg.role === 'user' && (
+                <div className="w-7 h-7 rounded-lg bg-secondary flex items-center justify-center shrink-0 mt-0.5">
+                  <User className="w-3.5 h-3.5 text-muted-foreground" />
+                </div>
+              )}
+            </motion.div>
+          ))}
+          {isLoading && (
+            <div className="flex gap-2">
+              <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <Sparkles className="w-3.5 h-3.5 text-primary" />
+              </div>
+              <div className="bg-secondary/60 rounded-2xl rounded-bl-md px-4 py-3">
+                <div className="flex gap-1">
+                  <div className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Input */}
+        <div className="px-3 pb-3">
+          <div className="flex gap-2 items-end">
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+              placeholder="Décrivez votre produit, service ou offre..."
+              className="rounded-xl bg-secondary/30 border-border/30 text-sm"
+              disabled={isLoading}
+            />
+            <Button onClick={sendMessage} disabled={!input.trim() || isLoading} size="icon" className="rounded-xl shrink-0 h-10 w-10 bg-primary">
+              <Send className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Generated Ad Preview & Launch */}
+      <AnimatePresence>
+        {generatedAd && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-4">
+            {/* Ad Preview */}
+            <div className="rounded-2xl border border-primary/30 overflow-hidden bg-card shadow-[0_4px_20px_hsl(var(--primary)/0.1)]">
+              <div className="px-4 py-2 bg-primary/5 border-b border-primary/10 flex items-center gap-2">
+                <Eye className="w-4 h-4 text-primary" />
+                <span className="text-xs font-semibold text-primary">Aperçu de votre publicité</span>
+              </div>
+              <div className="p-4">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[9px] font-bold uppercase">Sponsorisé</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {generatedAd.target_age_min}-{generatedAd.target_age_max} ans
+                  </span>
+                </div>
+                <h3 className="font-bold text-foreground">{generatedAd.title}</h3>
+                <p className="text-sm text-muted-foreground mt-1">{generatedAd.body}</p>
+                
+                {/* Image upload */}
+                {imageUrl ? (
+                  <div className="relative mt-3 rounded-xl overflow-hidden">
+                    <img src={imageUrl} alt="Ad" className="w-full h-40 object-cover" />
+                    <button onClick={() => setImageUrl('')} className="absolute top-2 right-2 px-2 py-1 rounded-lg bg-background/80 backdrop-blur-sm text-xs border border-border/30">✕</button>
+                  </div>
+                ) : (
+                  <label className="flex items-center justify-center gap-2 mt-3 h-24 rounded-xl border-2 border-dashed border-border/40 cursor-pointer hover:border-primary/40 transition-colors">
+                    <ImagePlus className="w-5 h-5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">{isUploading ? 'Upload...' : 'Ajouter une image (optionnel)'}</span>
+                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                  </label>
+                )}
+
+                <div className="mt-3 pt-3 border-t border-border/20">
+                  <Button className="w-full rounded-xl gap-2" size="sm" variant="outline">
+                    <ArrowRight className="w-4 h-4" />{generatedAd.cta_text}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Duration selector */}
+            <div>
+              <label className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-primary" /> Choisissez la durée
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(Object.entries(PRICING) as [DurationType, typeof PRICING[DurationType]][]).map(([key, plan]) => (
+                  <button key={key} onClick={() => setSelectedDuration(key)}
+                    className={cn("p-3 rounded-xl border-2 text-center transition-all",
+                      selectedDuration === key ? "border-primary bg-primary/5" : "border-border/30 bg-card hover:border-primary/30"
+                    )}>
+                    <p className="text-xs font-semibold text-foreground">{plan.label}</p>
+                    <p className="text-lg font-black text-primary">{plan.price}€</p>
+                    <p className="text-[9px] text-muted-foreground">{plan.reach}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Launch button */}
+            <Button onClick={handleLaunch} disabled={createCampaign.isPending}
+              className="w-full h-12 rounded-xl text-base font-semibold gap-2 bg-gradient-to-r from-primary to-primary/80 shadow-[0_4px_16px_hsl(var(--primary)/0.3)]">
+              {createCampaign.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Megaphone className="w-5 h-5" />}
+              Lancer la campagne — {PRICING[selectedDuration].price}€
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+export default function AdsManager() {
+  const { data: campaigns, isLoading } = useAdCampaigns();
+  const { upload, isUploading } = useImageUpload({ bucket: 'post-images' });
+
+  const [tab, setTab] = useState<'campaigns' | 'create' | 'analytics' | 'pricing'>('campaigns');
+
+  const chartData = generateChartData(campaigns || []);
 
   const totalImpressions = campaigns?.reduce((s, c) => s + c.impressions, 0) || 0;
   const totalClicks = campaigns?.reduce((s, c) => s + c.clicks, 0) || 0;
@@ -151,7 +318,7 @@ export default function AdsManager() {
             </div>
             <h1 className="text-3xl font-bold text-foreground mb-2">Gestionnaire de Publicités</h1>
             <p className="text-muted-foreground text-sm max-w-md mx-auto">
-              Campagnes publicitaires propulsées par l'IA avec modération automatique
+              Créez vos pubs en discutant avec l'IA — elle s'occupe de tout
             </p>
           </div>
         </motion.div>
@@ -180,7 +347,7 @@ export default function AdsManager() {
         <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
           {[
             { id: 'campaigns' as const, label: 'Campagnes', icon: BarChart3 },
-            { id: 'create' as const, label: 'Créer', icon: Plus },
+            { id: 'create' as const, label: 'Créer avec l\'IA', icon: Sparkles },
             { id: 'analytics' as const, label: 'Analytics', icon: TrendingUp },
             { id: 'pricing' as const, label: 'Tarifs', icon: Crown },
           ].map(t => (
@@ -197,8 +364,6 @@ export default function AdsManager() {
           {/* ====== ANALYTICS TAB ====== */}
           {tab === 'analytics' && (
             <motion.div key="analytics" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-6">
-              
-              {/* Impressions & Clicks Chart */}
               <div className="p-5 rounded-2xl bg-card border border-border/30">
                 <h3 className="font-semibold text-foreground mb-1 flex items-center gap-2">
                   <Eye className="w-4 h-4 text-primary" /> Impressions & Clics
@@ -228,7 +393,6 @@ export default function AdsManager() {
                 </div>
               </div>
 
-              {/* Spending Chart */}
               <div className="p-5 rounded-2xl bg-card border border-border/30">
                 <h3 className="font-semibold text-foreground mb-1 flex items-center gap-2">
                   <DollarSign className="w-4 h-4 text-amber-500" /> Dépenses quotidiennes
@@ -247,7 +411,6 @@ export default function AdsManager() {
                 </div>
               </div>
 
-              {/* Pie Chart */}
               {pieData.length > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="p-5 rounded-2xl bg-card border border-border/30">
@@ -258,9 +421,7 @@ export default function AdsManager() {
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={4}>
-                            {pieData.map((entry, i) => (
-                              <Cell key={i} fill={entry.color} />
-                            ))}
+                            {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                           </Pie>
                           <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '12px', fontSize: '12px' }} />
                         </PieChart>
@@ -275,7 +436,6 @@ export default function AdsManager() {
                       ))}
                     </div>
                   </div>
-
                   <div className="p-5 rounded-2xl bg-card border border-border/30 space-y-4">
                     <h3 className="font-semibold text-foreground flex items-center gap-2">
                       <TrendingUp className="w-4 h-4 text-primary" /> Performances
@@ -297,210 +457,10 @@ export default function AdsManager() {
             </motion.div>
           )}
 
-          {/* ====== CREATE TAB ====== */}
+          {/* ====== CREATE TAB — AI CHAT ====== */}
           {tab === 'create' && (
-            <motion.div key="create" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-6">
-              {/* AI Assistant */}
-              <div className="p-5 rounded-2xl bg-gradient-to-br from-primary/5 via-card to-accent/5 border border-primary/20">
-                <div className="flex items-center gap-2 mb-3">
-                  <Sparkles className="w-5 h-5 text-primary" />
-                  <h3 className="font-semibold text-foreground">Assistant IA</h3>
-                </div>
-                <p className="text-xs text-muted-foreground mb-3">Décrivez votre produit et laissez l'IA créer votre publicité</p>
-                <div className="flex gap-2">
-                  <Button onClick={handleAIGenerate} disabled={aiAssistant.isPending} className="flex-1 rounded-xl gap-2 premium-button">
-                    {aiAssistant.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                    Générer
-                  </Button>
-                  <Button onClick={handleModerate} disabled={moderating || !title || !body} variant="outline" className="rounded-xl gap-2">
-                    {moderating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
-                    Vérifier
-                  </Button>
-                </div>
-              </div>
-
-              {/* Moderation Result */}
-              <AnimatePresence>
-                {moderationResult && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                    className={cn("p-4 rounded-2xl border", moderationResult.approved !== false
-                      ? "bg-emerald-500/5 border-emerald-500/20" : "bg-destructive/5 border-destructive/20"
-                    )}>
-                    <div className="flex items-center gap-2 mb-2">
-                      {moderationResult.approved !== false ? (
-                        <><ShieldCheck className="w-5 h-5 text-emerald-500" /><span className="font-semibold text-emerald-600 text-sm">Approuvé — Score: {moderationResult.score}/10</span></>
-                      ) : (
-                        <><ShieldX className="w-5 h-5 text-destructive" /><span className="font-semibold text-destructive text-sm">Refusé</span></>
-                      )}
-                    </div>
-                    {moderationResult.reasons?.length > 0 && (
-                      <ul className="space-y-1 ml-7">{moderationResult.reasons.map((r: string, i: number) => (
-                        <li key={i} className="text-xs text-muted-foreground">• {r}</li>
-                      ))}</ul>
-                    )}
-                    {moderationResult.suggestions?.length > 0 && (
-                      <div className="mt-2 ml-7">
-                        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Suggestions</p>
-                        {moderationResult.suggestions.map((s: string, i: number) => (
-                          <p key={i} className="text-xs text-primary">💡 {s}</p>
-                        ))}
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Form */}
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-foreground mb-1.5 block">Titre de la pub</label>
-                  <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex: Découvrez notre nouvelle collection" className="rounded-xl" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-foreground mb-1.5 block">Texte publicitaire</label>
-                  <Textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Décrivez votre offre..." className="rounded-xl min-h-[100px]" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium text-foreground mb-1.5 block">Bouton CTA</label>
-                    <Input value={ctaText} onChange={(e) => setCtaText(e.target.value)} placeholder="En savoir plus" className="rounded-xl" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-foreground mb-1.5 block">Lien CTA</label>
-                    <Input value={ctaUrl} onChange={(e) => setCtaUrl(e.target.value)} placeholder="https://..." className="rounded-xl" />
-                  </div>
-                </div>
-
-                {/* Age Targeting */}
-                <div className="p-4 rounded-2xl bg-secondary/20 border border-border/30 space-y-4">
-                  <div className="flex items-center gap-2">
-                    <Target className="w-4 h-4 text-primary" />
-                    <h4 className="font-semibold text-foreground text-sm">Ciblage avancé</h4>
-                  </div>
-
-                  {/* Age Range */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="text-xs font-medium text-muted-foreground">Tranche d'âge</label>
-                      <span className="text-xs font-bold text-primary">{ageRange[0]} — {ageRange[1]} ans</span>
-                    </div>
-                    <Slider value={ageRange} onValueChange={setAgeRange} min={13} max={75} step={1} className="w-full" />
-                    <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
-                      <span>13 ans</span><span>75 ans</span>
-                    </div>
-                  </div>
-
-                  {/* Gender */}
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-2 block">Genre</label>
-                    <div className="flex gap-2">
-                      {GENDER_OPTIONS.map(g => (
-                        <button key={g.value} onClick={() => setGender(g.value)}
-                          className={cn("flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-medium transition-all border",
-                            gender === g.value ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border/30 hover:border-primary/20"
-                          )}>
-                          <g.icon className="w-3.5 h-3.5" />{g.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Interests */}
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-2 block">Centres d'intérêt</label>
-                    <div className="flex flex-wrap gap-2">
-                      {INTEREST_OPTIONS.map(interest => (
-                        <button key={interest} onClick={() => setInterests(prev => prev.includes(interest) ? prev.filter(i => i !== interest) : [...prev, interest])}
-                          className={cn("px-3 py-1.5 rounded-xl text-xs font-medium transition-all border",
-                            interests.includes(interest)
-                              ? "bg-primary/10 text-primary border-primary/30"
-                              : "bg-card text-muted-foreground border-border/30 hover:border-primary/20"
-                          )}>
-                          {interest}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Text audience */}
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Description audience (optionnel)</label>
-                    <Input value={targetAudience} onChange={(e) => setTargetAudience(e.target.value)} placeholder="Ex: Entrepreneurs parisiens" className="rounded-xl text-sm" />
-                  </div>
-                </div>
-
-                {/* Image */}
-                <div>
-                  <label className="text-sm font-medium text-foreground mb-1.5 block">Image publicitaire</label>
-                  {imageUrl ? (
-                    <div className="relative rounded-xl overflow-hidden">
-                      <img src={imageUrl} alt="Ad" className="w-full h-48 object-cover" />
-                      <button onClick={() => setImageUrl('')} className="absolute top-2 right-2 p-1.5 rounded-lg bg-background/80 backdrop-blur-sm text-foreground text-xs border border-border/30">Supprimer</button>
-                    </div>
-                  ) : (
-                    <label className="flex items-center justify-center h-32 rounded-xl border-2 border-dashed border-border/50 cursor-pointer hover:border-primary/50 transition-colors">
-                      <div className="text-center">
-                        <Plus className="w-6 h-6 text-muted-foreground mx-auto mb-1" />
-                        <span className="text-xs text-muted-foreground">Ajouter une image</span>
-                      </div>
-                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                    </label>
-                  )}
-                </div>
-
-                {/* Duration */}
-                <div>
-                  <label className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-primary" /> Durée de la campagne
-                  </label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {(Object.entries(PRICING) as [DurationType, typeof PRICING[DurationType]][]).map(([key, plan]) => (
-                      <motion.button key={key} whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }} onClick={() => setDuration(key)}
-                        className={cn("relative p-4 rounded-2xl border-2 text-left transition-all",
-                          duration === key ? "border-primary bg-primary/5 shadow-[0_4px_16px_hsl(var(--primary)/0.2)]" : "border-border/30 bg-card hover:border-primary/30"
-                        )}>
-                        {key === '1_month' && <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-lg bg-primary text-primary-foreground text-[9px] font-bold">POPULAIRE</span>}
-                        <p className="font-bold text-foreground text-sm">{plan.label}</p>
-                        <p className="text-2xl font-black text-primary mt-1">{plan.price}€</p>
-                        <div className="flex items-center gap-1 mt-2 text-[11px] text-muted-foreground">
-                          <Users className="w-3 h-3" /><span>{plan.reach}</span>
-                        </div>
-                        {duration === key && <motion.div layoutId="selected-plan" className="absolute top-2 right-2"><CheckCircle2 className="w-5 h-5 text-primary" /></motion.div>}
-                      </motion.button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Preview */}
-                {(title || body) && (
-                  <div>
-                    <label className="text-sm font-medium text-foreground mb-3 block">Aperçu</label>
-                    <div className="rounded-2xl border border-border/30 overflow-hidden bg-card">
-                      <div className="flex items-center gap-2 px-4 pt-3 pb-2">
-                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20">
-                          <Megaphone className="w-3 h-3 text-primary" />
-                          <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Sponsorisé</span>
-                        </div>
-                        <span className="text-[10px] text-muted-foreground">{ageRange[0]}-{ageRange[1]} ans • {gender === 'all' ? 'Tous' : gender === 'male' ? 'Hommes' : 'Femmes'}</span>
-                      </div>
-                      <div className="px-4 pb-3">
-                        <h3 className="font-bold text-base">{title || 'Titre'}</h3>
-                        <p className="text-sm text-muted-foreground mt-1">{body || '...'}</p>
-                      </div>
-                      {imageUrl && <img src={imageUrl} alt="Preview" className="w-full h-48 object-cover" />}
-                      <div className="px-4 py-3 border-t border-border/20">
-                        <Button className="w-full rounded-xl gap-2" size="sm"><ArrowRight className="w-4 h-4" />{ctaText}</Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <Button onClick={handleCreate} disabled={!title.trim() || !body.trim() || createCampaign.isPending}
-                  className="w-full h-12 rounded-xl text-base font-semibold gap-2 bg-gradient-to-r from-primary to-primary/80 shadow-[0_4px_16px_hsl(var(--primary)/0.3)]">
-                  {createCampaign.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Megaphone className="w-5 h-5" />}
-                  Lancer la campagne — {PRICING[duration].price}€
-                </Button>
-              </div>
+            <motion.div key="create" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
+              <AdChatCreator />
             </motion.div>
           )}
 
@@ -513,8 +473,8 @@ export default function AdsManager() {
                 <div className="text-center py-16">
                   <Megaphone className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
                   <h3 className="font-semibold text-foreground mb-2">Aucune campagne</h3>
-                  <p className="text-sm text-muted-foreground mb-4">Créez votre première publicité</p>
-                  <Button onClick={() => setTab('create')} className="rounded-xl gap-2 premium-button"><Plus className="w-4 h-4" />Créer</Button>
+                  <p className="text-sm text-muted-foreground mb-4">Discutez avec l'IA pour créer votre première pub</p>
+                  <Button onClick={() => setTab('create')} className="rounded-xl gap-2 premium-button"><Sparkles className="w-4 h-4" />Créer avec l'IA</Button>
                 </div>
               ) : (
                 campaigns.map((campaign, i) => (
@@ -536,8 +496,6 @@ export default function AdsManager() {
                         {campaign.status === 'active' ? 'Active' : campaign.status === 'draft' ? 'Brouillon' : 'Terminée'}
                       </span>
                     </div>
-
-                    {/* Targeting info */}
                     <div className="flex flex-wrap items-center gap-2 mb-3 text-[10px]">
                       <span className="px-2 py-0.5 rounded-md bg-secondary/50 text-muted-foreground">
                         {campaign.target_age_min}-{campaign.target_age_max} ans
@@ -549,14 +507,12 @@ export default function AdsManager() {
                         <span key={int} className="px-2 py-0.5 rounded-md bg-primary/10 text-primary">{int}</span>
                       ))}
                     </div>
-
                     <div className="flex items-center gap-4 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1"><Eye className="w-3.5 h-3.5" />{campaign.impressions}</span>
                       <span className="flex items-center gap-1"><MousePointerClick className="w-3.5 h-3.5" />{campaign.clicks}</span>
                       <span className="flex items-center gap-1"><DollarSign className="w-3.5 h-3.5" />{campaign.budget}€</span>
                       <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{format(new Date(campaign.ends_at), 'dd MMM', { locale: fr })}</span>
                     </div>
-
                     {campaign.status === 'active' && (
                       <div className="mt-3">
                         <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
@@ -596,7 +552,7 @@ export default function AdsManager() {
                     </div>
                     <div className="text-right">
                       <p className="text-2xl font-black text-primary">{plan.price}€</p>
-                      <Button size="sm" variant="outline" className="mt-2 rounded-xl text-xs" onClick={() => { setDuration(key); setTab('create'); }}>Choisir</Button>
+                      <Button size="sm" variant="outline" className="mt-2 rounded-xl text-xs" onClick={() => setTab('create')}>Choisir</Button>
                     </div>
                   </motion.div>
                 ))}
