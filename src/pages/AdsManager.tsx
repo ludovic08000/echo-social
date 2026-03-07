@@ -64,10 +64,13 @@ function AdChatCreator() {
   const [generatedAd, setGeneratedAd] = useState<any>(null);
   const [selectedDuration, setSelectedDuration] = useState<DurationType>('1_week');
   const [imageUrl, setImageUrl] = useState('');
+  const [videoUrl, setVideoUrl] = useState('');
+  const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
   const [generatingImage, setGeneratingImage] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const createCampaign = useCreateAdCampaign();
   const { upload, isUploading } = useImageUpload({ bucket: 'post-images' });
+  const { upload: uploadVideo, isUploading: isUploadingVideo } = useImageUpload({ bucket: 'videos' });
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
