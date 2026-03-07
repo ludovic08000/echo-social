@@ -10,7 +10,7 @@ import { fr } from 'date-fns/locale';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, type Message } from '@/hooks/useMessages';
+import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, useDeleteMessageForMe, useDeleteMessageForEveryone, type Message } from '@/hooks/useMessages';
 import { useFriendships } from '@/hooks/useFriendships';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -269,6 +269,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const { data: conversations } = useConversations();
   const { data: messages, isLoading } = useMessages(conversationId);
   const sendMessage = useSendMessage();
+  const deleteForMe = useDeleteMessageForMe();
+  const deleteForEveryone = useDeleteMessageForEveryone();
   const markRead = useMarkConversationRead();
   const [newMessage, setNewMessage] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
@@ -276,6 +278,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
+  const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
