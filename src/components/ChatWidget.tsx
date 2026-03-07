@@ -176,7 +176,7 @@ function WidgetConversationList() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/30 bg-primary text-primary-foreground rounded-t-xl">
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/30 bg-primary text-primary-foreground rounded-t-lg">
         <span className="text-sm font-bold">Messagerie</span>
         <div className="flex items-center gap-0.5">
           <button onClick={() => setShowNewChat(true)} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
@@ -359,7 +359,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       }} />
 
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30 bg-primary text-primary-foreground rounded-t-xl">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30 bg-primary text-primary-foreground rounded-t-lg">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           {conversation && (
             <>
@@ -557,7 +557,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       )}
 
       {/* Input bar */}
-      <div className="border-t border-border/30 bg-background rounded-b-xl">
+      <div className="border-t border-border/30 bg-background">
         <form onSubmit={handleSend} className="flex items-center gap-1.5 px-2 py-1.5">
           <div className="flex items-center gap-0">
             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
