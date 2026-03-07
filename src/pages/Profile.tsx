@@ -463,6 +463,7 @@ export default function Profile() {
                     <MessageCircle className="w-4 h-4 mr-2" />
                     Envoyer un message
                   </Button>
+                  <ReportFakeAccountButton reportedUserId={userId!} />
                 </>
               )}
             </div>
