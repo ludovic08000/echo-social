@@ -128,6 +128,7 @@ export function useCreateAdCampaign() {
       title: string;
       body: string;
       image_url?: string;
+      video_url?: string;
       cta_text?: string;
       cta_url?: string;
       target_audience?: any;
