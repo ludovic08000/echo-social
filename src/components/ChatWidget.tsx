@@ -296,6 +296,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const { goBack, closeChat, minimizeChat } = useChatWidget();
   const conversation = conversations?.find(c => c.id === conversationId);
 
+  // Call hook
+  const call = useCall();
+
+
   const { upload, isUploading } = useImageUpload({
     bucket: 'post-images',
     onSuccess: (url) => {
