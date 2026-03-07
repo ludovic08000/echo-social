@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { useAdCampaigns, useCreateAdCampaign, useAdAIAssistant, useAdDailyStats, getAdPricing, DurationType, AdCampaign } from '@/hooks/useAdCampaigns';
 import { cn } from '@/lib/utils';
+import { LocationSelector } from '@/components/ads/LocationSelector';
+import { type TargetLocation, getDefaultLocation } from '@/lib/geoData';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { format, subDays, eachDayOfInterval } from 'date-fns';
 import { fr } from 'date-fns/locale';
