@@ -1,0 +1,1 @@
+ALTER TABLE public.ad_campaigns ADD COLUMN target_location jsonb DEFAULT '{"type": "france", "values": []}'::jsonb;

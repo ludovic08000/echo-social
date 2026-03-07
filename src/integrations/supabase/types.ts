@@ -115,6 +115,7 @@ export type Database = {
           target_audience: Json | null
           target_gender: string | null
           target_interests: string[] | null
+          target_location: Json | null
           title: string
           updated_at: string
           video_url: string | null
@@ -144,6 +145,7 @@ export type Database = {
           target_audience?: Json | null
           target_gender?: string | null
           target_interests?: string[] | null
+          target_location?: Json | null
           title: string
           updated_at?: string
           video_url?: string | null
@@ -173,6 +175,7 @@ export type Database = {
           target_audience?: Json | null
           target_gender?: string | null
           target_interests?: string[] | null
+          target_location?: Json | null
           title?: string
           updated_at?: string
           video_url?: string | null
