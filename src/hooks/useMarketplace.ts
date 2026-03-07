@@ -3,9 +3,16 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 
-export function useProducts(category?: string, search?: string) {
+export interface LocationFilter {
+  country?: string;
+  region?: string;
+  city?: string;
+  scope?: 'local' | 'region' | 'country' | 'europe';
+}
+
+export function useProducts(category?: string, search?: string, location?: LocationFilter) {
   return useQuery({
-    queryKey: ['products', category, search],
+    queryKey: ['products', category, search, location],
     queryFn: async () => {
       let query = supabase
         .from('products')
@@ -19,6 +26,20 @@ export function useProducts(category?: string, search?: string) {
       if (search) {
         query = query.ilike('title', `%${search}%`);
       }
+      
+      // Location filters
+      if (location?.scope !== 'europe') {
+        if (location?.country) {
+          query = query.eq('country', location.country);
+        }
+        if (location?.region) {
+          query = query.eq('region', location.region);
+        }
+        if (location?.city) {
+          query = query.eq('city', location.city);
+        }
+      }
+      // scope 'europe' = no country filter → show all
 
       const { data, error } = await query;
       if (error) throw error;

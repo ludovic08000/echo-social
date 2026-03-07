@@ -1,13 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
-import { useProducts } from '@/hooks/useMarketplace';
+import { useProducts, LocationFilter } from '@/hooks/useMarketplace';
 import { ProductCard } from '@/components/marketplace/ProductCard';
 import { CartSheet } from '@/components/marketplace/CartSheet';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Store, Plus, ShoppingBag, Sparkles, Flame, Clock, SlidersHorizontal, X, Heart, TrendingUp, Tag } from 'lucide-react';
+import { Search, Store, Plus, ShoppingBag, Sparkles, Flame, Clock, SlidersHorizontal, X, Heart, TrendingUp, Tag, MapPin, Globe } from 'lucide-react';
 import { SellerDashboard } from '@/components/marketplace/SellerDashboard';
 import { SEOHead } from '@/components/SEOHead';
 import { CreateProductDialog } from '@/components/marketplace/CreateProductDialog';
@@ -15,6 +15,8 @@ import { useSellerProfile } from '@/hooks/useMarketplace';
 import { useProductFavorites } from '@/hooks/useProductFavorites';
 import { cn } from '@/lib/utils';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { COUNTRIES, GEO_DATA } from '@/lib/geoData';
 
 const CATEGORIES = [
   { value: 'all', label: 'Tout', icon: '🔥' },
@@ -36,6 +38,13 @@ const SORT_OPTIONS = [
   { value: 'price-desc', label: 'Prix ↓', icon: Tag },
 ];
 
+const LOCATION_SCOPES = [
+  { value: 'europe', label: 'Europe', icon: '🌍' },
+  { value: 'country', label: 'Pays', icon: '🏳️' },
+  { value: 'region', label: 'Région', icon: '📍' },
+  { value: 'local', label: 'Ville', icon: '🏘️' },
+];
+
 export default function Marketplace() {
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState('');
@@ -43,7 +52,31 @@ export default function Marketplace() {
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'browse');
   const [sortBy, setSortBy] = useState('recent');
   const [showSearch, setShowSearch] = useState(false);
-  const { data: products = [], isLoading } = useProducts(category, search);
+  const [showLocationFilter, setShowLocationFilter] = useState(false);
+  const [locationScope, setLocationScope] = useState<'local' | 'region' | 'country' | 'europe'>('country');
+  const [selectedCountry, setSelectedCountry] = useState('FR');
+  const [selectedRegion, setSelectedRegion] = useState('');
+  const [selectedCity, setSelectedCity] = useState('');
+
+  const locationFilter: LocationFilter = useMemo(() => ({
+    scope: locationScope,
+    country: locationScope !== 'europe' ? selectedCountry : undefined,
+    region: (locationScope === 'region' || locationScope === 'local') ? selectedRegion || undefined : undefined,
+    city: locationScope === 'local' ? selectedCity || undefined : undefined,
+  }), [locationScope, selectedCountry, selectedRegion, selectedCity]);
+
+  const regions = useMemo(() => {
+    const data = GEO_DATA[selectedCountry];
+    return data ? Object.keys(data).sort() : [];
+  }, [selectedCountry]);
+
+  const cities = useMemo(() => {
+    const data = GEO_DATA[selectedCountry];
+    if (!data || !selectedRegion) return [];
+    return (data[selectedRegion] || []).map(v => v.nom).sort();
+  }, [selectedCountry, selectedRegion]);
+
+  const { data: products = [], isLoading } = useProducts(category, search, locationFilter);
   const { data: seller } = useSellerProfile();
   const { data: favorites = [] } = useProductFavorites();
 
