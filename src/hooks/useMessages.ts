@@ -41,7 +41,6 @@ export function useConversations() {
     queryFn: async () => {
       if (!user) return [];
 
-      // Get conversations where user is a participant
       const { data: participations, error: partError } = await supabase
         .from('conversation_participants')
         .select('conversation_id, last_read_at')
@@ -53,7 +52,6 @@ export function useConversations() {
       const conversationIds = participations.map(p => p.conversation_id);
       const lastReadMap = new Map(participations.map(p => [p.conversation_id, p.last_read_at]));
 
-      // Get conversations
       const { data: conversations, error: convError } = await supabase
         .from('conversations')
         .select('*')
@@ -62,7 +60,6 @@ export function useConversations() {
 
       if (convError) throw convError;
 
-      // Get other participants
       const { data: allParticipants } = await supabase
         .from('conversation_participants')
         .select('conversation_id, user_id')
@@ -71,7 +68,6 @@ export function useConversations() {
 
       const otherUserIds = [...new Set(allParticipants?.map(p => p.user_id) || [])];
       
-      // Get profiles
       const { data: profiles } = await supabase
         .from('profiles')
         .select('user_id, name, avatar_url')
@@ -80,7 +76,6 @@ export function useConversations() {
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
       const participantMap = new Map(allParticipants?.map(p => [p.conversation_id, p.user_id]) || []);
 
-      // Get last messages
       const { data: messages } = await supabase
         .from('messages')
         .select('conversation_id, body, created_at, sender_id')
@@ -94,7 +89,6 @@ export function useConversations() {
         }
       });
 
-      // Count unread messages
       const unreadCounts: Record<string, number> = {};
       messages?.forEach(m => {
         const lastRead = lastReadMap.get(m.conversation_id);
@@ -131,7 +125,6 @@ export function useMessages(conversationId: string) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  // Set up realtime subscription
   useEffect(() => {
     if (!conversationId || !user) return;
 
@@ -140,7 +133,7 @@ export function useMessages(conversationId: string) {
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'messages',
           filter: `conversation_id=eq.${conversationId}`,
@@ -160,7 +153,15 @@ export function useMessages(conversationId: string) {
   return useQuery({
     queryKey: ['messages', conversationId],
     queryFn: async () => {
-      if (!conversationId) return [];
+      if (!conversationId || !user) return [];
+
+      // Get hidden message IDs for this user
+      const { data: deletions } = await supabase
+        .from('message_deletions')
+        .select('message_id')
+        .eq('user_id', user.id);
+
+      const hiddenIds = new Set((deletions || []).map(d => d.message_id));
 
       const { data: messages, error } = await supabase
         .from('messages')
@@ -170,8 +171,10 @@ export function useMessages(conversationId: string) {
 
       if (error) throw error;
 
-      // Get profiles
-      const senderIds = [...new Set(messages.map(m => m.sender_id))];
+      // Filter out hidden messages
+      const visibleMessages = messages.filter(m => !hiddenIds.has(m.id));
+
+      const senderIds = [...new Set(visibleMessages.map(m => m.sender_id))];
       const { data: profiles } = await supabase
         .from('profiles')
         .select('user_id, name, avatar_url')
@@ -179,7 +182,7 @@ export function useMessages(conversationId: string) {
 
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
 
-      return messages.map(msg => ({
+      return visibleMessages.map(msg => ({
         ...msg,
         profile: {
           name: profileMap.get(msg.sender_id)?.name || 'Unknown',
@@ -212,13 +215,11 @@ export function useSendMessage() {
 
       if (error) throw error;
 
-      // Update conversation updated_at
       await supabase
         .from('conversations')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', conversationId);
 
-      // Create notification for recipient
       const { data: participants } = await supabase
         .from('conversation_participants')
         .select('user_id')
@@ -242,6 +243,54 @@ export function useSendMessage() {
   });
 }
 
+// Delete message for me only (hide it)
+export function useDeleteMessageForMe() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
+      if (!user) throw new Error('Not authenticated');
+
+      const { error } = await supabase
+        .from('message_deletions')
+        .insert({ message_id: messageId, user_id: user.id });
+
+      if (error) throw error;
+      return conversationId;
+    },
+    onSuccess: (conversationId) => {
+      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}
+
+// Delete message for everyone (only sender can do this)
+export function useDeleteMessageForEveryone() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
+      if (!user) throw new Error('Not authenticated');
+
+      const { error } = await supabase
+        .from('messages')
+        .delete()
+        .eq('id', messageId)
+        .eq('sender_id', user.id);
+
+      if (error) throw error;
+      return conversationId;
+    },
+    onSuccess: (conversationId) => {
+      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}
+
 export function useCreateConversation() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -250,7 +299,6 @@ export function useCreateConversation() {
     mutationFn: async (otherUserId: string) => {
       if (!user) throw new Error('Not authenticated');
 
-      // Check if conversation already exists
       const { data: existingParticipations } = await supabase
         .from('conversation_participants')
         .select('conversation_id')
@@ -268,7 +316,6 @@ export function useCreateConversation() {
         }
       }
 
-      // Create new conversation without selecting it yet (SELECT policy requires participation)
       const conversationId = crypto.randomUUID();
 
       const { error: convError } = await supabase
@@ -277,7 +324,6 @@ export function useCreateConversation() {
 
       if (convError) throw convError;
 
-      // Add participants
       const { error: partError } = await supabase
         .from('conversation_participants')
         .insert([
