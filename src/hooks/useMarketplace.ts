@@ -143,6 +143,9 @@ export function useCreateProduct() {
       color?: string;
       shipping_type?: string;
       shipping_price?: number;
+      country?: string;
+      region?: string;
+      city?: string;
     }) => {
       const { data, error } = await supabase
         .from('products')
