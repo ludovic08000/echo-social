@@ -7,22 +7,22 @@ import { ProductReviews } from '@/components/marketplace/ProductReviews';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { ShoppingCart, BadgeCheck, Star, ArrowLeft, Package, Zap, Wrench, Heart, Store, ChevronLeft, ChevronRight, Truck, MapPin, Download } from 'lucide-react';
+import { ShoppingCart, BadgeCheck, Star, ArrowLeft, Package, Zap, Wrench, Heart, Store, ChevronLeft, ChevronRight, Truck, MapPin, Download, Shield, MessageCircle, Share2 } from 'lucide-react';
 import { SEOHead } from '@/components/SEOHead';
 import { cn } from '@/lib/utils';
 
 const TYPE_LABELS: Record<string, { label: string; icon: any }> = {
-  physical: { label: 'Produit physique', icon: Package },
-  digital: { label: 'Produit numérique', icon: Zap },
+  physical: { label: 'Physique', icon: Package },
+  digital: { label: 'Numérique', icon: Zap },
   service: { label: 'Service', icon: Wrench },
 };
 
 const SHIPPING_LABELS: Record<string, { label: string; icon: any }> = {
   standard: { label: 'Standard (3-5j)', icon: Truck },
   express: { label: 'Express (1-2j)', icon: Truck },
-  pickup: { label: 'Retrait en main propre', icon: MapPin },
-  digital: { label: 'Livraison numérique', icon: Download },
-  free: { label: 'Livraison gratuite', icon: Truck },
+  pickup: { label: 'Retrait', icon: MapPin },
+  digital: { label: 'Téléchargement', icon: Download },
+  free: { label: 'Gratuit', icon: Truck },
 };
 
 export default function ProductDetailPage() {
@@ -37,7 +37,7 @@ export default function ProductDetailPage() {
     return (
       <AppLayout>
         <div className="py-4 space-y-4">
-          <div className="skeleton aspect-square rounded-2xl" />
+          <div className="skeleton aspect-[4/5] rounded-2xl" />
           <div className="skeleton h-8 w-2/3" />
           <div className="skeleton h-6 w-1/3" />
         </div>
@@ -64,109 +64,155 @@ export default function ProductDetailPage() {
   const isFav = favorites.includes(product.id);
   const shippingInfo = SHIPPING_LABELS[product.shipping_type] || SHIPPING_LABELS.standard;
   const ShippingIcon = shippingInfo.icon;
+  const isOutOfStock = product.stock_quantity !== null && product.stock_quantity <= 0;
 
   return (
     <AppLayout>
       <SEOHead title={`${product.title} - Marketplace`} description={product.description || product.title} />
-      <div className="py-4 space-y-4">
-        {/* Back */}
-        <Link to="/marketplace" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
-          <ArrowLeft className="w-4 h-4" />
-          Marketplace
-        </Link>
+      <div className="pb-28 space-y-4">
+        {/* Back + actions bar */}
+        <div className="flex items-center justify-between py-2">
+          <Link to="/marketplace" className="w-9 h-9 rounded-xl bg-secondary/60 flex items-center justify-center hover:bg-secondary transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+          <div className="flex gap-2">
+            <button className="w-9 h-9 rounded-xl bg-secondary/60 flex items-center justify-center hover:bg-secondary transition-colors">
+              <Share2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => toggleFav.mutate(product.id)}
+              className={cn(
+                "w-9 h-9 rounded-xl flex items-center justify-center transition-all",
+                isFav ? "bg-destructive/10 text-destructive" : "bg-secondary/60 hover:bg-secondary"
+              )}
+            >
+              <Heart className={cn("w-4 h-4", isFav && "fill-current")} />
+            </button>
+          </div>
+        </div>
 
         {/* Image gallery */}
-        <div className="relative aspect-square rounded-2xl overflow-hidden bg-muted">
+        <div className="relative aspect-[4/5] rounded-3xl overflow-hidden bg-muted shadow-[var(--shadow-lg)]">
           <img src={images[imgIndex]} alt={product.title} className="w-full h-full object-cover" />
+          
           {images.length > 1 && (
             <>
               <button
                 onClick={() => setImgIndex((i) => (i - 1 + images.length) % images.length)}
-                className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-background/70 backdrop-blur-sm flex items-center justify-center"
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl bg-background/80 backdrop-blur-sm flex items-center justify-center shadow-md active:scale-90 transition-transform"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setImgIndex((i) => (i + 1) % images.length)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-background/70 backdrop-blur-sm flex items-center justify-center"
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl bg-background/80 backdrop-blur-sm flex items-center justify-center shadow-md active:scale-90 transition-transform"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
-              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+              {/* Dots */}
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 bg-background/60 backdrop-blur-sm rounded-full px-2 py-1">
                 {images.map((_: string, i: number) => (
                   <button
                     key={i}
                     onClick={() => setImgIndex(i)}
-                    className={cn("w-2 h-2 rounded-full transition-colors", i === imgIndex ? "bg-primary" : "bg-background/60")}
+                    className={cn("w-1.5 h-1.5 rounded-full transition-all", i === imgIndex ? "bg-primary w-4" : "bg-foreground/30")}
                   />
                 ))}
               </div>
             </>
           )}
-          {/* Favorite */}
-          <button
-            onClick={() => toggleFav.mutate(product.id)}
-            className="absolute top-3 right-3 w-10 h-10 rounded-full bg-background/70 backdrop-blur-sm flex items-center justify-center"
-          >
-            <Heart className={cn("w-5 h-5", isFav ? "fill-destructive text-destructive" : "text-foreground")} />
-          </button>
-        </div>
 
-        {/* Info */}
-        <div className="space-y-3">
-          <div className="flex items-start justify-between gap-2">
-            <h1 className="text-xl font-bold">{product.title}</h1>
-            <Badge variant="outline" className="flex-shrink-0 gap-1">
+          {/* Badges */}
+          <div className="absolute top-4 left-4 flex flex-col gap-1.5">
+            {hasDiscount && (
+              <span className="bg-destructive text-destructive-foreground text-xs font-bold px-2.5 py-1 rounded-xl shadow-md">
+                -{Math.round((1 - product.price / product.compare_at_price!) * 100)}%
+              </span>
+            )}
+            <Badge variant="secondary" className="gap-1 rounded-xl bg-background/80 backdrop-blur-sm shadow-sm">
               <TypeIcon className="w-3 h-3" />
               {typeInfo.label}
             </Badge>
           </div>
+        </div>
 
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-bold text-foreground">{product.price.toFixed(2)}€</span>
+        {/* Thumbnails strip */}
+        {images.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1">
+            {images.map((img: string, i: number) => (
+              <button
+                key={i}
+                onClick={() => setImgIndex(i)}
+                className={cn(
+                  "w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border-2 transition-all",
+                  i === imgIndex ? "border-primary shadow-[0_0_8px_hsl(var(--primary)/0.3)]" : "border-transparent opacity-60 hover:opacity-100"
+                )}
+              >
+                <img src={img} alt="" className="w-full h-full object-cover" />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Info section */}
+        <div className="space-y-3">
+          <h1 className="text-xl font-bold leading-tight">{product.title}</h1>
+
+          {/* Price block */}
+          <div className="flex items-baseline gap-2.5">
+            <span className="text-3xl font-extrabold text-foreground tracking-tight">{product.price.toFixed(2)} €</span>
             {hasDiscount && (
-              <span className="text-lg text-muted-foreground line-through">{product.compare_at_price!.toFixed(2)}€</span>
+              <span className="text-base text-muted-foreground line-through">{product.compare_at_price!.toFixed(2)} €</span>
             )}
           </div>
 
+          {/* Rating */}
           {product.rating_count > 0 && (
             <div className="flex items-center gap-1.5">
-              <Star className="w-4 h-4 fill-primary text-primary" />
-              <span className="font-medium">{product.rating_average?.toFixed(1)}</span>
-              <span className="text-muted-foreground text-sm">({product.rating_count} avis)</span>
+              <div className="flex">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Star key={i} className={cn("w-4 h-4", i < Math.round(product.rating_average || 0) ? "fill-primary text-primary" : "text-border")} />
+                ))}
+              </div>
+              <span className="text-sm font-medium">{product.rating_average?.toFixed(1)}</span>
+              <span className="text-sm text-muted-foreground">({product.rating_count} avis)</span>
             </div>
           )}
 
-          {/* Size & Color */}
-          {(product.size || product.color) && (
-            <div className="flex gap-2">
-              {product.size && <Badge variant="secondary">Taille: {product.size}</Badge>}
-              {product.color && <Badge variant="secondary">Couleur: {product.color}</Badge>}
-            </div>
-          )}
-
-          {/* Stock */}
-          {product.stock_quantity !== null && (
-            <p className={cn("text-sm", product.stock_quantity > 0 ? "text-muted-foreground" : "text-destructive font-medium")}>
-              {product.stock_quantity > 0 ? `${product.stock_quantity} en stock` : 'Rupture de stock'}
-            </p>
-          )}
-
-          {/* Shipping info */}
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <ShippingIcon className="w-4 h-4" />
-            <span>{shippingInfo.label}</span>
-            {product.shipping_price > 0 && <span className="font-medium text-foreground">+{product.shipping_price.toFixed(2)}€</span>}
+          {/* Size, Color, Stock badges */}
+          <div className="flex flex-wrap gap-1.5">
+            {product.size && (
+              <Badge variant="outline" className="rounded-xl text-xs">Taille: {product.size}</Badge>
+            )}
+            {product.color && (
+              <Badge variant="outline" className="rounded-xl text-xs">Couleur: {product.color}</Badge>
+            )}
+            {product.stock_quantity !== null && (
+              <Badge variant={isOutOfStock ? "destructive" : "outline"} className="rounded-xl text-xs">
+                {isOutOfStock ? 'Épuisé' : `${product.stock_quantity} en stock`}
+              </Badge>
+            )}
           </div>
 
-          <Button
-            className="w-full premium-button"
-            onClick={() => addToCart.mutate({ productId: product.id })}
-            disabled={addToCart.isPending || (product.stock_quantity !== null && product.stock_quantity <= 0)}
-          >
-            <ShoppingCart className="w-4 h-4 mr-2" />
-            Ajouter au panier
-          </Button>
+          {/* Shipping & Protection cards */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex items-center gap-2 p-3 rounded-2xl bg-secondary/40 border border-border/30">
+              <ShippingIcon className="w-5 h-5 text-primary flex-shrink-0" />
+              <div>
+                <p className="text-xs font-semibold">{shippingInfo.label}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {product.shipping_price > 0 ? `+${product.shipping_price.toFixed(2)} €` : 'Inclus'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 p-3 rounded-2xl bg-secondary/40 border border-border/30">
+              <Shield className="w-5 h-5 text-primary flex-shrink-0" />
+              <div>
+                <p className="text-xs font-semibold">Protection</p>
+                <p className="text-[10px] text-muted-foreground">Achat sécurisé</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         <Separator />
@@ -174,42 +220,43 @@ export default function ProductDetailPage() {
         {/* Description */}
         {product.description && (
           <div>
-            <h2 className="font-semibold mb-2">Description</h2>
-            <p className="text-sm text-muted-foreground whitespace-pre-wrap">{product.description}</p>
+            <h2 className="font-bold text-sm mb-2">Description</h2>
+            <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">{product.description}</p>
           </div>
         )}
 
         <Separator />
 
-        {/* Seller info */}
+        {/* Seller card */}
         {seller && (
-          <div className="premium-card p-4">
+          <div className="p-4 rounded-2xl bg-card border border-border/40 shadow-[var(--shadow-sm)]">
             <div className="flex items-center gap-3">
               {seller.store_logo_url ? (
-                <img src={seller.store_logo_url} alt={seller.store_name} className="w-12 h-12 rounded-full object-cover" />
+                <img src={seller.store_logo_url} alt={seller.store_name} className="w-14 h-14 rounded-2xl object-cover" />
               ) : (
-                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Store className="w-6 h-6 text-primary" />
+                <div className="w-14 h-14 rounded-2xl bg-[image:var(--premium-gradient)] flex items-center justify-center">
+                  <Store className="w-7 h-7 text-primary-foreground" />
                 </div>
               )}
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <span className="font-semibold">{seller.store_name}</span>
+                  <span className="font-bold text-sm">{seller.store_name}</span>
                   {seller.is_verified && <BadgeCheck className="w-4 h-4 text-primary" />}
                 </div>
-                {seller.store_description && (
-                  <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{seller.store_description}</p>
-                )}
-                <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                  <span>{seller.total_sales} ventes</span>
+                <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
+                  <span className="font-medium">{seller.total_sales} ventes</span>
                   {seller.rating_average && (
                     <span className="flex items-center gap-0.5">
                       <Star className="w-3 h-3 fill-primary text-primary" />
-                      {seller.rating_average.toFixed(1)} ({seller.rating_count})
+                      {seller.rating_average.toFixed(1)}
                     </span>
                   )}
                 </div>
               </div>
+              <Button variant="outline" size="sm" className="rounded-xl text-xs gap-1">
+                <MessageCircle className="w-3.5 h-3.5" />
+                Contact
+              </Button>
             </div>
           </div>
         )}
@@ -218,6 +265,24 @@ export default function ProductDetailPage() {
 
         {/* Reviews */}
         <ProductReviews productId={product.id} />
+      </div>
+
+      {/* Fixed bottom bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-2xl border-t border-border/30 safe-area-pb">
+        <div className="flex items-center gap-3 px-4 py-3 max-w-2xl mx-auto">
+          <div className="flex-1 min-w-0">
+            <p className="text-lg font-extrabold tracking-tight">{product.price.toFixed(2)} €</p>
+            {hasDiscount && <p className="text-[11px] text-muted-foreground line-through">{product.compare_at_price!.toFixed(2)} €</p>}
+          </div>
+          <Button
+            className="premium-button flex-1 h-12 text-sm font-bold rounded-2xl"
+            onClick={() => addToCart.mutate({ productId: product.id })}
+            disabled={addToCart.isPending || isOutOfStock}
+          >
+            <ShoppingCart className="w-4 h-4 mr-2" />
+            {isOutOfStock ? 'Épuisé' : 'Ajouter au panier'}
+          </Button>
+        </div>
       </div>
     </AppLayout>
   );
