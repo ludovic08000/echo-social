@@ -188,6 +188,8 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
   };
 
   useEffect(() => {
+    // Auto-start recording immediately on mount (triggered by user click on mic button)
+    startRecording();
     return () => {
       clearInterval(timerRef.current);
       streamRef.current?.getTracks().forEach(t => t.stop());
@@ -195,6 +197,7 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
         try { mediaRecorderRef.current.stop(); } catch {}
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const formatDuration = (s: number) => {
