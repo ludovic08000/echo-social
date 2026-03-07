@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake, ShieldAlert, Crown } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
 import { CreatePost } from '@/components/CreatePost';
@@ -33,6 +33,8 @@ import { AnonymousWall } from '@/components/profile/AnonymousWall';
 import { ProfileMusicPlayer } from '@/components/profile/ProfileMusicPlayer';
 import { type Album } from '@/hooks/useAlbums';
 import { toast } from '@/hooks/use-toast';
+import { CreatorBadge } from '@/components/CreatorBadge';
+import { useIsCreator } from '@/hooks/useCreator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 
