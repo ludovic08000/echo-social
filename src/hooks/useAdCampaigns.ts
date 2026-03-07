@@ -176,6 +176,7 @@ export function useCreateAdCampaign() {
           target_gender: input.target_gender || 'all',
           target_interests: input.target_interests || [],
           target_location: input.target_location || { type: 'france', values: [] },
+          budget: pricing.price,
           duration_type: input.duration_type,
           ends_at: endsAt.toISOString(),
           status: 'active',
