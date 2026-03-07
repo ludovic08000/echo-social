@@ -65,6 +65,7 @@ function AdChatCreator() {
   const [selectedDuration, setSelectedDuration] = useState<DurationType>('1_week');
   const [imageUrl, setImageUrl] = useState('');
   const [generatingImage, setGeneratingImage] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const createCampaign = useCreateAdCampaign();
   const { upload, isUploading } = useImageUpload({ bucket: 'post-images' });
 
