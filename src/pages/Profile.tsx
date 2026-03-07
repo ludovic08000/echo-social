@@ -134,6 +134,7 @@ export default function Profile() {
   const { data: profile, isLoading: profileLoading } = useProfile(userId);
   const { data: posts, isLoading: postsLoading } = useUserPosts(userId || '');
   const { data: friendshipData } = useFriendshipStatus(userId || '');
+  const { data: isCreator } = useIsCreator(userId);
   const updateProfile = useUpdateProfile();
 
   // Check if own profile has pending identity verification
@@ -524,7 +525,10 @@ export default function Profile() {
 
           {/* Name & Stats */}
           <div className="pt-16 lg:pt-20 pb-4">
-            <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">{profile.name}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">{profile.name}</h1>
+              {isCreator && <CreatorBadge size="lg" />}
+            </div>
             
             {/* Stats row */}
             <div className="flex items-center gap-5 mt-2">
