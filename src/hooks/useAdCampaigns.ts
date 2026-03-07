@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
+import { type TargetLocation } from '@/lib/geoData';
 
 export interface AdCampaign {
   id: string;
@@ -136,7 +137,7 @@ export function useCreateAdCampaign() {
       target_age_max?: number;
       target_gender?: string;
       target_interests?: string[];
-      target_location?: any;
+      target_location?: TargetLocation;
       duration_type: DurationType;
     }) => {
       // First moderate
