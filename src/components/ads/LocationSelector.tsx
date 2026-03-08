@@ -20,7 +20,7 @@ export function LocationSelector({ value, onChange, compact }: LocationSelectorP
 
   const regions = getRegions(value.country);
   const cities = value.region ? getCities(value.country, value.region, popFilter, search) : [];
-  const showComingSoon = COUNTRIES.filter(c => !c.enabled).length > 0;
+  const showComingSoon = false;
 
   const setCountry = (code: string) => onChange({ country: code, region: null, villes: [] });
   const setRegion = (r: string | null) => { onChange({ ...value, region: r, villes: [] }); setSearch(''); };
