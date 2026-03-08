@@ -261,13 +261,17 @@ Deno.serve(async (req) => {
 
     // ─── Validate magic bytes for images ───
     if (file.type.startsWith("image/")) {
-      const header = new Uint8Array(fileBuffer.slice(0, 8));
+      const header = new Uint8Array(fileBuffer.slice(0, 12));
       if (!validateImageMagicBytes(header, file.type)) {
-        return new Response(JSON.stringify({
-          error: "Le contenu du fichier ne correspond pas au type déclaré",
-        }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        // Fallback: accept if magic bytes match ANY known image format
+        const isAnyImage = isKnownImageMagicBytes(header);
+        if (!isAnyImage) {
+          return new Response(JSON.stringify({
+            error: "Le contenu du fichier ne correspond pas au type déclaré",
+          }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
       }
     }
 
