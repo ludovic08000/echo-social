@@ -86,7 +86,7 @@ export function SettingsProfileTab() {
           </div>
           <div className="min-w-0">
             <p className="font-semibold text-sm truncate">{profile?.name}</p>
-            <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+            <p className="text-xs text-muted-foreground truncate">{user?.email ? user.email.replace(/(.{2})(.*)(@.*)/, '$1***$3') : ''}</p>
           </div>
         </div>
       </section>
