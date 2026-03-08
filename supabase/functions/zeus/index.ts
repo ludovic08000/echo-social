@@ -506,6 +506,20 @@ const ZEUS_TOOLS = [
       parameters: { type: "object", properties: { days: { type: "number", description: "Nombre de jours à analyser (7, 14, 30)" } }, required: ["days"], additionalProperties: false },
     },
   },
+  {
+    type: "function", function: {
+      name: "simulate_platform_load", description: "Simuler la charge réseau pour estimer les capacités max : utilisateurs simultanés, lives concurrents, posts/min, messages/min, marketplace. Basé sur les données réelles + limites infra.",
+      parameters: {
+        type: "object",
+        properties: {
+          scenario: { type: "string", enum: ["current", "peak", "stress", "growth_10x", "growth_100x"], description: "Scénario de simulation" },
+          focus: { type: "string", enum: ["all", "lives", "posts", "messages", "marketplace", "auth"], description: "Domaine à analyser en détail" },
+        },
+        required: ["scenario"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // Execute Zeus tool calls against the database
