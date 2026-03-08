@@ -339,7 +339,7 @@ serve(async (req) => {
 
     // ── NEGOTIATION CHECKOUT ──
     if (action === "negotiation_checkout") {
-      const { negotiationId } = body;
+      const { negotiationId, relay } = body;
       if (!negotiationId) throw new Error("negotiationId requis");
 
       // Fetch negotiation
@@ -358,22 +358,46 @@ serve(async (req) => {
 
       const agreedPrice = Number(neg.offered_price);
       const commission = Math.round(agreedPrice * COMMISSION_RATE * 100) / 100;
-      const total = agreedPrice + commission;
+
+      // Calculate shipping
+      let totalShipping = 0;
+      let totalWeightGrams = 0;
+      if (relay?.id) {
+        const weight = product.weight_grams || 500;
+        totalWeightGrams = weight;
+        totalShipping = estimateRelayShipping(weight);
+      }
+
+      const total = agreedPrice + commission + totalShipping;
 
       const orderNumber = `ORD-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
 
+      const orderData: any = {
+        buyer_id: userId,
+        order_number: orderNumber,
+        subtotal: agreedPrice,
+        total,
+        commission_rate: COMMISSION_RATE,
+        commission_amount: commission,
+        status: "pending",
+        notes: `Prix négocié (original: ${product.price}€)`,
+      };
+
+      // Add relay point info if provided
+      if (relay?.id) {
+        orderData.shipping_method = 'mondial_relay';
+        orderData.shipping_relay_id = relay.id;
+        orderData.shipping_relay_name = relay.name;
+        orderData.shipping_relay_address = relay.address;
+        orderData.shipping_relay_postcode = relay.postcode;
+        orderData.shipping_relay_city = relay.city;
+        orderData.shipping_relay_country = relay.country || 'FR';
+        orderData.shipping_weight_grams = totalWeightGrams;
+      }
+
       const { data: order, error: orderError } = await supabase
         .from("orders")
-        .insert({
-          buyer_id: userId,
-          order_number: orderNumber,
-          subtotal: agreedPrice,
-          total,
-          commission_rate: COMMISSION_RATE,
-          commission_amount: commission,
-          status: "pending",
-          notes: `Prix négocié (original: ${product.price}€)`,
-        })
+        .insert(orderData)
         .select()
         .single();
 
@@ -422,6 +446,17 @@ serve(async (req) => {
             currency: "eur",
             product_data: { name: "Frais de service ForSure (5%)", images: [] },
             unit_amount: Math.round(commission * 100),
+          },
+          quantity: 1,
+        });
+      }
+
+      if (totalShipping > 0) {
+        lineItems.push({
+          price_data: {
+            currency: "eur",
+            product_data: { name: "Livraison Mondial Relay", images: [] },
+            unit_amount: Math.round(totalShipping * 100),
           },
           quantity: 1,
         });
