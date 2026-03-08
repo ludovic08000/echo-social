@@ -107,7 +107,47 @@ export function SellerDashboard() {
     }
   };
 
-  const markAsDelivered = async (order: any) => {
+  const handlePackingVideoUpload = async (orderId: string, file: File) => {
+    setUploadingVideo(orderId);
+    try {
+      // Upload to videos bucket
+      const ext = file.name.split('.').pop() || 'mp4';
+      const filePath = `packing/${orderId}_${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(filePath, file, { contentType: file.type });
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('videos')
+        .getPublicUrl(filePath);
+
+      setUploadingVideo(null);
+      setAnalyzingVideo(orderId);
+
+      // Send to AI for analysis
+      const { data, error } = await supabase.functions.invoke('verify-packing-video', {
+        body: { order_id: orderId, video_url: publicUrl },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      if (data.status === 'verified') {
+        toast.success('✅ Vidéo d\'emballage vérifiée ! Vous pouvez maintenant créer l\'étiquette.');
+      } else {
+        toast.error(`❌ Vidéo rejetée : ${data.analysis?.summary || 'Manipulation détectée'}`);
+      }
+      refetchOrders();
+    } catch (e: any) {
+      toast.error(e.message || 'Erreur lors de l\'upload vidéo');
+    } finally {
+      setUploadingVideo(null);
+      setAnalyzingVideo(null);
+    }
+  };
+
+
     setMarkingDelivered(order.id);
     try {
       // Update order status to delivered
