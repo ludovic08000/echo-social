@@ -43,7 +43,6 @@ import AdsManager from "./pages/AdsManager";
 import AIAgents from "./pages/AIAgents";
 import Admin from "./pages/Admin";
 import CreatorUpgrade from "./pages/CreatorUpgrade";
-import ZeusConsole from "./pages/ZeusConsole";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -97,7 +96,6 @@ function AppContent() {
               <Route path="/ai-agents" element={<ProtectedRoute><AIAgents /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
               <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />
-              <Route path="/zeus" element={<ProtectedRoute><ZeusConsole /></ProtectedRoute>} />
               
               {/* 404 */}
               <Route path="*" element={<NotFound />} />

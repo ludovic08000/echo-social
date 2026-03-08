@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { useAuth } from '@/lib/auth';
@@ -20,6 +20,7 @@ import { getAIModules, getAIEngineStats, getCategoryLabel, getCategoryColor } fr
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { motion } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
 import { cn } from '@/lib/utils';
 
 function useIsAdmin() {
@@ -50,6 +51,7 @@ const NAV_ITEMS = [
   { key: 'stats', label: 'Statistiques', icon: BarChart3 },
   { key: 'subscriptions', label: 'Abonnements', icon: CreditCard },
   { key: 'ai', label: 'Intelligence Artificielle', icon: Brain },
+  { key: 'zeus', label: '⚡ Console Zeus', icon: Zap },
   { key: 'security', label: 'Sécurité', icon: Lock },
   { key: 'settings', label: 'Paramètres', icon: Settings },
 ] as const;
@@ -1621,6 +1623,118 @@ ${archive.profile_snapshot ? `    Nom : ${archive.profile_snapshot.name || '-'}
   );
 }
 
+// ─── ZEUS CONSOLE ───
+function ZeusSection() {
+  type ZMsg = { role: 'user' | 'assistant' | 'system'; content: string };
+  const ZEUS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/zeus`;
+  const QUICK_CMDS = [
+    { label: '🛡️ Modérer', prompt: 'Modère ce message : "Salut, tu veux gagner 1000€ ? Clique ici vite !"' },
+    { label: '✍️ Améliorer post', prompt: 'Améliore ce post : "hey les gars jsui trop content de vs annoncer mon projet"' },
+    { label: '🌍 Traduire', prompt: 'Traduis en anglais : "Bienvenue sur notre réseau social innovant"' },
+    { label: '📝 Description produit', prompt: 'Génère une description : Sneakers Nike Air Max 90, taille 42, blanches' },
+    { label: '🔍 Status', prompt: '/status' },
+  ];
+  const [messages, setMessages] = useState<ZMsg[]>([{ role: 'system', content: `⚡ **Console Zeus** — Moteur IA Central\n\nDomaines : modération, content, post, seller, ads, photo, agent.\nTapez une commande ou utilisez les raccourcis.` }]);
+  const [input, setInput] = useState('');
+  const [streaming, setStreaming] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [messages]);
+
+  const inferDomainAction = (text: string) => {
+    const lower = text.toLowerCase();
+    if (lower.startsWith('/status')) return { domain: '_status', action: 'status', extra: {} };
+    if (lower.includes('modèr') || lower.includes('moder') || lower.includes('spam')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); return { domain: 'moderation', action: 'moderate_message', extra: { messageBody: m?.[1] || m?.[2] || text } }; }
+    if (lower.includes('amélio') || lower.includes('post') || lower.includes('réécri')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); let a = 'improve'; if (lower.includes('formel')) a = 'formal'; if (lower.includes('court')) a = 'shorter'; return { domain: 'post', action: a, extra: { text: m?.[1] || m?.[2] || text } }; }
+    if (lower.includes('tradui')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); let lang = 'en'; if (lower.includes('français')) lang = 'fr'; if (lower.includes('espagnol')) lang = 'es'; return { domain: 'content', action: 'translate', extra: { text: m?.[1] || m?.[2] || text, targetLanguage: lang } }; }
+    if (lower.includes('résum')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); return { domain: 'content', action: 'summarize', extra: { text: m?.[1] || m?.[2] || text } }; }
+    if (lower.includes('corrig')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); return { domain: 'content', action: 'correct', extra: { text: m?.[1] || m?.[2] || text } }; }
+    if (lower.includes('description') || lower.includes('produit')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); return { domain: 'seller', action: 'generate_description', extra: { productInfo: m?.[1] || m?.[2] || text } }; }
+    return { domain: 'content', action: 'improve', extra: { text, tone: 'friendly' } };
+  };
+
+  const formatResult = (domain: string, action: string, data: any): string => {
+    if (domain === 'moderation') return `### 🛡️ Modération\n| | |\n|---|---|\n|**Statut**|${data.safe ? '✅ Sûr' : '⚠️ Dangereux'}|\n|**Catégorie**|${data.category || 'safe'}|\n|**Raison**|${data.reason || 'Aucune'}|`;
+    if (domain === 'post') return `### ✍️ Post Amélioré\n\n${data.improved_text || JSON.stringify(data)}${data.corrections?.length ? `\n\n**Corrections :** ${data.corrections.join(', ')}` : ''}`;
+    if (domain === 'content') return `### 📝 Résultat\n\n${data.result || JSON.stringify(data)}`;
+    return `### ⚡ Réponse\n\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``;
+  };
+
+  const send = useCallback(async () => {
+    const text = input.trim(); if (!text || streaming) return;
+    setInput(''); setMessages(p => [...p, { role: 'user', content: text }]); setStreaming(true);
+    try {
+      const { domain, action, extra } = inferDomainAction(text);
+      if (domain === '_status') {
+        setMessages(p => [...p, { role: 'assistant', content: `### ⚡ Zeus Status\n\n| Domaine | Actions |\n|---|---|\n|**content**|summarize, translate, correct, improve|\n|**post**|improve, formal, casual, shorter, longer|\n|**moderation**|moderate_message|\n|**ads**|chat, generate_ad, moderate_ad|\n|**seller**|generate_description, coach_chat|\n|**photo**|analyze_photo, compare_photos|\n|**agent**|chat agents|\n\n🟢 Opérationnel • 🧠 Gemini 3 Flash` }]);
+        setStreaming(false); return;
+      }
+      if (domain === 'seller' && action === 'generate_description') {
+        const { data: { session } } = await supabase.auth.getSession();
+        const resp = await fetch(ZEUS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` }, body: JSON.stringify({ domain, action, ...extra }) });
+        if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || 'Erreur');
+        if (resp.headers.get('content-type')?.includes('event-stream')) {
+          let content = ''; const reader = resp.body!.getReader(); const decoder = new TextDecoder(); let buf = '';
+          while (true) { const { done, value } = await reader.read(); if (done) break; buf += decoder.decode(value, { stream: true }); let idx;
+            while ((idx = buf.indexOf('\n')) !== -1) { let line = buf.slice(0, idx); buf = buf.slice(idx + 1); if (line.endsWith('\r')) line = line.slice(0, -1); if (!line.startsWith('data: ')) continue; const j = line.slice(6).trim(); if (j === '[DONE]') break;
+              try { const c = JSON.parse(j).choices?.[0]?.delta?.content; if (c) { content += c; setMessages(p => { const last = p[p.length-1]; if (last?.role === 'assistant') return p.map((m,i) => i === p.length-1 ? {...m, content: `### 📝 Description\n\n${content}`} : m); return [...p, {role:'assistant' as const,content:`### 📝 Description\n\n${content}`}]; }); } } catch {} } }
+          setStreaming(false); return;
+        }
+      }
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(ZEUS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` }, body: JSON.stringify({ domain, action, ...extra }) });
+      if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || `Erreur ${resp.status}`);
+      const data = await resp.json();
+      setMessages(p => [...p, { role: 'assistant', content: formatResult(domain, action, data) }]);
+    } catch (e: any) { setMessages(p => [...p, { role: 'assistant', content: `### ❌ Erreur\n\n${e.message}` }]); }
+    finally { setStreaming(false); }
+  }, [input, streaming]);
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-8rem)]">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-primary/20 border border-amber-500/30 flex items-center justify-center">
+          <Zap className="w-5 h-5 text-amber-400" />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Console Zeus</h2>
+          <p className="text-[11px] text-muted-foreground">Moteur IA central • 7 domaines • Gemini 3 Flash</p>
+        </div>
+        <Badge variant="outline" className="ml-auto text-[10px] border-amber-500/30 text-amber-400">LIVE</Badge>
+      </div>
+
+      <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3 mb-3 pr-1">
+        {messages.map((msg, i) => (
+          <div key={i} className={cn('flex gap-2', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+            {msg.role !== 'user' && <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500/20 to-primary/20 border border-amber-500/30 flex items-center justify-center shrink-0 mt-1"><Zap className="w-3.5 h-3.5 text-amber-400" /></div>}
+            <div className={cn('max-w-[85%] rounded-2xl px-3 py-2.5 text-sm', msg.role === 'user' ? 'bg-primary text-primary-foreground rounded-br-md' : 'bg-card border border-border rounded-bl-md')}>
+              <div className="prose prose-sm max-w-none dark:prose-invert text-inherit"><ReactMarkdown>{msg.content}</ReactMarkdown></div>
+            </div>
+            {msg.role === 'user' && <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0 mt-1"><Users className="w-3.5 h-3.5 text-primary" /></div>}
+          </div>
+        ))}
+        {streaming && messages[messages.length-1]?.role === 'user' && (
+          <div className="flex gap-2"><div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500/20 to-primary/20 border border-amber-500/30 flex items-center justify-center shrink-0"><RefreshCw className="w-3.5 h-3.5 text-amber-400 animate-spin" /></div>
+            <div className="bg-card border border-border rounded-2xl rounded-bl-md px-3 py-2.5"><div className="flex gap-1"><span className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" /><span className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{animationDelay:'150ms'}} /><span className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{animationDelay:'300ms'}} /></div></div></div>
+        )}
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+        {QUICK_CMDS.map(c => (<button key={c.label} onClick={() => { setInput(c.prompt); inputRef.current?.focus(); }} className="px-3 py-1.5 rounded-full text-[11px] font-medium whitespace-nowrap bg-card border border-border hover:border-primary/40 text-muted-foreground hover:text-foreground transition-all">{c.label}</button>))}
+      </div>
+
+      <div className="flex gap-2 items-end mt-1">
+        <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+          placeholder="Commandez Zeus..." className="flex-1 min-h-[42px] max-h-[100px] resize-none text-sm rounded-xl border border-input bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring" rows={1} />
+        <Button onClick={send} disabled={!input.trim() || streaming} className="h-[42px] w-[42px] shrink-0 bg-gradient-to-br from-amber-500 to-primary" size="icon">
+          {streaming ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ChevronRight className="w-4 h-4" />}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN ADMIN PAGE ───
 export default function Admin() {
   const [section, setSection] = useState<AdminSection>('dashboard');
@@ -1649,6 +1763,7 @@ export default function Admin() {
       case 'stats': return <StatsSection />;
       case 'subscriptions': return <SubscriptionsSection />;
       case 'ai': return <AISection />;
+      case 'zeus': return <ZeusSection />;
       case 'security': return <SecuritySection />;
       case 'settings': return <SettingsSection />;
     }
