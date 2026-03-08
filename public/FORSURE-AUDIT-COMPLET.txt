@@ -1,0 +1,519 @@
+================================================================================
+                    FORSURE — DOCUMENT TECHNIQUE COMPLET
+                 Fonctionnalités, Sécurité & Architecture
+                        Généré le 8 mars 2026
+================================================================================
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 1. STACK TECHNIQUE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Frontend :
+  • React 18 + TypeScript + Vite
+  • Tailwind CSS + shadcn/ui (design system complet)
+  • Framer Motion (animations)
+  • React Router v6 (routing SPA)
+  • TanStack React Query (state serveur)
+  • Capacitor (build mobile Android/iOS)
+
+Backend :
+  • Lovable Cloud (Supabase) — base PostgreSQL, Auth, Storage, Edge Functions
+  • Cloudflare R2 — stockage média (images, vidéos, audio, documents)
+  • Stripe — paiements (abonnements créateurs, marketplace, tips)
+  • LiveKit — streaming vidéo en direct
+  • Mondial Relay — livraison colis marketplace
+  • Lovable AI Gateway — modération IA, assistants, coaching
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 2. FONCTIONNALITÉS — RÉSEAU SOCIAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2.1 — Authentification & Profils
+  • Inscription par email avec confirmation obligatoire
+  • Connexion / déconnexion sécurisée
+  • Profil utilisateur complet (nom, bio, avatar, ville, date de naissance)
+  • Recadrage d'avatar (AvatarCropper)
+  • Profil type : standard / créateur
+  • Badge créateur vérifié (CreatorBadge)
+  • Upgrade créateur via abonnement Stripe (5€/mois)
+  • Section "À propos" détaillée sur le profil
+  • Grille de photos de profil
+  • Lecteur de musique intégré au profil
+  • Mur anonyme (messages anonymes sur le profil)
+
+2.2 — Publications & Feed
+  • Création de posts (texte + images + vidéos)
+  • Feed intelligent avec algorithme de scoring personnalisé
+  • Réactions multiples (like, love, haha, sad, angry, wow)
+  • Commentaires sur les posts
+  • Partage de posts (Web Share API native)
+  • Détail d'un post (page dédiée)
+  • Posts sponsorisés intégrés au feed
+  • Mood picker (humeur du moment)
+  • Section médias dans le feed
+  • Section Reels dans le feed
+
+2.3 — Stories
+  • Barre de stories en haut du feed
+  • Création et visualisation de stories
+  • Expiration automatique
+
+2.4 — Amis & Relations
+  • Envoi/réception de demandes d'amitié
+  • Liste d'amis
+  • Suggestions d'amis (par ville, amis communs)
+  • Suggestions d'amis par ville
+  • Groupes d'amis personnalisés (avec couleurs et icônes)
+  • Friend Match (matching d'amis par affinités)
+
+2.5 — Messagerie
+  • Conversations privées 1-to-1
+  • Conversations de groupe
+  • Messages texte, images, GIFs, audio
+  • Enregistrement vocal (VoiceRecorder)
+  • Sélecteur de GIFs (GifPicker)
+  • Statut de message (envoyé, délivré, lu)
+  • Demandes de messages (non-amis → status "pending")
+  • Suppression de messages
+  • Anti-spam serveur (rate limit 20 msg/min, détection doublons)
+  • Modération IA des messages
+
+2.6 — Appels
+  • Appels vocaux et vidéo (via LiveKit)
+  • Overlay d'appel intégré
+
+2.7 — Vidéos
+  • Section vidéos dédiée
+  • Feed vidéo avec thumbnails
+  • Upload vidéo vers R2
+
+2.8 — Lives (Streaming en direct)
+  • Lancement de live (HostLiveView)
+  • Visionnage de live (LiveViewerPlayer)
+  • Chat en direct pendant le live
+  • Emojis en live (LiveEmojiPicker)
+  • Compteur de viewers
+  • Catégories et hashtags
+  • Enregistrement automatique
+  • Nettoyage automatique des lives inactifs (cleanup-lives)
+
+2.9 — Groupes
+  • Création de groupes (public/privé)
+  • Publication dans les groupes
+  • Gestion des membres (admin/membre)
+  • Page détail du groupe
+
+2.10 — Pages
+  • Création de pages (comme les pages Facebook)
+  • Administration de pages (multi-admin)
+  • Page détail
+
+2.11 — Recherche
+  • Recherche globale (utilisateurs, posts, groupes, pages)
+
+2.12 — Notifications
+  • Système de notifications complet (likes, commentaires, demandes d'amis, messages, ventes)
+  • Paramètres de notifications personnalisables
+  • Sons de notification configurables
+  • Notifications email (optionnel)
+
+2.13 — Albums Photo
+  • Création d'albums (public/amis/privé)
+  • Ajout de médias aux albums
+  • Galerie de photos
+
+2.14 — Journal Intime
+  • Entrées de journal privées
+  • Suivi d'humeur
+
+2.15 — Challenges
+  • Création de challenges
+  • Participation et soumissions
+  • Système de votes
+
+2.16 — Jeux
+  • Échecs (avec IA)
+  • Dames (avec IA)
+  • Puissance 4 (avec IA)
+  • Morpion (avec IA)
+  • Lobby de jeu
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 3. FONCTIONNALITÉS — MARKETPLACE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3.1 — Achat & Vente
+  • Catalogue de produits avec catégories
+  • Création de produits (titre, description, prix, photos, poids, stock)
+  • Fiche produit détaillée
+  • Panier d'achat
+  • Checkout sécurisé via Stripe (prix serveur, jamais client)
+  • Commission plateforme 5% acheteur
+  • Suivi de commande (pending → paid → shipped → delivered)
+  • Numéro de commande unique
+
+3.2 — Négociation
+  • Système de négociation de prix entre acheteur et vendeur
+  • Chat de négociation
+  • Checkout à prix négocié
+
+3.3 — Vendeur
+  • Dashboard vendeur (analytics ventes)
+  • Tableau des commandes vendeur
+  • Avis sur les vendeurs
+  • Profil vendeur avec note moyenne
+  • Coach IA vendeur (conseils de vente personnalisés)
+
+3.4 — Livraison
+  • Intégration Mondial Relay (points relais)
+  • Calcul automatique des frais de port par poids
+  • Sélecteur de point relais
+
+3.5 — Sécurité Marketplace
+  • Vidéo d'emballage obligatoire (preuve anti-litige)
+  • Vérification IA de la vidéo d'emballage
+  • Favoris produits
+  • Avis produits
+
+3.6 — Tips Créateurs
+  • Pourboire aux créateurs (1€ à 500€)
+  • Commission plateforme 15% sur les tips
+  • Historique des tips
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 4. FONCTIONNALITÉS — PUBLICITÉ
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  • Gestionnaire de campagnes publicitaires
+  • Ciblage (âge, genre, localisation, centres d'intérêt)
+  • Budget quotidien et total
+  • Statistiques (impressions, clics, reach, dépenses)
+  • Statistiques quotidiennes (ad_daily_stats)
+  • Modération des publicités (approbation avant diffusion)
+  • Checkout pub via Stripe
+  • Assistant IA pour la création de pubs
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 5. FONCTIONNALITÉS — INTELLIGENCE ARTIFICIELLE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5.1 — Moteur IA Central (ai-engine)
+  • Modération de contenu automatique (toxicité, spam, haine, harcèlement)
+  • Analyse de sentiment et émotion
+  • Recommandations de contenu personnalisées
+  • Réponses intelligentes (smart reply)
+  • Amélioration de contenu (réécriture, hashtags)
+  • Évaluation de risque utilisateur
+  • Auto-apprentissage par feedback humain (ai_feedback → ai_learned_rules)
+  • Cache de modération serveur (6h)
+  • Sélection automatique du modèle par complexité :
+    - gemini-2.5-flash-lite → tâches simples (modération, sentiment)
+    - gemini-2.5-flash → tâches complexes (génération, coaching)
+
+5.2 — Agents IA
+  • Agents IA spécialisés (multiples catégories)
+  • Conversations persistantes avec les agents
+  • Quota de messages gratuits par jour
+  • Agents premium
+
+5.3 — Assistants IA Spécialisés
+  • Assistant de création de posts (post-assistant)
+  • Assistant publicitaire (ad-assistant)
+  • Coach vendeur IA (seller-ai-coach)
+  • Assistant produit marketplace (AIProductHelper)
+  • Génération de contenu IA (ai-content)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 6. FONCTIONNALITÉS — ADMINISTRATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  • Panel d'administration complet
+  • Gestion des signalements (abuse_reports)
+  • Vérification d'identité des utilisateurs signalés
+  • Ban d'utilisateurs / emails / IPs
+  • Archives d'usurpation d'identité
+  • Statistiques de la plateforme
+  • Rôles utilisateur (admin, moderator, user) via table user_roles
+  • Fonction has_role() sécurisée (SECURITY DEFINER)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 7. PARAMÈTRES UTILISATEUR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  • Profil (édition complète)
+  • Apparence (thème clair/sombre, fond personnalisé)
+  • Confidentialité (visibilité profil, blocage, etc.)
+  • Notifications (granulaires par type)
+  • Accessibilité
+  • Préférences de contenu
+  • Bien-être numérique (détox, limites de temps)
+  • Planificateur de détox (DetoxSchedulePanel)
+  • Demande d'export de données (RGPD)
+  • Demande de suppression de compte (RGPD)
+  • Pages légales (CGU, politique de confidentialité)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 8. INTERNATIONALISATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  • Support multilingue : Français, English, Español, Deutsch
+  • Système i18n avec fichiers de traduction par locale
+  • Détection automatique de la langue
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 9. EDGE FUNCTIONS (BACKEND) — 25 FONCTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Fonction                  Description
+  ─────────────────────     ──────────────────────────────────────────────
+  ai-engine                 Moteur IA central (modération, sentiment, etc.)
+  ai-content                Génération de contenu IA
+  agent-chat                Chat avec agents IA
+  agent-actions             Actions des agents IA
+  ad-assistant              Assistant création de pubs
+  ad-checkout               Checkout campagnes pub
+  anti-abuse                Détection anti-abus et multi-comptes
+  check-subscription        Vérification statut abonnement
+  cleanup-lives             Nettoyage lives inactifs (admin only)
+  create-checkout           Checkout abonnement créateur Stripe
+  create-tip                Pourboire créateur
+  customer-portal           Portail Stripe (gestion abonnement)
+  feed-scoring              Scoring du feed personnalisé
+  livekit-token             Génération token LiveKit
+  marketplace-checkout      Checkout marketplace (achat produits)
+  message-moderation        Modération des messages
+  mondial-relay             API Mondial Relay (points relais)
+  photo-guard               Comparaison de photos (anti-usurpation)
+  post-assistant            Assistant rédaction de posts
+  r2-upload                 Upload sécurisé vers Cloudflare R2
+  seller-ai-coach           Coach IA vendeur
+  stripe-webhook            Webhook Stripe (paiements, abonnements)
+  trust-score               Calcul du score de confiance
+  verify-packing-video      Vérification vidéo d'emballage
+  feed-scoring              Scoring personnalisé du feed
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 10. SÉCURITÉ — AUDIT COMPLET (25 POINTS)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ ✅ = Corrigé    📝 = Manuel / En attente
+
+ #   Sujet                                        Gravité    Statut
+ ──  ──────────────────────────────────────────    ────────   ──────
+  1  verify_jwt=false sur Edge Functions           CRITIQUE   ✅ Auth validée dans le code de chaque fonction
+  2  photo-guard sans auth serveur                 CRITIQUE   ✅ JWT obligatoire, userId depuis le token
+  3  trust-score avec userId client                CRITIQUE   ✅ userId extrait du JWT uniquement
+  4  seller-ai-coach trop exposé                   CRITIQUE   ✅ Auth + rate limit (10 req/min)
+  5  ad-assistant non verrouillé                   ÉLEVÉE     ✅ Auth + rate limit (10 req/min)
+  6  ai-engine entrées client trop larges          ÉLEVÉE     ✅ Sanitisation texte (5000 chars max), context validé
+  7  SUPABASE_SERVICE_ROLE_KEY sans gardes         CRITIQUE   ✅ Chaque fonction valide strictement les entrées
+  8  Documents d'identité via URL publique R2      CRITIQUE   ✅ Bucket privé "id-documents" + signed URLs
+  9  Séparation stockage public/privé/sensible     ÉLEVÉE     ✅ Partiel — bucket id-documents privé créé
+ 10  CORS trop permissif (Access-Control: *)       ÉLEVÉE     ✅ Restreint aux domaines *.lovable.app
+ 11  .env dans l'archive projet                    ÉLEVÉE     📝 Auto-géré par Lovable Cloud
+ 12  Protection média cosmétique                   MOYENNE    📝 Manuel (watermark, signed URLs médias)
+ 13  Confidentialité gérée côté UI, pas RLS        CRITIQUE   ✅ RLS albums basé sur privacy + amitié
+ 14  RLS trop ouvertes (USING true)                ÉLEVÉE     ✅ Politiques révisées (albums, album_media)
+ 15  security_logs trop permissif                  MOYENNE    ✅ Insertion réservée aux admins (has_role)
+ 16  Trop de logique sécurité dans le front        ÉLEVÉE     ✅ Vérifications serveur dans edge functions
+ 17  Pas de rate limiting sur fonctions sensibles   CRITIQUE   ✅ Rate limit sur IA, upload, tips
+ 18  Uploads : validation surtout côté front       ÉLEVÉE     ✅ Magic bytes + MIME + extension côté serveur
+ 19  Fingerprint/IP à encadrer                     MOYENNE    ✅ Auto-purge après 90 jours
+ 20  Pages légales pas alignées                    MOYENNE    📝 Manuel — mise à jour textes juridiques
+ 21  Pas de tests sécurité                         ÉLEVÉE     📝 Manuel — tests RLS/auth à écrire
+ 22  Stripe à verrouiller côté serveur             ÉLEVÉE     ✅ Prix validés serveur, webhook signé obligatoire
+ 23  Fonctions IA exposées aux surcoûts            CRITIQUE   ✅ Auth + rate limit + modèles optimisés
+ 24  Branding/URLs hétérogènes                     FAIBLE     📝 Nettoyage avant prod
+ 25  Surface fonctionnelle trop large pour V1      MOYENNE    📝 Décision produit
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 11. DÉTAIL DES MESURES DE SÉCURITÉ IMPLÉMENTÉES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+11.1 — Authentification
+  • Email + mot de passe avec confirmation email obligatoire
+  • Pas de comptes anonymes
+  • Protection contre les mots de passe fuités (leaked password protection)
+  • JWT vérifié côté serveur dans TOUTES les Edge Functions
+  • userId TOUJOURS extrait du token, jamais du client
+
+11.2 — Row Level Security (RLS)
+  • Activé sur toutes les tables
+  • Fonction has_role() SECURITY DEFINER pour éviter la récursion
+  • Albums : visibilité selon privacy (public/friends/private)
+  • Album_media : héritage de la privacy de l'album parent
+  • Messages : vérification de participation à la conversation
+  • Commandes : visibilité acheteur OU vendeur uniquement
+  • security_logs : insertion réservée aux admins
+  • Friendships : trigger serveur pour message requests
+
+11.3 — CORS
+  • Origines restreintes aux domaines *.lovable.app
+  • Header Vary: Origin pour compatibilité CDN
+  • Appliqué sur : r2-upload, create-tip, customer-portal, create-checkout,
+    _shared/cors.ts (partagé)
+
+11.4 — Rate Limiting
+  • Messages : 20/minute (trigger PostgreSQL check_message_rate_limit)
+  • Upload R2 : 30/minute par utilisateur
+  • Tips : 5/minute par utilisateur
+  • IA assistants : 10/minute par utilisateur (seller-ai-coach, ad-assistant)
+  • Modération IA : textes < 15 chars ignorés (économie coûts)
+
+11.5 — Validation d'upload (r2-upload)
+  • MIME type vérifié (whitelist par dossier)
+  • Extension vs MIME : correspondance obligatoire
+  • Magic bytes : validation binaire (JPEG, PNG, GIF, WEBP, BMP, HEIC)
+  • Taille max par type (avatars: 5MB, vidéos: 50MB, etc.)
+  • Fichiers vides rejetés
+  • Path traversal bloqué (sanitizePath)
+  • Ownership strict (suppression limitée au propre dossier)
+
+11.6 — Stripe & Paiements
+  • Prix TOUJOURS récupérés depuis la base de données (jamais du client)
+  • create-checkout : priceId validé contre Stripe (prix actif vérifié)
+  • Webhook : signature Stripe OBLIGATOIRE (plus de fallback)
+  • Tips : montant borné [1€ - 500€] avec trigger DB validate_tip_amount
+  • Vérification de stock serveur avant paiement
+  • Commissions calculées côté serveur
+
+11.7 — Anti-abus & Trust
+  • Trust Score composite (0-100) calculé serveur
+  • Facteurs : âge du compte, transactions, social, vérification
+  • Empreintes digitales (device fingerprints) pour détection multi-comptes
+  • Auto-purge des fingerprints après 90 jours
+  • Signalement utilisateurs avec workflow de vérification d'identité
+  • Ban utilisateurs / emails / IPs
+  • Archives d'usurpation d'identité avec preuves
+
+11.8 — Stockage sécurisé
+  • Médias publics → Cloudflare R2 (avec validation serveur)
+  • Documents d'identité → Bucket privé Supabase (id-documents)
+  • Signed URLs temporaires (5 min) pour accès admin aux documents
+  • Backgrounds utilisateur → Bucket privé Supabase (backgrounds)
+
+11.9 — Modération IA
+  • Modération automatique des posts et messages
+  • Auto-apprentissage via feedback humain (règles apprises stockées en DB)
+  • Cache de modération 6h (économie coûts)
+  • Modèles IA optimisés par tâche (flash-lite pour simple, flash pour complexe)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 12. BASE DE DONNÉES — TABLES PRINCIPALES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Social :
+    profiles, friendships, friend_groups, friend_group_members,
+    posts, comments, likes, notifications, notification_settings,
+    stories, albums, album_media, anonymous_wall_messages,
+    journal_entries, challenges, challenge_participants,
+    challenge_submissions
+
+  Messagerie :
+    conversations, conversation_participants, messages,
+    message_deletions
+
+  Lives :
+    live_streams, live_chat, live_views
+
+  Groupes & Pages :
+    groups, group_members, group_posts,
+    pages, page_admins
+
+  Marketplace :
+    products, cart_items, orders, order_items, negotiations,
+    seller_profiles, product_reviews, product_favorites, tips
+
+  Publicité :
+    ad_campaigns, ad_interactions, ad_daily_stats
+
+  IA :
+    ai_agents, ai_agent_conversations, ai_agent_messages,
+    ai_agent_usage, ai_feedback, ai_learned_rules,
+    ai_moderation_cache
+
+  Scoring :
+    feed_score_cache, trust_scores
+
+  Sécurité :
+    abuse_reports, banned_users, banned_emails, banned_ips,
+    device_fingerprints, identity_verifications,
+    identity_theft_archives, security_logs, user_roles
+
+  Abonnements :
+    creator_subscriptions
+
+  RGPD :
+    data_export_requests, account_deletion_requests
+
+  Confidentialité :
+    privacy_settings
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 13. FONCTIONS & TRIGGERS BASE DE DONNÉES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  handle_new_user()              → Crée le profil à l'inscription
+  handle_new_privacy_settings()  → Crée les paramètres de confidentialité
+  handle_new_trust_score()       → Initialise le trust score
+  handle_new_group()             → Ajoute le créateur comme admin
+  handle_new_page()              → Ajoute le créateur comme admin
+  check_message_rate_limit()     → 20 msg/min, anti-doublon, max 2000 chars
+  check_message_friendship()     → Messages pending si non-amis
+  validate_cart_item_quantity()   → Vérifie stock disponible
+  validate_tip_amount()          → Borne tips entre 1€ et 500€
+  cleanup_ai_cache()             → Purge cache modération expiré
+  cleanup_old_fingerprints()     → Purge fingerprints > 90 jours
+  generate_order_number()        → Numéro de commande unique
+  has_role()                     → Vérification rôle (SECURITY DEFINER)
+  is_conversation_participant()  → Vérification participation conversation
+  can_view_order()               → Accès commande (acheteur/vendeur)
+  can_view_order_item()          → Accès détail commande
+  get_public_trust_score()       → Lecture trust score (SECURITY DEFINER)
+  get_safe_live_stream()         → Live sans stream_key sauf propriétaire
+  get_friend_suggestions()       → Suggestions intelligentes (amis communs + ville)
+  update_updated_at_column()     → Mise à jour automatique updated_at
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 14. POINTS RESTANTS (MANUELS)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  □ Point 11 — .env : automatiquement géré par Lovable Cloud
+  □ Point 12 — Watermark serveur et signed URLs pour médias publics
+  □ Point 20 — Mise à jour des textes légaux (CGU/RGPD) selon le traitement réel
+  □ Point 21 — Écriture de tests automatisés (auth, RLS, rôles, uploads)
+  □ Point 24 — Nettoyage branding (logos, mentions Lovable, URLs)
+  □ Point 25 — Réduction périmètre V1 (décision produit)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 15. OPTIMISATIONS IA & COÛTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  • Modèles downgrade par complexité :
+    - gemini-2.5-flash-lite → modération, sentiment, smart reply (−70% coût)
+    - gemini-2.5-flash → génération, coaching, recommandation (−40% coût)
+  • Cache modération serveur : 6 heures (au lieu de 1h)
+  • Skip IA pour textes < 15 caractères côté client
+  • Skip IA pour messages techniques (appels, photos) côté serveur
+  • Validation basique sans IA quand possible (message-moderation)
+
+
+================================================================================
+                           FIN DU DOCUMENT
+               ForSure — Réseau Social Sécurisé & Complet
+================================================================================
