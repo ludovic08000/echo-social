@@ -267,15 +267,21 @@ Only output valid JSON. Keep the same language and tone.`;
         );
     }
 
-    const result = await callAI(LOVABLE_API_KEY, systemPrompt, userPrompt);
+    // Choose model based on task complexity
+    const cheapActions = ["moderate", "analyze_sentiment", "smart_reply"];
+    const model = cheapActions.includes(action)
+      ? "google/gemini-2.5-flash-lite"  // Fast & cheap for simple classification
+      : "google/gemini-2.5-flash";       // Better for complex generation
 
-    // Cache moderation results server-side
+    const result = await callAI(LOVABLE_API_KEY, systemPrompt, userPrompt, model);
+
+    // Cache moderation results server-side (6 hours instead of 1)
     if (action === "moderate" && result && text) {
       const contentHash = hashContent(text.trim().toLowerCase());
       await supabase.from("ai_moderation_cache").upsert({
         content_hash: contentHash,
         result,
-        expires_at: new Date(Date.now() + 3600000).toISOString(),
+        expires_at: new Date(Date.now() + 6 * 3600000).toISOString(), // 6h cache
       }, { onConflict: "content_hash" }).select();
     }
 
