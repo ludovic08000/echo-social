@@ -209,7 +209,9 @@ export function useVideoFeed(limit: number = 10) {
       return scoredVideos.slice(0, limit).map(({ _score, ...video }) => video) as ShortVideo[];
     },
     enabled: !!user,
-    staleTime: 30000, // 30 secondes avant refresh
+    staleTime: 2 * 60_000,   // 2 min cache — videos don't change fast
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
   });
 }
 

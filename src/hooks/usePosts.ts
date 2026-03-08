@@ -276,6 +276,8 @@ export function useUserPosts(userId: string) {
       });
     },
     enabled: !!userId,
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
   });
 }
 
