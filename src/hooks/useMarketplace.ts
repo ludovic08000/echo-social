@@ -271,6 +271,23 @@ export function useUpdateCartItem() {
         const { error } = await supabase.from('cart_items').delete().eq('id', id);
         if (error) throw error;
       } else {
+        // Verify stock before updating
+        const { data: cartItem } = await supabase
+          .from('cart_items')
+          .select('product_id')
+          .eq('id', id)
+          .maybeSingle();
+        if (cartItem) {
+          const { data: product } = await supabase
+            .from('products')
+            .select('stock_quantity, is_active')
+            .eq('id', cartItem.product_id)
+            .maybeSingle();
+          if (product && !product.is_active) throw new Error('Ce produit n\'est plus disponible');
+          if (product?.stock_quantity !== null && product?.stock_quantity !== undefined && quantity > product.stock_quantity) {
+            throw new Error(`Stock max : ${product.stock_quantity}`);
+          }
+        }
         const { error } = await supabase.from('cart_items').update({ quantity }).eq('id', id);
         if (error) throw error;
       }
