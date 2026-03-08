@@ -730,7 +730,7 @@ Date et heure : ${new Date().toLocaleString("fr-FR")}`;
     
     // First call — may trigger tool use
     let resp = await callAI(apiKey, {
-      model: "google/gemini-2.5-pro",
+      model: "google/gemini-3.1-pro-preview",
       messages,
       tools: ZEUS_TOOLS,
       stream: false,
@@ -761,7 +761,7 @@ Date et heure : ${new Date().toLocaleString("fr-FR")}`;
       messages.push(...toolResults);
 
       // Call AI again with tool results
-      resp = await callAI(apiKey, { model: "google/gemini-2.5-pro", messages, tools: ZEUS_TOOLS, stream: false });
+      resp = await callAI(apiKey, { model: "google/gemini-3.1-pro-preview", messages, tools: ZEUS_TOOLS, stream: false });
       errResp = aiError(resp.status, cors);
       if (errResp) return errResp;
       if (!resp.ok) throw new Error("AI error");
