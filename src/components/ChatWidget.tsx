@@ -56,11 +56,12 @@ const MESSAGE_REACTIONS = [
   { emoji: '🔥', label: 'fire' },
 ];
 
-const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/g;
+const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/;
+const URL_REGEX_G = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/g;
 
 function MessageBodyWithLinks({ body, isMe }: { body: string; isMe: boolean }) {
-  const parts = body.split(URL_REGEX);
-  if (parts.length === 1) return <>{body}</>;
+  if (!URL_REGEX.test(body)) return <>{body}</>;
+  const parts = body.split(URL_REGEX_G);
   return (
     <>
       {parts.map((part, i) =>
