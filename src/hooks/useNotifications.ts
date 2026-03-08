@@ -56,7 +56,7 @@ export function useNotifications() {
         return {
           id: notification.id,
           user_id: notification.user_id,
-          type: notification.type as 'like' | 'comment',
+          type: notification.type as Notification['type'],
           actor_id: notification.actor_id,
           post_id: notification.post_id,
           read_at: notification.read_at,
