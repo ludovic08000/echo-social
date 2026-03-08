@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Image, Video, X, Send, Timer, Rocket, ShoppingBag, Sparkles, Loader2, Check, Globe, Type, ArrowDownRight, ArrowUpRight, Briefcase, SmilePlus } from 'lucide-react';
+import { Image, Video, X, Send, Timer, Rocket, ShoppingBag, Sparkles, Loader2, Check, Globe, Type, ArrowDownRight, ArrowUpRight, Briefcase, SmilePlus, Radio } from 'lucide-react';
 import { useCreatePost } from '@/hooks/usePosts';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
@@ -49,6 +49,8 @@ export function CreatePost() {
   const [isUploading, setIsUploading] = useState(false);
   const [expiryHours, setExpiryHours] = useState<number | null>(null);
   const [capsuleDays, setCapsuleDays] = useState<number | null>(null);
+  const [publishAsReplay, setPublishAsReplay] = useState(false);
+  const [replayTitle, setReplayTitle] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<{ improved_text: string; detected_language: string; corrections: string[]; tone: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -115,6 +117,8 @@ export function CreatePost() {
     setMedia(null);
     setMediaPreview(null);
     setMediaType(null);
+    setPublishAsReplay(false);
+    setReplayTitle('');
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (videoInputRef.current) videoInputRef.current.value = '';
   };
@@ -149,12 +153,26 @@ export function CreatePost() {
       }
 
       await createPost.mutateAsync({ body: body.trim(), imageUrl, expiresAt, publishAt });
+
+      // Also create a replay entry if toggle is on
+      if (publishAsReplay && mediaType === 'video' && imageUrl) {
+        await supabase.from('live_streams').insert({
+          user_id: user.id,
+          title: replayTitle.trim() || body.trim() || 'Replay',
+          is_active: false,
+          recording_url: imageUrl,
+          ended_at: new Date().toISOString(),
+          started_at: new Date().toISOString(),
+        });
+      }
       
       setBody('');
       removeMedia();
       setExpanded(false);
       setExpiryHours(null);
       setCapsuleDays(null);
+      setPublishAsReplay(false);
+      setReplayTitle('');
       
       toast({
         title: capsuleDays 
@@ -367,6 +385,41 @@ export function CreatePost() {
                       >
                         <X className="w-3.5 h-3.5" />
                       </Button>
+                    </motion.div>
+                  )}
+
+                  {/* Publish as Replay toggle — only for videos */}
+                  {mediaType === 'video' && mediaPreview && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mt-2 space-y-2"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setPublishAsReplay(!publishAsReplay)}
+                        className={cn(
+                          "flex items-center gap-2 w-full px-3 py-2 rounded-xl text-[12px] font-medium transition-all border",
+                          publishAsReplay
+                            ? "bg-destructive/10 border-destructive/20 text-destructive"
+                            : "bg-secondary/40 border-border/20 text-muted-foreground hover:bg-secondary/60"
+                        )}
+                      >
+                        <Radio className={cn("w-3.5 h-3.5", publishAsReplay && "animate-pulse")} />
+                        Publier aussi comme Replay (visible dans les lives)
+                        {publishAsReplay && <Check className="w-3.5 h-3.5 ml-auto" />}
+                      </button>
+                      {publishAsReplay && (
+                        <motion.input
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          type="text"
+                          value={replayTitle}
+                          onChange={(e) => setReplayTitle(e.target.value)}
+                          placeholder="Titre du replay (optionnel)"
+                          className="w-full px-3 py-2 rounded-xl bg-secondary/40 border border-border/20 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/30 transition-colors"
+                        />
+                      )}
                     </motion.div>
                   )}
                   
