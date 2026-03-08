@@ -1,4 +1,4 @@
-import { User, Palette, Heart, Brain, Accessibility, Users, FileText, Shield, Bell, ChevronRight, LogOut, Gamepad2, Trophy, BookOpen, Search, MessageCircle, Tv } from 'lucide-react';
+import { User, Palette, Heart, Brain, Accessibility, Users, FileText, Shield, Bell, ChevronRight, LogOut, Gamepad2, Trophy, BookOpen, Search, MessageCircle, Tv, Baby } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { useAuth } from '@/lib/auth';
 import { Link, useNavigate } from 'react-router-dom';
