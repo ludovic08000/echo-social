@@ -62,6 +62,7 @@ export default function Signup() {
 
     // Check minimum age (13 years)
     const today = new Date();
+    const age = differenceInYears(today, dateOfBirth);
     const minDate = new Date(today.getFullYear() - 13, today.getMonth(), today.getDate());
     if (dateOfBirth > minDate) {
       toast({
@@ -70,6 +71,25 @@ export default function Signup() {
         variant: 'destructive',
       });
       return;
+    }
+
+    // If under 16, show parental control step first
+    const isMinor = age < 16;
+    if (isMinor && !showParentalStep) {
+      setShowParentalStep(true);
+      return;
+    }
+
+    // Validate parental PIN if minor
+    if (isMinor && showParentalStep) {
+      if (parentalPin.length !== 4 || !/^\d{4}$/.test(parentalPin)) {
+        toast({ title: 'Code invalide', description: 'Le code parental doit être composé de 4 chiffres', variant: 'destructive' });
+        return;
+      }
+      if (parentalPin !== parentalPinConfirm) {
+        toast({ title: 'Les codes ne correspondent pas', variant: 'destructive' });
+        return;
+      }
     }
 
     if (!acceptedTerms || !acceptedPrivacy) {
