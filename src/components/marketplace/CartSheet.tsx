@@ -224,7 +224,7 @@ export function CartSheet() {
               </div>
               <Button
                 className="w-full premium-button"
-                onClick={handleCheckout}
+                onClick={() => handleCheckout(false)}
                 disabled={isCheckingOut || cart.length === 0}
               >
                 {isCheckingOut ? (
@@ -233,6 +233,14 @@ export function CartSheet() {
                   <CreditCard className="w-4 h-4 mr-2" />
                 )}
                 {isCheckingOut ? 'Redirection...' : `Payer ${total.toFixed(2)}€`}
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full text-xs"
+                onClick={() => handleCheckout(true)}
+                disabled={isCheckingOut || cart.length === 0}
+              >
+                🧪 Commande test (sans paiement)
               </Button>
               <p className="text-[10px] text-muted-foreground text-center flex items-center justify-center gap-1">
                 <ShieldCheck className="w-3 h-3" />
