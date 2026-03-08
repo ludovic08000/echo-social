@@ -22,7 +22,7 @@ export function useSellerOrders() {
 
       const { data: orders, error: ordersError } = await supabase
         .from('orders')
-        .select('*, order_items(id, title, quantity, price, subtotal, status)')
+        .select('*, order_items(id, title, quantity, price, subtotal, status, product_id)')
         .in('id', orderIds)
         .order('created_at', { ascending: false });
 
