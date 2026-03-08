@@ -9,7 +9,7 @@ import { CartSheet } from '@/components/marketplace/CartSheet';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Store, Plus, ShoppingBag, Sparkles, Flame, Clock, SlidersHorizontal, X, Heart, TrendingUp, Tag, MapPin, Globe, Truck, Package, CheckCircle, AlertCircle, Copy } from 'lucide-react';
+import { Search, Store, Plus, ShoppingBag, Sparkles, Flame, Clock, SlidersHorizontal, X, Heart, TrendingUp, Tag, MapPin, Globe, Truck, Package, CheckCircle, AlertCircle, Copy, Star } from 'lucide-react';
 import { SellerDashboard } from '@/components/marketplace/SellerDashboard';
 import { SEOHead } from '@/components/SEOHead';
 import { CreateProductDialog } from '@/components/marketplace/CreateProductDialog';
