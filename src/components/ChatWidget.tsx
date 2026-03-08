@@ -534,7 +534,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                                   'px-3 py-2 rounded-xl text-xs max-w-full truncate',
                                   isMe ? 'bg-primary text-primary-foreground' : 'bg-secondary'
                                 )}>
-                                  {isVoiceMessage(msg.body) ? '🎙️ Message vocal' : 
+                                  {isCallMessage(msg.body) ? '📞 Appel' :
+                                   isVoiceMessage(msg.body) ? '🎙️ Message vocal' : 
                                    isGifMessage(msg.body) ? '🎬 GIF' : 
                                    msg.body.length > 50 ? msg.body.slice(0, 50) + '…' : msg.body}
                                 </div>
