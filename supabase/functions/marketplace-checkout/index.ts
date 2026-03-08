@@ -108,17 +108,30 @@ serve(async (req) => {
       const orderNumber = `ORD-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
 
       // Create order in DB first (pending status)
+      const orderData: any = {
+        buyer_id: userId,
+        order_number: orderNumber,
+        subtotal,
+        total,
+        commission_rate: COMMISSION_RATE,
+        commission_amount: commission,
+        status: "pending",
+      };
+
+      // Add relay point info if provided
+      if (relay?.id) {
+        orderData.shipping_method = 'mondial_relay';
+        orderData.shipping_relay_id = relay.id;
+        orderData.shipping_relay_name = relay.name;
+        orderData.shipping_relay_address = relay.address;
+        orderData.shipping_relay_postcode = relay.postcode;
+        orderData.shipping_relay_city = relay.city;
+        orderData.shipping_relay_country = relay.country || 'FR';
+      }
+
       const { data: order, error: orderError } = await supabase
         .from("orders")
-        .insert({
-          buyer_id: userId,
-          order_number: orderNumber,
-          subtotal,
-          total,
-          commission_rate: COMMISSION_RATE,
-          commission_amount: commission,
-          status: "pending",
-        })
+        .insert(orderData)
         .select()
         .single();
 
