@@ -145,24 +145,14 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
     if (!audioBlob || !user) return;
     setUploading(true);
     try {
-      // Determine extension from blob type
       let ext = 'webm';
       if (audioBlob.type.includes('mp4')) ext = 'mp4';
       else if (audioBlob.type.includes('ogg')) ext = 'ogg';
       else if (audioBlob.type.includes('wav')) ext = 'wav';
 
-      const fileName = `${user.id}/voice-${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from('post-images')
-        .upload(fileName, audioBlob, { contentType: audioBlob.type || 'audio/webm' });
-
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from('post-images')
-        .getPublicUrl(fileName);
-
-      onSend(urlData.publicUrl, duration);
+      const { uploadToR2 } = await import('@/lib/r2');
+      const { url } = await uploadToR2(audioBlob, 'voice', `voice-${Date.now()}.${ext}`);
+      onSend(url, duration);
     } catch (err) {
       console.error('Voice upload error:', err);
       toast.error('Erreur lors de l\'envoi du vocal');

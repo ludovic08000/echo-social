@@ -163,11 +163,8 @@ export default function Profile() {
     if (!idFile || !user || !pendingVerification) return;
     setUploadingId(true);
     try {
-      const ext = idFile.name.split('.').pop();
-      const path = `${user.id}/${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage.from('id-documents').upload(path, idFile);
-      if (uploadError) throw uploadError;
-      const { data: { publicUrl } } = supabase.storage.from('id-documents').getPublicUrl(path);
+      const { uploadToR2 } = await import('@/lib/r2');
+      const { url: publicUrl } = await uploadToR2(idFile, 'documents');
       await supabase.from('identity_verifications').update({
         id_document_url: publicUrl,
         status: 'document_submitted',

@@ -77,30 +77,17 @@ export function HostLiveView({ live }: HostLiveViewProps) {
       const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
       const blob = new Blob(recordedChunksRef.current, { type: mimeType });
       
-      if (blob.size < 1000) return null; // Too small, probably empty
+      if (blob.size < 1000) return null;
 
-      const fileName = `${user.id}/live-${live.id}-${Date.now()}.${ext}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(fileName, blob, { contentType: mimeType });
+      const { uploadToR2 } = await import('@/lib/r2');
+      const { url } = await uploadToR2(blob, 'lives', `live-${live.id}-${Date.now()}.${ext}`);
 
-      if (uploadError) {
-        console.error('Upload error:', uploadError);
-        return null;
-      }
-
-      const { data: urlData } = supabase.storage
-        .from('videos')
-        .getPublicUrl(fileName);
-
-      // Save recording URL to live_streams
       await supabase
         .from('live_streams')
-        .update({ recording_url: urlData.publicUrl } as any)
+        .update({ recording_url: url } as any)
         .eq('id', live.id);
 
-      return urlData.publicUrl;
+      return url;
     } catch (err) {
       console.error('Save recording error:', err);
       return null;

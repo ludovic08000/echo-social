@@ -381,9 +381,16 @@ export function useDeleteLive() {
         .single();
 
       if (live?.recording_url) {
-        const path = live.recording_url.split('/videos/')[1];
-        if (path) {
-          await supabase.storage.from('videos').remove([path]);
+        try {
+          const { deleteFromR2 } = await import('@/lib/r2');
+          // Extract R2 path from full URL
+          const r2PublicUrl = live.recording_url;
+          const pathMatch = r2PublicUrl.match(/lives\/[^?]+/);
+          if (pathMatch) {
+            await deleteFromR2(pathMatch[0]);
+          }
+        } catch (e) {
+          console.error('R2 delete error:', e);
         }
       }
 
