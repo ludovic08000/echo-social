@@ -740,8 +740,8 @@ export default function AdsManager() {
                   disabled={!manualTitle.trim() || !manualBody.trim() || createCampaign.isPending}
                   className="w-full h-12 rounded-xl text-base font-semibold gap-2 bg-gradient-to-r from-primary to-primary/80 shadow-[0_4px_16px_hsl(var(--primary)/0.3)]"
                 >
-                  {createCampaign.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Megaphone className="w-5 h-5" />}
-                  Lancer — {PRICING[manualDuration].price}€
+                  {createCampaign.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
+                  Payer et lancer — {PRICING[manualDuration].price}€
                 </Button>
               </div>
             </motion.div>
