@@ -35,8 +35,14 @@ const BENEFITS = [
 export default function CreatorUpgrade() {
   const { user } = useAuth();
   const { isCreatorSubscriber, subscriptionEnd, loading, startCheckout, openPortal, checkSubscription } = useStripeSubscription();
+  const { enabled: revenueEnabled, userCount, threshold, loading: statsLoading } = useIsCreatorRevenueEnabled();
   const [searchParams] = useSearchParams();
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+
+  const formatCount = (n: number) => {
+    if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
+    return n.toString();
+  };
 
   // Handle return from Stripe
   useEffect(() => {
