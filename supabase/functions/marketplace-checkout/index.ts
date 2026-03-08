@@ -47,8 +47,9 @@ serve(async (req) => {
 
     // ── CREATE MARKETPLACE CHECKOUT ──
     if (action === "create_checkout") {
-      const { items } = body;
+      const { items, relay } = body;
       // items: [{ product_id, title, price, quantity, seller_id, thumbnail_url }]
+      // relay: { id, name, address, postcode, city, country } (optional)
 
       if (!items?.length) throw new Error("Panier vide");
 
