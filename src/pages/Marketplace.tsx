@@ -135,7 +135,7 @@ export default function Marketplace() {
               </div>
               <div className="flex items-center gap-2">
                 {seller && (
-                  <Link to="/marketplace?tab=seller">
+                  <Link to="/marketplace?tab=seller&sellerTab=orders">
                     <Button
                       variant="secondary"
                       size="sm"
