@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark } from 'lucide-react';
+import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark, ShieldAlert } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Post, useDeletePost } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
@@ -17,6 +17,9 @@ import { ReactionType } from '@/hooks/useReactions';
 import { ShareButton } from './ShareButton';
 import { generatePostUrl } from '@/lib/urlUtils';
 import { useAIContent } from '@/hooks/useAIContent';
+import { useCurrentUserIsMinor } from '@/hooks/useMinorProtection';
+import { useReportUser } from '@/hooks/useTrustAndSafety';
+import { toast } from 'sonner';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,6 +43,8 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
   const [mediaLoaded, setMediaLoaded] = useState(false);
   const [saved, setSaved] = useState(false);
+  const { data: isMinorUser } = useCurrentUserIsMinor();
+  const reportUser = useReportUser();
 
   const postUrl = generatePostUrl(post.id);
 
@@ -160,6 +165,26 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
                 <DropdownMenuItem onClick={handleDelete} className="text-destructive">
                   <Trash2 className="w-4 h-4 mr-2" />
                   Supprimer
+                </DropdownMenuItem>
+              )}
+              {isMinorUser && !isOwner && (
+                <DropdownMenuItem 
+                  onClick={async () => {
+                    try {
+                      await reportUser.mutateAsync({
+                        reportedUserId: post.user_id,
+                        reportType: 'inappropriate_content',
+                        description: `Signalement mineur - post ${post.id}`,
+                      });
+                      toast.success('✅ Signalement envoyé !');
+                    } catch {
+                      toast.error('Erreur lors du signalement');
+                    }
+                  }}
+                  className="text-destructive"
+                >
+                  <ShieldAlert className="w-4 h-4 mr-2" />
+                  🛡️ Signaler ce contenu
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>

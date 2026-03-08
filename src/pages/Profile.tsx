@@ -37,6 +37,9 @@ import { toast } from '@/hooks/use-toast';
 import { CreatorBadge } from '@/components/CreatorBadge';
 import { TipButton } from '@/components/TipButton';
 import { useIsCreator } from '@/hooks/useCreator';
+import { useIsMinor } from '@/hooks/useMinorProtection';
+import { MinorProtectedBadge } from '@/components/MinorProtectedBadge';
+import { MinorReportButton } from '@/components/MinorReportButton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -137,6 +140,8 @@ export default function Profile() {
   const { data: posts, isLoading: postsLoading } = useUserPosts(userId || '');
   const { data: friendshipData } = useFriendshipStatus(userId || '');
   const { data: isCreator } = useIsCreator(userId);
+  const { data: targetIsMinor } = useIsMinor(userId);
+  const { data: currentUserIsMinor } = useIsMinor(user?.id);
   const updateProfile = useUpdateProfile();
   const profileBgStyle = useCustomBackground('profile');
 
@@ -537,6 +542,7 @@ export default function Profile() {
             <div className="flex items-center gap-2">
               <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">{profile.name}</h1>
               {isCreator && <CreatorBadge size="lg" />}
+              {targetIsMinor && <MinorProtectedBadge />}
             </div>
             
             {/* Stats row */}
@@ -662,6 +668,7 @@ export default function Profile() {
                    </Button>
                    {isCreator && <TipButton creatorId={userId!} creatorName={profile.name} />}
                    <ReportFakeAccountButton reportedUserId={userId!} />
+                   {currentUserIsMinor && <MinorReportButton reportedUserId={userId!} />}
                 </>
               )}
             </div>

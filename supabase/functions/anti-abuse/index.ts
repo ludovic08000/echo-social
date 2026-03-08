@@ -341,10 +341,94 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ── MINOR CONTACT DETECTION ──
+    if (action === "check_minor_contact") {
+      const { targetUserId } = body;
+
+      // Check if target is minor
+      const { data: minorCheck } = await supabase
+        .from("parental_controls")
+        .select("is_active")
+        .eq("user_id", targetUserId)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (!minorCheck) {
+        return new Response(JSON.stringify({ flagged: false }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Log the contact attempt
+      await supabase.from("minor_contact_logs").insert({
+        adult_user_id: user.id,
+        minor_user_id: targetUserId,
+        contact_type: body.contactType || "message",
+      });
+
+      // Check how many different minors this adult has contacted in last 24h
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: recentContacts } = await supabase
+        .from("minor_contact_logs")
+        .select("minor_user_id")
+        .eq("adult_user_id", user.id)
+        .gte("created_at", oneDayAgo);
+
+      const uniqueMinors = new Set(
+        (recentContacts || []).map((c: any) => c.minor_user_id)
+      );
+
+      let flagged = false;
+
+      // Alert if adult contacts 3+ different minors in 24h
+      if (uniqueMinors.size >= 3) {
+        flagged = true;
+        await supabase
+          .from("trust_scores")
+          .update({
+            is_flagged: true,
+            flag_reason: `Suspicious: contacted ${uniqueMinors.size} minors in 24h`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", user.id);
+      }
+
+      // Check repeated contact attempts to same minor
+      const { data: repeatedAttempts } = await supabase
+        .from("minor_contact_logs")
+        .select("id")
+        .eq("adult_user_id", user.id)
+        .eq("minor_user_id", targetUserId)
+        .gte("created_at", oneDayAgo);
+
+      if ((repeatedAttempts?.length || 0) >= 5) {
+        flagged = true;
+        await supabase
+          .from("trust_scores")
+          .update({
+            is_flagged: true,
+            flag_reason: `Repeated contact attempts to minor`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", user.id);
+      }
+
+      return new Response(
+        JSON.stringify({
+          flagged,
+          uniqueMinorsContacted: uniqueMinors.size,
+          repeatedAttempts: repeatedAttempts?.length || 0,
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
     return new Response(
       JSON.stringify({
-        error:
-          "Invalid action. Use: check_rate, register_fingerprint, check_bot, report_user",
+      error:
+          "Invalid action. Use: check_rate, register_fingerprint, check_bot, report_user, check_minor_contact",
       }),
       {
         status: 400,
