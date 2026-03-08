@@ -61,7 +61,7 @@ export function ChatWidgetProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const goBack = useCallback(() => {
-    setState(prev => ({ ...prev, conversationId: null, negotiationProduct: null }));
+    setState(prev => ({ ...prev, conversationId: null }));
   }, []);
 
   return (
