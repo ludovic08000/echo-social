@@ -11,6 +11,7 @@ export interface Message {
   body: string;
   image_url: string | null;
   created_at: string;
+  status: 'delivered' | 'pending' | 'blocked';
   profile: {
     name: string;
     avatar_url: string | null;
@@ -168,6 +169,7 @@ export function useMessages(conversationId: string) {
         .from('messages')
         .select('*')
         .eq('conversation_id', conversationId)
+        .in('status', ['delivered', 'pending'])
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -232,23 +234,34 @@ export function useSendMessage() {
         recordSentMessage(sanitizedBody);
       }
 
+      // AI moderation (async, non-blocking)
+      if (!isSpecialMessage && data?.id) {
+        supabase.functions.invoke('message-moderation', {
+          body: { action: 'moderate_message', messageBody: sanitizedBody, messageId: data.id },
+        }).catch(() => {});
+      }
+
       await supabase
         .from('conversations')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', conversationId);
 
-      const { data: participants } = await supabase
-        .from('conversation_participants')
-        .select('user_id')
-        .eq('conversation_id', conversationId)
-        .neq('user_id', user.id);
+      // Notification is now handled by the friendship trigger for non-friends
+      // For friends, send notification as before
+      if (data?.status === 'delivered') {
+        const { data: participants } = await supabase
+          .from('conversation_participants')
+          .select('user_id')
+          .eq('conversation_id', conversationId)
+          .neq('user_id', user.id);
 
-      if (participants?.length) {
-        await supabase.from('notifications').insert({
-          user_id: participants[0].user_id,
-          type: 'message',
-          actor_id: user.id,
-        });
+        if (participants?.length) {
+          await supabase.from('notifications').insert({
+            user_id: participants[0].user_id,
+            type: 'message',
+            actor_id: user.id,
+          });
+        }
       }
 
       return data;
@@ -379,6 +392,69 @@ export function useMarkConversationRead() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}
+
+// Check if a conversation has pending (non-friend) messages
+export function useHasPendingMessages(conversationId: string) {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ['pending-messages', conversationId],
+    queryFn: async () => {
+      if (!conversationId || !user) return false;
+
+      const { data } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('conversation_id', conversationId)
+        .eq('status', 'pending')
+        .neq('sender_id', user.id)
+        .limit(1);
+
+      return (data?.length || 0) > 0;
+    },
+    enabled: !!conversationId && !!user,
+  });
+}
+
+// Accept a message request (deliver all pending messages)
+export function useAcceptMessageRequest() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (conversationId: string) => {
+      const { data, error } = await supabase.functions.invoke('message-moderation', {
+        body: { action: 'accept_request', conversationId },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-messages'] });
+    },
+  });
+}
+
+// Reject a message request (block all pending messages)
+export function useRejectMessageRequest() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (conversationId: string) => {
+      const { data, error } = await supabase.functions.invoke('message-moderation', {
+        body: { action: 'reject_request', conversationId },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-messages'] });
     },
   });
 }
