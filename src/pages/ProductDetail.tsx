@@ -66,7 +66,7 @@ export default function ProductDetailPage() {
   const isFav = favorites.includes(product.id);
   const shippingInfo = SHIPPING_LABELS[product.shipping_type] || SHIPPING_LABELS.standard;
   const ShippingIcon = shippingInfo.icon;
-  const isOutOfStock = product.stock_quantity !== null && product.stock_quantity <= 0;
+  const isOwnProduct = user && seller && (seller as any).user_id === user.id;
 
   return (
     <AppLayout>
