@@ -35,6 +35,7 @@ import { ProfileMusicPlayer } from '@/components/profile/ProfileMusicPlayer';
 import { type Album } from '@/hooks/useAlbums';
 import { toast } from '@/hooks/use-toast';
 import { CreatorBadge } from '@/components/CreatorBadge';
+import { TipButton } from '@/components/TipButton';
 import { useIsCreator } from '@/hooks/useCreator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
