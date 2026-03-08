@@ -32,7 +32,7 @@ function useRecentReplays() {
         .eq('is_active', false)
         .not('ended_at', 'is', null)
         .order('ended_at', { ascending: false })
-        .limit(8);
+        .limit(10);
 
       if (error) throw error;
       if (!data?.length) return [];
@@ -48,13 +48,7 @@ function useRecentReplays() {
       );
 
       return data.map(l => ({
-        id: l.id,
-        title: l.title,
-        thumbnail_url: l.thumbnail_url,
-        total_views: l.total_views,
-        category: l.category,
-        ended_at: l.ended_at,
-        user_id: l.user_id,
+        ...l,
         host: profileMap.get(l.user_id),
       })) as ReplayStream[];
     },
@@ -62,122 +56,6 @@ function useRecentReplays() {
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
   });
-}
-
-function LiveTile({ 
-  to, 
-  thumbnailUrl, 
-  isLive, 
-  viewerCount, 
-  hostAvatar, 
-  hostName, 
-  title, 
-  category,
-  endedAt,
-  canDelete,
-  onDelete,
-  size = 'normal',
-}: {
-  to: string;
-  thumbnailUrl?: string | null;
-  isLive?: boolean;
-  viewerCount: number;
-  hostAvatar?: string | null;
-  hostName?: string;
-  title: string;
-  category?: string | null;
-  endedAt?: string | null;
-  canDelete?: boolean;
-  onDelete?: (e: React.MouseEvent) => void;
-  size?: 'normal' | 'large';
-}) {
-  return (
-    <Link
-      to={to}
-      className={cn(
-        "relative block rounded-xl overflow-hidden bg-black group",
-        size === 'large' ? 'row-span-2' : ''
-      )}
-    >
-      {/* Background */}
-      {thumbnailUrl ? (
-        <img
-          src={thumbnailUrl}
-          alt={title}
-          className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-        />
-      ) : (
-        <div className={cn(
-          "absolute inset-0 flex items-center justify-center",
-          isLive 
-            ? "bg-gradient-to-br from-destructive/30 via-black to-primary/20"
-            : "bg-gradient-to-br from-primary/20 via-black to-muted/20"
-        )}>
-          <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center group-hover:scale-110 transition-transform">
-            <Play className="w-4 h-4 text-white ml-0.5" />
-          </div>
-        </div>
-      )}
-
-      {/* Top badges */}
-      <div className="absolute top-2 left-2 right-2 flex items-center justify-between z-10">
-        {isLive ? (
-          <span className="px-1.5 py-0.5 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center gap-1 shadow-lg">
-            <Radio className="w-2.5 h-2.5 animate-pulse" />
-            LIVE
-          </span>
-        ) : (
-          <span className="px-1.5 py-0.5 rounded-full bg-secondary/80 backdrop-blur-sm text-foreground text-[9px] font-medium flex items-center gap-1">
-            <Clock className="w-2.5 h-2.5" />
-            Replay
-          </span>
-        )}
-        <div className="flex items-center gap-1">
-          {canDelete && onDelete && (
-            <button
-              onClick={onDelete}
-              className="p-1 rounded-full bg-black/60 backdrop-blur-sm text-white hover:bg-destructive transition-colors"
-            >
-              <Trash2 className="w-3 h-3" />
-            </button>
-          )}
-          {viewerCount > 0 && (
-            <span className="px-1.5 py-0.5 rounded-full bg-black/60 backdrop-blur-sm text-white text-[9px] flex items-center gap-1">
-              <Eye className="w-2.5 h-2.5" />
-              {viewerCount}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Bottom info */}
-      <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/90 via-black/50 to-transparent z-10">
-        <div className="flex items-center gap-1.5 mb-0.5">
-          <div className="relative flex-shrink-0">
-            <UserAvatar src={hostAvatar} alt={hostName} size="xs" />
-            {isLive && (
-              <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-destructive border border-black" />
-            )}
-          </div>
-          <p className="text-white text-[10px] font-semibold truncate">{hostName}</p>
-        </div>
-        <p className="text-white/80 text-[9px] line-clamp-2 leading-snug">{title}</p>
-        {!isLive && endedAt && (
-          <p className="text-white/50 text-[8px] mt-0.5">
-            {formatDistanceToNow(new Date(endedAt), { addSuffix: true, locale: fr })}
-          </p>
-        )}
-        {category && (
-          <span className="inline-block mt-1 px-1.5 py-0.5 rounded-full bg-white/10 backdrop-blur-sm text-white/70 text-[8px] font-medium">
-            {category}
-          </span>
-        )}
-      </div>
-
-      {/* Hover overlay */}
-      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
-    </Link>
-  );
 }
 
 export function FeedLiveSection() {
@@ -200,7 +78,6 @@ export function FeedLiveSection() {
 
   if (!hasLives && !hasReplays) return null;
 
-  // Combine all items: active lives first, then replays
   const allItems = [
     ...(lives || []).map(l => ({ ...l, isLive: true, ended_at: null as string | null })),
     ...(replays || []).map(r => ({ ...r, isLive: false, viewer_count: r.total_views, is_active: false })),
@@ -208,56 +85,109 @@ export function FeedLiveSection() {
 
   return (
     <article className="bg-card border border-border/20 rounded-2xl overflow-hidden">
-      <div className="flex items-center justify-between px-4 pt-4 pb-3">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-destructive/10 flex items-center justify-center">
-            <Radio className={cn("w-4 h-4", hasLives ? "text-destructive animate-pulse" : "text-muted-foreground")} />
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 pt-3 pb-2">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-destructive/10 flex items-center justify-center">
+            <Radio className={cn("w-3.5 h-3.5", hasLives ? "text-destructive animate-pulse" : "text-muted-foreground")} />
           </div>
-          <div>
-            <h3 className="text-sm font-semibold text-foreground leading-tight">
-              {hasLives ? 'En direct' : 'Replays récents'}
-            </h3>
-            {hasLives && (
-              <span className="text-[10px] text-destructive font-semibold">
-                {lives!.length} live{lives!.length > 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
+          <h3 className="text-sm font-semibold text-foreground">
+            {hasLives ? 'En direct' : 'Replays'}
+          </h3>
+          {hasLives && (
+            <span className="px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive text-[10px] font-bold">
+              {lives!.length}
+            </span>
+          )}
         </div>
         <Link to="/lives" className="text-xs text-primary font-medium hover:text-primary/80 transition-colors">
           Voir tout
         </Link>
       </div>
 
-      {/* Mosaic grid — scrollable horizontally */}
-      <div className="px-4 pb-4">
+      {/* Horizontal scroll cards */}
+      <div className="px-3 pb-3">
         <ScrollArea className="w-full">
-          <div 
-            className="grid grid-flow-col auto-cols-[120px] grid-rows-2 gap-2 pb-1"
-            style={{ width: 'max-content' }}
-          >
-            {allItems.map((item, index) => {
-              // First item is large (spans 2 rows) for visual hierarchy
-              const isLarge = index === 0 && allItems.length > 2;
-              
-              return (
-                <LiveTile
-                  key={item.id}
-                  to={`/live/${item.id}`}
-                  thumbnailUrl={item.thumbnail_url}
-                  isLive={item.isLive}
-                  viewerCount={item.viewer_count || 0}
-                  hostAvatar={item.host?.avatar_url}
-                  hostName={item.host?.name}
-                  title={item.title}
-                  category={item.category}
-                  endedAt={item.ended_at}
-                  canDelete={!item.isLive && user?.id === item.user_id}
-                  onDelete={!item.isLive ? (e) => handleDelete(e, item.id) : undefined}
-                  size={isLarge ? 'large' : 'normal'}
-                />
-              );
-            })}
+          <div className="flex gap-2.5 pb-1">
+            {allItems.map((item) => (
+              <Link
+                key={item.id}
+                to={`/live/${item.id}`}
+                className="relative flex-shrink-0 w-[110px] h-[160px] rounded-xl overflow-hidden bg-black group"
+              >
+                {/* Thumbnail / Placeholder */}
+                {item.thumbnail_url ? (
+                  <img
+                    src={item.thumbnail_url}
+                    alt={item.title}
+                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                ) : (
+                  <div className={cn(
+                    "absolute inset-0 flex items-center justify-center",
+                    item.isLive
+                      ? "bg-gradient-to-b from-destructive/40 to-black/90"
+                      : "bg-gradient-to-b from-primary/20 to-black/90"
+                  )}>
+                    <div className="w-9 h-9 rounded-full bg-white/10 backdrop-blur flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <Play className="w-4 h-4 text-white ml-0.5" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Top badge */}
+                <div className="absolute top-1.5 left-1.5 right-1.5 flex items-center justify-between z-10">
+                  {item.isLive ? (
+                    <span className="px-1.5 py-0.5 rounded bg-destructive text-white text-[8px] font-bold flex items-center gap-0.5 shadow-lg">
+                      <Radio className="w-2 h-2 animate-pulse" />
+                      LIVE
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded bg-black/50 backdrop-blur-sm text-white/80 text-[8px] font-medium flex items-center gap-0.5">
+                      <Clock className="w-2 h-2" />
+                      Replay
+                    </span>
+                  )}
+                  {!item.isLive && user?.id === item.user_id && (
+                    <button
+                      onClick={(e) => handleDelete(e, item.id)}
+                      className="p-1 rounded bg-black/50 backdrop-blur-sm text-white/80 hover:bg-destructive transition-colors"
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Viewers badge */}
+                {(item.viewer_count || 0) > 0 && (
+                  <div className="absolute top-1.5 right-1.5 z-10">
+                    <span className="px-1.5 py-0.5 rounded bg-black/50 backdrop-blur-sm text-white/80 text-[8px] flex items-center gap-0.5">
+                      <Eye className="w-2 h-2" />
+                      {item.viewer_count}
+                    </span>
+                  </div>
+                )}
+
+                {/* Bottom info */}
+                <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/95 via-black/60 to-transparent z-10">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <UserAvatar src={item.host?.avatar_url} alt={item.host?.name} size="xs" />
+                    <span className="text-white text-[9px] font-semibold truncate">
+                      {item.host?.name || 'Utilisateur'}
+                    </span>
+                  </div>
+                  <p className="text-white/70 text-[9px] line-clamp-2 leading-tight">{item.title}</p>
+                  {!item.isLive && item.ended_at && (
+                    <p className="text-white/40 text-[7px] mt-0.5">
+                      {formatDistanceToNow(new Date(item.ended_at), { addSuffix: true, locale: fr })}
+                    </p>
+                  )}
+                </div>
+
+                {/* Hover */}
+                <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 transition-colors" />
+              </Link>
+            ))}
           </div>
           <ScrollBar orientation="horizontal" />
         </ScrollArea>
