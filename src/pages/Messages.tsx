@@ -512,7 +512,7 @@ function ConversationList() {
                       "text-sm truncate",
                       conv.unread_count > 0 ? "font-bold text-foreground" : "font-medium"
                     )}>
-                      {conv.participant.name}
+                      {conv.is_group ? (conv.name || 'Groupe') : conv.participant.name}
                     </span>
                     {conv.last_message && (
                       <span className={cn(
