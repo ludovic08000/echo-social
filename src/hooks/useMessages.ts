@@ -395,3 +395,66 @@ export function useMarkConversationRead() {
     },
   });
 }
+
+// Check if a conversation has pending (non-friend) messages
+export function useHasPendingMessages(conversationId: string) {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ['pending-messages', conversationId],
+    queryFn: async () => {
+      if (!conversationId || !user) return false;
+
+      const { data } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('conversation_id', conversationId)
+        .eq('status', 'pending')
+        .neq('sender_id', user.id)
+        .limit(1);
+
+      return (data?.length || 0) > 0;
+    },
+    enabled: !!conversationId && !!user,
+  });
+}
+
+// Accept a message request (deliver all pending messages)
+export function useAcceptMessageRequest() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (conversationId: string) => {
+      const { data, error } = await supabase.functions.invoke('message-moderation', {
+        body: { action: 'accept_request', conversationId },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-messages'] });
+    },
+  });
+}
+
+// Reject a message request (block all pending messages)
+export function useRejectMessageRequest() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (conversationId: string) => {
+      const { data, error } = await supabase.functions.invoke('message-moderation', {
+        body: { action: 'reject_request', conversationId },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-messages'] });
+    },
+  });
+}
