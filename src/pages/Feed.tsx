@@ -133,7 +133,6 @@ export default function Feed() {
         viewport={{ once: true, margin: '-50px' }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
       >
-        {type === 'live' && <FeedLiveSection />}
         {type === 'reels' && <FeedReelsSection />}
         {type === 'suggestions' && <FriendSuggestions />}
         {type === 'suggestions_city' && <FriendSuggestionsByCity />}
