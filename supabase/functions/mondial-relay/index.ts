@@ -408,7 +408,7 @@ serve(async (req) => {
       if (trackingNumber) {
         // Mondial Relay requires a CRC hash to access the PDF label
         const crcBase = `${enseigne} ${trackingNumber} FR A4`;
-        const crc = md5Lib(crcBase + privateKey).toUpperCase();
+        const crc = md5Hex(crcBase + privateKey);
         labelUrl = `https://www.mondialrelay.com/ww2/PDF/StickerMaker2.aspx?ens=${enseigne}&expedition=${trackingNumber}&lg=FR&format=A4&crc=${crc}`;
       }
 
