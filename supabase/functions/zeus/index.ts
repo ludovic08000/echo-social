@@ -459,7 +459,167 @@ async function handleAgentChat(apiKey: string, body: any, userId: string, supaba
 
 // ═══════════════════════════════════════════════════════════════
 // ADMIN: Full platform intelligence & decision assistant
+// Zeus v2 — Uses Gemini 2.5 Pro + tool calling for on-demand queries
 // ═══════════════════════════════════════════════════════════════
+
+// Tools Zeus can call to query data on-demand
+const ZEUS_TOOLS = [
+  {
+    type: "function", function: {
+      name: "search_users", description: "Rechercher des utilisateurs par nom, ville ou type de profil",
+      parameters: { type: "object", properties: { query: { type: "string", description: "Nom ou ville à chercher" }, profile_type: { type: "string", enum: ["user", "creator", "business"], description: "Filtrer par type" } }, required: ["query"], additionalProperties: false },
+    },
+  },
+  {
+    type: "function", function: {
+      name: "get_user_details", description: "Obtenir les détails complets d'un utilisateur (profil, trust score, signalements, commandes)",
+      parameters: { type: "object", properties: { user_id: { type: "string", description: "UUID de l'utilisateur" } }, required: ["user_id"], additionalProperties: false },
+    },
+  },
+  {
+    type: "function", function: {
+      name: "get_reports_by_type", description: "Lister les signalements filtrés par type et/ou statut",
+      parameters: { type: "object", properties: { report_type: { type: "string", description: "Type: harassment, scam, spam, explicit, etc." }, status: { type: "string", enum: ["pending", "reviewed", "resolved", "dismissed"] } }, additionalProperties: false },
+    },
+  },
+  {
+    type: "function", function: {
+      name: "get_revenue_analytics", description: "Obtenir les analytics de revenus avec ventilation par période",
+      parameters: { type: "object", properties: { period: { type: "string", enum: ["today", "week", "month", "all"], description: "Période d'analyse" } }, required: ["period"], additionalProperties: false },
+    },
+  },
+  {
+    type: "function", function: {
+      name: "get_marketplace_stats", description: "Statistiques marketplace : produits, vendeurs, catégories populaires",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: "function", function: {
+      name: "get_engagement_metrics", description: "Métriques d'engagement : likes, commentaires, lives, stories actives",
+      parameters: { type: "object", properties: { period: { type: "string", enum: ["today", "week", "month"] } }, required: ["period"], additionalProperties: false },
+    },
+  },
+  {
+    type: "function", function: {
+      name: "get_growth_metrics", description: "Métriques de croissance : nouveaux inscrits, rétention, churn",
+      parameters: { type: "object", properties: { days: { type: "number", description: "Nombre de jours à analyser (7, 14, 30)" } }, required: ["days"], additionalProperties: false },
+    },
+  },
+];
+
+// Execute Zeus tool calls against the database
+async function executeZeusTool(name: string, args: any, supabase: any): Promise<string> {
+  try {
+    switch (name) {
+      case "search_users": {
+        let q = supabase.from("profiles").select("user_id, name, avatar_url, city, profile_type, bio, created_at");
+        if (args.query) q = q.ilike("name", `%${args.query}%`);
+        if (args.profile_type) q = q.eq("profile_type", args.profile_type);
+        const { data } = await q.limit(15);
+        return JSON.stringify({ users: (data || []).map((u: any) => ({ ...u, user_id: u.user_id.slice(0, 12) + "..." })) });
+      }
+      case "get_user_details": {
+        const uid = args.user_id;
+        const [profileRes, trustRes, reportsRes, ordersRes, postsRes, friendsRes] = await Promise.all([
+          supabase.from("profiles").select("*").eq("user_id", uid).maybeSingle(),
+          supabase.from("trust_scores").select("*").eq("user_id", uid).maybeSingle(),
+          supabase.from("abuse_reports").select("id, report_type, status, description, created_at").or(`reporter_id.eq.${uid},reported_user_id.eq.${uid}`).limit(10),
+          supabase.from("orders").select("id, total, status, created_at").eq("buyer_id", uid).limit(10),
+          supabase.from("posts").select("id, created_at", { count: "exact", head: true }).eq("user_id", uid),
+          supabase.from("friendships").select("id", { count: "exact", head: true }).or(`requester_id.eq.${uid},addressee_id.eq.${uid}`).eq("status", "accepted"),
+        ]);
+        return JSON.stringify({
+          profile: profileRes.data, trust: trustRes.data,
+          reports_count: (reportsRes.data || []).length, reports: reportsRes.data,
+          orders_count: (ordersRes.data || []).length, posts_count: postsRes.count || 0,
+          friends_count: friendsRes.count || 0,
+        });
+      }
+      case "get_reports_by_type": {
+        let q = supabase.from("abuse_reports").select("id, reporter_id, reported_user_id, report_type, status, description, created_at").order("created_at", { ascending: false }).limit(25);
+        if (args.report_type) q = q.eq("report_type", args.report_type);
+        if (args.status) q = q.eq("status", args.status);
+        const { data } = await q;
+        return JSON.stringify({ reports: data || [], total: (data || []).length });
+      }
+      case "get_revenue_analytics": {
+        const periodMap: Record<string, number> = { today: 1, week: 7, month: 30, all: 3650 };
+        const days = periodMap[args.period] || 30;
+        const since = new Date(Date.now() - days * 86400000).toISOString();
+        const [ordersRes, subsRes, tipsRes] = await Promise.all([
+          supabase.from("orders").select("id, total, status, commission_amount, created_at").gte("created_at", since),
+          supabase.from("creator_subscriptions").select("id, plan, status, price_cents, created_at").eq("status", "active"),
+          supabase.from("tip_transactions").select("id, amount, created_at").gte("created_at", since),
+        ]);
+        const orders = (ordersRes.data || []).filter((o: any) => !["cancelled", "refunded"].includes(o.status));
+        const revenue = orders.reduce((s: number, o: any) => s + (o.total || 0), 0);
+        const commission = orders.reduce((s: number, o: any) => s + (o.commission_amount || 0), 0);
+        const tips = (tipsRes.data || []).reduce((s: number, t: any) => s + (t.amount || 0), 0);
+        const mrr = (subsRes.data || []).reduce((s: number, sub: any) => s + (sub.price_cents || 0), 0) / 100;
+        return JSON.stringify({ period: args.period, orders_count: orders.length, revenue: revenue.toFixed(2), commission: commission.toFixed(2), tips: tips.toFixed(2), mrr: mrr.toFixed(2), active_subs: (subsRes.data || []).length });
+      }
+      case "get_marketplace_stats": {
+        const [productsRes, sellersRes, ordersRes] = await Promise.all([
+          supabase.from("products").select("id, category, price, stock_quantity, is_active, product_type"),
+          supabase.from("seller_profiles").select("id, shop_name, is_verified, seller_type"),
+          supabase.from("orders").select("id, status, total").limit(500),
+        ]);
+        const products = productsRes.data || [];
+        const categories: Record<string, number> = {};
+        products.forEach((p: any) => { categories[p.category || "autre"] = (categories[p.category || "autre"] || 0) + 1; });
+        return JSON.stringify({
+          total_products: products.length, active_products: products.filter((p: any) => p.is_active).length,
+          total_sellers: (sellersRes.data || []).length, verified_sellers: (sellersRes.data || []).filter((s: any) => s.is_verified).length,
+          categories, total_orders: (ordersRes.data || []).length,
+          avg_price: products.length ? (products.reduce((s: number, p: any) => s + Number(p.price || 0), 0) / products.length).toFixed(2) : "0",
+        });
+      }
+      case "get_engagement_metrics": {
+        const days = args.period === "today" ? 1 : args.period === "week" ? 7 : 30;
+        const since = new Date(Date.now() - days * 86400000).toISOString();
+        const [likesRes, commentsRes, postsRes, livesRes, storiesRes, messagesRes] = await Promise.all([
+          supabase.from("likes").select("id", { count: "exact", head: true }).gte("created_at", since),
+          supabase.from("comments").select("id", { count: "exact", head: true }).gte("created_at", since),
+          supabase.from("posts").select("id", { count: "exact", head: true }).gte("created_at", since),
+          supabase.from("live_streams").select("id, viewer_count, total_views").gte("created_at", since),
+          supabase.from("stories").select("id", { count: "exact", head: true }).gte("created_at", since),
+          supabase.from("messages").select("id", { count: "exact", head: true }).gte("created_at", since),
+        ]);
+        const lives = livesRes.data || [];
+        return JSON.stringify({
+          period: args.period, likes: likesRes.count || 0, comments: commentsRes.count || 0,
+          posts: postsRes.count || 0, stories: storiesRes.count || 0, messages: messagesRes.count || 0,
+          live_streams: lives.length, total_live_views: lives.reduce((s: number, l: any) => s + (l.total_views || 0), 0),
+        });
+      }
+      case "get_growth_metrics": {
+        const days = Math.min(args.days || 7, 90);
+        const since = new Date(Date.now() - days * 86400000).toISOString();
+        const prevSince = new Date(Date.now() - days * 2 * 86400000).toISOString();
+        const [newUsersRes, prevUsersRes, totalUsersRes, deletionRes] = await Promise.all([
+          supabase.from("profiles").select("id", { count: "exact", head: true }).gte("created_at", since),
+          supabase.from("profiles").select("id", { count: "exact", head: true }).gte("created_at", prevSince).lt("created_at", since),
+          supabase.from("profiles").select("id", { count: "exact", head: true }),
+          supabase.from("account_deletion_requests").select("id", { count: "exact", head: true }).gte("created_at", since),
+        ]);
+        const newUsers = newUsersRes.count || 0;
+        const prevUsers = prevUsersRes.count || 0;
+        const growthRate = prevUsers > 0 ? (((newUsers - prevUsers) / prevUsers) * 100).toFixed(1) : "N/A";
+        return JSON.stringify({
+          days, new_users: newUsers, previous_period_users: prevUsers,
+          growth_rate_percent: growthRate, total_users: totalUsersRes.count || 0,
+          deletion_requests: deletionRes.count || 0,
+        });
+      }
+      default:
+        return JSON.stringify({ error: `Unknown tool: ${name}` });
+    }
+  } catch (e) {
+    return JSON.stringify({ error: `Tool error: ${(e as Error).message}` });
+  }
+}
+
 async function handleAdmin(apiKey: string, body: any, userId: string, supabase: any, cors: Record<string, string>) {
   // Verify admin role
   const { data: roleData } = await supabase.from("user_roles").select("role").eq("user_id", userId).eq("role", "admin").maybeSingle();
@@ -468,81 +628,165 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
   const { action } = body;
 
   if (action === "chat") {
-    // Gather full platform context
-    const [usersRes, postsRes, ordersRes, reportsRes, agentsRes, bansRes, trustRes, subsRes, verificationsRes] = await Promise.all([
-      supabase.from("profiles").select("user_id, name, city, profile_type, created_at", { count: "exact" }).order("created_at", { ascending: false }).limit(20),
-      supabase.from("posts").select("id, body, created_at, user_id", { count: "exact" }).order("created_at", { ascending: false }).limit(10),
+    // Gather core platform snapshot (lightweight — details fetched via tools)
+    const [usersRes, postsRes, ordersRes, reportsRes, bansRes, trustRes, subsRes, verificationsRes, livesRes, productsRes] = await Promise.all([
+      supabase.from("profiles").select("user_id, name, city, profile_type, created_at", { count: "exact" }).order("created_at", { ascending: false }).limit(10),
+      supabase.from("posts").select("id", { count: "exact", head: true }),
       supabase.from("orders").select("id, total, status, created_at"),
       supabase.from("abuse_reports").select("id, report_type, status, description, created_at").order("created_at", { ascending: false }).limit(20),
-      supabase.from("ai_agent_usage").select("agent_id, message_count, usage_date").gte("usage_date", new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0]),
-      supabase.from("banned_users").select("id, user_id, reason, banned_at").eq("is_active", true),
+      supabase.from("banned_users").select("id", { count: "exact", head: true }).eq("is_active", true),
       supabase.from("trust_scores").select("user_id, trust_score, is_flagged, flag_reason").eq("is_flagged", true).limit(10),
       supabase.from("creator_subscriptions").select("id, plan, status, price_cents"),
       supabase.from("identity_verifications").select("id, status, reason, created_at").eq("status", "pending").limit(10),
+      supabase.from("live_streams").select("id", { count: "exact", head: true }).eq("is_active", true),
+      supabase.from("products").select("id", { count: "exact", head: true }).eq("is_active", true),
     ]);
 
     const orders = ordersRes.data || [];
     const totalRevenue = orders.filter((o: any) => o.status !== "cancelled" && o.status !== "refunded").reduce((s: number, o: any) => s + (o.total || 0), 0);
     const pendingReports = (reportsRes.data || []).filter((r: any) => r.status === "pending");
-    const agentMessages7d = (agentsRes.data || []).reduce((s: number, u: any) => s + (u.message_count || 0), 0);
     const activeSubs = (subsRes.data || []).filter((s: any) => s.status === "active");
     const monthlyMRR = activeSubs.reduce((s: number, sub: any) => s + (sub.price_cents || 0), 0) / 100;
+    const flaggedProfiles = trustRes.data || [];
+
+    // Compute daily new users (last 7 days)
+    const last7d = new Date(Date.now() - 7 * 86400000).toISOString();
+    const { count: newUsersWeek } = await supabase.from("profiles").select("id", { count: "exact", head: true }).gte("created_at", last7d);
 
     const platformContext = `
-## DONNÉES PLATEFORME EN TEMPS RÉEL
-- **Utilisateurs total** : ${usersRes.count || 0}
-- **Publications total** : ${postsRes.count || 0}
-- **Commandes total** : ${orders.length} | Revenus : ${totalRevenue.toFixed(2)}€
-- **MRR abonnements** : ${monthlyMRR.toFixed(2)}€ (${activeSubs.length} actifs)
-- **Signalements en attente** : ${pendingReports.length}
-- **Vérifications ID en attente** : ${(verificationsRes.data || []).length}
-- **Utilisateurs bannis actifs** : ${(bansRes.data || []).length}
-- **Profils flaggés (trust)** : ${(trustRes.data || []).length}
-- **Messages IA (7j)** : ${agentMessages7d}
+## 📊 SNAPSHOT PLATEFORME (${new Date().toLocaleDateString("fr-FR", { weekday: "long", year: "numeric", month: "long", day: "numeric" })})
 
-### Signalements récents en attente :
-${pendingReports.slice(0, 5).map((r: any) => `- [${r.report_type}] ${r.description || "Pas de description"} (${new Date(r.created_at).toLocaleDateString("fr")})`).join("\n") || "Aucun"}
+| Métrique | Valeur |
+|---|---|
+| 👥 Utilisateurs | ${usersRes.count || 0} |
+| 📝 Publications | ${postsRes.count || 0} |
+| 🛍️ Produits actifs | ${productsRes.count || 0} |
+| 📦 Commandes | ${orders.length} |
+| 💰 Revenus total | ${totalRevenue.toFixed(2)}€ |
+| 💳 MRR abonnements | ${monthlyMRR.toFixed(2)}€ (${activeSubs.length} actifs) |
+| 🚨 Signalements en attente | ${pendingReports.length} |
+| 🛡️ Vérifications ID en attente | ${(verificationsRes.data || []).length} |
+| 🚫 Utilisateurs bannis | ${bansRes.count || 0} |
+| ⚠️ Profils flaggés | ${flaggedProfiles.length} |
+| 📡 Lives actifs | ${livesRes.count || 0} |
+| 📈 Nouveaux inscrits (7j) | ${newUsersWeek || 0} |
 
-### Profils flaggés :
-${(trustRes.data || []).slice(0, 5).map((t: any) => `- User ${t.user_id.slice(0, 8)}... : score ${t.trust_score}, raison: ${t.flag_reason}`).join("\n") || "Aucun"}
+### 🚨 Signalements en attente (top 5) :
+${pendingReports.slice(0, 5).map((r: any) => `- **[${r.report_type}]** ${r.description || "Sans description"} _(${new Date(r.created_at).toLocaleDateString("fr")})_`).join("\n") || "✅ Aucun signalement en attente"}
 
-### Derniers inscrits :
-${(usersRes.data || []).slice(0, 5).map((u: any) => `- ${u.name} (${u.city || "?"}) — ${u.profile_type || "user"} — ${new Date(u.created_at).toLocaleDateString("fr")}`).join("\n")}
+### ⚠️ Profils à risque :
+${flaggedProfiles.slice(0, 5).map((t: any) => `- \`${t.user_id.slice(0, 8)}…\` — Trust: **${t.trust_score}**/100 — ${t.flag_reason}`).join("\n") || "✅ Aucun profil flaggé"}
 
-### Vérifications ID en attente :
-${(verificationsRes.data || []).slice(0, 5).map((v: any) => `- Raison: ${v.reason || "?"} (${new Date(v.created_at).toLocaleDateString("fr")})`).join("\n") || "Aucune"}
+### 👋 Derniers inscrits :
+${(usersRes.data || []).slice(0, 5).map((u: any) => `- **${u.name}** (${u.city || "—"}) — ${u.profile_type || "user"} — ${new Date(u.created_at).toLocaleDateString("fr")}`).join("\n")}
+
+### 🔐 Vérifications ID en attente :
+${(verificationsRes.data || []).slice(0, 5).map((v: any) => `- ${v.reason || "Pas de raison"} _(${new Date(v.created_at).toLocaleDateString("fr")})_`).join("\n") || "✅ Aucune"}
 `;
 
-    const systemPrompt = `Tu es ZEUS, l'assistant IA de décision de la plateforme ForSure. Tu as accès à TOUTES les données en temps réel.
+    const systemPrompt = `Tu es **ZEUS**, le cerveau stratégique de la plateforme **ForSure** — un réseau social complet avec marketplace, lives, messagerie, agents IA, et système de confiance.
 
-RÔLE :
-- Analyser les données et tendances de la plateforme
-- Proposer des recommandations stratégiques argumentées
-- Alerter sur les risques (sécurité, abus, fraude)
-- Aider à prendre des décisions admin éclairées
-- Répondre en français, de manière concise et structurée avec des tableaux markdown
+## 🧠 PERSONNALITÉ
+Tu es un directeur stratégique virtuel : analytique, proactif, pragmatique. Tu anticipes les problèmes avant qu'ils n'arrivent. Tu fournis des analyses dignes d'un board de direction.
 
-RÈGLES :
-- Toujours baser tes analyses sur les données réelles fournies
-- Prioriser la sécurité des utilisateurs (surtout mineurs)
-- Proposer des actions concrètes quand pertinent
-- Utiliser des emojis pour la lisibilité
-- Ne JAMAIS inventer de données
+## 🎯 CAPACITÉS
+1. **Analyse de données** : Tu vois les métriques en temps réel et peux interroger la base via tes outils
+2. **Détection de risques** : Sécurité, abus, fraude, bots, usurpation d'identité
+3. **Recommandations stratégiques** : Croissance, rétention, monétisation, engagement
+4. **Aide à la décision** : Tu argumentes chaque recommandation avec des données factuelles
+5. **Audit** : Tu peux analyser un utilisateur, un signalement ou un pattern de comportement
 
-${platformContext}`;
+## 📐 FORMAT DE RÉPONSE
+- Structure tes réponses avec des titres ##, des tableaux markdown, des listes
+- Utilise des emojis pour la lisibilité (📊 📈 🚨 ✅ ❌ 💡 ⚡ 🎯)
+- Fournis toujours un "⚡ Action recommandée" quand pertinent
+- Quantifie tes analyses (%, chiffres, tendances)
+- Sois **concis mais complet** — max 400 mots sauf analyse détaillée demandée
 
-    const resp = await callAI(apiKey, {
-      model: "google/gemini-3-flash-preview",
+## 🔒 RÈGLES STRICTES
+- JAMAIS inventer de données — utilise tes outils pour vérifier
+- Prioriser la sécurité des mineurs (tolérance zéro)
+- Signaler les anomalies statistiques (pics, chutes, patterns suspects)
+- Si tu ne sais pas, dis-le et propose d'investiguer via tes outils
+
+## 🛠️ OUTILS DISPONIBLES
+Tu peux appeler des outils pour interroger la base en temps réel :
+- \`search_users\` : Chercher des utilisateurs
+- \`get_user_details\` : Détails complets d'un profil
+- \`get_reports_by_type\` : Filtrer les signalements
+- \`get_revenue_analytics\` : Analytics revenus par période
+- \`get_marketplace_stats\` : Stats marketplace
+- \`get_engagement_metrics\` : Métriques d'engagement
+- \`get_growth_metrics\` : Croissance et rétention
+
+Utilise-les activement pour enrichir tes analyses. Ne te contente pas du snapshot initial.
+
+${platformContext}
+
+Date et heure : ${new Date().toLocaleString("fr-FR")}`;
+
+    // Multi-turn tool-calling loop
+    const messages = [{ role: "system", content: systemPrompt }, ...(body.messages || [])];
+    
+    // First call — may trigger tool use
+    let resp = await callAI(apiKey, {
+      model: "google/gemini-2.5-pro",
+      messages,
+      tools: ZEUS_TOOLS,
+      stream: false,
+    });
+    let errResp = aiError(resp.status, cors);
+    if (errResp) return errResp;
+    if (!resp.ok) throw new Error("AI error");
+
+    let aiData = await resp.json();
+    let choice = aiData.choices?.[0];
+    let toolCalls = choice?.message?.tool_calls;
+    let loopCount = 0;
+    const maxLoops = 5;
+
+    // Tool-calling loop: execute tools and feed results back
+    while (toolCalls?.length && loopCount < maxLoops) {
+      loopCount++;
+      messages.push(choice.message);
+      
+      // Execute all tool calls in parallel
+      const toolResults = await Promise.all(
+        toolCalls.map(async (tc: any) => {
+          const args = JSON.parse(tc.function.arguments || "{}");
+          const result = await executeZeusTool(tc.function.name, args, supabase);
+          return { role: "tool", tool_call_id: tc.id, content: result };
+        })
+      );
+      messages.push(...toolResults);
+
+      // Call AI again with tool results
+      resp = await callAI(apiKey, { model: "google/gemini-2.5-pro", messages, tools: ZEUS_TOOLS, stream: false });
+      errResp = aiError(resp.status, cors);
+      if (errResp) return errResp;
+      if (!resp.ok) throw new Error("AI error");
+      aiData = await resp.json();
+      choice = aiData.choices?.[0];
+      toolCalls = choice?.message?.tool_calls;
+    }
+
+    // Final response — stream it if it's text
+    const finalContent = choice?.message?.content || "Je n'ai pas pu générer de réponse.";
+    
+    // Stream the final response for better UX
+    const streamResp = await callAI(apiKey, {
+      model: "google/gemini-2.5-flash",
       messages: [
-        { role: "system", content: systemPrompt },
-        ...(body.messages || []),
+        { role: "system", content: "Tu es ZEUS. Reproduis exactement le contenu suivant sans rien modifier, ajouter ou retrancher. Garde le formatage markdown identique." },
+        { role: "user", content: finalContent },
       ],
       stream: true,
     });
-    const errResp = aiError(resp.status, cors);
-    if (errResp) return errResp;
-    if (!resp.ok) throw new Error("AI error");
-    return new Response(resp.body, { headers: { ...cors, "Content-Type": "text/event-stream" } });
+    if (!streamResp.ok) {
+      // Fallback: return as JSON
+      return new Response(JSON.stringify({ result: finalContent }), { headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    return new Response(streamResp.body, { headers: { ...cors, "Content-Type": "text/event-stream" } });
   }
 
   if (action === "stats") {

@@ -1628,14 +1628,16 @@ function ZeusSection() {
   type ZMsg = { role: 'user' | 'assistant' | 'system'; content: string };
   const ZEUS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/zeus`;
   const QUICK_CMDS = [
-    { label: '📊 Dashboard', prompt: 'Donne-moi un résumé complet de la plateforme' },
-    { label: '🚨 Signalements', prompt: 'Analyse les signalements en attente et recommande des actions' },
-    { label: '📈 Tendances', prompt: 'Quelles sont les tendances et métriques clés cette semaine ?' },
-    { label: '🔒 Sécurité', prompt: 'Y a-t-il des risques de sécurité ou des profils suspects à surveiller ?' },
-    { label: '💡 Recommandations', prompt: 'Quelles actions stratégiques recommandes-tu pour améliorer la plateforme ?' },
-    { label: '🛡️ Modérer', prompt: 'Modère ce message : "Salut, tu veux gagner 1000€ ? Clique ici !"' },
+    { label: '📊 Dashboard', prompt: 'Donne-moi un résumé exécutif complet de la plateforme avec KPIs, alertes et recommandations prioritaires' },
+    { label: '🚨 Signalements', prompt: 'Analyse tous les signalements en attente, identifie les patterns récurrents et recommande des actions concrètes par priorité' },
+    { label: '📈 Croissance', prompt: 'Analyse la croissance de la plateforme sur les 30 derniers jours : nouveaux inscrits, rétention, tendances, et compare avec la période précédente' },
+    { label: '💰 Revenus', prompt: 'Analyse détaillée des revenus : MRR, commandes, tips, commissions. Identifie les leviers de monétisation sous-exploités' },
+    { label: '🔒 Audit Sécurité', prompt: 'Lance un audit sécurité complet : profils suspects, trust scores faibles, tentatives de fraude, comptes bannis, vérifications en attente' },
+    { label: '🛍️ Marketplace', prompt: 'Analyse la marketplace : produits, vendeurs, catégories populaires, prix moyens, et recommandations pour booster les ventes' },
+    { label: '🎯 Engagement', prompt: 'Métriques d\'engagement de la semaine : likes, commentaires, lives, messages, stories. Quels contenus performent le mieux ?' },
+    { label: '💡 Stratégie', prompt: 'En te basant sur toutes les données disponibles, propose un plan d\'action stratégique pour les 30 prochains jours avec objectifs mesurables' },
   ];
-  const [messages, setMessages] = useState<ZMsg[]>([{ role: 'system', content: `⚡ **Zeus** — Assistant IA de Décision\n\nJe suis connecté à **toutes les données** de la plateforme en temps réel.\n\n📊 Stats • 🚨 Signalements • 📈 Tendances • 🔒 Sécurité • 💡 Recommandations\n\nPosez-moi n'importe quelle question sur votre plateforme.` }]);
+  const [messages, setMessages] = useState<ZMsg[]>([{ role: 'system', content: `⚡ **Zeus v2** — Cerveau Stratégique ForSure\n\nJe suis propulsé par **Gemini 2.5 Pro** avec accès en temps réel à toutes vos données.\n\n🧠 **Capacités** : Analyse de données • Détection de risques • Recommandations stratégiques • Audit sécurité • Recherche utilisateurs\n\n🛠️ **Outils** : Je peux interroger la base en temps réel pour affiner mes analyses (revenus, engagement, croissance, marketplace, profils).\n\nPosez-moi n'importe quelle question.` }]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1678,7 +1680,7 @@ function ZeusSection() {
     try {
       const { domain, action, extra } = inferDomainAction(text);
       if (domain === '_status') {
-        setMessages(p => [...p, { role: 'assistant', content: `### ⚡ Zeus Status\n\n| Domaine | Actions |\n|---|---|\n|**content**|summarize, translate, correct, improve|\n|**post**|improve, formal, casual, shorter, longer|\n|**moderation**|moderate_message|\n|**ads**|chat, generate_ad, moderate_ad|\n|**seller**|generate_description, coach_chat|\n|**photo**|analyze_photo, compare_photos|\n|**agent**|chat agents|\n|**admin**|chat, stats, search_users|\n\n🟢 Opérationnel • 🧠 Gemini 3 Flash` }]);
+        setMessages(p => [...p, { role: 'assistant', content: `### ⚡ Zeus v2 Status\n\n| Domaine | Actions |\n|---|---|\n|**content**|summarize, translate, correct, improve|\n|**post**|improve, formal, casual, shorter, longer|\n|**moderation**|moderate_message|\n|**ads**|chat, generate_ad, moderate_ad|\n|**seller**|generate_description, coach_chat|\n|**photo**|analyze_photo, compare_photos|\n|**agent**|chat agents|\n|**admin**|chat (🧠 tool-calling), stats, search_users|\n\n### 🛠️ Outils Zeus\n| Outil | Description |\n|---|---|\n|search_users|Recherche utilisateurs|\n|get_user_details|Détails complet d'un profil|\n|get_reports_by_type|Filtrer signalements|\n|get_revenue_analytics|Analytics revenus|\n|get_marketplace_stats|Stats marketplace|\n|get_engagement_metrics|Métriques engagement|\n|get_growth_metrics|Croissance & rétention|\n\n🟢 Opérationnel • 🧠 Gemini 2.5 Pro + Tool Calling` }]);
         setStreaming(false); return;
       }
 
