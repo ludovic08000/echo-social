@@ -37,8 +37,8 @@ export function useAIContent() {
     setSummaryLoading(true);
     const start = performance.now();
     try {
-      const { data, error } = await supabase.functions.invoke('ai-content', {
-        body: { action: 'summarize', text },
+      const { data, error } = await supabase.functions.invoke('zeus', {
+        body: { domain: 'content', action: 'summarize', text },
       });
       trackAICall('content-summarizer', Math.round(performance.now() - start), !error && !data?.error);
       if (error) throw error;
