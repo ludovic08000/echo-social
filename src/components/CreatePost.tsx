@@ -128,21 +128,9 @@ export function CreatePost() {
       let imageUrl: string | undefined;
 
       if (media) {
-        const fileExt = media.name.split('.').pop();
-        const bucket = mediaType === 'video' ? 'videos' : 'post-images';
-        const filePath = `${user.id}/${Date.now()}.${fileExt}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from(bucket)
-          .upload(filePath, media);
-
-        if (uploadError) throw uploadError;
-
-        const { data: urlData } = supabase.storage
-          .from(bucket)
-          .getPublicUrl(filePath);
-
-        imageUrl = urlData.publicUrl;
+        const folder = mediaType === 'video' ? 'videos' : 'post-images';
+        const { url } = await uploadToR2(media, folder);
+        imageUrl = url;
       }
 
       let expiresAt: string | undefined;
