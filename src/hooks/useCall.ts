@@ -7,8 +7,14 @@ import { toast } from 'sonner';
 export type CallType = 'audio' | 'video';
 export type CallState = 'idle' | 'connecting' | 'connected' | 'ended';
 
+export interface CallEndInfo {
+  type: CallType;
+  duration: number;
+  wasMissed: boolean; // true if nobody ever connected
+}
+
 interface UseCallOptions {
-  onCallEnded?: () => void;
+  onCallEnded?: (info: CallEndInfo) => void;
 }
 
 export function useCall(options?: UseCallOptions) {
@@ -21,6 +27,14 @@ export function useCall(options?: UseCallOptions) {
   const localVideoRef = useRef<HTMLDivElement | null>(null);
   const remoteVideoRef = useRef<HTMLDivElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const callStateRef = useRef<CallState>('idle');
+  const durationRef = useRef(0);
+  const callTypeRef = useRef<CallType>('audio');
+
+  // Keep refs in sync
+  useEffect(() => { callStateRef.current = callState; }, [callState]);
+  useEffect(() => { durationRef.current = duration; }, [duration]);
+  useEffect(() => { callTypeRef.current = callType; }, [callType]);
 
   // Duration timer
   useEffect(() => {
@@ -96,9 +110,12 @@ export function useCall(options?: UseCallOptions) {
       });
 
       room.on(RoomEvent.Disconnected, () => {
+        const wasMissed = callStateRef.current !== 'connected';
+        const endDuration = durationRef.current;
+        const endType = callTypeRef.current;
         setCallState('ended');
         releaseWakeLock();
-        options?.onCallEnded?.();
+        options?.onCallEnded?.({ type: endType, duration: endDuration, wasMissed });
       });
 
       room.on(RoomEvent.ParticipantConnected, () => {
@@ -142,6 +159,10 @@ export function useCall(options?: UseCallOptions) {
   }, [options]);
 
   const endCall = useCallback(() => {
+    const wasMissed = callStateRef.current !== 'connected';
+    const endDuration = durationRef.current;
+    const endType = callTypeRef.current;
+
     if (roomRef.current) {
       roomRef.current.disconnect();
       roomRef.current = null;
@@ -151,7 +172,8 @@ export function useCall(options?: UseCallOptions) {
     setCallState('idle');
     setDuration(0);
     releaseWakeLock();
-  }, []);
+    options?.onCallEnded?.({ type: endType, duration: endDuration, wasMissed });
+  }, [options]);
 
   const toggleMute = useCallback(() => {
     const room = roomRef.current;

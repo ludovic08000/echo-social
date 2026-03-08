@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   ArrowLeft, Send, Search, Plus, X, Phone, Video, Mic, MicOff,
   Smile, Check, CheckCheck, Minus, Camera, Reply, Copy, Trash2,
-  ChevronDown, Sparkles, MoreVertical, ThumbsUp, ImageIcon
+  ChevronDown, Sparkles, MoreVertical, ThumbsUp, ImageIcon, PhoneOff, PhoneMissed
 } from 'lucide-react';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -16,7 +16,7 @@ import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { useChatWidget } from './ChatWidgetContext';
 import { useImageUpload } from '@/hooks/useImageUpload';
-import { useCall } from '@/hooks/useCall';
+import { useCall, formatCallDuration, type CallEndInfo } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
 import { GifPicker } from '@/components/chat/GifPicker';
 import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
@@ -60,7 +60,7 @@ const EMOJI_CATEGORIES = [
   { label: '💎 Premium', emojis: ['💎','👑','🦄','🌙','⚡','🪐','🔮','🎭','🗝️','🧿','🪬','💐','🦚','🎪','🏰','🚀','🛸','🧬'] },
 ];
 
-// Helper to detect voice messages and GIFs
+// Helper to detect voice messages, GIFs, and call events
 function isVoiceMessage(body: string): boolean {
   return body.startsWith('🎙️ ') && body.includes('voice:');
 }
@@ -77,6 +77,20 @@ function isGifMessage(body: string): boolean {
 
 function getGifUrl(body: string): string {
   return body.replace('GIF:', '');
+}
+
+function isCallMessage(body: string): boolean {
+  return body.startsWith('📞 CALL:');
+}
+
+function getCallData(body: string): { status: 'missed' | 'ended'; callType: 'audio' | 'video'; duration?: number } | null {
+  const match = body.match(/📞 CALL:(missed|ended)\|(audio|video)(?:\|dur:(\d+))?/);
+  if (!match) return null;
+  return {
+    status: match[1] as 'missed' | 'ended',
+    callType: match[2] as 'audio' | 'video',
+    duration: match[3] ? parseInt(match[3], 10) : undefined,
+  };
 }
 
 // ─── New Conversation Dialog ─────────────────────────────
@@ -245,7 +259,13 @@ function WidgetConversationList() {
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">
                   <p className={cn("text-[11px] truncate flex-1", conv.unread_count > 0 ? "text-foreground font-medium" : "text-muted-foreground")}>
-                    {conv.last_message?.body || 'Démarrez la conversation…'}
+                    {conv.last_message?.body 
+                      ? isCallMessage(conv.last_message.body) 
+                        ? (getCallData(conv.last_message.body)?.status === 'missed' ? '📞 Appel manqué' : '📞 Appel terminé')
+                        : isVoiceMessage(conv.last_message.body) ? '🎙️ Message vocal'
+                        : isGifMessage(conv.last_message.body) ? '🎬 GIF'
+                        : conv.last_message.body
+                      : 'Démarrez la conversation…'}
                   </p>
                   {conv.unread_count > 0 && (
                     <span className="w-4 h-4 rounded-full bg-primary text-primary-foreground text-[8px] font-bold flex items-center justify-center flex-shrink-0">
@@ -289,7 +309,21 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const conversation = conversations?.find(c => c.id === conversationId);
 
   // Call hook & sound
-  const call = useCall();
+  const [showVoicemailPrompt, setShowVoicemailPrompt] = useState(false);
+  const call = useCall({
+    onCallEnded: useCallback((info: CallEndInfo) => {
+      // Send a system message about the call
+      const callMsg = info.wasMissed
+        ? `📞 CALL:missed|${info.type}`
+        : `📞 CALL:ended|${info.type}|dur:${info.duration}`;
+      sendMessage.mutate({ conversationId, body: callMsg });
+
+      // If the call was missed, offer voicemail
+      if (info.wasMissed) {
+        setShowVoicemailPrompt(true);
+      }
+    }, [conversationId]),
+  });
   const playSound = useRealtimeNotificationSound();
   const prevMsgCountRef = useRef(0);
 
@@ -506,7 +540,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                                   'px-3 py-2 rounded-xl text-xs max-w-full truncate',
                                   isMe ? 'bg-primary text-primary-foreground' : 'bg-secondary'
                                 )}>
-                                  {isVoiceMessage(msg.body) ? '🎙️ Message vocal' : 
+                                  {isCallMessage(msg.body) ? '📞 Appel' :
+                                   isVoiceMessage(msg.body) ? '🎙️ Message vocal' : 
                                    isGifMessage(msg.body) ? '🎬 GIF' : 
                                    msg.body.length > 50 ? msg.body.slice(0, 50) + '…' : msg.body}
                                 </div>
@@ -563,8 +598,34 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                           </div>
                         )}
 
-                        {/* GIF message */}
-                        {isGifMessage(msg.body) ? (
+                        {/* Call event message */}
+                        {isCallMessage(msg.body) ? (() => {
+                          const cd = getCallData(msg.body);
+                          if (!cd) return null;
+                          const isMissed = cd.status === 'missed';
+                          return (
+                            <div className="flex items-center justify-center w-full">
+                              <div className={cn(
+                                'flex items-center gap-2 px-3 py-2 rounded-2xl text-xs',
+                                isMissed ? 'bg-destructive/10 text-destructive' : 'bg-secondary text-muted-foreground'
+                              )}>
+                                {isMissed ? (
+                                  <PhoneMissed className="w-3.5 h-3.5" />
+                                ) : (
+                                  <Phone className="w-3.5 h-3.5" />
+                                )}
+                                <span className="font-medium">
+                                  {isMissed
+                                    ? `Appel ${cd.callType === 'video' ? 'vidéo' : 'audio'} manqué`
+                                    : `Appel ${cd.callType === 'video' ? 'vidéo' : 'audio'} · ${formatCallDuration(cd.duration || 0)}`
+                                  }
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })()
+                        /* GIF message */
+                        : isGifMessage(msg.body) ? (
                           <div
                             onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
                             className="cursor-pointer rounded-xl overflow-hidden"
@@ -684,14 +745,36 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         />
       )}
 
+      {/* Voicemail prompt after missed call */}
+      {showVoicemailPrompt && !showVoiceRecorder && (
+        <div className="mx-2 mb-1 bg-destructive/5 border border-destructive/20 rounded-xl px-3 py-2 flex items-center gap-2">
+          <PhoneMissed className="w-4 h-4 text-destructive flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-semibold text-destructive">Appel manqué</p>
+            <p className="text-[9px] text-muted-foreground">Laisser un message vocal ?</p>
+          </div>
+          <button
+            onClick={() => { setShowVoicemailPrompt(false); setShowVoiceRecorder(true); }}
+            className="px-2.5 py-1 rounded-full bg-primary text-primary-foreground text-[10px] font-medium hover:bg-primary/90 transition-colors flex-shrink-0"
+          >
+            <Mic className="w-3 h-3 inline mr-1" />
+            Vocal
+          </button>
+          <button onClick={() => setShowVoicemailPrompt(false)}>
+            <X className="w-3 h-3 text-muted-foreground" />
+          </button>
+        </div>
+      )}
+
       {/* Voice recorder */}
       {showVoiceRecorder && (
         <VoiceRecorder
           onSend={(audioUrl, duration) => {
             sendMessage.mutate({ conversationId, body: `🎙️ voice:${audioUrl}|dur:${duration}` });
             setShowVoiceRecorder(false);
+            setShowVoicemailPrompt(false);
           }}
-          onCancel={() => setShowVoiceRecorder(false)}
+          onCancel={() => { setShowVoiceRecorder(false); }}
         />
       )}
 
