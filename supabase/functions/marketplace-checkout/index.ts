@@ -110,7 +110,7 @@ serve(async (req) => {
       const { data: order, error: orderError } = await supabase
         .from("orders")
         .insert({
-          buyer_id: user.id,
+          buyer_id: userId,
           order_number: orderNumber,
           subtotal,
           total,
