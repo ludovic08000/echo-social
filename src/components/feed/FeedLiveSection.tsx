@@ -59,11 +59,22 @@ function useRecentReplays() {
 }
 
 export function FeedLiveSection() {
+  const { user } = useAuth();
   const { data: lives } = useLiveStreams();
   const { data: replays } = useRecentReplays();
+  const deleteLive = useDeleteLive();
 
   const hasLives = lives && lives.length > 0;
   const hasReplays = replays && replays.length > 0;
+
+  const handleDelete = (e: React.MouseEvent, liveId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm('Supprimer ce replay ?')) return;
+    deleteLive.mutate(liveId, {
+      onSuccess: () => toast({ title: 'Replay supprimé' }),
+    });
+  };
 
   if (!hasLives && !hasReplays) return null;
 
