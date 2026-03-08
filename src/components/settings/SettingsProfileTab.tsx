@@ -59,7 +59,7 @@ export function SettingsProfileTab() {
 
   const handleSave = async () => {
     try {
-      await updateProfile.mutateAsync({ name, bio, profile_music_url: musicUrl || null } as any);
+      await updateProfile.mutateAsync({ name, bio, profile_music_url: musicUrl || null, phone_number: phoneNumber || null } as any);
       toast({ title: t('settings.profileUpdated') });
     } catch (error) {
       toast({ title: t('common.error'), variant: 'destructive' });
