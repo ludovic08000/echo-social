@@ -104,6 +104,7 @@ function AppContent() {
           </BrowserRouter>
         </TooltipProvider>
       </ChatWidgetProvider>
+        </ParentalGateProvider>
     </AuthProvider>
   );
 }
