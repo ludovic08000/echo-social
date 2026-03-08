@@ -117,6 +117,8 @@ export function CreatePost() {
     setMedia(null);
     setMediaPreview(null);
     setMediaType(null);
+    setPublishAsReplay(false);
+    setReplayTitle('');
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (videoInputRef.current) videoInputRef.current.value = '';
   };
