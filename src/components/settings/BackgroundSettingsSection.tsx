@@ -65,7 +65,7 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
 
   const handleSelect = (bg: typeof PREDEFINED_BACKGROUNDS[0]) => {
     onUpdate(bg.url || null);
-    toast({ title: bg.url ? `Fond "${bg.label}" appliqué` : `Fond ${label} supprimé` });
+    toast.success(bg.url ? `Fond "${bg.label}" appliqué` : `Fond ${label} supprimé`);
   };
 
   const isSelected = (bg: typeof PREDEFINED_BACKGROUNDS[0]) => {
