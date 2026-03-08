@@ -63,7 +63,98 @@ export function FeedRightSidebar() {
     <aside className="hidden lg:block w-[300px] flex-shrink-0">
       <div className="sticky top-20 space-y-5 pl-4 max-h-[calc(100vh-100px)] overflow-y-auto scrollbar-thin pr-1">
 
-        {/* ── Friend Requests Card ── */}
+        {/* ── Lives en direct TikTok-style ── */}
+        {liveStreams && liveStreams.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
+            className="relative rounded-2xl border border-border/40 bg-card overflow-hidden"
+            style={{ boxShadow: 'var(--shadow-md)' }}
+          >
+            <div className="h-1 w-full bg-gradient-to-r from-destructive via-destructive/70 to-primary" />
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-destructive/10 flex items-center justify-center relative">
+                    <Radio className="w-4 h-4 text-destructive animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground leading-tight">En direct</h3>
+                    <span className="text-[10px] text-destructive font-semibold">{liveStreams.length} live{liveStreams.length > 1 ? 's' : ''}</span>
+                  </div>
+                </div>
+                <Link to="/lives" className="text-[11px] text-primary/80 font-medium hover:text-primary transition-colors">
+                  Voir tout →
+                </Link>
+              </div>
+
+              {/* TikTok-style vertical cards */}
+              <div className="space-y-2.5">
+                {liveStreams.slice(0, 3).map((live, i) => (
+                  <motion.div
+                    key={live.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.1 }}
+                  >
+                    <Link
+                      to={`/live/${live.id}`}
+                      className="block rounded-2xl overflow-hidden bg-black group relative aspect-[9/14]"
+                    >
+                      {/* Background */}
+                      {live.thumbnail_url ? (
+                        <img
+                          src={live.thumbnail_url}
+                          alt={live.title}
+                          className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                      ) : (
+                        <div className="absolute inset-0 bg-gradient-to-br from-destructive/30 via-black to-primary/20 flex items-center justify-center">
+                          <div className="w-14 h-14 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <Play className="w-6 h-6 text-white ml-0.5" />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Top badges */}
+                      <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between z-10">
+                        <span className="px-2 py-0.5 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center gap-1 shadow-lg">
+                          <Radio className="w-2.5 h-2.5 animate-pulse" />
+                          LIVE
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-sm text-white text-[10px] flex items-center gap-1">
+                          <Eye className="w-2.5 h-2.5" />
+                          {live.viewer_count}
+                        </span>
+                      </div>
+
+                      {/* Bottom info */}
+                      <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 via-black/50 to-transparent z-10">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <div className="relative flex-shrink-0">
+                            <UserAvatar src={live.host?.avatar_url} alt={live.host?.name} size="xs" />
+                            <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-destructive border border-black" />
+                          </div>
+                          <p className="text-white text-[11px] font-semibold truncate">{live.host?.name}</p>
+                        </div>
+                        <p className="text-white/80 text-[10px] whitespace-normal line-clamp-2 leading-snug">{live.title}</p>
+                        {live.category && (
+                          <span className="inline-block mt-1.5 px-2 py-0.5 rounded-full bg-white/10 backdrop-blur-sm text-white/70 text-[9px] font-medium">
+                            {live.category}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Hover overlay */}
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
+                    </Link>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
