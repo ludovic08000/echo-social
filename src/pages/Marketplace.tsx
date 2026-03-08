@@ -360,7 +360,7 @@ export default function Marketplace() {
           sellerId={seller.id}
           trigger={
             <Button
-              className="fixed bottom-20 right-4 z-50 md:hidden h-12 w-12 rounded-2xl shadow-[var(--shadow-gold)] bg-[image:var(--premium-gradient)] text-primary-foreground border-0 active:scale-90 transition-transform"
+              className="fixed bottom-20 right-4 z-50 md:hidden h-14 w-14 rounded-2xl shadow-[0_8px_32px_hsl(var(--primary)/0.4)] bg-[image:var(--premium-gradient)] text-primary-foreground border-0 active:scale-90 transition-all duration-300 hover:shadow-[0_12px_40px_hsl(var(--primary)/0.5)] hover:-translate-y-1"
             >
               <Plus className="w-6 h-6 stroke-[2.5]" />
             </Button>
