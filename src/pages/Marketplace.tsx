@@ -98,13 +98,7 @@ export default function Marketplace() {
 
   const { data: products = [], isLoading } = useProducts(category, search, locationFilter);
   const { data: seller } = useSellerProfile();
-  const { data: sellerOrders = [] } = useSellerOrders();
   const { data: favorites = [] } = useProductFavorites();
-
-  const pendingLabelsCount = useMemo(
-    () => sellerOrders.filter((o: any) => o.status === 'paid' || (o.status === 'shipped' && !o.shipping_label_url)).length,
-    [sellerOrders],
-  );
 
   useEffect(() => {
     const tab = searchParams.get('tab');
