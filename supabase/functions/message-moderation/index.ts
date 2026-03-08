@@ -173,11 +173,11 @@ Réponds UNIQUEMENT avec la fonction tool_call fournie.`,
         // If parsing fails, default to safe
       }
 
-      // Cache the result (1 hour)
+      // Cache the result (6 hours instead of 1)
       await supabase.from("ai_moderation_cache").insert({
         content_hash: contentHash,
         result: moderationResult,
-        expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        expires_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
       });
 
       // If unsafe and high confidence, block the message

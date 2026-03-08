@@ -173,9 +173,7 @@ Only output valid JSON.`;
             recent_history: recentFeedback || [],
           });
 
-          // Call AI then store rules
-          const aiResult = await callAI(LOVABLE_API_KEY, systemPrompt, userPrompt);
-          
+          const aiResult = await callAI(LOVABLE_API_KEY, systemPrompt, userPrompt, "google/gemini-2.5-flash");
           if (aiResult?.new_rules && Array.isArray(aiResult.new_rules)) {
             for (const rule of aiResult.new_rules) {
               await supabase.from("ai_learned_rules").insert({
