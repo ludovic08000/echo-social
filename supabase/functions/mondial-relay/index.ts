@@ -377,7 +377,8 @@ serve(async (req) => {
       const stat = extractXmlValue(xml, 'STAT');
 
       if (stat !== '0') {
-        throw new Error(`Erreur création étiquette Mondial Relay (code ${stat})`);
+        const detail = extractXmlValue(xml, 'Erreur') || extractXmlValue(xml, 'Message') || extractXmlValue(xml, 'Libelle') || '';
+        throw new Error(`Erreur création étiquette Mondial Relay (code ${stat})${detail ? `: ${detail}` : ''}`);
       }
 
       const trackingNumber = extractXmlValue(xml, 'ExpeditionNum');
