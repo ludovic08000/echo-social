@@ -191,8 +191,8 @@ serve(async (req) => {
 
       if (orderError) throw new Error(`Erreur création commande: ${orderError.message}`);
 
-      // Create order items
-      for (const item of items) {
+      // Create order items using verified server-side data
+      for (const item of verifiedItems) {
         const itemSubtotal = item.price * item.quantity;
         const itemCommission = Math.round(itemSubtotal * COMMISSION_RATE * 100) / 100;
 
@@ -208,6 +208,13 @@ serve(async (req) => {
           seller_payout: itemSubtotal - itemCommission,
           status: "pending",
         });
+      }
+
+      // Find or create Stripe customer
+      const customers = await stripe.customers.list({ email: userEmail, limit: 1 });
+      let customerId: string | undefined;
+      if (customers.data.length > 0) {
+        customerId = customers.data[0].id;
       }
 
       // Create Stripe Checkout session
