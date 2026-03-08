@@ -58,7 +58,7 @@ export default function Notifications() {
           {notifications?.map((notification) => (
             <Link
               key={notification.id}
-              to={notification.post_id ? `/post/${notification.post_id}` : '#'}
+              to={notification.type === 'sale' ? '/marketplace?sellerTab=orders' : notification.post_id ? `/post/${notification.post_id}` : '#'}
               onClick={() => {
                 if (!notification.read_at) {
                   markAsRead.mutate(notification.id);
