@@ -836,13 +836,13 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
           return new Response(JSON.stringify({ error: "user_id invalide pour whitelist_staff" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
         }
 
-        const { data: candidates, error: findErr } = await supabase
+        const { data: candidatesRaw, error: findErr } = await supabase
           .from("profiles")
           .select("user_id")
-          .ilike("user_id", `${prefix}%`)
-          .limit(2);
+          .limit(1000);
 
         if (findErr) return new Response(JSON.stringify({ error: findErr.message }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+        const candidates = (candidatesRaw || []).filter((c: any) => String(c.user_id).toLowerCase().startsWith(prefix.toLowerCase()));
         if (!candidates?.length) return new Response(JSON.stringify({ error: "Aucun utilisateur trouvé pour ce préfixe user_id" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
         if (candidates.length > 1) return new Response(JSON.stringify({ error: "Préfixe user_id ambigu, utilisez un ID complet" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
         resolvedUserId = candidates[0].user_id;
