@@ -105,8 +105,8 @@ export function useConversations() {
         }
       });
 
-      const unreadCounts: Record<string, number> = {};
-      messages?.forEach(m => {
+      // Count unread from the limited set (approximation, good enough for badge)
+      recentMessages?.forEach(m => {
         const lastRead = lastReadMap.get(m.conversation_id);
         if (!lastRead || new Date(m.created_at) > new Date(lastRead)) {
           if (m.sender_id !== user.id) {
