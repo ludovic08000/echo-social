@@ -1,12 +1,14 @@
 import { Link } from 'react-router-dom';
-import { Radio, Eye, Play, Clock } from 'lucide-react';
-import { useLiveStreams } from '@/hooks/useLiveStreams';
+import { Radio, Eye, Play, Clock, Trash2 } from 'lucide-react';
+import { useLiveStreams, useDeleteLive } from '@/hooks/useLiveStreams';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth';
 import { UserAvatar } from '@/components/UserAvatar';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { toast } from '@/hooks/use-toast';
 
 interface ReplayStream {
   id: string;
