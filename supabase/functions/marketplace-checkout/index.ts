@@ -348,6 +348,23 @@ serve(async (req) => {
         });
       }
 
+      // Notify sellers
+      const sellerIds = [...new Set(items.map((i: any) => i.seller_id).filter(Boolean))];
+      for (const sellerId of sellerIds) {
+        const { data: sellerProfile } = await supabase
+          .from("seller_profiles")
+          .select("user_id")
+          .eq("id", sellerId)
+          .single();
+        if (sellerProfile) {
+          await supabase.from("notifications").insert({
+            user_id: sellerProfile.user_id,
+            actor_id: userId,
+            type: "sale",
+          });
+        }
+      }
+
       // Clear cart
       await supabase.from("cart_items").delete().eq("user_id", userId);
 
