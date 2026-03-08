@@ -434,8 +434,8 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
                           {!order.tracking_number && order.shipping_relay_id && (
                             <Button
                               size="sm"
-                              variant="outline"
-                              className="w-full border-primary/30 text-primary hover:bg-primary/10"
+                              variant="premium"
+                              className="w-full"
                               onClick={() => createMondialRelayShipment(order)}
                               disabled={creatingShipment === order.id}
                             >
