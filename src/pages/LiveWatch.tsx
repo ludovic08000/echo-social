@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Heart, Gift, Users, Send, Radio, X, Play, ChevronUp, ChevronDown, Eye, Clock } from 'lucide-react';
 import { LiveEmojiPicker } from '@/components/live/LiveEmojiPicker';
 import { useLiveStream, useLiveChat, useSendLiveChatMessage, useJoinLive, useLeaveLive, useLiveStreams } from '@/hooks/useLiveStreams';
@@ -80,7 +80,7 @@ function useAllLives() {
 }
 
 // ─── Single Live Slide ─────────────────────────────────────────
-function LiveSlide({ item, isVisible }: { item: AllLiveItem; isVisible: boolean }) {
+function LiveSlide({ item, isVisible, backTo }: { item: AllLiveItem; isVisible: boolean; backTo: string }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const replayVideoRef = useRef<HTMLVideoElement>(null);
@@ -178,7 +178,7 @@ function LiveSlide({ item, isVisible }: { item: AllLiveItem; isVisible: boolean 
       <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/70 to-transparent z-20 pointer-events-none">
         <div className="flex items-center justify-between pointer-events-auto">
           <button
-            onClick={() => navigate('/lives')}
+            onClick={() => navigate(backTo)}
             className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -316,6 +316,8 @@ function LiveSlide({ item, isVisible }: { item: AllLiveItem; isVisible: boolean 
 // ─── Main: TikTok-style vertical scroll ─────────────────────────
 export default function LiveWatch() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const fromFeed = searchParams.get('from') === 'feed';
   const navigate = useNavigate();
   const { data: allLives, isLoading } = useAllLives();
 
@@ -391,7 +393,7 @@ export default function LiveWatch() {
           key={item.id}
           className="w-full h-screen snap-start snap-always"
         >
-          <LiveSlide item={item} isVisible={index === currentIndex} />
+          <LiveSlide item={item} isVisible={index === currentIndex} backTo={fromFeed ? '/feed' : '/lives'} />
         </div>
       ))}
     </div>
