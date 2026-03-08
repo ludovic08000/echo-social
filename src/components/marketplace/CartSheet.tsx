@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Loader2, ShieldCheck, MapPin, ChevronDown, ChevronUp } from 'lucide-react';
 import { useCart, useUpdateCartItem, useRemoveFromCart } from '@/hooks/useMarketplace';
 import { Separator } from '@/components/ui/separator';
@@ -18,16 +17,6 @@ interface SelectedRelay {
   country: string;
 }
 
-const estimateRelayShipping = (weightGrams: number, parcels: number) => {
-  const basePerParcel = 4.2;
-  const weightExtra =
-    weightGrams <= 500 ? 0 :
-    weightGrams <= 1000 ? 0.8 :
-    weightGrams <= 2000 ? 1.6 :
-    weightGrams <= 5000 ? 2.8 : 4.5;
-
-  return Math.round((basePerParcel + weightExtra) * parcels * 100) / 100;
-};
 
 export function CartSheet() {
   const { data: cart = [] } = useCart();
@@ -36,9 +25,7 @@ export function CartSheet() {
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [selectedRelay, setSelectedRelay] = useState<SelectedRelay | null>(null);
   const [showRelayPicker, setShowRelayPicker] = useState(false);
-  const [packageWeight, setPackageWeight] = useState('500');
-  const [packageParcels, setPackageParcels] = useState('1');
-  const packageSectionRef = useRef<HTMLDivElement | null>(null);
+  const FLAT_SHIPPING_ESTIMATE = 4.90;
 
   // Check if cart has physical products
   const hasPhysical = cart.some((item) => item.products?.product_type === 'physical');
@@ -50,21 +37,8 @@ export function CartSheet() {
   }, 0);
   const buyerFee = Math.round(subtotal * 0.05 * 100) / 100;
 
-  const weightGrams = Math.max(100, Number(packageWeight) || 500);
-  const parcelsCount = Math.max(1, Number(packageParcels) || 1);
-  const shippingEstimate = hasPhysical && selectedRelay
-    ? estimateRelayShipping(weightGrams, parcelsCount)
-    : 0;
-  const checkoutBlockedByRelay = hasPhysical && !selectedRelay;
-
+  const shippingEstimate = hasPhysical && selectedRelay ? FLAT_SHIPPING_ESTIMATE : 0;
   const total = subtotal + buyerFee + shippingEstimate;
-
-  useEffect(() => {
-    if (!selectedRelay) return;
-    requestAnimationFrame(() => {
-      packageSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
-  }, [selectedRelay]);
 
   const handleCheckout = async (testMode = false) => {
     if (cart.length === 0) return;
@@ -95,13 +69,7 @@ export function CartSheet() {
         country: selectedRelay.country,
       } : null;
 
-      const packageData = hasPhysical && selectedRelay
-        ? {
-            weight_grams: weightGrams,
-            parcels: parcelsCount,
-            shipping_estimate: shippingEstimate,
-          }
-        : null;
+      const packageData = null; // Weight is now set by the seller
 
       if (testMode) {
         const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
@@ -241,42 +209,12 @@ export function CartSheet() {
                     />
                   )}
 
-                  <div ref={packageSectionRef} className="rounded-lg border border-border/60 bg-card/60 p-3 space-y-2">
-                    <p className="text-xs font-medium">Détails colis pour estimation</p>
-                    {!selectedRelay ? (
-                      <p className="text-[11px] text-muted-foreground">
-                        Sélectionne d’abord un point relais pour afficher l’édition du poids et des colis.
-                      </p>
-                    ) : (
-                      <>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1">
-                            <p className="text-[11px] text-muted-foreground">Poids (g)</p>
-                            <Input
-                              type="number"
-                              min={100}
-                              value={packageWeight}
-                              onChange={(e) => setPackageWeight(e.target.value)}
-                              className="h-8 text-xs"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <p className="text-[11px] text-muted-foreground">Nombre de colis</p>
-                            <Input
-                              type="number"
-                              min={1}
-                              value={packageParcels}
-                              onChange={(e) => setPackageParcels(e.target.value)}
-                              className="h-8 text-xs"
-                            />
-                          </div>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground">
-                          Estimation livraison Mondial Relay : <span className="font-semibold text-foreground">{shippingEstimate.toFixed(2)}€</span>
-                        </p>
-                      </>
-                    )}
-                  </div>
+                  {selectedRelay && (
+                    <p className="text-[11px] text-muted-foreground px-2 py-1">
+                      Livraison estimée : <span className="font-semibold text-foreground">{FLAT_SHIPPING_ESTIMATE.toFixed(2)}€</span>
+                      <br />Le montant exact sera calculé par le vendeur selon le poids du colis.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -306,20 +244,20 @@ export function CartSheet() {
               <Button
                 className="w-full premium-button"
                 onClick={() => handleCheckout(false)}
-                disabled={isCheckingOut || cart.length === 0 || checkoutBlockedByRelay}
+                disabled={isCheckingOut || cart.length === 0 || (hasPhysical && !selectedRelay)}
               >
                 {isCheckingOut ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 ) : (
                   <CreditCard className="w-4 h-4 mr-2" />
                 )}
-                {checkoutBlockedByRelay ? 'Choisir un point relais pour continuer' : isCheckingOut ? 'Redirection...' : `Payer ${total.toFixed(2)}€`}
+                {(hasPhysical && !selectedRelay) ? 'Choisir un point relais pour continuer' : isCheckingOut ? 'Redirection...' : `Payer ${total.toFixed(2)}€`}
               </Button>
               <Button
                 variant="outline"
                 className="w-full text-xs"
                 onClick={() => handleCheckout(true)}
-                disabled={isCheckingOut || cart.length === 0 || checkoutBlockedByRelay}
+                disabled={isCheckingOut || cart.length === 0 || (hasPhysical && !selectedRelay)}
               >
                 🧪 Commande test (sans paiement)
               </Button>

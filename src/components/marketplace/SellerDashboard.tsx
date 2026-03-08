@@ -24,6 +24,17 @@ export function SellerDashboard() {
   const [markingDelivered, setMarkingDelivered] = useState<string | null>(null);
   const [uploadingVideo, setUploadingVideo] = useState<string | null>(null);
   const [analyzingVideo, setAnalyzingVideo] = useState<string | null>(null);
+  const [orderWeights, setOrderWeights] = useState<Record<string, string>>({});
+
+  const estimateRelayShipping = (weightGrams: number) => {
+    const basePerParcel = 4.2;
+    const weightExtra =
+      weightGrams <= 500 ? 0 :
+      weightGrams <= 1000 ? 0.8 :
+      weightGrams <= 2000 ? 1.6 :
+      weightGrams <= 5000 ? 2.8 : 4.5;
+    return Math.round((basePerParcel + weightExtra) * 100) / 100;
+  };
   const [sellerTab, setSellerTab] = useState<'products' | 'orders'>(
     searchParams.get('sellerTab') === 'orders' ? 'orders' : 'products'
   );
@@ -45,6 +56,9 @@ export function SellerDashboard() {
     const relayAddress = order.shipping_relay_address || '';
     const relayCity = `${order.shipping_relay_postcode || ''} ${order.shipping_relay_city || ''}`.trim();
     const date = new Date(order.created_at).toLocaleDateString('fr-FR');
+    const weightGrams = Math.max(100, Number(orderWeights[order.id]) || 500);
+    const shippingCost = estimateRelayShipping(weightGrams);
+    const weightLabel = weightGrams >= 1000 ? `${(weightGrams / 1000).toFixed(1)} kg` : `${weightGrams} g`;
 
     const html = `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="utf-8"><title>Bordereau ${order.order_number}</title>
@@ -74,6 +88,7 @@ ${items.map((item: any) => `<tr><td>${item.title}</td><td style="text-align:cent
 <tr class="total-row"><td colspan="3" style="text-align:right">TOTAL</td><td style="text-align:right">${Number(order.total).toFixed(2)} €</td></tr>
 </tbody></table>
 ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :</strong> ${order.tracking_number}</p>` : ''}
+<p style="margin-bottom:16px"><strong>Poids du colis :</strong> ${weightLabel} · <strong>Frais Mondial Relay :</strong> ${shippingCost.toFixed(2)} €</p>
 <div class="footer"><div class="sig-box">Signature expéditeur</div><div class="sig-box">Signature réceptionnaire</div></div>
 <script>window.onload=()=>window.print()</script>
 </body></html>`;
@@ -383,15 +398,47 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
                     {/* Packing video for orders >= 100€ */}
                     {renderPackingVideoSection(order)}
 
-                    {/* Actions - generate delivery slip */}
+                    {/* Weight selection & delivery slip */}
                     {order.status === 'paid' && (
                       needsPackingVideo(order) ? (
                         <p className="text-[11px] text-muted-foreground text-center py-1">⚠️ Vidéo d'emballage requise avant de générer le bordereau</p>
                       ) : (
-                        <Button size="sm" className="w-full" onClick={() => generateDeliverySlip(order)}>
-                          <FileText className="w-4 h-4 mr-2" />
-                          Générer le bordereau de livraison (PDF)
-                        </Button>
+                        <div className="space-y-2">
+                          <div className="rounded-lg border border-border/60 bg-card/60 p-3 space-y-2">
+                            <p className="text-xs font-medium flex items-center gap-1.5">
+                              <Package className="w-3.5 h-3.5 text-primary" />
+                              Poids du colis (grammes)
+                            </p>
+                            <div className="flex gap-2 flex-wrap">
+                              {[250, 500, 1000, 2000, 5000, 10000].map((w) => (
+                                <Button
+                                  key={w}
+                                  size="sm"
+                                  variant={Number(orderWeights[order.id] || '500') === w ? 'default' : 'outline'}
+                                  className="h-7 text-xs px-2"
+                                  onClick={() => setOrderWeights((prev) => ({ ...prev, [order.id]: String(w) }))}
+                                >
+                                  {w >= 1000 ? `${w / 1000}kg` : `${w}g`}
+                                </Button>
+                              ))}
+                            </div>
+                            <Input
+                              type="number"
+                              min={100}
+                              placeholder="Poids personnalisé (g)"
+                              value={orderWeights[order.id] || '500'}
+                              onChange={(e) => setOrderWeights((prev) => ({ ...prev, [order.id]: e.target.value }))}
+                              className="h-8 text-xs"
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              Frais Mondial Relay estimés : <span className="font-semibold text-foreground">{estimateRelayShipping(Math.max(100, Number(orderWeights[order.id]) || 500)).toFixed(2)}€</span>
+                            </p>
+                          </div>
+                          <Button size="sm" className="w-full" onClick={() => generateDeliverySlip(order)}>
+                            <FileText className="w-4 h-4 mr-2" />
+                            Générer le bordereau de livraison (PDF)
+                          </Button>
+                        </div>
                       )
                     )}
 
