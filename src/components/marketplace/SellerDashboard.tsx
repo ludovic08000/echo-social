@@ -41,31 +41,49 @@ export function SellerDashboard() {
     }
   }, [searchParams, paidOrders.length]);
 
-  const handleCreateLabel = async (orderId: string, payload: ShipmentPayload) => {
-    setCreatingLabel(true);
-    setShippingOrderId(orderId);
-    try {
-      const { data, error } = await supabase.functions.invoke('mondial-relay', {
-        body: {
-          action: 'create_shipment',
-          order_id: orderId,
-          sender: payload.sender,
-          package: payload.parcel,
-        },
-      });
+  const generateDeliverySlip = (order: any) => {
+    const items = order.order_items || [];
+    const relayName = order.shipping_relay_name || '—';
+    const relayAddress = order.shipping_relay_address || '';
+    const relayCity = `${order.shipping_relay_postcode || ''} ${order.shipping_relay_city || ''}`.trim();
+    const date = new Date(order.created_at).toLocaleDateString('fr-FR');
 
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+    const html = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8"><title>Bordereau ${order.order_number}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;padding:40px;color:#111;font-size:13px}
+h1{font-size:22px;margin-bottom:4px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:30px;border-bottom:3px solid #111;padding-bottom:16px}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:30px}
+.box{border:1px solid #ccc;border-radius:8px;padding:16px}
+.box h3{font-size:13px;text-transform:uppercase;color:#666;margin-bottom:8px;letter-spacing:0.5px}
+table{width:100%;border-collapse:collapse;margin-bottom:24px}
+th{background:#f5f5f5;text-align:left;padding:8px 12px;border:1px solid #ddd;font-size:12px}
+td{padding:8px 12px;border:1px solid #ddd}
+.total-row td{font-weight:bold;background:#f9f9f9}
+.footer{margin-top:40px;padding-top:16px;border-top:1px solid #ddd;display:flex;justify-content:space-between}
+.sig-box{border:1px dashed #ccc;width:200px;height:80px;display:flex;align-items:flex-end;justify-content:center;padding:8px;font-size:11px;color:#999}
+@media print{body{padding:20px}}
+</style></head><body>
+<div class="header"><div><h1>BORDEREAU DE LIVRAISON</h1><p style="color:#666">N° ${order.order_number}</p></div><div style="text-align:right"><p><strong>${seller?.store_name || 'Vendeur'}</strong></p><p style="color:#666">Date : ${date}</p></div></div>
+<div class="info-grid">
+<div class="box"><h3>Expéditeur</h3><p><strong>${seller?.store_name || 'Vendeur'}</strong></p></div>
+<div class="box"><h3>Destinataire — Point Relais</h3><p><strong>${relayName}</strong></p><p>${relayAddress}</p><p>${relayCity}</p>${order.shipping_relay_country ? `<p>${order.shipping_relay_country}</p>` : ''}</div>
+</div>
+<table><thead><tr><th>Produit</th><th style="width:60px;text-align:center">Qté</th><th style="width:100px;text-align:right">Prix unit.</th><th style="width:100px;text-align:right">Total</th></tr></thead><tbody>
+${items.map((item: any) => `<tr><td>${item.title}</td><td style="text-align:center">${item.quantity}</td><td style="text-align:right">${Number(item.price).toFixed(2)} €</td><td style="text-align:right">${Number(item.subtotal).toFixed(2)} €</td></tr>`).join('')}
+<tr class="total-row"><td colspan="3" style="text-align:right">TOTAL</td><td style="text-align:right">${Number(order.total).toFixed(2)} €</td></tr>
+</tbody></table>
+${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :</strong> ${order.tracking_number}</p>` : ''}
+<div class="footer"><div class="sig-box">Signature expéditeur</div><div class="sig-box">Signature réceptionnaire</div></div>
+<script>window.onload=()=>window.print()</script>
+</body></html>`;
 
-      toast.success(`Étiquette créée ! N° suivi : ${data.tracking_number}`);
-      setLabelEditorOpen(false);
-      setSelectedOrder(null);
-    } catch (e: any) {
-      toast.error(e.message || "Erreur lors de la création de l'étiquette");
-    } finally {
-      setCreatingLabel(false);
-      setShippingOrderId(null);
-    }
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
 
   const handlePackingVideoUpload = async (orderId: string, file: File) => {
