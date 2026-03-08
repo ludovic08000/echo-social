@@ -61,28 +61,18 @@ function useRecentReplays() {
 }
 
 // Mini video card that autoplays on hover
-function LiveCard({ item }: { item: { id: string; title: string; thumbnail_url: string | null; recording_url?: string | null; isLive: boolean; viewer_count: number; user_id: string; ended_at: string | null; host?: { name: string; avatar_url: string | null } }; }) {
+function LiveCard({ item, allItems }: { item: { id: string; title: string; thumbnail_url: string | null; recording_url?: string | null; isLive: boolean; viewer_count: number; user_id: string; ended_at: string | null; host?: { name: string; avatar_url: string | null } }; allItems?: any[] }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const { user } = useAuth();
   const deleteLive = useDeleteLive();
 
-  // Lazy-load video src on hover to save bandwidth
   const handleMouseEnter = useCallback(() => {
-    const v = videoRef.current;
-    if (v && item.recording_url) {
-      if (!v.src || v.src === '') {
-        v.src = item.recording_url;
-      }
-      v.play().catch(() => {});
-    }
-  }, [item.recording_url]);
+    videoRef.current?.play().catch(() => {});
+  }, []);
 
   const handleMouseLeave = useCallback(() => {
     const v = videoRef.current;
-    if (v) {
-      v.pause();
-      v.currentTime = 0;
-    }
+    if (v) { v.pause(); v.currentTime = 0; }
   }, []);
 
   const handleDelete = (e: React.MouseEvent) => {
@@ -97,9 +87,12 @@ function LiveCard({ item }: { item: { id: string; title: string; thumbnail_url: 
   const hasVideo = !!item.recording_url;
   const hasThumbnail = !!item.thumbnail_url;
 
+  // Build link: for replays with video, go to TikTok-style player with ?from=feed
+  const linkTo = item.isLive ? `/live/${item.id}` : `/live/${item.id}?from=feed`;
+
   return (
     <Link
-      to={`/live/${item.id}`}
+      to={linkTo}
       className="relative flex-shrink-0 w-[110px] h-[160px] rounded-xl overflow-hidden bg-black group"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
@@ -108,11 +101,12 @@ function LiveCard({ item }: { item: { id: string; title: string; thumbnail_url: 
       {hasVideo ? (
         <video
           ref={videoRef}
+          src={`${item.recording_url!}#t=0.5`}
           className="absolute inset-0 w-full h-full object-cover"
           muted
           loop
           playsInline
-          preload="none"
+          preload="metadata"
           poster={item.thumbnail_url || undefined}
         />
       ) : hasThumbnail ? (
