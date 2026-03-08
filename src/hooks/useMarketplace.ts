@@ -218,14 +218,21 @@ export function useAddToCart() {
       if (product?.seller_profiles && (product.seller_profiles as any).user_id === user.id) {
         throw new Error('Vous ne pouvez pas acheter votre propre produit');
       }
+
       // Check stock availability
       const { data: stockCheck } = await supabase
         .from('products')
         .select('stock_quantity')
         .eq('id', productId)
         .single();
+
       if (stockCheck?.stock_quantity !== null && stockCheck?.stock_quantity !== undefined && stockCheck.stock_quantity <= 0) {
         throw new Error('Ce produit est épuisé');
+      }
+
+      // If stock is 1, only one unit can exist in cart for this product
+      if (stockCheck?.stock_quantity === 1 && quantity > 1) {
+        throw new Error('Ce produit est limité à 1 exemplaire');
       }
 
       // Check if already in cart
@@ -237,20 +244,26 @@ export function useAddToCart() {
         .maybeSingle();
 
       if (existing) {
+        if (stockCheck?.stock_quantity === 1) {
+          throw new Error('Ce produit est déjà dans votre panier');
+        }
+
         // Check stock for total quantity
         const newQty = existing.quantity + quantity;
         if (stockCheck?.stock_quantity !== null && stockCheck?.stock_quantity !== undefined && newQty > stockCheck.stock_quantity) {
           throw new Error(`Stock insuffisant (${stockCheck.stock_quantity} disponible${stockCheck.stock_quantity > 1 ? 's' : ''})`);
         }
+
         const { error } = await supabase
           .from('cart_items')
           .update({ quantity: newQty })
           .eq('id', existing.id);
         if (error) throw error;
       } else {
+        const safeQty = stockCheck?.stock_quantity === 1 ? 1 : quantity;
         const { error } = await supabase
           .from('cart_items')
-          .insert({ user_id: user.id, product_id: productId, quantity });
+          .insert({ user_id: user.id, product_id: productId, quantity: safeQty });
         if (error) throw error;
       }
     },
@@ -291,6 +304,9 @@ export function useUpdateCartItem() {
             .eq('id', cartItem.product_id)
             .maybeSingle();
           if (product && !product.is_active) throw new Error('Ce produit n\'est plus disponible');
+          if (product?.stock_quantity === 1 && quantity > 1) {
+            throw new Error('Ce produit est limité à 1 exemplaire');
+          }
           if (product?.stock_quantity !== null && product?.stock_quantity !== undefined && quantity > product.stock_quantity) {
             throw new Error(`Stock max : ${product.stock_quantity}`);
           }

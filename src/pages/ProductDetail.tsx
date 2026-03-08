@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
-import { useProduct, useAddToCart } from '@/hooks/useMarketplace';
+import { useProduct, useAddToCart, useCart } from '@/hooks/useMarketplace';
 import { useAuth } from '@/lib/auth';
 import { useProductFavorites, useToggleFavorite } from '@/hooks/useProductFavorites';
 import { ProductReviews } from '@/components/marketplace/ProductReviews';
@@ -34,6 +34,7 @@ export default function ProductDetailPage() {
   const { data: product, isLoading } = useProduct(id);
   const { user } = useAuth();
   const addToCart = useAddToCart();
+  const { data: cart = [] } = useCart();
   const { data: favorites = [] } = useProductFavorites();
   const toggleFav = useToggleFavorite();
   const [imgIndex, setImgIndex] = useState(0);
@@ -92,6 +93,10 @@ export default function ProductDetailPage() {
   const ShippingIcon = shippingInfo.icon;
   const isOutOfStock = product.stock_quantity !== null && product.stock_quantity <= 0;
   const isOwnProduct = user && seller && (seller as any).user_id === user.id;
+  const isSingleStock = product.stock_quantity === 1;
+  const isAlreadyInCart = cart.some((item) => item.product_id === product.id);
+  const cartBlockedBySingleStock = isSingleStock && isAlreadyInCart;
+  const canAddToCart = !addToCart.isPending && !isOutOfStock && !isOwnProduct && !cartBlockedBySingleStock;
 
   return (
     <AppLayout>
@@ -298,10 +303,10 @@ export default function ProductDetailPage() {
           <Button
             className="premium-button flex-1 h-12 text-sm font-bold rounded-2xl"
             onClick={() => addToCart.mutate({ productId: product.id })}
-            disabled={addToCart.isPending || isOutOfStock || !!isOwnProduct}
+            disabled={!canAddToCart}
           >
             <ShoppingCart className="w-4 h-4 mr-2" />
-            {isOwnProduct ? 'Votre produit' : isOutOfStock ? 'Épuisé' : 'Ajouter au panier'}
+            {isOwnProduct ? 'Votre produit' : isOutOfStock ? 'Épuisé' : cartBlockedBySingleStock ? 'Déjà au panier' : 'Ajouter au panier'}
           </Button>
         </div>
       </div>
