@@ -14,16 +14,15 @@ import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 
 const CATEGORIES = [
-  { value: 'general', label: 'Général' },
+  { value: 'general', label: 'Autre' },
   { value: 'fashion', label: 'Mode' },
-  { value: 'electronics', label: 'Électronique' },
+  { value: 'electronics', label: 'Tech' },
+  { value: 'phones', label: 'Téléphonie' },
   { value: 'art', label: 'Art & Créations' },
   { value: 'beauty', label: 'Beauté' },
   { value: 'home', label: 'Maison' },
   { value: 'sports', label: 'Sport' },
   { value: 'books', label: 'Livres' },
-  { value: 'services', label: 'Services' },
-  { value: 'digital', label: 'Produits numériques' },
 ];
 
 const COLORS = [
