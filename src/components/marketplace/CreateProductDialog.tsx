@@ -154,6 +154,7 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
     toast.success('Description appliquée !');
   };
 
+  const handleSubmit = () => {
     if (!title.trim() || !price) return;
     createProduct.mutate(
       {
