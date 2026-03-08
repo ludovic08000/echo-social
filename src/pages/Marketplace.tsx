@@ -22,6 +22,28 @@ import { COUNTRIES, GEO_DATA } from '@/lib/geoData';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { SellerReviewDialog } from '@/components/marketplace/SellerReviewDialog';
+import { useHasReviewedOrder } from '@/hooks/useSellerReviews';
+
+function ReviewSellerButton({ order }: { order: any }) {
+  const [showReview, setShowReview] = useState(false);
+  const { data: hasReviewed } = useHasReviewedOrder(order.id);
+  const sellerProfileId = order.order_items?.[0]?.seller_id;
+  if (!sellerProfileId || hasReviewed) return null;
+  return (
+    <>
+      <Button variant="outline" size="sm" className="w-full rounded-xl text-xs gap-1.5 mt-1" onClick={() => setShowReview(true)}>
+        <Star className="w-3.5 h-3.5" /> Évaluer le vendeur
+      </Button>
+      <SellerReviewDialog
+        open={showReview}
+        onOpenChange={setShowReview}
+        sellerProfileId={sellerProfileId}
+        orderId={order.id}
+      />
+    </>
+  );
+}
 
 const CATEGORIES = [
   { value: 'all', label: 'Tout', icon: '🔥' },
