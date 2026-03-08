@@ -174,8 +174,8 @@ export function BackgroundSettingsSection() {
 
       <BackgroundPicker
         type="feed"
-        currentUrl={(profile as any).feed_bg_url}
-        onUpdate={(url) => updateProfile.mutate({ feed_bg_url: url } as any)}
+        currentUrl={profile.feed_bg_url}
+        onUpdate={(url) => updateProfile.mutate({ feed_bg_url: url })}
         isUpdating={updateProfile.isPending}
       />
     </div>
