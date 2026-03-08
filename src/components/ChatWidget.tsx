@@ -410,6 +410,22 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     });
   };
 
+  const handleAI = async (action: 'correct' | 'improve' | 'translate', tone?: string) => {
+    if (!newMessage.trim() || aiLoading) return;
+    setAiLoading(true);
+    setShowAIMenu(false);
+    const start = performance.now();
+    try {
+      const reqBody: Record<string, string> = { action, text: newMessage.trim() };
+      if (action === 'translate') reqBody.targetLanguage = 'en';
+      if (tone) reqBody.tone = tone;
+      const { data, error } = await supabase.functions.invoke('ai-content', { body: reqBody });
+      trackAICall(`chat-${action}`, Math.round(performance.now() - start), !error && !data?.error);
+      if (error || data?.error) { toast.error(data?.error || 'Erreur IA'); return; }
+      if (data?.result) setAiSuggestion(data.result);
+    } catch { toast.error('Erreur IA'); } finally { setAiLoading(false); }
+  };
+
   const handleReact = (msgId: string, emoji: string) => {
     setMessageReactions(prev => {
       const existing = prev[msgId] || [];
