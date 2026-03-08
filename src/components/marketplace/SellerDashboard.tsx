@@ -36,11 +36,7 @@ export function SellerDashboard() {
   );
 
   useEffect(() => {
-    if (searchParams.get('sellerTab') === 'orders') {
-      setSellerTab('orders');
-      return;
-    }
-    if (paidOrders.length > 0) {
+    if (searchParams.get('sellerTab') === 'orders' || paidOrders.length > 0) {
       setSellerTab('orders');
     }
   }, [searchParams, paidOrders.length]);
