@@ -14,7 +14,7 @@ import { FeedReelsSection } from '@/components/feed/FeedReelsSection';
 import { FeedMarketplaceSection } from '@/components/feed/FeedMarketplaceSection';
 import { FeedMediaSection } from '@/components/feed/FeedMediaSection';
 import { SponsoredPostCard } from '@/components/feed/SponsoredPostCard';
-import { Coffee, X, Sparkles, Lock } from 'lucide-react';
+import { Coffee, X, Sparkles, Lock, Shield } from 'lucide-react';
 import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgorithm';
 import { Button } from '@/components/ui/button';
 import { useActiveAds } from '@/hooks/useAdCampaigns';
