@@ -59,6 +59,13 @@ export function CartSheet() {
 
   const total = subtotal + buyerFee + shippingEstimate;
 
+  useEffect(() => {
+    if (!selectedRelay) return;
+    requestAnimationFrame(() => {
+      packageSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }, [selectedRelay]);
+
   const handleCheckout = async (testMode = false) => {
     if (cart.length === 0) return;
     if (hasPhysical && !selectedRelay) {
