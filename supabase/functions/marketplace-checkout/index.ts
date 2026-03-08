@@ -60,32 +60,51 @@ serve(async (req) => {
 
       if (!items?.length) throw new Error("Panier vide");
 
-      // Validate items
+      // Validate items have required fields
       for (const item of items) {
-        if (!item.product_id || !item.title || typeof item.price !== "number" || item.price <= 0) {
+        if (!item.product_id || !item.quantity || item.quantity < 1) {
           throw new Error("Données produit invalides");
-        }
-        if (!item.quantity || item.quantity < 1) {
-          throw new Error("Quantité invalide");
         }
       }
 
-      const subtotal = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
+      // SECURITY: Fetch real prices and data from DB — never trust client prices
+      const productIds = items.map((i: any) => i.product_id);
+      const { data: dbProducts, error: prodError } = await supabase
+        .from("products")
+        .select("id, title, price, seller_id, thumbnail_url, weight_grams, stock_quantity, status")
+        .in("id", productIds);
+
+      if (prodError || !dbProducts?.length) throw new Error("Produits introuvables");
+
+      // Verify all products exist and are available
+      const verifiedItems = [];
+      for (const item of items) {
+        const dbProduct = dbProducts.find((p: any) => p.id === item.product_id);
+        if (!dbProduct) throw new Error(`Produit ${item.product_id} introuvable`);
+        if (dbProduct.status !== "active") throw new Error(`Produit "${dbProduct.title}" n'est plus disponible`);
+        if (dbProduct.stock_quantity !== null && dbProduct.stock_quantity < item.quantity) {
+          throw new Error(`Stock insuffisant pour "${dbProduct.title}"`);
+        }
+        verifiedItems.push({
+          product_id: dbProduct.id,
+          title: dbProduct.title,
+          price: dbProduct.price, // Server-side price
+          quantity: item.quantity,
+          seller_id: dbProduct.seller_id,
+          thumbnail_url: dbProduct.thumbnail_url,
+          weight_grams: dbProduct.weight_grams,
+        });
+      }
+
+      const subtotal = verifiedItems.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
       const commission = Math.round(subtotal * COMMISSION_RATE * 100) / 100;
 
-      // Fetch real weights from products table
+      // Calculate shipping from DB weights
       let totalShipping = 0;
       let totalWeightGrams = 0;
       if (relay?.id) {
-        const productIds = items.map((i: any) => i.product_id);
-        const { data: products } = await supabase
-          .from("products")
-          .select("id, weight_grams")
-          .in("id", productIds);
-        
-        for (const item of items) {
-          const product = products?.find((p: any) => p.id === item.product_id);
-          const weight = product?.weight_grams || 500;
+        for (const item of verifiedItems) {
+          const weight = item.weight_grams || 500;
           totalWeightGrams += weight * item.quantity;
           totalShipping += estimateRelayShipping(weight) * item.quantity;
         }
@@ -94,22 +113,15 @@ serve(async (req) => {
 
       const total = subtotal + commission + totalShipping;
 
-      // Find or create Stripe customer
-      const customers = await stripe.customers.list({ email: userEmail, limit: 1 });
-      let customerId: string | undefined;
-      if (customers.data.length > 0) {
-        customerId = customers.data[0].id;
-      }
-
-      // Build line items for Stripe
-      const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = items.map((item: any) => ({
+      // Build line items for Stripe using server-side prices
+      const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = verifiedItems.map((item: any) => ({
         price_data: {
           currency: "eur",
           product_data: {
             name: item.title,
             images: item.thumbnail_url ? [item.thumbnail_url] : [],
           },
-          unit_amount: Math.round(item.price * 100), // cents
+          unit_amount: Math.round(item.price * 100),
         },
         quantity: item.quantity,
       }));
@@ -179,8 +191,8 @@ serve(async (req) => {
 
       if (orderError) throw new Error(`Erreur création commande: ${orderError.message}`);
 
-      // Create order items
-      for (const item of items) {
+      // Create order items using verified server-side data
+      for (const item of verifiedItems) {
         const itemSubtotal = item.price * item.quantity;
         const itemCommission = Math.round(itemSubtotal * COMMISSION_RATE * 100) / 100;
 
@@ -196,6 +208,13 @@ serve(async (req) => {
           seller_payout: itemSubtotal - itemCommission,
           status: "pending",
         });
+      }
+
+      // Find or create Stripe customer
+      const customers = await stripe.customers.list({ email: userEmail, limit: 1 });
+      let customerId: string | undefined;
+      if (customers.data.length > 0) {
+        customerId = customers.data[0].id;
       }
 
       // Create Stripe Checkout session
@@ -317,125 +336,7 @@ serve(async (req) => {
       });
     }
 
-    // ── TEST CHECKOUT (skip Stripe) ──
-    if (action === "test_checkout") {
-      const { items, relay } = body;
-      if (!items?.length) throw new Error("Panier vide");
-
-      const subtotal = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
-      const commission = Math.round(subtotal * COMMISSION_RATE * 100) / 100;
-
-      // Fetch real weights from products table
-      let totalShipping = 0;
-      let totalWeightGrams = 0;
-      if (relay?.id) {
-        const productIds = items.map((i: any) => i.product_id);
-        const { data: products } = await supabase
-          .from("products")
-          .select("id, weight_grams")
-          .in("id", productIds);
-        
-        for (const item of items) {
-          const product = products?.find((p: any) => p.id === item.product_id);
-          const weight = product?.weight_grams || 500;
-          totalWeightGrams += weight * item.quantity;
-          totalShipping += estimateRelayShipping(weight) * item.quantity;
-        }
-        totalShipping = Math.round(totalShipping * 100) / 100;
-      }
-
-      const total = subtotal + commission + totalShipping;
-
-      const orderNumber = `TEST-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
-
-      const orderData: any = {
-        buyer_id: userId,
-        order_number: orderNumber,
-        subtotal,
-        total,
-        commission_rate: COMMISSION_RATE,
-        commission_amount: commission,
-        status: "paid",
-        paid_at: new Date().toISOString(),
-      };
-
-      if (relay?.id) {
-        orderData.shipping_method = 'mondial_relay';
-        orderData.shipping_relay_id = relay.id;
-        orderData.shipping_relay_name = relay.name;
-        orderData.shipping_relay_address = relay.address;
-        orderData.shipping_relay_postcode = relay.postcode;
-        orderData.shipping_relay_city = relay.city;
-        orderData.shipping_relay_country = relay.country || 'FR';
-        orderData.shipping_weight_grams = totalWeightGrams;
-      }
-
-      const { data: order, error: orderError } = await supabase
-        .from("orders")
-        .insert(orderData)
-        .select()
-        .single();
-
-      if (orderError) throw new Error(`Erreur création commande: ${orderError.message}`);
-
-      for (const item of items) {
-        const itemSubtotal = item.price * item.quantity;
-        const itemCommission = Math.round(itemSubtotal * COMMISSION_RATE * 100) / 100;
-        await supabase.from("order_items").insert({
-          order_id: order.id,
-          product_id: item.product_id,
-          seller_id: item.seller_id,
-          title: item.title,
-          price: item.price,
-          quantity: item.quantity,
-          subtotal: itemSubtotal,
-          commission_amount: itemCommission,
-          seller_payout: itemSubtotal - itemCommission,
-          status: "paid",
-        });
-      }
-
-      // Notify sellers
-      const sellerIds = [...new Set(items.map((i: any) => i.seller_id).filter(Boolean))];
-      for (const sellerId of sellerIds) {
-        const { data: sellerProfile } = await supabase
-          .from("seller_profiles")
-          .select("user_id")
-          .eq("id", sellerId)
-          .single();
-        if (sellerProfile) {
-          await supabase.from("notifications").insert({
-            user_id: sellerProfile.user_id,
-            actor_id: userId,
-            type: "sale",
-          });
-        }
-      }
-
-      // Decrement stock for purchased products (test mode)
-      for (const item of items) {
-        if (item.product_id) {
-          const { data: prod } = await supabase
-            .from("products")
-            .select("stock_quantity")
-            .eq("id", item.product_id)
-            .single();
-          if (prod?.stock_quantity !== null && prod?.stock_quantity !== undefined) {
-            await supabase
-              .from("products")
-              .update({ stock_quantity: Math.max(0, prod.stock_quantity - (item.quantity || 1)) })
-              .eq("id", item.product_id);
-          }
-        }
-      }
-
-      // Clear cart
-      await supabase.from("cart_items").delete().eq("user_id", userId);
-
-      return new Response(JSON.stringify({ success: true, orderId: order.id, orderNumber }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    // test_checkout removed for security — all payments go through Stripe
 
     return new Response(JSON.stringify({ error: "Action invalide" }), {
       status: 400,

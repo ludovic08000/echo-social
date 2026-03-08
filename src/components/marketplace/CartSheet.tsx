@@ -50,7 +50,7 @@ export function CartSheet() {
   const shippingEstimate = hasPhysical && selectedRelay ? shippingTotal : 0;
   const total = subtotal + buyerFee + shippingEstimate;
 
-  const handleCheckout = async (testMode = false) => {
+  const handleCheckout = async () => {
     if (cart.length === 0) return;
     if (hasPhysical && !selectedRelay) {
       toast.error('Veuillez choisir un point relais pour la livraison');
@@ -80,17 +80,6 @@ export function CartSheet() {
       } : null;
 
       const packageData = null; // Weight is now set by the seller
-
-      if (testMode) {
-        const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
-          body: { action: 'test_checkout', items, relay: relayData, package: packageData },
-        });
-        if (error) throw error;
-        if (data?.error) throw new Error(data.error);
-        toast.success(`🎉 Commande test créée ! ${data.orderNumber}`);
-        window.location.href = `/marketplace?order_success=${data.orderId}`;
-        return;
-      }
 
       const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
         body: { action: 'create_checkout', items, relay: relayData, package: packageData },
@@ -253,7 +242,7 @@ export function CartSheet() {
               </div>
               <Button
                 className="w-full premium-button"
-                onClick={() => handleCheckout(false)}
+                onClick={() => handleCheckout()}
                 disabled={isCheckingOut || cart.length === 0 || (hasPhysical && !selectedRelay)}
               >
                 {isCheckingOut ? (
@@ -262,14 +251,6 @@ export function CartSheet() {
                   <CreditCard className="w-4 h-4 mr-2" />
                 )}
                 {(hasPhysical && !selectedRelay) ? 'Choisir un point relais pour continuer' : isCheckingOut ? 'Redirection...' : `Payer ${total.toFixed(2)}€`}
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full text-xs"
-                onClick={() => handleCheckout(true)}
-                disabled={isCheckingOut || cart.length === 0 || (hasPhysical && !selectedRelay)}
-              >
-                🧪 Commande test (sans paiement)
               </Button>
               <p className="text-[10px] text-muted-foreground text-center flex items-center justify-center gap-1">
                 <ShieldCheck className="w-3 h-3" />
