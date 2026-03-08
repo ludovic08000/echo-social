@@ -1110,7 +1110,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       )}
 
-
+      {replyTo && (
         <div className="mx-2 mb-1 bg-secondary/80 rounded-lg px-3 py-1.5 flex items-center gap-2">
           <div className="w-0.5 h-6 rounded-full bg-primary flex-shrink-0" />
           <div className="flex-1 min-w-0">
