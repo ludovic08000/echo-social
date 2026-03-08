@@ -68,10 +68,25 @@ export function useNegotiationsByConversation(conversationId?: string) {
       if (!user || !conversationId) return [];
       const { data, error } = await supabase
         .from('negotiations')
-        .select('*, products:product_id(id, title, price, thumbnail_url, seller_profiles:seller_profile_id(id, store_name, user_id, store_logo_url))')
+        .select('*')
         .eq('conversation_id', conversationId)
         .order('created_at', { ascending: false });
       if (error) throw error;
+      
+      // Fetch product info for the first negotiation
+      if (data && data.length > 0) {
+        const productId = data[0].product_id;
+        const sellerProfileId = data[0].seller_profile_id;
+        const [productRes, sellerRes] = await Promise.all([
+          supabase.from('products').select('id, title, price, thumbnail_url').eq('id', productId).single(),
+          supabase.from('seller_profiles').select('id, store_name, user_id, store_logo_url').eq('id', sellerProfileId).single(),
+        ]);
+        return data.map(n => ({
+          ...n,
+          product: productRes.data,
+          seller_profile: sellerRes.data,
+        }));
+      }
       return data as any[];
     },
     enabled: !!user && !!conversationId,
