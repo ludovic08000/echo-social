@@ -9,11 +9,12 @@ import { CartSheet } from '@/components/marketplace/CartSheet';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Store, Plus, ShoppingBag, Sparkles, Flame, Clock, SlidersHorizontal, X, Heart, TrendingUp, Tag, MapPin, Globe } from 'lucide-react';
+import { Search, Store, Plus, ShoppingBag, Sparkles, Flame, Clock, SlidersHorizontal, X, Heart, TrendingUp, Tag, MapPin, Globe, Truck } from 'lucide-react';
 import { SellerDashboard } from '@/components/marketplace/SellerDashboard';
 import { SEOHead } from '@/components/SEOHead';
 import { CreateProductDialog } from '@/components/marketplace/CreateProductDialog';
 import { useSellerProfile } from '@/hooks/useMarketplace';
+import { useSellerOrders } from '@/hooks/useSellerOrders';
 import { useProductFavorites } from '@/hooks/useProductFavorites';
 import { cn } from '@/lib/utils';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
@@ -98,7 +99,13 @@ export default function Marketplace() {
 
   const { data: products = [], isLoading } = useProducts(category, search, locationFilter);
   const { data: seller } = useSellerProfile();
+  const { data: sellerOrders = [] } = useSellerOrders();
   const { data: favorites = [] } = useProductFavorites();
+
+  const pendingLabelsCount = useMemo(
+    () => sellerOrders.filter((o: any) => o.status === 'paid' || (o.status === 'shipped' && !o.shipping_label_url)).length,
+    [sellerOrders],
+  );
 
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -134,6 +141,17 @@ export default function Marketplace() {
                 <p className="text-primary-foreground/70 text-xs mt-0.5">Achetez, vendez, échangez</p>
               </div>
               <div className="flex items-center gap-2">
+                {seller && pendingLabelsCount > 0 && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setActiveTab('seller')}
+                    className="h-9 rounded-xl text-xs gap-1.5"
+                  >
+                    <Truck className="w-4 h-4" />
+                    Étiquettes ({pendingLabelsCount})
+                  </Button>
+                )}
                 <button
                   onClick={() => setShowLocationFilter(!showLocationFilter)}
                   className="w-9 h-9 rounded-xl bg-primary-foreground/15 backdrop-blur-sm flex items-center justify-center text-primary-foreground hover:bg-primary-foreground/25 transition-colors"
