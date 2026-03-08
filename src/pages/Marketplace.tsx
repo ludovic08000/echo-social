@@ -480,17 +480,28 @@ export default function Marketplace() {
                     </div>
 
                     {/* Tracking */}
-                    {order.tracking_number && (
+                    {/* Tracking */}
+                    {order.tracking_number ? (
                       <button
                         onClick={() => window.open(`https://www.mondialrelay.fr/suivi-de-colis/?NumeroExpedition=${order.tracking_number}`, '_blank')}
-                        className="flex items-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 rounded-xl px-3 py-2 w-full transition-colors cursor-pointer"
+                        className="flex items-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 rounded-xl px-3 py-2.5 w-full transition-colors cursor-pointer"
                       >
-                        <Truck className="w-3.5 h-3.5 text-blue-500" />
-                        <span className="text-[10px] text-muted-foreground">Suivi :</span>
-                        <span className="text-xs font-mono font-bold text-blue-600 flex-1 text-left">{order.tracking_number}</span>
-                        <span className="text-[10px] text-blue-500 font-semibold">Voir le suivi →</span>
+                        <Truck className="w-4 h-4 text-blue-500" />
+                        <div className="flex-1 text-left">
+                          <p className="text-[10px] text-muted-foreground">Numéro de suivi</p>
+                          <p className="text-xs font-mono font-bold text-blue-600">{order.tracking_number}</p>
+                        </div>
+                        <span className="text-[11px] text-blue-500 font-semibold whitespace-nowrap">Suivre →</span>
                       </button>
-                    )}
+                    ) : order.status === 'paid' ? (
+                      <div className="flex items-center gap-2 bg-amber-500/10 rounded-xl px-3 py-2.5 w-full">
+                        <Clock className="w-4 h-4 text-amber-500" />
+                        <div className="flex-1">
+                          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">En attente d'expédition</p>
+                          <p className="text-[10px] text-muted-foreground">Le vendeur prépare votre colis. Le numéro de suivi apparaîtra ici dès l'envoi.</p>
+                        </div>
+                      </div>
+                    ) : null}
 
                     {/* Relay point info */}
                     {order.shipping_relay_name && (
