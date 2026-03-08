@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { useProduct, useAddToCart } from '@/hooks/useMarketplace';
+import { useAuth } from '@/lib/auth';
 import { useProductFavorites, useToggleFavorite } from '@/hooks/useProductFavorites';
 import { ProductReviews } from '@/components/marketplace/ProductReviews';
 import { Button } from '@/components/ui/button';
