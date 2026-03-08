@@ -49,6 +49,8 @@ export function CreatePost() {
   const [isUploading, setIsUploading] = useState(false);
   const [expiryHours, setExpiryHours] = useState<number | null>(null);
   const [capsuleDays, setCapsuleDays] = useState<number | null>(null);
+  const [publishAsReplay, setPublishAsReplay] = useState(false);
+  const [replayTitle, setReplayTitle] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<{ improved_text: string; detected_language: string; corrections: string[]; tone: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
