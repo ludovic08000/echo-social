@@ -70,6 +70,7 @@ function ShareDialog({
   text?: string;
 }) {
   const { user } = useAuth();
+  const { openConversation } = useChatWidget();
   const [search, setSearch] = useState('');
   const [sending, setSending] = useState<string | null>(null);
   const { data: conversations } = useConversations();
