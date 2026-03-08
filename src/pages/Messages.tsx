@@ -12,7 +12,7 @@ import { AppLayout } from '@/components/AppLayout';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, type Message } from '@/hooks/useMessages';
+import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, useCreateGroupConversation, type Message } from '@/hooks/useMessages';
 import { useFriendships } from '@/hooks/useFriendships';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
