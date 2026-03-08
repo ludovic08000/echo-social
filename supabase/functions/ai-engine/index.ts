@@ -233,7 +233,7 @@ Only output valid JSON. Replies should be in the same language as the conversati
 - "readability_after": number 0-100
 - "engagement_boost_estimate": number (percentage increase in expected engagement)
 Only output valid JSON. Keep the same language and tone.`;
-        userPrompt = text || "";
+        userPrompt = safeText;
         break;
       }
 
