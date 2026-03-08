@@ -1,36 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSellerProfile, useCreateSellerProfile, useSellerProducts, useDeleteProduct } from '@/hooks/useMarketplace';
 import { useSellerOrders } from '@/hooks/useSellerOrders';
 import { CreateProductDialog } from './CreateProductDialog';
 import { OrderTracking } from './OrderTracking';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Store, Package, TrendingUp, Trash2, Eye, Truck, Download, Loader2, CheckCircle2, Video, ShieldCheck, ShieldAlert, Upload } from 'lucide-react';
+import { Store, Package, TrendingUp, Trash2, Eye, Truck, Loader2, CheckCircle2, Video, ShieldCheck, ShieldAlert, Upload, FileText } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
-interface ShipmentPayload {
-  sender: {
-    name: string;
-    address: string;
-    city: string;
-    postcode: string;
-    country: string;
-    phone: string;
-    email: string;
-  };
-  parcel: {
-    weight_grams: number;
-    parcels: number;
-    length_cm?: number;
-    size_code?: string;
-  };
-}
 
 export function SellerDashboard() {
   const [searchParams] = useSearchParams();
@@ -40,30 +21,12 @@ export function SellerDashboard() {
   const createSeller = useCreateSellerProfile();
   const deleteProduct = useDeleteProduct();
   const [storeName, setStoreName] = useState('');
-  const [shippingOrderId, setShippingOrderId] = useState<string | null>(null);
-  const [creatingLabel, setCreatingLabel] = useState(false);
   const [markingDelivered, setMarkingDelivered] = useState<string | null>(null);
   const [uploadingVideo, setUploadingVideo] = useState<string | null>(null);
   const [analyzingVideo, setAnalyzingVideo] = useState<string | null>(null);
-  const [labelEditorOpen, setLabelEditorOpen] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [sellerTab, setSellerTab] = useState<'products' | 'orders'>(
     searchParams.get('sellerTab') === 'orders' ? 'orders' : 'products'
   );
-  const [labelForm, setLabelForm] = useState({
-    weightGrams: '500',
-    parcels: '1',
-    lengthCm: '',
-    sizeCode: '',
-    senderName: '',
-    senderAddress: '',
-    senderCity: '',
-    senderPostcode: '',
-    senderCountry: 'FR',
-    senderPhone: '',
-    senderEmail: '',
-  });
-  const autoOpenedOrderRef = useRef<string | null>(null);
 
   const paidOrders = useMemo(
     () => orders.filter((o: any) => o.status === 'paid' || o.status === 'shipped' || o.status === 'delivered'),
@@ -71,40 +34,54 @@ export function SellerDashboard() {
   );
 
   useEffect(() => {
-    if (searchParams.get('sellerTab') === 'orders') {
-      setSellerTab('orders');
-      return;
-    }
-    if (paidOrders.length > 0) {
+    if (searchParams.get('sellerTab') === 'orders' || paidOrders.length > 0) {
       setSellerTab('orders');
     }
   }, [searchParams, paidOrders.length]);
 
-  const handleCreateLabel = async (orderId: string, payload: ShipmentPayload) => {
-    setCreatingLabel(true);
-    setShippingOrderId(orderId);
-    try {
-      const { data, error } = await supabase.functions.invoke('mondial-relay', {
-        body: {
-          action: 'create_shipment',
-          order_id: orderId,
-          sender: payload.sender,
-          package: payload.parcel,
-        },
-      });
+  const generateDeliverySlip = (order: any) => {
+    const items = order.order_items || [];
+    const relayName = order.shipping_relay_name || '—';
+    const relayAddress = order.shipping_relay_address || '';
+    const relayCity = `${order.shipping_relay_postcode || ''} ${order.shipping_relay_city || ''}`.trim();
+    const date = new Date(order.created_at).toLocaleDateString('fr-FR');
 
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+    const html = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8"><title>Bordereau ${order.order_number}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;padding:40px;color:#111;font-size:13px}
+h1{font-size:22px;margin-bottom:4px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:30px;border-bottom:3px solid #111;padding-bottom:16px}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:30px}
+.box{border:1px solid #ccc;border-radius:8px;padding:16px}
+.box h3{font-size:13px;text-transform:uppercase;color:#666;margin-bottom:8px;letter-spacing:0.5px}
+table{width:100%;border-collapse:collapse;margin-bottom:24px}
+th{background:#f5f5f5;text-align:left;padding:8px 12px;border:1px solid #ddd;font-size:12px}
+td{padding:8px 12px;border:1px solid #ddd}
+.total-row td{font-weight:bold;background:#f9f9f9}
+.footer{margin-top:40px;padding-top:16px;border-top:1px solid #ddd;display:flex;justify-content:space-between}
+.sig-box{border:1px dashed #ccc;width:200px;height:80px;display:flex;align-items:flex-end;justify-content:center;padding:8px;font-size:11px;color:#999}
+@media print{body{padding:20px}}
+</style></head><body>
+<div class="header"><div><h1>BORDEREAU DE LIVRAISON</h1><p style="color:#666">N° ${order.order_number}</p></div><div style="text-align:right"><p><strong>${seller?.store_name || 'Vendeur'}</strong></p><p style="color:#666">Date : ${date}</p></div></div>
+<div class="info-grid">
+<div class="box"><h3>Expéditeur</h3><p><strong>${seller?.store_name || 'Vendeur'}</strong></p></div>
+<div class="box"><h3>Destinataire — Point Relais</h3><p><strong>${relayName}</strong></p><p>${relayAddress}</p><p>${relayCity}</p>${order.shipping_relay_country ? `<p>${order.shipping_relay_country}</p>` : ''}</div>
+</div>
+<table><thead><tr><th>Produit</th><th style="width:60px;text-align:center">Qté</th><th style="width:100px;text-align:right">Prix unit.</th><th style="width:100px;text-align:right">Total</th></tr></thead><tbody>
+${items.map((item: any) => `<tr><td>${item.title}</td><td style="text-align:center">${item.quantity}</td><td style="text-align:right">${Number(item.price).toFixed(2)} €</td><td style="text-align:right">${Number(item.subtotal).toFixed(2)} €</td></tr>`).join('')}
+<tr class="total-row"><td colspan="3" style="text-align:right">TOTAL</td><td style="text-align:right">${Number(order.total).toFixed(2)} €</td></tr>
+</tbody></table>
+${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :</strong> ${order.tracking_number}</p>` : ''}
+<div class="footer"><div class="sig-box">Signature expéditeur</div><div class="sig-box">Signature réceptionnaire</div></div>
+<script>window.onload=()=>window.print()</script>
+</body></html>`;
 
-      toast.success(`Étiquette créée ! N° suivi : ${data.tracking_number}`);
-      setLabelEditorOpen(false);
-      setSelectedOrder(null);
-    } catch (e: any) {
-      toast.error(e.message || "Erreur lors de la création de l'étiquette");
-    } finally {
-      setCreatingLabel(false);
-      setShippingOrderId(null);
-    }
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
 
   const handlePackingVideoUpload = async (orderId: string, file: File) => {
@@ -172,66 +149,6 @@ export function SellerDashboard() {
     }
   };
 
-  const openLabelEditor = (order: any) => {
-    setSelectedOrder(order);
-    setLabelForm({
-      weightGrams: String(order.shipping_weight_grams || 500),
-      parcels: '1',
-      lengthCm: '',
-      sizeCode: '',
-      senderName: seller?.store_name || 'Vendeur',
-      senderAddress: order.shipping_relay_address || '',
-      senderCity: order.shipping_relay_city || '',
-      senderPostcode: order.shipping_relay_postcode || '',
-      senderCountry: order.shipping_relay_country || 'FR',
-      senderPhone: '',
-      senderEmail: '',
-    });
-    setLabelEditorOpen(true);
-  };
-
-  const submitLabelCreation = async () => {
-    if (!selectedOrder) return;
-
-    const weight = Math.max(100, Number(labelForm.weightGrams) || 500);
-    const parcels = Math.max(1, Number(labelForm.parcels) || 1);
-    const lengthCm = Number(labelForm.lengthCm);
-
-    await handleCreateLabel(selectedOrder.id, {
-      sender: {
-        name: labelForm.senderName.trim() || seller?.store_name || 'Vendeur',
-        address: labelForm.senderAddress.trim(),
-        city: labelForm.senderCity.trim(),
-        postcode: labelForm.senderPostcode.trim(),
-        country: (labelForm.senderCountry || 'FR').trim().toUpperCase(),
-        phone: labelForm.senderPhone.trim(),
-        email: labelForm.senderEmail.trim(),
-      },
-      parcel: {
-        weight_grams: weight,
-        parcels,
-        length_cm: Number.isFinite(lengthCm) && lengthCm > 0 ? lengthCm : undefined,
-        size_code: labelForm.sizeCode.trim() || undefined,
-      },
-    });
-  };
-
-  useEffect(() => {
-    const focusOrderId = searchParams.get('order_success');
-    if (!focusOrderId || autoOpenedOrderRef.current === focusOrderId) return;
-
-    if (orders.length === 0) {
-      refetchOrders();
-      return;
-    }
-
-    const orderToEdit = orders.find((order: any) => order.id === focusOrderId);
-    if (!orderToEdit) return;
-
-    setSellerTab('orders');
-    openLabelEditor(orderToEdit);
-    autoOpenedOrderRef.current = focusOrderId;
-  }, [searchParams, orders, refetchOrders]);
 
   if (isLoading) {
     return <div className="space-y-4"><div className="skeleton h-32 w-full" /><div className="skeleton h-32 w-full" /></div>;
@@ -466,28 +383,16 @@ export function SellerDashboard() {
                     {/* Packing video for orders >= 100€ */}
                     {renderPackingVideoSection(order)}
 
-                    {/* Actions - block label if video not verified for orders >= 100€ */}
-                    {(order.status === 'paid' || (order.status === 'shipped' && !order.shipping_label_url)) && (
+                    {/* Actions - generate delivery slip */}
+                    {order.status === 'paid' && (
                       needsPackingVideo(order) ? (
-                        <p className="text-[11px] text-muted-foreground text-center py-1">⚠️ Vidéo d'emballage requise avant de générer l'étiquette</p>
+                        <p className="text-[11px] text-muted-foreground text-center py-1">⚠️ Vidéo d'emballage requise avant de générer le bordereau</p>
                       ) : (
-                        <Button size="sm" className="w-full" onClick={() => openLabelEditor(order)}
-                          disabled={creatingLabel && shippingOrderId === order.id}>
-                          {creatingLabel && shippingOrderId === order.id ? (
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          ) : (<Truck className="w-4 h-4 mr-2" />)}
-                          {order.status === 'shipped' ? "Régénérer l'étiquette" : "Créer étiquette Mondial Relay"}
+                        <Button size="sm" className="w-full" onClick={() => generateDeliverySlip(order)}>
+                          <FileText className="w-4 h-4 mr-2" />
+                          Générer le bordereau de livraison (PDF)
                         </Button>
                       )
-                    )}
-
-                    {order.shipping_label_url && (
-                      <a href={order.shipping_label_url} target="_blank" rel="noopener noreferrer">
-                        <Button variant="outline" size="sm" className="w-full">
-                          <Download className="w-4 h-4 mr-2" />
-                          Télécharger l'étiquette
-                        </Button>
-                      </a>
                     )}
 
                     {order.tracking_number && (
@@ -518,78 +423,6 @@ export function SellerDashboard() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={labelEditorOpen} onOpenChange={setLabelEditorOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Édition étiquette Mondial Relay</DialogTitle>
-            <DialogDescription>
-              Renseigne le colis avant génération de l'étiquette pour {selectedOrder?.order_number || 'la commande'}.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="weight">Poids (g)</Label>
-                <Input id="weight" type="number" min={100} value={labelForm.weightGrams} onChange={(e) => setLabelForm((prev) => ({ ...prev, weightGrams: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="parcels">Nb colis</Label>
-                <Input id="parcels" type="number" min={1} value={labelForm.parcels} onChange={(e) => setLabelForm((prev) => ({ ...prev, parcels: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="length">Longueur (cm)</Label>
-                <Input id="length" type="number" min={1} value={labelForm.lengthCm} onChange={(e) => setLabelForm((prev) => ({ ...prev, lengthCm: e.target.value }))} placeholder="Optionnel" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="size">Code taille</Label>
-                <Input id="size" value={labelForm.sizeCode} onChange={(e) => setLabelForm((prev) => ({ ...prev, sizeCode: e.target.value }))} placeholder="S, M, L... (optionnel)" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5 col-span-2">
-                <Label htmlFor="sender-name">Expéditeur</Label>
-                <Input id="sender-name" value={labelForm.senderName} onChange={(e) => setLabelForm((prev) => ({ ...prev, senderName: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5 col-span-2">
-                <Label htmlFor="sender-address">Adresse expéditeur</Label>
-                <Input id="sender-address" value={labelForm.senderAddress} onChange={(e) => setLabelForm((prev) => ({ ...prev, senderAddress: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="sender-postcode">Code postal</Label>
-                <Input id="sender-postcode" value={labelForm.senderPostcode} onChange={(e) => setLabelForm((prev) => ({ ...prev, senderPostcode: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="sender-city">Ville</Label>
-                <Input id="sender-city" value={labelForm.senderCity} onChange={(e) => setLabelForm((prev) => ({ ...prev, senderCity: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="sender-country">Pays (code)</Label>
-                <Input id="sender-country" value={labelForm.senderCountry} onChange={(e) => setLabelForm((prev) => ({ ...prev, senderCountry: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="sender-phone">Téléphone</Label>
-                <Input id="sender-phone" value={labelForm.senderPhone} onChange={(e) => setLabelForm((prev) => ({ ...prev, senderPhone: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5 col-span-2">
-                <Label htmlFor="sender-email">Email</Label>
-                <Input id="sender-email" type="email" value={labelForm.senderEmail} onChange={(e) => setLabelForm((prev) => ({ ...prev, senderEmail: e.target.value }))} />
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setLabelEditorOpen(false)} disabled={creatingLabel}>
-              Annuler
-            </Button>
-            <Button onClick={submitLabelCreation} disabled={!selectedOrder || creatingLabel}>
-              {creatingLabel ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Truck className="w-4 h-4 mr-2" />}
-              Générer l'étiquette
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
