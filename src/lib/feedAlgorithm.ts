@@ -376,3 +376,32 @@ export function getWeeklyUsage(): number[] {
     return [0, 0, 0, 0, 0, 0, 0];
   }
 }
+
+// ── DB-backed algorithm config (Zeus can modify these) ──
+let _cachedAlgoConfig: Record<string, any> | null = null;
+let _cacheTime = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5 min
+
+export async function loadAlgorithmConfig(): Promise<Record<string, any>> {
+  if (_cachedAlgoConfig && Date.now() - _cacheTime < CACHE_TTL) {
+    return _cachedAlgoConfig;
+  }
+  try {
+    const { data } = await supabase
+      .from('feed_algorithm_config')
+      .select('key, value');
+    if (data) {
+      const config: Record<string, any> = {};
+      data.forEach((row: any) => { config[row.key] = row.value; });
+      _cachedAlgoConfig = config;
+      _cacheTime = Date.now();
+      return config;
+    }
+  } catch {}
+  return {};
+}
+
+export function invalidateAlgoConfigCache() {
+  _cachedAlgoConfig = null;
+  _cacheTime = 0;
+}
