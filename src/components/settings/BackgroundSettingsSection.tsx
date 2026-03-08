@@ -36,7 +36,7 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      toast({ title: 'Format non supporté', variant: 'destructive' });
+      toast.error('Format non supporté');
       return;
     }
 
