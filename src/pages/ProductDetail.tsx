@@ -5,10 +5,11 @@ import { useProduct, useAddToCart } from '@/hooks/useMarketplace';
 import { useAuth } from '@/lib/auth';
 import { useProductFavorites, useToggleFavorite } from '@/hooks/useProductFavorites';
 import { ProductReviews } from '@/components/marketplace/ProductReviews';
+import { NegotiationChat } from '@/components/marketplace/NegotiationChat';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { ShoppingCart, BadgeCheck, Star, ArrowLeft, Package, Zap, Wrench, Heart, Store, ChevronLeft, ChevronRight, Truck, MapPin, Download, Shield, MessageCircle, Share2 } from 'lucide-react';
+import { ShoppingCart, BadgeCheck, Star, ArrowLeft, Package, Zap, Wrench, Heart, Store, ChevronLeft, ChevronRight, Truck, MapPin, Download, Shield, MessageCircle, Share2, Tag } from 'lucide-react';
 import { SEOHead } from '@/components/SEOHead';
 import { cn } from '@/lib/utils';
 
@@ -34,6 +35,7 @@ export default function ProductDetailPage() {
   const { data: favorites = [] } = useProductFavorites();
   const toggleFav = useToggleFavorite();
   const [imgIndex, setImgIndex] = useState(0);
+  const [showNegotiation, setShowNegotiation] = useState(false);
 
   if (isLoading) {
     return (
@@ -256,7 +258,8 @@ export default function ProductDetailPage() {
                   )}
                 </div>
               </div>
-              <Button variant="outline" size="sm" className="rounded-xl text-xs gap-1">
+              <Button variant="outline" size="sm" className="rounded-xl text-xs gap-1"
+                onClick={() => setShowNegotiation(true)}>
                 <MessageCircle className="w-3.5 h-3.5" />
                 Contact
               </Button>
@@ -277,6 +280,16 @@ export default function ProductDetailPage() {
             <p className="text-lg font-extrabold tracking-tight">{product.price.toFixed(2)} €</p>
             {hasDiscount && <p className="text-[11px] text-muted-foreground line-through">{product.compare_at_price!.toFixed(2)} €</p>}
           </div>
+          {!isOwnProduct && !isOutOfStock && (
+            <Button
+              variant="outline"
+              className="h-12 rounded-2xl text-sm font-bold gap-1.5 border-primary/30"
+              onClick={() => setShowNegotiation(true)}
+            >
+              <Tag className="w-4 h-4" />
+              Négocier
+            </Button>
+          )}
           <Button
             className="premium-button flex-1 h-12 text-sm font-bold rounded-2xl"
             onClick={() => addToCart.mutate({ productId: product.id })}
@@ -287,6 +300,15 @@ export default function ProductDetailPage() {
           </Button>
         </div>
       </div>
+
+      {/* Negotiation Chat */}
+      {product && seller && (
+        <NegotiationChat
+          open={showNegotiation}
+          onOpenChange={setShowNegotiation}
+          product={product as any}
+        />
+      )}
     </AppLayout>
   );
 }

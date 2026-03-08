@@ -9,7 +9,7 @@ import { CartSheet } from '@/components/marketplace/CartSheet';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Store, Plus, ShoppingBag, Sparkles, Flame, Clock, SlidersHorizontal, X, Heart, TrendingUp, Tag, MapPin, Globe, Truck, Package, CheckCircle, AlertCircle, Copy } from 'lucide-react';
+import { Search, Store, Plus, ShoppingBag, Sparkles, Flame, Clock, SlidersHorizontal, X, Heart, TrendingUp, Tag, MapPin, Globe, Truck, Package, CheckCircle, AlertCircle, Copy, Star } from 'lucide-react';
 import { SellerDashboard } from '@/components/marketplace/SellerDashboard';
 import { SEOHead } from '@/components/SEOHead';
 import { CreateProductDialog } from '@/components/marketplace/CreateProductDialog';
@@ -22,6 +22,28 @@ import { COUNTRIES, GEO_DATA } from '@/lib/geoData';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { SellerReviewDialog } from '@/components/marketplace/SellerReviewDialog';
+import { useHasReviewedOrder } from '@/hooks/useSellerReviews';
+
+function ReviewSellerButton({ order }: { order: any }) {
+  const [showReview, setShowReview] = useState(false);
+  const { data: hasReviewed } = useHasReviewedOrder(order.id);
+  const sellerProfileId = order.order_items?.[0]?.seller_id;
+  if (!sellerProfileId || hasReviewed) return null;
+  return (
+    <>
+      <Button variant="outline" size="sm" className="w-full rounded-xl text-xs gap-1.5 mt-1" onClick={() => setShowReview(true)}>
+        <Star className="w-3.5 h-3.5" /> Évaluer le vendeur
+      </Button>
+      <SellerReviewDialog
+        open={showReview}
+        onOpenChange={setShowReview}
+        sellerProfileId={sellerProfileId}
+        orderId={order.id}
+      />
+    </>
+  );
+}
 
 const CATEGORIES = [
   { value: 'all', label: 'Tout', icon: '🔥' },
@@ -514,6 +536,11 @@ export default function Marketplace() {
                       <span className="text-xs text-muted-foreground">Total</span>
                       <span className="text-sm font-bold text-foreground">{order.total?.toFixed(2)} €</span>
                     </div>
+
+                    {/* Review seller button for delivered orders */}
+                    {order.status === 'delivered' && (
+                      <ReviewSellerButton order={order} />
+                    )}
                   </div>
                 );
               })
