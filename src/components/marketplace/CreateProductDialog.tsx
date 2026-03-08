@@ -14,17 +14,7 @@ import { MARKETPLACE_CATEGORIES } from '@/lib/marketplaceCategories';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 
-const CATEGORIES = [
-  { value: 'general', label: 'Autre' },
-  { value: 'fashion', label: 'Mode' },
-  { value: 'electronics', label: 'Tech' },
-  { value: 'phones', label: 'Téléphonie' },
-  { value: 'art', label: 'Art & Créations' },
-  { value: 'beauty', label: 'Beauté' },
-  { value: 'home', label: 'Maison' },
-  { value: 'sports', label: 'Sport' },
-  { value: 'books', label: 'Livres' },
-];
+const CATEGORIES = MARKETPLACE_CATEGORIES;
 
 const COLORS = [
   'Noir', 'Blanc', 'Rouge', 'Bleu', 'Vert', 'Jaune', 'Rose', 'Violet', 'Orange', 'Gris', 'Marron', 'Beige', 'Multicolore', 'Autre',

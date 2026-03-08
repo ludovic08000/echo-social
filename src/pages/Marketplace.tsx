@@ -46,18 +46,7 @@ function ReviewSellerButton({ order }: { order: any }) {
   );
 }
 
-const CATEGORIES = [
-  { value: 'all', label: 'Tout', icon: '🔥' },
-  { value: 'fashion', label: 'Mode', icon: '👗' },
-  { value: 'electronics', label: 'Tech', icon: '📱' },
-  { value: 'art', label: 'Art', icon: '🎨' },
-  { value: 'beauty', label: 'Beauté', icon: '💄' },
-  { value: 'home', label: 'Maison', icon: '🏠' },
-  { value: 'sports', label: 'Sport', icon: '⚽' },
-  { value: 'books', label: 'Livres', icon: '📚' },
-  { value: 'phones', label: 'Téléphonie', icon: '📞' },
-  { value: 'general', label: 'Autre', icon: '📦' },
-];
+const CATEGORIES = BROWSE_CATEGORIES;
 
 const SORT_OPTIONS = [
   { value: 'recent', label: 'Récents', icon: Clock },
