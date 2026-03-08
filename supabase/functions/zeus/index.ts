@@ -824,7 +824,7 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
       if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
       return new Response(JSON.stringify({ success: true, key, reason, new_value: merged }), { headers: { ...cors, "Content-Type": "application/json" } });
     }
-    return new Response(JSON.stringify({ error: "Action non supportée" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: "Action non supportée", proposalAction, normalizedProposalAction, key: !!key, updates: !!updates }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
   }
 
   if (action === "chat") {
