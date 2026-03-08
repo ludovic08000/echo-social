@@ -635,8 +635,9 @@ export default function Profile() {
                   <Button variant="secondary" className="flex-1 rounded-xl h-10 text-sm">
                     <MessageCircle className="w-4 h-4 mr-2" />
                     Envoyer un message
-                  </Button>
-                  <ReportFakeAccountButton reportedUserId={userId!} />
+                   </Button>
+                   {isCreator && <TipButton creatorId={userId!} creatorName={profile.name} />}
+                   <ReportFakeAccountButton reportedUserId={userId!} />
                 </>
               )}
             </div>
