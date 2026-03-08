@@ -56,6 +56,9 @@ export function SellerDashboard() {
     const relayAddress = order.shipping_relay_address || '';
     const relayCity = `${order.shipping_relay_postcode || ''} ${order.shipping_relay_city || ''}`.trim();
     const date = new Date(order.created_at).toLocaleDateString('fr-FR');
+    const weightGrams = Math.max(100, Number(orderWeights[order.id]) || 500);
+    const shippingCost = estimateRelayShipping(weightGrams);
+    const weightLabel = weightGrams >= 1000 ? `${(weightGrams / 1000).toFixed(1)} kg` : `${weightGrams} g`;
 
     const html = `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="utf-8"><title>Bordereau ${order.order_number}</title>
