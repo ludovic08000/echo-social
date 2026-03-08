@@ -150,6 +150,43 @@ export default function CreatorUpgrade() {
           ))}
         </div>
 
+        {/* Revenue unlock banner */}
+        {!revenueEnabled && !statsLoading && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35 }}
+            className="rounded-2xl p-5 border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/5"
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center">
+                <Lock className="w-5 h-5 text-amber-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-sm">Revenus Créateur</h3>
+                <p className="text-xs text-muted-foreground">Débloqué à 100 000 inscrits</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" />{formatCount(userCount)} inscrits</span>
+                <span>{formatCount(threshold)} requis</span>
+              </div>
+              <div className="w-full h-2.5 rounded-full bg-muted overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full bg-gradient-to-r from-amber-500 to-orange-500"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.min(100, (userCount / threshold) * 100)}%` }}
+                  transition={{ duration: 1, delay: 0.5, ease: 'easeOut' }}
+                />
+              </div>
+              <p className="text-[10px] text-muted-foreground text-center">
+                Les tips et la monétisation seront activés une fois ce palier atteint 🚀
+              </p>
+            </div>
+          </motion.div>
+        )}
+
         {/* CTA */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
