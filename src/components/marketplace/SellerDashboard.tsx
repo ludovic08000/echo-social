@@ -3,11 +3,15 @@ import { useSellerProfile, useCreateSellerProfile, useSellerProducts, useDeleteP
 import { useSellerOrders } from '@/hooks/useSellerOrders';
 import { CreateProductDialog } from './CreateProductDialog';
 import { OrderTracking } from './OrderTracking';
+import { SalesAnalytics } from './SalesAnalytics';
+import { OrdersTable } from './OrdersTable';
+import { AIProductHelper } from './AIProductHelper';
+import { AISalesCoach } from './AISalesCoach';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Store, Package, TrendingUp, Trash2, Eye, Truck, Loader2, CheckCircle2, Video, ShieldCheck, ShieldAlert, Upload, FileText } from 'lucide-react';
+import { Store, Package, TrendingUp, Trash2, Eye, Truck, Loader2, CheckCircle2, Video, ShieldCheck, ShieldAlert, Upload, FileText, BarChart3, Bot, Sparkles } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
