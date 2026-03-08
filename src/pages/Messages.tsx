@@ -565,6 +565,8 @@ function ChatView({ conversationId }: { conversationId: string }) {
   const { data: conversations } = useConversations();
   const { data: messages, isLoading } = useMessages(conversationId);
   const sendMessage = useSendMessage();
+  const deleteForMe = useDeleteMessageForMe();
+  const deleteForEveryone = useDeleteMessageForEveryone();
   const markRead = useMarkConversationRead();
   const [newMessage, setNewMessage] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
