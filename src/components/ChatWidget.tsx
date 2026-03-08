@@ -456,6 +456,30 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       </div>
 
+      {/* Pending message request banner */}
+      {hasPending && (
+        <div className="mx-2 mt-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2.5">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1">📩 Demande de message</p>
+          <p className="text-[10px] text-muted-foreground mb-2">Cette personne ne fait pas partie de vos amis. Voulez-vous accepter ses messages ?</p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => acceptRequest.mutate(conversationId)}
+              disabled={acceptRequest.isPending}
+              className="px-3 py-1 rounded-full bg-primary text-primary-foreground text-[10px] font-medium hover:bg-primary/90 transition-colors"
+            >
+              ✅ Accepter
+            </button>
+            <button
+              onClick={() => rejectRequest.mutate(conversationId)}
+              disabled={rejectRequest.isPending}
+              className="px-3 py-1 rounded-full bg-destructive/10 text-destructive text-[10px] font-medium hover:bg-destructive/20 transition-colors"
+            >
+              🚫 Refuser
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto overflow-x-visible px-3 py-2 space-y-0.5 relative">
         {isLoading ? (
