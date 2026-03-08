@@ -100,7 +100,7 @@ export function SellerDashboard() {
       setLabelEditorOpen(false);
       setSelectedOrder(null);
     } catch (e: any) {
-      toast.error(e.message || 'Erreur lors de la création de l\'étiquette');
+      toast.error(e.message || "Erreur lors de la création de l'étiquette");
     } finally {
       setCreatingLabel(false);
       setShippingOrderId(null);
@@ -110,7 +110,6 @@ export function SellerDashboard() {
   const handlePackingVideoUpload = async (orderId: string, file: File) => {
     setUploadingVideo(orderId);
     try {
-      // Upload to videos bucket
       const ext = file.name.split('.').pop() || 'mp4';
       const filePath = `packing/${orderId}_${Date.now()}.${ext}`;
       const { error: uploadError } = await supabase.storage
@@ -125,7 +124,6 @@ export function SellerDashboard() {
       setUploadingVideo(null);
       setAnalyzingVideo(orderId);
 
-      // Send to AI for analysis
       const { data, error } = await supabase.functions.invoke('verify-packing-video', {
         body: { order_id: orderId, video_url: publicUrl },
       });
@@ -134,13 +132,13 @@ export function SellerDashboard() {
       if (data?.error) throw new Error(data.error);
 
       if (data.status === 'verified') {
-        toast.success('✅ Vidéo d\'emballage vérifiée ! Vous pouvez maintenant créer l\'étiquette.');
+        toast.success("✅ Vidéo d'emballage vérifiée ! Vous pouvez créer l'étiquette.");
       } else {
         toast.error(`❌ Vidéo rejetée : ${data.analysis?.summary || 'Manipulation détectée'}`);
       }
       refetchOrders();
     } catch (e: any) {
-      toast.error(e.message || 'Erreur lors de l\'upload vidéo');
+      toast.error(e.message || "Erreur lors de l'upload vidéo");
     } finally {
       setUploadingVideo(null);
       setAnalyzingVideo(null);
@@ -150,14 +148,12 @@ export function SellerDashboard() {
   const markAsDelivered = async (order: any) => {
     setMarkingDelivered(order.id);
     try {
-      // Update order status to delivered
       const { error: orderError } = await supabase
         .from('orders')
         .update({ status: 'delivered' as any, delivered_at: new Date().toISOString() })
         .eq('id', order.id);
       if (orderError) throw orderError;
 
-      // Deactivate all products from this order
       const productIds = (order.order_items || []).map((item: any) => item.product_id).filter(Boolean);
       if (productIds.length > 0) {
         const { error: productError } = await supabase
@@ -224,17 +220,13 @@ export function SellerDashboard() {
     const focusOrderId = searchParams.get('order_success');
     if (!focusOrderId || autoOpenedOrderRef.current === focusOrderId) return;
 
-    // If orders haven't loaded yet, trigger a refetch and wait
     if (orders.length === 0) {
       refetchOrders();
       return;
     }
 
     const orderToEdit = orders.find((order: any) => order.id === focusOrderId);
-    if (!orderToEdit) {
-      // Order might not belong to this seller, just skip
-      return;
-    }
+    if (!orderToEdit) return;
 
     setSellerTab('orders');
     openLabelEditor(orderToEdit);
@@ -273,6 +265,63 @@ export function SellerDashboard() {
       </Card>
     );
   }
+
+  const needsPackingVideo = (order: any) => order.total >= 100 && order.packing_video_status !== 'verified';
+
+  const renderPackingVideoSection = (order: any) => {
+    if (order.total < 100 || order.status !== 'paid') return null;
+    const status = order.packing_video_status || 'none';
+
+    return (
+      <div className="rounded-xl border border-border/50 p-3 space-y-2">
+        <div className="flex items-center gap-2 text-xs font-semibold">
+          <Video className="w-4 h-4 text-primary" />
+          Vidéo d'emballage obligatoire (+100€)
+        </div>
+
+        {status === 'none' && (
+          <>
+            <p className="text-[11px] text-muted-foreground">Filmez l'emballage sans coupure. L'IA vérifiera l'authenticité.</p>
+            <label className="cursor-pointer">
+              <input type="file" accept="video/*" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePackingVideoUpload(order.id, f); }}
+                disabled={!!uploadingVideo || !!analyzingVideo} />
+              <div className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors">
+                {uploadingVideo === order.id ? (<><Loader2 className="w-4 h-4 animate-spin" /> Upload...</>)
+                  : analyzingVideo === order.id ? (<><Loader2 className="w-4 h-4 animate-spin" /> Analyse IA...</>)
+                  : (<><Upload className="w-4 h-4" /> Uploader la vidéo</>)}
+              </div>
+            </label>
+          </>
+        )}
+
+        {status === 'analyzing' && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Analyse IA en cours...</div>
+        )}
+
+        {status === 'verified' && (
+          <div className="flex items-center gap-2 text-xs text-green-600"><ShieldCheck className="w-4 h-4" /> Vidéo vérifiée ✓</div>
+        )}
+
+        {(status === 'rejected' || status === 'error') && (
+          <div className="space-y-1.5">
+            <div className={`flex items-center gap-2 text-xs ${status === 'rejected' ? 'text-destructive' : 'text-muted-foreground'}`}>
+              <ShieldAlert className="w-4 h-4" />
+              {status === 'rejected' ? 'Vidéo rejetée — Manipulation détectée' : 'Erreur — Réessayer'}
+            </div>
+            <label className="cursor-pointer">
+              <input type="file" accept="video/*" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePackingVideoUpload(order.id, f); }}
+                disabled={!!uploadingVideo || !!analyzingVideo} />
+              <div className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors">
+                <Upload className="w-4 h-4" /> {status === 'rejected' ? 'Renvoyer une vidéo' : 'Réessayer'}
+              </div>
+            </label>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -414,21 +463,22 @@ export function SellerDashboard() {
                       ))}
                     </div>
 
-                    {/* Actions */}
+                    {/* Packing video for orders >= 100€ */}
+                    {renderPackingVideoSection(order)}
+
+                    {/* Actions - block label if video not verified for orders >= 100€ */}
                     {(order.status === 'paid' || (order.status === 'shipped' && !order.shipping_label_url)) && (
-                      <Button
-                        size="sm"
-                        className="w-full"
-                        onClick={() => openLabelEditor(order)}
-                        disabled={creatingLabel && shippingOrderId === order.id}
-                      >
-                        {creatingLabel && shippingOrderId === order.id ? (
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                          <Truck className="w-4 h-4 mr-2" />
-                        )}
-                        {order.status === 'shipped' ? 'Régénérer l’étiquette Mondial Relay' : 'Éditer & créer étiquette Mondial Relay'}
-                      </Button>
+                      needsPackingVideo(order) ? (
+                        <p className="text-[11px] text-muted-foreground text-center py-1">⚠️ Vidéo d'emballage requise avant de générer l'étiquette</p>
+                      ) : (
+                        <Button size="sm" className="w-full" onClick={() => openLabelEditor(order)}
+                          disabled={creatingLabel && shippingOrderId === order.id}>
+                          {creatingLabel && shippingOrderId === order.id ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (<Truck className="w-4 h-4 mr-2" />)}
+                          {order.status === 'shipped' ? "Régénérer l'étiquette" : "Créer étiquette Mondial Relay"}
+                        </Button>
+                      )
                     )}
 
                     {order.shipping_label_url && (
@@ -473,7 +523,7 @@ export function SellerDashboard() {
           <DialogHeader>
             <DialogTitle>Édition étiquette Mondial Relay</DialogTitle>
             <DialogDescription>
-              Renseigne le colis avant génération de l’étiquette pour {selectedOrder?.order_number || 'la commande'}.
+              Renseigne le colis avant génération de l'étiquette pour {selectedOrder?.order_number || 'la commande'}.
             </DialogDescription>
           </DialogHeader>
 
@@ -535,7 +585,7 @@ export function SellerDashboard() {
             </Button>
             <Button onClick={submitLabelCreation} disabled={!selectedOrder || creatingLabel}>
               {creatingLabel ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Truck className="w-4 h-4 mr-2" />}
-              Générer l’étiquette
+              Générer l'étiquette
             </Button>
           </DialogFooter>
         </DialogContent>
