@@ -360,12 +360,12 @@ serve(async (req) => {
         <Currency>EUR</Currency>
       </ShipmentValue>
       <DeliveryMode>
-        <Mode>24R</Mode>
-        <Location>${escXml(relayLocation)}</Location>
+        <mode>24R</mode>
+        <location>${escXml(relayLocation)}</location>
       </DeliveryMode>
       <CollectionMode>
-        <Mode>REL</Mode>
-        <Location>${escXml(relayLocation)}</Location>
+        <mode>REL</mode>
+        <location>${escXml(relayLocation)}</location>
       </CollectionMode>
       <Sender>
         <Address>
