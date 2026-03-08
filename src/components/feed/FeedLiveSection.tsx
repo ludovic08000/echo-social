@@ -97,7 +97,19 @@ function LiveCard({ item }: { item: { id: string; title: string; thumbnail_url: 
       onMouseLeave={handleMouseLeave}
     >
       {/* Background: video preview > thumbnail > gradient placeholder */}
-      {hasVideo ? (
+      {/* Thumbnail image (always shown as base layer if available) */}
+      {(hasThumbnail || hasVideo) && (
+        <img
+          src={item.thumbnail_url || undefined}
+          alt={item.title}
+          loading="lazy"
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ display: item.thumbnail_url ? 'block' : 'none' }}
+        />
+      )}
+
+      {/* Video only loads on hover for perf */}
+      {hasVideo && isHovering && (
         <video
           ref={videoRef}
           src={item.recording_url!}
@@ -105,10 +117,12 @@ function LiveCard({ item }: { item: { id: string; title: string; thumbnail_url: 
           muted
           loop
           playsInline
-          preload="metadata"
-          poster={item.thumbnail_url || undefined}
+          preload="none"
+          autoPlay
         />
-      ) : hasThumbnail ? (
+      )}
+
+      {!hasThumbnail && !hasVideo ? (
         <img
           src={item.thumbnail_url!}
           alt={item.title}
