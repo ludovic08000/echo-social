@@ -173,9 +173,7 @@ Only output valid JSON.`;
             recent_history: recentFeedback || [],
           });
 
-          // Call AI then store rules
-          const aiResult = await callAI(LOVABLE_API_KEY, systemPrompt, userPrompt);
-          
+          const aiResult = await callAI(LOVABLE_API_KEY, systemPrompt, userPrompt, "google/gemini-2.5-flash");
           if (aiResult?.new_rules && Array.isArray(aiResult.new_rules)) {
             for (const rule of aiResult.new_rules) {
               await supabase.from("ai_learned_rules").insert({
@@ -267,15 +265,21 @@ Only output valid JSON. Keep the same language and tone.`;
         );
     }
 
-    const result = await callAI(LOVABLE_API_KEY, systemPrompt, userPrompt);
+    // Choose model based on task complexity
+    const cheapActions = ["moderate", "analyze_sentiment", "smart_reply"];
+    const model = cheapActions.includes(action)
+      ? "google/gemini-2.5-flash-lite"  // Fast & cheap for simple classification
+      : "google/gemini-2.5-flash";       // Better for complex generation
 
-    // Cache moderation results server-side
+    const result = await callAI(LOVABLE_API_KEY, systemPrompt, userPrompt, model);
+
+    // Cache moderation results server-side (6 hours instead of 1)
     if (action === "moderate" && result && text) {
       const contentHash = hashContent(text.trim().toLowerCase());
       await supabase.from("ai_moderation_cache").upsert({
         content_hash: contentHash,
         result,
-        expires_at: new Date(Date.now() + 3600000).toISOString(),
+        expires_at: new Date(Date.now() + 6 * 3600000).toISOString(), // 6h cache
       }, { onConflict: "content_hash" }).select();
     }
 
@@ -292,7 +296,7 @@ Only output valid JSON. Keep the same language and tone.`;
   }
 });
 
-async function callAI(apiKey: string, systemPrompt: string, userPrompt: string) {
+async function callAI(apiKey: string, systemPrompt: string, userPrompt: string, model = "google/gemini-2.5-flash") {
   const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -300,7 +304,7 @@ async function callAI(apiKey: string, systemPrompt: string, userPrompt: string) 
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "google/gemini-3-flash-preview",
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },

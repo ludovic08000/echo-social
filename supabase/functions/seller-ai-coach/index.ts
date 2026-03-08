@@ -157,7 +157,7 @@ serve(async (req) => {
 
     let systemPrompt = "";
     let userMessages: any[] = [];
-    let model = "google/gemini-3-flash-preview";
+    let model = "google/gemini-2.5-flash";
 
     if (action === "generate_description") {
       const { productInfo, category, price } = body;

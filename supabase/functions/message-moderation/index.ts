@@ -58,6 +58,17 @@ Deno.serve(async (req) => {
         });
       }
 
+      // Skip AI for very short messages (< 15 chars) — too short to be harmful, use basic check
+      if (messageBody.length < 15) {
+        const result = basicModeration(messageBody);
+        if (!result.safe && messageId) {
+          await supabase.from("messages").update({ status: "blocked" }).eq("id", messageId);
+        }
+        return new Response(JSON.stringify(result), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       // Check cache first
       const contentHash = await hashContent(messageBody);
       const { data: cached } = await supabase
@@ -162,11 +173,11 @@ Réponds UNIQUEMENT avec la fonction tool_call fournie.`,
         // If parsing fails, default to safe
       }
 
-      // Cache the result (1 hour)
+      // Cache the result (6 hours instead of 1)
       await supabase.from("ai_moderation_cache").insert({
         content_hash: contentHash,
         result: moderationResult,
-        expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        expires_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
       });
 
       // If unsafe and high confidence, block the message

@@ -101,7 +101,7 @@ Sois concis, enthousiaste et professionnel. Utilise des emojis avec parcimonie. 
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-3-flash-preview",
+          model: "google/gemini-2.5-flash",
           messages: [
             { role: "system", content: systemPrompt },
             ...messages,
@@ -211,7 +211,7 @@ Sois concis, enthousiaste et professionnel. Utilise des emojis avec parcimonie. 
       method: "POST",
       headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: "google/gemini-2.5-flash",
         messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
       }),
     });

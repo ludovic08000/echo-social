@@ -103,10 +103,14 @@ export function useAIEngine() {
     }
   }, [user?.id]);
 
-  // ── Moderation (cache géré côté serveur) ──
+  // ── Moderation (cache géré côté serveur + skip court côté client) ──
   const moderate = useCallback(async (text: string): Promise<ModerationResult | null> => {
     if (!text || text.trim().length < 3) {
       return { safe: true, score: 0, categories: [], sentiment: 'neutral', emotion: 'trust', confidence: 100, suggestion: '', auto_action: 'allow' };
+    }
+    // Skip AI call for very short text — too short to be harmful
+    if (text.trim().length < 15) {
+      return { safe: true, score: 0, categories: [], sentiment: 'neutral', emotion: 'trust', confidence: 80, suggestion: '', auto_action: 'allow' };
     }
     return callEngine<ModerationResult>('moderate', 'ai-moderator', { text });
   }, [callEngine]);

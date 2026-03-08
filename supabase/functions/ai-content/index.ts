@@ -90,6 +90,12 @@ serve(async (req) => {
       userPrompt = text;
     }
 
+    // Use cheaper model for simple tasks (correct, translate), better model for creative tasks
+    const cheapActions = ["correct", "translate"];
+    const model = cheapActions.includes(action)
+      ? "google/gemini-2.5-flash-lite"
+      : "google/gemini-2.5-flash";
+
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -97,7 +103,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
