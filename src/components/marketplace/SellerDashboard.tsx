@@ -217,6 +217,7 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
               placeholder="Nom de votre boutique"
             />
             <Button
+              variant="premium"
               onClick={() => createSeller.mutate(storeName)}
               disabled={!storeName.trim() || createSeller.isPending}
             >
