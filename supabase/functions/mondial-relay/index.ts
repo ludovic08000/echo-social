@@ -581,6 +581,15 @@ serve(async (req) => {
       const { tracking_number } = body;
       if (!tracking_number) throw new Error("Numéro de suivi requis");
 
+      // Sandbox tracking numbers can't be tracked
+      if (tracking_number === "SANDBOX MODE" || tracking_number.startsWith("0003")) {
+        return new Response(JSON.stringify({
+          events: [{ date: new Date().toISOString().split("T")[0], status: "Expédition enregistrée (mode sandbox)", location: "" }],
+          tracking_number,
+          sandbox: true,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       const params: Record<string, string> = {
         Enseigne: enseigne,
         Expedition: tracking_number,
@@ -591,7 +600,14 @@ serve(async (req) => {
       const xml = await callMondialRelay("WSI2_TracingColisDetaille", params);
       const stat = extractXmlValue(xml, 'STAT');
 
+      // Code 95 = shipment not found yet (just created, not scanned)
       if (stat !== '0') {
+        if (stat === '95') {
+          return new Response(JSON.stringify({
+            events: [{ date: new Date().toISOString().split("T")[0], status: "En attente de prise en charge", location: "" }],
+            tracking_number,
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
         throw new Error(`Erreur suivi Mondial Relay (code ${stat})`);
       }
 
