@@ -28,13 +28,16 @@ const GIFTS = [
 export function TipButton({ creatorId, creatorName }: TipButtonProps) {
   const { user } = useAuth();
   const { enabled: revenueEnabled } = useIsCreatorRevenueEnabled();
+  const eligibility = useCreatorEligibility();
   const [open, setOpen] = useState(false);
   const [selectedGift, setSelectedGift] = useState<typeof GIFTS[0] | null>(null);
   const [customAmount, setCustomAmount] = useState('');
   const [showCustom, setShowCustom] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  if (!revenueEnabled) {
+  const canReceiveTips = revenueEnabled && eligibility.eligible;
+
+  if (!canReceiveTips) {
     return (
       <Button variant="ghost" size="sm" disabled className="gap-1.5 text-muted-foreground">
         <Lock className="w-4 h-4" />
