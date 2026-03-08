@@ -109,18 +109,36 @@ export function useConversations() {
       });
 
       return conversations.map(conv => {
-        const otherUserId = participantMap.get(conv.id);
-        const profile = otherUserId ? profileMap.get(otherUserId) : null;
+        const isGroup = (conv as any).is_group || false;
+        const groupName = (conv as any).name || null;
+
+        // Get all other participants for this conversation
+        const convParticipants = (allParticipants || [])
+          .filter(p => p.conversation_id === conv.id)
+          .map(p => {
+            const profile = profileMap.get(p.user_id);
+            return {
+              user_id: p.user_id,
+              name: profile?.name || 'Unknown',
+              avatar_url: profile?.avatar_url || null,
+            };
+          });
+
+        // For 1:1 conversations, use the first (only) other participant
+        const firstParticipant = convParticipants[0];
 
         return {
           id: conv.id,
           created_at: conv.created_at,
           updated_at: conv.updated_at,
-          participant: {
-            user_id: otherUserId || '',
-            name: profile?.name || 'Unknown',
-            avatar_url: profile?.avatar_url || null,
+          is_group: isGroup,
+          name: groupName,
+          participant: firstParticipant || {
+            user_id: '',
+            name: 'Unknown',
+            avatar_url: null,
           },
+          participants: isGroup ? convParticipants : undefined,
           last_message: lastMessageMap.get(conv.id),
           unread_count: unreadCounts[conv.id] || 0,
         } as Conversation;
