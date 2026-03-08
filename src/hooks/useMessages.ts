@@ -525,8 +525,8 @@ export function useRejectMessageRequest() {
 
   return useMutation({
     mutationFn: async (conversationId: string) => {
-      const { data, error } = await supabase.functions.invoke('message-moderation', {
-        body: { action: 'reject_request', conversationId },
+      const { data, error } = await supabase.functions.invoke('zeus', {
+        body: { domain: 'moderation', action: 'reject_request', conversationId },
       });
       if (error) throw error;
       return data;

@@ -96,6 +96,7 @@ export function AISalesCoach({
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
           body: JSON.stringify({
+            domain: 'seller',
             action: 'coach_chat',
             messages: allMessages,
             context,
