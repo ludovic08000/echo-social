@@ -66,7 +66,6 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
   const [city, setCity] = useState('');
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiResult, setAiResult] = useState('');
-  const [city, setCity] = useState('');
 
   const regions = useMemo(() => {
     const data = GEO_DATA[country];
