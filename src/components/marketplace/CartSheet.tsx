@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,6 +38,7 @@ export function CartSheet() {
   const [showRelayPicker, setShowRelayPicker] = useState(false);
   const [packageWeight, setPackageWeight] = useState('500');
   const [packageParcels, setPackageParcels] = useState('1');
+  const packageSectionRef = useRef<HTMLDivElement | null>(null);
 
   // Check if cart has physical products
   const hasPhysical = cart.some((item) => item.products?.product_type === 'physical');
@@ -54,8 +55,16 @@ export function CartSheet() {
   const shippingEstimate = hasPhysical && selectedRelay
     ? estimateRelayShipping(weightGrams, parcelsCount)
     : 0;
+  const checkoutBlockedByRelay = hasPhysical && !selectedRelay;
 
   const total = subtotal + buyerFee + shippingEstimate;
+
+  useEffect(() => {
+    if (!selectedRelay) return;
+    requestAnimationFrame(() => {
+      packageSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }, [selectedRelay]);
 
   const handleCheckout = async (testMode = false) => {
     if (cart.length === 0) return;
@@ -232,36 +241,42 @@ export function CartSheet() {
                     />
                   )}
 
-                  {selectedRelay && (
-                    <div className="rounded-lg border border-border/60 bg-card/60 p-3 space-y-2">
-                      <p className="text-xs font-medium">Détails colis pour estimation</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <p className="text-[11px] text-muted-foreground">Poids (g)</p>
-                          <Input
-                            type="number"
-                            min={100}
-                            value={packageWeight}
-                            onChange={(e) => setPackageWeight(e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-[11px] text-muted-foreground">Nombre de colis</p>
-                          <Input
-                            type="number"
-                            min={1}
-                            value={packageParcels}
-                            onChange={(e) => setPackageParcels(e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                        </div>
-                      </div>
+                  <div ref={packageSectionRef} className="rounded-lg border border-border/60 bg-card/60 p-3 space-y-2">
+                    <p className="text-xs font-medium">Détails colis pour estimation</p>
+                    {!selectedRelay ? (
                       <p className="text-[11px] text-muted-foreground">
-                        Estimation livraison Mondial Relay : <span className="font-semibold text-foreground">{shippingEstimate.toFixed(2)}€</span>
+                        Sélectionne d’abord un point relais pour afficher l’édition du poids et des colis.
                       </p>
-                    </div>
-                  )}
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <p className="text-[11px] text-muted-foreground">Poids (g)</p>
+                            <Input
+                              type="number"
+                              min={100}
+                              value={packageWeight}
+                              onChange={(e) => setPackageWeight(e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[11px] text-muted-foreground">Nombre de colis</p>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={packageParcels}
+                              onChange={(e) => setPackageParcels(e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          Estimation livraison Mondial Relay : <span className="font-semibold text-foreground">{shippingEstimate.toFixed(2)}€</span>
+                        </p>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -291,20 +306,20 @@ export function CartSheet() {
               <Button
                 className="w-full premium-button"
                 onClick={() => handleCheckout(false)}
-                disabled={isCheckingOut || cart.length === 0}
+                disabled={isCheckingOut || cart.length === 0 || checkoutBlockedByRelay}
               >
                 {isCheckingOut ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 ) : (
                   <CreditCard className="w-4 h-4 mr-2" />
                 )}
-                {isCheckingOut ? 'Redirection...' : `Payer ${total.toFixed(2)}€`}
+                {checkoutBlockedByRelay ? 'Choisir un point relais pour continuer' : isCheckingOut ? 'Redirection...' : `Payer ${total.toFixed(2)}€`}
               </Button>
               <Button
                 variant="outline"
                 className="w-full text-xs"
                 onClick={() => handleCheckout(true)}
-                disabled={isCheckingOut || cart.length === 0}
+                disabled={isCheckingOut || cart.length === 0 || checkoutBlockedByRelay}
               >
                 🧪 Commande test (sans paiement)
               </Button>
