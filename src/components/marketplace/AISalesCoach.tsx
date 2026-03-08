@@ -49,11 +49,11 @@ export function AISalesCoach({
 
   const quickPrompts = [
     '📊 Analyse complète de ma boutique',
+    '🏷️ Compare mes prix à la concurrence',
     '📈 Comment augmenter mes ventes ?',
-    '💰 Mes prix sont-ils compétitifs ?',
-    '📸 Conseils pour mes photos produit',
-    '🎯 Stratégie marketing personnalisée',
-    '⚡ Actions prioritaires cette semaine',
+    '🔥 Quelles catégories se vendent le mieux ?',
+    '🎯 Donne-moi un plan d\'action chiffré',
+    '⚡ Score de performance de ma boutique',
   ];
 
   const sendMessage = async (text: string) => {
