@@ -1,7 +1,10 @@
 // ────────────────────────────────────────────────────────
 // Feed Algorithm Engine
 // Anti-spam, anti-bias, configurable scoring, diversity
+// Supports live DB-backed config via feed_algorithm_config table
 // ────────────────────────────────────────────────────────
+
+import { supabase } from '@/integrations/supabase/client';
 
 export interface ContentPrefs {
   feedAlgorithm: 'smart' | 'chronological' | 'friends_first';
