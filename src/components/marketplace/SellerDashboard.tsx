@@ -105,7 +105,35 @@ export function SellerDashboard() {
     }
   };
 
-  const openLabelEditor = (order: any) => {
+  const markAsDelivered = async (order: any) => {
+    setMarkingDelivered(order.id);
+    try {
+      // Update order status to delivered
+      const { error: orderError } = await supabase
+        .from('orders')
+        .update({ status: 'delivered' as any, delivered_at: new Date().toISOString() })
+        .eq('id', order.id);
+      if (orderError) throw orderError;
+
+      // Deactivate all products from this order
+      const productIds = (order.order_items || []).map((item: any) => item.product_id).filter(Boolean);
+      if (productIds.length > 0) {
+        const { error: productError } = await supabase
+          .from('products')
+          .update({ is_active: false })
+          .in('id', productIds);
+        if (productError) console.error('Failed to deactivate products:', productError);
+      }
+
+      toast.success('Commande marquée comme livrée !');
+      refetchOrders();
+    } catch (e: any) {
+      toast.error(e.message || 'Erreur');
+    } finally {
+      setMarkingDelivered(null);
+    }
+  };
+
     setSelectedOrder(order);
     setLabelForm({
       weightGrams: String(order.shipping_weight_grams || 500),
