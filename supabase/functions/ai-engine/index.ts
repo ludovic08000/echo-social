@@ -220,7 +220,7 @@ Only output valid JSON.`;
 - "replies": string[] (exactly 3 suggested replies, short and natural)
 - "tone": string (detected conversation tone)
 Only output valid JSON. Replies should be in the same language as the conversation.`;
-        userPrompt = text || "";
+        userPrompt = safeText;
         break;
       }
 
