@@ -405,9 +405,13 @@ serve(async (req) => {
       const stat = extractXmlValue(xml, 'STAT');
 
       let trackingNumber = extractXmlValue(xml, 'ExpeditionNum');
-      let labelUrl = trackingNumber
-        ? `https://www.mondialrelay.com/ww2/PDF/StickerMaker2.aspx?ens=${enseigne}&expedition=${trackingNumber}&lg=FR&format=A4&crc=`
-        : null;
+      let labelUrl: string | null = null;
+      if (trackingNumber) {
+        // Mondial Relay requires a CRC hash to access the PDF label
+        const crcBase = `${enseigne} ${trackingNumber} FR A4`;
+        const crc = md5Lib(crcBase + privateKey).toUpperCase();
+        labelUrl = `https://www.mondialrelay.com/ww2/PDF/StickerMaker2.aspx?ens=${enseigne}&expedition=${trackingNumber}&lg=FR&format=A4&crc=${crc}`;
+      }
 
       if (stat !== '0') {
         const isTestOrder = (order.order_number || '').startsWith('TEST-');
