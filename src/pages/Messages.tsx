@@ -629,8 +629,8 @@ function ShareContentPicker({ onShare, onClose }: { onShare: (text: string) => v
               }}
               className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-secondary/60 transition-all text-left"
             >
-              {tab === 'products' && item.image_urls?.[0] && (
-                <img src={item.image_urls[0]} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+              {tab === 'products' && item.thumbnail_url && (
+                <img src={item.thumbnail_url} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
               )}
               {tab === 'posts' && item.image_url && (
                 <img src={item.image_url} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
