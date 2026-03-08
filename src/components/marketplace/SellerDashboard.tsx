@@ -88,6 +88,7 @@ ${items.map((item: any) => `<tr><td>${item.title}</td><td style="text-align:cent
 <tr class="total-row"><td colspan="3" style="text-align:right">TOTAL</td><td style="text-align:right">${Number(order.total).toFixed(2)} €</td></tr>
 </tbody></table>
 ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :</strong> ${order.tracking_number}</p>` : ''}
+<p style="margin-bottom:16px"><strong>Poids du colis :</strong> ${weightLabel} · <strong>Frais Mondial Relay :</strong> ${shippingCost.toFixed(2)} €</p>
 <div class="footer"><div class="sig-box">Signature expéditeur</div><div class="sig-box">Signature réceptionnaire</div></div>
 <script>window.onload=()=>window.print()</script>
 </body></html>`;
