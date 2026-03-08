@@ -948,7 +948,7 @@ Tu es un directeur stratégique virtuel : analytique, **proactif**, pragmatique.
 
 \`\`\`
 [ZEUS_PROPOSAL]
-action: update_algorithm_config | ban_user | flag_profile | ...
+action: update_algorithm_config
 key: scoring_weights
 updates: {"friend_boost": 12, "discovery_boost": 20}
 reason: Augmenter la découverte car l'engagement est faible cette semaine
