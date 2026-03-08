@@ -12,6 +12,7 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, useDeleteMessageForMe, useDeleteMessageForEveryone, useHasPendingMessages, useAcceptMessageRequest, useRejectMessageRequest, type Message } from '@/hooks/useMessages';
+import { useNegotiations, useCreateNegotiation, useRespondNegotiation, useAcceptCounterOffer, type Negotiation } from '@/hooks/useNegotiations';
 import { useFriendships } from '@/hooks/useFriendships';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
