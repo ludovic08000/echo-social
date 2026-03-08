@@ -25,16 +25,56 @@ Deno.serve(async (req) => {
     if (authError || !user) throw new Error("Not authenticated");
 
     // R2 config
-    const accountId = Deno.env.get("R2_ACCOUNT_ID");
-    const accessKeyId = Deno.env.get("R2_ACCESS_KEY_ID");
-    const secretAccessKey = Deno.env.get("R2_SECRET_ACCESS_KEY");
-    const bucketName = Deno.env.get("R2_BUCKET_NAME");
-    const publicUrl = Deno.env.get("R2_PUBLIC_URL");
+    const accountId = Deno.env.get("R2_ACCOUNT_ID")!;
+    const accessKeyId = Deno.env.get("R2_ACCESS_KEY_ID")!;
+    const secretAccessKey = Deno.env.get("R2_SECRET_ACCESS_KEY")!;
+    const bucketName = Deno.env.get("R2_BUCKET_NAME")!;
+    const publicUrl = Deno.env.get("R2_PUBLIC_URL")!;
 
     if (!accountId || !accessKeyId || !secretAccessKey || !bucketName || !publicUrl) {
       throw new Error("R2 configuration incomplete");
     }
 
+    const endpoint = `https://${accountId}.r2.cloudflarestorage.com`;
+
+    // --- DELETE ---
+    if (req.method === "DELETE") {
+      const { path } = await req.json();
+      if (!path) throw new Error("No path provided");
+
+      // Security: only allow deleting own files
+      if (!path.includes(`/${user.id}/`)) {
+        throw new Error("Unauthorized: can only delete own files");
+      }
+
+      const url = `${endpoint}/${bucketName}/${path}`;
+      const now = new Date();
+      const dateStamp = now.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+      const shortDate = dateStamp.substring(0, 8);
+      const region = "auto";
+      const credentialScope = `${shortDate}/${region}/s3/aws4_request`;
+
+      const emptyHash = await sha256Hex(new Uint8Array(0));
+      const host = `${accountId}.r2.cloudflarestorage.com`;
+      const headers: Record<string, string> = {
+        host,
+        "x-amz-content-sha256": emptyHash,
+        "x-amz-date": dateStamp,
+      };
+
+      const sig = await sign("DELETE", `/${bucketName}/${path}`, headers, emptyHash, dateStamp, shortDate, credentialScope, accessKeyId, secretAccessKey);
+
+      await fetch(url, {
+        method: "DELETE",
+        headers: { ...headers, Authorization: sig },
+      });
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // --- PUT (upload) ---
     const formData = await req.formData();
     const file = formData.get("file") as File;
     const folder = (formData.get("folder") as string) || "uploads";
@@ -42,10 +82,9 @@ Deno.serve(async (req) => {
     if (!file) throw new Error("No file provided");
 
     const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
+    // Structure: {category}/{user_id}/{timestamp}.{ext}
     const fileName = `${folder}/${user.id}/${Date.now()}.${ext}`;
 
-    // Upload to R2 via S3-compatible API using AWS Signature V4
-    const endpoint = `https://${accountId}.r2.cloudflarestorage.com`;
     const url = `${endpoint}/${bucketName}/${fileName}`;
     const fileBuffer = await file.arrayBuffer();
 
@@ -53,13 +92,10 @@ Deno.serve(async (req) => {
     const dateStamp = now.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
     const shortDate = dateStamp.substring(0, 8);
     const region = "auto";
-    const service = "s3";
-    const credentialScope = `${shortDate}/${region}/${service}/aws4_request`;
+    const credentialScope = `${shortDate}/${region}/s3/aws4_request`;
 
-    // Hash payload
     const payloadHash = await sha256Hex(new Uint8Array(fileBuffer));
 
-    // Canonical headers
     const host = `${accountId}.r2.cloudflarestorage.com`;
     const headers: Record<string, string> = {
       host,
@@ -68,47 +104,11 @@ Deno.serve(async (req) => {
       "content-type": file.type || "application/octet-stream",
     };
 
-    const signedHeaderKeys = Object.keys(headers).sort();
-    const signedHeaders = signedHeaderKeys.join(";");
-    const canonicalHeaders = signedHeaderKeys
-      .map((k) => `${k}:${headers[k]}\n`)
-      .join("");
-
-    const canonicalRequest = [
-      "PUT",
-      `/${bucketName}/${fileName}`,
-      "",
-      canonicalHeaders,
-      signedHeaders,
-      payloadHash,
-    ].join("\n");
-
-    const stringToSign = [
-      "AWS4-HMAC-SHA256",
-      dateStamp,
-      credentialScope,
-      await sha256Hex(new TextEncoder().encode(canonicalRequest)),
-    ].join("\n");
-
-    // Signing key
-    const kDate = await hmacSha256(
-      new TextEncoder().encode(`AWS4${secretAccessKey}`),
-      shortDate
-    );
-    const kRegion = await hmacSha256(kDate, region);
-    const kService = await hmacSha256(kRegion, service);
-    const signingKey = await hmacSha256(kService, "aws4_request");
-
-    const signature = toHex(await hmacSha256(signingKey, stringToSign));
-
-    const authorization = `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+    const authorization = await sign("PUT", `/${bucketName}/${fileName}`, headers, payloadHash, dateStamp, shortDate, credentialScope, accessKeyId, secretAccessKey);
 
     const r2Response = await fetch(url, {
       method: "PUT",
-      headers: {
-        ...headers,
-        Authorization: authorization,
-      },
+      headers: { ...headers, Authorization: authorization },
       body: fileBuffer,
     });
 
@@ -118,7 +118,6 @@ Deno.serve(async (req) => {
       throw new Error(`R2 upload failed: ${r2Response.status}`);
     }
 
-    // Construct public URL
     const fileUrl = `${publicUrl.replace(/\/$/, "")}/${fileName}`;
 
     return new Response(
@@ -134,17 +133,48 @@ Deno.serve(async (req) => {
   }
 });
 
-// --- Crypto helpers ---
+// --- AWS Signature V4 helpers ---
+
+async function sign(
+  method: string,
+  path: string,
+  headers: Record<string, string>,
+  payloadHash: string,
+  dateStamp: string,
+  shortDate: string,
+  credentialScope: string,
+  accessKeyId: string,
+  secretAccessKey: string
+): Promise<string> {
+  const signedHeaderKeys = Object.keys(headers).sort();
+  const signedHeaders = signedHeaderKeys.join(";");
+  const canonicalHeaders = signedHeaderKeys.map((k) => `${k}:${headers[k]}\n`).join("");
+
+  const canonicalRequest = [method, path, "", canonicalHeaders, signedHeaders, payloadHash].join("\n");
+
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    dateStamp,
+    credentialScope,
+    await sha256Hex(new TextEncoder().encode(canonicalRequest)),
+  ].join("\n");
+
+  const kDate = await hmacSha256(new TextEncoder().encode(`AWS4${secretAccessKey}`), shortDate);
+  const kRegion = await hmacSha256(kDate, "auto");
+  const kService = await hmacSha256(kRegion, "s3");
+  const signingKey = await hmacSha256(kService, "aws4_request");
+
+  const signature = toHex(await hmacSha256(signingKey, stringToSign));
+
+  return `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+}
 
 async function sha256Hex(data: Uint8Array): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", data);
   return toHex(new Uint8Array(hash));
 }
 
-async function hmacSha256(
-  key: Uint8Array | ArrayBuffer,
-  message: string
-): Promise<Uint8Array> {
+async function hmacSha256(key: Uint8Array | ArrayBuffer, message: string): Promise<Uint8Array> {
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
     key instanceof Uint8Array ? key : new Uint8Array(key),
@@ -152,16 +182,10 @@ async function hmacSha256(
     false,
     ["sign"]
   );
-  const sig = await crypto.subtle.sign(
-    "HMAC",
-    cryptoKey,
-    new TextEncoder().encode(message)
-  );
+  const sig = await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(message));
   return new Uint8Array(sig);
 }
 
 function toHex(arr: Uint8Array): string {
-  return Array.from(arr)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  return Array.from(arr).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
