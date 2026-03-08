@@ -53,6 +53,7 @@ function useRecentReplays() {
         total_views: l.total_views,
         category: l.category,
         ended_at: l.ended_at,
+        user_id: l.user_id,
         host: profileMap.get(l.user_id),
       })) as ReplayStream[];
     },
