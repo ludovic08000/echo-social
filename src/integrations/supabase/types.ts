@@ -1640,6 +1640,80 @@ export type Database = {
           },
         ]
       }
+      negotiations: {
+        Row: {
+          buyer_id: string
+          conversation_id: string | null
+          counter_price: number | null
+          created_at: string | null
+          id: string
+          offered_price: number
+          order_id: string | null
+          original_price: number
+          product_id: string
+          seller_profile_id: string
+          status: string
+          updated_at: string | null
+        }
+        Insert: {
+          buyer_id: string
+          conversation_id?: string | null
+          counter_price?: number | null
+          created_at?: string | null
+          id?: string
+          offered_price: number
+          order_id?: string | null
+          original_price: number
+          product_id: string
+          seller_profile_id: string
+          status?: string
+          updated_at?: string | null
+        }
+        Update: {
+          buyer_id?: string
+          conversation_id?: string | null
+          counter_price?: number | null
+          created_at?: string | null
+          id?: string
+          offered_price?: number
+          order_id?: string | null
+          original_price?: number
+          product_id?: string
+          seller_profile_id?: string
+          status?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "negotiations_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negotiations_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negotiations_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negotiations_seller_profile_id_fkey"
+            columns: ["seller_profile_id"]
+            isOneToOne: false
+            referencedRelation: "seller_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notification_settings: {
         Row: {
           close_friends_posts_enabled: boolean
