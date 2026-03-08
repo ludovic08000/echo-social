@@ -368,11 +368,19 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
               </div>
             )}
 
-            {/* Weight (for physical) */}
+            {/* Weight & Shipping (auto-calculated) */}
             {productType === 'physical' && (
               <div>
                 <Label>Poids du produit (grammes) *</Label>
-                <Select value={weightGrams} onValueChange={setWeightGrams}>
+                <Select value={weightGrams} onValueChange={(v) => {
+                  setWeightGrams(v);
+                  const w = parseInt(v);
+                  const base = 4.2;
+                  const extra = w <= 500 ? 0 : w <= 1000 ? 0.8 : w <= 2000 ? 1.6 : w <= 5000 ? 2.8 : 4.5;
+                  const estimated = Math.round((base + extra) * 100) / 100;
+                  setShippingPrice(estimated.toString());
+                  setShippingType('standard');
+                }}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="Sélectionner le poids" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="250">250g</SelectItem>
@@ -383,30 +391,16 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
                     <SelectItem value="10000">10 kg</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-[11px] text-muted-foreground mt-1">Les frais Mondial Relay seront calculés automatiquement</p>
+                {weightGrams && shippingPrice && (
+                  <p className="text-[11px] text-primary font-medium mt-1.5">
+                    📦 Frais d'envoi Mondial Relay estimés : {parseFloat(shippingPrice).toFixed(2)} €
+                  </p>
+                )}
+                {!weightGrams && (
+                  <p className="text-[11px] text-muted-foreground mt-1">Sélectionnez le poids pour calculer les frais d'envoi</p>
+                )}
               </div>
             )}
-
-            {/* Shipping */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Livraison</Label>
-                <Select value={shippingType} onValueChange={setShippingType}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {SHIPPING_TYPES.map((s) => (
-                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {shippingType !== 'free' && shippingType !== 'digital' && shippingType !== 'pickup' && (
-                <div>
-                  <Label>Frais (€)</Label>
-                  <Input type="number" min="0" step="0.01" value={shippingPrice} onChange={(e) => setShippingPrice(e.target.value)} placeholder="0.00" className="mt-1" />
-                </div>
-              )}
-            </div>
 
             {/* Location */}
             <div className="space-y-2">
