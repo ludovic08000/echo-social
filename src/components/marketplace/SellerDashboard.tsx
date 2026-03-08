@@ -29,6 +29,7 @@ export function SellerDashboard() {
   const [uploadingVideo, setUploadingVideo] = useState<string | null>(null);
   const [analyzingVideo, setAnalyzingVideo] = useState<string | null>(null);
   const [orderWeights, setOrderWeights] = useState<Record<string, string>>({});
+  const [creatingShipment, setCreatingShipment] = useState<string | null>(null);
 
   const estimateRelayShipping = (weightGrams: number) => {
     const basePerParcel = 4.2;
