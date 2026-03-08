@@ -284,6 +284,15 @@ export default function Marketplace() {
               <Sparkles className="w-4 h-4" />
               Explorer
             </TabsTrigger>
+            <TabsTrigger value="orders" className="flex-1 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-[0_4px_16px_hsl(var(--primary)/0.3)] py-3 text-xs font-bold gap-2 transition-all duration-300 relative">
+              <Package className="w-4 h-4" />
+              Mes achats
+              {myOrders.length > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center px-[3px]">
+                  {myOrders.length}
+                </span>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="seller" className="flex-1 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-[0_4px_16px_hsl(var(--primary)/0.3)] py-3 text-xs font-bold gap-2 transition-all duration-300">
               <Store className="w-4 h-4" />
               Ma boutique
