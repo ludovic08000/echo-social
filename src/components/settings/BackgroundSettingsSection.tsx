@@ -34,14 +34,9 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
 
   // Resolve signed URL for preview
   useEffect(() => {
-    if (currentUrl && currentUrl.startsWith('storage:')) {
-      const storagePath = currentUrl.replace('storage:', '');
-      supabase.storage
-        .from('backgrounds')
-        .createSignedUrl(storagePath, 3600)
-        .then(({ data }) => {
-          setPreviewUrl(data?.signedUrl || null);
-        });
+    if (currentUrl && !currentUrl.startsWith('gradient:') && currentUrl !== '') {
+      // R2 public URLs are directly usable
+      setPreviewUrl(currentUrl);
     } else {
       setPreviewUrl(null);
     }
