@@ -481,20 +481,15 @@ export default function Marketplace() {
 
                     {/* Tracking */}
                     {order.tracking_number && (
-                      <div className="flex items-center gap-2 bg-blue-500/10 rounded-xl px-3 py-2">
+                      <button
+                        onClick={() => window.open(`https://www.mondialrelay.fr/suivi-de-colis/?NumeroExpedition=${order.tracking_number}`, '_blank')}
+                        className="flex items-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 rounded-xl px-3 py-2 w-full transition-colors cursor-pointer"
+                      >
                         <Truck className="w-3.5 h-3.5 text-blue-500" />
                         <span className="text-[10px] text-muted-foreground">Suivi :</span>
-                        <span className="text-xs font-mono font-bold text-blue-600 flex-1">{order.tracking_number}</span>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(order.tracking_number);
-                            toast.success('Numéro de suivi copié !');
-                          }}
-                          className="text-muted-foreground hover:text-primary transition-colors"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                        <span className="text-xs font-mono font-bold text-blue-600 flex-1 text-left">{order.tracking_number}</span>
+                        <span className="text-[10px] text-blue-500 font-semibold">Voir le suivi →</span>
+                      </button>
                     )}
 
                     {/* Relay point info */}
