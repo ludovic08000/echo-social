@@ -1,3 +1,5 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
@@ -7,16 +9,65 @@ const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')!;
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
+// Rate limiting per user
+const rateLimiter = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT = 5;
+const RATE_WINDOW_MS = 60 * 1000;
+
+function checkRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const entry = rateLimiter.get(userId);
+  if (!entry || now > entry.resetAt) {
+    rateLimiter.set(userId, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return true;
+  }
+  if (entry.count >= RATE_LIMIT) return false;
+  entry.count++;
+  return true;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { action, userId, imageUrl } = await req.json();
+    // ─── Auth check (CRITICAL FIX) ───
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Non authentifié' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const userClient = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY')!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: authError } = await userClient.auth.getUser();
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: 'Non authentifié' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Rate limit
+    if (!checkRateLimit(user.id)) {
+      return new Response(JSON.stringify({ error: 'Trop de requêtes' }), {
+        status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const { action, imageUrl } = await req.json();
+    // SECURITY: userId is ALWAYS derived from JWT, never from client
+    const userId = user.id;
 
     if (action === 'analyze_photo') {
-      // Use Gemini to analyze if a profile photo looks suspicious
+      if (!imageUrl || typeof imageUrl !== 'string') {
+        return new Response(JSON.stringify({ error: 'imageUrl requis' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       const analysisPrompt = `Analyze this profile photo for signs of a fake or stolen profile picture. Check for:
 1. Is this likely a stock photo? (watermarks, professional lighting, generic poses)
 2. Does it look like a celebrity or public figure whose photo might be stolen?
@@ -33,14 +84,14 @@ Respond in JSON format:
   "details": "Brief explanation in French"
 }`;
 
-      const response = await fetch('https://api.lovable.dev/v1/chat/completions', {
+      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
+          model: 'google/gemini-2.5-flash-lite',
           messages: [
             {
               role: 'user',
@@ -61,7 +112,6 @@ Respond in JSON format:
       const aiData = await response.json();
       const content = aiData.choices?.[0]?.message?.content || '{}';
       
-      // Parse JSON from response
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       const analysis = jsonMatch ? JSON.parse(jsonMatch[0]) : { risk_score: 0, is_suspicious: false, reasons: [], recommendation: 'approve', details: 'Analyse impossible' };
 
@@ -71,19 +121,16 @@ Respond in JSON format:
     }
 
     if (action === 'compare_photos') {
-      // Compare a user's photo against other users' photos to detect duplicates
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        'apikey': SUPABASE_SERVICE_ROLE_KEY,
-      };
+      const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-      // Get recent profiles with avatars (exclude the target user)
-      const profilesRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/profiles?avatar_url=not.is.null&user_id=neq.${userId}&select=user_id,name,avatar_url&limit=50&order=created_at.desc`,
-        { headers }
-      );
-      const profiles = await profilesRes.json();
+      // Get recent profiles with avatars (exclude the authenticated user)
+      const { data: profiles } = await serviceClient
+        .from('profiles')
+        .select('user_id,name,avatar_url')
+        .not('avatar_url', 'is', null)
+        .neq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(50);
 
       if (!profiles?.length) {
         return new Response(JSON.stringify({ success: true, duplicates: [], message: 'Pas assez de profils pour comparer' }), {
@@ -91,7 +138,19 @@ Respond in JSON format:
         });
       }
 
-      // Use AI to compare the target image with a batch of other profile photos
+      // Get the authenticated user's avatar
+      const { data: myProfile } = await serviceClient
+        .from('profiles')
+        .select('avatar_url')
+        .eq('user_id', userId)
+        .single();
+
+      if (!myProfile?.avatar_url) {
+        return new Response(JSON.stringify({ success: true, has_duplicates: false, matches: [], summary: 'Pas de photo de profil' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       const otherAvatars = profiles.slice(0, 10).map((p: any) => p.avatar_url).filter(Boolean);
       
       const comparePrompt = `I will show you multiple profile photos. The FIRST image is the target photo we're investigating. The remaining images are from other users on the platform.
@@ -111,21 +170,21 @@ Respond in JSON format:
   "summary": "Brief explanation in French"
 }`;
 
-      const content = [
+      const contentPayload = [
         { type: 'text', text: comparePrompt },
-        { type: 'image_url', image_url: { url: imageUrl } },
+        { type: 'image_url', image_url: { url: myProfile.avatar_url } },
         ...otherAvatars.map((url: string) => ({ type: 'image_url', image_url: { url } })),
       ];
 
-      const response = await fetch('https://api.lovable.dev/v1/chat/completions', {
+      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
-          messages: [{ role: 'user', content }],
+          model: 'google/gemini-2.5-flash-lite',
+          messages: [{ role: 'user', content: contentPayload }],
           temperature: 0.1,
         }),
       });
@@ -137,7 +196,6 @@ Respond in JSON format:
       const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
       const result = jsonMatch ? JSON.parse(jsonMatch[0]) : { has_duplicates: false, matches: [], summary: 'Analyse impossible' };
 
-      // Map matches to actual user info
       const enrichedMatches = (result.matches || []).map((m: any) => ({
         ...m,
         matched_user: profiles[m.image_index - 1] || null,
