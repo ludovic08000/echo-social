@@ -1,17 +1,32 @@
 import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Loader2, ShieldCheck } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Loader2, ShieldCheck, MapPin, ChevronDown, ChevronUp } from 'lucide-react';
 import { useCart, useUpdateCartItem, useRemoveFromCart } from '@/hooks/useMarketplace';
 import { Separator } from '@/components/ui/separator';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { RelayPointPicker } from './RelayPointPicker';
+
+interface SelectedRelay {
+  id: string;
+  name: string;
+  address: string;
+  postcode: string;
+  city: string;
+  country: string;
+}
 
 export function CartSheet() {
   const { data: cart = [] } = useCart();
   const updateItem = useUpdateCartItem();
   const removeItem = useRemoveFromCart();
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [selectedRelay, setSelectedRelay] = useState<SelectedRelay | null>(null);
+  const [showRelayPicker, setShowRelayPicker] = useState(false);
+
+  // Check if cart has physical products
+  const hasPhysical = cart.some((item) => item.products?.product_type === 'physical');
 
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = cart.reduce((sum, item) => {
@@ -23,6 +38,12 @@ export function CartSheet() {
 
   const handleCheckout = async () => {
     if (cart.length === 0) return;
+    if (hasPhysical && !selectedRelay) {
+      toast.error('Veuillez choisir un point relais pour la livraison');
+      setShowRelayPicker(true);
+      return;
+    }
+
     setIsCheckingOut(true);
 
     try {
@@ -36,7 +57,18 @@ export function CartSheet() {
       }));
 
       const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
-        body: { action: 'create_checkout', items },
+        body: {
+          action: 'create_checkout',
+          items,
+          relay: selectedRelay ? {
+            id: selectedRelay.id,
+            name: selectedRelay.name,
+            address: selectedRelay.address,
+            postcode: selectedRelay.postcode,
+            city: selectedRelay.city,
+            country: selectedRelay.country,
+          } : null,
+        },
       });
 
       if (error) throw error;
@@ -121,6 +153,48 @@ export function CartSheet() {
                   </div>
                 );
               })}
+
+              {/* Relay point selection for physical products */}
+              {hasPhysical && (
+                <div className="space-y-2">
+                  <Separator />
+                  <button
+                    onClick={() => setShowRelayPicker(!showRelayPicker)}
+                    className="flex items-center justify-between w-full px-2 py-2 text-sm font-medium"
+                  >
+                    <span className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-primary" />
+                      {selectedRelay ? 'Point relais sélectionné' : 'Choisir un point relais'}
+                    </span>
+                    {showRelayPicker ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
+
+                  {selectedRelay && !showRelayPicker && (
+                    <div className="px-2 py-2 rounded-lg bg-primary/5 border border-primary/20 text-xs">
+                      <p className="font-semibold">{selectedRelay.name}</p>
+                      <p className="text-muted-foreground">{selectedRelay.address}</p>
+                      <p className="text-muted-foreground">{selectedRelay.postcode} {selectedRelay.city}</p>
+                    </div>
+                  )}
+
+                  {showRelayPicker && (
+                    <RelayPointPicker
+                      selectedId={selectedRelay?.id}
+                      onSelect={(point) => {
+                        setSelectedRelay({
+                          id: point.id,
+                          name: point.name,
+                          address: point.address,
+                          postcode: point.postcode,
+                          city: point.city,
+                          country: point.country,
+                        });
+                        setShowRelayPicker(false);
+                      }}
+                    />
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="space-y-3 pt-2">
@@ -153,7 +227,7 @@ export function CartSheet() {
               </Button>
               <p className="text-[10px] text-muted-foreground text-center flex items-center justify-center gap-1">
                 <ShieldCheck className="w-3 h-3" />
-                Paiement sécurisé par Stripe
+                Paiement sécurisé par Stripe · Livraison Mondial Relay
               </p>
             </div>
           </>
