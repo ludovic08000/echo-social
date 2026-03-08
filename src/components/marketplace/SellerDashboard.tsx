@@ -430,16 +430,38 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
                             <FileText className="w-4 h-4 mr-2" />
                             Générer le bordereau de livraison (PDF)
                           </Button>
-                        </div>
-                      )
-                    )}
-
-                    {order.tracking_number && (
-                      <OrderTracking trackingNumber={order.tracking_number} />
-                    )}
-
-                    {order.status === 'shipped' && (
-                      <Button
+                          {!order.tracking_number && order.shipping_relay_id && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full border-primary/30 text-primary hover:bg-primary/10"
+                              onClick={() => createMondialRelayShipment(order)}
+                              disabled={creatingShipment === order.id}
+                            >
+                              {creatingShipment === order.id ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              ) : (
+                                <Truck className="w-4 h-4 mr-2" />
+                              )}
+                              Créer l'expédition Mondial Relay
+                            </Button>
+                          )}
+                          {!order.tracking_number && !order.shipping_relay_id && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full border-primary/30 text-primary hover:bg-primary/10"
+                              onClick={() => createMondialRelayShipment(order)}
+                              disabled={creatingShipment === order.id}
+                            >
+                              {creatingShipment === order.id ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              ) : (
+                                <Truck className="w-4 h-4 mr-2" />
+                              )}
+                              Créer l'expédition & obtenir le suivi
+                            </Button>
+                          )}
                         size="sm"
                         variant="outline"
                         className="w-full border-green-500/30 text-green-600 hover:bg-green-500/10"
