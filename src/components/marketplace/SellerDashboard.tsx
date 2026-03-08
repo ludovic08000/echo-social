@@ -159,6 +159,8 @@ export function SellerDashboard() {
     openLabelEditor(orderToEdit);
     autoOpenedOrderRef.current = focusOrderId;
   }, [searchParams, orders]);
+
+  if (isLoading) {
     return <div className="space-y-4"><div className="skeleton h-32 w-full" /><div className="skeleton h-32 w-full" /></div>;
   }
 
