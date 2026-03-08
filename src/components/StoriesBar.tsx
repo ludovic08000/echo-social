@@ -94,20 +94,9 @@ export function StoriesBar() {
 
     setIsCreating(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from('post-images')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('post-images')
-        .getPublicUrl(fileName);
-
-      await createStory.mutateAsync({ imageUrl: publicUrl });
+      const { uploadToR2 } = await import('@/lib/r2');
+      const { url } = await uploadToR2(file, 'stories');
+      await createStory.mutateAsync({ imageUrl: url });
       toast({ title: 'Story publiée !' });
     } catch (error) {
       toast({ title: 'Erreur', description: 'Impossible de publier la story', variant: 'destructive' });

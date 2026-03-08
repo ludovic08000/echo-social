@@ -34,14 +34,9 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
 
   // Resolve signed URL for preview
   useEffect(() => {
-    if (currentUrl && currentUrl.startsWith('storage:')) {
-      const storagePath = currentUrl.replace('storage:', '');
-      supabase.storage
-        .from('backgrounds')
-        .createSignedUrl(storagePath, 3600)
-        .then(({ data }) => {
-          setPreviewUrl(data?.signedUrl || null);
-        });
+    if (currentUrl && !currentUrl.startsWith('gradient:') && currentUrl !== '') {
+      // R2 public URLs are directly usable
+      setPreviewUrl(currentUrl);
     } else {
       setPreviewUrl(null);
     }
@@ -58,20 +53,9 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
 
     setUploading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-      const ext = file.name.split('.').pop();
-      const fileName = `bg-${type}-${Date.now()}.${ext}`;
-      const storagePath = `${user.id}/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('backgrounds')
-        .upload(storagePath, file, { contentType: file.type, upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      // Store the storage path (not a public URL) — signed URLs will be generated on read
-      onUpdate(`storage:${storagePath}`);
+      const { uploadToR2 } = await import('@/lib/r2');
+      const { url } = await uploadToR2(file, 'backgrounds');
+      onUpdate(url);
       toast.success(`Fond ${label} mis à jour !`);
     } catch (err) {
       console.error('Background upload error:', err);
@@ -130,7 +114,7 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
           disabled={uploading || isUpdating}
           className={cn(
             "aspect-[3/4] rounded-xl border-2 border-dashed border-border/50 transition-all duration-200 flex flex-col items-center justify-center gap-1 hover:border-primary/50 hover:bg-primary/5",
-            currentUrl && !currentUrl.startsWith('gradient:') && "border-primary bg-primary/5"
+            currentUrl && !currentUrl.startsWith('gradient:') && currentUrl !== '' && "border-primary bg-primary/5"
           )}
         >
           {uploading ? (
@@ -145,11 +129,11 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
       </div>
 
       {/* Preview of custom uploaded bg */}
-      {currentUrl && currentUrl.startsWith('storage:') && previewUrl && (
+      {currentUrl && !currentUrl.startsWith('gradient:') && currentUrl !== '' && previewUrl && (
         <div className="relative rounded-xl overflow-hidden h-16">
           <img src={previewUrl} alt="Fond actuel" className="w-full h-full object-cover" />
           <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/50 text-[8px] text-white flex items-center gap-1">
-            🔒 URL signée
+            ☁️ R2
           </div>
           <button
             onClick={() => onUpdate(null)}

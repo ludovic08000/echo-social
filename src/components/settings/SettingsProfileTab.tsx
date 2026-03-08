@@ -44,12 +44,9 @@ export function SettingsProfileTab() {
 
     setIsUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const filePath = `${user.id}/avatar.${fileExt}`;
-      const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, file, { upsert: true });
-      if (uploadError) throw uploadError;
-      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-      await updateProfile.mutateAsync({ avatar_url: urlData.publicUrl + '?t=' + Date.now() });
+      const { uploadToR2 } = await import('@/lib/r2');
+      const { url } = await uploadToR2(file, 'avatars');
+      await updateProfile.mutateAsync({ avatar_url: url + '?t=' + Date.now() });
       toast({ title: t('settings.photoUpdated') });
     } catch (error) {
       toast({ title: t('common.error'), variant: 'destructive' });
