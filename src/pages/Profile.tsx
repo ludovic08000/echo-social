@@ -164,10 +164,15 @@ export default function Profile() {
     if (!idFile || !user || !pendingVerification) return;
     setUploadingId(true);
     try {
-      const { uploadToR2 } = await import('@/lib/r2');
-      const { url: publicUrl } = await uploadToR2(idFile, 'documents');
+      // SECURITY FIX: Upload to private Supabase bucket instead of public R2
+      const fileName = `${user.id}/${Date.now()}-${idFile.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from('id-documents')
+        .upload(fileName, idFile, { upsert: true });
+      if (uploadError) throw uploadError;
+      // Store path only (not a public URL) — admin uses signed URL to view
       await supabase.from('identity_verifications').update({
-        id_document_url: publicUrl,
+        id_document_url: fileName,
         status: 'document_submitted',
         updated_at: new Date().toISOString(),
       }).eq('id', pendingVerification.id);

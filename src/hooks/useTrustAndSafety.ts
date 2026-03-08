@@ -21,9 +21,10 @@ export function useTrustScore(userId: string | undefined) {
 
 export function useComputeTrustScore() {
   return useMutation({
-    mutationFn: async (userId: string) => {
+    mutationFn: async (_userId?: string) => {
+      // userId is now derived from JWT server-side, never sent by client
       const { data, error } = await supabase.functions.invoke('trust-score', {
-        body: { action: 'compute', userId },
+        body: { action: 'compute' },
       });
       if (error) throw error;
       return data;
