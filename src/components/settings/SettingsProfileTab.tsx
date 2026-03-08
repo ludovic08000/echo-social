@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { Camera, Download, Shield, ChevronRight, LogOut, Trash2, Music } from 'lucide-react';
+import { Camera, Download, Shield, ChevronRight, LogOut, Trash2, Music, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
@@ -23,6 +23,7 @@ export function SettingsProfileTab() {
   const [name, setName] = useState('');
   const [bio, setBio] = useState('');
   const [musicUrl, setMusicUrl] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
@@ -30,6 +31,7 @@ export function SettingsProfileTab() {
       setName(profile.name || '');
       setBio(profile.bio || '');
       setMusicUrl(profile.profile_music_url || '');
+      setPhoneNumber((profile as any).phone_number || '');
     }
   }, [profile]);
 
@@ -57,7 +59,7 @@ export function SettingsProfileTab() {
 
   const handleSave = async () => {
     try {
-      await updateProfile.mutateAsync({ name, bio, profile_music_url: musicUrl || null } as any);
+      await updateProfile.mutateAsync({ name, bio, profile_music_url: musicUrl || null, phone_number: phoneNumber || null } as any);
       toast({ title: t('settings.profileUpdated') });
     } catch (error) {
       toast({ title: t('common.error'), variant: 'destructive' });
@@ -123,6 +125,18 @@ export function SettingsProfileTab() {
               className="rounded-xl h-10 text-sm bg-secondary/40 border-border/30 focus:bg-background"
             />
             <p className="text-[10px] text-muted-foreground">Les visiteurs entendront cette musique sur votre profil</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="phone" className="text-xs flex items-center gap-1"><Phone className="w-3 h-3" /> Numéro de téléphone</Label>
+            <Input
+              id="phone"
+              type="tel"
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
+              placeholder="+33 6 12 34 56 78"
+              className="rounded-xl h-10 text-sm bg-secondary/40 border-border/30 focus:bg-background"
+            />
+            <p className="text-[10px] text-muted-foreground">Permet à vos contacts de vous retrouver sur Forsure</p>
           </div>
           <Button
             onClick={handleSave}

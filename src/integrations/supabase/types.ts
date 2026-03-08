@@ -2469,6 +2469,7 @@ export type Database = {
           mood_text: string | null
           mood_updated_at: string | null
           name: string
+          phone_number: string | null
           profile_bg_url: string | null
           profile_music_url: string | null
           profile_type: string | null
@@ -2499,6 +2500,7 @@ export type Database = {
           mood_text?: string | null
           mood_updated_at?: string | null
           name: string
+          phone_number?: string | null
           profile_bg_url?: string | null
           profile_music_url?: string | null
           profile_type?: string | null
@@ -2529,6 +2531,7 @@ export type Database = {
           mood_text?: string | null
           mood_updated_at?: string | null
           name?: string
+          phone_number?: string | null
           profile_bg_url?: string | null
           profile_music_url?: string | null
           profile_type?: string | null
@@ -3319,6 +3322,16 @@ export type Database = {
         Returns: boolean
       }
       is_user_minor: { Args: { p_user_id: string }; Returns: boolean }
+      match_contacts_by_phone: {
+        Args: { p_phone_numbers: string[]; p_user_id: string }
+        Returns: {
+          avatar_url: string
+          is_friend: boolean
+          name: string
+          phone_number: string
+          user_id: string
+        }[]
+      }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
