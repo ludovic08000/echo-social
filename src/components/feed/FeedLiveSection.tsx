@@ -61,6 +61,7 @@ function useRecentReplays() {
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
   });
+}
 
 export function FeedLiveSection() {
   const { user } = useAuth();
