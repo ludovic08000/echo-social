@@ -40,12 +40,11 @@ serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) throw new Error("Utilisateur non authentifié");
+    const { data: userData, error: userError } = await userClient.auth.getUser();
+    if (userError || !userData?.user) throw new Error("Utilisateur non authentifié");
 
-    const userId = claimsData.claims.sub as string;
-    const userEmail = claimsData.claims.email as string;
+    const userId = userData.user.id;
+    const userEmail = userData.user.email;
     if (!userEmail) throw new Error("Email utilisateur requis");
 
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
