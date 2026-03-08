@@ -279,8 +279,8 @@ Only output valid JSON. Keep the same language and tone.`;
     const result = await callAI(LOVABLE_API_KEY, systemPrompt, userPrompt, model);
 
     // Cache moderation results server-side (6 hours instead of 1)
-    if (action === "moderate" && result && text) {
-      const contentHash = hashContent(text.trim().toLowerCase());
+    if (action === "moderate" && result && safeText) {
+      const contentHash = hashContent(safeText.trim().toLowerCase());
       await supabase.from("ai_moderation_cache").upsert({
         content_hash: contentHash,
         result,

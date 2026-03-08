@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
 Deno.serve(async (req) => {
@@ -11,15 +11,46 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
+    // ─── Auth check: only admins or service-role can trigger cleanup ───
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Non authentifié" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, serviceKey);
+
+    // Verify caller is an admin
+    const userClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: authError } = await userClient.auth.getUser();
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Non authentifié" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Only admins can run cleanup
+    const { data: roleCheck } = await supabase
+      .from("user_roles")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("role", "admin")
+      .maybeSingle();
+
+    if (!roleCheck) {
+      return new Response(JSON.stringify({ error: "Accès refusé" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    // Get old lives to delete their recordings from storage
     const { data: oldLives } = await supabase
       .from('live_streams')
       .select('id, recording_url, user_id')
@@ -33,7 +64,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Delete recording files from storage
     for (const live of oldLives) {
       if (live.recording_url) {
         const path = live.recording_url.split('/videos/')[1];
@@ -44,12 +74,9 @@ Deno.serve(async (req) => {
     }
 
     const ids = oldLives.map(l => l.id);
-
-    // Delete related chat and views
     await supabase.from('live_chat').delete().in('live_id', ids);
     await supabase.from('live_views').delete().in('live_id', ids);
 
-    // Delete the live streams
     const { error } = await supabase
       .from('live_streams')
       .delete()
@@ -64,7 +91,7 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     console.error('Cleanup error:', err);
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: (err as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
