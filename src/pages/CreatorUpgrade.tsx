@@ -1,54 +1,72 @@
-import { Crown, BarChart3, Heart, TrendingUp, Check, Sparkles } from 'lucide-react';
+import { Crown, BarChart3, Heart, TrendingUp, Sparkles, ExternalLink, RefreshCw, CreditCard } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth';
-import { useIsCreator, useActivateCreator, useDeactivateCreator, useCreatorSubscription } from '@/hooks/useCreator';
-import { toast } from '@/hooks/use-toast';
+import { useStripeSubscription } from '@/hooks/useStripeSubscription';
+import { toast } from 'sonner';
+import { useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 
 const BENEFITS = [
   {
     icon: Crown,
-    title: 'Badge Créateur',
+    title: 'Badge Créateur 👑',
     description: 'Un badge distinctif sur votre profil et vos publications',
   },
   {
     icon: BarChart3,
     title: 'Statistiques avancées',
-    description: 'Analytics détaillées sur la portée et l\'engagement de votre contenu',
+    description: "Analytics détaillées sur la portée et l'engagement de votre contenu",
   },
   {
     icon: Heart,
     title: 'Monétisation',
-    description: 'Recevez des tips et dons de vos abonnés (bientôt)',
+    description: 'Recevez des tips et dons de vos abonnés',
   },
   {
     icon: TrendingUp,
     title: 'Priorité dans le feed',
-    description: 'Vos publications sont mises en avant dans l\'algorithme',
+    description: "Vos publications sont mises en avant dans l'algorithme",
   },
 ];
 
 export default function CreatorUpgrade() {
   const { user } = useAuth();
-  const { data: isCreator } = useIsCreator(user?.id);
-  const { data: subscription } = useCreatorSubscription();
-  const activate = useActivateCreator();
-  const deactivate = useDeactivateCreator();
+  const { isCreatorSubscriber, subscriptionEnd, loading, startCheckout, openPortal, checkSubscription } = useStripeSubscription();
+  const [searchParams] = useSearchParams();
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
 
-  const handleActivate = () => {
-    activate.mutate(undefined, {
-      onSuccess: () => toast({ title: '🎉 Vous êtes maintenant Créateur !', description: 'Profitez de tous vos avantages' }),
-      onError: () => toast({ title: 'Erreur', variant: 'destructive' }),
-    });
+  // Handle return from Stripe
+  useEffect(() => {
+    if (searchParams.get('success') === 'true') {
+      toast.success('🎉 Paiement réussi ! Votre abonnement Créateur est actif.');
+      checkSubscription();
+    } else if (searchParams.get('canceled') === 'true') {
+      toast.info('Paiement annulé.');
+    }
+  }, [searchParams, checkSubscription]);
+
+  const handleCheckout = async () => {
+    if (!user) {
+      toast.error('Vous devez être connecté');
+      return;
+    }
+    setCheckoutLoading(true);
+    try {
+      await startCheckout();
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur lors du paiement');
+    } finally {
+      setCheckoutLoading(false);
+    }
   };
 
-  const handleDeactivate = () => {
-    if (confirm('Êtes-vous sûr de vouloir annuler votre abonnement Créateur ?')) {
-      deactivate.mutate(undefined, {
-        onSuccess: () => toast({ title: 'Abonnement annulé' }),
-        onError: () => toast({ title: 'Erreur', variant: 'destructive' }),
-      });
+  const handleManage = async () => {
+    try {
+      await openPortal();
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur');
     }
   };
 
@@ -75,13 +93,33 @@ export default function CreatorUpgrade() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-2xl p-6 text-center"
+          className={`rounded-2xl p-6 text-center border ${
+            isCreatorSubscriber
+              ? 'bg-gradient-to-br from-green-500/10 to-emerald-500/10 border-green-500/30'
+              : 'bg-gradient-to-br from-amber-500/10 to-orange-500/10 border-amber-500/20'
+          }`}
         >
-          <div className="flex items-baseline justify-center gap-1">
-            <span className="text-4xl font-bold">5€</span>
-            <span className="text-muted-foreground">/mois</span>
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">Annulable à tout moment</p>
+          {isCreatorSubscriber ? (
+            <>
+              <div className="flex items-center justify-center gap-2 text-green-600 font-semibold mb-1">
+                <Sparkles className="w-5 h-5" />
+                Abonnement actif
+              </div>
+              {subscriptionEnd && (
+                <p className="text-xs text-muted-foreground">
+                  Prochain renouvellement : {new Date(subscriptionEnd).toLocaleDateString('fr-FR', { dateStyle: 'long' })}
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="flex items-baseline justify-center gap-1">
+                <span className="text-4xl font-bold">5€</span>
+                <span className="text-muted-foreground">/mois</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Annulable à tout moment</p>
+            </>
+          )}
         </motion.div>
 
         {/* Benefits */}
@@ -110,42 +148,54 @@ export default function CreatorUpgrade() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          className="pt-2 pb-8"
+          className="pt-2 pb-8 space-y-3"
         >
-          {isCreator ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-center gap-2 text-sm text-amber-600 font-medium">
-                <Sparkles className="w-4 h-4" />
-                Vous êtes Créateur !
-              </div>
+          {loading ? (
+            <div className="flex justify-center">
+              <div className="w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : isCreatorSubscriber ? (
+            <>
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={handleDeactivate}
-                disabled={deactivate.isPending}
+                onClick={handleManage}
               >
-                Annuler l'abonnement
+                <CreditCard className="w-4 h-4 mr-2" />
+                Gérer mon abonnement
+                <ExternalLink className="w-3 h-3 ml-2" />
               </Button>
-            </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full"
+                onClick={() => checkSubscription()}
+              >
+                <RefreshCw className="w-3 h-3 mr-2" />
+                Actualiser le statut
+              </Button>
+            </>
           ) : (
-            <Button
-              className="w-full h-12 text-base font-semibold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border-0 rounded-xl shadow-lg shadow-amber-500/25"
-              onClick={handleActivate}
-              disabled={activate.isPending}
-            >
-              {activate.isPending ? (
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <>
-                  <Crown className="w-5 h-5 mr-2" />
-                  Devenir Créateur — 5€/mois
-                </>
-              )}
-            </Button>
+            <>
+              <Button
+                className="w-full h-12 text-base font-semibold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border-0 rounded-xl shadow-lg shadow-amber-500/25"
+                onClick={handleCheckout}
+                disabled={checkoutLoading}
+              >
+                {checkoutLoading ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <Crown className="w-5 h-5 mr-2" />
+                    Devenir Créateur — 5€/mois
+                  </>
+                )}
+              </Button>
+              <p className="text-[10px] text-muted-foreground text-center">
+                Paiement sécurisé via Stripe. Annulable à tout moment.
+              </p>
+            </>
           )}
-          <p className="text-[10px] text-muted-foreground text-center mt-3">
-            Le paiement via Stripe sera disponible prochainement. L'activation est gratuite pendant la période de lancement.
-          </p>
         </motion.div>
       </div>
     </AppLayout>
