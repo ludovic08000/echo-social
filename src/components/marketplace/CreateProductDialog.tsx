@@ -199,7 +199,7 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
     setDescription('');
     setPrice('');
     setCategory('general');
-    setProductType('physical');
+    setCondition('good');
     setStock('');
     setThumbnailUrl('');
     setSize('');
