@@ -150,10 +150,11 @@ export function CartSheet() {
                           variant="outline"
                           size="icon"
                           className="h-6 w-6 rounded-full"
-                          disabled={product.stock_quantity !== null && item.quantity >= product.stock_quantity}
+                          disabled={item.quantity >= (product.stock_quantity ?? 1)}
                           onClick={() => {
-                            if (product.stock_quantity !== null && item.quantity >= product.stock_quantity) {
-                              toast.error(`Stock max : ${product.stock_quantity}`);
+                            const maxAllowedQty = product.stock_quantity ?? 1;
+                            if (item.quantity >= maxAllowedQty) {
+                              toast.error(maxAllowedQty === 1 ? 'Ce produit est limité à 1 exemplaire' : `Stock max : ${maxAllowedQty}`);
                               return;
                             }
                             updateItem.mutate({ id: item.id, quantity: item.quantity + 1 });
