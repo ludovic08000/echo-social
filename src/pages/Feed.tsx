@@ -261,22 +261,23 @@ export default function Feed() {
               </motion.div>
             ) : (
               <>
-                <div className="space-y-3">
+                <div className="space-y-3 px-4">
                   {posts.map((post, index) => (
-                    <motion.div
-                      key={post.id}
-                      custom={index}
-                      variants={postVariants}
-                      initial="hidden"
-                      whileInView="visible"
-                      viewport={{ once: true, margin: '-30px' }}
-                    >
-                      <PostCard
-                        post={post}
-                        onCommentClick={() => navigate(`/post/${post.id}`)}
-                      />
+                    <div key={post.id}>
+                      <motion.div
+                        custom={index}
+                        variants={postVariants}
+                        initial="hidden"
+                        whileInView="visible"
+                        viewport={{ once: true, margin: '-30px' }}
+                      >
+                        <PostCard
+                          post={post}
+                          onCommentClick={() => navigate(`/post/${post.id}`)}
+                        />
+                      </motion.div>
                       {renderInjection(index)}
-                    </motion.div>
+                    </div>
                   ))}
                 </div>
 
