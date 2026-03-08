@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, useDeleteMessageForMe, useDeleteMessageForEveryone, useHasPendingMessages, useAcceptMessageRequest, useRejectMessageRequest, type Message } from '@/hooks/useMessages';
-import { useNegotiations, useCreateNegotiation, useRespondNegotiation, useAcceptCounterOffer, type Negotiation } from '@/hooks/useNegotiations';
+import { useNegotiations, useCreateNegotiation, useRespondNegotiation, useAcceptCounterOffer, useNegotiationsByConversation, type Negotiation } from '@/hooks/useNegotiations';
 import { useFriendships } from '@/hooks/useFriendships';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
@@ -348,9 +348,27 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { goBack, closeChat, minimizeChat, state: chatState } = useChatWidget();
+  const { goBack, closeChat, minimizeChat, state: chatState, openNegotiation: setNegotiationContext } = useChatWidget();
   const conversation = conversations?.find(c => c.id === conversationId);
   const negotiationProduct = chatState.negotiationProduct;
+
+  // Auto-load negotiation context from conversation if not set
+  const { data: convNegotiations = [] } = useNegotiationsByConversation(!negotiationProduct ? conversationId : undefined);
+  
+  useEffect(() => {
+    if (!negotiationProduct && convNegotiations.length > 0) {
+      const neg = convNegotiations[0];
+      if (neg.product) {
+        setNegotiationContext({
+          id: neg.product.id,
+          title: neg.product.title,
+          price: neg.product.price,
+          thumbnail_url: neg.product.thumbnail_url,
+          seller_profiles: neg.seller_profile,
+        }, conversationId);
+      }
+    }
+  }, [negotiationProduct, convNegotiations, conversationId, setNegotiationContext]);
 
   // Negotiation hooks
   const { data: negotiations = [] } = useNegotiations(negotiationProduct?.id);
