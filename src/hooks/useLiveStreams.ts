@@ -363,3 +363,45 @@ export function useEndLive() {
     },
   });
 }
+
+export function useDeleteLive() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (liveId: string) => {
+      if (!user) throw new Error('Not authenticated');
+
+      // Get recording URL to delete from storage
+      const { data: live } = await supabase
+        .from('live_streams')
+        .select('recording_url')
+        .eq('id', liveId)
+        .eq('user_id', user.id)
+        .single();
+
+      if (live?.recording_url) {
+        const path = live.recording_url.split('/videos/')[1];
+        if (path) {
+          await supabase.storage.from('videos').remove([path]);
+        }
+      }
+
+      // Delete related data
+      await supabase.from('live_chat').delete().eq('live_id', liveId);
+      await supabase.from('live_views').delete().eq('live_id', liveId);
+
+      const { error } = await supabase
+        .from('live_streams')
+        .delete()
+        .eq('id', liveId)
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['live-streams'] });
+      queryClient.invalidateQueries({ queryKey: ['recent-replays'] });
+    },
+  });
+}

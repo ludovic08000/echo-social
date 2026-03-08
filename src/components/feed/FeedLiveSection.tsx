@@ -1,12 +1,14 @@
 import { Link } from 'react-router-dom';
-import { Radio, Eye, Play, Clock } from 'lucide-react';
-import { useLiveStreams } from '@/hooks/useLiveStreams';
+import { Radio, Eye, Play, Clock, Trash2 } from 'lucide-react';
+import { useLiveStreams, useDeleteLive } from '@/hooks/useLiveStreams';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth';
 import { UserAvatar } from '@/components/UserAvatar';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { toast } from '@/hooks/use-toast';
 
 interface ReplayStream {
   id: string;
@@ -15,6 +17,7 @@ interface ReplayStream {
   total_views: number;
   category: string | null;
   ended_at: string | null;
+  user_id: string;
   host?: { name: string; avatar_url: string | null };
 }
 
@@ -50,6 +53,7 @@ function useRecentReplays() {
         total_views: l.total_views,
         category: l.category,
         ended_at: l.ended_at,
+        user_id: l.user_id,
         host: profileMap.get(l.user_id),
       })) as ReplayStream[];
     },
@@ -57,11 +61,22 @@ function useRecentReplays() {
 }
 
 export function FeedLiveSection() {
+  const { user } = useAuth();
   const { data: lives } = useLiveStreams();
   const { data: replays } = useRecentReplays();
+  const deleteLive = useDeleteLive();
 
   const hasLives = lives && lives.length > 0;
   const hasReplays = replays && replays.length > 0;
+
+  const handleDelete = (e: React.MouseEvent, liveId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm('Supprimer ce replay ?')) return;
+    deleteLive.mutate(liveId, {
+      onSuccess: () => toast({ title: 'Replay supprimé' }),
+    });
+  };
 
   if (!hasLives && !hasReplays) return null;
 
@@ -159,12 +174,22 @@ export function FeedLiveSection() {
                   <Clock className="w-2.5 h-2.5" />
                   Replay
                 </span>
-                {replay.total_views > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-sm text-white text-[10px] flex items-center gap-1">
-                    <Eye className="w-2.5 h-2.5" />
-                    {replay.total_views}
-                  </span>
-                )}
+                <div className="flex items-center gap-1">
+                  {user && user.id === replay.user_id && (
+                    <button
+                      onClick={(e) => handleDelete(e, replay.id)}
+                      className="p-1 rounded-full bg-black/60 backdrop-blur-sm text-white hover:bg-destructive transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                  {replay.total_views > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-sm text-white text-[10px] flex items-center gap-1">
+                      <Eye className="w-2.5 h-2.5" />
+                      {replay.total_views}
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="absolute bottom-0 left-0 right-0 p-2.5 bg-gradient-to-t from-black/90 via-black/50 to-transparent z-10">
