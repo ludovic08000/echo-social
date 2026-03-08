@@ -56,11 +56,12 @@ const MESSAGE_REACTIONS = [
   { emoji: '🔥', label: 'fire' },
 ];
 
-const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/g;
+const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/;
+const URL_REGEX_G = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/g;
 
 function MessageBodyWithLinks({ body, isMe }: { body: string; isMe: boolean }) {
-  const parts = body.split(URL_REGEX);
-  if (parts.length === 1) return <>{body}</>;
+  if (!URL_REGEX.test(body)) return <>{body}</>;
+  const parts = body.split(URL_REGEX_G);
   return (
     <>
       {parts.map((part, i) =>
@@ -911,6 +912,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         <div className="mx-2 mb-1 bg-background border border-border/40 rounded-xl shadow-lg overflow-hidden">
           <div className="p-1.5 grid grid-cols-2 gap-1">
             <button
+              type="button"
               onClick={() => handleAI('correct')}
               disabled={!newMessage.trim()}
               className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg hover:bg-secondary/80 transition-colors text-left disabled:opacity-40"
@@ -922,6 +924,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               </div>
             </button>
             <button
+              type="button"
               onClick={() => handleAI('improve', 'friendly')}
               disabled={!newMessage.trim()}
               className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg hover:bg-secondary/80 transition-colors text-left disabled:opacity-40"
@@ -933,6 +936,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               </div>
             </button>
             <button
+              type="button"
               onClick={() => handleAI('translate')}
               disabled={!newMessage.trim()}
               className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg hover:bg-secondary/80 transition-colors text-left disabled:opacity-40"
@@ -944,6 +948,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               </div>
             </button>
             <button
+              type="button"
               onClick={() => handleAI('improve', 'formal')}
               disabled={!newMessage.trim()}
               className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg hover:bg-secondary/80 transition-colors text-left disabled:opacity-40"
@@ -981,7 +986,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               ref={inputRef}
               value={newMessage}
               onChange={e => setNewMessage(e.target.value)}
-              onFocus={() => { setShowEmojis(false); setShowGifs(false); setShowAIMenu(false); }}
+              onFocus={() => { setShowEmojis(false); setShowGifs(false); }}
               placeholder="Aa"
               className="flex-1 bg-secondary/60 rounded-full px-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors min-w-0"
             />
