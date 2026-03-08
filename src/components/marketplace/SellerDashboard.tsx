@@ -385,28 +385,16 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
                     {/* Packing video for orders >= 100€ */}
                     {renderPackingVideoSection(order)}
 
-                    {/* Actions - block label if video not verified for orders >= 100€ */}
-                    {(order.status === 'paid' || (order.status === 'shipped' && !order.shipping_label_url)) && (
+                    {/* Actions - generate delivery slip */}
+                    {order.status === 'paid' && (
                       needsPackingVideo(order) ? (
-                        <p className="text-[11px] text-muted-foreground text-center py-1">⚠️ Vidéo d'emballage requise avant de générer l'étiquette</p>
+                        <p className="text-[11px] text-muted-foreground text-center py-1">⚠️ Vidéo d'emballage requise avant de générer le bordereau</p>
                       ) : (
-                        <Button size="sm" className="w-full" onClick={() => openLabelEditor(order)}
-                          disabled={creatingLabel && shippingOrderId === order.id}>
-                          {creatingLabel && shippingOrderId === order.id ? (
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          ) : (<Truck className="w-4 h-4 mr-2" />)}
-                          {order.status === 'shipped' ? "Régénérer l'étiquette" : "Créer étiquette Mondial Relay"}
+                        <Button size="sm" className="w-full" onClick={() => generateDeliverySlip(order)}>
+                          <FileText className="w-4 h-4 mr-2" />
+                          Générer le bordereau de livraison (PDF)
                         </Button>
                       )
-                    )}
-
-                    {order.shipping_label_url && (
-                      <a href={order.shipping_label_url} target="_blank" rel="noopener noreferrer">
-                        <Button variant="outline" size="sm" className="w-full">
-                          <Download className="w-4 h-4 mr-2" />
-                          Télécharger l'étiquette
-                        </Button>
-                      </a>
                     )}
 
                     {order.tracking_number && (
