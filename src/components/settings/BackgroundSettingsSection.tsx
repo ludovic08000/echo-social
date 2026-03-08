@@ -42,9 +42,11 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
 
     setUploading(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
       const ext = file.name.split('.').pop();
       const fileName = `bg-${type}-${Date.now()}.${ext}`;
-      const path = `backgrounds/${fileName}`;
+      const path = `${user.id}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
