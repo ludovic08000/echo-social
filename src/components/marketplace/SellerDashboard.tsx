@@ -474,8 +474,8 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
                     {order.status === 'shipped' && (
                       <Button
                         size="sm"
-                        variant="outline"
-                        className="w-full border-green-500/30 text-green-600 hover:bg-green-500/10"
+                        variant="premium"
+                        className="w-full"
                         onClick={() => markAsDelivered(order)}
                         disabled={markingDelivered === order.id}
                       >
