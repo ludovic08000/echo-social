@@ -243,6 +243,25 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
               </div>
             )}
 
+            {/* Weight (for physical) */}
+            {productType === 'physical' && (
+              <div>
+                <Label>Poids du produit (grammes) *</Label>
+                <Select value={weightGrams} onValueChange={setWeightGrams}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Sélectionner le poids" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="250">250g</SelectItem>
+                    <SelectItem value="500">500g</SelectItem>
+                    <SelectItem value="1000">1 kg</SelectItem>
+                    <SelectItem value="2000">2 kg</SelectItem>
+                    <SelectItem value="5000">5 kg</SelectItem>
+                    <SelectItem value="10000">10 kg</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground mt-1">Les frais Mondial Relay seront calculés automatiquement</p>
+              </div>
+            )}
+
             {/* Shipping */}
             <div className="grid grid-cols-2 gap-3">
               <div>

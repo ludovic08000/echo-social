@@ -242,7 +242,7 @@ export function CartSheet() {
                 </div>
                 {hasPhysical && selectedRelay && (
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Livraison estimée</span>
+                    <span className="text-muted-foreground">Livraison Mondial Relay</span>
                     <span>{shippingEstimate.toFixed(2)}€</span>
                   </div>
                 )}
