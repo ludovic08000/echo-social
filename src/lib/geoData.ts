@@ -15,17 +15,17 @@ export interface Country {
 
 export const COUNTRIES: Country[] = [
   { code: 'FR', label: 'France', flag: '🇫🇷', enabled: true },
-  { code: 'BE', label: 'Belgique', flag: '🇧🇪', enabled: false },
-  { code: 'CH', label: 'Suisse', flag: '🇨🇭', enabled: false },
-  { code: 'LU', label: 'Luxembourg', flag: '🇱🇺', enabled: false },
-  { code: 'DE', label: 'Allemagne', flag: '🇩🇪', enabled: false },
-  { code: 'ES', label: 'Espagne', flag: '🇪🇸', enabled: false },
-  { code: 'IT', label: 'Italie', flag: '🇮🇹', enabled: false },
-  { code: 'PT', label: 'Portugal', flag: '🇵🇹', enabled: false },
-  { code: 'NL', label: 'Pays-Bas', flag: '🇳🇱', enabled: false },
-  { code: 'AT', label: 'Autriche', flag: '🇦🇹', enabled: false },
-  { code: 'IE', label: 'Irlande', flag: '🇮🇪', enabled: false },
-  { code: 'PL', label: 'Pologne', flag: '🇵🇱', enabled: false },
+  { code: 'BE', label: 'Belgique', flag: '🇧🇪', enabled: true },
+  { code: 'CH', label: 'Suisse', flag: '🇨🇭', enabled: true },
+  { code: 'LU', label: 'Luxembourg', flag: '🇱🇺', enabled: true },
+  { code: 'DE', label: 'Allemagne', flag: '🇩🇪', enabled: true },
+  { code: 'ES', label: 'Espagne', flag: '🇪🇸', enabled: true },
+  { code: 'IT', label: 'Italie', flag: '🇮🇹', enabled: true },
+  { code: 'PT', label: 'Portugal', flag: '🇵🇹', enabled: true },
+  { code: 'NL', label: 'Pays-Bas', flag: '🇳🇱', enabled: true },
+  { code: 'AT', label: 'Autriche', flag: '🇦🇹', enabled: true },
+  { code: 'IE', label: 'Irlande', flag: '🇮🇪', enabled: true },
+  { code: 'PL', label: 'Pologne', flag: '🇵🇱', enabled: true },
 ];
 
 export const ENABLED_COUNTRIES = COUNTRIES.filter(c => c.enabled);
