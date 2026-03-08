@@ -140,7 +140,7 @@ export function useCreateAdCampaign() {
       target_location?: TargetLocation;
       duration_type: DurationType;
     }) => {
-      // First moderate
+      // 1. Moderate content
       const { data: modResult } = await supabase.functions.invoke('ad-assistant', {
         body: {
           action: 'moderate_ad',
@@ -151,7 +151,6 @@ export function useCreateAdCampaign() {
       });
 
       const isApproved = modResult?.approved !== false;
-      const moderationStatus = isApproved ? 'approved' : 'rejected';
       const moderationReason = modResult?.reasons?.join(', ') || null;
 
       if (!isApproved) {
@@ -161,6 +160,7 @@ export function useCreateAdCampaign() {
       const pricing = PRICING[input.duration_type];
       const endsAt = getEndDate(input.duration_type);
       
+      // 2. Create campaign with status 'pending_payment'
       const { data, error } = await supabase
         .from('ad_campaigns')
         .insert({
@@ -180,21 +180,55 @@ export function useCreateAdCampaign() {
           budget: pricing.price,
           duration_type: input.duration_type,
           ends_at: endsAt.toISOString(),
-          status: 'active',
-          moderation_status: moderationStatus,
+          status: 'pending_payment',
+          moderation_status: 'approved',
           moderation_reason: moderationReason,
         } as any)
         .select()
         .single();
       if (error) throw error;
+
+      // 3. Create Stripe checkout session
+      const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke('ad-checkout', {
+        body: {
+          campaign_id: data.id,
+          amount: pricing.price,
+          campaign_title: input.title,
+        },
+      });
+
+      if (checkoutError) throw checkoutError;
+      if (!checkoutData?.url) throw new Error('Erreur de paiement');
+
+      // 4. Redirect to Stripe
+      window.location.href = checkoutData.url;
+
       return data;
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+}
+
+/**
+ * Activate a campaign after successful payment
+ */
+export function useActivateAdCampaign() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (campaignId: string) => {
+      const { error } = await supabase
+        .from('ad_campaigns')
+        .update({ status: 'active' })
+        .eq('id', campaignId)
+        .eq('status', 'pending_payment');
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ad-campaigns'] });
       queryClient.invalidateQueries({ queryKey: ['active-ads'] });
-      toast.success('Campagne publicitaire approuvée et lancée ! ✅');
+      toast.success('🎉 Paiement confirmé ! Votre campagne est active.');
     },
-    onError: (e: any) => toast.error(e.message),
   });
 }
 
