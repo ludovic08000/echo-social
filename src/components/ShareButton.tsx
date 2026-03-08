@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { useConversations, useCreateConversation, useSendMessage } from '@/hooks/useMessages';
 import { UserAvatar } from './UserAvatar';
+import { useChatWidget } from './ChatWidgetContext';
 
 interface ShareButtonProps {
   url: string;
@@ -69,6 +70,7 @@ function ShareDialog({
   text?: string;
 }) {
   const { user } = useAuth();
+  const { openConversation } = useChatWidget();
   const [search, setSearch] = useState('');
   const [sending, setSending] = useState<string | null>(null);
   const { data: conversations } = useConversations();
@@ -117,6 +119,8 @@ function ShareDialog({
       await sendMessage.mutateAsync({ conversationId, body: `🔗 ${fullShareText}` });
       toast({ title: 'Envoyé !', description: 'Contenu partagé dans la conversation' });
       onOpenChange(false);
+      // Open the messenger on that conversation
+      openConversation(conversationId);
     } catch {
       toast({ title: 'Erreur', variant: 'destructive' });
     } finally {
