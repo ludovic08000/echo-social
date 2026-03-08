@@ -197,6 +197,8 @@ export function AIAgentChat({ agent, onBack }: Props) {
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         },
         body: JSON.stringify({
+          domain: 'agent',
+          action: 'agent_chat',
           agent_id: agent.id,
           conversation_id: conversationId,
           message: userMsg,
