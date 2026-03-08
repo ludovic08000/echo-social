@@ -253,6 +253,7 @@ export function HostLiveView({ live }: HostLiveViewProps) {
                 placeholder="Message..."
                 className="flex-1 bg-white/10 border-white/20 text-white placeholder:text-white/50"
               />
+              <LiveEmojiPicker onSelect={(emoji) => setMessage(prev => prev + emoji)} />
               <Button type="submit" size="icon" disabled={!message.trim()} className="bg-primary text-primary-foreground">
                 <Send className="w-4 h-4" />
               </Button>
