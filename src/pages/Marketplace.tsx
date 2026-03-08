@@ -514,6 +514,11 @@ export default function Marketplace() {
                       <span className="text-xs text-muted-foreground">Total</span>
                       <span className="text-sm font-bold text-foreground">{order.total?.toFixed(2)} €</span>
                     </div>
+
+                    {/* Review seller button for delivered orders */}
+                    {order.status === 'delivered' && (
+                      <ReviewSellerButton order={order} />
+                    )}
                   </div>
                 );
               })
