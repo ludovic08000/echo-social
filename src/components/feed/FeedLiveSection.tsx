@@ -144,12 +144,7 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
             <Radio className="w-2 h-2 animate-pulse" />
             LIVE
           </span>
-        ) : (
-          <span className="px-1.5 py-0.5 rounded bg-black/50 backdrop-blur-sm text-white/80 text-[8px] font-medium flex items-center gap-0.5">
-            <Clock className="w-2 h-2" />
-            Replay
-          </span>
-        )}
+        ) : null}
         {!item.isLive && user?.id === item.user_id && (
           <button
             onClick={handleDelete}
