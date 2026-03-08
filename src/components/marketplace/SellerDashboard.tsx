@@ -5,12 +5,32 @@ import { CreateProductDialog } from './CreateProductDialog';
 import { OrderTracking } from './OrderTracking';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Store, Package, TrendingUp, Trash2, Eye, Truck, Download, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+
+interface ShipmentPayload {
+  sender: {
+    name: string;
+    address: string;
+    city: string;
+    postcode: string;
+    country: string;
+    phone: string;
+    email: string;
+  };
+  parcel: {
+    weight_grams: number;
+    parcels: number;
+    length_cm?: number;
+    size_code?: string;
+  };
+}
 
 export function SellerDashboard() {
   const { data: seller, isLoading } = useSellerProfile();
@@ -21,8 +41,23 @@ export function SellerDashboard() {
   const [storeName, setStoreName] = useState('');
   const [shippingOrderId, setShippingOrderId] = useState<string | null>(null);
   const [creatingLabel, setCreatingLabel] = useState(false);
+  const [labelEditorOpen, setLabelEditorOpen] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
+  const [labelForm, setLabelForm] = useState({
+    weightGrams: '500',
+    parcels: '1',
+    lengthCm: '',
+    sizeCode: '',
+    senderName: '',
+    senderAddress: '',
+    senderCity: '',
+    senderPostcode: '',
+    senderCountry: 'FR',
+    senderPhone: '',
+    senderEmail: '',
+  });
 
-  const handleCreateLabel = async (orderId: string) => {
+  const handleCreateLabel = async (orderId: string, payload: ShipmentPayload) => {
     setCreatingLabel(true);
     setShippingOrderId(orderId);
     try {
@@ -30,14 +65,8 @@ export function SellerDashboard() {
         body: {
           action: 'create_shipment',
           order_id: orderId,
-          sender: {
-            name: seller?.store_name || 'Vendeur',
-            address: '',
-            city: '',
-            postcode: '',
-            country: 'FR',
-            email: '',
-          },
+          sender: payload.sender,
+          package: payload.parcel,
         },
       });
 
@@ -45,12 +74,58 @@ export function SellerDashboard() {
       if (data?.error) throw new Error(data.error);
 
       toast.success(`Étiquette créée ! N° suivi : ${data.tracking_number}`);
+      setLabelEditorOpen(false);
+      setSelectedOrder(null);
     } catch (e: any) {
       toast.error(e.message || 'Erreur lors de la création de l\'étiquette');
     } finally {
       setCreatingLabel(false);
       setShippingOrderId(null);
     }
+  };
+
+  const openLabelEditor = (order: any) => {
+    setSelectedOrder(order);
+    setLabelForm({
+      weightGrams: String(order.shipping_weight_grams || 500),
+      parcels: '1',
+      lengthCm: '',
+      sizeCode: '',
+      senderName: seller?.store_name || 'Vendeur',
+      senderAddress: order.shipping_relay_address || '',
+      senderCity: order.shipping_relay_city || '',
+      senderPostcode: order.shipping_relay_postcode || '',
+      senderCountry: order.shipping_relay_country || 'FR',
+      senderPhone: '',
+      senderEmail: '',
+    });
+    setLabelEditorOpen(true);
+  };
+
+  const submitLabelCreation = async () => {
+    if (!selectedOrder) return;
+
+    const weight = Math.max(100, Number(labelForm.weightGrams) || 500);
+    const parcels = Math.max(1, Number(labelForm.parcels) || 1);
+    const lengthCm = Number(labelForm.lengthCm);
+
+    await handleCreateLabel(selectedOrder.id, {
+      sender: {
+        name: labelForm.senderName.trim() || seller?.store_name || 'Vendeur',
+        address: labelForm.senderAddress.trim(),
+        city: labelForm.senderCity.trim(),
+        postcode: labelForm.senderPostcode.trim(),
+        country: (labelForm.senderCountry || 'FR').trim().toUpperCase(),
+        phone: labelForm.senderPhone.trim(),
+        email: labelForm.senderEmail.trim(),
+      },
+      parcel: {
+        weight_grams: weight,
+        parcels,
+        length_cm: Number.isFinite(lengthCm) && lengthCm > 0 ? lengthCm : undefined,
+        size_code: labelForm.sizeCode.trim() || undefined,
+      },
+    });
   };
 
   if (isLoading) {
@@ -233,7 +308,7 @@ export function SellerDashboard() {
                       <Button
                         size="sm"
                         className="w-full"
-                        onClick={() => handleCreateLabel(order.id)}
+                        onClick={() => openLabelEditor(order)}
                         disabled={creatingLabel && shippingOrderId === order.id}
                       >
                         {creatingLabel && shippingOrderId === order.id ? (
@@ -241,7 +316,7 @@ export function SellerDashboard() {
                         ) : (
                           <Truck className="w-4 h-4 mr-2" />
                         )}
-                        Créer étiquette Mondial Relay
+                        Éditer & créer étiquette Mondial Relay
                       </Button>
                     )}
 
@@ -264,6 +339,79 @@ export function SellerDashboard() {
           )}
         </TabsContent>
       </Tabs>
+
+      <Dialog open={labelEditorOpen} onOpenChange={setLabelEditorOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Édition étiquette Mondial Relay</DialogTitle>
+            <DialogDescription>
+              Renseigne le colis avant génération de l’étiquette pour {selectedOrder?.order_number || 'la commande'}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="weight">Poids (g)</Label>
+                <Input id="weight" type="number" min={100} value={labelForm.weightGrams} onChange={(e) => setLabelForm((prev) => ({ ...prev, weightGrams: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="parcels">Nb colis</Label>
+                <Input id="parcels" type="number" min={1} value={labelForm.parcels} onChange={(e) => setLabelForm((prev) => ({ ...prev, parcels: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="length">Longueur (cm)</Label>
+                <Input id="length" type="number" min={1} value={labelForm.lengthCm} onChange={(e) => setLabelForm((prev) => ({ ...prev, lengthCm: e.target.value }))} placeholder="Optionnel" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="size">Code taille</Label>
+                <Input id="size" value={labelForm.sizeCode} onChange={(e) => setLabelForm((prev) => ({ ...prev, sizeCode: e.target.value }))} placeholder="S, M, L... (optionnel)" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5 col-span-2">
+                <Label htmlFor="sender-name">Expéditeur</Label>
+                <Input id="sender-name" value={labelForm.senderName} onChange={(e) => setLabelForm((prev) => ({ ...prev, senderName: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5 col-span-2">
+                <Label htmlFor="sender-address">Adresse expéditeur</Label>
+                <Input id="sender-address" value={labelForm.senderAddress} onChange={(e) => setLabelForm((prev) => ({ ...prev, senderAddress: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="sender-postcode">Code postal</Label>
+                <Input id="sender-postcode" value={labelForm.senderPostcode} onChange={(e) => setLabelForm((prev) => ({ ...prev, senderPostcode: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="sender-city">Ville</Label>
+                <Input id="sender-city" value={labelForm.senderCity} onChange={(e) => setLabelForm((prev) => ({ ...prev, senderCity: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="sender-country">Pays (code)</Label>
+                <Input id="sender-country" value={labelForm.senderCountry} onChange={(e) => setLabelForm((prev) => ({ ...prev, senderCountry: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="sender-phone">Téléphone</Label>
+                <Input id="sender-phone" value={labelForm.senderPhone} onChange={(e) => setLabelForm((prev) => ({ ...prev, senderPhone: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5 col-span-2">
+                <Label htmlFor="sender-email">Email</Label>
+                <Input id="sender-email" type="email" value={labelForm.senderEmail} onChange={(e) => setLabelForm((prev) => ({ ...prev, senderEmail: e.target.value }))} />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLabelEditorOpen(false)} disabled={creatingLabel}>
+              Annuler
+            </Button>
+            <Button onClick={submitLabelCreation} disabled={!selectedOrder || creatingLabel}>
+              {creatingLabel ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Truck className="w-4 h-4 mr-2" />}
+              Générer l’étiquette
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
