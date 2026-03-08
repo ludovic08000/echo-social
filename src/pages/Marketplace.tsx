@@ -16,6 +16,7 @@ import { CreateProductDialog } from '@/components/marketplace/CreateProductDialo
 import { useSellerProfile } from '@/hooks/useMarketplace';
 import { useProductFavorites } from '@/hooks/useProductFavorites';
 import { cn } from '@/lib/utils';
+import { BROWSE_CATEGORIES } from '@/lib/marketplaceCategories';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { COUNTRIES, GEO_DATA } from '@/lib/geoData';
