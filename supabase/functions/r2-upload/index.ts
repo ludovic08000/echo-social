@@ -49,22 +49,12 @@ function checkRateLimit(userId: string): boolean {
 }
 
 // Allowed origins for CORS
-const ALLOWED_ORIGINS = [
-  "https://calm-connect-05.lovable.app",
-  "https://id-preview--14bf9f2a-b211-4bff-8f3c-1cd3d8a0a907.lovable.app",
-  "http://localhost:5173",
-  "http://localhost:8080",
-];
-
 function getCorsHeaders(req: Request): Record<string, string> {
-  const origin = req.headers.get("Origin") || "";
-  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
-    "Access-Control-Allow-Origin": allowedOrigin,
+    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers":
       "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
     "Access-Control-Allow-Methods": "POST, DELETE, OPTIONS",
-    "Vary": "Origin",
   };
 }
 
