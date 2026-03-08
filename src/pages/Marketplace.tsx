@@ -134,16 +134,17 @@ export default function Marketplace() {
                 <p className="text-primary-foreground/70 text-xs mt-0.5">Achetez, vendez, échangez</p>
               </div>
               <div className="flex items-center gap-2">
-                {seller && pendingLabelsCount > 0 && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setActiveTab('seller')}
-                    className="h-9 rounded-xl text-xs gap-1.5"
-                  >
-                    <Truck className="w-4 h-4" />
-                    Étiquettes ({pendingLabelsCount})
-                  </Button>
+                {seller && (
+                  <Link to="/marketplace?tab=seller">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="h-9 rounded-xl text-xs gap-1.5"
+                    >
+                      <Truck className="w-4 h-4" />
+                      Étiquettes
+                    </Button>
+                  </Link>
                 )}
                 <button
                   onClick={() => setShowLocationFilter(!showLocationFilter)}
