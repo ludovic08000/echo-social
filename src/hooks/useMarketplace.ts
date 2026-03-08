@@ -226,13 +226,10 @@ export function useAddToCart() {
         .eq('id', productId)
         .single();
 
-      if (stockCheck?.stock_quantity !== null && stockCheck?.stock_quantity !== undefined && stockCheck.stock_quantity <= 0) {
-        throw new Error('Ce produit est épuisé');
-      }
+      const maxAllowedQty = stockCheck?.stock_quantity ?? 1;
 
-      // If stock is 1, only one unit can exist in cart for this product
-      if (stockCheck?.stock_quantity === 1 && quantity > 1) {
-        throw new Error('Ce produit est limité à 1 exemplaire');
+      if (maxAllowedQty <= 0) {
+        throw new Error('Ce produit est épuisé');
       }
 
       // Check if already in cart
@@ -244,14 +241,11 @@ export function useAddToCart() {
         .maybeSingle();
 
       if (existing) {
-        if (stockCheck?.stock_quantity === 1) {
-          throw new Error('Ce produit est déjà dans votre panier');
-        }
-
-        // Check stock for total quantity
         const newQty = existing.quantity + quantity;
-        if (stockCheck?.stock_quantity !== null && stockCheck?.stock_quantity !== undefined && newQty > stockCheck.stock_quantity) {
-          throw new Error(`Stock insuffisant (${stockCheck.stock_quantity} disponible${stockCheck.stock_quantity > 1 ? 's' : ''})`);
+        if (newQty > maxAllowedQty) {
+          throw new Error(maxAllowedQty === 1
+            ? 'Ce produit est déjà dans votre panier'
+            : `Stock insuffisant (${maxAllowedQty} disponible${maxAllowedQty > 1 ? 's' : ''})`);
         }
 
         const { error } = await supabase
@@ -260,7 +254,7 @@ export function useAddToCart() {
           .eq('id', existing.id);
         if (error) throw error;
       } else {
-        const safeQty = stockCheck?.stock_quantity === 1 ? 1 : quantity;
+        const safeQty = Math.min(quantity, maxAllowedQty);
         const { error } = await supabase
           .from('cart_items')
           .insert({ user_id: user.id, product_id: productId, quantity: safeQty });
