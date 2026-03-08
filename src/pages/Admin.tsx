@@ -20,6 +20,7 @@ import { getAIModules, getAIEngineStats, getCategoryLabel, getCategoryColor } fr
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { motion } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
 import { cn } from '@/lib/utils';
 
 function useIsAdmin() {
