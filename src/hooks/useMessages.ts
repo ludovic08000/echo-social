@@ -22,11 +22,18 @@ export interface Conversation {
   id: string;
   created_at: string;
   updated_at: string;
+  is_group: boolean;
+  name: string | null;
   participant: {
     user_id: string;
     name: string;
     avatar_url: string | null;
   };
+  participants?: {
+    user_id: string;
+    name: string;
+    avatar_url: string | null;
+  }[];
   last_message?: {
     body: string;
     created_at: string;
