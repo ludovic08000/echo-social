@@ -444,7 +444,7 @@ export function useCreateGroupConversation() {
   });
 }
 
-
+export function useMarkConversationRead() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
