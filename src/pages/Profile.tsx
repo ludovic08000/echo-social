@@ -140,6 +140,8 @@ export default function Profile() {
   const { data: posts, isLoading: postsLoading } = useUserPosts(userId || '');
   const { data: friendshipData } = useFriendshipStatus(userId || '');
   const { data: isCreator } = useIsCreator(userId);
+  const { data: targetIsMinor } = useIsMinor(userId);
+  const { data: currentUserIsMinor } = useIsMinor(user?.id);
   const updateProfile = useUpdateProfile();
   const profileBgStyle = useCustomBackground('profile');
 
