@@ -166,8 +166,8 @@ function md5Hex(str: string): string {
 }
 
 function buildSignature(params: Record<string, string>, privateKey: string): string {
-  // Mondial Relay: concatenate all non-empty values + private key, then MD5
-  const concat = Object.values(params).filter(v => v !== '').join('') + privateKey;
+  // Mondial Relay: concatenate values in insertion order + private key, including empty values
+  const concat = Object.values(params).join('') + privateKey;
   return md5Hex(concat).toUpperCase();
 }
 
