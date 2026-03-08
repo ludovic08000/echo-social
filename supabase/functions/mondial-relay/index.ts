@@ -398,7 +398,7 @@ serve(async (req) => {
         'TAvisage', 'TReprise', 'Montage', 'TRDV', 'Assurance', 'Instructions', 'Texte',
       ] as const;
       const creationSignatureBase = creationEtiquetteOrder.map((key) => params[key] ?? '').join('');
-      params.Security = md5Lib(`${creationSignatureBase}${privateKey}`).toUpperCase();
+      params.Security = md5Hex(`${creationSignatureBase}${privateKey}`);
 
       const xml = await callMondialRelay("WSI2_CreationEtiquette", params);
       const stat = extractXmlValue(xml, 'STAT');
