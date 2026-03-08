@@ -1,0 +1,3 @@
+ALTER TABLE public.profiles 
+ADD COLUMN IF NOT EXISTS profile_bg_url text DEFAULT NULL,
+ADD COLUMN IF NOT EXISTS feed_bg_url text DEFAULT NULL;

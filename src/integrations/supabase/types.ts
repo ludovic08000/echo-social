@@ -2275,6 +2275,7 @@ export type Database = {
           date_of_birth: string | null
           education_city: string | null
           education_level: string | null
+          feed_bg_url: string | null
           field_visibility: Json | null
           id: string
           interests: string[] | null
@@ -2283,6 +2284,7 @@ export type Database = {
           mood_text: string | null
           mood_updated_at: string | null
           name: string
+          profile_bg_url: string | null
           profile_music_url: string | null
           profile_type: string | null
           relationship_status: string | null
@@ -2303,6 +2305,7 @@ export type Database = {
           date_of_birth?: string | null
           education_city?: string | null
           education_level?: string | null
+          feed_bg_url?: string | null
           field_visibility?: Json | null
           id?: string
           interests?: string[] | null
@@ -2311,6 +2314,7 @@ export type Database = {
           mood_text?: string | null
           mood_updated_at?: string | null
           name: string
+          profile_bg_url?: string | null
           profile_music_url?: string | null
           profile_type?: string | null
           relationship_status?: string | null
@@ -2331,6 +2335,7 @@ export type Database = {
           date_of_birth?: string | null
           education_city?: string | null
           education_level?: string | null
+          feed_bg_url?: string | null
           field_visibility?: Json | null
           id?: string
           interests?: string[] | null
@@ -2339,6 +2344,7 @@ export type Database = {
           mood_text?: string | null
           mood_updated_at?: string | null
           name?: string
+          profile_bg_url?: string | null
           profile_music_url?: string | null
           profile_type?: string | null
           relationship_status?: string | null
