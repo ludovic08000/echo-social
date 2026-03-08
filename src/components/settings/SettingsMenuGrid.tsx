@@ -23,6 +23,7 @@ const iconColors: Record<string, string> = {
   pages: 'bg-indigo-500/10 text-indigo-500',
   privacy: 'bg-teal-500/10 text-teal-500',
   notifications: 'bg-orange-500/10 text-orange-500',
+  parental: 'bg-pink-500/10 text-pink-500',
 };
 
 const quickLinks = [
