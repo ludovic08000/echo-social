@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Heart, Gift, Users, Send, Radio, X } from 'lucide-react';
+import { LiveEmojiPicker } from '@/components/live/LiveEmojiPicker';
 import { useLiveStream, useLiveChat, useSendLiveChatMessage, useJoinLive, useLeaveLive } from '@/hooks/useLiveStreams';
 import { LiveViewerPlayer } from '@/components/live/LiveViewerPlayer';
 import { HostLiveView } from '@/components/live/HostLiveView';
@@ -207,6 +208,7 @@ export default function LiveWatch() {
                 placeholder="Envoie un message..."
                 className="flex-1 bg-white/10 border-white/20 text-white placeholder:text-white/50"
               />
+              <LiveEmojiPicker onSelect={(emoji) => setMessage(prev => prev + emoji)} />
               <Button type="submit" size="icon" disabled={!message.trim()} className="bg-primary text-primary-foreground">
                 <Send className="w-4 h-4" />
               </Button>
