@@ -36,7 +36,7 @@ export function useR2Upload({ folder, onSuccess, maxSizeMB = 5 }: UseR2UploadOpt
       const { url } = await uploadToR2(file, folder);
       setProgress(100);
 
-      toast.success('Fichier uploadé avec succès');
+      // Silent success — no toast needed
       onSuccess?.(url);
       return url;
     } catch (error: any) {

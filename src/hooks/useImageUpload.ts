@@ -76,8 +76,7 @@ export function useImageUpload({ bucket, onSuccess, maxSizeMB }: UseImageUploadO
       const { url } = await uploadToR2(file, bucket);
       setProgress(100);
 
-      const isVideo = file.type.startsWith('video/');
-      toast.success(isVideo ? 'Vidéo uploadée avec succès' : 'Fichier uploadé avec succès');
+      // Silent success — no toast needed
       onSuccess?.(url);
       return url;
     } catch (error: any) {
