@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import {
   ArrowLeft, Send, Search, Plus, X, Phone, Video, Mic, MicOff,
   Smile, Check, CheckCheck, Minus, Camera, Reply, Copy, Trash2,
-  ChevronDown, Sparkles, MoreVertical, ThumbsUp, ImageIcon, PhoneOff, PhoneMissed
+  ChevronDown, Sparkles, MoreVertical, ThumbsUp, ImageIcon, PhoneOff, PhoneMissed,
+  Flag, Forward
 } from 'lucide-react';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -13,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, useDeleteMessageForMe, useDeleteMessageForEveryone, useHasPendingMessages, useAcceptMessageRequest, useRejectMessageRequest, type Message } from '@/hooks/useMessages';
 import { useFriendships } from '@/hooks/useFriendships';
 import { useAuth } from '@/lib/auth';
+import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { useChatWidget } from './ChatWidgetContext';
 import { useImageUpload } from '@/hooks/useImageUpload';
@@ -21,6 +23,7 @@ import { CallOverlay } from '@/components/CallOverlay';
 import { GifPicker } from '@/components/chat/GifPicker';
 import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { useRealtimeNotificationSound } from '@/hooks/useNotificationSounds';
+import { toast } from 'sonner';
 
 
 // ─── Utils ───────────────────────────────────────────────
@@ -603,6 +606,29 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                                     <div>
                                       <p className="font-medium text-destructive">Supprimer pour tous</p>
                                       <p className="text-[10px] text-muted-foreground">Plus personne ne verra ce message</p>
+                                    </div>
+                                  </button>
+                                )}
+                                {!isMe && (
+                                  <button
+                                    onClick={async () => {
+                                      await supabase.from('abuse_reports').insert({
+                                        reporter_id: user!.id,
+                                        reported_user_id: msg.sender_id,
+                                        report_type: 'message',
+                                        description: `Message signalé: "${msg.body.slice(0, 200)}"`,
+                                      });
+                                      setDeleteMenuMsgId(null);
+                                      toast.success('Message signalé');
+                                    }}
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs hover:bg-amber-500/5 transition-all text-left group/btn"
+                                  >
+                                    <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center group-hover/btn:bg-amber-500/20 transition-colors">
+                                      <Flag className="w-3.5 h-3.5 text-amber-600" />
+                                    </div>
+                                    <div>
+                                      <p className="font-medium text-amber-600">Signaler</p>
+                                      <p className="text-[10px] text-muted-foreground">Signaler ce contenu inapproprié</p>
                                     </div>
                                   </button>
                                 )}
