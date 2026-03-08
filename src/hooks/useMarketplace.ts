@@ -55,7 +55,7 @@ export function useProduct(id: string | undefined) {
       if (!id) return null;
       const { data, error } = await supabase
         .from('products')
-        .select('*, seller_profiles(id, store_name, store_logo_url, is_verified, store_description, rating_average, rating_count, total_sales)')
+        .select('*, seller_profiles(id, user_id, store_name, store_logo_url, is_verified, store_description, rating_average, rating_count, total_sales)')
         .eq('id', id)
         .single();
       if (error) throw error;
