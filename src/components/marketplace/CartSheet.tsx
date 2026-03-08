@@ -50,7 +50,7 @@ export function CartSheet() {
   const shippingEstimate = hasPhysical && selectedRelay ? shippingTotal : 0;
   const total = subtotal + buyerFee + shippingEstimate;
 
-  const handleCheckout = async (testMode = false) => {
+  const handleCheckout = async () => {
     if (cart.length === 0) return;
     if (hasPhysical && !selectedRelay) {
       toast.error('Veuillez choisir un point relais pour la livraison');
