@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Image, Video } from 'lucide-react';
+import { Image } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
@@ -20,7 +20,6 @@ export function FeedMediaSection() {
     queryFn: async () => {
       if (!user) return [];
 
-      // Get friends
       const { data: friendships } = await supabase
         .from('friendships')
         .select('requester_id, addressee_id')
@@ -50,31 +49,36 @@ export function FeedMediaSection() {
   if (!mediaPosts || mediaPosts.length === 0) return null;
 
   return (
-    <div className="px-4 py-3">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Image className="w-4 h-4 text-primary" />
-          <h3 className="font-semibold text-sm">Photos & Médias récents</h3>
+    <article className="bg-card border border-border/20 rounded-2xl overflow-hidden">
+      <div className="flex items-center justify-between px-4 pt-4 pb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
+            <Image className="w-4 h-4 text-primary" />
+          </div>
+          <h3 className="text-sm font-semibold text-foreground">Photos & Médias</h3>
         </div>
       </div>
-      <ScrollArea className="w-full whitespace-nowrap">
-        <div className="flex gap-2 pb-2">
-          {mediaPosts.map((post) => (
-            <Link
-              key={post.id}
-              to={`/post/${post.id}`}
-              className="flex-shrink-0 w-28 h-28 rounded-xl overflow-hidden bg-muted group"
-            >
-              <img
-                src={post.image_url}
-                alt=""
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-              />
-            </Link>
-          ))}
-        </div>
-        <ScrollBar orientation="horizontal" />
-      </ScrollArea>
-    </div>
+
+      <div className="px-4 pb-4">
+        <ScrollArea className="w-full whitespace-nowrap">
+          <div className="flex gap-2 pb-1">
+            {mediaPosts.map((post) => (
+              <Link
+                key={post.id}
+                to={`/post/${post.id}`}
+                className="flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden bg-muted group"
+              >
+                <img
+                  src={post.image_url}
+                  alt=""
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
+              </Link>
+            ))}
+          </div>
+          <ScrollBar orientation="horizontal" />
+        </ScrollArea>
+      </div>
+    </article>
   );
 }
