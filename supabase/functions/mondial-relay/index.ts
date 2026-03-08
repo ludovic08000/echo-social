@@ -219,8 +219,8 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const enseigne = Deno.env.get("MONDIAL_RELAY_ENSEIGNE") ?? "";
-  const privateKey = Deno.env.get("MONDIAL_RELAY_PRIVATE_KEY") ?? "";
+  const enseigne = (Deno.env.get("MONDIAL_RELAY_ENSEIGNE") ?? "").trim();
+  const privateKey = (Deno.env.get("MONDIAL_RELAY_PRIVATE_KEY") ?? "").trim();
 
   if (!enseigne || !privateKey) {
     return new Response(JSON.stringify({ error: "Configuration Mondial Relay manquante" }), {
