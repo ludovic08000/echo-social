@@ -507,6 +507,10 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
             totalRevenue={seller.total_revenue || 0}
             productCount={products.length}
             orderCount={paidOrders.length}
+            products={products.map((p: any) => ({ title: p.title, price: p.price, category: p.category, stock: p.stock_quantity, created: p.created_at }))}
+            recentOrders={paidOrders.slice(0, 20).map((o: any) => ({ total: o.total, status: o.status, date: o.created_at, items: o.order_items?.length || 0 }))}
+            rating={seller.rating_average}
+            ratingCount={seller.rating_count || 0}
           />
         </TabsContent>
       </Tabs>
