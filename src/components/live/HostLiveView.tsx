@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Send, Radio, StopCircle, Save } from 'lucide-react';
+import { LiveEmojiPicker } from './LiveEmojiPicker';
 import { LiveStreamPlayer, LiveStreamPlayerRef } from './LiveStreamPlayer';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
