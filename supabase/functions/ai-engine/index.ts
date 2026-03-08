@@ -211,7 +211,7 @@ Only output valid JSON.`;
 - "recommended_actions": string[] (what actions to take)
 - "trust_score": number 0-100 (overall trust score)
 Only output valid JSON.`;
-        userPrompt = JSON.stringify(context || {});
+        userPrompt = JSON.stringify(safeContext);
         break;
       }
 
