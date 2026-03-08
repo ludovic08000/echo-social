@@ -22,11 +22,18 @@ export interface Conversation {
   id: string;
   created_at: string;
   updated_at: string;
+  is_group: boolean;
+  name: string | null;
   participant: {
     user_id: string;
     name: string;
     avatar_url: string | null;
   };
+  participants?: {
+    user_id: string;
+    name: string;
+    avatar_url: string | null;
+  }[];
   last_message?: {
     body: string;
     created_at: string;
@@ -102,18 +109,36 @@ export function useConversations() {
       });
 
       return conversations.map(conv => {
-        const otherUserId = participantMap.get(conv.id);
-        const profile = otherUserId ? profileMap.get(otherUserId) : null;
+        const isGroup = (conv as any).is_group || false;
+        const groupName = (conv as any).name || null;
+
+        // Get all other participants for this conversation
+        const convParticipants = (allParticipants || [])
+          .filter(p => p.conversation_id === conv.id)
+          .map(p => {
+            const profile = profileMap.get(p.user_id);
+            return {
+              user_id: p.user_id,
+              name: profile?.name || 'Unknown',
+              avatar_url: profile?.avatar_url || null,
+            };
+          });
+
+        // For 1:1 conversations, use the first (only) other participant
+        const firstParticipant = convParticipants[0];
 
         return {
           id: conv.id,
           created_at: conv.created_at,
           updated_at: conv.updated_at,
-          participant: {
-            user_id: otherUserId || '',
-            name: profile?.name || 'Unknown',
-            avatar_url: profile?.avatar_url || null,
+          is_group: isGroup,
+          name: groupName,
+          participant: firstParticipant || {
+            user_id: '',
+            name: 'Unknown',
+            avatar_url: null,
           },
+          participants: isGroup ? convParticipants : undefined,
           last_message: lastMessageMap.get(conv.id),
           unread_count: unreadCounts[conv.id] || 0,
         } as Conversation;
@@ -360,6 +385,51 @@ export function useCreateConversation() {
           { conversation_id: conversationId, user_id: user.id },
           { conversation_id: conversationId, user_id: otherUserId },
         ]);
+
+      if (partError) {
+        await supabase.from('conversations').delete().eq('id', conversationId);
+        throw partError;
+      }
+
+      return { id: conversationId };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}
+
+export function useCreateGroupConversation() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async ({ name, memberIds }: { name: string; memberIds: string[] }) => {
+      if (!user) throw new Error('Not authenticated');
+      if (!name.trim()) throw new Error('Nom du groupe requis');
+      if (memberIds.length < 2) throw new Error('Ajoutez au moins 2 amis');
+
+      const conversationId = crypto.randomUUID();
+
+      const { error: convError } = await supabase
+        .from('conversations')
+        .insert({
+          id: conversationId,
+          name: name.trim(),
+          is_group: true,
+          created_by: user.id,
+        });
+
+      if (convError) throw convError;
+
+      const participants = [user.id, ...memberIds].map(uid => ({
+        conversation_id: conversationId,
+        user_id: uid,
+      }));
+
+      const { error: partError } = await supabase
+        .from('conversation_participants')
+        .insert(participants);
 
       if (partError) {
         await supabase.from('conversations').delete().eq('id', conversationId);
