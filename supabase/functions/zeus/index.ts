@@ -520,6 +520,27 @@ const ZEUS_TOOLS = [
       },
     },
   },
+  {
+    type: "function", function: {
+      name: "get_algorithm_config", description: "Lire la configuration actuelle de l'algorithme du feed (poids, récence, anti-spam, marketplace injection, etc.)",
+      parameters: { type: "object", properties: { key: { type: "string", description: "Clé spécifique (scoring_weights, recency_tiers, time_of_day, velocity, marketplace_injection, anti_spam) ou vide pour tout" } }, additionalProperties: false },
+    },
+  },
+  {
+    type: "function", function: {
+      name: "update_algorithm_config", description: "Modifier un paramètre de l'algorithme du feed. Change la valeur d'une clé de config. Exemples : augmenter friend_boost, réduire spam_penalty, changer les positions marketplace.",
+      parameters: {
+        type: "object",
+        properties: {
+          key: { type: "string", enum: ["scoring_weights", "recency_tiers", "time_of_day", "velocity", "marketplace_injection", "anti_spam"], description: "Clé de config à modifier" },
+          updates: { type: "object", description: "Objet partiel avec les champs à modifier (merge avec l'existant)" },
+          reason: { type: "string", description: "Justification du changement pour le log" },
+        },
+        required: ["key", "updates", "reason"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // Execute Zeus tool calls against the database
@@ -740,6 +761,39 @@ async function executeZeusTool(name: string, args: any, supabase: any): Promise<
 
         return JSON.stringify(sim);
       }
+      case "get_algorithm_config": {
+        let q = supabase.from("feed_algorithm_config").select("key, value, description, updated_at");
+        if (args.key) q = q.eq("key", args.key);
+        const { data, error } = await q;
+        if (error) return JSON.stringify({ error: error.message });
+        return JSON.stringify({ config: data || [] });
+      }
+      case "update_algorithm_config": {
+        // Read current value
+        const { data: current, error: readErr } = await supabase
+          .from("feed_algorithm_config")
+          .select("value")
+          .eq("key", args.key)
+          .maybeSingle();
+        if (readErr || !current) return JSON.stringify({ error: `Config "${args.key}" introuvable` });
+
+        // Merge updates
+        const merged = { ...current.value, ...args.updates };
+        const { error: updateErr } = await supabase
+          .from("feed_algorithm_config")
+          .update({ value: merged, updated_at: new Date().toISOString() })
+          .eq("key", args.key);
+        if (updateErr) return JSON.stringify({ error: updateErr.message });
+
+        return JSON.stringify({
+          success: true,
+          key: args.key,
+          reason: args.reason,
+          previous: current.value,
+          new_value: merged,
+          changed_fields: Object.keys(args.updates),
+        });
+      }
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
@@ -846,7 +900,24 @@ Tu peux appeler des outils pour interroger la base en temps réel :
 - \`get_marketplace_stats\` : Stats marketplace
 - \`get_engagement_metrics\` : Métriques d'engagement
 - \`get_growth_metrics\` : Croissance et rétention
-- \`simulate_platform_load\` : **Simulation de charge réseau** — Estime les capacités max (utilisateurs simultanés, lives, posts/min, messages/min, commandes) selon 5 scénarios : current, peak (x3), stress (x10), growth_10x, growth_100x. Détecte les goulots d'étranglement et recommande des optimisations.
+- \`simulate_platform_load\` : **Simulation de charge réseau** — scénarios current/peak/stress/growth_10x/growth_100x
+- \`get_algorithm_config\` : **Lire la config de l'algorithme du feed** — poids de scoring, récence, anti-spam, marketplace, etc.
+- \`update_algorithm_config\` : **Modifier l'algorithme du feed** — ajuster les poids, boosts, pénalités en temps réel. Toujours justifier le changement.
+
+## 🧬 ALGORITHME DU FEED
+Tu as le pouvoir de lire ET modifier l'algorithme du feed en temps réel. Les clés de config sont :
+- \`scoring_weights\` : friend_boost, discovery_boost, image_boost, engagement_cap, spam_penalty_factor, etc.
+- \`recency_tiers\` : paliers de récence (1h, 3h, 6h, 12h, 24h, 48h)
+- \`time_of_day\` : multiplicateurs par tranche horaire
+- \`velocity\` : détection de contenu trending
+- \`marketplace_injection\` : positions d'injection et nombre de produits
+- \`anti_spam\` : pénalités anti-spam
+
+Quand on te demande d'améliorer l'algo :
+1. Lis d'abord la config actuelle avec \`get_algorithm_config\`
+2. Analyse les métriques d'engagement avec \`get_engagement_metrics\`
+3. Propose tes modifications avec justification
+4. Applique avec \`update_algorithm_config\` si l'admin confirme ou si la demande est explicite
 
 Utilise-les activement pour enrichir tes analyses. Ne te contente pas du snapshot initial.
 Pour les simulations, appelle TOUJOURS l'outil \`simulate_platform_load\` pour fournir des données réelles. Ne devine jamais les chiffres.
