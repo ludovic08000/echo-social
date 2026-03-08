@@ -198,7 +198,8 @@ export default function Profile() {
   });
 
   const coverUpload = useImageUpload({
-    bucket: 'avatars',
+    bucket: 'images',
+    maxSizeMB: 10,
     onSuccess: (url) => {
       updateProfile.mutate({ cover_url: url }, {
         onSuccess: () => {
