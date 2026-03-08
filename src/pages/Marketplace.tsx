@@ -252,13 +252,13 @@ export default function Marketplace() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="w-full bg-secondary/50 rounded-xl p-1 h-auto">
-            <TabsTrigger value="browse" className="flex-1 rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm py-2.5 text-xs font-semibold gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" />
+          <TabsList className="w-full bg-card/80 backdrop-blur-md rounded-2xl p-1.5 h-auto border border-border/30 shadow-[var(--shadow-sm)]">
+            <TabsTrigger value="browse" className="flex-1 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-[0_4px_16px_hsl(var(--primary)/0.3)] py-3 text-xs font-bold gap-2 transition-all duration-300">
+              <Sparkles className="w-4 h-4" />
               Explorer
             </TabsTrigger>
-            <TabsTrigger value="seller" className="flex-1 rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm py-2.5 text-xs font-semibold gap-1.5">
-              <Store className="w-3.5 h-3.5" />
+            <TabsTrigger value="seller" className="flex-1 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-[0_4px_16px_hsl(var(--primary)/0.3)] py-3 text-xs font-bold gap-2 transition-all duration-300">
+              <Store className="w-4 h-4" />
               Ma boutique
             </TabsTrigger>
           </TabsList>
@@ -267,19 +267,19 @@ export default function Marketplace() {
             {/* Categories - horizontal scroll */}
             <ScrollArea className="w-full">
               <div className="flex gap-2 pb-1 px-0.5">
-                {CATEGORIES.map((cat) => (
+            {CATEGORIES.map((cat) => (
                   <button
                     key={cat.value}
                     onClick={() => setCategory(cat.value)}
                     className={cn(
-                      'flex flex-col items-center gap-1 px-3 py-2 rounded-2xl transition-all duration-200 flex-shrink-0 min-w-[64px]',
+                      'flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-2xl transition-all duration-300 flex-shrink-0 min-w-[68px] border backdrop-blur-sm',
                       category === cat.value
-                        ? 'bg-primary text-primary-foreground shadow-[0_2px_10px_hsl(var(--primary)/0.3)]'
-                        : 'bg-secondary/60 text-muted-foreground hover:bg-secondary'
+                        ? 'bg-primary text-primary-foreground shadow-[0_4px_20px_hsl(var(--primary)/0.4)] border-primary/50 scale-[1.05] -translate-y-0.5'
+                        : 'bg-card/80 text-muted-foreground hover:bg-card hover:shadow-[var(--shadow-md)] hover:-translate-y-0.5 border-border/30 hover:border-border/60'
                     )}
                   >
-                    <span className="text-lg leading-none">{cat.icon}</span>
-                    <span className="text-[10px] font-semibold leading-none">{cat.label}</span>
+                    <span className="text-xl leading-none drop-shadow-sm">{cat.icon}</span>
+                    <span className="text-[10px] font-bold tracking-wide leading-none">{cat.label}</span>
                   </button>
                 ))}
               </div>
@@ -293,13 +293,13 @@ export default function Marketplace() {
                   key={opt.value}
                   onClick={() => setSortBy(opt.value)}
                   className={cn(
-                    'flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all flex-shrink-0 border',
+                    'flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-semibold transition-all duration-300 flex-shrink-0 border backdrop-blur-sm',
                     sortBy === opt.value
-                      ? 'border-primary/30 bg-primary/8 text-primary'
-                      : 'border-border/40 text-muted-foreground hover:border-border'
+                      ? 'border-primary/40 bg-primary/10 text-primary shadow-[0_2px_12px_hsl(var(--primary)/0.15)]'
+                      : 'border-border/30 bg-card/60 text-muted-foreground hover:border-primary/20 hover:bg-card/90 hover:text-foreground'
                   )}
                 >
-                  <opt.icon className="w-3 h-3" />
+                  <opt.icon className="w-3.5 h-3.5" />
                   {opt.label}
                 </button>
               ))}
@@ -360,7 +360,7 @@ export default function Marketplace() {
           sellerId={seller.id}
           trigger={
             <Button
-              className="fixed bottom-20 right-4 z-50 md:hidden h-12 w-12 rounded-2xl shadow-[var(--shadow-gold)] bg-[image:var(--premium-gradient)] text-primary-foreground border-0 active:scale-90 transition-transform"
+              className="fixed bottom-20 right-4 z-50 md:hidden h-14 w-14 rounded-2xl shadow-[0_8px_32px_hsl(var(--primary)/0.4)] bg-[image:var(--premium-gradient)] text-primary-foreground border-0 active:scale-90 transition-all duration-300 hover:shadow-[0_12px_40px_hsl(var(--primary)/0.5)] hover:-translate-y-1"
             >
               <Plus className="w-6 h-6 stroke-[2.5]" />
             </Button>
