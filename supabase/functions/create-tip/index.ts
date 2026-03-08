@@ -29,7 +29,7 @@ serve(async (req) => {
 
     if (!amount || amount < 1) throw new Error("Montant minimum : 1€");
     if (!creator_id) throw new Error("Créateur non spécifié");
-    if (creator_id === user.id) throw new Error("Vous ne pouvez pas vous envoyer un tip");
+    // Self-tips allowed for testing
 
     // Verify creator exists and is a creator
     const { data: creatorProfile } = await supabaseClient
