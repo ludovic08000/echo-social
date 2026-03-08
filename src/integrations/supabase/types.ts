@@ -1799,9 +1799,19 @@ export type Database = {
           payment_intent_id: string | null
           shipped_at: string | null
           shipping_address: Json | null
+          shipping_label_url: string | null
+          shipping_method: string | null
+          shipping_relay_address: string | null
+          shipping_relay_city: string | null
+          shipping_relay_country: string | null
+          shipping_relay_id: string | null
+          shipping_relay_name: string | null
+          shipping_relay_postcode: string | null
+          shipping_weight_grams: number | null
           status: Database["public"]["Enums"]["order_status"]
           subtotal: number
           total: number
+          tracking_number: string | null
           updated_at: string
         }
         Insert: {
@@ -1818,9 +1828,19 @@ export type Database = {
           payment_intent_id?: string | null
           shipped_at?: string | null
           shipping_address?: Json | null
+          shipping_label_url?: string | null
+          shipping_method?: string | null
+          shipping_relay_address?: string | null
+          shipping_relay_city?: string | null
+          shipping_relay_country?: string | null
+          shipping_relay_id?: string | null
+          shipping_relay_name?: string | null
+          shipping_relay_postcode?: string | null
+          shipping_weight_grams?: number | null
           status?: Database["public"]["Enums"]["order_status"]
           subtotal: number
           total: number
+          tracking_number?: string | null
           updated_at?: string
         }
         Update: {
@@ -1837,9 +1857,19 @@ export type Database = {
           payment_intent_id?: string | null
           shipped_at?: string | null
           shipping_address?: Json | null
+          shipping_label_url?: string | null
+          shipping_method?: string | null
+          shipping_relay_address?: string | null
+          shipping_relay_city?: string | null
+          shipping_relay_country?: string | null
+          shipping_relay_id?: string | null
+          shipping_relay_name?: string | null
+          shipping_relay_postcode?: string | null
+          shipping_weight_grams?: number | null
           status?: Database["public"]["Enums"]["order_status"]
           subtotal?: number
           total?: number
+          tracking_number?: string | null
           updated_at?: string
         }
         Relationships: []
