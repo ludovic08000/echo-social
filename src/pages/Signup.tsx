@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, CalendarIcon } from 'lucide-react';
-import { format } from 'date-fns';
+import { Eye, EyeOff, CalendarIcon, Shield } from 'lucide-react';
+import { format, differenceInYears } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
@@ -14,6 +14,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function Signup() {
   const navigate = useNavigate();
