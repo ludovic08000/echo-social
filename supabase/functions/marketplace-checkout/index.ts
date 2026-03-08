@@ -81,7 +81,7 @@ serve(async (req) => {
       for (const item of items) {
         const dbProduct = dbProducts.find((p: any) => p.id === item.product_id);
         if (!dbProduct) throw new Error(`Produit ${item.product_id} introuvable`);
-        if (dbProduct.status !== "active") throw new Error(`Produit "${dbProduct.title}" n'est plus disponible`);
+        if (!dbProduct.is_active) throw new Error(`Produit "${dbProduct.title}" n'est plus disponible`);
         if (dbProduct.stock_quantity !== null && dbProduct.stock_quantity < item.quantity) {
           throw new Error(`Stock insuffisant pour "${dbProduct.title}"`);
         }
