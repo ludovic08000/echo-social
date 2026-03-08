@@ -80,11 +80,14 @@ export default function Notifications() {
                   <div
                     className={cn(
                       'absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center',
-                      notification.type === 'like' ? 'bg-primary' : 'bg-secondary'
+                      notification.type === 'like' ? 'bg-primary' :
+                      notification.type === 'sale' ? 'bg-green-500' : 'bg-secondary'
                     )}
                   >
                     {notification.type === 'like' ? (
                       <Heart className="w-3 h-3 text-primary-foreground fill-current" />
+                    ) : notification.type === 'sale' ? (
+                      <ShoppingBag className="w-3 h-3 text-white" />
                     ) : (
                       <MessageCircle className="w-3 h-3 text-secondary-foreground" />
                     )}
@@ -94,7 +97,9 @@ export default function Notifications() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm">
                     <span className="font-medium">{notification.actor.name}</span>{' '}
-                    {notification.type === 'like' ? 'a aimé votre post' : 'a commenté votre post'}
+                    {notification.type === 'like' ? 'a aimé votre post' :
+                     notification.type === 'sale' ? 'a acheté un de vos produits 🎉' :
+                     'a commenté votre post'}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {formatDistanceToNow(new Date(notification.created_at), {
