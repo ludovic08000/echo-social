@@ -56,6 +56,7 @@ serve(async (req) => {
       customer_email: customerId ? undefined : user.email,
       line_items: [{ price: priceId, quantity: 1 }],
       mode: "subscription",
+      phone_number_collection: { enabled: false },
       success_url: `${origin}/creator-upgrade?success=true`,
       cancel_url: `${origin}/creator-upgrade?canceled=true`,
       metadata: { user_id: user.id },

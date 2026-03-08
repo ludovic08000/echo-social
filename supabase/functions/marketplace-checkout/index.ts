@@ -223,6 +223,7 @@ serve(async (req) => {
         customer_email: customerId ? undefined : userEmail,
         line_items: lineItems,
         mode: "payment",
+        phone_number_collection: { enabled: false },
         success_url: `${origin}/marketplace?order_success=${order.id}`,
         cancel_url: `${origin}/marketplace?order_canceled=true`,
         metadata: {
@@ -431,6 +432,7 @@ serve(async (req) => {
         customer_email: customerId ? undefined : userEmail,
         line_items: lineItems,
         mode: "payment",
+        phone_number_collection: { enabled: false },
         success_url: `${origin}/marketplace?order_success=${order.id}`,
         cancel_url: `${origin}/marketplace?order_canceled=true`,
         metadata: { user_id: userId, order_id: order.id, order_number: orderNumber, negotiation_id: negotiationId },
