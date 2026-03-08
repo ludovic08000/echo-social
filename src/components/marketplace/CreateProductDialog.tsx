@@ -310,7 +310,7 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
               </div>
             </div>
 
-            {/* Category & Type */}
+            {/* Category & Condition */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Catégorie</Label>
@@ -324,13 +324,13 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
                 </Select>
               </div>
               <div>
-                <Label>Type</Label>
-                <Select value={productType} onValueChange={(v: any) => setProductType(v)}>
+                <Label>État *</Label>
+                <Select value={condition} onValueChange={setCondition}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="physical">Physique</SelectItem>
-                    <SelectItem value="digital">Numérique</SelectItem>
-                    <SelectItem value="service">Service</SelectItem>
+                    {CONDITIONS.map((c) => (
+                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
