@@ -912,6 +912,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         <div className="mx-2 mb-1 bg-background border border-border/40 rounded-xl shadow-lg overflow-hidden">
           <div className="p-1.5 grid grid-cols-2 gap-1">
             <button
+              type="button"
               onClick={() => handleAI('correct')}
               disabled={!newMessage.trim()}
               className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg hover:bg-secondary/80 transition-colors text-left disabled:opacity-40"
@@ -923,6 +924,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               </div>
             </button>
             <button
+              type="button"
               onClick={() => handleAI('improve', 'friendly')}
               disabled={!newMessage.trim()}
               className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg hover:bg-secondary/80 transition-colors text-left disabled:opacity-40"
@@ -934,6 +936,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               </div>
             </button>
             <button
+              type="button"
               onClick={() => handleAI('translate')}
               disabled={!newMessage.trim()}
               className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg hover:bg-secondary/80 transition-colors text-left disabled:opacity-40"
@@ -945,6 +948,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               </div>
             </button>
             <button
+              type="button"
               onClick={() => handleAI('improve', 'formal')}
               disabled={!newMessage.trim()}
               className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg hover:bg-secondary/80 transition-colors text-left disabled:opacity-40"
