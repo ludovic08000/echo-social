@@ -234,23 +234,34 @@ export function useSendMessage() {
         recordSentMessage(sanitizedBody);
       }
 
+      // AI moderation (async, non-blocking)
+      if (!isSpecialMessage && data?.id) {
+        supabase.functions.invoke('message-moderation', {
+          body: { action: 'moderate_message', messageBody: sanitizedBody, messageId: data.id },
+        }).catch(() => {});
+      }
+
       await supabase
         .from('conversations')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', conversationId);
 
-      const { data: participants } = await supabase
-        .from('conversation_participants')
-        .select('user_id')
-        .eq('conversation_id', conversationId)
-        .neq('user_id', user.id);
+      // Notification is now handled by the friendship trigger for non-friends
+      // For friends, send notification as before
+      if (data?.status === 'delivered') {
+        const { data: participants } = await supabase
+          .from('conversation_participants')
+          .select('user_id')
+          .eq('conversation_id', conversationId)
+          .neq('user_id', user.id);
 
-      if (participants?.length) {
-        await supabase.from('notifications').insert({
-          user_id: participants[0].user_id,
-          type: 'message',
-          actor_id: user.id,
-        });
+        if (participants?.length) {
+          await supabase.from('notifications').insert({
+            user_id: participants[0].user_id,
+            type: 'message',
+            actor_id: user.id,
+          });
+        }
       }
 
       return data;
