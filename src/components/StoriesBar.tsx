@@ -222,7 +222,7 @@ export function StoriesBar() {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/mp4,video/webm,video/quicktime"
             className="hidden"
             onChange={handleFileSelect}
           />
@@ -342,18 +342,34 @@ export function StoriesBar() {
                 </div>
               </div>
 
-              {/* Story Image */}
+              {/* Story Image/Video */}
               <AnimatePresence mode="wait">
-                <motion.img
-                  key={currentStory.id}
-                  initial={{ scale: 1.05, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.98, opacity: 0 }}
-                  transition={{ duration: 0.3 }}
-                  src={currentStory.image_url}
-                  alt="Story"
-                  className="w-full h-full object-cover"
-                />
+                {currentStory.image_url.match(/\.(mp4|webm|mov|ogg)(\?|$)/i) ? (
+                  <motion.video
+                    key={currentStory.id}
+                    initial={{ scale: 1.05, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.98, opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                    src={currentStory.image_url}
+                    className="w-full h-full object-cover"
+                    autoPlay
+                    muted
+                    playsInline
+                    loop
+                  />
+                ) : (
+                  <motion.img
+                    key={currentStory.id}
+                    initial={{ scale: 1.05, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.98, opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                    src={currentStory.image_url}
+                    alt="Story"
+                    className="w-full h-full object-cover"
+                  />
+                )}
               </AnimatePresence>
 
               {/* Caption */}
