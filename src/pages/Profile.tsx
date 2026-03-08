@@ -666,6 +666,7 @@ export default function Profile() {
                    </Button>
                    {isCreator && <TipButton creatorId={userId!} creatorName={profile.name} />}
                    <ReportFakeAccountButton reportedUserId={userId!} />
+                   {currentUserIsMinor && <MinorReportButton reportedUserId={userId!} />}
                 </>
               )}
             </div>
