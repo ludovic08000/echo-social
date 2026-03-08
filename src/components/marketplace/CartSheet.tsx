@@ -69,13 +69,7 @@ export function CartSheet() {
         country: selectedRelay.country,
       } : null;
 
-      const packageData = hasPhysical && selectedRelay
-        ? {
-            weight_grams: weightGrams,
-            parcels: parcelsCount,
-            shipping_estimate: shippingEstimate,
-          }
-        : null;
+      const packageData = null; // Weight is now set by the seller
 
       if (testMode) {
         const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
