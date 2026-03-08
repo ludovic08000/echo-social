@@ -210,7 +210,8 @@ export function NegotiationChat({ open, onOpenChange, product }: NegotiationChat
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col p-0 gap-0 rounded-2xl overflow-hidden">
+      <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col p-0 gap-0 rounded-2xl overflow-hidden" aria-describedby={undefined}>
+        <DialogTitle className="sr-only">Négociation - {product.title}</DialogTitle>
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-3 bg-primary text-primary-foreground">
           <button onClick={() => onOpenChange(false)}>

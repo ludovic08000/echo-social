@@ -10,11 +10,19 @@ export function useProductReviews(productId: string | undefined) {
       if (!productId) return [];
       const { data, error } = await supabase
         .from('product_reviews')
-        .select('*, profiles:user_id(name, avatar_url)')
+        .select('*')
         .eq('product_id', productId)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return data;
+      if (!data || data.length === 0) return [];
+      // Fetch profiles separately
+      const userIds = [...new Set(data.map(r => r.user_id))];
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, name, avatar_url')
+        .in('user_id', userIds);
+      const profileMap = new Map((profiles || []).map(p => [p.user_id, p]));
+      return data.map(r => ({ ...r, profiles: profileMap.get(r.user_id) || null }));
     },
     enabled: !!productId,
   });
