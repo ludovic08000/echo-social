@@ -60,7 +60,7 @@ const EMOJI_CATEGORIES = [
   { label: '💎 Premium', emojis: ['💎','👑','🦄','🌙','⚡','🪐','🔮','🎭','🗝️','🧿','🪬','💐','🦚','🎪','🏰','🚀','🛸','🧬'] },
 ];
 
-// Helper to detect voice messages and GIFs
+// Helper to detect voice messages, GIFs, and call events
 function isVoiceMessage(body: string): boolean {
   return body.startsWith('🎙️ ') && body.includes('voice:');
 }
@@ -77,6 +77,20 @@ function isGifMessage(body: string): boolean {
 
 function getGifUrl(body: string): string {
   return body.replace('GIF:', '');
+}
+
+function isCallMessage(body: string): boolean {
+  return body.startsWith('📞 CALL:');
+}
+
+function getCallData(body: string): { status: 'missed' | 'ended'; callType: 'audio' | 'video'; duration?: number } | null {
+  const match = body.match(/📞 CALL:(missed|ended)\|(audio|video)(?:\|dur:(\d+))?/);
+  if (!match) return null;
+  return {
+    status: match[1] as 'missed' | 'ended',
+    callType: match[2] as 'audio' | 'video',
+    duration: match[3] ? parseInt(match[3], 10) : undefined,
+  };
 }
 
 // ─── New Conversation Dialog ─────────────────────────────
