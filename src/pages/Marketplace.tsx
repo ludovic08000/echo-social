@@ -322,14 +322,14 @@ export default function Marketplace() {
                     key={cat.value}
                     onClick={() => setCategory(cat.value)}
                     className={cn(
-                      'flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-2xl transition-all duration-300 flex-shrink-0 min-w-[68px] border backdrop-blur-sm',
+                      'flex flex-col items-center justify-center gap-1.5 w-[72px] h-[72px] rounded-2xl transition-all duration-300 flex-shrink-0 border backdrop-blur-sm',
                       category === cat.value
                         ? 'bg-primary text-primary-foreground shadow-[0_4px_20px_hsl(var(--primary)/0.4)] border-primary/50 scale-[1.05] -translate-y-0.5'
                         : 'bg-card/80 text-muted-foreground hover:bg-card hover:shadow-[var(--shadow-md)] hover:-translate-y-0.5 border-border/30 hover:border-border/60'
                     )}
                   >
                     <span className="text-xl leading-none drop-shadow-sm">{cat.icon}</span>
-                    <span className="text-[10px] font-bold tracking-wide leading-none">{cat.label}</span>
+                    <span className="text-[10px] font-bold tracking-wide leading-none truncate max-w-[60px]">{cat.label}</span>
                   </button>
                 ))}
               </div>
