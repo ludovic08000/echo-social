@@ -3,10 +3,22 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Bot, Send, Loader2, TrendingUp } from 'lucide-react';
+import { Bot, Send, Loader2, TrendingUp, Camera, PenLine, Search, AlertTriangle, Zap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 type Message = { role: 'user' | 'assistant'; content: string };
+
+interface ProductData {
+  title: string;
+  price: number;
+  category: string;
+  stock: number | null;
+  created: string;
+  description?: string;
+  thumbnail?: string;
+  images?: string[];
+  productType?: string;
+}
 
 interface AISalesCoachProps {
   sellerName: string;
@@ -14,7 +26,7 @@ interface AISalesCoachProps {
   totalRevenue: number;
   productCount: number;
   orderCount: number;
-  products?: { title: string; price: number; category: string; stock: number | null; created: string }[];
+  products?: ProductData[];
   recentOrders?: { total: number; status: string; date: string; items: number }[];
   rating?: number;
   ratingCount?: number;
@@ -40,20 +52,27 @@ export function AISalesCoach({
     totalRevenue,
     productCount,
     orderCount,
-    products: products.slice(0, 15),
+    products: products.slice(0, 15).map(p => ({
+      ...p,
+      photoCount: (p.images?.length || 0) + (p.thumbnail ? 1 : 0),
+      hasDescription: !!p.description && p.description.length > 20,
+      descriptionLength: p.description?.length || 0,
+      descriptionQuality: !p.description ? 'absente' : p.description.length < 50 ? 'faible' : p.description.length < 150 ? 'correcte' : 'détaillée',
+      imageUrls: [p.thumbnail, ...(p.images || [])].filter(Boolean).slice(0, 3),
+    })),
     recentOrders: recentOrders.slice(0, 20),
     rating,
     ratingCount,
     averageOrderValue: orderCount > 0 ? Math.round(totalRevenue / orderCount * 100) / 100 : 0,
   };
 
-  const quickPrompts = [
-    '📊 Analyse complète de ma boutique',
-    '🏷️ Compare mes prix à la concurrence',
-    '📈 Comment augmenter mes ventes ?',
-    '🔥 Quelles catégories se vendent le mieux ?',
-    '🎯 Donne-moi un plan d\'action chiffré',
-    '⚡ Score de performance de ma boutique',
+  const quickActions = [
+    { icon: TrendingUp, label: '📊 Analyse complète', prompt: 'Fais une analyse complète de ma boutique : score /100, prix vs concurrence, probabilité de vente de chaque produit, et plan d\'action chiffré.' },
+    { icon: Search, label: '🏷️ Comparer mes prix', prompt: 'Compare chacun de mes produits aux prix du marché. Pour chaque produit, donne : prix médian marché, écart en %, positionnement (trop cher/correct/sous-évalué), et prix optimal recommandé.' },
+    { icon: Camera, label: '📸 Analyser mes photos', prompt: 'Analyse les photos de mes produits. Pour chaque annonce, évalue : nombre de photos, qualité estimée, et donne des conseils concrets pour améliorer l\'attractivité visuelle.' },
+    { icon: AlertTriangle, label: '💎 Produits sous-évalués', prompt: 'Détecte les annonces sous-évaluées dans ma boutique ET sur la marketplace. Quels produits sont vendus bien en dessous du prix marché ? Opportunités d\'arbitrage ?' },
+    { icon: PenLine, label: '✍️ Réécrire mes annonces', prompt: 'Réécris automatiquement les titres et descriptions de TOUS mes produits pour maximiser les ventes. Pour chaque produit, donne : ancien titre → nouveau titre optimisé, et une description SEO complète.' },
+    { icon: Zap, label: '⚡ Estimation demande', prompt: 'Estime la demande réelle pour chacun de mes produits en te basant sur le volume de ventes de la catégorie, le nombre de concurrents et les tendances. Classe-les par potentiel de vente.' },
   ];
 
   const sendMessage = async (text: string) => {
@@ -134,7 +153,7 @@ export function AISalesCoach({
 
   const runAutoAnalysis = () => {
     setAutoAnalysisDone(true);
-    sendMessage('Fais une analyse complète de ma boutique avec mes chiffres de ventes, identifie les points forts et faibles, et donne-moi 5 recommandations concrètes pour augmenter mon chiffre d\'affaires.');
+    sendMessage('Fais une analyse complète de ma boutique : détecte automatiquement le type de chaque produit à partir du titre, analyse les photos, compare les prix au marché, estime la demande, et donne un score /100 avec plan d\'action chiffré pour augmenter le CA.');
   };
 
   return (
@@ -142,12 +161,15 @@ export function AISalesCoach({
       <CardContent className="p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Bot className="w-4 h-4 text-primary" />
-            <h4 className="text-sm font-bold">Coach IA Ventes</h4>
+            <Bot className="w-5 h-5 text-primary" />
+            <div>
+              <h4 className="text-sm font-bold">Coach IA Ventes</h4>
+              <p className="text-[10px] text-muted-foreground">Analyse marché • Pricing • Optimisation</p>
+            </div>
           </div>
           {messages.length === 0 && !autoAnalysisDone && (
-            <Button size="sm" className="h-7 text-xs gap-1" onClick={runAutoAnalysis}>
-              <TrendingUp className="w-3 h-3" /> Analyser ma boutique
+            <Button size="sm" className="h-8 text-xs gap-1.5" onClick={runAutoAnalysis}>
+              <TrendingUp className="w-3.5 h-3.5" /> Analyse auto
             </Button>
           )}
         </div>
@@ -172,34 +194,34 @@ export function AISalesCoach({
         {messages.length === 0 && !isLoading ? (
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
-              Le coach analyse vos données réelles (ventes, produits, commandes, notes) et vous donne des recommandations personnalisées.
+              IA avancée : analyse photos, détection sous-évaluation, réécriture d'annonces, estimation demande et pricing dynamique.
             </p>
             <div className="grid grid-cols-2 gap-1.5">
-              {quickPrompts.map((prompt) => (
+              {quickActions.map((qa) => (
                 <Button
-                  key={prompt}
+                  key={qa.label}
                   variant="outline"
                   size="sm"
                   className="h-auto py-2 px-2.5 text-[10px] text-left leading-tight whitespace-normal"
-                  onClick={() => sendMessage(prompt)}
+                  onClick={() => sendMessage(qa.prompt)}
                 >
-                  {prompt}
+                  {qa.label}
                 </Button>
               ))}
             </div>
           </div>
         ) : (
-          <ScrollArea className="h-72">
+          <ScrollArea className="h-80">
             <div className="space-y-3 pr-2">
               {messages.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] rounded-xl px-3 py-2 text-xs ${
+                  <div className={`max-w-[90%] rounded-xl px-3 py-2 text-xs ${
                     msg.role === 'user'
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-secondary border border-border'
                   }`}>
                     {msg.role === 'assistant' ? (
-                      <div className="prose prose-sm max-w-none text-xs">
+                      <div className="prose prose-sm max-w-none text-xs [&_table]:text-[10px] [&_th]:px-1.5 [&_td]:px-1.5">
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
                       </div>
                     ) : (
@@ -210,8 +232,9 @@ export function AISalesCoach({
               ))}
               {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
                 <div className="flex justify-start">
-                  <div className="bg-secondary border border-border rounded-xl px-3 py-2">
+                  <div className="bg-secondary border border-border rounded-xl px-3 py-2 flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                    <span className="text-[10px] text-muted-foreground">Analyse en cours...</span>
                   </div>
                 </div>
               )}
@@ -228,7 +251,7 @@ export function AISalesCoach({
           }}
         >
           <Input
-            placeholder="Posez votre question..."
+            placeholder="Posez votre question au coach IA..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             className="text-xs h-9"
