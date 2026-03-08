@@ -52,6 +52,11 @@ serve(async (req) => {
     const { action, text, context, feedback } = body;
     const user_id = authUser.id; // Always use authenticated user ID, never trust client
 
+    // Input sanitization: cap text length to prevent abuse
+    const MAX_TEXT_LENGTH = 5000;
+    const safeText = typeof text === "string" ? text.slice(0, MAX_TEXT_LENGTH) : "";
+    const safeContext = context && typeof context === "object" ? context : {};
+
     if (!action || typeof action !== "string") {
       return new Response(
         JSON.stringify({ error: "Missing 'action' parameter" }),
