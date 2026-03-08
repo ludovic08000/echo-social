@@ -427,8 +427,8 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        error:
-          "Invalid action. Use: check_rate, register_fingerprint, check_bot, report_user",
+      error:
+          "Invalid action. Use: check_rate, register_fingerprint, check_bot, report_user, check_minor_contact",
       }),
       {
         status: 400,
