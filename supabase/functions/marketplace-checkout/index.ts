@@ -57,9 +57,7 @@ serve(async (req) => {
 
     // ── CREATE MARKETPLACE CHECKOUT ──
     if (action === "create_checkout") {
-      const { items, relay, package: packageData } = body;
-      // items: [{ product_id, title, price, quantity, seller_id, thumbnail_url }]
-      // relay: { id, name, address, postcode, city, country } (optional)
+      const { items, relay } = body;
 
       if (!items?.length) throw new Error("Panier vide");
 
@@ -76,11 +74,26 @@ serve(async (req) => {
       const subtotal = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
       const commission = Math.round(subtotal * COMMISSION_RATE * 100) / 100;
 
-      const weightGrams = Math.max(100, Number(packageData?.weight_grams) || 500);
-      const parcels = Math.max(1, Number(packageData?.parcels) || 1);
-      const shippingFee = relay?.id ? estimateRelayShipping(weightGrams, parcels) : 0;
+      // Fetch real weights from products table
+      let totalShipping = 0;
+      let totalWeightGrams = 0;
+      if (relay?.id) {
+        const productIds = items.map((i: any) => i.product_id);
+        const { data: products } = await supabase
+          .from("products")
+          .select("id, weight_grams")
+          .in("id", productIds);
+        
+        for (const item of items) {
+          const product = products?.find((p: any) => p.id === item.product_id);
+          const weight = product?.weight_grams || 500;
+          totalWeightGrams += weight * item.quantity;
+          totalShipping += estimateRelayShipping(weight) * item.quantity;
+        }
+        totalShipping = Math.round(totalShipping * 100) / 100;
+      }
 
-      const total = subtotal + commission + shippingFee;
+      const total = subtotal + commission + totalShipping;
 
       // Find or create Stripe customer
       const customers = await stripe.customers.list({ email: userEmail, limit: 1 });
