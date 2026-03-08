@@ -24,6 +24,29 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) throw new Error("Not authenticated");
 
+    // Fetch user profile name for folder structure
+    const serviceClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+    const { data: profile } = await serviceClient
+      .from("profiles")
+      .select("name")
+      .eq("user_id", user.id)
+      .single();
+
+    // Sanitize name for folder: lowercase, remove accents/special chars, replace spaces with hyphens
+    const rawName = profile?.name || "user";
+    const sanitizedName = rawName
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .toLowerCase()
+      || "user";
+    const userFolder = `${sanitizedName}-${user.id.substring(0, 8)}`;
+
     // R2 config
     const accountId = Deno.env.get("R2_ACCOUNT_ID")?.trim() ?? "";
     let accessKeyId = Deno.env.get("R2_ACCESS_KEY_ID")?.trim() ?? "";
