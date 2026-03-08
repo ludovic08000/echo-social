@@ -56,3 +56,6 @@ verify_jwt = false
 
 [functions.cleanup-lives]
 verify_jwt = false
+
+[functions.ad-checkout]
+verify_jwt = false

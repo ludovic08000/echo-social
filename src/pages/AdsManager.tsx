@@ -10,9 +10,9 @@ import {
   Megaphone, Plus, Sparkles, Loader2, Eye, MousePointerClick, 
   DollarSign, Calendar, Target, Zap, BarChart3, CheckCircle2, ArrowRight,
   Users, Clock, Crown, Shield, ShieldCheck, ShieldX, TrendingUp,
-  UserCheck, Send, Bot, User, ImagePlus, Video, Film, X
+  UserCheck, Send, Bot, User, ImagePlus, Video, Film, X, CreditCard
 } from 'lucide-react';
-import { useAdCampaigns, useCreateAdCampaign, useAdAIAssistant, useAdDailyStats, getAdPricing, DurationType, AdCampaign } from '@/hooks/useAdCampaigns';
+import { useAdCampaigns, useCreateAdCampaign, useActivateAdCampaign, useAdAIAssistant, useAdDailyStats, getAdPricing, DurationType, AdCampaign } from '@/hooks/useAdCampaigns';
 import { cn } from '@/lib/utils';
 import { LocationSelector } from '@/components/ads/LocationSelector';
 import { type TargetLocation, getDefaultLocation } from '@/lib/geoData';
@@ -363,8 +363,8 @@ function AdChatCreator() {
             {/* Launch button */}
             <Button onClick={handleLaunch} disabled={createCampaign.isPending}
               className="w-full h-12 rounded-xl text-base font-semibold gap-2 bg-gradient-to-r from-primary to-primary/80 shadow-[0_4px_16px_hsl(var(--primary)/0.3)]">
-              {createCampaign.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Megaphone className="w-5 h-5" />}
-              Lancer la campagne — {PRICING[selectedDuration].price}€
+              {createCampaign.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
+              Payer et lancer — {PRICING[selectedDuration].price}€
             </Button>
           </motion.div>
         )}
@@ -376,6 +376,7 @@ function AdChatCreator() {
 export default function AdsManager() {
   const { data: campaigns, isLoading } = useAdCampaigns();
   const { upload, isUploading } = useImageUpload({ bucket: 'post-images' });
+  const activateAd = useActivateAdCampaign();
 
   const [tab, setTab] = useState<'campaigns' | 'create' | 'manual' | 'analytics' | 'pricing'>('campaigns');
   const createCampaign = useCreateAdCampaign();
@@ -391,6 +392,22 @@ export default function AdsManager() {
   const [manualGender, setManualGender] = useState('all');
   const [manualInterests, setManualInterests] = useState<string[]>([]);
   const [manualLocation, setManualLocation] = useState<TargetLocation>(getDefaultLocation());
+
+  // Handle return from Stripe payment
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const paymentStatus = params.get('payment');
+    const campaignId = params.get('campaign_id');
+    
+    if (paymentStatus === 'success' && campaignId) {
+      activateAd.mutate(campaignId);
+      // Clean URL
+      window.history.replaceState({}, '', '/ads');
+    } else if (paymentStatus === 'canceled') {
+      toast.info('Paiement annulé. La campagne reste en attente.');
+      window.history.replaceState({}, '', '/ads');
+    }
+  }, []);
 
   const chartData = generateChartData(campaigns || []);
 
@@ -723,8 +740,8 @@ export default function AdsManager() {
                   disabled={!manualTitle.trim() || !manualBody.trim() || createCampaign.isPending}
                   className="w-full h-12 rounded-xl text-base font-semibold gap-2 bg-gradient-to-r from-primary to-primary/80 shadow-[0_4px_16px_hsl(var(--primary)/0.3)]"
                 >
-                  {createCampaign.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Megaphone className="w-5 h-5" />}
-                  Lancer — {PRICING[manualDuration].price}€
+                  {createCampaign.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
+                  Payer et lancer — {PRICING[manualDuration].price}€
                 </Button>
               </div>
             </motion.div>
