@@ -1,7 +1,6 @@
 import { useState, useRef } from 'react';
 import { ArrowLeft, Plus, Trash2, Play, X } from 'lucide-react';
 import { useAlbumMedia, useAddMediaToAlbum, useDeleteMedia, type Album, type AlbumMedia } from '@/hooks/useAlbums';
-import { useImageUpload } from '@/hooks/useImageUpload';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';

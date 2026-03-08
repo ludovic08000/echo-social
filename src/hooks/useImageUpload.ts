@@ -36,41 +36,44 @@ export function useImageUpload({ bucket, onSuccess, maxSizeMB = 5 }: UseImageUpl
     }
 
     setIsUploading(true);
-    setProgress(0);
+    setProgress(10);
 
     try {
-      const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-      const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `${user.id}/${fileName}`;
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('folder', bucket);
 
       setProgress(30);
 
-      const { error: uploadError } = await supabase.storage
-        .from(bucket)
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: true,
-        });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No session');
 
-      if (uploadError) {
-        console.error('Upload error:', uploadError);
-        throw uploadError;
-      }
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/r2-upload`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: formData,
+        }
+      );
 
       setProgress(70);
 
-      const { data: urlData } = supabase.storage
-        .from(bucket)
-        .getPublicUrl(filePath);
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Upload failed');
+      }
 
-      const publicUrl = urlData.publicUrl;
-
+      const result = await response.json();
       setProgress(100);
       
       toast.success('Image uploadée avec succès');
-      onSuccess?.(publicUrl);
+      onSuccess?.(result.url);
       
-      return publicUrl;
+      return result.url;
     } catch (error: any) {
       console.error('Upload failed:', error);
       toast.error(error.message || "Erreur lors de l'upload");
