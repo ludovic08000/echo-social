@@ -29,6 +29,7 @@ export function SellerDashboard() {
   const [uploadingVideo, setUploadingVideo] = useState<string | null>(null);
   const [analyzingVideo, setAnalyzingVideo] = useState<string | null>(null);
   const [orderWeights, setOrderWeights] = useState<Record<string, string>>({});
+  const [creatingShipment, setCreatingShipment] = useState<string | null>(null);
 
   const estimateRelayShipping = (weightGrams: number) => {
     const basePerParcel = 4.2;
@@ -168,6 +169,31 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
     }
   };
 
+  const createMondialRelayShipment = async (order: any) => {
+    setCreatingShipment(order.id);
+    try {
+      const weightGrams = Math.max(100, Number(orderWeights[order.id]) || 500);
+      const { data, error } = await supabase.functions.invoke('mondial-relay', {
+        body: {
+          action: 'create_shipment',
+          order_id: order.id,
+          package: { weight_grams: weightGrams },
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast.success(`✅ Expédition créée ! N° suivi : ${data.tracking_number}`);
+      if (data.label_url) {
+        window.open(data.label_url, '_blank');
+      }
+      refetchOrders();
+    } catch (e: any) {
+      toast.error(e.message || "Erreur lors de la création de l'expédition");
+    } finally {
+      setCreatingShipment(null);
+    }
+  };
 
   if (isLoading) {
     return <div className="space-y-4"><div className="skeleton h-32 w-full" /><div className="skeleton h-32 w-full" /></div>;
@@ -404,6 +430,38 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
                             <FileText className="w-4 h-4 mr-2" />
                             Générer le bordereau de livraison (PDF)
                           </Button>
+                          {!order.tracking_number && order.shipping_relay_id && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full border-primary/30 text-primary hover:bg-primary/10"
+                              onClick={() => createMondialRelayShipment(order)}
+                              disabled={creatingShipment === order.id}
+                            >
+                              {creatingShipment === order.id ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              ) : (
+                                <Truck className="w-4 h-4 mr-2" />
+                              )}
+                              Créer l'expédition Mondial Relay
+                            </Button>
+                          )}
+                          {!order.tracking_number && !order.shipping_relay_id && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full border-primary/30 text-primary hover:bg-primary/10"
+                              onClick={() => createMondialRelayShipment(order)}
+                              disabled={creatingShipment === order.id}
+                            >
+                              {creatingShipment === order.id ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              ) : (
+                                <Truck className="w-4 h-4 mr-2" />
+                              )}
+                              Créer l'expédition & obtenir le suivi
+                            </Button>
+                          )}
                         </div>
                       )
                     )}
