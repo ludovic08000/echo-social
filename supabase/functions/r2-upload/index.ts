@@ -114,8 +114,9 @@ Deno.serve(async (req) => {
     if (!file) throw new Error("No file provided");
 
     const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
-    // Structure: {category}/{user_id}/{timestamp}.{ext}
-    const fileName = `${folder}/${user.id}/${Date.now()}.${ext}`;
+    // Structure: {userFolder}/{category}/{timestamp}.{ext}
+    // e.g. ludovic-98c32ea4/post-images/1772970005315.jpg
+    const fileName = `${userFolder}/${folder}/${Date.now()}.${ext}`;
 
     const url = `${endpoint}/${bucketName}/${fileName}`;
     const fileBuffer = await file.arrayBuffer();
