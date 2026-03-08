@@ -150,7 +150,14 @@ export function CartSheet() {
                           variant="outline"
                           size="icon"
                           className="h-6 w-6 rounded-full"
-                          onClick={() => updateItem.mutate({ id: item.id, quantity: item.quantity + 1 })}
+                          disabled={product.stock_quantity !== null && item.quantity >= product.stock_quantity}
+                          onClick={() => {
+                            if (product.stock_quantity !== null && item.quantity >= product.stock_quantity) {
+                              toast.error(`Stock max : ${product.stock_quantity}`);
+                              return;
+                            }
+                            updateItem.mutate({ id: item.id, quantity: item.quantity + 1 });
+                          }}
                         >
                           <Plus className="w-3 h-3" />
                         </Button>
