@@ -7,8 +7,14 @@ import { toast } from 'sonner';
 export type CallType = 'audio' | 'video';
 export type CallState = 'idle' | 'connecting' | 'connected' | 'ended';
 
+export interface CallEndInfo {
+  type: CallType;
+  duration: number;
+  wasMissed: boolean; // true if nobody ever connected
+}
+
 interface UseCallOptions {
-  onCallEnded?: () => void;
+  onCallEnded?: (info: CallEndInfo) => void;
 }
 
 export function useCall(options?: UseCallOptions) {
