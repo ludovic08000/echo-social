@@ -150,15 +150,24 @@ export function SellerDashboard() {
 
   useEffect(() => {
     const focusOrderId = searchParams.get('order_success');
-    if (!focusOrderId || autoOpenedOrderRef.current === focusOrderId || orders.length === 0) return;
+    if (!focusOrderId || autoOpenedOrderRef.current === focusOrderId) return;
+
+    // If orders haven't loaded yet, trigger a refetch and wait
+    if (orders.length === 0) {
+      refetchOrders();
+      return;
+    }
 
     const orderToEdit = orders.find((order: any) => order.id === focusOrderId);
-    if (!orderToEdit) return;
+    if (!orderToEdit) {
+      // Order might not belong to this seller, just skip
+      return;
+    }
 
     setSellerTab('orders');
     openLabelEditor(orderToEdit);
     autoOpenedOrderRef.current = focusOrderId;
-  }, [searchParams, orders]);
+  }, [searchParams, orders, refetchOrders]);
 
   if (isLoading) {
     return <div className="space-y-4"><div className="skeleton h-32 w-full" /><div className="skeleton h-32 w-full" /></div>;
