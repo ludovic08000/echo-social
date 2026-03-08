@@ -39,8 +39,8 @@ export function SellerDashboard() {
       weightGrams <= 5000 ? 2.8 : 4.5;
     return Math.round((basePerParcel + weightExtra) * 100) / 100;
   };
-  const [sellerTab, setSellerTab] = useState<'products' | 'orders'>(
-    searchParams.get('sellerTab') === 'orders' ? 'orders' : 'products'
+  const [sellerTab, setSellerTab] = useState<string>(
+    searchParams.get('sellerTab') || 'products'
   );
 
   const paidOrders = useMemo(
