@@ -8,7 +8,7 @@ const corsHeaders = {
 };
 
 const MAX_TEXT_LENGTH = 5000;
-const ALLOWED_ACTIONS = ["summarize", "translate"];
+const ALLOWED_ACTIONS = ["summarize", "translate", "improve", "correct"];
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -16,7 +16,6 @@ serve(async (req) => {
   }
 
   try {
-    // ─── Auth check ───
     const authHeader = req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Non authentifié" }), {
@@ -41,9 +40,8 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    const { action, text, targetLanguage } = await req.json();
+    const { action, text, targetLanguage, tone } = await req.json();
 
-    // ─── Input validation ───
     if (!text || typeof text !== "string" || !action || typeof action !== "string") {
       return new Response(
         JSON.stringify({ error: "Missing 'action' or 'text' parameter" }),
@@ -76,6 +74,19 @@ serve(async (req) => {
       const allowedLangs = ["en", "fr", "es", "de", "it", "pt", "ar", "zh", "ja", "ko"];
       const lang = allowedLangs.includes(targetLanguage) ? targetLanguage : "en";
       systemPrompt = `You are a professional translator. Translate the following text to ${lang}. Only output the translation, nothing else. Preserve the tone and meaning.`;
+      userPrompt = text;
+    } else if (action === "correct") {
+      systemPrompt = `You are a spelling and grammar checker for chat messages. Fix all spelling mistakes, grammar errors, and punctuation in the following message. Keep the same language, tone and meaning. Keep it casual if it's casual. Do NOT add anything extra. Only output the corrected text.`;
+      userPrompt = text;
+    } else if (action === "improve") {
+      const toneMap: Record<string, string> = {
+        formal: "Make it more polished and professional while keeping the same meaning.",
+        friendly: "Make it warmer and more friendly while keeping the same meaning.",
+        funny: "Make it funnier and more playful while keeping the same meaning.",
+        poetic: "Make it more poetic and eloquent while keeping the same meaning.",
+      };
+      const toneInstruction = toneMap[tone] || toneMap["friendly"];
+      systemPrompt = `You are a writing assistant for chat messages. Improve the following message. ${toneInstruction} Keep the same language. Only output the improved text, nothing else.`;
       userPrompt = text;
     }
 
