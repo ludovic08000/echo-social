@@ -19,18 +19,24 @@ serve(async (req) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  const userClient = createClient(
-    supabaseUrl,
-    Deno.env.get("SUPABASE_ANON_KEY") ?? ""
-  );
-
   try {
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) throw new Error("Non authentifié");
+    if (!authHeader?.startsWith("Bearer ")) {
+      throw new Error("Non authentifié");
+    }
+
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
 
     const token = authHeader.replace("Bearer ", "");
-    const { data: { user } } = await userClient.auth.getUser(token);
-    if (!user?.email) throw new Error("Utilisateur non authentifié");
+    const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token);
+    if (claimsError || !claimsData?.claims) throw new Error("Utilisateur non authentifié");
+
+    const userId = claimsData.claims.sub as string;
+    const userEmail = claimsData.claims.email as string;
+    if (!userEmail) throw new Error("Email utilisateur requis");
 
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
       apiVersion: "2025-08-27.basil",
