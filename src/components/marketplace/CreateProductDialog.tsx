@@ -10,6 +10,7 @@ import { useCreateProduct } from '@/hooks/useMarketplace';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { COUNTRIES, GEO_DATA } from '@/lib/geoData';
+import { MARKETPLACE_CATEGORIES } from '@/lib/marketplaceCategories';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 
