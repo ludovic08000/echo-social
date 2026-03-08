@@ -5,10 +5,11 @@ import { useProduct, useAddToCart } from '@/hooks/useMarketplace';
 import { useAuth } from '@/lib/auth';
 import { useProductFavorites, useToggleFavorite } from '@/hooks/useProductFavorites';
 import { ProductReviews } from '@/components/marketplace/ProductReviews';
+import { NegotiationChat } from '@/components/marketplace/NegotiationChat';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { ShoppingCart, BadgeCheck, Star, ArrowLeft, Package, Zap, Wrench, Heart, Store, ChevronLeft, ChevronRight, Truck, MapPin, Download, Shield, MessageCircle, Share2 } from 'lucide-react';
+import { ShoppingCart, BadgeCheck, Star, ArrowLeft, Package, Zap, Wrench, Heart, Store, ChevronLeft, ChevronRight, Truck, MapPin, Download, Shield, MessageCircle, Share2, Tag } from 'lucide-react';
 import { SEOHead } from '@/components/SEOHead';
 import { cn } from '@/lib/utils';
 
