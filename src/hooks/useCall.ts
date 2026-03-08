@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { Room, RoomEvent, Track, RemoteTrackPublication } from 'livekit-client';
 import { getLiveKitToken } from '@/lib/livekit';
 import { requestMediaPermissions, acquireWakeLock, releaseWakeLock } from '@/lib/platformPermissions';
+import { toast } from 'sonner';
 
 export type CallType = 'audio' | 'video';
 export type CallState = 'idle' | 'connecting' | 'connected' | 'ended';
@@ -46,8 +47,7 @@ export function useCall(options?: UseCallOptions) {
     });
 
     if (!perms.granted) {
-      console.error('Permissions denied:', perms.error);
-      // Could show a toast here
+      toast.error(perms.error || 'Impossible d\'accéder au micro/caméra');
       return;
     }
 
@@ -129,6 +129,7 @@ export function useCall(options?: UseCallOptions) {
       }
     } catch (err) {
       console.error('Call error:', err);
+      toast.error('Impossible de lancer l\'appel. Vérifiez votre connexion.');
       setCallState('ended');
       releaseWakeLock();
     }
