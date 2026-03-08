@@ -1686,7 +1686,11 @@ function ZeusSection() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({ domain: 'admin', action: 'apply_proposal', proposalAction: proposal.action, key: proposal.key, updates: proposal.updates, reason: proposal.reason }),
       });
-      if (!resp.ok) throw new Error('Erreur application');
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || 'Erreur application');
+      }
+      await resp.json().catch(() => null);
       setAppliedProposals(prev => new Set(prev).add(proposalId));
       setMessages(prev => [...prev, { role: 'system', content: `✅ **Proposition appliquée** : ${proposal.reason}\n\nClé \`${proposal.key}\` mise à jour.` }]);
       toast({ title: '✅ Proposition Zeus appliquée', description: proposal.reason });
