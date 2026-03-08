@@ -83,6 +83,7 @@ function useAllLives() {
 function LiveSlide({ item, isVisible }: { item: AllLiveItem; isVisible: boolean }) {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const replayVideoRef = useRef<HTMLVideoElement>(null);
   const { data: chatMessages } = useLiveChat(isVisible && item.is_active ? item.id : undefined);
   const sendMessage = useSendLiveChatMessage();
   const joinLive = useJoinLive();
