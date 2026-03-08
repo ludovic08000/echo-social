@@ -29,7 +29,23 @@ interface BackgroundPickerProps {
 function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: BackgroundPickerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const label = type === 'profile' ? 'Profil' : 'Feed';
+
+  // Resolve signed URL for preview
+  useEffect(() => {
+    if (currentUrl && currentUrl.startsWith('storage:')) {
+      const storagePath = currentUrl.replace('storage:', '');
+      supabase.storage
+        .from('backgrounds')
+        .createSignedUrl(storagePath, 3600)
+        .then(({ data }) => {
+          setPreviewUrl(data?.signedUrl || null);
+        });
+    } else {
+      setPreviewUrl(null);
+    }
+  }, [currentUrl]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
