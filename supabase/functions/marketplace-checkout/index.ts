@@ -180,7 +180,7 @@ serve(async (req) => {
         .from("orders")
         .select("*")
         .eq("id", orderId)
-        .eq("buyer_id", user.id)
+        .eq("buyer_id", userId)
         .single();
 
       if (!order) throw new Error("Commande introuvable");
