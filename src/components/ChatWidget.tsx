@@ -591,8 +591,34 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                           </div>
                         )}
 
-                        {/* GIF message */}
-                        {isGifMessage(msg.body) ? (
+                        {/* Call event message */}
+                        {isCallMessage(msg.body) ? (() => {
+                          const cd = getCallData(msg.body);
+                          if (!cd) return null;
+                          const isMissed = cd.status === 'missed';
+                          return (
+                            <div className="flex items-center justify-center w-full">
+                              <div className={cn(
+                                'flex items-center gap-2 px-3 py-2 rounded-2xl text-xs',
+                                isMissed ? 'bg-destructive/10 text-destructive' : 'bg-secondary text-muted-foreground'
+                              )}>
+                                {isMissed ? (
+                                  <PhoneMissed className="w-3.5 h-3.5" />
+                                ) : (
+                                  <Phone className="w-3.5 h-3.5" />
+                                )}
+                                <span className="font-medium">
+                                  {isMissed
+                                    ? `Appel ${cd.callType === 'video' ? 'vidéo' : 'audio'} manqué`
+                                    : `Appel ${cd.callType === 'video' ? 'vidéo' : 'audio'} · ${formatCallDuration(cd.duration || 0)}`
+                                  }
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })()
+                        /* GIF message */
+                        : isGifMessage(msg.body) ? (
                           <div
                             onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
                             className="cursor-pointer rounded-xl overflow-hidden"
