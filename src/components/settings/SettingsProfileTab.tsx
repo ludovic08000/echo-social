@@ -23,6 +23,7 @@ export function SettingsProfileTab() {
   const [name, setName] = useState('');
   const [bio, setBio] = useState('');
   const [musicUrl, setMusicUrl] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
@@ -30,6 +31,7 @@ export function SettingsProfileTab() {
       setName(profile.name || '');
       setBio(profile.bio || '');
       setMusicUrl(profile.profile_music_url || '');
+      setPhoneNumber((profile as any).phone_number || '');
     }
   }, [profile]);
 
