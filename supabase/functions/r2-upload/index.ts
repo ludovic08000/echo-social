@@ -26,7 +26,7 @@ const FOLDER_MAX_SIZES: Record<string, number> = {
   backgrounds: 5 * 1024 * 1024,
   documents: 10 * 1024 * 1024,
   voice: 5 * 1024 * 1024,
-  lives: 5 * 1024 * 1024,
+  lives: 50 * 1024 * 1024,
   feed: 10 * 1024 * 1024,
   uploads: 10 * 1024 * 1024,
 };
