@@ -36,7 +36,7 @@ export function SellerDashboard() {
   const [searchParams] = useSearchParams();
   const { data: seller, isLoading } = useSellerProfile();
   const { data: products = [] } = useSellerProducts();
-  const { data: orders = [] } = useSellerOrders();
+  const { data: orders = [], refetch: refetchOrders } = useSellerOrders();
   const createSeller = useCreateSellerProfile();
   const deleteProduct = useDeleteProduct();
   const [storeName, setStoreName] = useState('');
