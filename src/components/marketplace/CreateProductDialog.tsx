@@ -58,6 +58,7 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
   const [color, setColor] = useState('');
   const [shippingType, setShippingType] = useState('standard');
   const [shippingPrice, setShippingPrice] = useState('');
+  const [weightGrams, setWeightGrams] = useState('');
   const [country, setCountry] = useState('FR');
   const [region, setRegion] = useState('');
   const [city, setCity] = useState('');
