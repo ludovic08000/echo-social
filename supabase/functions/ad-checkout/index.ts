@@ -27,6 +27,12 @@ serve(async (req) => {
     const { campaign_id, amount, campaign_title } = await req.json();
     if (!campaign_id || !amount) throw new Error("Données manquantes");
 
+    // Validate amount server-side
+    const numAmount = Number(amount);
+    if (!Number.isFinite(numAmount) || numAmount < 1 || numAmount > 100000) {
+      throw new Error("Montant invalide (min 1€, max 100 000€)");
+    }
+
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
       apiVersion: "2025-08-27.basil",
     });
@@ -51,7 +57,7 @@ serve(async (req) => {
               name: `Campagne pub: ${campaign_title || "ForSure Ads"}`,
               description: `Budget publicitaire ForSure Ads`,
             },
-            unit_amount: Math.round(amount * 100), // Convert to cents
+            unit_amount: Math.round(numAmount * 100), // Convert to cents
           },
           quantity: 1,
         },
