@@ -203,18 +203,34 @@ export function useSendMessage() {
     mutationFn: async ({ conversationId, body, imageUrl }: { conversationId: string; body: string; imageUrl?: string }) => {
       if (!user) throw new Error('Not authenticated');
 
+      // Anti-spam validation (skip for voice/image-only messages)
+      const isSpecialMessage = body.startsWith('🎙️ voice:') || body === '📷 Image';
+      if (!isSpecialMessage) {
+        const validation = validateMessage(body);
+        if (!validation.valid) {
+          throw new Error(validation.error);
+        }
+      }
+
+      const sanitizedBody = isSpecialMessage ? body : sanitizeMessageBody(body);
+
       const { data, error } = await supabase
         .from('messages')
         .insert({
           conversation_id: conversationId,
           sender_id: user.id,
-          body,
+          body: sanitizedBody,
           image_url: imageUrl || null,
         })
         .select()
         .single();
 
       if (error) throw error;
+
+      // Record for rate limiting
+      if (!isSpecialMessage) {
+        recordSentMessage(sanitizedBody);
+      }
 
       await supabase
         .from('conversations')
