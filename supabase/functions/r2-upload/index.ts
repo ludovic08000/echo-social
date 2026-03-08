@@ -5,16 +5,16 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB absolute max
 const ALLOWED_MIME_TYPES: Record<string, string[]> = {
   avatars:     ["image/jpeg", "image/png", "image/webp", "image/gif"],
   images:      ["image/jpeg", "image/png", "image/webp", "image/gif"],
-  "post-images": ["image/jpeg", "image/png", "image/webp", "image/gif"],
+  "post-images": ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"],
   videos:      ["video/mp4", "video/webm", "video/quicktime"],
   products:    ["image/jpeg", "image/png", "image/webp"],
-  stories:     ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4"],
+  stories:     ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"],
   backgrounds: ["image/jpeg", "image/png", "image/webp"],
   documents:   ["image/jpeg", "image/png", "image/webp", "application/pdf"],
   voice:       ["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg"],
   lives:       ["image/jpeg", "image/png", "image/webp", "video/webm", "video/mp4"],
-  feed:        ["image/jpeg", "image/png", "image/webp", "image/gif"],
-  uploads:     ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4"],
+  feed:        ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"],
+  uploads:     ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"],
 };
 const FOLDER_MAX_SIZES: Record<string, number> = {
   avatars: 5 * 1024 * 1024,
