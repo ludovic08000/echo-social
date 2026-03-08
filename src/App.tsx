@@ -50,9 +50,10 @@ const queryClient = new QueryClient();
 function AppContent() {
   useSettingsInit();
   return (
-    <AuthProvider>
-      <ChatWidgetProvider>
-        <TooltipProvider>
+      <AuthProvider>
+        <ParentalGateProvider>
+        <ChatWidgetProvider>
+          <TooltipProvider>
           <Toaster />
           <Sonner />
           <BrowserRouter>
