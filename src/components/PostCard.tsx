@@ -167,6 +167,26 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
                   Supprimer
                 </DropdownMenuItem>
               )}
+              {isMinorUser && !isOwner && (
+                <DropdownMenuItem 
+                  onClick={async () => {
+                    try {
+                      await reportUser.mutateAsync({
+                        reportedUserId: post.user_id,
+                        reportType: 'inappropriate_content',
+                        description: `Signalement mineur - post ${post.id}`,
+                      });
+                      toast.success('✅ Signalement envoyé !');
+                    } catch {
+                      toast.error('Erreur lors du signalement');
+                    }
+                  }}
+                  className="text-destructive"
+                >
+                  <ShieldAlert className="w-4 h-4 mr-2" />
+                  🛡️ Signaler ce contenu
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
