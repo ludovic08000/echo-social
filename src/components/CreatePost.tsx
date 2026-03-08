@@ -4,6 +4,7 @@ import { Image, Video, X, Send, Timer, Rocket, ShoppingBag, Sparkles, Loader2, C
 import { useCreatePost } from '@/hooks/usePosts';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
+import { uploadToR2 } from '@/lib/r2';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { UserAvatar } from './UserAvatar';
@@ -128,21 +129,9 @@ export function CreatePost() {
       let imageUrl: string | undefined;
 
       if (media) {
-        const fileExt = media.name.split('.').pop();
-        const bucket = mediaType === 'video' ? 'videos' : 'post-images';
-        const filePath = `${user.id}/${Date.now()}.${fileExt}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from(bucket)
-          .upload(filePath, media);
-
-        if (uploadError) throw uploadError;
-
-        const { data: urlData } = supabase.storage
-          .from(bucket)
-          .getPublicUrl(filePath);
-
-        imageUrl = urlData.publicUrl;
+        const folder = mediaType === 'video' ? 'videos' : 'post-images';
+        const { url } = await uploadToR2(media, folder);
+        imageUrl = url;
       }
 
       let expiresAt: string | undefined;
