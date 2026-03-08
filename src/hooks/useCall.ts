@@ -47,8 +47,7 @@ export function useCall(options?: UseCallOptions) {
     });
 
     if (!perms.granted) {
-      console.error('Permissions denied:', perms.error);
-      // Could show a toast here
+      toast.error(perms.error || 'Impossible d\'accéder au micro/caméra');
       return;
     }
 
