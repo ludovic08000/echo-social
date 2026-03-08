@@ -119,6 +119,8 @@ function ShareDialog({
       await sendMessage.mutateAsync({ conversationId, body: `🔗 ${fullShareText}` });
       toast({ title: 'Envoyé !', description: 'Contenu partagé dans la conversation' });
       onOpenChange(false);
+      // Open the messenger on that conversation
+      openConversation(conversationId);
     } catch {
       toast({ title: 'Erreur', variant: 'destructive' });
     } finally {
