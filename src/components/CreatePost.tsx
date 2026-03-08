@@ -5,6 +5,7 @@ import { useCreatePost } from '@/hooks/usePosts';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
 import { uploadToR2 } from '@/lib/r2';
+import { generateVideoThumbnail } from '@/lib/videoThumbnail';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { UserAvatar } from './UserAvatar';
@@ -155,12 +156,23 @@ export function CreatePost() {
       await createPost.mutateAsync({ body: body.trim(), imageUrl, expiresAt, publishAt });
 
       // Also create a replay entry if toggle is on
-      if (publishAsReplay && mediaType === 'video' && imageUrl) {
+      if (publishAsReplay && mediaType === 'video' && imageUrl && media) {
+        let thumbnailUrl: string | null = null;
+        try {
+          const thumbBlob = await generateVideoThumbnail(media);
+          const thumbFile = new File([thumbBlob], 'thumbnail.jpg', { type: 'image/jpeg' });
+          const { url } = await uploadToR2(thumbFile, 'thumbnails');
+          thumbnailUrl = url;
+        } catch (e) {
+          console.warn('Thumbnail generation failed, continuing without', e);
+        }
+
         await supabase.from('live_streams').insert({
           user_id: user.id,
           title: replayTitle.trim() || body.trim() || 'Replay',
           is_active: false,
           recording_url: imageUrl,
+          thumbnail_url: thumbnailUrl,
           ended_at: new Date().toISOString(),
           started_at: new Date().toISOString(),
         });
