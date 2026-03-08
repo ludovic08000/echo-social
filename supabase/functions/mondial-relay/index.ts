@@ -7,7 +7,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const MR_WSDL = "https://api.mondialrelay.com/WebService.asmx";
+const MR_WSDL = "https://api.mondialrelay.com/Web_Services.asmx";
 const MR_API_V2 = "https://connect-api-sandbox.mondialrelay.com/api/shipment";
 
 // Compact MD5 implementation (Web Crypto does not support MD5)
