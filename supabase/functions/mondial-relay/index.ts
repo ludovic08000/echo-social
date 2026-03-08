@@ -337,6 +337,14 @@ serve(async (req) => {
 
       const escXml = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
+      // Format phone to international format (+33...)
+      const formatPhone = (phone: string): string => {
+        const cleaned = phone.replace(/\s+/g, '').replace(/[^0-9+]/g, '');
+        if (cleaned.startsWith('+')) return cleaned;
+        if (cleaned.startsWith('0')) return '+33' + cleaned.substring(1);
+        return '+33' + cleaned;
+      };
+
       const xmlPayload = `<?xml version="1.0" encoding="utf-8"?>
 <ShipmentCreationRequest xmlns="http://www.example.org/Request">
   <Context>
@@ -355,63 +363,40 @@ serve(async (req) => {
       <OrderNo>${escXml(orderNo)}</OrderNo>
       <CustomerNo>${escXml(customerNo)}</CustomerNo>
       <ParcelCount>1</ParcelCount>
-      <ShipmentValue>
-        <Amount>0</Amount>
-        <Currency>EUR</Currency>
-      </ShipmentValue>
-      <deliveryMode>
-        <Code>24R</Code>
-        <Location>${escXml(relayLocation)}</Location>
-      </deliveryMode>
-      <collectionMode>
-        <Code>REL</Code>
-        <Location>${escXml(relayLocation)}</Location>
-      </collectionMode>
+      <ShipmentValue Currency="EUR" Amount="0"/>
+      <DeliveryMode Mode="24R" Location="${escXml(relayLocation)}"/>
+      <CollectionMode Mode="REL" Location="${escXml(relayLocation)}"/>
+      <Parcels>
+        <Parcel>
+          <Content>Commande marketplace</Content>
+          <Weight Value="${weight}" Unit="gr"/>
+        </Parcel>
+      </Parcels>
       <Sender>
         <Address>
-          <Language>FR</Language>
           <Title></Title>
           <Firstname>${escXml(senderFirstname)}</Firstname>
           <Lastname>${escXml(senderLastname)}</Lastname>
           <Streetname>${escXml(senderAddress)}</Streetname>
-          <AddressAdd1></AddressAdd1>
-          <AddressAdd2></AddressAdd2>
-          <AddressAdd3></AddressAdd3>
           <CountryCode>${escXml(senderCountry)}</CountryCode>
           <PostCode>${escXml(senderPostcode)}</PostCode>
           <City>${escXml(senderCity)}</City>
-          <PhoneNo>${escXml(senderPhone)}</PhoneNo>
-          <MobileNo>${escXml(senderPhone)}</MobileNo>
+          <PhoneNo>${escXml(formatPhone(senderPhone))}</PhoneNo>
+          <MobileNo>${escXml(formatPhone(senderPhone))}</MobileNo>
           <Email>${escXml(senderEmail)}</Email>
         </Address>
       </Sender>
       <Recipient>
         <Address>
-          <Language>FR</Language>
           <Title></Title>
           <Firstname>${escXml(recipientFirstname)}</Firstname>
           <Lastname>${escXml(recipientLastname)}</Lastname>
           <Streetname>${escXml(order.shipping_relay_address || "")}</Streetname>
-          <AddressAdd1></AddressAdd1>
-          <AddressAdd2></AddressAdd2>
-          <AddressAdd3></AddressAdd3>
           <CountryCode>${escXml(order.shipping_relay_country || "FR")}</CountryCode>
           <PostCode>${escXml(order.shipping_relay_postcode || "")}</PostCode>
           <City>${escXml(order.shipping_relay_city || "")}</City>
-          <PhoneNo></PhoneNo>
-          <MobileNo></MobileNo>
-          <Email></Email>
         </Address>
       </Recipient>
-      <Parcels>
-        <Parcel>
-          <Content>Commande marketplace</Content>
-          <Weight>
-            <Value>${weight}</Value>
-            <Unit>gr</Unit>
-          </Weight>
-        </Parcel>
-      </Parcels>
     </Shipment>
   </ShipmentsList>
 </ShipmentCreationRequest>`;
