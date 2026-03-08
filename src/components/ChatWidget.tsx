@@ -1084,8 +1084,33 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       )}
 
+      {/* Relay Point Picker for negotiation payment */}
+      {showRelayPicker && (
+        <div className="mx-2 mt-1 mb-1 border border-border/40 rounded-xl overflow-hidden bg-background shadow-lg">
+          <div className="flex items-center justify-between px-3 py-1.5 bg-primary/5 border-b border-border/30">
+            <span className="text-[10px] font-semibold flex items-center gap-1"><MapPin className="w-3 h-3" /> Point Relais</span>
+            <button onClick={() => setShowRelayPicker(false)}><X className="w-3 h-3" /></button>
+          </div>
+          <div className="max-h-[200px] overflow-y-auto">
+            <RelayPointPicker
+              selectedId={selectedRelay?.id}
+              onSelect={(point) => {
+                setSelectedRelay({
+                  id: point.id,
+                  name: point.name,
+                  address: point.address,
+                  postcode: point.postcode,
+                  city: point.city,
+                  country: point.country,
+                });
+                setShowRelayPicker(false);
+              }}
+            />
+          </div>
+        </div>
+      )}
 
-      {replyTo && (
+
         <div className="mx-2 mb-1 bg-secondary/80 rounded-lg px-3 py-1.5 flex items-center gap-2">
           <div className="w-0.5 h-6 rounded-full bg-primary flex-shrink-0" />
           <div className="flex-1 min-w-0">
