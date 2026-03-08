@@ -3,7 +3,7 @@ import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { uploadToR2 } from '@/lib/r2';
 
-type MediaFolder = 'avatars' | 'images' | 'videos' | 'products' | 'stories' | 'backgrounds' | 'documents' | 'voice' | 'lives' | 'feed';
+type MediaFolder = 'avatars' | 'images' | 'videos' | 'products' | 'stories' | 'backgrounds' | 'documents' | 'voice' | 'lives' | 'feed' | 'post-images';
 
 interface UseImageUploadOptions {
   bucket: MediaFolder;
