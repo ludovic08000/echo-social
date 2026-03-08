@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Gift, Loader2, Heart, Star, Flame, Crown, Diamond, Zap, Rocket, Music } from 'lucide-react';
+import { Gift, Loader2, Heart, Star, Flame, Crown, Diamond, Zap, Rocket, Music, Lock } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useIsCreatorRevenueEnabled } from '@/hooks/usePlatformStats';
 
 interface TipButtonProps {
   creatorId: string;
