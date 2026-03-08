@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Store, Package, TrendingUp, Trash2, Eye, Truck, Download, Loader2 } from 'lucide-react';
+import { Store, Package, TrendingUp, Trash2, Eye, Truck, Download, Loader2, CheckCircle2 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -42,6 +42,7 @@ export function SellerDashboard() {
   const [storeName, setStoreName] = useState('');
   const [shippingOrderId, setShippingOrderId] = useState<string | null>(null);
   const [creatingLabel, setCreatingLabel] = useState(false);
+  const [markingDelivered, setMarkingDelivered] = useState<string | null>(null);
   const [labelEditorOpen, setLabelEditorOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [sellerTab, setSellerTab] = useState<'products' | 'orders'>(
@@ -101,6 +102,35 @@ export function SellerDashboard() {
     } finally {
       setCreatingLabel(false);
       setShippingOrderId(null);
+    }
+  };
+
+  const markAsDelivered = async (order: any) => {
+    setMarkingDelivered(order.id);
+    try {
+      // Update order status to delivered
+      const { error: orderError } = await supabase
+        .from('orders')
+        .update({ status: 'delivered' as any, delivered_at: new Date().toISOString() })
+        .eq('id', order.id);
+      if (orderError) throw orderError;
+
+      // Deactivate all products from this order
+      const productIds = (order.order_items || []).map((item: any) => item.product_id).filter(Boolean);
+      if (productIds.length > 0) {
+        const { error: productError } = await supabase
+          .from('products')
+          .update({ is_active: false })
+          .in('id', productIds);
+        if (productError) console.error('Failed to deactivate products:', productError);
+      }
+
+      toast.success('Commande marquée comme livrée !');
+      refetchOrders();
+    } catch (e: any) {
+      toast.error(e.message || 'Erreur');
+    } finally {
+      setMarkingDelivered(null);
     }
   };
 
@@ -370,6 +400,23 @@ export function SellerDashboard() {
 
                     {order.tracking_number && (
                       <OrderTracking trackingNumber={order.tracking_number} />
+                    )}
+
+                    {order.status === 'shipped' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full border-green-500/30 text-green-600 hover:bg-green-500/10"
+                        onClick={() => markAsDelivered(order)}
+                        disabled={markingDelivered === order.id}
+                      >
+                        {markingDelivered === order.id ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4 mr-2" />
+                        )}
+                        Marquer comme livré
+                      </Button>
                     )}
                   </CardContent>
                 </Card>
