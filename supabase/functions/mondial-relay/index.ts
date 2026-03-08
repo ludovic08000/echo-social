@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
-import md5 from "npm:blueimp-md5@2.19.0";
+import md5Lib from "npm:blueimp-md5@2.19.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
