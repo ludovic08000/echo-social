@@ -812,7 +812,11 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
   // Handle apply_proposal action (admin validated a Zeus proposal)
   if (action === 'apply_proposal') {
     const { proposalAction, key, updates, reason } = body;
-    if (proposalAction === 'update_algorithm_config' && key && updates) {
+    const normalizedProposalAction = String(proposalAction || "")
+      .split("|")[0]
+      .replace(/[`\s]/g, "")
+      .replace(/\.$/, "");
+    if (normalizedProposalAction === 'update_algorithm_config' && key && updates) {
       const { data: current } = await supabase.from("feed_algorithm_config").select("value").eq("key", key).maybeSingle();
       if (!current) return new Response(JSON.stringify({ error: `Config "${key}" introuvable` }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
       const merged = { ...current.value, ...updates };
