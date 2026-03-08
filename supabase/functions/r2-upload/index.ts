@@ -56,7 +56,9 @@ const ALLOWED_ORIGINS_LIST = [
 
 function getCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get('origin') || '';
-  const isAllowed = ALLOWED_ORIGINS_LIST.includes(origin) || origin.endsWith('.lovable.app');
+  const isAllowed = ALLOWED_ORIGINS_LIST.includes(origin) 
+    || origin.endsWith('.lovable.app') 
+    || origin.endsWith('.lovableproject.com');
   return {
     "Access-Control-Allow-Origin": isAllowed ? origin : ALLOWED_ORIGINS_LIST[0],
     "Access-Control-Allow-Headers":
