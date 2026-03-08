@@ -217,6 +217,7 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
               placeholder="Nom de votre boutique"
             />
             <Button
+              variant="premium"
               onClick={() => createSeller.mutate(storeName)}
               disabled={!storeName.trim() || createSeller.isPending}
             >
@@ -426,15 +427,15 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
                               Frais Mondial Relay estimés : <span className="font-semibold text-foreground">{estimateRelayShipping(Math.max(100, Number(orderWeights[order.id]) || 500)).toFixed(2)}€</span>
                             </p>
                           </div>
-                          <Button size="sm" className="w-full" onClick={() => generateDeliverySlip(order)}>
-                            <FileText className="w-4 h-4 mr-2" />
-                            Générer le bordereau de livraison (PDF)
+                          <Button size="sm" variant="premium" className="w-full" onClick={() => generateDeliverySlip(order)}>
+                             <FileText className="w-4 h-4 mr-2" />
+                             Générer le bordereau de livraison (PDF)
                           </Button>
                           {!order.tracking_number && order.shipping_relay_id && (
                             <Button
                               size="sm"
-                              variant="outline"
-                              className="w-full border-primary/30 text-primary hover:bg-primary/10"
+                              variant="premium"
+                              className="w-full"
                               onClick={() => createMondialRelayShipment(order)}
                               disabled={creatingShipment === order.id}
                             >
@@ -449,8 +450,8 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
                           {!order.tracking_number && !order.shipping_relay_id && (
                             <Button
                               size="sm"
-                              variant="outline"
-                              className="w-full border-primary/30 text-primary hover:bg-primary/10"
+                              variant="premium"
+                              className="w-full"
                               onClick={() => createMondialRelayShipment(order)}
                               disabled={creatingShipment === order.id}
                             >
@@ -473,8 +474,8 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
                     {order.status === 'shipped' && (
                       <Button
                         size="sm"
-                        variant="outline"
-                        className="w-full border-green-500/30 text-green-600 hover:bg-green-500/10"
+                        variant="premium"
+                        className="w-full"
                         onClick={() => markAsDelivered(order)}
                         disabled={markingDelivered === order.id}
                       >
