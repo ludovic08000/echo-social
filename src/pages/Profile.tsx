@@ -137,6 +137,7 @@ export default function Profile() {
   const { data: friendshipData } = useFriendshipStatus(userId || '');
   const { data: isCreator } = useIsCreator(userId);
   const updateProfile = useUpdateProfile();
+  const profileBgStyle = useCustomBackground('profile');
 
   // Check if own profile has pending identity verification
   const { data: pendingVerification } = useQuery({
