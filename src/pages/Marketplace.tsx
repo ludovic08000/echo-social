@@ -54,17 +54,30 @@ export default function Marketplace() {
   const [category, setCategory] = useState('all');
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'browse');
   const [sortBy, setSortBy] = useState('recent');
+  const [orderConfirmation, setOrderConfirmation] = useState<any>(null);
 
-  // Handle order success - verify payment and open seller view directly
+  const { data: myOrders = [], refetch: refetchOrders } = useMyOrders();
+
+  // Handle order success - show confirmation dialog
   useEffect(() => {
     const orderId = searchParams.get('order_success');
     if (orderId) {
-      setActiveTab('seller');
+      setActiveTab('orders');
       supabase.functions.invoke('marketplace-checkout', {
         body: { action: 'verify_payment', orderId },
       }).then(({ data }) => {
-        if (data?.paid) {
-          toast.success('🎉 Commande confirmée ! Merci pour votre achat.');
+        if (data?.paid || data?.order) {
+          refetchOrders();
+          // Find the order to show confirmation
+          const findOrder = async () => {
+            const { data: order } = await supabase
+              .from('orders')
+              .select('*, order_items(*, products(title, thumbnail_url))')
+              .eq('id', orderId)
+              .single();
+            if (order) setOrderConfirmation(order);
+          };
+          findOrder();
         }
       }).catch(() => {});
     }
