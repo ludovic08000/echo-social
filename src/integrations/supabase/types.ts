@@ -1601,6 +1601,7 @@ export type Database = {
           id: string
           image_url: string | null
           sender_id: string
+          status: string
         }
         Insert: {
           body: string
@@ -1609,6 +1610,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           sender_id: string
+          status?: string
         }
         Update: {
           body?: string
@@ -1617,6 +1619,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           sender_id?: string
+          status?: string
         }
         Relationships: [
           {
