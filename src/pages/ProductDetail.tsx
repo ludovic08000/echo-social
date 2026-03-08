@@ -258,7 +258,8 @@ export default function ProductDetailPage() {
                   )}
                 </div>
               </div>
-              <Button variant="outline" size="sm" className="rounded-xl text-xs gap-1">
+              <Button variant="outline" size="sm" className="rounded-xl text-xs gap-1"
+                onClick={() => setShowNegotiation(true)}>
                 <MessageCircle className="w-3.5 h-3.5" />
                 Contact
               </Button>
