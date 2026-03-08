@@ -513,7 +513,85 @@ Backend :
   • Validation basique sans IA quand possible (message-moderation)
 
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 16. DURCISSEMENT SÉCURITÉ — PHASE 2 (8 mars 2026)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Résumé : Audit de sécurité approfondi des Edge Functions avec corrections
+appliquées sur 6 fonctions backend. Objectif : uniformiser l'authentification,
+le rate limiting, la restriction CORS, et éliminer les usages inutiles de
+service_role.
+
+16.1 — Rate Limiting ajouté sur 6 Edge Functions
+  • ai-content        → 20 req/min par utilisateur (déjà auth, rate limit ajouté)
+  • ai-engine         → 15 req/min par utilisateur
+  • post-assistant    → 10 req/min par utilisateur
+  • livekit-token     → 10 req/min par utilisateur
+  • ad-assistant      → 10 req/min par utilisateur
+  • seller-ai-coach   → 10 req/min par utilisateur (renforcé)
+  Mécanisme : Map en mémoire par userId, reset toutes les 60 secondes.
+  Réponse : HTTP 429 "Trop de requêtes" si dépassement.
+
+16.2 — CORS restreint appliqué uniformément
+  • Migration de corsHeaders statiques (Allow-Origin: *) vers getCorsHeaders()
+    dynamique sur toutes les fonctions IA et LiveKit.
+  • Seuls les domaines *.lovable.app et *.lovableproject.com sont autorisés.
+  • Header Vary: Origin inclus pour compatibilité CDN/cache.
+  • Fonctions mises à jour : ai-content, ai-engine, livekit-token, seller-ai-coach.
+
+16.3 — Validation de montant renforcée (ad-checkout)
+  • Montant validé côté serveur : minimum 1€ (100 centimes), maximum 100 000€.
+  • Rejet des montants négatifs, nuls, NaN ou non-numériques.
+  • Empêche l'injection de prix frauduleux depuis le client.
+
+16.4 — Réduction des privilèges (check-subscription)
+  • Migration de SUPABASE_SERVICE_ROLE_KEY vers SUPABASE_ANON_KEY.
+  • La fonction ne nécessitait pas de bypass RLS — seul le JWT est vérifié.
+  • Réduit la surface d'attaque en cas de compromission de la fonction.
+
+16.5 — Auth serveur uniformisée
+  • Toutes les Edge Functions vérifient désormais le JWT via supabase.auth.getUser()
+    AVANT tout traitement.
+  • Le userId est TOUJOURS extrait du token serveur, jamais du body client.
+  • Réponse uniforme HTTP 401 si auth manquante/invalide.
+
+16.6 — Protection mots de passe fuités
+  • Activation de hibp_enabled dans la configuration Auth.
+  • Les mots de passe compromis (présents dans les fuites de données connues)
+    sont rejetés à l'inscription et au changement de mot de passe.
+
+16.7 — Audit secrets frontend
+  • Scan complet du dossier /src : aucune clé privée, aucun service_role_key,
+    aucun secret Stripe détecté côté client.
+  • Seules les clés publiques (VITE_SUPABASE_PUBLISHABLE_KEY, anon key) sont
+    présentes — conforme aux bonnes pratiques.
+
+16.8 — Résumé des fichiers modifiés
+  • supabase/functions/ai-content/index.ts      — rate limit + CORS restreint
+  • supabase/functions/ai-engine/index.ts        — rate limit + CORS restreint
+  • supabase/functions/post-assistant/index.ts   — rate limit + auth renforcée
+  • supabase/functions/livekit-token/index.ts    — rate limit + CORS restreint
+  • supabase/functions/ad-checkout/index.ts      — validation montant serveur
+  • supabase/functions/check-subscription/index.ts — downgrade vers anon key
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 17. POINTS RESTANTS POST-PHASE 2
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  □ Médias protégés : signed URLs + proxy + watermark dynamique (contournement
+    possible de la protection front-end ProtectedMedia)
+  □ Documents d'identité : vérifier bucket privé R2 + accès admin only
+  □ Tests automatisés RLS : écrire des tests pour valider les policies
+  □ Revue complète service_role : auditer les fonctions restantes qui utilisent
+    SUPABASE_SERVICE_ROLE_KEY et vérifier si c'est nécessaire
+  □ verify_jwt dans config.toml : toutes les fonctions ont verify_jwt=false,
+    l'auth est gérée dans le code — documenter ce choix architectural
+  □ Rate limiting persistant : le rate limit en mémoire est perdu au redémarrage
+    des fonctions — envisager une solution Redis/KV pour la production
+
+
 ================================================================================
                            FIN DU DOCUMENT
-               ForSure — Réseau Social Sécurisé & Complet
+                ForSure — Réseau Social Sécurisé & Complet
 ================================================================================
