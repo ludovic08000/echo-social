@@ -409,47 +409,63 @@ serve(async (req) => {
       });
 
       const responseText = await apiResponse.text();
-      console.log("API v2 response status:", apiResponse.status, "body:", responseText);
+      console.log("API v2 response status:", apiResponse.status, "body:", responseText.substring(0, 2000));
 
-      let result: any;
-      try {
-        result = JSON.parse(responseText);
-      } catch {
-        throw new Error(`Réponse API v2 invalide (${apiResponse.status}): ${responseText.substring(0, 500)}`);
-      }
-
-      if (!apiResponse.ok) {
-        const errMsg = result?.Message || result?.error || result?.title || responseText.substring(0, 300);
-        throw new Error(`Erreur API v2 Mondial Relay (${apiResponse.status}): ${errMsg}`);
-      }
-
-      // Extract tracking number and label URL from v2 response
+      // The response can be XML or JSON depending on API version
       let trackingNumber: string | null = null;
       let labelUrl: string | null = null;
 
-      // API v2 returns ShipmentsList with ShipmentNumber and LabelLink
-      const shipments = result?.ShipmentsList || result?.shipmentsList || [];
-      if (shipments.length > 0) {
-        const first = shipments[0];
-        trackingNumber = first.ShipmentNumber || first.shipmentNumber || first.ExpeditionNum || null;
+      if (responseText.trim().startsWith('<') || responseText.trim().startsWith('<?xml')) {
+        // Parse XML response
+        // Check for errors first
+        const statusCode = extractXmlValue(responseText, 'Code') || extractXmlValue(responseText, 'codeField');
+        const statusMessage = extractXmlValue(responseText, 'Message') || extractXmlValue(responseText, 'messageField');
+        const statusLevel = extractXmlValue(responseText, 'Level') || extractXmlValue(responseText, 'levelField');
 
-        // Parcels may contain individual labels
-        const parcels = first.Parcels || first.parcels || [];
-        if (parcels.length > 0 && (parcels[0].Label || parcels[0].label)) {
-          labelUrl = parcels[0].Label || parcels[0].label;
+        if (statusLevel === 'Error' || (statusCode && statusCode !== '0')) {
+          throw new Error(`Erreur API v2 Mondial Relay (${statusCode}): ${statusMessage}`);
         }
-      }
 
-      // Fallback: top-level label link
-      if (!labelUrl && (result?.LabelLink || result?.labelLink)) {
-        labelUrl = result.LabelLink || result.labelLink;
-      }
+        // Extract shipment number
+        trackingNumber = extractXmlValue(responseText, 'ShipmentNumber') 
+          || extractXmlValue(responseText, 'ExpeditionNum')
+          || extractXmlValue(responseText, 'shipmentNumber');
+        
+        // Extract label URL  
+        labelUrl = extractXmlValue(responseText, 'LabelLink')
+          || extractXmlValue(responseText, 'Label')
+          || extractXmlValue(responseText, 'labelLink');
+      } else {
+        // Try JSON parsing
+        let result: any;
+        try {
+          result = JSON.parse(responseText);
+        } catch {
+          throw new Error(`Réponse API v2 invalide (${apiResponse.status}): ${responseText.substring(0, 500)}`);
+        }
 
-      // Fallback for label via Labels array
-      if (!labelUrl && (result?.Labels || result?.labels)) {
-        const labels = result.Labels || result.labels;
-        if (labels.length > 0) {
-          labelUrl = labels[0]?.Output || labels[0]?.Url || labels[0]?.url || null;
+        if (!apiResponse.ok) {
+          const errMsg = result?.Message || result?.error || result?.title || responseText.substring(0, 300);
+          throw new Error(`Erreur API v2 Mondial Relay (${apiResponse.status}): ${errMsg}`);
+        }
+
+        // Check for error in statusListField (JSON envelope)
+        const statusList = result?.statusListField || result?.StatusList || [];
+        if (statusList.length > 0 && statusList[0]?.levelField === 'Error') {
+          throw new Error(`Erreur API v2 (${statusList[0].codeField}): ${statusList[0].messageField}`);
+        }
+
+        const shipments = result?.ShipmentsList || result?.shipmentsListField || [];
+        if (shipments.length > 0) {
+          const first = shipments[0];
+          trackingNumber = first.ShipmentNumber || first.shipmentNumber || first.ExpeditionNum || null;
+          const parcels = first.Parcels || first.parcels || [];
+          if (parcels.length > 0) {
+            labelUrl = parcels[0].Label || parcels[0].label || null;
+          }
+        }
+        if (!labelUrl) {
+          labelUrl = result?.LabelLink || result?.labelLink || null;
         }
       }
 
