@@ -38,6 +38,7 @@ export function CartSheet() {
   const [showRelayPicker, setShowRelayPicker] = useState(false);
   const [packageWeight, setPackageWeight] = useState('500');
   const [packageParcels, setPackageParcels] = useState('1');
+  const packageSectionRef = useRef<HTMLDivElement | null>(null);
 
   // Check if cart has physical products
   const hasPhysical = cart.some((item) => item.products?.product_type === 'physical');
@@ -54,6 +55,7 @@ export function CartSheet() {
   const shippingEstimate = hasPhysical && selectedRelay
     ? estimateRelayShipping(weightGrams, parcelsCount)
     : 0;
+  const checkoutBlockedByRelay = hasPhysical && !selectedRelay;
 
   const total = subtotal + buyerFee + shippingEstimate;
 
