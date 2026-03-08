@@ -470,7 +470,7 @@ serve(async (req) => {
       }
 
       if (!trackingNumber) {
-        console.error("API v2 full response:", JSON.stringify(result));
+        console.error("API v2 full response:", responseText.substring(0, 2000));
         throw new Error("Numéro d'expédition non trouvé dans la réponse API v2");
       }
 
