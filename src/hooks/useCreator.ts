@@ -44,22 +44,15 @@ export function useActivateCreator() {
     mutationFn: async () => {
       if (!user) throw new Error('Not authenticated');
 
-      // For now, activate without payment (Stripe will be added later)
-      await supabase.from('creator_subscriptions').upsert({
-        user_id: user.id,
-        status: 'active',
-        plan: 'creator_monthly',
-        price_cents: 500,
-        currency: 'eur',
-        current_period_start: new Date().toISOString(),
-        current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      }, { onConflict: 'user_id' });
+      // Start Stripe checkout — activation happens via webhook
+      const { data, error } = await supabase.functions.invoke('create-checkout', {
+        body: { priceId: 'price_1T8gAk6wgOEGAgcG4A12CIFZ' },
+      });
 
-      await supabase.from('profiles').update({
-        is_creator: true,
-        creator_since: new Date().toISOString(),
-        creator_tier: 'creator',
-      }).eq('user_id', user.id);
+      if (error) throw error;
+      if (data?.url) {
+        window.open(data.url, '_blank');
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['is-creator'] });
