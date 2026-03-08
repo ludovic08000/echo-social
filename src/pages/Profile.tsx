@@ -373,6 +373,9 @@ export default function Profile() {
 
   return (
     <AppLayout fullWidth>
+      {profileBgStyle && (
+        <div className="fixed inset-0 -z-10 opacity-30" style={profileBgStyle} />
+      )}
       <div className="mx-auto max-w-[900px]">
       <div className="-mt-2">
         <input ref={avatarInputRef} type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
