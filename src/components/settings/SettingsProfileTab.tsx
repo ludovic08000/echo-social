@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { Camera, Download, Shield, ChevronRight, LogOut, Trash2, Music } from 'lucide-react';
+import { Camera, Download, Shield, ChevronRight, LogOut, Trash2, Music, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
