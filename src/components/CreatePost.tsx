@@ -5,6 +5,7 @@ import { useCreatePost } from '@/hooks/usePosts';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
 import { uploadToR2 } from '@/lib/r2';
+import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { UserAvatar } from './UserAvatar';
 import { MoodPicker } from './MoodPicker';
