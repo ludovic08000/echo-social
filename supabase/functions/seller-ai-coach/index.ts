@@ -46,23 +46,44 @@ ${price ? `Prix : ${price}€` : ''}`,
       ];
     } else if (action === "coach_chat") {
       const { messages, context } = body;
+      const avgOrder = context?.averageOrderValue || 0;
+      const productsInfo = (context?.products || [])
+        .map((p: any) => `• ${p.title} — ${p.price}€ (${p.category}, stock: ${p.stock ?? '∞'})`)
+        .join('\n');
+      const ordersInfo = (context?.recentOrders || [])
+        .map((o: any) => `• ${o.date?.slice(0, 10)} — ${o.total}€ (${o.status}, ${o.items} articles)`)
+        .join('\n');
+
       systemPrompt = `Tu es un coach de vente expert en e-commerce sur ForSure Marketplace, une marketplace française.
 
-Données du vendeur :
+DONNÉES RÉELLES DU VENDEUR — analyse ces chiffres en détail :
+━━━━━━━━━━━━━━━━━━━━━━━
+📊 KPIs :
 - Boutique : ${context?.sellerName || 'Vendeur'}
 - Ventes totales : ${context?.totalSales || 0}
-- Revenus totaux : ${context?.totalRevenue || 0}€
+- Chiffre d'affaires total : ${context?.totalRevenue || 0}€
+- Panier moyen : ${avgOrder}€
 - Nombre de produits : ${context?.productCount || 0}
 - Commandes récentes : ${context?.orderCount || 0}
+- Note moyenne : ${context?.rating ? context.rating + '/5' : 'Pas encore notée'} (${context?.ratingCount || 0} avis)
+
+📦 Catalogue produits :
+${productsInfo || '(aucun produit)'}
+
+🛒 Commandes récentes :
+${ordersInfo || '(aucune commande)'}
+━━━━━━━━━━━━━━━━━━━━━━━
 
 Tu dois :
-- Donner des conseils personnalisés basés sur les données du vendeur
-- Proposer des stratégies concrètes et actionnables
-- Analyser les tendances et suggérer des améliorations
-- Répondre en français, de manière concise et pratique
-- Utiliser des bullet points et des emojis pour la lisibilité
-- Si le vendeur a peu de ventes, encourager et donner des conseils pour démarrer
-- Suggérer des optimisations de prix, photos, descriptions, marketing`;
+- Faire une VRAIE analyse chiffrée basée sur les données ci-dessus
+- Calculer des métriques : taux de conversion, panier moyen, produits les plus/moins vendus
+- Identifier les points forts et les faiblesses concrètes
+- Donner des recommandations ACTIONNABLES numérotées par priorité
+- Proposer des objectifs chiffrés réalistes (ex: "+20% de CA en 30 jours")
+- Si peu de données, expliquer les étapes pour démarrer
+- Répondre en français, ton motivant mais professionnel
+- Utiliser des emojis, bullet points, sections claires
+- Chaque conseil doit être spécifique au vendeur, pas générique`;
 
       userMessages = (messages || []).map((m: any) => ({
         role: m.role,
