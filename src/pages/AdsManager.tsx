@@ -376,6 +376,7 @@ function AdChatCreator() {
 export default function AdsManager() {
   const { data: campaigns, isLoading } = useAdCampaigns();
   const { upload, isUploading } = useImageUpload({ bucket: 'post-images' });
+  const activateAd = useActivateAdCampaign();
 
   const [tab, setTab] = useState<'campaigns' | 'create' | 'manual' | 'analytics' | 'pricing'>('campaigns');
   const createCampaign = useCreateAdCampaign();
@@ -391,6 +392,22 @@ export default function AdsManager() {
   const [manualGender, setManualGender] = useState('all');
   const [manualInterests, setManualInterests] = useState<string[]>([]);
   const [manualLocation, setManualLocation] = useState<TargetLocation>(getDefaultLocation());
+
+  // Handle return from Stripe payment
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const paymentStatus = params.get('payment');
+    const campaignId = params.get('campaign_id');
+    
+    if (paymentStatus === 'success' && campaignId) {
+      activateAd.mutate(campaignId);
+      // Clean URL
+      window.history.replaceState({}, '', '/ads');
+    } else if (paymentStatus === 'canceled') {
+      toast.info('Paiement annulé. La campagne reste en attente.');
+      window.history.replaceState({}, '', '/ads');
+    }
+  }, []);
 
   const chartData = generateChartData(campaigns || []);
 
