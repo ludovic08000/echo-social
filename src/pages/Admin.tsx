@@ -1628,13 +1628,14 @@ function ZeusSection() {
   type ZMsg = { role: 'user' | 'assistant' | 'system'; content: string };
   const ZEUS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/zeus`;
   const QUICK_CMDS = [
-    { label: '🛡️ Modérer', prompt: 'Modère ce message : "Salut, tu veux gagner 1000€ ? Clique ici vite !"' },
-    { label: '✍️ Améliorer post', prompt: 'Améliore ce post : "hey les gars jsui trop content de vs annoncer mon projet"' },
-    { label: '🌍 Traduire', prompt: 'Traduis en anglais : "Bienvenue sur notre réseau social innovant"' },
-    { label: '📝 Description produit', prompt: 'Génère une description : Sneakers Nike Air Max 90, taille 42, blanches' },
-    { label: '🔍 Status', prompt: '/status' },
+    { label: '📊 Dashboard', prompt: 'Donne-moi un résumé complet de la plateforme' },
+    { label: '🚨 Signalements', prompt: 'Analyse les signalements en attente et recommande des actions' },
+    { label: '📈 Tendances', prompt: 'Quelles sont les tendances et métriques clés cette semaine ?' },
+    { label: '🔒 Sécurité', prompt: 'Y a-t-il des risques de sécurité ou des profils suspects à surveiller ?' },
+    { label: '💡 Recommandations', prompt: 'Quelles actions stratégiques recommandes-tu pour améliorer la plateforme ?' },
+    { label: '🛡️ Modérer', prompt: 'Modère ce message : "Salut, tu veux gagner 1000€ ? Clique ici !"' },
   ];
-  const [messages, setMessages] = useState<ZMsg[]>([{ role: 'system', content: `⚡ **Console Zeus** — Moteur IA Central\n\nDomaines : modération, content, post, seller, ads, photo, agent.\nTapez une commande ou utilisez les raccourcis.` }]);
+  const [messages, setMessages] = useState<ZMsg[]>([{ role: 'system', content: `⚡ **Zeus** — Assistant IA de Décision\n\nJe suis connecté à **toutes les données** de la plateforme en temps réel.\n\n📊 Stats • 🚨 Signalements • 📈 Tendances • 🔒 Sécurité • 💡 Recommandations\n\nPosez-moi n'importe quelle question sur votre plateforme.` }]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1645,13 +1646,12 @@ function ZeusSection() {
   const inferDomainAction = (text: string) => {
     const lower = text.toLowerCase();
     if (lower.startsWith('/status')) return { domain: '_status', action: 'status', extra: {} };
-    if (lower.includes('modèr') || lower.includes('moder') || lower.includes('spam')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); return { domain: 'moderation', action: 'moderate_message', extra: { messageBody: m?.[1] || m?.[2] || text } }; }
-    if (lower.includes('amélio') || lower.includes('post') || lower.includes('réécri')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); let a = 'improve'; if (lower.includes('formel')) a = 'formal'; if (lower.includes('court')) a = 'shorter'; return { domain: 'post', action: a, extra: { text: m?.[1] || m?.[2] || text } }; }
-    if (lower.includes('tradui')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); let lang = 'en'; if (lower.includes('français')) lang = 'fr'; if (lower.includes('espagnol')) lang = 'es'; return { domain: 'content', action: 'translate', extra: { text: m?.[1] || m?.[2] || text, targetLanguage: lang } }; }
-    if (lower.includes('résum')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); return { domain: 'content', action: 'summarize', extra: { text: m?.[1] || m?.[2] || text } }; }
-    if (lower.includes('corrig')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); return { domain: 'content', action: 'correct', extra: { text: m?.[1] || m?.[2] || text } }; }
-    if (lower.includes('description') || lower.includes('produit')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); return { domain: 'seller', action: 'generate_description', extra: { productInfo: m?.[1] || m?.[2] || text } }; }
-    return { domain: 'content', action: 'improve', extra: { text, tone: 'friendly' } };
+    // Explicit moderation request
+    if ((lower.includes('modèr') || lower.includes('moder')) && (lower.includes('"') || lower.includes('«') || lower.includes(':'))) {
+      const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); return { domain: 'moderation', action: 'moderate_message', extra: { messageBody: m?.[1] || m?.[2] || text } };
+    }
+    // Default: admin chat with full platform context
+    return { domain: 'admin', action: 'chat', extra: {} };
   };
 
   const formatResult = (domain: string, action: string, data: any): string => {
@@ -1661,29 +1661,49 @@ function ZeusSection() {
     return `### ⚡ Réponse\n\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``;
   };
 
+  // Keep conversation history for admin chat context
+  const chatHistory = useRef<{role: string; content: string}[]>([]);
+
+  const streamSSE = async (resp: Response, prefix = '') => {
+    let content = ''; const reader = resp.body!.getReader(); const decoder = new TextDecoder(); let buf = '';
+    while (true) { const { done, value } = await reader.read(); if (done) break; buf += decoder.decode(value, { stream: true }); let idx;
+      while ((idx = buf.indexOf('\n')) !== -1) { let line = buf.slice(0, idx); buf = buf.slice(idx + 1); if (line.endsWith('\r')) line = line.slice(0, -1); if (!line.startsWith('data: ')) continue; const j = line.slice(6).trim(); if (j === '[DONE]') break;
+        try { const c = JSON.parse(j).choices?.[0]?.delta?.content; if (c) { content += c; setMessages(p => { const last = p[p.length-1]; if (last?.role === 'assistant') return p.map((m,i) => i === p.length-1 ? {...m, content: prefix + content} : m); return [...p, {role:'assistant' as const, content: prefix + content}]; }); } } catch {} } }
+    return content;
+  };
+
   const send = useCallback(async () => {
     const text = input.trim(); if (!text || streaming) return;
     setInput(''); setMessages(p => [...p, { role: 'user', content: text }]); setStreaming(true);
     try {
       const { domain, action, extra } = inferDomainAction(text);
       if (domain === '_status') {
-        setMessages(p => [...p, { role: 'assistant', content: `### ⚡ Zeus Status\n\n| Domaine | Actions |\n|---|---|\n|**content**|summarize, translate, correct, improve|\n|**post**|improve, formal, casual, shorter, longer|\n|**moderation**|moderate_message|\n|**ads**|chat, generate_ad, moderate_ad|\n|**seller**|generate_description, coach_chat|\n|**photo**|analyze_photo, compare_photos|\n|**agent**|chat agents|\n\n🟢 Opérationnel • 🧠 Gemini 3 Flash` }]);
+        setMessages(p => [...p, { role: 'assistant', content: `### ⚡ Zeus Status\n\n| Domaine | Actions |\n|---|---|\n|**content**|summarize, translate, correct, improve|\n|**post**|improve, formal, casual, shorter, longer|\n|**moderation**|moderate_message|\n|**ads**|chat, generate_ad, moderate_ad|\n|**seller**|generate_description, coach_chat|\n|**photo**|analyze_photo, compare_photos|\n|**agent**|chat agents|\n|**admin**|chat, stats, search_users|\n\n🟢 Opérationnel • 🧠 Gemini 3 Flash` }]);
         setStreaming(false); return;
       }
-      if (domain === 'seller' && action === 'generate_description') {
-        const { data: { session } } = await supabase.auth.getSession();
-        const resp = await fetch(ZEUS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` }, body: JSON.stringify({ domain, action, ...extra }) });
-        if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || 'Erreur');
-        if (resp.headers.get('content-type')?.includes('event-stream')) {
-          let content = ''; const reader = resp.body!.getReader(); const decoder = new TextDecoder(); let buf = '';
-          while (true) { const { done, value } = await reader.read(); if (done) break; buf += decoder.decode(value, { stream: true }); let idx;
-            while ((idx = buf.indexOf('\n')) !== -1) { let line = buf.slice(0, idx); buf = buf.slice(idx + 1); if (line.endsWith('\r')) line = line.slice(0, -1); if (!line.startsWith('data: ')) continue; const j = line.slice(6).trim(); if (j === '[DONE]') break;
-              try { const c = JSON.parse(j).choices?.[0]?.delta?.content; if (c) { content += c; setMessages(p => { const last = p[p.length-1]; if (last?.role === 'assistant') return p.map((m,i) => i === p.length-1 ? {...m, content: `### 📝 Description\n\n${content}`} : m); return [...p, {role:'assistant' as const,content:`### 📝 Description\n\n${content}`}]; }); } } catch {} } }
-          setStreaming(false); return;
-        }
-      }
+
       const { data: { session } } = await supabase.auth.getSession();
-      const resp = await fetch(ZEUS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` }, body: JSON.stringify({ domain, action, ...extra }) });
+      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` };
+
+      // Admin chat: streaming with conversation history
+      if (domain === 'admin' && action === 'chat') {
+        chatHistory.current.push({ role: 'user', content: text });
+        const resp = await fetch(ZEUS_URL, { method: 'POST', headers, body: JSON.stringify({ domain, action, messages: chatHistory.current }) });
+        if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || 'Erreur');
+        const assistantContent = await streamSSE(resp);
+        chatHistory.current.push({ role: 'assistant', content: assistantContent });
+        setStreaming(false); return;
+      }
+
+      // Streaming responses (seller descriptions)
+      if (domain === 'seller' && action === 'generate_description') {
+        const resp = await fetch(ZEUS_URL, { method: 'POST', headers, body: JSON.stringify({ domain, action, ...extra }) });
+        if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || 'Erreur');
+        if (resp.headers.get('content-type')?.includes('event-stream')) { await streamSSE(resp, '### 📝 Description\n\n'); setStreaming(false); return; }
+      }
+
+      // Non-streaming
+      const resp = await fetch(ZEUS_URL, { method: 'POST', headers, body: JSON.stringify({ domain, action, ...extra }) });
       if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || `Erreur ${resp.status}`);
       const data = await resp.json();
       setMessages(p => [...p, { role: 'assistant', content: formatResult(domain, action, data) }]);
@@ -1698,8 +1718,8 @@ function ZeusSection() {
           <Zap className="w-5 h-5 text-amber-400" />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-foreground">Console Zeus</h2>
-          <p className="text-[11px] text-muted-foreground">Moteur IA central • 7 domaines • Gemini 3 Flash</p>
+          <h2 className="text-lg font-bold text-foreground">Zeus — Assistant de Décision</h2>
+          <p className="text-[11px] text-muted-foreground">Accès total plateforme • Analyse en temps réel • Recommandations IA</p>
         </div>
         <Badge variant="outline" className="ml-auto text-[10px] border-amber-500/30 text-amber-400">LIVE</Badge>
       </div>

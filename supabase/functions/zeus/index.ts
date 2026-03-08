@@ -458,6 +458,124 @@ async function handleAgentChat(apiKey: string, body: any, userId: string, supaba
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ADMIN: Full platform intelligence & decision assistant
+// ═══════════════════════════════════════════════════════════════
+async function handleAdmin(apiKey: string, body: any, userId: string, supabase: any, cors: Record<string, string>) {
+  // Verify admin role
+  const { data: roleData } = await supabase.from("user_roles").select("role").eq("user_id", userId).eq("role", "admin").maybeSingle();
+  if (!roleData) return new Response(JSON.stringify({ error: "Accès admin requis" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+
+  const { action } = body;
+
+  if (action === "chat") {
+    // Gather full platform context
+    const [usersRes, postsRes, ordersRes, reportsRes, agentsRes, bansRes, trustRes, subsRes, verificationsRes] = await Promise.all([
+      supabase.from("profiles").select("user_id, name, city, profile_type, created_at", { count: "exact" }).order("created_at", { ascending: false }).limit(20),
+      supabase.from("posts").select("id, body, created_at, user_id", { count: "exact" }).order("created_at", { ascending: false }).limit(10),
+      supabase.from("orders").select("id, total, status, created_at"),
+      supabase.from("abuse_reports").select("id, report_type, status, description, created_at").order("created_at", { ascending: false }).limit(20),
+      supabase.from("ai_agent_usage").select("agent_id, message_count, usage_date").gte("usage_date", new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0]),
+      supabase.from("banned_users").select("id, user_id, reason, banned_at").eq("is_active", true),
+      supabase.from("trust_scores").select("user_id, trust_score, is_flagged, flag_reason").eq("is_flagged", true).limit(10),
+      supabase.from("creator_subscriptions").select("id, plan, status, price_cents"),
+      supabase.from("identity_verifications").select("id, status, reason, created_at").eq("status", "pending").limit(10),
+    ]);
+
+    const orders = ordersRes.data || [];
+    const totalRevenue = orders.filter((o: any) => o.status !== "cancelled" && o.status !== "refunded").reduce((s: number, o: any) => s + (o.total || 0), 0);
+    const pendingReports = (reportsRes.data || []).filter((r: any) => r.status === "pending");
+    const agentMessages7d = (agentsRes.data || []).reduce((s: number, u: any) => s + (u.message_count || 0), 0);
+    const activeSubs = (subsRes.data || []).filter((s: any) => s.status === "active");
+    const monthlyMRR = activeSubs.reduce((s: number, sub: any) => s + (sub.price_cents || 0), 0) / 100;
+
+    const platformContext = `
+## DONNÉES PLATEFORME EN TEMPS RÉEL
+- **Utilisateurs total** : ${usersRes.count || 0}
+- **Publications total** : ${postsRes.count || 0}
+- **Commandes total** : ${orders.length} | Revenus : ${totalRevenue.toFixed(2)}€
+- **MRR abonnements** : ${monthlyMRR.toFixed(2)}€ (${activeSubs.length} actifs)
+- **Signalements en attente** : ${pendingReports.length}
+- **Vérifications ID en attente** : ${(verificationsRes.data || []).length}
+- **Utilisateurs bannis actifs** : ${(bansRes.data || []).length}
+- **Profils flaggés (trust)** : ${(trustRes.data || []).length}
+- **Messages IA (7j)** : ${agentMessages7d}
+
+### Signalements récents en attente :
+${pendingReports.slice(0, 5).map((r: any) => `- [${r.report_type}] ${r.description || "Pas de description"} (${new Date(r.created_at).toLocaleDateString("fr")})`).join("\n") || "Aucun"}
+
+### Profils flaggés :
+${(trustRes.data || []).slice(0, 5).map((t: any) => `- User ${t.user_id.slice(0, 8)}... : score ${t.trust_score}, raison: ${t.flag_reason}`).join("\n") || "Aucun"}
+
+### Derniers inscrits :
+${(usersRes.data || []).slice(0, 5).map((u: any) => `- ${u.name} (${u.city || "?"}) — ${u.profile_type || "user"} — ${new Date(u.created_at).toLocaleDateString("fr")}`).join("\n")}
+
+### Vérifications ID en attente :
+${(verificationsRes.data || []).slice(0, 5).map((v: any) => `- Raison: ${v.reason || "?"} (${new Date(v.created_at).toLocaleDateString("fr")})`).join("\n") || "Aucune"}
+`;
+
+    const systemPrompt = `Tu es ZEUS, l'assistant IA de décision de la plateforme ForSure. Tu as accès à TOUTES les données en temps réel.
+
+RÔLE :
+- Analyser les données et tendances de la plateforme
+- Proposer des recommandations stratégiques argumentées
+- Alerter sur les risques (sécurité, abus, fraude)
+- Aider à prendre des décisions admin éclairées
+- Répondre en français, de manière concise et structurée avec des tableaux markdown
+
+RÈGLES :
+- Toujours baser tes analyses sur les données réelles fournies
+- Prioriser la sécurité des utilisateurs (surtout mineurs)
+- Proposer des actions concrètes quand pertinent
+- Utiliser des emojis pour la lisibilité
+- Ne JAMAIS inventer de données
+
+${platformContext}`;
+
+    const resp = await callAI(apiKey, {
+      model: "google/gemini-3-flash-preview",
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...(body.messages || []),
+      ],
+      stream: true,
+    });
+    const errResp = aiError(resp.status, cors);
+    if (errResp) return errResp;
+    if (!resp.ok) throw new Error("AI error");
+    return new Response(resp.body, { headers: { ...cors, "Content-Type": "text/event-stream" } });
+  }
+
+  if (action === "stats") {
+    const [usersRes, postsRes, ordersRes, reportsRes, bansRes, subsRes] = await Promise.all([
+      supabase.from("profiles").select("id", { count: "exact", head: true }),
+      supabase.from("posts").select("id", { count: "exact", head: true }),
+      supabase.from("orders").select("id, total, status"),
+      supabase.from("abuse_reports").select("id", { count: "exact", head: true }).eq("status", "pending"),
+      supabase.from("banned_users").select("id", { count: "exact", head: true }).eq("is_active", true),
+      supabase.from("creator_subscriptions").select("id, price_cents, status").eq("status", "active"),
+    ]);
+    const orders = ordersRes.data || [];
+    const revenue = orders.filter((o: any) => o.status !== "cancelled").reduce((s: number, o: any) => s + (o.total || 0), 0);
+    const mrr = (subsRes.data || []).reduce((s: number, sub: any) => s + (sub.price_cents || 0), 0) / 100;
+    return new Response(JSON.stringify({
+      users: usersRes.count || 0, posts: postsRes.count || 0,
+      orders: orders.length, revenue: revenue.toFixed(2),
+      pendingReports: reportsRes.count || 0, activeBans: bansRes.count || 0,
+      activeSubscriptions: (subsRes.data || []).length, mrr: mrr.toFixed(2),
+    }), { headers: { ...cors, "Content-Type": "application/json" } });
+  }
+
+  if (action === "search_users") {
+    const { query } = body;
+    if (!query) return new Response(JSON.stringify({ error: "query required" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    const { data } = await supabase.from("profiles").select("user_id, name, avatar_url, city, profile_type, created_at").ilike("name", `%${query}%`).limit(20);
+    return new Response(JSON.stringify({ users: data || [] }), { headers: { ...cors, "Content-Type": "application/json" } });
+  }
+
+  return new Response(JSON.stringify({ error: "Unknown admin action" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+}
+
+// ═══════════════════════════════════════════════════════════════
 // BASIC MODERATION FALLBACKS
 // ═══════════════════════════════════════════════════════════════
 function basicModeration(text: string): { safe: boolean; reason: string | null; category: string } {
@@ -510,7 +628,7 @@ Deno.serve(async (req) => {
     }
 
     // Rate limit per domain
-    const limitMap: Record<string, number> = { content: 20, post: 15, moderation: 30, ads: 10, seller: 10, photo: 5, agent: 20 };
+    const limitMap: Record<string, number> = { content: 20, post: 15, moderation: 30, ads: 10, seller: 10, photo: 5, agent: 20, admin: 30 };
     if (!checkRateLimit(`${user.id}:${domain}`, limitMap[domain] || 15)) {
       return new Response(JSON.stringify({ error: "Trop de requêtes, réessayez." }), { status: 429, headers: { ...cors, "Content-Type": "application/json" } });
     }
@@ -523,6 +641,7 @@ Deno.serve(async (req) => {
       case "seller": return await handleSeller(LOVABLE_API_KEY, body, user.id, supabase, cors);
       case "photo": return await handlePhotoGuard(LOVABLE_API_KEY, body, user.id, supabase, cors);
       case "agent": return await handleAgentChat(LOVABLE_API_KEY, body, user.id, supabase, cors);
+      case "admin": return await handleAdmin(LOVABLE_API_KEY, body, user.id, supabase, cors);
       default:
         return new Response(JSON.stringify({ error: `Unknown domain: ${domain}` }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
