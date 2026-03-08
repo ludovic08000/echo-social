@@ -520,6 +520,27 @@ const ZEUS_TOOLS = [
       },
     },
   },
+  {
+    type: "function", function: {
+      name: "get_algorithm_config", description: "Lire la configuration actuelle de l'algorithme du feed (poids, récence, anti-spam, marketplace injection, etc.)",
+      parameters: { type: "object", properties: { key: { type: "string", description: "Clé spécifique (scoring_weights, recency_tiers, time_of_day, velocity, marketplace_injection, anti_spam) ou vide pour tout" } }, additionalProperties: false },
+    },
+  },
+  {
+    type: "function", function: {
+      name: "update_algorithm_config", description: "Modifier un paramètre de l'algorithme du feed. Change la valeur d'une clé de config. Exemples : augmenter friend_boost, réduire spam_penalty, changer les positions marketplace.",
+      parameters: {
+        type: "object",
+        properties: {
+          key: { type: "string", enum: ["scoring_weights", "recency_tiers", "time_of_day", "velocity", "marketplace_injection", "anti_spam"], description: "Clé de config à modifier" },
+          updates: { type: "object", description: "Objet partiel avec les champs à modifier (merge avec l'existant)" },
+          reason: { type: "string", description: "Justification du changement pour le log" },
+        },
+        required: ["key", "updates", "reason"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // Execute Zeus tool calls against the database
