@@ -204,8 +204,10 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
 
   const needsPackingVideo = (order: any) => order.total >= 100 && order.packing_video_status !== 'verified';
 
-  const renderPackingVideoSection = (order: any) => {
-    if (order.total < 100 || order.status !== 'paid') return null;
+  const renderPackingVideoSection = (_order: any) => {
+    // Temporarily disabled for testing
+    return null;
+    /*if (order.total < 100 || order.status !== 'paid') return null;
     const status = order.packing_video_status || 'none';
 
     return (
