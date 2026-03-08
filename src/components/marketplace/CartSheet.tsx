@@ -306,20 +306,20 @@ export function CartSheet() {
               <Button
                 className="w-full premium-button"
                 onClick={() => handleCheckout(false)}
-                disabled={isCheckingOut || cart.length === 0}
+                disabled={isCheckingOut || cart.length === 0 || checkoutBlockedByRelay}
               >
                 {isCheckingOut ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 ) : (
                   <CreditCard className="w-4 h-4 mr-2" />
                 )}
-                {isCheckingOut ? 'Redirection...' : `Payer ${total.toFixed(2)}€`}
+                {checkoutBlockedByRelay ? 'Choisir un point relais pour continuer' : isCheckingOut ? 'Redirection...' : `Payer ${total.toFixed(2)}€`}
               </Button>
               <Button
                 variant="outline"
                 className="w-full text-xs"
                 onClick={() => handleCheckout(true)}
-                disabled={isCheckingOut || cart.length === 0}
+                disabled={isCheckingOut || cart.length === 0 || checkoutBlockedByRelay}
               >
                 🧪 Commande test (sans paiement)
               </Button>
