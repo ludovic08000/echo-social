@@ -298,11 +298,9 @@ export function useUpdateCartItem() {
             .eq('id', cartItem.product_id)
             .maybeSingle();
           if (product && !product.is_active) throw new Error('Ce produit n\'est plus disponible');
-          if (product?.stock_quantity === 1 && quantity > 1) {
-            throw new Error('Ce produit est limité à 1 exemplaire');
-          }
-          if (product?.stock_quantity !== null && product?.stock_quantity !== undefined && quantity > product.stock_quantity) {
-            throw new Error(`Stock max : ${product.stock_quantity}`);
+          const maxAllowedQty = product?.stock_quantity ?? 1;
+          if (quantity > maxAllowedQty) {
+            throw new Error(maxAllowedQty === 1 ? 'Ce produit est limité à 1 exemplaire' : `Stock max : ${maxAllowedQty}`);
           }
         }
         const { error } = await supabase.from('cart_items').update({ quantity }).eq('id', id);
