@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Palette, Heart, Brain, Accessibility } from 'lucide-react';
+import { ArrowLeft, Palette, Heart, Brain, Accessibility, Baby } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from '@/lib/i18n';
 import { AppLayout } from '@/components/AppLayout';
