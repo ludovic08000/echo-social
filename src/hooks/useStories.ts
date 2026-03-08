@@ -111,6 +111,9 @@ export function useStories() {
 
       return result;
     },
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 }
 

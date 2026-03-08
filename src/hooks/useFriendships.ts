@@ -75,6 +75,8 @@ export function useFriendships() {
       return { friends, pending, requests };
     },
     enabled: !!user,
+    staleTime: 2 * 60_000,
+    gcTime: 10 * 60_000,
   });
 }
 
