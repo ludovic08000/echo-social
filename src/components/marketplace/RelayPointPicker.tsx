@@ -43,6 +43,17 @@ function formatHours(raw: string) {
   return slots.length > 0 ? slots.join(', ') : 'Fermé';
 }
 
+const POSTCODE_PATTERNS: Record<string, RegExp> = {
+  FR: /^\d{5}$/,
+  BE: /^\d{4}$/,
+  LU: /^\d{4}$/,
+  ES: /^\d{5}$/,
+  DE: /^\d{5}$/,
+  NL: /^\d{4}\s?[A-Za-z]{2}$/,
+  AT: /^\d{4}$/,
+  PT: /^\d{4}(-\d{3})?$/,
+};
+
 export function RelayPointPicker({ onSelect, selectedId, country = 'FR' }: RelayPointPickerProps) {
   const [postcode, setPostcode] = useState('');
   const [points, setPoints] = useState<RelayPoint[]>([]);
@@ -50,8 +61,21 @@ export function RelayPointPicker({ onSelect, selectedId, country = 'FR' }: Relay
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  const validatePostcode = (value: string): string | null => {
+    const trimmed = value.trim();
+    if (!trimmed) return 'Veuillez entrer un code postal';
+    if (trimmed.length > 10) return 'Code postal trop long';
+    const pattern = POSTCODE_PATTERNS[country] || /^[A-Za-z0-9\s-]{3,10}$/;
+    if (!pattern.test(trimmed)) return 'Code postal invalide pour ce pays';
+    return null;
+  };
+
   const searchPoints = async () => {
-    if (!postcode.trim()) return;
+    const validationError = validatePostcode(postcode);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     setLoading(true);
     setError('');
 
@@ -64,7 +88,7 @@ export function RelayPointPicker({ onSelect, selectedId, country = 'FR' }: Relay
       if (data?.error) throw new Error(data.error);
 
       setPoints(data.points || []);
-      if (data.points?.length === 0) setError('Aucun point relais trouvé');
+      if (data.points?.length === 0) setError('Aucun point relais trouvé pour ce code postal');
     } catch (e: any) {
       setError(e.message || 'Erreur de recherche');
     } finally {
