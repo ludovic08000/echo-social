@@ -981,13 +981,64 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           )}
 
           {acceptedNeg && !isSeller && (
-            <div className="mt-2 flex items-center gap-2">
-              <Check className="w-3.5 h-3.5 text-emerald-600" />
-              <span className="text-[10px] font-semibold text-emerald-700 flex-1">
-                Prix négocié: <b>{(acceptedNeg.counter_price || acceptedNeg.offered_price).toFixed(2)} €</b>
-              </span>
-              <Button size="sm" className="h-7 rounded-xl text-[10px] gap-1 premium-button" onClick={handlePayNegotiated}>
-                <CreditCard className="w-3 h-3" /> Payer
+            <div className="mt-2 space-y-2">
+              <div className="flex items-center gap-1.5">
+                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="text-[10px] font-semibold text-emerald-700">Prix négocié accepté</span>
+              </div>
+              
+              {/* Price breakdown */}
+              <div className="bg-secondary/60 rounded-lg p-2 space-y-1 text-[10px]">
+                <div className="flex justify-between">
+                  <span>Prix négocié</span>
+                  <span className="font-semibold">{(acceptedNeg.counter_price || acceptedNeg.offered_price).toFixed(2)} €</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Frais de service (5%)</span>
+                  <span>{((acceptedNeg.counter_price || acceptedNeg.offered_price) * 0.05).toFixed(2)} €</span>
+                </div>
+                {selectedRelay && (
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Livraison Mondial Relay</span>
+                    <span>{estimateShipping(500).toFixed(2)} €</span>
+                  </div>
+                )}
+                <div className="border-t border-border/30 pt-1 flex justify-between font-bold">
+                  <span>Total</span>
+                  <span>
+                    {((acceptedNeg.counter_price || acceptedNeg.offered_price) * 1.05 + (selectedRelay ? estimateShipping(500) : 0)).toFixed(2)} €
+                  </span>
+                </div>
+              </div>
+
+              {/* Relay point selection */}
+              <div className="space-y-1.5">
+                {selectedRelay ? (
+                  <div className="flex items-center gap-1.5 bg-primary/5 rounded-lg p-1.5 text-[10px]">
+                    <MapPin className="w-3 h-3 text-primary flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold truncate">{selectedRelay.name}</p>
+                      <p className="text-muted-foreground truncate">{selectedRelay.address}, {selectedRelay.postcode} {selectedRelay.city}</p>
+                    </div>
+                    <button onClick={() => setSelectedRelay(null)} className="text-muted-foreground hover:text-foreground">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <Button size="sm" variant="outline" className="w-full h-7 text-[10px] rounded-lg gap-1"
+                    onClick={() => setShowRelayPicker(true)}>
+                    <Truck className="w-3 h-3" /> Choisir un point relais
+                  </Button>
+                )}
+              </div>
+
+              <Button size="sm" className="w-full h-8 rounded-xl text-[10px] gap-1 premium-button"
+                onClick={handlePayNegotiated} disabled={negPayLoading}>
+                {negPayLoading ? (
+                  <div className="w-3.5 h-3.5 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" />
+                ) : (
+                  <><CreditCard className="w-3.5 h-3.5" /> Payer {((acceptedNeg.counter_price || acceptedNeg.offered_price) * 1.05 + (selectedRelay ? estimateShipping(500) : 0)).toFixed(2)} €</>
+                )}
               </Button>
             </div>
           )}
