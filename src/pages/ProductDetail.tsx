@@ -287,7 +287,7 @@ export default function ProductDetailPage() {
             <p className="text-lg font-extrabold tracking-tight">{product.price.toFixed(2)} €</p>
             {hasDiscount && <p className="text-[11px] text-muted-foreground line-through">{product.compare_at_price!.toFixed(2)} €</p>}
           </div>
-          {!isOwnProduct && !isOutOfStock && (
+          {!isOwnProduct && !isOutOfStock && !isAlreadyInCart && (
             <Button
               variant="outline"
               className="h-12 rounded-2xl text-sm font-bold gap-1.5 border-primary/30"
