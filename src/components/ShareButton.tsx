@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { useConversations, useCreateConversation, useSendMessage } from '@/hooks/useMessages';
 import { UserAvatar } from './UserAvatar';
+import { useChatWidget } from './ChatWidgetContext';
 
 interface ShareButtonProps {
   url: string;
