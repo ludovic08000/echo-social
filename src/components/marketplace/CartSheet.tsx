@@ -36,7 +36,7 @@ export function CartSheet() {
   const buyerFee = Math.round(subtotal * 0.05 * 100) / 100;
   const total = subtotal + buyerFee;
 
-  const handleCheckout = async () => {
+  const handleCheckout = async (testMode = false) => {
     if (cart.length === 0) return;
     if (hasPhysical && !selectedRelay) {
       toast.error('Veuillez choisir un point relais pour la livraison');
@@ -56,19 +56,28 @@ export function CartSheet() {
         thumbnail_url: item.products?.thumbnail_url || null,
       }));
 
+      const relayData = selectedRelay ? {
+        id: selectedRelay.id,
+        name: selectedRelay.name,
+        address: selectedRelay.address,
+        postcode: selectedRelay.postcode,
+        city: selectedRelay.city,
+        country: selectedRelay.country,
+      } : null;
+
+      if (testMode) {
+        const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
+          body: { action: 'test_checkout', items, relay: relayData },
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        toast.success(`🎉 Commande test créée ! ${data.orderNumber}`);
+        window.location.href = `/marketplace?order_success=${data.orderId}`;
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
-        body: {
-          action: 'create_checkout',
-          items,
-          relay: selectedRelay ? {
-            id: selectedRelay.id,
-            name: selectedRelay.name,
-            address: selectedRelay.address,
-            postcode: selectedRelay.postcode,
-            city: selectedRelay.city,
-            country: selectedRelay.country,
-          } : null,
-        },
+        body: { action: 'create_checkout', items, relay: relayData },
       });
 
       if (error) throw error;
@@ -215,7 +224,7 @@ export function CartSheet() {
               </div>
               <Button
                 className="w-full premium-button"
-                onClick={handleCheckout}
+                onClick={() => handleCheckout(false)}
                 disabled={isCheckingOut || cart.length === 0}
               >
                 {isCheckingOut ? (
@@ -224,6 +233,14 @@ export function CartSheet() {
                   <CreditCard className="w-4 h-4 mr-2" />
                 )}
                 {isCheckingOut ? 'Redirection...' : `Payer ${total.toFixed(2)}€`}
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full text-xs"
+                onClick={() => handleCheckout(true)}
+                disabled={isCheckingOut || cart.length === 0}
+              >
+                🧪 Commande test (sans paiement)
               </Button>
               <p className="text-[10px] text-muted-foreground text-center flex items-center justify-center gap-1">
                 <ShieldCheck className="w-3 h-3" />
