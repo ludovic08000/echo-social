@@ -108,6 +108,18 @@ function LiveSlide({ item, isVisible }: { item: AllLiveItem; isVisible: boolean 
     };
   }, [isVisible, item.id, item.is_active, isHost]);
 
+  // Autoplay/pause replay video based on visibility
+  useEffect(() => {
+    const video = replayVideoRef.current;
+    if (!video) return;
+    if (isVisible) {
+      video.currentTime = 0;
+      video.play().catch(() => {});
+    } else {
+      video.pause();
+    }
+  }, [isVisible]);
+
   useEffect(() => {
     if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
   }, [chatMessages]);
