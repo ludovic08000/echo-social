@@ -1646,13 +1646,12 @@ function ZeusSection() {
   const inferDomainAction = (text: string) => {
     const lower = text.toLowerCase();
     if (lower.startsWith('/status')) return { domain: '_status', action: 'status', extra: {} };
-    if (lower.includes('modèr') || lower.includes('moder') || lower.includes('spam')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); return { domain: 'moderation', action: 'moderate_message', extra: { messageBody: m?.[1] || m?.[2] || text } }; }
-    if (lower.includes('amélio') || lower.includes('post') || lower.includes('réécri')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); let a = 'improve'; if (lower.includes('formel')) a = 'formal'; if (lower.includes('court')) a = 'shorter'; return { domain: 'post', action: a, extra: { text: m?.[1] || m?.[2] || text } }; }
-    if (lower.includes('tradui')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); let lang = 'en'; if (lower.includes('français')) lang = 'fr'; if (lower.includes('espagnol')) lang = 'es'; return { domain: 'content', action: 'translate', extra: { text: m?.[1] || m?.[2] || text, targetLanguage: lang } }; }
-    if (lower.includes('résum')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); return { domain: 'content', action: 'summarize', extra: { text: m?.[1] || m?.[2] || text } }; }
-    if (lower.includes('corrig')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); return { domain: 'content', action: 'correct', extra: { text: m?.[1] || m?.[2] || text } }; }
-    if (lower.includes('description') || lower.includes('produit')) { const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); return { domain: 'seller', action: 'generate_description', extra: { productInfo: m?.[1] || m?.[2] || text } }; }
-    return { domain: 'content', action: 'improve', extra: { text, tone: 'friendly' } };
+    // Explicit moderation request
+    if ((lower.includes('modèr') || lower.includes('moder')) && (lower.includes('"') || lower.includes('«') || lower.includes(':'))) {
+      const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); return { domain: 'moderation', action: 'moderate_message', extra: { messageBody: m?.[1] || m?.[2] || text } };
+    }
+    // Default: admin chat with full platform context
+    return { domain: 'admin', action: 'chat', extra: {} };
   };
 
   const formatResult = (domain: string, action: string, data: any): string => {
