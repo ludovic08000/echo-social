@@ -169,7 +169,7 @@ serve(async (req) => {
         orderData.shipping_relay_postcode = relay.postcode;
         orderData.shipping_relay_city = relay.city;
         orderData.shipping_relay_country = relay.country || 'FR';
-        orderData.shipping_weight_grams = weightGrams;
+        orderData.shipping_weight_grams = totalWeightGrams;
       }
 
       const { data: order, error: orderError } = await supabase
