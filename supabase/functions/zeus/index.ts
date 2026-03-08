@@ -809,6 +809,20 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
 
   const { action } = body;
 
+  // Handle apply_proposal action (admin validated a Zeus proposal)
+  if (action === 'apply_proposal') {
+    const { proposalAction, key, updates, reason } = body;
+    if (proposalAction === 'update_algorithm_config' && key && updates) {
+      const { data: current } = await supabase.from("feed_algorithm_config").select("value").eq("key", key).maybeSingle();
+      if (!current) return new Response(JSON.stringify({ error: `Config "${key}" introuvable` }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
+      const merged = { ...current.value, ...updates };
+      const { error } = await supabase.from("feed_algorithm_config").update({ value: merged, updated_at: new Date().toISOString(), updated_by: userId }).eq("key", key);
+      if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ success: true, key, reason, new_value: merged }), { headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ error: "Action non supportée" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+  }
+
   if (action === "chat") {
     // Gather core platform snapshot (lightweight — details fetched via tools)
     const [usersRes, postsRes, ordersRes, reportsRes, bansRes, trustRes, subsRes, verificationsRes, livesRes, productsRes] = await Promise.all([
