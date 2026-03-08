@@ -17,16 +17,6 @@ interface SelectedRelay {
   country: string;
 }
 
-const estimateRelayShipping = (weightGrams: number, parcels: number) => {
-  const basePerParcel = 4.2;
-  const weightExtra =
-    weightGrams <= 500 ? 0 :
-    weightGrams <= 1000 ? 0.8 :
-    weightGrams <= 2000 ? 1.6 :
-    weightGrams <= 5000 ? 2.8 : 4.5;
-
-  return Math.round((basePerParcel + weightExtra) * parcels * 100) / 100;
-};
 
 export function CartSheet() {
   const { data: cart = [] } = useCart();
