@@ -1621,7 +1621,7 @@ ${archive.profile_snapshot ? `    Nom : ${archive.profile_snapshot.name || '-'}
       ))}
     </div>
   );
-
+}
 
 // ─── ZEUS CONSOLE ───
 function ZeusSection() {
