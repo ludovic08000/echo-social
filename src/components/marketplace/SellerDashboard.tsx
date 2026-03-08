@@ -151,66 +151,6 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
     }
   };
 
-  const openLabelEditor = (order: any) => {
-    setSelectedOrder(order);
-    setLabelForm({
-      weightGrams: String(order.shipping_weight_grams || 500),
-      parcels: '1',
-      lengthCm: '',
-      sizeCode: '',
-      senderName: seller?.store_name || 'Vendeur',
-      senderAddress: order.shipping_relay_address || '',
-      senderCity: order.shipping_relay_city || '',
-      senderPostcode: order.shipping_relay_postcode || '',
-      senderCountry: order.shipping_relay_country || 'FR',
-      senderPhone: '',
-      senderEmail: '',
-    });
-    setLabelEditorOpen(true);
-  };
-
-  const submitLabelCreation = async () => {
-    if (!selectedOrder) return;
-
-    const weight = Math.max(100, Number(labelForm.weightGrams) || 500);
-    const parcels = Math.max(1, Number(labelForm.parcels) || 1);
-    const lengthCm = Number(labelForm.lengthCm);
-
-    await handleCreateLabel(selectedOrder.id, {
-      sender: {
-        name: labelForm.senderName.trim() || seller?.store_name || 'Vendeur',
-        address: labelForm.senderAddress.trim(),
-        city: labelForm.senderCity.trim(),
-        postcode: labelForm.senderPostcode.trim(),
-        country: (labelForm.senderCountry || 'FR').trim().toUpperCase(),
-        phone: labelForm.senderPhone.trim(),
-        email: labelForm.senderEmail.trim(),
-      },
-      parcel: {
-        weight_grams: weight,
-        parcels,
-        length_cm: Number.isFinite(lengthCm) && lengthCm > 0 ? lengthCm : undefined,
-        size_code: labelForm.sizeCode.trim() || undefined,
-      },
-    });
-  };
-
-  useEffect(() => {
-    const focusOrderId = searchParams.get('order_success');
-    if (!focusOrderId || autoOpenedOrderRef.current === focusOrderId) return;
-
-    if (orders.length === 0) {
-      refetchOrders();
-      return;
-    }
-
-    const orderToEdit = orders.find((order: any) => order.id === focusOrderId);
-    if (!orderToEdit) return;
-
-    setSellerTab('orders');
-    openLabelEditor(orderToEdit);
-    autoOpenedOrderRef.current = focusOrderId;
-  }, [searchParams, orders, refetchOrders]);
 
   if (isLoading) {
     return <div className="space-y-4"><div className="skeleton h-32 w-full" /><div className="skeleton h-32 w-full" /></div>;
