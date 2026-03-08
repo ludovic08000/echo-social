@@ -71,7 +71,7 @@ serve(async (req) => {
       const productIds = items.map((i: any) => i.product_id);
       const { data: dbProducts, error: prodError } = await supabase
         .from("products")
-        .select("id, title, price, seller_id, thumbnail_url, weight_grams, stock_quantity, status")
+        .select("id, title, price, seller_id, thumbnail_url, weight_grams, stock_quantity, is_active")
         .in("id", productIds);
 
       if (prodError || !dbProducts?.length) throw new Error("Produits introuvables");
@@ -81,7 +81,7 @@ serve(async (req) => {
       for (const item of items) {
         const dbProduct = dbProducts.find((p: any) => p.id === item.product_id);
         if (!dbProduct) throw new Error(`Produit ${item.product_id} introuvable`);
-        if (dbProduct.status !== "active") throw new Error(`Produit "${dbProduct.title}" n'est plus disponible`);
+        if (!dbProduct.is_active) throw new Error(`Produit "${dbProduct.title}" n'est plus disponible`);
         if (dbProduct.stock_quantity !== null && dbProduct.stock_quantity < item.quantity) {
           throw new Error(`Stock insuffisant pour "${dbProduct.title}"`);
         }
