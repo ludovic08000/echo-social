@@ -281,7 +281,7 @@ export function CartSheet() {
                 ) : (
                   <CreditCard className="w-4 h-4 mr-2" />
                 )}
-                {checkoutBlockedByRelay ? 'Choisir un point relais pour continuer' : isCheckingOut ? 'Redirection...' : `Payer ${total.toFixed(2)}€`}
+                {(hasPhysical && !selectedRelay) ? 'Choisir un point relais pour continuer' : isCheckingOut ? 'Redirection...' : `Payer ${total.toFixed(2)}€`}
               </Button>
               <Button
                 variant="outline"
