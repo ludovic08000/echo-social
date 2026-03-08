@@ -302,6 +302,7 @@ serve(async (req) => {
       const supabase = createClient(supabaseUrl, serviceKey);
 
       const { order_id, sender, relay_id } = body;
+      const shipment = body?.package ?? {};
       if (!order_id) throw new Error("order_id requis");
 
       // Get order
@@ -313,7 +314,22 @@ serve(async (req) => {
 
       if (!order) throw new Error("Commande introuvable");
 
-      const weight = order.shipping_weight_grams || 500;
+      const parsedWeight = Number(shipment.weight_grams);
+      const parsedParcels = Number(shipment.parcels);
+      const parsedLength = Number(shipment.length_cm);
+
+      const weight = Number.isFinite(parsedWeight) && parsedWeight > 0
+        ? Math.round(parsedWeight)
+        : (order.shipping_weight_grams || 500);
+      const parcels = Number.isFinite(parsedParcels) && parsedParcels > 0
+        ? Math.round(parsedParcels)
+        : 1;
+      const lengthCm = Number.isFinite(parsedLength) && parsedLength > 0
+        ? Math.round(parsedLength).toString()
+        : '';
+      const sizeCode = typeof shipment.size_code === 'string'
+        ? shipment.size_code.trim().toUpperCase()
+        : '';
 
       // Mondial Relay rejects empty expedition fields (STAT 97)
       const senderName = sender?.name || "Vendeur ForSure";
@@ -354,9 +370,9 @@ serve(async (req) => {
         Dest_Tel2: '',
         Dest_Mail: '',
         Poids: weight.toString(),
-        Longueur: '',
-        Taille: '',
-        NbColis: '1',
+        Longueur: lengthCm,
+        Taille: sizeCode,
+        NbColis: parcels.toString(),
         CRT_Valeur: '0',
         CRT_Devise: '',
         Exp_Valeur: '',
