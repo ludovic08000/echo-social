@@ -628,7 +628,7 @@ Deno.serve(async (req) => {
     }
 
     // Rate limit per domain
-    const limitMap: Record<string, number> = { content: 20, post: 15, moderation: 30, ads: 10, seller: 10, photo: 5, agent: 20 };
+    const limitMap: Record<string, number> = { content: 20, post: 15, moderation: 30, ads: 10, seller: 10, photo: 5, agent: 20, admin: 30 };
     if (!checkRateLimit(`${user.id}:${domain}`, limitMap[domain] || 15)) {
       return new Response(JSON.stringify({ error: "Trop de requêtes, réessayez." }), { status: 429, headers: { ...cors, "Content-Type": "application/json" } });
     }
@@ -641,6 +641,7 @@ Deno.serve(async (req) => {
       case "seller": return await handleSeller(LOVABLE_API_KEY, body, user.id, supabase, cors);
       case "photo": return await handlePhotoGuard(LOVABLE_API_KEY, body, user.id, supabase, cors);
       case "agent": return await handleAgentChat(LOVABLE_API_KEY, body, user.id, supabase, cors);
+      case "admin": return await handleAdmin(LOVABLE_API_KEY, body, user.id, supabase, cors);
       default:
         return new Response(JSON.stringify({ error: `Unknown domain: ${domain}` }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
