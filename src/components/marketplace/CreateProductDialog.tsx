@@ -246,10 +246,45 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
               <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Nom du produit" className="mt-1" />
             </div>
 
-            {/* Description */}
-            <div>
-              <Label>Description</Label>
-              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Décrivez votre produit..." className="mt-1" rows={3} />
+            {/* Description + AI */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Description</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs gap-1"
+                  onClick={generateAIDescription}
+                  disabled={aiGenerating || !title.trim()}
+                >
+                  {aiGenerating ? (
+                    <><Loader2 className="w-3 h-3 animate-spin" /> Génération...</>
+                  ) : (
+                    <><Sparkles className="w-3 h-3" /> Générer avec l'IA</>
+                  )}
+                </Button>
+              </div>
+              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Décrivez votre produit ou utilisez l'IA ✨" className="mt-1" rows={3} />
+              
+              {aiResult && (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2">
+                  <p className="text-[11px] font-medium text-primary flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" /> Suggestion IA — vérifiez puis validez
+                  </p>
+                  <div className="text-xs prose prose-sm max-w-none">
+                    <ReactMarkdown>{aiResult}</ReactMarkdown>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" className="flex-1 h-7 text-xs" onClick={applyAIDescription}>
+                      <Check className="w-3 h-3 mr-1" /> Utiliser cette description
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setAiResult('')}>
+                      Ignorer
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Price & Stock */}
