@@ -143,6 +143,7 @@ export function useCreateProduct() {
       color?: string;
       shipping_type?: string;
       shipping_price?: number;
+      weight_grams?: number;
       country?: string;
       region?: string;
       city?: string;
