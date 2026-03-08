@@ -29,6 +29,7 @@ const SHIPPING_LABELS: Record<string, { label: string; icon: any }> = {
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: product, isLoading } = useProduct(id);
+  const { user } = useAuth();
   const addToCart = useAddToCart();
   const { data: favorites = [] } = useProductFavorites();
   const toggleFav = useToggleFavorite();
