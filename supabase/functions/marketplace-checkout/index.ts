@@ -60,32 +60,51 @@ serve(async (req) => {
 
       if (!items?.length) throw new Error("Panier vide");
 
-      // Validate items
+      // Validate items have required fields
       for (const item of items) {
-        if (!item.product_id || !item.title || typeof item.price !== "number" || item.price <= 0) {
+        if (!item.product_id || !item.quantity || item.quantity < 1) {
           throw new Error("Données produit invalides");
-        }
-        if (!item.quantity || item.quantity < 1) {
-          throw new Error("Quantité invalide");
         }
       }
 
-      const subtotal = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
+      // SECURITY: Fetch real prices and data from DB — never trust client prices
+      const productIds = items.map((i: any) => i.product_id);
+      const { data: dbProducts, error: prodError } = await supabase
+        .from("products")
+        .select("id, title, price, seller_id, thumbnail_url, weight_grams, stock_quantity, status")
+        .in("id", productIds);
+
+      if (prodError || !dbProducts?.length) throw new Error("Produits introuvables");
+
+      // Verify all products exist and are available
+      const verifiedItems = [];
+      for (const item of items) {
+        const dbProduct = dbProducts.find((p: any) => p.id === item.product_id);
+        if (!dbProduct) throw new Error(`Produit ${item.product_id} introuvable`);
+        if (dbProduct.status !== "active") throw new Error(`Produit "${dbProduct.title}" n'est plus disponible`);
+        if (dbProduct.stock_quantity !== null && dbProduct.stock_quantity < item.quantity) {
+          throw new Error(`Stock insuffisant pour "${dbProduct.title}"`);
+        }
+        verifiedItems.push({
+          product_id: dbProduct.id,
+          title: dbProduct.title,
+          price: dbProduct.price, // Server-side price
+          quantity: item.quantity,
+          seller_id: dbProduct.seller_id,
+          thumbnail_url: dbProduct.thumbnail_url,
+          weight_grams: dbProduct.weight_grams,
+        });
+      }
+
+      const subtotal = verifiedItems.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
       const commission = Math.round(subtotal * COMMISSION_RATE * 100) / 100;
 
-      // Fetch real weights from products table
+      // Calculate shipping from DB weights
       let totalShipping = 0;
       let totalWeightGrams = 0;
       if (relay?.id) {
-        const productIds = items.map((i: any) => i.product_id);
-        const { data: products } = await supabase
-          .from("products")
-          .select("id, weight_grams")
-          .in("id", productIds);
-        
-        for (const item of items) {
-          const product = products?.find((p: any) => p.id === item.product_id);
-          const weight = product?.weight_grams || 500;
+        for (const item of verifiedItems) {
+          const weight = item.weight_grams || 500;
           totalWeightGrams += weight * item.quantity;
           totalShipping += estimateRelayShipping(weight) * item.quantity;
         }
@@ -94,22 +113,15 @@ serve(async (req) => {
 
       const total = subtotal + commission + totalShipping;
 
-      // Find or create Stripe customer
-      const customers = await stripe.customers.list({ email: userEmail, limit: 1 });
-      let customerId: string | undefined;
-      if (customers.data.length > 0) {
-        customerId = customers.data[0].id;
-      }
-
-      // Build line items for Stripe
-      const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = items.map((item: any) => ({
+      // Build line items for Stripe using server-side prices
+      const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = verifiedItems.map((item: any) => ({
         price_data: {
           currency: "eur",
           product_data: {
             name: item.title,
             images: item.thumbnail_url ? [item.thumbnail_url] : [],
           },
-          unit_amount: Math.round(item.price * 100), // cents
+          unit_amount: Math.round(item.price * 100),
         },
         quantity: item.quantity,
       }));
