@@ -1,102 +1,52 @@
-import { useState, useCallback } from 'react';
-import { Contacts } from '@capacitor-community/contacts';
+import { useState } from 'react';
 import { Share } from '@capacitor/share';
-import { Capacitor } from '@capacitor/core';
-import { UserPlus, Search, Check, Send, Phone } from 'lucide-react';
+import { UserPlus, Search, Check, Send, Phone, Users, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
-
-interface ParsedContact {
-  id: string;
-  name: string;
-  phone: string;
-}
+import { UserAvatar } from '@/components/UserAvatar';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useContactSync, MatchedContact, UnmatchedContact } from '@/hooks/useContactSync';
+import { useSendFriendRequest } from '@/hooks/useFriendships';
+import { useNavigate } from 'react-router-dom';
 
 const INVITE_MESSAGE = `Rejoins-moi sur Forsure, le réseau social de confiance ! 🚀\nTélécharge l'app ici : https://calm-connect-05.lovable.app`;
 
 export function InviteContacts() {
-  const [contacts, setContacts] = useState<ParsedContact[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const navigate = useNavigate();
+  const { isNative, loading, synced, matched, unmatched, syncContacts } = useContactSync();
+  const sendRequest = useSendFriendRequest();
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [selectedInvites, setSelectedInvites] = useState<Set<string>>(new Set());
+  const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
 
-  const isNative = Capacitor.isNativePlatform();
-
-  const loadContacts = useCallback(async () => {
-    if (!isNative) {
-      // On web, use share API fallback
-      try {
-        await navigator.share?.({
-          title: 'Rejoins Forsure !',
-          text: INVITE_MESSAGE,
-          url: 'https://calm-connect-05.lovable.app',
-        });
-      } catch {
-        await navigator.clipboard.writeText(INVITE_MESSAGE);
-        toast({ title: 'Lien copié !', description: 'Partagez-le avec vos amis' });
-      }
-      return;
-    }
-
-    setLoading(true);
+  const handleWebShare = async () => {
     try {
-      const permission = await Contacts.requestPermissions();
-      if (permission.contacts !== 'granted') {
-        toast({
-          title: 'Accès refusé',
-          description: 'Autorisez l\'accès aux contacts dans les réglages',
-          variant: 'destructive',
-        });
-        setLoading(false);
-        return;
-      }
-
-      const result = await Contacts.getContacts({
-        projection: {
-          name: true,
-          phones: true,
-        },
+      await navigator.share?.({
+        title: 'Rejoins Forsure !',
+        text: INVITE_MESSAGE,
+        url: 'https://calm-connect-05.lovable.app',
       });
-
-      const parsed: ParsedContact[] = [];
-      const seen = new Set<string>();
-
-      for (const c of result.contacts) {
-        const name = c.name?.display || c.name?.given || '';
-        const phones = c.phones || [];
-        for (const p of phones) {
-          const num = p.number?.replace(/\s/g, '') || '';
-          if (num && !seen.has(num)) {
-            seen.add(num);
-            parsed.push({
-              id: `${c.contactId}-${num}`,
-              name: name || num,
-              phone: num,
-            });
-          }
-        }
-      }
-
-      parsed.sort((a, b) => a.name.localeCompare(b.name));
-      setContacts(parsed);
-      setLoaded(true);
-    } catch (err: any) {
-      toast({
-        title: 'Erreur',
-        description: err.message || 'Impossible de charger les contacts',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
+    } catch {
+      await navigator.clipboard.writeText(INVITE_MESSAGE);
+      toast({ title: 'Lien copié !', description: 'Partagez-le avec vos amis' });
     }
-  }, [isNative]);
+  };
 
-  const toggleContact = (id: string) => {
-    setSelected(prev => {
+  const handleAddFriend = async (userId: string) => {
+    try {
+      await sendRequest.mutateAsync(userId);
+      setSentRequests(prev => new Set(prev).add(userId));
+      toast({ title: '🤝 Demande envoyée !' });
+    } catch {
+      toast({ title: 'Erreur', variant: 'destructive' });
+    }
+  };
+
+  const toggleInvite = (id: string) => {
+    setSelectedInvites(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -104,41 +54,35 @@ export function InviteContacts() {
     });
   };
 
-  const selectAll = () => {
-    if (selected.size === filtered.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(filtered.map(c => c.id)));
-    }
-  };
-
   const sendInvites = async () => {
-    if (selected.size === 0) return;
-
+    if (selectedInvites.size === 0) return;
     try {
-      // On native, use Share API with the message
       await Share.share({
         title: 'Rejoins Forsure !',
         text: INVITE_MESSAGE,
         dialogTitle: 'Inviter des amis',
       });
-
       toast({
-        title: `${selected.size} invitation(s) envoyée(s) !`,
+        title: `${selectedInvites.size} invitation(s) envoyée(s) !`,
         description: 'Vos amis recevront le lien',
       });
-      setSelected(new Set());
+      setSelectedInvites(new Set());
     } catch {
-      // User cancelled share
+      // User cancelled
     }
   };
 
-  const filtered = contacts.filter(c =>
+  const filteredMatched = matched.filter(c =>
+    c.name.toLowerCase().includes(search.toLowerCase()) ||
+    c.contact_name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const filteredUnmatched = unmatched.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     c.phone.includes(search)
   );
 
-  // Web fallback — simple share button
+  // Web fallback
   if (!isNative) {
     return (
       <div className="flex flex-col items-center justify-center p-8 gap-4 text-center">
@@ -147,102 +91,202 @@ export function InviteContacts() {
         </div>
         <h3 className="font-semibold text-lg">Invitez vos amis</h3>
         <p className="text-sm text-muted-foreground max-w-xs">
-          Partagez le lien de Forsure avec vos proches pour qu'ils rejoignent le réseau
+          Partagez le lien de Forsure avec vos proches
         </p>
-        <Button onClick={loadContacts} className="gap-2">
+        <Button onClick={handleWebShare} className="gap-2">
           <Send className="w-4 h-4" />
           Partager le lien
         </Button>
+        <p className="text-xs text-muted-foreground mt-2">
+          📱 Sur l'app mobile, synchronisez votre répertoire pour retrouver vos amis
+        </p>
       </div>
     );
   }
 
-  // Not loaded yet — show CTA
-  if (!loaded) {
+  // Not synced yet
+  if (!synced) {
     return (
       <div className="flex flex-col items-center justify-center p-8 gap-4 text-center">
         <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
           <Phone className="w-8 h-8 text-primary" />
         </div>
-        <h3 className="font-semibold text-lg">Invitez depuis vos contacts</h3>
+        <h3 className="font-semibold text-lg">Retrouvez vos amis</h3>
         <p className="text-sm text-muted-foreground max-w-xs">
-          Sélectionnez des personnes de votre répertoire pour les inviter sur Forsure
+          Synchronisez votre répertoire pour découvrir quels contacts sont déjà sur Forsure
         </p>
-        <Button onClick={loadContacts} disabled={loading} className="gap-2">
+        <Button onClick={syncContacts} disabled={loading} className="gap-2">
           {loading ? (
             <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
           ) : (
-            <UserPlus className="w-4 h-4" />
+            <Users className="w-4 h-4" />
           )}
-          {loading ? 'Chargement...' : 'Accéder aux contacts'}
+          {loading ? 'Synchronisation...' : 'Synchroniser mes contacts'}
         </Button>
+        <p className="text-xs text-muted-foreground/60 mt-1">
+          🔒 Vos contacts ne sont pas stockés sur nos serveurs
+        </p>
       </div>
     );
   }
 
+  // Synced — show results
   return (
     <div className="flex flex-col h-full">
-      {/* Search + select all */}
-      <div className="p-3 space-y-2 border-b border-border">
+      {/* Search */}
+      <div className="p-3 border-b border-border">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Rechercher un contact..."
+            placeholder="Rechercher..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-9"
           />
         </div>
-        <div className="flex items-center justify-between">
-          <button
-            onClick={selectAll}
-            className="text-xs text-primary font-medium"
-          >
-            {selected.size === filtered.length && filtered.length > 0 ? 'Tout désélectionner' : 'Tout sélectionner'}
-          </button>
-          <span className="text-xs text-muted-foreground">
-            {selected.size} sélectionné{selected.size > 1 ? 's' : ''}
-          </span>
-        </div>
       </div>
 
-      {/* Contact list */}
-      <ScrollArea className="flex-1">
-        <div className="divide-y divide-border">
-          {filtered.length === 0 ? (
-            <p className="p-6 text-center text-sm text-muted-foreground">Aucun contact trouvé</p>
-          ) : (
-            filtered.map(contact => (
-              <button
-                key={contact.id}
-                onClick={() => toggleContact(contact.id)}
-                className="w-full flex items-center gap-3 p-3 hover:bg-muted/50 transition-colors"
-              >
-                <Checkbox checked={selected.has(contact.id)} />
-                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-semibold text-muted-foreground">
-                  {contact.name.charAt(0).toUpperCase()}
-                </div>
-                <div className="text-left flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{contact.name}</p>
-                  <p className="text-xs text-muted-foreground">{contact.phone}</p>
-                </div>
-                {selected.has(contact.id) && (
-                  <Check className="w-4 h-4 text-primary shrink-0" />
-                )}
-              </button>
-            ))
-          )}
-        </div>
-      </ScrollArea>
+      <Tabs defaultValue="found" className="flex-1 flex flex-col">
+        <TabsList className="grid grid-cols-2 mx-3 mt-2">
+          <TabsTrigger value="found" className="text-xs">
+            Sur Forsure ({matched.length})
+          </TabsTrigger>
+          <TabsTrigger value="invite" className="text-xs">
+            À inviter ({unmatched.length})
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Send button */}
-      {selected.size > 0 && (
-        <div className="p-3 border-t border-border">
-          <Button onClick={sendInvites} className="w-full gap-2">
-            <Send className="w-4 h-4" />
-            Inviter {selected.size} personne{selected.size > 1 ? 's' : ''}
-          </Button>
-        </div>
+        {/* Matched contacts */}
+        <TabsContent value="found" className="flex-1 mt-0">
+          <ScrollArea className="h-[350px]">
+            <div className="divide-y divide-border">
+              {filteredMatched.length === 0 ? (
+                <p className="p-6 text-center text-sm text-muted-foreground">
+                  Aucun contact trouvé sur Forsure
+                </p>
+              ) : (
+                filteredMatched.map(contact => (
+                  <MatchedContactRow
+                    key={contact.user_id}
+                    contact={contact}
+                    onAddFriend={handleAddFriend}
+                    onViewProfile={() => navigate(`/profile/${contact.user_id}`)}
+                    isSent={sentRequests.has(contact.user_id)}
+                    isPending={sendRequest.isPending}
+                  />
+                ))
+              )}
+            </div>
+          </ScrollArea>
+        </TabsContent>
+
+        {/* Unmatched contacts to invite */}
+        <TabsContent value="invite" className="flex-1 mt-0">
+          <ScrollArea className="h-[350px]">
+            <div className="px-3 py-2 flex justify-between items-center">
+              <button
+                onClick={() => {
+                  if (selectedInvites.size === filteredUnmatched.length) {
+                    setSelectedInvites(new Set());
+                  } else {
+                    setSelectedInvites(new Set(filteredUnmatched.map(c => c.id)));
+                  }
+                }}
+                className="text-xs text-primary font-medium"
+              >
+                {selectedInvites.size === filteredUnmatched.length && filteredUnmatched.length > 0
+                  ? 'Tout désélectionner'
+                  : 'Tout sélectionner'}
+              </button>
+              <span className="text-xs text-muted-foreground">
+                {selectedInvites.size} sélectionné{selectedInvites.size > 1 ? 's' : ''}
+              </span>
+            </div>
+            <div className="divide-y divide-border">
+              {filteredUnmatched.length === 0 ? (
+                <p className="p-6 text-center text-sm text-muted-foreground">
+                  Tous vos contacts sont sur Forsure !
+                </p>
+              ) : (
+                filteredUnmatched.map(contact => (
+                  <button
+                    key={contact.id}
+                    onClick={() => toggleInvite(contact.id)}
+                    className="w-full flex items-center gap-3 p-3 hover:bg-muted/50 transition-colors"
+                  >
+                    <Checkbox checked={selectedInvites.has(contact.id)} />
+                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-semibold text-muted-foreground">
+                      {contact.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="text-left flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{contact.name}</p>
+                      <p className="text-xs text-muted-foreground">{contact.phone}</p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </ScrollArea>
+
+          {selectedInvites.size > 0 && (
+            <div className="p-3 border-t border-border">
+              <Button onClick={sendInvites} className="w-full gap-2">
+                <Send className="w-4 h-4" />
+                Inviter {selectedInvites.size} personne{selectedInvites.size > 1 ? 's' : ''}
+              </Button>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function MatchedContactRow({
+  contact,
+  onAddFriend,
+  onViewProfile,
+  isSent,
+  isPending,
+}: {
+  contact: MatchedContact;
+  onAddFriend: (userId: string) => void;
+  onViewProfile: () => void;
+  isSent: boolean;
+  isPending: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-3 p-3">
+      <button onClick={onViewProfile} className="shrink-0">
+        <UserAvatar src={contact.avatar_url} alt={contact.name} size="md" />
+      </button>
+      <div className="flex-1 min-w-0">
+        <button onClick={onViewProfile} className="text-left">
+          <p className="text-sm font-medium truncate">{contact.name}</p>
+          <p className="text-xs text-muted-foreground truncate">
+            {contact.contact_name !== contact.name ? `${contact.contact_name} dans vos contacts` : 'Dans vos contacts'}
+          </p>
+        </button>
+      </div>
+      {contact.is_friend ? (
+        <span className="text-xs text-muted-foreground flex items-center gap-1">
+          <Check className="w-3.5 h-3.5 text-primary" /> Ami
+        </span>
+      ) : isSent ? (
+        <span className="text-xs text-muted-foreground flex items-center gap-1">
+          <Check className="w-3.5 h-3.5" /> Envoyé
+        </span>
+      ) : (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onAddFriend(contact.user_id)}
+          disabled={isPending}
+          className="gap-1 text-xs"
+        >
+          <UserPlus className="w-3.5 h-3.5" />
+          Ajouter
+        </Button>
       )}
     </div>
   );
