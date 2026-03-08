@@ -74,13 +74,39 @@ serve(async (req) => {
 
         console.log(`✅ Tip confirmed for session ${stripeSessionId}`);
       }
+      // ── SUBSCRIPTION (Creator) ──
+      else if (!session.metadata?.order_id && session.metadata?.user_id && session.mode === "subscription") {
+        const userId = session.metadata.user_id;
+        console.log(`Processing creator subscription for user ${userId}`);
+
+        // Activate creator status
+        await supabase
+          .from("profiles")
+          .update({ is_creator: true, creator_since: new Date().toISOString(), creator_tier: "creator" })
+          .eq("user_id", userId);
+
+        // Upsert creator_subscriptions
+        await supabase.from("creator_subscriptions").upsert({
+          user_id: userId,
+          status: "active",
+          plan: "creator_monthly",
+          price_cents: 500,
+          currency: "eur",
+          stripe_customer_id: typeof session.customer === "string" ? session.customer : session.customer?.id || null,
+          stripe_subscription_id: typeof session.subscription === "string" ? session.subscription : session.subscription?.id || null,
+          current_period_start: new Date().toISOString(),
+          current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        }, { onConflict: "user_id" });
+
+        console.log(`✅ Creator activated for user ${userId}`);
+      }
       // ── ORDER PAYMENT ──
       else {
         const orderId = session.metadata?.order_id;
         const userId = session.metadata?.user_id;
 
         if (!orderId) {
-          console.log("No order_id in metadata, skipping (may be a subscription checkout)");
+          console.log("No order_id or subscription in metadata, skipping");
           return new Response(JSON.stringify({ received: true }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
