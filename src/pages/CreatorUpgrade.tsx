@@ -1,9 +1,10 @@
-import { Crown, BarChart3, Heart, TrendingUp, Sparkles, ExternalLink, RefreshCw, CreditCard } from 'lucide-react';
+import { Crown, BarChart3, Heart, TrendingUp, Sparkles, ExternalLink, RefreshCw, CreditCard, Lock, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth';
 import { useStripeSubscription } from '@/hooks/useStripeSubscription';
+import { useIsCreatorRevenueEnabled } from '@/hooks/usePlatformStats';
 import { toast } from 'sonner';
 import { useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
