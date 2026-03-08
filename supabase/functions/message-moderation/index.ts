@@ -419,3 +419,50 @@ function basicModeration(text: string): { safe: boolean; reason: string | null; 
 
   return { safe: true, reason: null, category: "safe" };
 }
+
+// Fallback moderation for messages to minors (no AI)
+function basicMinorModeration(text: string): { safe: boolean; reason: string | null; category: string } {
+  const lower = text.toLowerCase();
+
+  // First run basic moderation
+  const basic = basicModeration(text);
+  if (!basic.safe) return basic;
+
+  // Grooming patterns
+  const groomingPatterns = [
+    /t'es\s+(trop\s+)?(belle|beau|mignon|mignonne|sexy|jolie|joli|canon)/i,
+    /envoie\s+(moi\s+)?(une|ta|des)\s+(photo|image|selfie|vidéo)/i,
+    /dis\s+(pas|rien)\s+(à|aux)\s+(tes\s+)?(parents|père|mère|mama|papa|famille)/i,
+    /notre\s+secret/i,
+    /on\s+peut\s+(se\s+)?(voir|rencontrer|retrouver)/i,
+    /tu\s+habites?\s+(où|ou)/i,
+    /quel(le)?\s+(âge|école|collège|lycée)/i,
+    /(ton|ta)\s+(numéro|tel|téléphone|insta|snap|whatsapp|tiktok)/i,
+    /je\s+suis\s+(ton|ta)\s+(ami|copain|copine|confident)/i,
+    /t'inquiète\s+pas.*entre\s+nous/i,
+    /personne\s+(ne\s+)?saura/i,
+    /webcam|cam[éè]ra|facetime/i,
+  ];
+
+  for (const pattern of groomingPatterns) {
+    if (pattern.test(lower)) {
+      return { safe: false, reason: "Message suspect détecté envers un mineur", category: "grooming" };
+    }
+  }
+
+  // Isolation patterns
+  const isolationPatterns = [
+    /ne\s+(dis|parle|raconte)\s+(rien|pas|jamais)\s+(à|aux)/i,
+    /tes\s+parents\s+(ne\s+)?(compren|savent|doivent)/i,
+    /viens\s+(sur|en)\s+(privé|dm|mp)/i,
+    /on\s+(parle|discute)\s+(ailleurs|autre\s+part)/i,
+  ];
+
+  for (const pattern of isolationPatterns) {
+    if (pattern.test(lower)) {
+      return { safe: false, reason: "Tentative d'isolement détectée envers un mineur", category: "isolation" };
+    }
+  }
+
+  return { safe: true, reason: null, category: "safe" };
+}
