@@ -130,15 +130,15 @@ serve(async (req) => {
         });
       }
 
-      if (shippingFee > 0) {
+      if (totalShipping > 0) {
         lineItems.push({
           price_data: {
             currency: "eur",
             product_data: {
-              name: "Livraison Mondial Relay (estimée)",
+              name: "Livraison Mondial Relay",
               images: [],
             },
-            unit_amount: Math.round(shippingFee * 100),
+            unit_amount: Math.round(totalShipping * 100),
           },
           quantity: 1,
         });
