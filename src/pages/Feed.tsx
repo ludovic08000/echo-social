@@ -55,6 +55,7 @@ export default function Feed() {
   const [pauseDismissed, setPauseDismissed] = useState(false);
   const { data: activeAds } = useActiveAds();
   const feedBgStyle = useCustomBackground('feed');
+  const { isMinor, isUnlocked, requestUnlock } = useParentalGate();
 
   const posts = data?.pages.flat() || [];
 
