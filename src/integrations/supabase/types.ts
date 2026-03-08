@@ -3176,7 +3176,33 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      anonymous_wall_messages_safe: {
+        Row: {
+          author_id: string | null
+          created_at: string | null
+          id: string | null
+          is_approved: boolean | null
+          message: string | null
+          target_user_id: string | null
+        }
+        Insert: {
+          author_id?: never
+          created_at?: string | null
+          id?: string | null
+          is_approved?: boolean | null
+          message?: string | null
+          target_user_id?: string | null
+        }
+        Update: {
+          author_id?: never
+          created_at?: string | null
+          id?: string | null
+          is_approved?: boolean | null
+          message?: string | null
+          target_user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       can_view_order: {
@@ -3202,6 +3228,27 @@ export type Database = {
         }[]
       }
       get_public_trust_score: { Args: { p_user_id: string }; Returns: number }
+      get_safe_live_stream: {
+        Args: { p_live_id: string }
+        Returns: {
+          category: string
+          created_at: string
+          description: string
+          ended_at: string
+          hashtags: string[]
+          id: string
+          is_active: boolean
+          peak_viewer_count: number
+          recording_url: string
+          started_at: string
+          stream_key: string
+          thumbnail_url: string
+          title: string
+          total_views: number
+          user_id: string
+          viewer_count: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
