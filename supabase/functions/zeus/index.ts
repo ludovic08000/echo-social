@@ -506,6 +506,20 @@ const ZEUS_TOOLS = [
       parameters: { type: "object", properties: { days: { type: "number", description: "Nombre de jours à analyser (7, 14, 30)" } }, required: ["days"], additionalProperties: false },
     },
   },
+  {
+    type: "function", function: {
+      name: "simulate_platform_load", description: "Simuler la charge réseau pour estimer les capacités max : utilisateurs simultanés, lives concurrents, posts/min, messages/min, marketplace. Basé sur les données réelles + limites infra.",
+      parameters: {
+        type: "object",
+        properties: {
+          scenario: { type: "string", enum: ["current", "peak", "stress", "growth_10x", "growth_100x"], description: "Scénario de simulation" },
+          focus: { type: "string", enum: ["all", "lives", "posts", "messages", "marketplace", "auth"], description: "Domaine à analyser en détail" },
+        },
+        required: ["scenario"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // Execute Zeus tool calls against the database
@@ -611,6 +625,120 @@ async function executeZeusTool(name: string, args: any, supabase: any): Promise<
           growth_rate_percent: growthRate, total_users: totalUsersRes.count || 0,
           deletion_requests: deletionRes.count || 0,
         });
+      }
+      case "simulate_platform_load": {
+        const scenario = args.scenario || "current";
+        const focus = args.focus || "all";
+
+        // Gather real baseline data
+        const [totalUsersRes, activePostsRes, activeLivesRes, msgsHourRes, ordersHourRes, storiesRes] = await Promise.all([
+          supabase.from("profiles").select("id", { count: "exact", head: true }),
+          supabase.from("posts").select("id", { count: "exact", head: true }).gte("created_at", new Date(Date.now() - 86400000).toISOString()),
+          supabase.from("live_streams").select("id, viewer_count, peak_viewer_count").eq("is_active", true),
+          supabase.from("messages").select("id", { count: "exact", head: true }).gte("created_at", new Date(Date.now() - 3600000).toISOString()),
+          supabase.from("orders").select("id", { count: "exact", head: true }).gte("created_at", new Date(Date.now() - 3600000).toISOString()),
+          supabase.from("stories").select("id", { count: "exact", head: true }).gte("created_at", new Date(Date.now() - 86400000).toISOString()),
+        ]);
+
+        const totalUsers = totalUsersRes.count || 0;
+        const postsToday = activePostsRes.count || 0;
+        const activeLives = activeLivesRes.data || [];
+        const msgsPerHour = msgsHourRes.count || 0;
+        const ordersPerHour = ordersHourRes.count || 0;
+        const storiesToday = storiesRes.count || 0;
+        const currentViewers = activeLives.reduce((s: number, l: any) => s + (l.viewer_count || 0), 0);
+        const peakViewers = activeLives.reduce((s: number, l: any) => s + (l.peak_viewer_count || 0), 0);
+
+        // Infrastructure limits (Supabase Pro / Lovable Cloud)
+        const infra = {
+          db_connections_max: 60, // Supabase pooler
+          db_rows_per_sec: 5000,
+          realtime_connections_max: 500, // Supabase realtime
+          edge_functions_concurrent: 100,
+          storage_bandwidth_gb: 50, // per month
+          api_requests_per_sec: 1000,
+        };
+
+        // Multipliers per scenario
+        const multipliers: Record<string, number> = { current: 1, peak: 3, stress: 10, growth_10x: 10, growth_100x: 100 };
+        const mult = multipliers[scenario] || 1;
+
+        const simUsers = totalUsers * mult;
+        const concurrentRate = scenario === "current" ? 0.05 : scenario === "peak" ? 0.15 : 0.25;
+        const concurrent = Math.round(simUsers * concurrentRate);
+
+        // Simulation results
+        const sim = {
+          scenario,
+          focus,
+          baseline: {
+            total_users: totalUsers,
+            posts_today: postsToday,
+            stories_today: storiesToday,
+            active_lives: activeLives.length,
+            current_live_viewers: currentViewers,
+            peak_live_viewers: peakViewers,
+            messages_per_hour: msgsPerHour,
+            orders_per_hour: ordersPerHour,
+          },
+          simulation: {
+            simulated_users: simUsers,
+            estimated_concurrent: concurrent,
+            estimated_posts_per_min: Math.round((postsToday || 1) / 1440 * mult),
+            estimated_messages_per_min: Math.round((msgsPerHour || 1) / 60 * mult),
+            estimated_orders_per_hour: Math.round((ordersPerHour || 1) * mult),
+            estimated_live_streams: Math.round((activeLives.length || 1) * mult),
+            estimated_live_viewers: Math.round(Math.max(currentViewers, 1) * mult),
+            estimated_stories_per_hour: Math.round((storiesToday || 1) / 24 * mult),
+          },
+          capacity: {
+            db_connections: { used_estimate: Math.min(concurrent * 0.3, infra.db_connections_max * 2), max: infra.db_connections_max, status: concurrent * 0.3 > infra.db_connections_max ? "🔴 SATURÉ" : concurrent * 0.3 > infra.db_connections_max * 0.7 ? "🟡 ATTENTION" : "🟢 OK" },
+            realtime: { used_estimate: Math.min(concurrent * 0.5, infra.realtime_connections_max * 2), max: infra.realtime_connections_max, status: concurrent * 0.5 > infra.realtime_connections_max ? "🔴 SATURÉ" : concurrent * 0.5 > infra.realtime_connections_max * 0.7 ? "🟡 ATTENTION" : "🟢 OK" },
+            edge_functions: { concurrent_estimate: Math.round(concurrent * 0.1), max: infra.edge_functions_concurrent, status: concurrent * 0.1 > infra.edge_functions_concurrent ? "🔴 SATURÉ" : "🟢 OK" },
+            api_throughput: { requests_per_sec_estimate: Math.round(concurrent * 0.5), max: infra.api_requests_per_sec, status: concurrent * 0.5 > infra.api_requests_per_sec ? "🔴 SATURÉ" : "🟢 OK" },
+            live_streaming: {
+              max_concurrent_streams: Math.min(Math.floor(infra.realtime_connections_max / 10), 50),
+              max_viewers_per_stream: infra.realtime_connections_max > concurrent * 0.5 ? "illimité (dans la limite realtime)" : Math.floor(infra.realtime_connections_max / Math.max(activeLives.length, 1)),
+              status: concurrent * 0.5 > infra.realtime_connections_max ? "🔴 GOULOT" : "🟢 OK",
+            },
+          },
+          bottlenecks: [] as string[],
+          recommendations: [] as string[],
+          max_theoretical: {
+            max_concurrent_users: Math.min(infra.realtime_connections_max, infra.db_connections_max * 3, infra.api_requests_per_sec * 2),
+            max_simultaneous_lives: Math.floor(infra.realtime_connections_max / 10),
+            max_posts_per_minute: Math.floor(infra.db_rows_per_sec * 60 * 0.1),
+            max_messages_per_minute: Math.floor(infra.db_rows_per_sec * 60 * 0.2),
+            max_orders_per_hour: Math.floor(infra.edge_functions_concurrent * 3600 * 0.01),
+          },
+        };
+
+        // Detect bottlenecks
+        if (sim.capacity.db_connections.status.includes("SATURÉ")) sim.bottlenecks.push("🗄️ Connexions DB saturées — upgrade pool ou passer en mode serverless");
+        if (sim.capacity.realtime.status.includes("SATURÉ")) sim.bottlenecks.push("📡 Realtime saturé — limiter les subscriptions ou upgrade plan");
+        if (sim.capacity.edge_functions.status.includes("SATURÉ")) sim.bottlenecks.push("⚡ Edge Functions saturées — ajouter cache / réduire appels IA");
+        if (sim.capacity.api_throughput.status.includes("SATURÉ")) sim.bottlenecks.push("🌐 API rate limit atteint — CDN, cache, ou throttle côté client");
+        if (sim.capacity.live_streaming.status.includes("GOULOT")) sim.bottlenecks.push("🎥 Live streaming limité par realtime — considérer LiveKit dédié");
+
+        if (sim.bottlenecks.length === 0) sim.bottlenecks.push("✅ Aucun goulot détecté pour ce scénario");
+
+        // Recommendations
+        if (scenario === "growth_10x" || scenario === "growth_100x") {
+          sim.recommendations.push("📈 Passer à Supabase Pro/Enterprise pour plus de connexions DB");
+          sim.recommendations.push("🔄 Implémenter un CDN (Cloudflare) devant les assets");
+          sim.recommendations.push("💾 Ajouter Redis/Upstash pour le cache des requêtes fréquentes");
+          sim.recommendations.push("🎬 Migrer les lives vers un service dédié (LiveKit Cloud / Mux)");
+        }
+        if (scenario === "stress") {
+          sim.recommendations.push("🛡️ Activer le rate limiting agressif côté API Gateway");
+          sim.recommendations.push("📊 Monitorer avec Grafana + Prometheus");
+        }
+        if (concurrent > 200) {
+          sim.recommendations.push("🔧 Optimiser les requêtes N+1 (utiliser des vues matérialisées)");
+          sim.recommendations.push("🧩 Séparer les lectures/écritures avec des réplicas read-only");
+        }
+
+        return JSON.stringify(sim);
       }
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` });
@@ -718,8 +846,10 @@ Tu peux appeler des outils pour interroger la base en temps réel :
 - \`get_marketplace_stats\` : Stats marketplace
 - \`get_engagement_metrics\` : Métriques d'engagement
 - \`get_growth_metrics\` : Croissance et rétention
+- \`simulate_platform_load\` : **Simulation de charge réseau** — Estime les capacités max (utilisateurs simultanés, lives, posts/min, messages/min, commandes) selon 5 scénarios : current, peak (x3), stress (x10), growth_10x, growth_100x. Détecte les goulots d'étranglement et recommande des optimisations.
 
 Utilise-les activement pour enrichir tes analyses. Ne te contente pas du snapshot initial.
+Pour les simulations, appelle TOUJOURS l'outil \`simulate_platform_load\` pour fournir des données réelles. Ne devine jamais les chiffres.
 
 ${platformContext}
 
