@@ -256,9 +256,16 @@ export function useAddToCart() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cart'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['product'] });
       toast.success('Ajouté au panier !');
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e: any) => {
+      // Refetch product data to show updated stock
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['product'] });
+      toast.error(e.message);
+    },
   });
 }
 
