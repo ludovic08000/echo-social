@@ -97,6 +97,7 @@ function AppContent() {
               <Route path="/ai-agents" element={<ProtectedRoute><AIAgents /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
               <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />
+              <Route path="/zeus" element={<ProtectedRoute><ZeusConsole /></ProtectedRoute>} />
               
               {/* 404 */}
               <Route path="*" element={<NotFound />} />
