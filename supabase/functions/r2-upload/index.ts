@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
       const credentialScope = `${shortDate}/${region}/s3/aws4_request`;
 
       const emptyHash = await sha256Hex(new Uint8Array(0));
-      const host = `${accountId}.r2.cloudflarestorage.com`;
+      const host = `${accountId}.${regionPrefix}r2.cloudflarestorage.com`;
       const headers: Record<string, string> = {
         host,
         "x-amz-content-sha256": emptyHash,
