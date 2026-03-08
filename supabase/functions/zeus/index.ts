@@ -824,6 +824,57 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
       if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
       return new Response(JSON.stringify({ success: true, key, reason, new_value: merged }), { headers: { ...cors, "Content-Type": "application/json" } });
     }
+
+    if (normalizedProposalAction === 'whitelist_staff' && key === 'trust_score_override' && updates?.user_id) {
+      const rawUserId = String(updates.user_id).trim();
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+      let resolvedUserId = rawUserId;
+      if (!uuidRegex.test(rawUserId)) {
+        const prefix = rawUserId.replace(/\.\.\.$/, "").replace(/[^0-9a-f-]/gi, "");
+        if (!prefix) {
+          return new Response(JSON.stringify({ error: "user_id invalide pour whitelist_staff" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+        }
+
+        const { data: candidatesRaw, error: findErr } = await supabase
+          .from("profiles")
+          .select("user_id")
+          .limit(1000);
+
+        if (findErr) return new Response(JSON.stringify({ error: findErr.message }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+        const candidates = (candidatesRaw || []).filter((c: any) => String(c.user_id).toLowerCase().startsWith(prefix.toLowerCase()));
+        if (!candidates?.length) return new Response(JSON.stringify({ error: "Aucun utilisateur trouvé pour ce préfixe user_id" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
+        if (candidates.length > 1) return new Response(JSON.stringify({ error: "Préfixe user_id ambigu, utilisez un ID complet" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+        resolvedUserId = candidates[0].user_id;
+      }
+
+      const targetTrustScore = Number(updates.trust_score ?? 100);
+      const { data: existing } = await supabase.from("trust_scores").select("id").eq("user_id", resolvedUserId).maybeSingle();
+
+      if (existing?.id) {
+        const { error } = await supabase
+          .from("trust_scores")
+          .update({
+            trust_score: targetTrustScore,
+            is_flagged: false,
+            flag_reason: "staff_whitelisted",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", resolvedUserId);
+        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+      } else {
+        const { error } = await supabase.from("trust_scores").insert({
+          user_id: resolvedUserId,
+          trust_score: targetTrustScore,
+          is_flagged: false,
+          flag_reason: "staff_whitelisted",
+        });
+        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+      }
+
+      return new Response(JSON.stringify({ success: true, action: "whitelist_staff", user_id: resolvedUserId, trust_score: targetTrustScore, reason }), { headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
     return new Response(JSON.stringify({ error: "Action non supportée", proposalAction, normalizedProposalAction, key: !!key, updates: !!updates }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
   }
 
@@ -897,7 +948,7 @@ Tu es un directeur stratégique virtuel : analytique, **proactif**, pragmatique.
 
 \`\`\`
 [ZEUS_PROPOSAL]
-action: update_algorithm_config | ban_user | flag_profile | ...
+action: update_algorithm_config
 key: scoring_weights
 updates: {"friend_boost": 12, "discovery_boost": 20}
 reason: Augmenter la découverte car l'engagement est faible cette semaine
