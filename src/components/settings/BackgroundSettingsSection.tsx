@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Upload, Check, X, Image, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
@@ -29,7 +29,23 @@ interface BackgroundPickerProps {
 function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: BackgroundPickerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const label = type === 'profile' ? 'Profil' : 'Feed';
+
+  // Resolve signed URL for preview
+  useEffect(() => {
+    if (currentUrl && currentUrl.startsWith('storage:')) {
+      const storagePath = currentUrl.replace('storage:', '');
+      supabase.storage
+        .from('backgrounds')
+        .createSignedUrl(storagePath, 3600)
+        .then(({ data }) => {
+          setPreviewUrl(data?.signedUrl || null);
+        });
+    } else {
+      setPreviewUrl(null);
+    }
+  }, [currentUrl]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -46,18 +62,19 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
       if (!user) throw new Error('Not authenticated');
       const ext = file.name.split('.').pop();
       const fileName = `bg-${type}-${Date.now()}.${ext}`;
-      const path = `${user.id}/${fileName}`;
+      const storagePath = `${user.id}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(path, file, { contentType: file.type });
+        .from('backgrounds')
+        .upload(storagePath, file, { contentType: file.type, upsert: true });
 
       if (uploadError) throw uploadError;
 
-      const { data } = supabase.storage.from('avatars').getPublicUrl(path);
-      onUpdate(data.publicUrl);
+      // Store the storage path (not a public URL) — signed URLs will be generated on read
+      onUpdate(`storage:${storagePath}`);
       toast.success(`Fond ${label} mis à jour !`);
     } catch (err) {
+      console.error('Background upload error:', err);
       toast.error('Erreur lors de l\'upload');
     } finally {
       setUploading(false);
@@ -128,9 +145,12 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
       </div>
 
       {/* Preview of custom uploaded bg */}
-      {currentUrl && !currentUrl.startsWith('gradient:') && (
+      {currentUrl && currentUrl.startsWith('storage:') && previewUrl && (
         <div className="relative rounded-xl overflow-hidden h-16">
-          <img src={currentUrl} alt="Fond actuel" className="w-full h-full object-cover" />
+          <img src={previewUrl} alt="Fond actuel" className="w-full h-full object-cover" />
+          <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/50 text-[8px] text-white flex items-center gap-1">
+            🔒 URL signée
+          </div>
           <button
             onClick={() => onUpdate(null)}
             className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-destructive transition-colors"
