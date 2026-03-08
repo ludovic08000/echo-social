@@ -1637,7 +1637,7 @@ function ZeusSection() {
     { label: '🎯 Engagement', prompt: 'Métriques d\'engagement de la semaine : likes, commentaires, lives, messages, stories. Quels contenus performent le mieux ?' },
     { label: '💡 Stratégie', prompt: 'En te basant sur toutes les données disponibles, propose un plan d\'action stratégique pour les 30 prochains jours avec objectifs mesurables' },
   ];
-  const [messages, setMessages] = useState<ZMsg[]>([{ role: 'system', content: `⚡ **Zeus** — Assistant IA de Décision\n\nJe suis connecté à **toutes les données** de la plateforme en temps réel.\n\n📊 Stats • 🚨 Signalements • 📈 Tendances • 🔒 Sécurité • 💡 Recommandations\n\nPosez-moi n'importe quelle question sur votre plateforme.` }]);
+  const [messages, setMessages] = useState<ZMsg[]>([{ role: 'system', content: `⚡ **Zeus v2** — Cerveau Stratégique ForSure\n\nJe suis propulsé par **Gemini 2.5 Pro** avec accès en temps réel à toutes vos données.\n\n🧠 **Capacités** : Analyse de données • Détection de risques • Recommandations stratégiques • Audit sécurité • Recherche utilisateurs\n\n🛠️ **Outils** : Je peux interroger la base en temps réel pour affiner mes analyses (revenus, engagement, croissance, marketplace, profils).\n\nPosez-moi n'importe quelle question.` }]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
