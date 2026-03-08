@@ -167,10 +167,10 @@ export function scorePost(
   const textLen = post.body.length;
   if (textLen > 50 && textLen < 500) score += 6;
 
-  // ── 5. RECENCY (exponential decay, 12h half-life) ──
+  // ── 5. RECENCY (strong boost, 6h half-life) ──
   const ageMs = Date.now() - new Date(post.created_at).getTime();
   const ageHours = ageMs / (1000 * 60 * 60);
-  score += Math.max(0, 25 * Math.exp(-ageHours / 12));
+  score += Math.max(0, 60 * Math.exp(-ageHours / 6));
 
   // ── 6. OWN POSTS (mild boost) ──
   if (post.user_id === ctx.userId) score += 3;
