@@ -7,7 +7,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const MR_WSDL = "https://api.mondialrelay.com/WebService.asmx";
+const MR_WSDL = "https://api.mondialrelay.com/Web_Services.asmx";
 const MR_API_V2 = "https://connect-api-sandbox.mondialrelay.com/api/shipment";
 
 // Compact MD5 implementation (Web Crypto does not support MD5)
@@ -219,8 +219,8 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const enseigne = Deno.env.get("MONDIAL_RELAY_ENSEIGNE") ?? "";
-  const privateKey = Deno.env.get("MONDIAL_RELAY_PRIVATE_KEY") ?? "";
+  const enseigne = (Deno.env.get("MONDIAL_RELAY_ENSEIGNE") ?? "").trim();
+  const privateKey = (Deno.env.get("MONDIAL_RELAY_PRIVATE_KEY") ?? "").trim();
 
   if (!enseigne || !privateKey) {
     return new Response(JSON.stringify({ error: "Configuration Mondial Relay manquante" }), {
@@ -235,7 +235,10 @@ serve(async (req) => {
 
     // ── SEARCH RELAY POINTS ──
     if (action === "search_points") {
-      const { postcode, country = "FR" } = body;
+      const rawPostcode = typeof body.postcode === "string" ? body.postcode : "";
+      const rawCountry = typeof body.country === "string" ? body.country : "FR";
+      const postcode = rawPostcode.trim();
+      const country = rawCountry.trim().toUpperCase() || "FR";
       if (!postcode) throw new Error("Code postal requis");
 
       const params: Record<string, string> = {
@@ -260,7 +263,15 @@ serve(async (req) => {
       const stat = extractXmlValue(xml, 'STAT');
 
       if (stat !== '0') {
-        throw new Error(`Mondial Relay erreur code ${stat}`);
+        const detail = extractXmlValue(xml, 'Erreur') || extractXmlValue(xml, 'Message') || extractXmlValue(xml, 'Libelle') || '';
+        console.error('WSI4_PointRelais_Recherche failed', {
+          stat,
+          detail,
+          enseigneLength: enseigne.length,
+          postcode,
+          country,
+        });
+        throw new Error(`Mondial Relay erreur code ${stat}${detail ? `: ${detail}` : ''}`);
       }
 
       const points = extractRelayPoints(xml);
