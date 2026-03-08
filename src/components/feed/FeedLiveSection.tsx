@@ -66,6 +66,25 @@ function LiveCard({ item }: { item: { id: string; title: string; thumbnail_url: 
   const { user } = useAuth();
   const deleteLive = useDeleteLive();
 
+  // Lazy-load video src on hover to save bandwidth
+  const handleMouseEnter = useCallback(() => {
+    const v = videoRef.current;
+    if (v && item.recording_url) {
+      if (!v.src || v.src === '') {
+        v.src = item.recording_url;
+      }
+      v.play().catch(() => {});
+    }
+  }, [item.recording_url]);
+
+  const handleMouseLeave = useCallback(() => {
+    const v = videoRef.current;
+    if (v) {
+      v.pause();
+      v.currentTime = 0;
+    }
+  }, []);
+
   const handleDelete = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
