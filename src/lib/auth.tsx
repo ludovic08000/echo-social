@@ -40,9 +40,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               },
             }).catch(() => {});
 
-            // Compute trust score
+            // Compute trust score (userId derived from JWT server-side)
             supabase.functions.invoke('trust-score', {
-              body: { action: 'compute', userId: session.user.id },
+              body: { action: 'compute' },
             }).catch(() => {});
           }, 2000);
         }

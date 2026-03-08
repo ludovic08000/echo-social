@@ -6,7 +6,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Compute trust score for a user based on multiple signals
 function computeTrustScore(data: {
   accountAgeDays: number;
   successfulSales: number;
@@ -19,62 +18,28 @@ function computeTrustScore(data: {
   sellerRating: number | null;
   sellerRatingCount: number;
   friendCount: number;
-}): {
-  trustScore: number;
-  transactionScore: number;
-  socialScore: number;
-  accountAgeScore: number;
-  verificationScore: number;
-} {
-  // 1. Account age score (0-20)
+}) {
   const accountAgeScore = Math.min(20, Math.floor(data.accountAgeDays / 15));
 
-  // 2. Transaction score (0-40)
   const totalTransactions = data.successfulSales + data.successfulPurchases;
   let transactionScore = Math.min(25, totalTransactions * 2);
-
-  // Penalty for disputes
-  if (data.disputesLost > 0) {
-    transactionScore -= data.disputesLost * 5;
-  }
-  if (data.disputesOpened > totalTransactions * 0.3 && totalTransactions > 3) {
-    transactionScore -= 10; // Too many disputes relative to transactions
-  }
-
-  // Seller rating bonus
+  if (data.disputesLost > 0) transactionScore -= data.disputesLost * 5;
+  if (data.disputesOpened > totalTransactions * 0.3 && totalTransactions > 3) transactionScore -= 10;
   if (data.sellerRating && data.sellerRatingCount >= 3) {
     transactionScore += Math.floor((data.sellerRating / 5) * 15);
   }
   transactionScore = Math.max(0, Math.min(40, transactionScore));
 
-  // 3. Social score (0-20)
   let socialScore = Math.min(15, Math.floor(data.friendCount / 5));
-  // Penalty for confirmed reports
-  if (data.reportsConfirmed > 0) {
-    socialScore -= data.reportsConfirmed * 5;
-  }
+  if (data.reportsConfirmed > 0) socialScore -= data.reportsConfirmed * 5;
   socialScore = Math.max(0, Math.min(20, socialScore));
 
-  // 4. Verification score (0-20)
   let verificationScore = 0;
   if (data.isVerifiedIdentity) verificationScore += 20;
 
-  // Composite
-  const trustScore = Math.max(
-    0,
-    Math.min(
-      100,
-      accountAgeScore + transactionScore + socialScore + verificationScore
-    )
-  );
+  const trustScore = Math.max(0, Math.min(100, accountAgeScore + transactionScore + socialScore + verificationScore));
 
-  return {
-    trustScore,
-    transactionScore,
-    socialScore,
-    accountAgeScore,
-    verificationScore,
-  };
+  return { trustScore, transactionScore, socialScore, accountAgeScore, verificationScore };
 }
 
 Deno.serve(async (req) => {
@@ -83,15 +48,34 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // ─── Auth check (CRITICAL FIX) ───
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Non authentifié" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const body = await req.json();
-    const { action, userId } = body;
+    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: authError } = await userClient.auth.getUser();
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Non authentifié" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    if (action === "compute" && userId) {
-      // Get profile for account age
+    const body = await req.json();
+    const { action } = body;
+    // SECURITY: always use authenticated user's ID, never trust client
+    const userId = user.id;
+
+    if (action === "compute") {
       const { data: profile } = await supabase
         .from("profiles")
         .select("created_at")
@@ -99,34 +83,27 @@ Deno.serve(async (req) => {
         .single();
 
       const accountAgeDays = profile
-        ? Math.floor(
-            (Date.now() - new Date(profile.created_at).getTime()) /
-              (1000 * 60 * 60 * 24)
-          )
+        ? Math.floor((Date.now() - new Date(profile.created_at).getTime()) / (1000 * 60 * 60 * 24))
         : 0;
 
-      // Get existing trust data
       const { data: existing } = await supabase
         .from("trust_scores")
         .select("*")
         .eq("user_id", userId)
         .maybeSingle();
 
-      // Get seller profile stats
       const { data: seller } = await supabase
         .from("seller_profiles")
         .select("rating_average, rating_count, total_sales")
         .eq("user_id", userId)
         .maybeSingle();
 
-      // Count friends
       const { count: friendCount } = await supabase
         .from("friendships")
         .select("id", { count: "exact", head: true })
         .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
         .eq("status", "accepted");
 
-      // Count reports
       const { count: reportsReceived } = await supabase
         .from("abuse_reports")
         .select("id", { count: "exact", head: true })
@@ -152,24 +129,20 @@ Deno.serve(async (req) => {
         friendCount: friendCount || 0,
       });
 
-      // Upsert trust score
       const { data: result, error } = await supabase
         .from("trust_scores")
-        .upsert(
-          {
-            user_id: userId,
-            trust_score: scores.trustScore,
-            transaction_score: scores.transactionScore,
-            social_score: scores.socialScore,
-            account_age_score: scores.accountAgeScore,
-            verification_score: scores.verificationScore,
-            successful_sales: seller?.total_sales || 0,
-            reports_received: reportsReceived || 0,
-            reports_confirmed: reportsConfirmed || 0,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id" }
-        )
+        .upsert({
+          user_id: userId,
+          trust_score: scores.trustScore,
+          transaction_score: scores.transactionScore,
+          social_score: scores.socialScore,
+          account_age_score: scores.accountAgeScore,
+          verification_score: scores.verificationScore,
+          successful_sales: seller?.total_sales || 0,
+          reports_received: reportsReceived || 0,
+          reports_confirmed: reportsConfirmed || 0,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" })
         .select()
         .single();
 
@@ -180,7 +153,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (action === "get" && userId) {
+    if (action === "get") {
+      // Users can only get their own trust score
       const { data, error } = await supabase
         .from("trust_scores")
         .select("*")
@@ -195,15 +169,11 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({ error: "Invalid action. Use 'compute' or 'get'" }),
-      {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
     return new Response(JSON.stringify({ error: (err as Error).message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

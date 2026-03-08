@@ -1150,9 +1150,10 @@ function VerificationsSection() {
     }
     setAnalyzing(userId);
     try {
+      // userId is now derived from JWT server-side
       const [analyzeRes, compareRes] = await Promise.all([
-        supabase.functions.invoke('photo-guard', { body: { action: 'analyze_photo', userId, imageUrl: avatarUrl } }),
-        supabase.functions.invoke('photo-guard', { body: { action: 'compare_photos', userId, imageUrl: avatarUrl } }),
+        supabase.functions.invoke('photo-guard', { body: { action: 'analyze_photo', imageUrl: avatarUrl } }),
+        supabase.functions.invoke('photo-guard', { body: { action: 'compare_photos' } }),
       ]);
       setAnalysisResults(prev => ({
         ...prev,
@@ -1264,7 +1265,10 @@ function VerificationsSection() {
                   </TableCell>
                   <TableCell>
                     {v.id_document_url ? (
-                      <a href={v.id_document_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline">Voir</a>
+                      <Button size="sm" variant="link" className="text-xs p-0 h-auto" onClick={async () => {
+                        const { data } = await supabase.storage.from('id-documents').createSignedUrl(v.id_document_url, 300);
+                        if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+                      }}>Voir</Button>
                     ) : (
                       <span className="text-xs text-muted-foreground">-</span>
                     )}
