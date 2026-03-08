@@ -120,7 +120,6 @@ export default function Feed() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: '-50px' }}
             transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="px-4"
           >
             <SponsoredPostCard ad={ad} />
           </motion.div>
