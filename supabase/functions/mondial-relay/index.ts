@@ -168,7 +168,7 @@ function md5Hex(str: string): string {
 
 function buildSignature(params: Record<string, string>, privateKey: string): string {
   const concat = Object.values(params).join('') + privateKey;
-  return md5(concat).toUpperCase();
+  return md5Lib(concat).toUpperCase();
 }
 
 async function callMondialRelay(method: string, params: Record<string, string>): Promise<string> {
