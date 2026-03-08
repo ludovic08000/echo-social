@@ -24,7 +24,7 @@ export function useProducts(category?: string, search?: string, location?: Locat
         query = query.eq('category', category);
       }
       if (search) {
-        query = query.ilike('title', `%${search}%`);
+        query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
       }
       
       // Location filters
