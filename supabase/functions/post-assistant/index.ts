@@ -1,24 +1,56 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const MAX_TEXT_LENGTH = 5000;
+const ALLOWED_ACTIONS = ["improve", "formal", "casual", "shorter", "longer"];
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    // ─── Auth check ───
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Non authentifié" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: authHeader } } }
+    );
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Non authentifié" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { text, action } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
-    if (!text?.trim()) {
+    // ─── Input validation ───
+    if (!text || typeof text !== "string" || !text.trim()) {
       return new Response(JSON.stringify({ error: "Texte requis" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    if (text.length > MAX_TEXT_LENGTH) {
+      return new Response(JSON.stringify({ error: `Texte trop long. Maximum: ${MAX_TEXT_LENGTH} caractères` }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const safeAction = ALLOWED_ACTIONS.includes(action) ? action : "improve";
 
     const systemPrompt = `Tu es un assistant d'écriture pour un réseau social. Tu DOIS répondre en utilisant l'outil improve_text. Ne réponds JAMAIS en texte libre.
 
@@ -43,7 +75,7 @@ Indique les corrections apportées dans "corrections" (liste courte).`;
         model: "google/gemini-3-flash-preview",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Action: ${action || "improve"}\n\nTexte:\n${text}` },
+          { role: "user", content: `Action: ${safeAction}\n\nTexte:\n${text}` },
         ],
         tools: [
           {
@@ -97,7 +129,6 @@ Indique les corrections apportées dans "corrections" (liste courte).`;
       });
     }
 
-    // Fallback if no tool call
     return new Response(JSON.stringify({
       improved_text: text,
       detected_language: "unknown",
@@ -108,9 +139,8 @@ Indique les corrections apportées dans "corrections" (liste courte).`;
     });
   } catch (e) {
     console.error("post-assistant error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return new Response(JSON.stringify({ error: "Erreur interne" }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

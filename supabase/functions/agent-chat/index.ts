@@ -82,8 +82,13 @@ serve(async (req) => {
     }
 
     const { agent_id, conversation_id, message } = await req.json();
-    if (!agent_id || !message?.trim()) {
+    if (!agent_id || typeof agent_id !== "string" || !message || typeof message !== "string" || !message.trim()) {
       return new Response(JSON.stringify({ error: "agent_id et message requis" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (message.length > 5000) {
+      return new Response(JSON.stringify({ error: "Message trop long (max 5000 caractères)" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

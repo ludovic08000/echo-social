@@ -27,8 +27,9 @@ serve(async (req) => {
       });
     }
 
-    const { action } = await req.json();
-    if (!action?.type) {
+    const body = await req.json();
+    const { action } = body;
+    if (!action?.type || typeof action.type !== "string") {
       return new Response(JSON.stringify({ error: "Action requise" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -88,11 +89,12 @@ serve(async (req) => {
 
     switch (action.type) {
       case "publish_post": {
+        const body = (action.body || "").substring(0, 5000);
         const { data, error } = await supabase
           .from("posts")
           .insert({
             user_id: userId,
-            body: action.body || "",
+            body,
             image_url: imageUrl,
           })
           .select("id")

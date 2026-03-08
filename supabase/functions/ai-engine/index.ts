@@ -31,9 +31,28 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { action, text, context, feedback, user_id } = await req.json();
+    // ─── Auth check ───
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Non authentifié" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user: authUser }, error: authErr } = await userClient.auth.getUser();
+    if (authErr || !authUser) {
+      return new Response(JSON.stringify({ error: "Non authentifié" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    if (!action) {
+    const body = await req.json();
+    const { action, text, context, feedback } = body;
+    const user_id = authUser.id; // Always use authenticated user ID, never trust client
+
+    if (!action || typeof action !== "string") {
       return new Response(
         JSON.stringify({ error: "Missing 'action' parameter" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
