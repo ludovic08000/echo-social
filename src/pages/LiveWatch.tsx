@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Heart, Gift, Users, Send, Radio, X, Play, ChevronUp, ChevronDown, Eye, Clock } from 'lucide-react';
 import { LiveEmojiPicker } from '@/components/live/LiveEmojiPicker';
 import { useLiveStream, useLiveChat, useSendLiveChatMessage, useJoinLive, useLeaveLive, useLiveStreams } from '@/hooks/useLiveStreams';
