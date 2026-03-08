@@ -201,6 +201,8 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
     setCountry('FR');
     setRegion('');
     setCity('');
+    setAiResult('');
+    setAiGenerating(false);
   };
 
   return (
