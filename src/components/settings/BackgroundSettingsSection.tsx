@@ -54,7 +54,7 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
 
       const { data } = supabase.storage.from('avatars').getPublicUrl(path);
       onUpdate(data.publicUrl);
-      toast({ title: `Fond ${label} mis à jour !` });
+      toast.success(`Fond ${label} mis à jour !`);
     } catch (err) {
       toast({ title: 'Erreur lors de l\'upload', variant: 'destructive' });
     } finally {
