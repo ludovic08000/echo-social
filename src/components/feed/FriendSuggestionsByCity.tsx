@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { UserPlus, MapPin, Users, ChevronRight, Sparkles } from 'lucide-react';
+import { UserPlus, MapPin, Users, Sparkles } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
@@ -41,12 +41,9 @@ export function FriendSuggestionsByCity() {
     enabled: !!user,
   });
 
-  // Group by city
   const grouped = useMemo(() => {
     if (!suggestions) return {};
     const groups: Record<string, Suggestion[]> = {};
-    
-    // First: same city
     const myCity = myProfile?.city?.toLowerCase().trim();
     
     suggestions.forEach(s => {
@@ -55,7 +52,6 @@ export function FriendSuggestionsByCity() {
       groups[city].push(s);
     });
 
-    // Sort: own city first
     const sorted: [string, Suggestion[]][] = Object.entries(groups).sort(([a], [b]) => {
       if (myCity && a.toLowerCase() === myCity) return -1;
       if (myCity && b.toLowerCase() === myCity) return 1;
@@ -75,25 +71,25 @@ export function FriendSuggestionsByCity() {
   const cities = Object.keys(grouped);
 
   return (
-    <div className="px-4 py-3">
-      <div className="premium-card p-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Sparkles className="w-4.5 h-4.5 text-primary" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-foreground">Personnes à découvrir</h3>
-              <p className="text-[10px] text-muted-foreground">Suggestions par ville et région</p>
-            </div>
+    <article className="bg-card border border-border/20 rounded-2xl overflow-hidden">
+      <div className="flex items-center justify-between px-4 pt-4 pb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
+            <Sparkles className="w-4 h-4 text-primary" />
           </div>
-          <Link to="/friends" className="text-xs text-primary font-medium flex items-center gap-0.5">
-            Voir tout <ChevronRight className="w-3 h-3" />
-          </Link>
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Personnes à découvrir</h3>
+            <p className="text-[10px] text-muted-foreground">Par ville et région</p>
+          </div>
         </div>
+        <Link to="/friends" className="text-xs text-primary font-medium hover:text-primary/80 transition-colors">
+          Voir tout
+        </Link>
+      </div>
 
+      <div className="px-4 pb-4 space-y-3">
         {cities.slice(0, 3).map((city) => (
-          <div key={city} className="space-y-2.5">
+          <div key={city} className="space-y-2">
             <div className="flex items-center gap-2">
               <MapPin className="w-3.5 h-3.5 text-primary" />
               <span className="text-xs font-semibold text-foreground">{city}</span>
@@ -105,7 +101,7 @@ export function FriendSuggestionsByCity() {
               <span className="text-[10px] text-muted-foreground ml-auto">{grouped[city].length} personne{grouped[city].length > 1 ? 's' : ''}</span>
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               {grouped[city].slice(0, 3).map((s, i) => (
                 <motion.div
                   key={s.user_id}
@@ -152,6 +148,6 @@ export function FriendSuggestionsByCity() {
           </div>
         ))}
       </div>
-    </div>
+    </article>
   );
 }
