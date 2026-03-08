@@ -38,10 +38,8 @@ serve(async (req) => {
     let event: Stripe.Event;
 
     if (webhookSecret) {
-      // Verify signature when webhook secret is configured
       event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
     } else {
-      // Fallback: parse without verification (dev mode)
       console.warn("STRIPE_WEBHOOK_SECRET not set — skipping signature verification");
       event = JSON.parse(body) as Stripe.Event;
     }
@@ -51,134 +49,193 @@ serve(async (req) => {
     // ── CHECKOUT SESSION COMPLETED ──
     if (event.type === "checkout_sessions.completed" || event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
-      const orderId = session.metadata?.order_id;
-      const userId = session.metadata?.user_id;
+      const metadataType = session.metadata?.type;
 
-      if (!orderId) {
-        console.log("No order_id in metadata, skipping (may be a subscription checkout)");
-        return new Response(JSON.stringify({ received: true }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+      // ── TIP PAYMENT ──
+      if (metadataType === "tip") {
+        const stripeSessionId = session.id;
+        console.log(`Processing tip payment for session ${stripeSessionId}`);
 
-      console.log(`Processing payment for order ${orderId}, user ${userId}`);
+        await supabase
+          .from("tips")
+          .update({ status: "completed" })
+          .eq("stripe_session_id", stripeSessionId);
 
-      // Check if order is already paid (idempotency)
-      const { data: order } = await supabase
-        .from("orders")
-        .select("id, status, buyer_id")
-        .eq("id", orderId)
-        .single();
-
-      if (!order) {
-        console.error(`Order ${orderId} not found`);
-        return new Response(JSON.stringify({ received: true }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      if (order.status === "paid" || order.status === "shipped" || order.status === "delivered") {
-        console.log(`Order ${orderId} already processed (status: ${order.status})`);
-        return new Response(JSON.stringify({ received: true }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      // Update order to paid
-      const paymentIntentId =
-        typeof session.payment_intent === "string"
-          ? session.payment_intent
-          : session.payment_intent?.id || null;
-
-      await supabase
-        .from("orders")
-        .update({
-          status: "paid",
-          paid_at: new Date().toISOString(),
-          payment_intent_id: paymentIntentId,
-        })
-        .eq("id", orderId);
-
-      // Update order items
-      await supabase
-        .from("order_items")
-        .update({ status: "paid" })
-        .eq("order_id", orderId);
-
-      // Decrement stock
-      const { data: orderItems } = await supabase
-        .from("order_items")
-        .select("product_id, quantity, seller_id")
-        .eq("order_id", orderId);
-
-      if (orderItems) {
-        for (const item of orderItems) {
-          const { data: prod } = await supabase
-            .from("products")
-            .select("stock_quantity")
-            .eq("id", item.product_id)
-            .single();
-
-          if (prod?.stock_quantity !== null && prod?.stock_quantity !== undefined) {
-            await supabase
-              .from("products")
-              .update({
-                stock_quantity: Math.max(0, prod.stock_quantity - item.quantity),
-              })
-              .eq("id", item.product_id);
-          }
+        // Notify the creator
+        const tipperId = session.metadata?.tipper_id;
+        const creatorId = session.metadata?.creator_id;
+        if (tipperId && creatorId) {
+          await supabase.from("notifications").insert({
+            user_id: creatorId,
+            actor_id: tipperId,
+            type: "like",
+          });
         }
 
-        // Notify sellers
-        const sellerIds = [...new Set(orderItems.map((i) => i.seller_id).filter(Boolean))];
-        for (const sellerId of sellerIds) {
-          const { data: sellerProfile } = await supabase
-            .from("seller_profiles")
-            .select("user_id")
-            .eq("id", sellerId)
-            .single();
-
-          if (sellerProfile) {
-            await supabase.from("notifications").insert({
-              user_id: sellerProfile.user_id,
-              actor_id: order.buyer_id,
-              type: "sale",
-            });
-          }
-        }
+        console.log(`✅ Tip confirmed for session ${stripeSessionId}`);
       }
+      // ── ORDER PAYMENT ──
+      else {
+        const orderId = session.metadata?.order_id;
+        const userId = session.metadata?.user_id;
 
-      // Clear buyer's cart
-      await supabase.from("cart_items").delete().eq("user_id", order.buyer_id);
+        if (!orderId) {
+          console.log("No order_id in metadata, skipping (may be a subscription checkout)");
+          return new Response(JSON.stringify({ received: true }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
 
-      console.log(`✅ Order ${orderId} marked as paid via webhook`);
-    }
+        console.log(`Processing payment for order ${orderId}, user ${userId}`);
 
-    // ── PAYMENT FAILED ──
-    if (event.type === "checkout.session.expired" || event.type === "checkout_sessions.expired") {
-      const session = event.data.object as Stripe.Checkout.Session;
-      const orderId = session.metadata?.order_id;
-
-      if (orderId) {
-        // Mark order as cancelled if payment session expired
         const { data: order } = await supabase
           .from("orders")
-          .select("status")
+          .select("id, status, buyer_id")
           .eq("id", orderId)
           .single();
 
-        if (order?.status === "pending") {
-          await supabase
+        if (!order) {
+          console.error(`Order ${orderId} not found`);
+          return new Response(JSON.stringify({ received: true }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        if (order.status === "paid" || order.status === "shipped" || order.status === "delivered") {
+          console.log(`Order ${orderId} already processed (status: ${order.status})`);
+          return new Response(JSON.stringify({ received: true }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const paymentIntentId =
+          typeof session.payment_intent === "string"
+            ? session.payment_intent
+            : session.payment_intent?.id || null;
+
+        await supabase
+          .from("orders")
+          .update({
+            status: "paid",
+            paid_at: new Date().toISOString(),
+            payment_intent_id: paymentIntentId,
+          })
+          .eq("id", orderId);
+
+        await supabase
+          .from("order_items")
+          .update({ status: "paid" })
+          .eq("order_id", orderId);
+
+        const { data: orderItems } = await supabase
+          .from("order_items")
+          .select("product_id, quantity, seller_id")
+          .eq("order_id", orderId);
+
+        if (orderItems) {
+          for (const item of orderItems) {
+            const { data: prod } = await supabase
+              .from("products")
+              .select("stock_quantity")
+              .eq("id", item.product_id)
+              .single();
+
+            if (prod?.stock_quantity !== null && prod?.stock_quantity !== undefined) {
+              await supabase
+                .from("products")
+                .update({
+                  stock_quantity: Math.max(0, prod.stock_quantity - item.quantity),
+                })
+                .eq("id", item.product_id);
+            }
+          }
+
+          const sellerIds = [...new Set(orderItems.map((i) => i.seller_id).filter(Boolean))];
+          for (const sellerId of sellerIds) {
+            const { data: sellerProfile } = await supabase
+              .from("seller_profiles")
+              .select("user_id")
+              .eq("id", sellerId)
+              .single();
+
+            if (sellerProfile) {
+              await supabase.from("notifications").insert({
+                user_id: sellerProfile.user_id,
+                actor_id: order.buyer_id,
+                type: "sale",
+              });
+            }
+          }
+        }
+
+        await supabase.from("cart_items").delete().eq("user_id", order.buyer_id);
+        console.log(`✅ Order ${orderId} marked as paid via webhook`);
+      }
+    }
+
+    // ── CHECKOUT SESSION EXPIRED ──
+    if (event.type === "checkout.session.expired" || event.type === "checkout_sessions.expired") {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const metadataType = session.metadata?.type;
+
+      if (metadataType === "tip") {
+        await supabase
+          .from("tips")
+          .update({ status: "expired" })
+          .eq("stripe_session_id", session.id);
+        console.log(`❌ Tip session ${session.id} expired`);
+      } else {
+        const orderId = session.metadata?.order_id;
+        if (orderId) {
+          const { data: order } = await supabase
             .from("orders")
-            .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
-            .eq("id", orderId);
+            .select("status")
+            .eq("id", orderId)
+            .single();
 
-          await supabase
-            .from("order_items")
-            .update({ status: "cancelled" })
-            .eq("order_id", orderId);
+          if (order?.status === "pending") {
+            await supabase
+              .from("orders")
+              .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
+              .eq("id", orderId);
 
-          console.log(`❌ Order ${orderId} cancelled (session expired)`);
+            await supabase
+              .from("order_items")
+              .update({ status: "cancelled" })
+              .eq("order_id", orderId);
+
+            console.log(`❌ Order ${orderId} cancelled (session expired)`);
+          }
+        }
+      }
+    }
+
+    // ── SUBSCRIPTION DELETED (Creator unsubscribes) ──
+    if (event.type === "customer.subscription.deleted") {
+      const subscription = event.data.object as Stripe.Subscription;
+      const customerId = typeof subscription.customer === "string"
+        ? subscription.customer
+        : subscription.customer?.id;
+
+      if (customerId) {
+        const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
+        if (customer?.email) {
+          const { data: users } = await supabase.auth.admin.listUsers();
+          const matchedUser = users?.users?.find((u) => u.email === customer.email);
+
+          if (matchedUser) {
+            await supabase
+              .from("profiles")
+              .update({ is_creator: false, creator_tier: "free" })
+              .eq("user_id", matchedUser.id);
+
+            await supabase
+              .from("creator_subscriptions")
+              .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
+              .eq("user_id", matchedUser.id);
+
+            console.log(`✅ Creator subscription cancelled for user ${matchedUser.id}`);
+          }
         }
       }
     }
