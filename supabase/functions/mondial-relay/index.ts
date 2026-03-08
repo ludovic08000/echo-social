@@ -8,6 +8,7 @@ const corsHeaders = {
 };
 
 const MR_WSDL = "https://api.mondialrelay.com/Web_Services.asmx";
+const MR_API_V2 = "https://connect-api-sandbox.mondialrelay.com/api/shipment";
 
 // Compact MD5 implementation (Web Crypto does not support MD5)
 function md5Hex(str: string): string {
@@ -269,10 +270,19 @@ serve(async (req) => {
       });
     }
 
-    // ── CREATE SHIPMENT / LABEL ──
+    // ── CREATE SHIPMENT / LABEL (API v2 REST) ──
     if (action === "create_shipment") {
       const authHeader = req.headers.get("Authorization");
       if (!authHeader?.startsWith("Bearer ")) throw new Error("Non authentifié");
+
+      // API v2 credentials
+      const v2Login = Deno.env.get("MONDIAL_RELAY_V2_LOGIN") ?? "";
+      const v2Password = Deno.env.get("MONDIAL_RELAY_V2_PASSWORD") ?? "";
+      const v2BrandId = Deno.env.get("MONDIAL_RELAY_V2_BRAND_ID") ?? "";
+
+      if (!v2Login || !v2Password || !v2BrandId) {
+        throw new Error("Configuration API v2 Mondial Relay manquante (login/password/brand_id)");
+      }
 
       const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
       const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -292,23 +302,10 @@ serve(async (req) => {
       if (!order) throw new Error("Commande introuvable");
 
       const parsedWeight = Number(shipment.weight_grams);
-      const parsedParcels = Number(shipment.parcels);
-      const parsedLength = Number(shipment.length_cm);
-
       const weight = Number.isFinite(parsedWeight) && parsedWeight > 0
         ? Math.round(parsedWeight)
         : (order.shipping_weight_grams || 500);
-      const parcels = Number.isFinite(parsedParcels) && parsedParcels > 0
-        ? Math.round(parsedParcels)
-        : 1;
-      const lengthCm = Number.isFinite(parsedLength) && parsedLength > 0
-        ? Math.round(parsedLength).toString()
-        : '';
-      const sizeCode = typeof shipment.size_code === 'string'
-        ? shipment.size_code.trim().toUpperCase()
-        : '';
 
-      // Mondial Relay rejects empty expedition fields (STAT 97)
       const senderName = sender?.name || "Vendeur ForSure";
       const senderAddress = sender?.address || order.shipping_relay_address || "10 RUE DE TEST";
       const senderCity = sender?.city || order.shipping_relay_city || "PARIS";
@@ -316,90 +313,141 @@ serve(async (req) => {
       const senderCountry = sender?.country || order.shipping_relay_country || "FR";
       const senderPhone = sender?.phone || "0600000000";
       const senderEmail = sender?.email || "support@forsure.app";
-      const collectionRelayId = relay_id || order.shipping_relay_id || "";
 
-      const params: Record<string, string> = {
-        Enseigne: enseigne,
-        ModeCol: 'REL',
-        ModeLiv: '24R',
-        NDossier: order.order_number || '',
-        NClient: order.buyer_id.substring(0, 9),
-        Expe_Langage: 'FR',
-        Expe_Ad1: senderName,
-        Expe_Ad2: '',
-        Expe_Ad3: senderAddress,
-        Expe_Ad4: '',
-        Expe_Ville: senderCity,
-        Expe_CP: senderPostcode,
-        Expe_Pays: senderCountry,
-        Expe_Tel1: senderPhone,
-        Expe_Tel2: '',
-        Expe_Mail: senderEmail,
-        Dest_Langage: 'FR',
-        Dest_Ad1: order.shipping_relay_name || '',
-        Dest_Ad2: '',
-        Dest_Ad3: order.shipping_relay_address || '',
-        Dest_Ad4: '',
-        Dest_Ville: order.shipping_relay_city || '',
-        Dest_CP: order.shipping_relay_postcode || '',
-        Dest_Pays: order.shipping_relay_country || 'FR',
-        Dest_Tel1: '',
-        Dest_Tel2: '',
-        Dest_Mail: '',
-        Poids: weight.toString(),
-        Longueur: lengthCm,
-        Taille: sizeCode,
-        NbColis: parcels.toString(),
-        CRT_Valeur: '0',
-        CRT_Devise: '',
-        Exp_Valeur: '',
-        Exp_Devise: '',
-        COL_Rel_Pays: senderCountry,
-        COL_Rel: collectionRelayId,
-        LIV_Rel_Pays: order.shipping_relay_country || 'FR',
-        LIV_Rel: order.shipping_relay_id || '',
-        TAvisage: '',
-        TReprise: '',
-        Montage: '',
-        TRDV: '',
-        Assurance: '',
-        Instructions: '',
-        Texte: '',
+      // Build API v2 shipment payload
+      const shipmentPayload = {
+        OutputFormat: "PdfA4",
+        OutputType: "QRCode",
+        BrandIdAPI: v2BrandId,
+        ShipmentsList: [
+          {
+            OrderNo: order.order_number || `ORD-${order_id.substring(0, 8)}`,
+            CustomerNo: order.buyer_id.substring(0, 9),
+            ParcelCount: 1,
+            DeliveryMode: {
+              Mode: "24R",
+              Location: order.shipping_relay_id || relay_id || "",
+            },
+            CollectionMode: {
+              Mode: "REL",
+              Location: relay_id || order.shipping_relay_id || "",
+            },
+            Sender: {
+              Language: "FR",
+              Title: "",
+              Firstname: senderName.split(" ")[0] || "Vendeur",
+              Lastname: senderName.split(" ").slice(1).join(" ") || "ForSure",
+              Streetname: senderAddress,
+              AddressAdd1: "",
+              AddressAdd2: "",
+              AddressAdd3: "",
+              CountryCode: senderCountry,
+              PostCode: senderPostcode,
+              City: senderCity,
+              PhoneNo: senderPhone,
+              MobileNo: senderPhone,
+              Email: senderEmail,
+            },
+            Recipient: {
+              Language: "FR",
+              Title: "",
+              Firstname: (order.shipping_relay_name || "Client").split(" ")[0] || "Client",
+              Lastname: (order.shipping_relay_name || "").split(" ").slice(1).join(" ") || "",
+              Streetname: order.shipping_relay_address || "",
+              AddressAdd1: "",
+              AddressAdd2: "",
+              AddressAdd3: "",
+              CountryCode: order.shipping_relay_country || "FR",
+              PostCode: order.shipping_relay_postcode || "",
+              City: order.shipping_relay_city || "",
+              PhoneNo: "",
+              MobileNo: "",
+              Email: "",
+            },
+            Parcels: [
+              {
+                Content: "Commande marketplace",
+                Weight: {
+                  Value: weight,
+                  Unit: "gr",
+                },
+                ...(shipment.length_cm ? {
+                  Length: { Value: Number(shipment.length_cm), Unit: "cm" },
+                } : {}),
+                ...(shipment.width_cm ? {
+                  Width: { Value: Number(shipment.width_cm), Unit: "cm" },
+                } : {}),
+                ...(shipment.height_cm ? {
+                  Height: { Value: Number(shipment.height_cm), Unit: "cm" },
+                } : {}),
+              },
+            ],
+          },
+        ],
       };
 
-      const creationEtiquetteOrder = [
-        'Enseigne', 'ModeCol', 'ModeLiv', 'NDossier', 'NClient',
-        'Expe_Langage', 'Expe_Ad1', 'Expe_Ad2', 'Expe_Ad3', 'Expe_Ad4', 'Expe_Ville', 'Expe_CP', 'Expe_Pays', 'Expe_Tel1', 'Expe_Tel2', 'Expe_Mail',
-        'Dest_Langage', 'Dest_Ad1', 'Dest_Ad2', 'Dest_Ad3', 'Dest_Ad4', 'Dest_Ville', 'Dest_CP', 'Dest_Pays', 'Dest_Tel1', 'Dest_Tel2', 'Dest_Mail',
-        'Poids', 'Longueur', 'Taille', 'NbColis', 'CRT_Valeur', 'CRT_Devise', 'Exp_Valeur', 'Exp_Devise',
-        'COL_Rel_Pays', 'COL_Rel', 'LIV_Rel_Pays', 'LIV_Rel',
-        'TAvisage', 'TReprise', 'Montage', 'TRDV', 'Assurance', 'Instructions', 'Texte',
-      ] as const;
-      const creationSignatureBase = creationEtiquetteOrder.map((key) => params[key] ?? '').join('');
-      params.Security = md5Hex(`${creationSignatureBase}${privateKey}`);
+      console.log("API v2 payload:", JSON.stringify(shipmentPayload));
 
-      const xml = await callMondialRelay("WSI2_CreationEtiquette", params);
-      const stat = extractXmlValue(xml, 'STAT');
+      // Call API v2 REST with Basic Auth
+      const basicAuth = btoa(`${v2Login}:${v2Password}`);
+      const apiResponse = await fetch(MR_API_V2, {
+        method: "POST",
+        headers: {
+          "Authorization": `Basic ${basicAuth}`,
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify(shipmentPayload),
+      });
 
-      let trackingNumber = extractXmlValue(xml, 'ExpeditionNum');
-      let labelUrl: string | null = null;
-      if (trackingNumber) {
-        // Mondial Relay requires a CRC hash to access the PDF label
-        const crcBase = `${enseigne} ${trackingNumber} FR A4`;
-        const crc = md5Hex(crcBase + privateKey);
-        labelUrl = `https://www.mondialrelay.com/ww2/PDF/StickerMaker2.aspx?ens=${enseigne}&expedition=${trackingNumber}&lg=FR&format=A4&crc=${crc}`;
+      const responseText = await apiResponse.text();
+      console.log("API v2 response status:", apiResponse.status, "body:", responseText);
+
+      let result: any;
+      try {
+        result = JSON.parse(responseText);
+      } catch {
+        throw new Error(`Réponse API v2 invalide (${apiResponse.status}): ${responseText.substring(0, 500)}`);
       }
 
-      if (stat !== '0') {
-        const isTestOrder = (order.order_number || '').startsWith('TEST-');
-        if (!isTestOrder) {
-          const detail = extractXmlValue(xml, 'Erreur') || extractXmlValue(xml, 'Message') || extractXmlValue(xml, 'Libelle') || '';
-          throw new Error(`Erreur création étiquette Mondial Relay (code ${stat})${detail ? `: ${detail}` : ''}`);
-        }
+      if (!apiResponse.ok) {
+        const errMsg = result?.Message || result?.error || result?.title || responseText.substring(0, 300);
+        throw new Error(`Erreur API v2 Mondial Relay (${apiResponse.status}): ${errMsg}`);
+      }
 
-        // Fallback for test orders to unblock end-to-end testing without real carrier billing
-        trackingNumber = `TESTMR-${Date.now()}`;
-        labelUrl = null;
+      // Extract tracking number and label URL from v2 response
+      let trackingNumber: string | null = null;
+      let labelUrl: string | null = null;
+
+      // API v2 returns ShipmentsList with ShipmentNumber and LabelLink
+      const shipments = result?.ShipmentsList || result?.shipmentsList || [];
+      if (shipments.length > 0) {
+        const first = shipments[0];
+        trackingNumber = first.ShipmentNumber || first.shipmentNumber || first.ExpeditionNum || null;
+
+        // Parcels may contain individual labels
+        const parcels = first.Parcels || first.parcels || [];
+        if (parcels.length > 0 && (parcels[0].Label || parcels[0].label)) {
+          labelUrl = parcels[0].Label || parcels[0].label;
+        }
+      }
+
+      // Fallback: top-level label link
+      if (!labelUrl && (result?.LabelLink || result?.labelLink)) {
+        labelUrl = result.LabelLink || result.labelLink;
+      }
+
+      // Fallback for label via Labels array
+      if (!labelUrl && (result?.Labels || result?.labels)) {
+        const labels = result.Labels || result.labels;
+        if (labels.length > 0) {
+          labelUrl = labels[0]?.Output || labels[0]?.Url || labels[0]?.url || null;
+        }
+      }
+
+      if (!trackingNumber) {
+        console.error("API v2 full response:", JSON.stringify(result));
+        throw new Error("Numéro d'expédition non trouvé dans la réponse API v2");
       }
 
       // Update order
@@ -414,7 +462,7 @@ serve(async (req) => {
         })
         .eq("id", order_id);
 
-      return new Response(JSON.stringify({ tracking_number: trackingNumber, label_url: labelUrl, test_mode: stat !== '0' }), {
+      return new Response(JSON.stringify({ tracking_number: trackingNumber, label_url: labelUrl }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
