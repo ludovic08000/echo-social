@@ -71,7 +71,7 @@ serve(async (req) => {
       const productIds = items.map((i: any) => i.product_id);
       const { data: dbProducts, error: prodError } = await supabase
         .from("products")
-        .select("id, title, price, seller_id, thumbnail_url, weight_grams, stock_quantity, status")
+        .select("id, title, price, seller_id, thumbnail_url, weight_grams, stock_quantity, is_active")
         .in("id", productIds);
 
       if (prodError || !dbProducts?.length) throw new Error("Produits introuvables");
