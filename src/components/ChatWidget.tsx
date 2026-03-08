@@ -982,7 +982,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               ref={inputRef}
               value={newMessage}
               onChange={e => setNewMessage(e.target.value)}
-              onFocus={() => { setShowEmojis(false); setShowGifs(false); setShowAIMenu(false); }}
+              onFocus={() => { setShowEmojis(false); setShowGifs(false); }}
               placeholder="Aa"
               className="flex-1 bg-secondary/60 rounded-full px-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors min-w-0"
             />
