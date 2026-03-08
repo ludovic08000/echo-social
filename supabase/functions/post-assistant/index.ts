@@ -23,6 +23,7 @@ const MAX_TEXT_LENGTH = 5000;
 const ALLOWED_ACTIONS = ["improve", "formal", "casual", "shorter", "longer"];
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
