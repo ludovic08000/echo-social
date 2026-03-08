@@ -74,7 +74,7 @@ export function useUpdateProfile() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async (updates: Partial<Pick<Profile, 'name' | 'bio' | 'avatar_url' | 'cover_url' | 'cover_position_y' | 'city' | 'website_url' | 'education_level' | 'education_city' | 'date_of_birth' | 'work' | 'relationship_status' | 'interests' | 'field_visibility'>>) => {
+    mutationFn: async (updates: Partial<Pick<Profile, 'name' | 'bio' | 'avatar_url' | 'cover_url' | 'cover_position_y' | 'city' | 'website_url' | 'education_level' | 'education_city' | 'date_of_birth' | 'work' | 'relationship_status' | 'interests' | 'field_visibility' | 'profile_bg_url' | 'feed_bg_url'>>) => {
       if (!user) throw new Error('Not authenticated');
 
       // Cast field_visibility for Supabase compatibility
