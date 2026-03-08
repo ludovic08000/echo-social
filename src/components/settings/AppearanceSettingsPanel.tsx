@@ -5,6 +5,7 @@ import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { useTranslation } from '@/lib/i18n';
+import { BackgroundSettingsSection } from './BackgroundSettingsSection';
 
 type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -202,6 +203,9 @@ export function AppearanceSettingsPanel() {
           <Switch checked={animationsEnabled} onCheckedChange={setAnimationsEnabled} />
         </div>
       </div>
+
+      {/* Background customization */}
+      <BackgroundSettingsSection />
     </div>
   );
 }

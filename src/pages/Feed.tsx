@@ -18,6 +18,7 @@ import { Coffee, X, Sparkles } from 'lucide-react';
 import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgorithm';
 import { Button } from '@/components/ui/button';
 import { useActiveAds } from '@/hooks/useAdCampaigns';
+import { useCustomBackground } from '@/hooks/useCustomBackground';
 
 const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'live' | 'media' | 'marketplace'> = {
   1: 'live',
@@ -52,6 +53,7 @@ export default function Feed() {
   const [showPauseReminder, setShowPauseReminder] = useState(false);
   const [pauseDismissed, setPauseDismissed] = useState(false);
   const { data: activeAds } = useActiveAds();
+  const feedBgStyle = useCustomBackground('feed');
 
   const posts = data?.pages.flat() || [];
 
@@ -150,6 +152,9 @@ export default function Feed() {
 
   return (
     <AppLayout fullWidth>
+      {feedBgStyle && (
+        <div className="fixed inset-0 -z-10 opacity-30" style={feedBgStyle} />
+      )}
       <div className="flex justify-center">
         <div className="w-full flex justify-center gap-6 xl:gap-10">
           <div className="flex-1 max-w-[680px] min-w-0">

@@ -1,4 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
+import { useCustomBackground } from '@/hooks/useCustomBackground';
 import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake, ShieldAlert, Crown } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
@@ -136,6 +137,7 @@ export default function Profile() {
   const { data: friendshipData } = useFriendshipStatus(userId || '');
   const { data: isCreator } = useIsCreator(userId);
   const updateProfile = useUpdateProfile();
+  const profileBgStyle = useCustomBackground('profile');
 
   // Check if own profile has pending identity verification
   const { data: pendingVerification } = useQuery({
@@ -371,6 +373,9 @@ export default function Profile() {
 
   return (
     <AppLayout fullWidth>
+      {profileBgStyle && (
+        <div className="fixed inset-0 -z-10 opacity-30" style={profileBgStyle} />
+      )}
       <div className="mx-auto max-w-[900px]">
       <div className="-mt-2">
         <input ref={avatarInputRef} type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
