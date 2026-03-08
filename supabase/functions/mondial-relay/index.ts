@@ -347,14 +347,18 @@ serve(async (req) => {
     <VersionAPI>1.0</VersionAPI>
   </Context>
   <OutputOptions>
-    <OutputFormat>PdfA4</OutputFormat>
-    <OutputType>QRCode</OutputType>
+    <OutputFormat>A4</OutputFormat>
+    <OutputType>PdfUrl</OutputType>
   </OutputOptions>
   <ShipmentsList>
     <Shipment>
       <OrderNo>${escXml(orderNo)}</OrderNo>
       <CustomerNo>${escXml(customerNo)}</CustomerNo>
       <ParcelCount>1</ParcelCount>
+      <ShipmentValue>
+        <Amount>0</Amount>
+        <Currency>EUR</Currency>
+      </ShipmentValue>
       <DeliveryMode>
         <Mode>24R</Mode>
         <Location>${escXml(relayLocation)}</Location>
@@ -364,25 +368,40 @@ serve(async (req) => {
         <Location>${escXml(relayLocation)}</Location>
       </CollectionMode>
       <Sender>
-        <Language>FR</Language>
-        <Firstname>${escXml(senderFirstname)}</Firstname>
-        <Lastname>${escXml(senderLastname)}</Lastname>
-        <Streetname>${escXml(senderAddress)}</Streetname>
-        <CountryCode>${escXml(senderCountry)}</CountryCode>
-        <PostCode>${escXml(senderPostcode)}</PostCode>
-        <City>${escXml(senderCity)}</City>
-        <PhoneNo>${escXml(senderPhone)}</PhoneNo>
-        <MobileNo>${escXml(senderPhone)}</MobileNo>
-        <Email>${escXml(senderEmail)}</Email>
+        <Address>
+          <Language>FR</Language>
+          <Title></Title>
+          <Firstname>${escXml(senderFirstname)}</Firstname>
+          <Lastname>${escXml(senderLastname)}</Lastname>
+          <Streetname>${escXml(senderAddress)}</Streetname>
+          <AddressAdd1></AddressAdd1>
+          <AddressAdd2></AddressAdd2>
+          <AddressAdd3></AddressAdd3>
+          <CountryCode>${escXml(senderCountry)}</CountryCode>
+          <PostCode>${escXml(senderPostcode)}</PostCode>
+          <City>${escXml(senderCity)}</City>
+          <PhoneNo>${escXml(senderPhone)}</PhoneNo>
+          <MobileNo>${escXml(senderPhone)}</MobileNo>
+          <Email>${escXml(senderEmail)}</Email>
+        </Address>
       </Sender>
       <Recipient>
-        <Language>FR</Language>
-        <Firstname>${escXml(recipientFirstname)}</Firstname>
-        <Lastname>${escXml(recipientLastname)}</Lastname>
-        <Streetname>${escXml(order.shipping_relay_address || "")}</Streetname>
-        <CountryCode>${escXml(order.shipping_relay_country || "FR")}</CountryCode>
-        <PostCode>${escXml(order.shipping_relay_postcode || "")}</PostCode>
-        <City>${escXml(order.shipping_relay_city || "")}</City>
+        <Address>
+          <Language>FR</Language>
+          <Title></Title>
+          <Firstname>${escXml(recipientFirstname)}</Firstname>
+          <Lastname>${escXml(recipientLastname)}</Lastname>
+          <Streetname>${escXml(order.shipping_relay_address || "")}</Streetname>
+          <AddressAdd1></AddressAdd1>
+          <AddressAdd2></AddressAdd2>
+          <AddressAdd3></AddressAdd3>
+          <CountryCode>${escXml(order.shipping_relay_country || "FR")}</CountryCode>
+          <PostCode>${escXml(order.shipping_relay_postcode || "")}</PostCode>
+          <City>${escXml(order.shipping_relay_city || "")}</City>
+          <PhoneNo></PhoneNo>
+          <MobileNo></MobileNo>
+          <Email></Email>
+        </Address>
       </Recipient>
       <Parcels>
         <Parcel>
