@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Loader2, ShieldCheck, MapPin, ChevronDown, ChevronUp } from 'lucide-react';
 import { useCart, useUpdateCartItem, useRemoveFromCart } from '@/hooks/useMarketplace';
 import { Separator } from '@/components/ui/separator';
