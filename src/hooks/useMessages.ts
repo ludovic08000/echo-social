@@ -11,6 +11,7 @@ export interface Message {
   body: string;
   image_url: string | null;
   created_at: string;
+  status: 'delivered' | 'pending' | 'blocked';
   profile: {
     name: string;
     avatar_url: string | null;
