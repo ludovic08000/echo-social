@@ -315,6 +315,16 @@ serve(async (req) => {
 
       const weight = order.shipping_weight_grams || 500;
 
+      // Mondial Relay rejects empty expedition fields (STAT 97)
+      const senderName = sender?.name || "Vendeur ForSure";
+      const senderAddress = sender?.address || order.shipping_relay_address || "10 RUE DE TEST";
+      const senderCity = sender?.city || order.shipping_relay_city || "PARIS";
+      const senderPostcode = sender?.postcode || order.shipping_relay_postcode || "75001";
+      const senderCountry = sender?.country || order.shipping_relay_country || "FR";
+      const senderPhone = sender?.phone || "0600000000";
+      const senderEmail = sender?.email || "support@forsure.app";
+      const collectionRelayId = relay_id || order.shipping_relay_id || "";
+
       const params: Record<string, string> = {
         Enseigne: enseigne,
         ModeCol: 'REL',
@@ -322,16 +332,16 @@ serve(async (req) => {
         NDossier: order.order_number || '',
         NClient: order.buyer_id.substring(0, 9),
         Expe_Langage: 'FR',
-        Expe_Ad1: sender?.name || 'Vendeur ForSure',
+        Expe_Ad1: senderName,
         Expe_Ad2: '',
-        Expe_Ad3: sender?.address || '',
+        Expe_Ad3: senderAddress,
         Expe_Ad4: '',
-        Expe_Ville: sender?.city || '',
-        Expe_CP: sender?.postcode || '',
-        Expe_Pays: sender?.country || 'FR',
-        Expe_Tel1: sender?.phone || '',
+        Expe_Ville: senderCity,
+        Expe_CP: senderPostcode,
+        Expe_Pays: senderCountry,
+        Expe_Tel1: senderPhone,
         Expe_Tel2: '',
-        Expe_Mail: sender?.email || '',
+        Expe_Mail: senderEmail,
         Dest_Langage: 'FR',
         Dest_Ad1: order.shipping_relay_name || '',
         Dest_Ad2: '',
@@ -351,8 +361,8 @@ serve(async (req) => {
         CRT_Devise: '',
         Exp_Valeur: '',
         Exp_Devise: '',
-        COL_Rel_Pays: sender?.country || 'FR',
-        COL_Rel: relay_id || '',
+        COL_Rel_Pays: senderCountry,
+        COL_Rel: collectionRelayId,
         LIV_Rel_Pays: order.shipping_relay_country || 'FR',
         LIV_Rel: order.shipping_relay_id || '',
         TAvisage: '',
