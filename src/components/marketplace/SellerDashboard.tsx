@@ -148,7 +148,17 @@ export function SellerDashboard() {
     });
   };
 
-  if (isLoading) {
+  useEffect(() => {
+    const focusOrderId = searchParams.get('order_success');
+    if (!focusOrderId || autoOpenedOrderRef.current === focusOrderId || orders.length === 0) return;
+
+    const orderToEdit = orders.find((order: any) => order.id === focusOrderId);
+    if (!orderToEdit) return;
+
+    setSellerTab('orders');
+    openLabelEditor(orderToEdit);
+    autoOpenedOrderRef.current = focusOrderId;
+  }, [searchParams, orders]);
     return <div className="space-y-4"><div className="skeleton h-32 w-full" /><div className="skeleton h-32 w-full" /></div>;
   }
 
