@@ -399,7 +399,52 @@ export function useCreateConversation() {
   });
 }
 
-export function useMarkConversationRead() {
+export function useCreateGroupConversation() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async ({ name, memberIds }: { name: string; memberIds: string[] }) => {
+      if (!user) throw new Error('Not authenticated');
+      if (!name.trim()) throw new Error('Nom du groupe requis');
+      if (memberIds.length < 2) throw new Error('Ajoutez au moins 2 amis');
+
+      const conversationId = crypto.randomUUID();
+
+      const { error: convError } = await supabase
+        .from('conversations')
+        .insert({
+          id: conversationId,
+          name: name.trim(),
+          is_group: true,
+          created_by: user.id,
+        });
+
+      if (convError) throw convError;
+
+      const participants = [user.id, ...memberIds].map(uid => ({
+        conversation_id: conversationId,
+        user_id: uid,
+      }));
+
+      const { error: partError } = await supabase
+        .from('conversation_participants')
+        .insert(participants);
+
+      if (partError) {
+        await supabase.from('conversations').delete().eq('id', conversationId);
+        throw partError;
+      }
+
+      return { id: conversationId };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}
+
+
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
