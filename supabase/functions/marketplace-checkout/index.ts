@@ -299,17 +299,32 @@ serve(async (req) => {
 
     // ── TEST CHECKOUT (skip Stripe) ──
     if (action === "test_checkout") {
-      const { items, relay, package: packageData } = body;
+      const { items, relay } = body;
       if (!items?.length) throw new Error("Panier vide");
 
       const subtotal = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
       const commission = Math.round(subtotal * COMMISSION_RATE * 100) / 100;
 
-      const weightGrams = Math.max(100, Number(packageData?.weight_grams) || 500);
-      const parcels = Math.max(1, Number(packageData?.parcels) || 1);
-      const shippingFee = relay?.id ? estimateRelayShipping(weightGrams, parcels) : 0;
+      // Fetch real weights from products table
+      let totalShipping = 0;
+      let totalWeightGrams = 0;
+      if (relay?.id) {
+        const productIds = items.map((i: any) => i.product_id);
+        const { data: products } = await supabase
+          .from("products")
+          .select("id, weight_grams")
+          .in("id", productIds);
+        
+        for (const item of items) {
+          const product = products?.find((p: any) => p.id === item.product_id);
+          const weight = product?.weight_grams || 500;
+          totalWeightGrams += weight * item.quantity;
+          totalShipping += estimateRelayShipping(weight) * item.quantity;
+        }
+        totalShipping = Math.round(totalShipping * 100) / 100;
+      }
 
-      const total = subtotal + commission + shippingFee;
+      const total = subtotal + commission + totalShipping;
 
       const orderNumber = `TEST-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
 
@@ -332,7 +347,7 @@ serve(async (req) => {
         orderData.shipping_relay_postcode = relay.postcode;
         orderData.shipping_relay_city = relay.city;
         orderData.shipping_relay_country = relay.country || 'FR';
-        orderData.shipping_weight_grams = weightGrams;
+        orderData.shipping_weight_grams = totalWeightGrams;
       }
 
       const { data: order, error: orderError } = await supabase
