@@ -10,15 +10,14 @@ const corsHeaders = {
 
 const COMMISSION_RATE = 0.05; // 5% buyer fee
 
-function estimateRelayShipping(weightGrams: number, parcels: number): number {
-  const basePerParcel = 4.2;
-  const weightExtra =
+function estimateRelayShipping(weightGrams: number): number {
+  const base = 4.2;
+  const extra =
     weightGrams <= 500 ? 0 :
     weightGrams <= 1000 ? 0.8 :
     weightGrams <= 2000 ? 1.6 :
     weightGrams <= 5000 ? 2.8 : 4.5;
-
-  return Math.round((basePerParcel + weightExtra) * parcels * 100) / 100;
+  return Math.round((base + extra) * 100) / 100;
 }
 
 serve(async (req) => {
