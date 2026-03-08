@@ -297,8 +297,8 @@ function AdChatCreator() {
                         if (!generatedAd) return;
                         setGeneratingImage(true);
                         try {
-                          const { data } = await supabase.functions.invoke('ad-assistant', {
-                            body: { action: 'generate_image', title: generatedAd.title, description: generatedAd.body },
+                          const { data } = await supabase.functions.invoke('zeus', {
+                            body: { domain: 'ads', action: 'generate_image', title: generatedAd.title, description: generatedAd.body },
                           });
                           if (data?.image_url) setImageUrl(data.image_url);
                           else toast.error("Échec de la génération");
