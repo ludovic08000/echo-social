@@ -37,6 +37,9 @@ import { toast } from '@/hooks/use-toast';
 import { CreatorBadge } from '@/components/CreatorBadge';
 import { TipButton } from '@/components/TipButton';
 import { useIsCreator } from '@/hooks/useCreator';
+import { useIsMinor } from '@/hooks/useMinorProtection';
+import { MinorProtectedBadge } from '@/components/MinorProtectedBadge';
+import { MinorReportButton } from '@/components/MinorReportButton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 
