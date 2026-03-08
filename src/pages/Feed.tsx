@@ -22,13 +22,15 @@ import { useCustomBackground } from '@/hooks/useCustomBackground';
 
 const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'live' | 'media' | 'marketplace'> = {
   1: 'live',
-  3: 'suggestions_city',
-  5: 'suggestions',
-  8: 'media',
-  11: 'marketplace',
-  14: 'reels',
-  18: 'live',
-  22: 'suggestions',
+  2: 'marketplace',
+  4: 'suggestions_city',
+  6: 'suggestions',
+  9: 'media',
+  12: 'marketplace',
+  15: 'reels',
+  19: 'live',
+  23: 'marketplace',
+  27: 'suggestions',
 };
 
 const postVariants = {
