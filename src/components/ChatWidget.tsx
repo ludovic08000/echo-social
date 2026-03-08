@@ -293,6 +293,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const deleteForMe = useDeleteMessageForMe();
   const deleteForEveryone = useDeleteMessageForEveryone();
   const markRead = useMarkConversationRead();
+  const { data: hasPending } = useHasPendingMessages(conversationId);
+  const acceptRequest = useAcceptMessageRequest();
+  const rejectRequest = useRejectMessageRequest();
   const [newMessage, setNewMessage] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
   const [showGifs, setShowGifs] = useState(false);
