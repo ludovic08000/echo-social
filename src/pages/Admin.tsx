@@ -1718,8 +1718,8 @@ function ZeusSection() {
           <Zap className="w-5 h-5 text-amber-400" />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-foreground">Console Zeus</h2>
-          <p className="text-[11px] text-muted-foreground">Moteur IA central • 7 domaines • Gemini 3 Flash</p>
+          <h2 className="text-lg font-bold text-foreground">Zeus — Assistant de Décision</h2>
+          <p className="text-[11px] text-muted-foreground">Accès total plateforme • Analyse en temps réel • Recommandations IA</p>
         </div>
         <Badge variant="outline" className="ml-auto text-[10px] border-amber-500/30 text-amber-400">LIVE</Badge>
       </div>
