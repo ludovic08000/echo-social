@@ -134,6 +134,7 @@ export function SellerDashboard() {
     }
   };
 
+  const openLabelEditor = (order: any) => {
     setSelectedOrder(order);
     setLabelForm({
       weightGrams: String(order.shipping_weight_grams || 500),
