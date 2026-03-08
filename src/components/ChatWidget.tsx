@@ -881,6 +881,83 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         />
       )}
 
+      {/* AI suggestion preview */}
+      {aiSuggestion && !showVoiceRecorder && (
+        <div className="mx-2 mb-1 bg-primary/5 border border-primary/20 rounded-xl px-3 py-2">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Wand2 className="w-3 h-3 text-primary" />
+            <span className="text-[9px] font-semibold text-primary">Suggestion IA</span>
+          </div>
+          <p className="text-xs text-foreground leading-relaxed mb-2">{aiSuggestion}</p>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => { setNewMessage(aiSuggestion); setAiSuggestion(null); inputRef.current?.focus(); }}
+              className="px-2.5 py-1 rounded-full bg-primary text-primary-foreground text-[10px] font-medium hover:bg-primary/90 transition-colors"
+            >
+              ✓ Utiliser
+            </button>
+            <button
+              onClick={() => setAiSuggestion(null)}
+              className="px-2.5 py-1 rounded-full bg-secondary text-secondary-foreground text-[10px] font-medium hover:bg-secondary/80 transition-colors"
+            >
+              ✗ Ignorer
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* AI actions menu */}
+      {showAIMenu && !showVoiceRecorder && (
+        <div className="mx-2 mb-1 bg-background border border-border/40 rounded-xl shadow-lg overflow-hidden">
+          <div className="p-1.5 grid grid-cols-2 gap-1">
+            <button
+              onClick={() => handleAI('correct')}
+              disabled={!newMessage.trim()}
+              className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg hover:bg-secondary/80 transition-colors text-left disabled:opacity-40"
+            >
+              <SpellCheck className="w-3.5 h-3.5 text-primary" />
+              <div>
+                <p className="text-[10px] font-semibold">Corriger</p>
+                <p className="text-[8px] text-muted-foreground">Orthographe & grammaire</p>
+              </div>
+            </button>
+            <button
+              onClick={() => handleAI('improve', 'friendly')}
+              disabled={!newMessage.trim()}
+              className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg hover:bg-secondary/80 transition-colors text-left disabled:opacity-40"
+            >
+              <PenLine className="w-3.5 h-3.5 text-primary" />
+              <div>
+                <p className="text-[10px] font-semibold">Améliorer</p>
+                <p className="text-[8px] text-muted-foreground">Style & ton</p>
+              </div>
+            </button>
+            <button
+              onClick={() => handleAI('translate')}
+              disabled={!newMessage.trim()}
+              className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg hover:bg-secondary/80 transition-colors text-left disabled:opacity-40"
+            >
+              <Languages className="w-3.5 h-3.5 text-primary" />
+              <div>
+                <p className="text-[10px] font-semibold">Traduire</p>
+                <p className="text-[8px] text-muted-foreground">Anglais auto</p>
+              </div>
+            </button>
+            <button
+              onClick={() => handleAI('improve', 'formal')}
+              disabled={!newMessage.trim()}
+              className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg hover:bg-secondary/80 transition-colors text-left disabled:opacity-40"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-primary" />
+              <div>
+                <p className="text-[10px] font-semibold">Formel</p>
+                <p className="text-[8px] text-muted-foreground">Ton pro</p>
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Input bar */}
       {!showVoiceRecorder && (
         <div className="border-t border-border/30 bg-background">
