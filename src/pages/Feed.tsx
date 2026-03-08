@@ -52,6 +52,7 @@ export default function Feed() {
   const [showPauseReminder, setShowPauseReminder] = useState(false);
   const [pauseDismissed, setPauseDismissed] = useState(false);
   const { data: activeAds } = useActiveAds();
+  const feedBgStyle = useCustomBackground('feed');
 
   const posts = data?.pages.flat() || [];
 
