@@ -35,6 +35,7 @@ export default function ProductDetailPage() {
   const { user } = useAuth();
   const addToCart = useAddToCart();
   const { data: cart = [] } = useCart();
+  const { data: favorites = [] } = useProductFavorites();
   const toggleFav = useToggleFavorite();
   const [imgIndex, setImgIndex] = useState(0);
   const { openNegotiation } = useChatWidget();
