@@ -1,21 +1,56 @@
+import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { ShoppingCart, Plus, Minus, Trash2, CreditCard } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Loader2, ShieldCheck } from 'lucide-react';
 import { useCart, useUpdateCartItem, useRemoveFromCart } from '@/hooks/useMarketplace';
 import { Separator } from '@/components/ui/separator';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 export function CartSheet() {
   const { data: cart = [] } = useCart();
   const updateItem = useUpdateCartItem();
   const removeItem = useRemoveFromCart();
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
 
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = cart.reduce((sum, item) => {
     const price = item.products?.price ?? 0;
     return sum + price * item.quantity;
   }, 0);
-  const buyerFee = subtotal * 0.05;
+  const buyerFee = Math.round(subtotal * 0.05 * 100) / 100;
   const total = subtotal + buyerFee;
+
+  const handleCheckout = async () => {
+    if (cart.length === 0) return;
+    setIsCheckingOut(true);
+
+    try {
+      const items = cart.map((item) => ({
+        product_id: item.product_id,
+        title: item.products?.title || 'Produit',
+        price: item.products?.price || 0,
+        quantity: item.quantity,
+        seller_id: item.products?.seller_id || '',
+        thumbnail_url: item.products?.thumbnail_url || null,
+      }));
+
+      const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
+        body: { action: 'create_checkout', items },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      if (data?.url) {
+        window.open(data.url, '_blank');
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'Erreur lors du paiement');
+    } finally {
+      setIsCheckingOut(false);
+    }
+  };
 
   return (
     <Sheet>
@@ -104,12 +139,21 @@ export function CartSheet() {
                   <span>{total.toFixed(2)}€</span>
                 </div>
               </div>
-              <Button className="w-full premium-button" disabled>
-                <CreditCard className="w-4 h-4 mr-2" />
-                Paiement (bientôt disponible)
+              <Button
+                className="w-full premium-button"
+                onClick={handleCheckout}
+                disabled={isCheckingOut || cart.length === 0}
+              >
+                {isCheckingOut ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <CreditCard className="w-4 h-4 mr-2" />
+                )}
+                {isCheckingOut ? 'Redirection...' : `Payer ${total.toFixed(2)}€`}
               </Button>
-              <p className="text-[10px] text-muted-foreground text-center">
-                Le paiement sécurisé par Stripe sera disponible prochainement.
+              <p className="text-[10px] text-muted-foreground text-center flex items-center justify-center gap-1">
+                <ShieldCheck className="w-3 h-3" />
+                Paiement sécurisé par Stripe
               </p>
             </div>
           </>
