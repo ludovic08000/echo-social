@@ -102,9 +102,12 @@ export function useCall(options?: UseCallOptions) {
       });
 
       room.on(RoomEvent.Disconnected, () => {
+        const wasMissed = callStateRef.current !== 'connected';
+        const endDuration = durationRef.current;
+        const endType = callTypeRef.current;
         setCallState('ended');
         releaseWakeLock();
-        options?.onCallEnded?.();
+        options?.onCallEnded?.({ type: endType, duration: endDuration, wasMissed });
       });
 
       room.on(RoomEvent.ParticipantConnected, () => {
