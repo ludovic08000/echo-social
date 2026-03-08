@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
 
     const payloadHash = await sha256Hex(new Uint8Array(fileBuffer));
 
-    const host = `${accountId}.r2.cloudflarestorage.com`;
+    const host = `${accountId}.${regionPrefix}r2.cloudflarestorage.com`;
     const headers: Record<string, string> = {
       host,
       "x-amz-content-sha256": payloadHash,
