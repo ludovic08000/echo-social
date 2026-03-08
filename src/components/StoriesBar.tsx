@@ -222,7 +222,7 @@ export function StoriesBar() {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/mp4,video/webm,video/quicktime"
             className="hidden"
             onChange={handleFileSelect}
           />
