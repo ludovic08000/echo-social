@@ -468,10 +468,14 @@ serve(async (req) => {
           throw new Error(`Erreur API v2 Mondial Relay (${apiResponse.status}): ${errMsg}`);
         }
 
-        // Check for error in statusListField (JSON envelope)
+        // Check for any error in statusListField (JSON envelope)
         const statusList = result?.statusListField || result?.StatusList || [];
-        if (statusList.length > 0 && statusList[0]?.levelField === 'Error') {
-          throw new Error(`Erreur API v2 (${statusList[0].codeField}): ${statusList[0].messageField}`);
+        const blockingError = statusList.find((item: any) => {
+          const level = String(item?.levelField || item?.Level || '').toLowerCase();
+          return level === 'error';
+        });
+        if (blockingError) {
+          throw new Error(`Erreur API v2 (${blockingError.codeField || blockingError.Code || '?' }): ${blockingError.messageField || blockingError.Message || 'Erreur inconnue'}`);
         }
 
         const shipments = result?.ShipmentsList || result?.shipmentsListField || [];
