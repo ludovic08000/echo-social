@@ -126,6 +126,18 @@ export function SettingsProfileTab() {
             />
             <p className="text-[10px] text-muted-foreground">Les visiteurs entendront cette musique sur votre profil</p>
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="phone" className="text-xs flex items-center gap-1"><Phone className="w-3 h-3" /> Numéro de téléphone</Label>
+            <Input
+              id="phone"
+              type="tel"
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
+              placeholder="+33 6 12 34 56 78"
+              className="rounded-xl h-10 text-sm bg-secondary/40 border-border/30 focus:bg-background"
+            />
+            <p className="text-[10px] text-muted-foreground">Permet à vos contacts de vous retrouver sur Forsure</p>
+          </div>
           <Button
             onClick={handleSave}
             disabled={updateProfile.isPending}
