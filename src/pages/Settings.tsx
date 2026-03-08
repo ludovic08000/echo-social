@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Palette, Heart, Brain, Accessibility } from 'lucide-react';
+import { ArrowLeft, Palette, Heart, Brain, Accessibility, Baby } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from '@/lib/i18n';
 import { AppLayout } from '@/components/AppLayout';
@@ -13,6 +13,7 @@ import { AppearanceSettingsPanel } from '@/components/settings/AppearanceSetting
 import { WellbeingSettingsPanel } from '@/components/settings/WellbeingSettingsPanel';
 import { ContentPreferencesPanel } from '@/components/settings/ContentPreferencesPanel';
 import { AccessibilitySettingsPanel } from '@/components/settings/AccessibilitySettingsPanel';
+import { ParentalControlPanel } from '@/components/settings/ParentalControlPanel';
 import { Button } from '@/components/ui/button';
 
 export default function Settings() {
@@ -127,6 +128,18 @@ export default function Settings() {
           <div className="animate-fade-in">
             <section className="premium-card p-5">
               <NotificationSettingsPanel />
+            </section>
+          </div>
+        )}
+
+        {activeTab === 'parental' && (
+          <div className="animate-fade-in">
+            <section className="premium-card p-5">
+              <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                <Baby className="w-4 h-4 text-pink-500" />
+                Contrôle parental
+              </h2>
+              <ParentalControlPanel />
             </section>
           </div>
         )}

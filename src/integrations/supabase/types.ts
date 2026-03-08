@@ -2107,6 +2107,39 @@ export type Database = {
         }
         Relationships: []
       }
+      parental_controls: {
+        Row: {
+          allowed_categories: string[]
+          created_at: string
+          id: string
+          is_active: boolean
+          is_minor: boolean
+          pin_hash: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          allowed_categories?: string[]
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_minor?: boolean
+          pin_hash: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          allowed_categories?: string[]
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_minor?: boolean
+          pin_hash?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       posts: {
         Row: {
           body: string

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, CalendarIcon } from 'lucide-react';
-import { format } from 'date-fns';
+import { Eye, EyeOff, CalendarIcon, Shield } from 'lucide-react';
+import { format, differenceInYears } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
@@ -14,6 +14,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -28,6 +29,10 @@ export default function Signup() {
   const [isLoading, setIsLoading] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
+  const [showParentalStep, setShowParentalStep] = useState(false);
+  const [parentalPin, setParentalPin] = useState('');
+  const [parentalPinConfirm, setParentalPinConfirm] = useState('');
+  const [showParentalPin, setShowParentalPin] = useState(false);
 
   if (user) {
     navigate('/feed');
@@ -57,6 +62,7 @@ export default function Signup() {
 
     // Check minimum age (13 years)
     const today = new Date();
+    const age = differenceInYears(today, dateOfBirth);
     const minDate = new Date(today.getFullYear() - 13, today.getMonth(), today.getDate());
     if (dateOfBirth > minDate) {
       toast({
@@ -65,6 +71,25 @@ export default function Signup() {
         variant: 'destructive',
       });
       return;
+    }
+
+    // If under 16, show parental control step first
+    const isMinor = age < 16;
+    if (isMinor && !showParentalStep) {
+      setShowParentalStep(true);
+      return;
+    }
+
+    // Validate parental PIN if minor
+    if (isMinor && showParentalStep) {
+      if (parentalPin.length !== 4 || !/^\d{4}$/.test(parentalPin)) {
+        toast({ title: 'Code invalide', description: 'Le code parental doit être composé de 4 chiffres', variant: 'destructive' });
+        return;
+      }
+      if (parentalPin !== parentalPinConfirm) {
+        toast({ title: 'Les codes ne correspondent pas', variant: 'destructive' });
+        return;
+      }
     }
 
     if (!acceptedTerms || !acceptedPrivacy) {
@@ -99,6 +124,30 @@ export default function Signup() {
       });
       setIsLoading(false);
       return;
+    }
+
+    // Save parental control if minor
+    const userAge = differenceInYears(new Date(), dateOfBirth);
+    if (userAge < 16 && parentalPin) {
+      try {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(parentalPin + 'forsure-parental-salt');
+        const hash = await crypto.subtle.digest('SHA-256', data);
+        const pinHash = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+        // Wait a moment for user to be created
+        const { data: { user: newUser } } = await supabase.auth.getUser();
+        if (newUser) {
+          await supabase.from('parental_controls').insert({
+            user_id: newUser.id,
+            pin_hash: pinHash,
+            is_minor: true,
+            allowed_categories: ['education', 'sport', 'gaming', 'musique', 'art', 'humour'],
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to save parental control', e);
+      }
     }
 
     toast({
@@ -248,12 +297,52 @@ export default function Signup() {
               </div>
             </div>
 
+            {/* Parental control step for minors */}
+            {showParentalStep && (
+              <div className="space-y-3 p-4 rounded-xl bg-pink-500/5 border border-pink-500/20 animate-fade-in">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <Shield className="w-4 h-4 text-pink-500" />
+                  Protection parentale
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  L'utilisateur a moins de 16 ans. Un parent doit définir un code PIN à 4 chiffres pour le contrôle parental.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Code PIN</Label>
+                    <Input
+                      type={showParentalPin ? 'text' : 'password'}
+                      value={parentalPin}
+                      onChange={(e) => setParentalPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                      placeholder="• • • •"
+                      maxLength={4}
+                      className="text-center text-lg tracking-[0.5em] font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Confirmer</Label>
+                    <Input
+                      type={showParentalPin ? 'text' : 'password'}
+                      value={parentalPinConfirm}
+                      onChange={(e) => setParentalPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                      placeholder="• • • •"
+                      maxLength={4}
+                      className="text-center text-lg tracking-[0.5em] font-mono"
+                    />
+                  </div>
+                </div>
+                <button type="button" onClick={() => setShowParentalPin(!showParentalPin)} className="text-xs text-primary hover:underline">
+                  {showParentalPin ? 'Masquer' : 'Afficher'} le code
+                </button>
+              </div>
+            )}
+
             <Button
               type="submit"
               disabled={isLoading || !acceptedTerms || !acceptedPrivacy}
               className="pulse-button-gradient w-full"
             >
-              {isLoading ? t('signup.submitting') : t('signup.submit')}
+              {isLoading ? t('signup.submitting') : showParentalStep ? 'Créer le compte avec protection' : t('signup.submit')}
             </Button>
           </form>
 

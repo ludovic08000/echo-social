@@ -14,11 +14,12 @@ import { FeedReelsSection } from '@/components/feed/FeedReelsSection';
 import { FeedMarketplaceSection } from '@/components/feed/FeedMarketplaceSection';
 import { FeedMediaSection } from '@/components/feed/FeedMediaSection';
 import { SponsoredPostCard } from '@/components/feed/SponsoredPostCard';
-import { Coffee, X, Sparkles } from 'lucide-react';
+import { Coffee, X, Sparkles, Lock } from 'lucide-react';
 import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgorithm';
 import { Button } from '@/components/ui/button';
 import { useActiveAds } from '@/hooks/useAdCampaigns';
 import { useCustomBackground } from '@/hooks/useCustomBackground';
+import { useParentalGate } from '@/components/ParentalGate';
 
 const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'media' | 'marketplace'> = {
   2: 'marketplace',
@@ -54,6 +55,7 @@ export default function Feed() {
   const [pauseDismissed, setPauseDismissed] = useState(false);
   const { data: activeAds } = useActiveAds();
   const feedBgStyle = useCustomBackground('feed');
+  const { isMinor, isUnlocked, requestUnlock } = useParentalGate();
 
   const posts = data?.pages.flat() || [];
 
@@ -267,6 +269,20 @@ export default function Feed() {
               </motion.div>
             ) : (
               <>
+                {/* Parental control banner */}
+                {isMinor && !isUnlocked && (
+                  <div className="px-4 mb-3">
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-pink-500/10 border border-pink-500/20">
+                      <Lock className="w-4 h-4 text-pink-500 shrink-0" />
+                      <p className="text-xs text-muted-foreground flex-1">
+                        Mode protégé actif — certains contenus sont filtrés.
+                      </p>
+                      <Button size="sm" variant="outline" className="text-xs h-7 rounded-lg" onClick={() => requestUnlock()}>
+                        Déverrouiller
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-3 px-4">
                   {posts.map((post, index) => (
                     <div key={post.id}>
