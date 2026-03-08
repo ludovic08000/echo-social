@@ -29,6 +29,10 @@ export default function Signup() {
   const [isLoading, setIsLoading] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
+  const [showParentalStep, setShowParentalStep] = useState(false);
+  const [parentalPin, setParentalPin] = useState('');
+  const [parentalPinConfirm, setParentalPinConfirm] = useState('');
+  const [showParentalPin, setShowParentalPin] = useState(false);
 
   if (user) {
     navigate('/feed');
