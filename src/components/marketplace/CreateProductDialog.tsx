@@ -96,6 +96,7 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
         color: color || undefined,
         shipping_type: shippingType,
         shipping_price: shippingPrice ? parseFloat(shippingPrice) : 0,
+        weight_grams: weightGrams ? parseInt(weightGrams) : undefined,
         country,
         region: region || undefined,
         city: city || undefined,
