@@ -413,10 +413,173 @@ export default function Marketplace() {
             )}
           </TabsContent>
 
+          {/* Orders tab */}
+          <TabsContent value="orders" className="mt-4 space-y-3">
+            {myOrders.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="w-16 h-16 rounded-2xl bg-secondary/60 flex items-center justify-center mx-auto mb-3">
+                  <Package className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <h3 className="font-bold text-base">Aucune commande</h3>
+                <p className="text-muted-foreground text-sm mt-1">Vos achats apparaîtront ici</p>
+              </div>
+            ) : (
+              myOrders.map((order: any) => {
+                const statusConfig: Record<string, { label: string; color: string; icon: any }> = {
+                  pending: { label: 'En attente', color: 'text-amber-500', icon: Clock },
+                  paid: { label: 'Payée', color: 'text-green-500', icon: CheckCircle },
+                  shipped: { label: 'Expédiée', color: 'text-blue-500', icon: Truck },
+                  delivered: { label: 'Livrée', color: 'text-green-600', icon: CheckCircle },
+                  cancelled: { label: 'Annulée', color: 'text-destructive', icon: AlertCircle },
+                };
+                const status = statusConfig[order.status] || statusConfig.pending;
+                const StatusIcon = status.icon;
+                return (
+                  <div key={order.id} className="bg-card rounded-2xl border border-border/30 p-4 space-y-3 shadow-[var(--shadow-sm)]">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <StatusIcon className={cn('w-4 h-4', status.color)} />
+                        <span className={cn('text-xs font-bold', status.color)}>{status.label}</span>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground">
+                        {format(new Date(order.created_at), 'dd MMM yyyy à HH:mm', { locale: fr })}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 bg-secondary/40 rounded-xl px-3 py-2">
+                      <span className="text-[10px] text-muted-foreground">N°</span>
+                      <span className="text-xs font-mono font-bold text-foreground flex-1">{order.order_number}</span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(order.order_number);
+                          toast.success('Numéro copié !');
+                        }}
+                        className="text-muted-foreground hover:text-primary transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Items */}
+                    <div className="space-y-2">
+                      {(order.order_items || []).map((item: any) => (
+                        <div key={item.id} className="flex items-center gap-3">
+                          {item.products?.thumbnail_url ? (
+                            <img src={item.products.thumbnail_url} alt="" className="w-10 h-10 rounded-lg object-cover bg-muted" />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
+                              <Package className="w-4 h-4 text-muted-foreground" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium truncate">{item.title}</p>
+                            <p className="text-[10px] text-muted-foreground">x{item.quantity} — {item.price?.toFixed(2)} €</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Tracking */}
+                    {order.tracking_number && (
+                      <div className="flex items-center gap-2 bg-blue-500/10 rounded-xl px-3 py-2">
+                        <Truck className="w-3.5 h-3.5 text-blue-500" />
+                        <span className="text-[10px] text-muted-foreground">Suivi :</span>
+                        <span className="text-xs font-mono font-bold text-blue-600 flex-1">{order.tracking_number}</span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(order.tracking_number);
+                            toast.success('Numéro de suivi copié !');
+                          }}
+                          className="text-muted-foreground hover:text-primary transition-colors"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Relay point info */}
+                    {order.shipping_relay_name && (
+                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                        <MapPin className="w-3 h-3" />
+                        <span>Point relais : {order.shipping_relay_name}, {order.shipping_relay_city}</span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-1 border-t border-border/20">
+                      <span className="text-xs text-muted-foreground">Total</span>
+                      <span className="text-sm font-bold text-foreground">{order.total?.toFixed(2)} €</span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </TabsContent>
+
           <TabsContent value="seller" className="mt-4">
             <SellerDashboard />
           </TabsContent>
         </Tabs>
+
+        {/* Order confirmation dialog */}
+        <Dialog open={!!orderConfirmation} onOpenChange={(open) => !open && setOrderConfirmation(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-lg">
+                <CheckCircle className="w-6 h-6 text-green-500" />
+                Commande confirmée !
+              </DialogTitle>
+            </DialogHeader>
+            {orderConfirmation && (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">Merci pour votre achat 🎉</p>
+                
+                <div className="bg-secondary/40 rounded-xl px-4 py-3 space-y-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">N° de commande</span>
+                    <span className="font-mono font-bold">{orderConfirmation.order_number}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Total payé</span>
+                    <span className="font-bold">{orderConfirmation.total?.toFixed(2)} €</span>
+                  </div>
+                  {orderConfirmation.shipping_relay_name && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Point relais</span>
+                      <span className="font-medium">{orderConfirmation.shipping_relay_name}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  {(orderConfirmation.order_items || []).map((item: any) => (
+                    <div key={item.id} className="flex items-center gap-3">
+                      {item.products?.thumbnail_url ? (
+                        <img src={item.products.thumbnail_url} alt="" className="w-10 h-10 rounded-lg object-cover bg-muted" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
+                          <Package className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <p className="text-xs font-medium">{item.title}</p>
+                        <p className="text-[10px] text-muted-foreground">x{item.quantity}</p>
+                      </div>
+                      <span className="text-xs font-bold">{item.subtotal?.toFixed(2)} €</span>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="text-[11px] text-muted-foreground text-center">
+                  Le vendeur va préparer votre colis. Vous recevrez le numéro de suivi dès l'expédition.
+                </p>
+
+                <Button className="w-full" onClick={() => setOrderConfirmation(null)}>
+                  OK, compris !
+                </Button>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Floating sell button */}
