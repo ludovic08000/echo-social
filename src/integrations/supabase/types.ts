@@ -3214,6 +3214,7 @@ export type Database = {
         Returns: boolean
       }
       cleanup_ai_cache: { Args: never; Returns: undefined }
+      cleanup_old_fingerprints: { Args: never; Returns: undefined }
       generate_order_number: { Args: never; Returns: string }
       get_friend_suggestions: {
         Args: { limit_count?: number; target_user_id: string }
