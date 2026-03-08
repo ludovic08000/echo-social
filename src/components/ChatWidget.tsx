@@ -347,8 +347,85 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { goBack, closeChat, minimizeChat } = useChatWidget();
+  const { goBack, closeChat, minimizeChat, state: chatState } = useChatWidget();
   const conversation = conversations?.find(c => c.id === conversationId);
+  const negotiationProduct = chatState.negotiationProduct;
+
+  // Negotiation hooks
+  const { data: negotiations = [] } = useNegotiations(negotiationProduct?.id);
+  const createNeg = useCreateNegotiation();
+  const respondNeg = useRespondNegotiation();
+  const acceptCounter = useAcceptCounterOffer();
+  const [showOfferInput, setShowOfferInput] = useState(false);
+  const [offerPrice, setOfferPrice] = useState('');
+  const [counterInput, setCounterInput] = useState('');
+  const [counterNegId, setCounterNegId] = useState<string | null>(null);
+
+  const seller = negotiationProduct?.seller_profiles;
+  const isSeller = seller && (seller as any).user_id === user?.id;
+
+  const myNegotiation = useMemo(() =>
+    negotiations.find(n => n.buyer_id === user?.id && ['pending', 'counter'].includes(n.status)),
+    [negotiations, user]
+  );
+  const acceptedNeg = useMemo(() =>
+    negotiations.find(n => n.buyer_id === user?.id && n.status === 'accepted'),
+    [negotiations, user]
+  );
+  const pendingForSeller = useMemo(() =>
+    negotiations.filter(n => n.status === 'pending' || n.status === 'counter'),
+    [negotiations]
+  );
+
+  const handleMakeOffer = async () => {
+    const price = parseFloat(offerPrice);
+    if (!negotiationProduct || !seller) return;
+    if (isNaN(price) || price <= 0) { toast.error('Prix invalide'); return; }
+    if (price >= negotiationProduct.price) { toast.error('Votre offre doit être inférieure au prix'); return; }
+    createNeg.mutate({
+      productId: negotiationProduct.id,
+      sellerProfileId: seller.id,
+      originalPrice: negotiationProduct.price,
+      offeredPrice: price,
+      conversationId,
+    }, {
+      onSuccess: () => {
+        setShowOfferInput(false);
+        setOfferPrice('');
+        sendMessage.mutate({ conversationId, body: `💰 OFFRE: ${price.toFixed(2)} € pour "${negotiationProduct.title}" (prix: ${negotiationProduct.price.toFixed(2)} €)` });
+      },
+    });
+  };
+
+  const handleSellerRespond = (neg: Negotiation, action: 'accepted' | 'rejected') => {
+    respondNeg.mutate({ negotiationId: neg.id, action }, {
+      onSuccess: () => {
+        const msg = action === 'accepted'
+          ? `✅ OFFRE ACCEPTÉE: ${neg.offered_price.toFixed(2)} € pour "${negotiationProduct?.title}"`
+          : `❌ OFFRE REFUSÉE pour "${negotiationProduct?.title}"`;
+        sendMessage.mutate({ conversationId, body: msg });
+      },
+    });
+  };
+
+  const handleCounterOffer = (neg: Negotiation, counterPrice: number) => {
+    respondNeg.mutate({ negotiationId: neg.id, action: 'counter', counterPrice }, {
+      onSuccess: () => {
+        sendMessage.mutate({ conversationId, body: `🔄 CONTRE-OFFRE: ${counterPrice.toFixed(2)} € pour "${negotiationProduct?.title}"` });
+      },
+    });
+  };
+
+  const handlePayNegotiated = async () => {
+    if (!acceptedNeg) return;
+    try {
+      const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
+        body: { action: 'negotiation_checkout', negotiationId: acceptedNeg.id },
+      });
+      if (error || data?.error) throw new Error(data?.error || 'Erreur');
+      if (data?.url) window.location.href = data.url;
+    } catch (e: any) { toast.error(e.message || 'Erreur paiement'); }
+  };
 
   // Call hook & sound
   const [showVoicemailPrompt, setShowVoicemailPrompt] = useState(false);
