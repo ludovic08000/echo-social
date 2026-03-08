@@ -67,7 +67,7 @@ serve(async (req) => {
       const total = subtotal + commission;
 
       // Find or create Stripe customer
-      const customers = await stripe.customers.list({ email: user.email, limit: 1 });
+      const customers = await stripe.customers.list({ email: userEmail, limit: 1 });
       let customerId: string | undefined;
       if (customers.data.length > 0) {
         customerId = customers.data[0].id;
