@@ -93,10 +93,8 @@ export default function ProductDetailPage() {
   const ShippingIcon = shippingInfo.icon;
   const isOutOfStock = product.stock_quantity !== null && product.stock_quantity <= 0;
   const isOwnProduct = user && seller && (seller as any).user_id === user.id;
-  const isSingleStock = product.stock_quantity === 1;
   const isAlreadyInCart = cart.some((item) => item.product_id === product.id);
-  const cartBlockedBySingleStock = isSingleStock && isAlreadyInCart;
-  const canAddToCart = !addToCart.isPending && !isOutOfStock && !isOwnProduct && !cartBlockedBySingleStock;
+  const canAddToCart = !addToCart.isPending && !isOutOfStock && !isOwnProduct && !isAlreadyInCart;
 
   return (
     <AppLayout>
