@@ -14,23 +14,6 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
-interface ShipmentPayload {
-  sender: {
-    name: string;
-    address: string;
-    city: string;
-    postcode: string;
-    country: string;
-    phone: string;
-    email: string;
-  };
-  parcel: {
-    weight_grams: number;
-    parcels: number;
-    length_cm?: number;
-    size_code?: string;
-  };
-}
 
 export function SellerDashboard() {
   const [searchParams] = useSearchParams();
