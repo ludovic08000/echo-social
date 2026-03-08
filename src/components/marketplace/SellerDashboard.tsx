@@ -204,59 +204,9 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
 
   const needsPackingVideo = (order: any) => order.total >= 100 && order.packing_video_status !== 'verified';
 
-  const renderPackingVideoSection = (order: any) => {
-    if (order.total < 100 || order.status !== 'paid') return null;
-    const status = order.packing_video_status || 'none';
-
-    return (
-      <div className="rounded-xl border border-border/50 p-3 space-y-2">
-        <div className="flex items-center gap-2 text-xs font-semibold">
-          <Video className="w-4 h-4 text-primary" />
-          Vidéo d'emballage obligatoire (+100€)
-        </div>
-
-        {status === 'none' && (
-          <>
-            <p className="text-[11px] text-muted-foreground">Filmez l'emballage sans coupure. L'IA vérifiera l'authenticité.</p>
-            <label className="cursor-pointer">
-              <input type="file" accept="video/*" className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePackingVideoUpload(order.id, f); }}
-                disabled={!!uploadingVideo || !!analyzingVideo} />
-              <div className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors">
-                {uploadingVideo === order.id ? (<><Loader2 className="w-4 h-4 animate-spin" /> Upload...</>)
-                  : analyzingVideo === order.id ? (<><Loader2 className="w-4 h-4 animate-spin" /> Analyse IA...</>)
-                  : (<><Upload className="w-4 h-4" /> Uploader la vidéo</>)}
-              </div>
-            </label>
-          </>
-        )}
-
-        {status === 'analyzing' && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Analyse IA en cours...</div>
-        )}
-
-        {status === 'verified' && (
-          <div className="flex items-center gap-2 text-xs text-green-600"><ShieldCheck className="w-4 h-4" /> Vidéo vérifiée ✓</div>
-        )}
-
-        {(status === 'rejected' || status === 'error') && (
-          <div className="space-y-1.5">
-            <div className={`flex items-center gap-2 text-xs ${status === 'rejected' ? 'text-destructive' : 'text-muted-foreground'}`}>
-              <ShieldAlert className="w-4 h-4" />
-              {status === 'rejected' ? 'Vidéo rejetée — Manipulation détectée' : 'Erreur — Réessayer'}
-            </div>
-            <label className="cursor-pointer">
-              <input type="file" accept="video/*" className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePackingVideoUpload(order.id, f); }}
-                disabled={!!uploadingVideo || !!analyzingVideo} />
-              <div className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors">
-                <Upload className="w-4 h-4" /> {status === 'rejected' ? 'Renvoyer une vidéo' : 'Réessayer'}
-              </div>
-            </label>
-          </div>
-        )}
-      </div>
-    );
+  const renderPackingVideoSection = (_order: any) => {
+    // Temporarily disabled for testing
+    return null;
   };
 
   return (
