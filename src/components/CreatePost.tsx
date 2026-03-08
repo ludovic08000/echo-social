@@ -4,7 +4,7 @@ import { Image, Video, X, Send, Timer, Rocket, ShoppingBag, Sparkles, Loader2, C
 import { useCreatePost } from '@/hooks/usePosts';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
-import { supabase } from '@/integrations/supabase/client';
+import { uploadToR2 } from '@/lib/r2';
 import { useNavigate } from 'react-router-dom';
 import { UserAvatar } from './UserAvatar';
 import { MoodPicker } from './MoodPicker';
