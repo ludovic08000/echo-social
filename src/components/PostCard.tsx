@@ -43,6 +43,8 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
   const [mediaLoaded, setMediaLoaded] = useState(false);
   const [saved, setSaved] = useState(false);
+  const { data: isMinorUser } = useCurrentUserIsMinor();
+  const reportUser = useReportUser();
 
   const postUrl = generatePostUrl(post.id);
 
