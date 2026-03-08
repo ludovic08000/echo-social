@@ -3201,6 +3201,7 @@ export type Database = {
           user_id: string
         }[]
       }
+      get_public_trust_score: { Args: { p_user_id: string }; Returns: number }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
