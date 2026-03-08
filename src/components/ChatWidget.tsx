@@ -259,7 +259,13 @@ function WidgetConversationList() {
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">
                   <p className={cn("text-[11px] truncate flex-1", conv.unread_count > 0 ? "text-foreground font-medium" : "text-muted-foreground")}>
-                    {conv.last_message?.body || 'Démarrez la conversation…'}
+                    {conv.last_message?.body 
+                      ? isCallMessage(conv.last_message.body) 
+                        ? (getCallData(conv.last_message.body)?.status === 'missed' ? '📞 Appel manqué' : '📞 Appel terminé')
+                        : isVoiceMessage(conv.last_message.body) ? '🎙️ Message vocal'
+                        : isGifMessage(conv.last_message.body) ? '🎬 GIF'
+                        : conv.last_message.body
+                      : 'Démarrez la conversation…'}
                   </p>
                   {conv.unread_count > 0 && (
                     <span className="w-4 h-4 rounded-full bg-primary text-primary-foreground text-[8px] font-bold flex items-center justify-center flex-shrink-0">
