@@ -206,7 +206,7 @@ serve(async (req) => {
             .eq("order_id", orderId);
 
           // Clear the buyer's cart
-          await supabase.from("cart_items").delete().eq("user_id", user.id);
+          await supabase.from("cart_items").delete().eq("user_id", userId);
 
           return new Response(JSON.stringify({ paid: true }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
