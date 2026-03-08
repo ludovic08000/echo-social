@@ -35,6 +35,7 @@ export default function ProductDetailPage() {
   const { data: favorites = [] } = useProductFavorites();
   const toggleFav = useToggleFavorite();
   const [imgIndex, setImgIndex] = useState(0);
+  const [showNegotiation, setShowNegotiation] = useState(false);
 
   if (isLoading) {
     return (
