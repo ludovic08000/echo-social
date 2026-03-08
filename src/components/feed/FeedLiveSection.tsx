@@ -63,8 +63,19 @@ function useRecentReplays() {
 // Mini video card that autoplays on hover
 function LiveCard({ item }: { item: { id: string; title: string; thumbnail_url: string | null; recording_url?: string | null; isLive: boolean; viewer_count: number; user_id: string; ended_at: string | null; host?: { name: string; avatar_url: string | null } }; }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [isHovering, setIsHovering] = useState(false);
   const { user } = useAuth();
   const deleteLive = useDeleteLive();
+
+  const handleMouseEnter = useCallback(() => {
+    setIsHovering(true);
+    videoRef.current?.play().catch(() => {});
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setIsHovering(false);
+    if (videoRef.current) { videoRef.current.pause(); videoRef.current.currentTime = 0; }
+  }, []);
 
   const handleDelete = (e: React.MouseEvent) => {
     e.preventDefault();
