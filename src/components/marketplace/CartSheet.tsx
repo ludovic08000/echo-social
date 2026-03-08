@@ -81,17 +81,6 @@ export function CartSheet() {
 
       const packageData = null; // Weight is now set by the seller
 
-      if (testMode) {
-        const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
-          body: { action: 'test_checkout', items, relay: relayData, package: packageData },
-        });
-        if (error) throw error;
-        if (data?.error) throw new Error(data.error);
-        toast.success(`🎉 Commande test créée ! ${data.orderNumber}`);
-        window.location.href = `/marketplace?order_success=${data.orderId}`;
-        return;
-      }
-
       const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
         body: { action: 'create_checkout', items, relay: relayData, package: packageData },
       });
