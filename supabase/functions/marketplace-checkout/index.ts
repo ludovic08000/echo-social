@@ -10,6 +10,17 @@ const corsHeaders = {
 
 const COMMISSION_RATE = 0.05; // 5% buyer fee
 
+function estimateRelayShipping(weightGrams: number, parcels: number): number {
+  const basePerParcel = 4.2;
+  const weightExtra =
+    weightGrams <= 500 ? 0 :
+    weightGrams <= 1000 ? 0.8 :
+    weightGrams <= 2000 ? 1.6 :
+    weightGrams <= 5000 ? 2.8 : 4.5;
+
+  return Math.round((basePerParcel + weightExtra) * parcels * 100) / 100;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -47,7 +58,7 @@ serve(async (req) => {
 
     // ── CREATE MARKETPLACE CHECKOUT ──
     if (action === "create_checkout") {
-      const { items, relay } = body;
+      const { items, relay, package: packageData } = body;
       // items: [{ product_id, title, price, quantity, seller_id, thumbnail_url }]
       // relay: { id, name, address, postcode, city, country } (optional)
 
@@ -65,7 +76,12 @@ serve(async (req) => {
 
       const subtotal = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
       const commission = Math.round(subtotal * COMMISSION_RATE * 100) / 100;
-      const total = subtotal + commission;
+
+      const weightGrams = Math.max(100, Number(packageData?.weight_grams) || 500);
+      const parcels = Math.max(1, Number(packageData?.parcels) || 1);
+      const shippingFee = relay?.id ? estimateRelayShipping(weightGrams, parcels) : 0;
+
+      const total = subtotal + commission + shippingFee;
 
       // Find or create Stripe customer
       const customers = await stripe.customers.list({ email: userEmail, limit: 1 });
@@ -75,7 +91,7 @@ serve(async (req) => {
       }
 
       // Build line items for Stripe
-      const lineItems = items.map((item: any) => ({
+      const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = items.map((item: any) => ({
         price_data: {
           currency: "eur",
           product_data: {
@@ -97,6 +113,20 @@ serve(async (req) => {
               images: [],
             },
             unit_amount: Math.round(commission * 100),
+          },
+          quantity: 1,
+        });
+      }
+
+      if (shippingFee > 0) {
+        lineItems.push({
+          price_data: {
+            currency: "eur",
+            product_data: {
+              name: "Livraison Mondial Relay (estimée)",
+              images: [],
+            },
+            unit_amount: Math.round(shippingFee * 100),
           },
           quantity: 1,
         });
@@ -127,6 +157,7 @@ serve(async (req) => {
         orderData.shipping_relay_postcode = relay.postcode;
         orderData.shipping_relay_city = relay.city;
         orderData.shipping_relay_country = relay.country || 'FR';
+        orderData.shipping_weight_grams = weightGrams;
       }
 
       const { data: order, error: orderError } = await supabase
@@ -235,12 +266,17 @@ serve(async (req) => {
 
     // ── TEST CHECKOUT (skip Stripe) ──
     if (action === "test_checkout") {
-      const { items, relay } = body;
+      const { items, relay, package: packageData } = body;
       if (!items?.length) throw new Error("Panier vide");
 
       const subtotal = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
       const commission = Math.round(subtotal * COMMISSION_RATE * 100) / 100;
-      const total = subtotal + commission;
+
+      const weightGrams = Math.max(100, Number(packageData?.weight_grams) || 500);
+      const parcels = Math.max(1, Number(packageData?.parcels) || 1);
+      const shippingFee = relay?.id ? estimateRelayShipping(weightGrams, parcels) : 0;
+
+      const total = subtotal + commission + shippingFee;
 
       const orderNumber = `TEST-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
 
@@ -263,6 +299,7 @@ serve(async (req) => {
         orderData.shipping_relay_postcode = relay.postcode;
         orderData.shipping_relay_city = relay.city;
         orderData.shipping_relay_country = relay.country || 'FR';
+        orderData.shipping_weight_grams = weightGrams;
       }
 
       const { data: order, error: orderError } = await supabase
