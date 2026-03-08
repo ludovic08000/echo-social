@@ -10,7 +10,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { useRef } from 'react';
+import { useRef, useCallback } from 'react';
 
 interface ReplayStream {
   id: string;
