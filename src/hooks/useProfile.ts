@@ -37,6 +37,8 @@ export interface Profile {
   is_creator: boolean;
   creator_since: string | null;
   creator_tier: string | null;
+  profile_bg_url: string | null;
+  feed_bg_url: string | null;
   created_at: string;
   updated_at: string;
 }
