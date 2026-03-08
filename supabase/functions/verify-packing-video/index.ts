@@ -202,10 +202,12 @@ Tu dois répondre UNIQUEMENT en utilisant le tool fourni.`;
     );
   } catch (e) {
     console.error("verify-packing-video error:", e);
+    const msg = e instanceof Error ? e.message : "Erreur interne";
+    const isValidation = ["requis", "introuvable", "non requise", "Non authentifié"].some(s => msg.includes(s));
     return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Erreur interne" }),
+      JSON.stringify({ error: msg }),
       {
-        status: 500,
+        status: isValidation ? 400 : 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );

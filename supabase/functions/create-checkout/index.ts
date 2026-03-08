@@ -67,9 +67,11 @@ serve(async (req) => {
       status: 200,
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
+    const msg = (error as Error).message;
+    const isValidation = ["Price ID required", "User not authenticated", "Vous avez déjà"].some(s => msg.includes(s));
+    return new Response(JSON.stringify({ error: msg }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500,
+      status: isValidation ? 400 : 500,
     });
   }
 });
