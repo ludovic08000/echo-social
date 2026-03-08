@@ -307,13 +307,13 @@ export default function Marketplace() {
 
             {/* Products grid */}
             {isLoading ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="rounded-2xl overflow-hidden">
-                    <div className="skeleton aspect-[3/4]" />
-                    <div className="p-2.5 space-y-2">
-                      <div className="skeleton h-3 w-3/4" />
-                      <div className="skeleton h-4 w-1/3" />
+              <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                {Array.from({ length: 12 }).map((_, i) => (
+                  <div key={i} className="rounded-xl overflow-hidden">
+                    <div className="skeleton aspect-square" />
+                    <div className="p-1.5 space-y-1">
+                      <div className="skeleton h-2.5 w-3/4" />
+                      <div className="skeleton h-3 w-1/3" />
                     </div>
                   </div>
                 ))}
@@ -340,9 +340,9 @@ export default function Marketplace() {
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+              <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
                 {sortedProducts.map((product) => (
-                  <ProductCard key={product.id} product={product} />
+                  <ProductCard key={product.id} product={product} compact />
                 ))}
               </div>
             )}
