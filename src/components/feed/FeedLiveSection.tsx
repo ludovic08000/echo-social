@@ -128,7 +128,6 @@ function LiveCard({ item }: { item: { id: string; title: string; thumbnail_url: 
           alt={item.title}
           className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
-      ) : (
         <div className={cn(
           "absolute inset-0 flex flex-col items-center justify-center gap-2",
           item.isLive
