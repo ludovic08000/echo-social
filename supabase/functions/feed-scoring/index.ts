@@ -35,6 +35,36 @@ function getSpamScore(text: string): number {
   return Math.min(100, spam);
 }
 
+// Time-of-day activity multiplier (posts during peak hours get a boost)
+function getTimeOfDayMultiplier(postDate: Date): number {
+  const hour = postDate.getHours();
+  // Peak: 7-9h, 12-14h, 18-23h
+  if ((hour >= 7 && hour <= 9) || (hour >= 12 && hour <= 14) || (hour >= 18 && hour <= 23)) return 1.3;
+  if (hour >= 10 && hour <= 11) return 1.1;
+  if (hour >= 15 && hour <= 17) return 1.0;
+  return 0.7; // night posts less visible
+}
+
+// Engagement velocity: how fast a post is getting engagement relative to its age
+function getEngagementVelocity(likes: number, comments: number, ageHours: number): number {
+  if (ageHours < 0.1) return 0;
+  const totalEngagement = likes + comments * 2;
+  const velocity = totalEngagement / Math.max(0.5, ageHours);
+  // Logarithmic scale to prevent runaway viral content
+  return Math.min(20, Math.log2(1 + velocity) * 5);
+}
+
+// Content freshness tiers for more dynamic feed
+function getRecencyScore(ageHours: number): number {
+  if (ageHours < 1) return 50;       // Very fresh: massive boost
+  if (ageHours < 3) return 40;       // Fresh: strong boost
+  if (ageHours < 6) return 30;       // Recent: good boost
+  if (ageHours < 12) return 18;      // Same day: moderate
+  if (ageHours < 24) return 10;      // Yesterday-ish: mild
+  if (ageHours < 48) return 5;       // 2 days: small
+  return Math.max(0, 3 * Math.exp(-(ageHours - 48) / 72));  // Slow decay after
+}
+
 function scorePost(
   post: any,
   friendIds: Set<string>,
@@ -55,85 +85,111 @@ function scorePost(
 
   let score = 0;
   const isFriend = friendIds.has(post.user_id) || post.user_id === userId;
+  const postDate = new Date(post.created_at);
+  const ageMs = Date.now() - postDate.getTime();
+  const ageHours = ageMs / (1000 * 60 * 60);
 
-  // 1. Engagement (capped)
+  // 1. RECENCY — tiered for more dynamic feel
+  const recencyScore = getRecencyScore(ageHours);
+  factors.recency = recencyScore;
+  score += recencyScore;
+
+  // 2. ENGAGEMENT VELOCITY (trending detection)
+  const velocity = getEngagementVelocity(
+    post.likes_count || 0,
+    post.comments_count || 0,
+    ageHours
+  );
+  factors.velocity = velocity;
+  score += velocity;
+
+  // 3. Engagement (capped, with viral reduction)
   const rawEngagement =
     (post.likes_count || 0) * 1.0 + (post.comments_count || 0) * 2.5;
-  const engagementCap = config.viralContentReduce ? 20 : 40;
-  const engagementScore = Math.min(engagementCap, rawEngagement * 2);
+  const engagementCap = config.viralContentReduce ? 15 : 30;
+  const engagementScore = Math.min(engagementCap, rawEngagement * 1.5);
   factors.engagement = engagementScore;
   score += engagementScore;
 
-  // 2. Social proximity
+  // 4. Social proximity
   const friendWeight = config.friendsWeight / 100;
   if (config.feedAlgorithm === "friends_first") {
     if (isFriend) {
-      factors.friend_boost = 50;
-      score += 50;
+      factors.friend_boost = 45;
+      score += 45;
     }
   } else {
     const interactions = friendInteractions.get(post.user_id) || 0;
-    const socialScore = Math.min(30, interactions * 5) * friendWeight;
+    const socialScore = Math.min(25, interactions * 4) * friendWeight;
+    if (isFriend) {
+      factors.friend_base = 8;
+      score += 8; // Base friend boost even without interactions
+    }
     factors.social = socialScore;
     score += socialScore;
   }
 
-  // 3. Discovery
+  // 5. Discovery boost
   const discoveryWeight = config.discoveryWeight / 100;
   if (!isFriend) {
-    factors.discovery = 10 * discoveryWeight;
-    score += 10 * discoveryWeight;
+    // Newer discovery content gets a bigger boost
+    const discoveryRecency = ageHours < 6 ? 15 : 8;
+    factors.discovery = discoveryRecency * discoveryWeight;
+    score += discoveryRecency * discoveryWeight;
   }
 
-  // 4. Rich content
+  // 6. Rich content bonus
   if (post.image_url) {
-    factors.media = 12;
-    score += 12;
+    factors.media = 14;
+    score += 14;
   }
   const textLen = (post.body || "").length;
-  if (textLen > 50 && textLen < 500) {
-    factors.text_quality = 6;
-    score += 6;
+  if (textLen > 80 && textLen < 600) {
+    factors.text_quality = 8;
+    score += 8;
+  } else if (textLen > 20 && textLen <= 80) {
+    factors.text_quality = 4;
+    score += 4;
   }
 
-  // 5. Recency (12h half-life)
-  const ageMs = Date.now() - new Date(post.created_at).getTime();
-  const ageHours = ageMs / (1000 * 60 * 60);
-  const recencyScore = Math.max(0, 25 * Math.exp(-ageHours / 12));
-  factors.recency = recencyScore;
-  score += recencyScore;
+  // 7. Time-of-day boost
+  const todMultiplier = getTimeOfDayMultiplier(postDate);
+  const todBoost = (todMultiplier - 1) * 15;
+  factors.time_of_day = todBoost;
+  score += todBoost;
 
-  // 6. Own posts
+  // 8. Own posts (mild boost)
   if (post.user_id === userId) {
-    factors.own = 3;
-    score += 3;
+    factors.own = 5;
+    score += 5;
   }
 
-  // 7. Anti-spam
-  const spamPenalty = getSpamScore(post.body || "") * 0.5;
+  // 9. Anti-spam
+  const spamPenalty = getSpamScore(post.body || "") * 0.6;
   factors.spam_penalty = -spamPenalty;
   score -= spamPenalty;
 
-  // 8. Diversity penalty
+  // 10. Diversity penalty (progressive)
   const authorCount = seenAuthors.get(post.user_id) || 0;
   if (authorCount > 0) {
     const diversityPenalty =
-      (config.diversityBoost / 100) * 12 * authorCount;
+      (config.diversityBoost / 100) * (8 + 6 * authorCount);
     factors.diversity_penalty = -diversityPenalty;
     score -= diversityPenalty;
   }
 
-  // 9. Trust score boost (authors with high trust get a bump)
-  const trustBoost = ((trustScore - 50) / 50) * 10; // -10 to +10
+  // 11. Trust score boost
+  const trustBoost = ((trustScore - 50) / 50) * 8;
   factors.trust = trustBoost;
   score += trustBoost;
 
-  // 10. Controlled randomization
-  const rand = Math.random() * 6;
+  // 12. Controlled randomization (higher for fresh content)
+  const randRange = ageHours < 6 ? 10 : 5;
+  const rand = Math.random() * randRange;
   factors.random = rand;
   score += rand;
 
-  // 11. Muted keywords filter
+  // 13. Muted keywords filter
   if (config.mutedKeywords.length > 0) {
     const lower = (post.body || "").toLowerCase();
     if (config.mutedKeywords.some((kw: string) => lower.includes(kw))) {

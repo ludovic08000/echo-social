@@ -117,6 +117,34 @@ export function getDiversityPenalty(
   return count * factor;
 }
 
+// ── Time-of-day activity multiplier ──
+function getTimeOfDayMultiplier(postDate: Date): number {
+  const hour = postDate.getHours();
+  if ((hour >= 7 && hour <= 9) || (hour >= 12 && hour <= 14) || (hour >= 18 && hour <= 23)) return 1.3;
+  if (hour >= 10 && hour <= 11) return 1.1;
+  if (hour >= 15 && hour <= 17) return 1.0;
+  return 0.7;
+}
+
+// ── Engagement velocity (trending detection) ──
+function getEngagementVelocity(likes: number, comments: number, ageHours: number): number {
+  if (ageHours < 0.1) return 0;
+  const total = likes + comments * 2;
+  const velocity = total / Math.max(0.5, ageHours);
+  return Math.min(20, Math.log2(1 + velocity) * 5);
+}
+
+// ── Tiered recency for dynamic feed ──
+function getRecencyScore(ageHours: number): number {
+  if (ageHours < 1) return 50;
+  if (ageHours < 3) return 40;
+  if (ageHours < 6) return 30;
+  if (ageHours < 12) return 18;
+  if (ageHours < 24) return 10;
+  if (ageHours < 48) return 5;
+  return Math.max(0, 3 * Math.exp(-(ageHours - 48) / 72));
+}
+
 // ── Main scoring function ──
 export function scorePost(
   post: {
@@ -132,62 +160,67 @@ export function scorePost(
 ): number {
   const { prefs, weights } = ctx;
   
-  // Chronological mode = no scoring
   if (prefs.feedAlgorithm === 'chronological') {
     return -new Date(post.created_at).getTime();
   }
 
   let score = 0;
   const isFriend = ctx.friendInteractionCounts.has(post.user_id) || post.user_id === ctx.userId;
+  const postDate = new Date(post.created_at);
+  const ageMs = Date.now() - postDate.getTime();
+  const ageHours = ageMs / (1000 * 60 * 60);
 
-  // ── 1. ENGAGEMENT (capped to prevent viral domination) ──
+  // ── 1. RECENCY (tiered for dynamism) ──
+  score += getRecencyScore(ageHours);
+
+  // ── 2. ENGAGEMENT VELOCITY (trending) ──
+  score += getEngagementVelocity(post.likes_count, post.comments_count, ageHours);
+
+  // ── 3. ENGAGEMENT (capped) ──
   const rawEngagement = post.likes_count * 1.0 + post.comments_count * 2.5;
-  let engagementCap = 40;
-  if (prefs.viralContentReduce) engagementCap = 20; // Reduce viral content influence
-  score += Math.min(engagementCap, rawEngagement * 2);
+  const engagementCap = prefs.viralContentReduce ? 15 : 30;
+  score += Math.min(engagementCap, rawEngagement * 1.5);
 
-  // ── 2. SOCIAL PROXIMITY (weighted by user preference) ──
+  // ── 4. SOCIAL PROXIMITY ──
   const friendWeight = weights.friends / 100;
   if (prefs.feedAlgorithm === 'friends_first') {
-    // Friends first mode: massive boost
-    if (isFriend) score += 50;
+    if (isFriend) score += 45;
   } else {
     const interactionCount = ctx.friendInteractionCounts.get(post.user_id) || 0;
-    score += Math.min(30, interactionCount * 5) * friendWeight;
+    score += Math.min(25, interactionCount * 4) * friendWeight;
+    if (isFriend) score += 8; // Base friend boost
   }
 
-  // ── 3. DISCOVERY BOOST (for non-friends when discovery weight is high) ──
+  // ── 5. DISCOVERY BOOST ──
   const discoveryWeight = weights.discovery / 100;
   if (!isFriend) {
-    score += 10 * discoveryWeight;
+    const discoveryRecency = ageHours < 6 ? 15 : 8;
+    score += discoveryRecency * discoveryWeight;
   }
 
-  // ── 4. RICH CONTENT ──
-  if (post.image_url) score += 12;
+  // ── 6. RICH CONTENT ──
+  if (post.image_url) score += 14;
   const textLen = post.body.length;
-  if (textLen > 50 && textLen < 500) score += 6;
+  if (textLen > 80 && textLen < 600) score += 8;
+  else if (textLen > 20 && textLen <= 80) score += 4;
 
-  // ── 5. RECENCY (strong boost, 6h half-life) ──
-  const ageMs = Date.now() - new Date(post.created_at).getTime();
-  const ageHours = ageMs / (1000 * 60 * 60);
-  score += Math.max(0, 60 * Math.exp(-ageHours / 6));
+  // ── 7. TIME-OF-DAY BOOST ──
+  score += (getTimeOfDayMultiplier(postDate) - 1) * 15;
 
-  // ── 6. OWN POSTS (mild boost) ──
-  if (post.user_id === ctx.userId) score += 3;
+  // ── 8. OWN POSTS ──
+  if (post.user_id === ctx.userId) score += 5;
 
-  // ── 7. ANTI-SPAM PENALTY ──
-  const spamScore = getSpamScore(post.body);
-  score -= spamScore * 0.5;
+  // ── 9. ANTI-SPAM ──
+  score -= getSpamScore(post.body) * 0.6;
 
-  // ── 8. DIVERSITY PENALTY (anti-bias) ──
-  // Penalize seeing too many posts from same author
+  // ── 10. DIVERSITY PENALTY (progressive) ──
   const authorAppearances = ctx.seenAuthors.has(post.user_id) ? 1 : 0;
   if (authorAppearances > 0) {
-    score -= (prefs.diversityBoost / 100) * 12 * authorAppearances;
+    score -= (prefs.diversityBoost / 100) * (8 + 6 * authorAppearances);
   }
 
-  // ── 9. CONTROLLED RANDOMIZATION ──
-  score += Math.random() * 6;
+  // ── 11. CONTROLLED RANDOMIZATION (higher for fresh content) ──
+  score += Math.random() * (ageHours < 6 ? 10 : 5);
 
   return score;
 }
