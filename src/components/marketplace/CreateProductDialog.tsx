@@ -83,7 +83,77 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
     onSuccess: (url) => setThumbnailUrl(url),
   });
 
-  const handleSubmit = () => {
+  const generateAIDescription = async () => {
+    if (!title.trim()) {
+      toast.error('Remplissez le titre du produit d\'abord');
+      return;
+    }
+    setAiGenerating(true);
+    setAiResult('');
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/seller-ai-coach`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({
+            action: 'generate_description',
+            productInfo: title.trim() + (description.trim() ? ` — ${description.trim()}` : ''),
+            category,
+            price: price ? parseFloat(price) : undefined,
+          }),
+        }
+      );
+      if (!response.ok) throw new Error('Erreur IA');
+      if (!response.body) throw new Error('Pas de réponse');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let full = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buffer.indexOf('\n')) !== -1) {
+          let line = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 1);
+          if (line.endsWith('\r')) line = line.slice(0, -1);
+          if (!line.startsWith('data: ') || line.trim() === '') continue;
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === '[DONE]') break;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) {
+              full += content;
+              setAiResult(full);
+            }
+          } catch {}
+        }
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'Erreur lors de la génération');
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
+  const applyAIDescription = () => {
+    // Strip markdown formatting for clean text in the description field
+    const clean = aiResult
+      .replace(/#{1,6}\s/g, '')
+      .replace(/\*\*/g, '')
+      .replace(/\*/g, '')
+      .trim();
+    setDescription(clean);
+    setAiResult('');
+    toast.success('Description appliquée !');
+  };
+
     if (!title.trim() || !price) return;
     createProduct.mutate(
       {
