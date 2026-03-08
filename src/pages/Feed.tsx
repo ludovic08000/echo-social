@@ -20,15 +20,13 @@ import { Button } from '@/components/ui/button';
 import { useActiveAds } from '@/hooks/useAdCampaigns';
 import { useCustomBackground } from '@/hooks/useCustomBackground';
 
-const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'live' | 'media' | 'marketplace'> = {
-  1: 'live',
+const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'media' | 'marketplace'> = {
   2: 'marketplace',
   4: 'suggestions_city',
   6: 'suggestions',
   9: 'media',
   12: 'marketplace',
   15: 'reels',
-  19: 'live',
   23: 'marketplace',
   27: 'suggestions',
 };
@@ -135,7 +133,6 @@ export default function Feed() {
         viewport={{ once: true, margin: '-50px' }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
       >
-        {type === 'live' && <FeedLiveSection />}
         {type === 'reels' && <FeedReelsSection />}
         {type === 'suggestions' && <FriendSuggestions />}
         {type === 'suggestions_city' && <FriendSuggestionsByCity />}
@@ -200,6 +197,15 @@ export default function Feed() {
               className="px-4"
             >
               <StoriesBar />
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.05 }}
+              className="px-4"
+            >
+              <FeedLiveSection />
             </motion.div>
 
             <motion.div
