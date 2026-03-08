@@ -168,6 +168,7 @@ export function useMessages(conversationId: string) {
         .from('messages')
         .select('*')
         .eq('conversation_id', conversationId)
+        .in('status', ['delivered', 'pending'])
         .order('created_at', { ascending: true });
 
       if (error) throw error;
