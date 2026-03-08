@@ -293,13 +293,13 @@ export default function Marketplace() {
                   key={opt.value}
                   onClick={() => setSortBy(opt.value)}
                   className={cn(
-                    'flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all flex-shrink-0 border',
+                    'flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-semibold transition-all duration-300 flex-shrink-0 border backdrop-blur-sm',
                     sortBy === opt.value
-                      ? 'border-primary/30 bg-primary/8 text-primary'
-                      : 'border-border/40 text-muted-foreground hover:border-border'
+                      ? 'border-primary/40 bg-primary/10 text-primary shadow-[0_2px_12px_hsl(var(--primary)/0.15)]'
+                      : 'border-border/30 bg-card/60 text-muted-foreground hover:border-primary/20 hover:bg-card/90 hover:text-foreground'
                   )}
                 >
-                  <opt.icon className="w-3 h-3" />
+                  <opt.icon className="w-3.5 h-3.5" />
                   {opt.label}
                 </button>
               ))}
