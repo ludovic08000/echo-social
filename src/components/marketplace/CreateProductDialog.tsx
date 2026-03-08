@@ -164,7 +164,10 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
   };
 
   const handleSubmit = () => {
-    if (!title.trim() || !price) return;
+    if (!title.trim() || !price || !weightGrams) {
+      if (!weightGrams) toast.error('Veuillez indiquer le poids du produit');
+      return;
+    }
     createProduct.mutate(
       {
         seller_id: sellerId,
@@ -172,15 +175,16 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
         description: description.trim() || undefined,
         price: parseFloat(price),
         category,
-        product_type: productType,
+        product_type: 'physical',
         thumbnail_url: thumbnailUrl || undefined,
         images: thumbnailUrl ? [thumbnailUrl] : undefined,
         stock_quantity: stock ? parseInt(stock) : undefined,
         size: size || undefined,
         color: color || undefined,
+        condition,
         shipping_type: shippingType,
         shipping_price: shippingPrice ? parseFloat(shippingPrice) : 0,
-        weight_grams: weightGrams ? parseInt(weightGrams) : undefined,
+        weight_grams: parseInt(weightGrams),
         country,
         region: region || undefined,
         city: city || undefined,
