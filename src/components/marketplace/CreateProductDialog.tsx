@@ -61,7 +61,8 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [category, setCategory] = useState('general');
-  const [productType, setProductType] = useState<'physical' | 'digital' | 'service'>('physical');
+  const [productType] = useState<'physical'>('physical');
+  const [condition, setCondition] = useState('good');
   const [stock, setStock] = useState('');
   const [thumbnailUrl, setThumbnailUrl] = useState('');
   const [size, setSize] = useState('');
