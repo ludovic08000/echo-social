@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
-import md5Lib from "npm:blueimp-md5@2.19.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,29 +9,7 @@ const corsHeaders = {
 
 const MR_WSDL = "https://api.mondialrelay.com/Web_Services.asmx";
 
-function md5(input: string): string {
-  // Simple MD5 for signature — use Web Crypto
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  let hash = 0x67452301;
-  let h1 = 0xefcdab89;
-  let h2 = 0x98badcfe;
-  let h3 = 0x10325476;
-  // Fallback: we'll use a proper approach with crypto
-  return input; // placeholder — we'll use the real crypto below
-}
-
-// Mondial Relay uses MD5 for signature verification
-async function computeMD5(input: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const hashBuffer = await crypto.subtle.digest("MD-5", data).catch(() => null);
-  
-  // MD5 is not available in Web Crypto, use a manual implementation
-  return md5Hex(input);
-}
-
-// Compact MD5 implementation
+// Compact MD5 implementation (Web Crypto does not support MD5)
 function md5Hex(str: string): string {
   function md5cycle(x: number[], k: number[]) {
     let a = x[0], b = x[1], c = x[2], d = x[3];
@@ -168,7 +145,7 @@ function md5Hex(str: string): string {
 
 function buildSignature(params: Record<string, string>, privateKey: string): string {
   const concat = Object.values(params).join('') + privateKey;
-  return md5Lib(concat).toUpperCase();
+  return md5Hex(concat);
 }
 
 async function callMondialRelay(method: string, params: Record<string, string>): Promise<string> {
@@ -399,7 +376,7 @@ serve(async (req) => {
         'TAvisage', 'TReprise', 'Montage', 'TRDV', 'Assurance', 'Instructions', 'Texte',
       ] as const;
       const creationSignatureBase = creationEtiquetteOrder.map((key) => params[key] ?? '').join('');
-      params.Security = md5Lib(`${creationSignatureBase}${privateKey}`).toUpperCase();
+      params.Security = md5Hex(`${creationSignatureBase}${privateKey}`);
 
       const xml = await callMondialRelay("WSI2_CreationEtiquette", params);
       const stat = extractXmlValue(xml, 'STAT');
@@ -409,7 +386,7 @@ serve(async (req) => {
       if (trackingNumber) {
         // Mondial Relay requires a CRC hash to access the PDF label
         const crcBase = `${enseigne} ${trackingNumber} FR A4`;
-        const crc = md5Lib(crcBase + privateKey).toUpperCase();
+        const crc = md5Hex(crcBase + privateKey);
         labelUrl = `https://www.mondialrelay.com/ww2/PDF/StickerMaker2.aspx?ens=${enseigne}&expedition=${trackingNumber}&lg=FR&format=A4&crc=${crc}`;
       }
 
