@@ -16,6 +16,7 @@ export function FeedRightSidebar() {
   const { user } = useAuth();
   const { data: friendships } = useFriendships();
   const { data: conversations } = useConversations();
+  const { data: liveStreams } = useLiveStreams();
   const [search, setSearch] = useState('');
   const { isDesktop } = useScreenSize();
   const { openConversation } = useChatWidget();
