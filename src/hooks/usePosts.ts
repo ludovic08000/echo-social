@@ -35,16 +35,15 @@ export function usePosts() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
+  // Realtime: only listen for new posts (INSERT), not every like/comment change
+  // Likes/comments counts update on next staleTime refresh — saves massive DB reads
   useEffect(() => {
     const channel = supabase
       .channel('posts-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, () => {
         queryClient.invalidateQueries({ queryKey: ['posts'] });
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, () => {
-        queryClient.invalidateQueries({ queryKey: ['posts'] });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, () => {
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'posts' }, () => {
         queryClient.invalidateQueries({ queryKey: ['posts'] });
       })
       .subscribe();
