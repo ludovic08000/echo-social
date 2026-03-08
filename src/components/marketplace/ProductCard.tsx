@@ -25,8 +25,8 @@ export function ProductCard({ product, compact }: ProductCardProps) {
     <div className="group relative">
       {/* Image */}
       <Link to={`/marketplace/product/${product.id}`} className={cn(
-        "block relative overflow-hidden rounded-2xl bg-muted",
-        compact ? "aspect-[4/3]" : "aspect-[3/4]"
+        "block relative overflow-hidden bg-muted",
+        compact ? "aspect-square rounded-xl" : "aspect-[3/4] rounded-2xl"
       )}>
         <img
           src={thumbnail}
