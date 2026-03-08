@@ -159,6 +159,10 @@ export function useCall(options?: UseCallOptions) {
   }, [options]);
 
   const endCall = useCallback(() => {
+    const wasMissed = callStateRef.current !== 'connected';
+    const endDuration = durationRef.current;
+    const endType = callTypeRef.current;
+
     if (roomRef.current) {
       roomRef.current.disconnect();
       roomRef.current = null;
@@ -168,7 +172,8 @@ export function useCall(options?: UseCallOptions) {
     setCallState('idle');
     setDuration(0);
     releaseWakeLock();
-  }, []);
+    options?.onCallEnded?.({ type: endType, duration: endDuration, wasMissed });
+  }, [options]);
 
   const toggleMute = useCallback(() => {
     const room = roomRef.current;
