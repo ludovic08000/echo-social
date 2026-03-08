@@ -202,7 +202,7 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
     );
   }
 
-  const needsPackingVideo = (order: any) => order.total >= 100 && order.packing_video_status !== 'verified';
+  const needsPackingVideo = (_order: any) => false; // Temporarily disabled for testing
 
   const renderPackingVideoSection = (_order: any) => {
     // Temporarily disabled for testing
