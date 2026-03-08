@@ -147,7 +147,7 @@ export function SellerDashboard() {
     }
   };
 
-
+  const markAsDelivered = async (order: any) => {
     setMarkingDelivered(order.id);
     try {
       // Update order status to delivered
