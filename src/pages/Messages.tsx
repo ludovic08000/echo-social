@@ -572,8 +572,8 @@ function ShareContentPicker({ onShare, onClose }: { onShare: (text: string) => v
         const { data } = await supabase.from('posts').select('id, body, image_url, created_at').order('created_at', { ascending: false }).limit(10);
         setItems(data || []);
       } else if (tab === 'products') {
-        const { data } = await supabase.from('products').select('id, title, price, image_urls, created_at').eq('status', 'active').order('created_at', { ascending: false }).limit(10);
-        setItems(data || []);
+        const { data } = await supabase.from('products').select('id, title, price, thumbnail_url, created_at').eq('is_active', true).order('created_at', { ascending: false }).limit(10);
+        setItems((data as any[]) || []);
       } else {
         const { data } = await supabase.from('live_streams').select('id, title, user_id, is_active, created_at').eq('is_active', true).order('created_at', { ascending: false }).limit(10);
         setItems(data || []);
