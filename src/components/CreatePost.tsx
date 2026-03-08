@@ -153,12 +153,26 @@ export function CreatePost() {
       }
 
       await createPost.mutateAsync({ body: body.trim(), imageUrl, expiresAt, publishAt });
+
+      // Also create a replay entry if toggle is on
+      if (publishAsReplay && mediaType === 'video' && imageUrl) {
+        await supabase.from('live_streams').insert({
+          user_id: user.id,
+          title: replayTitle.trim() || body.trim() || 'Replay',
+          is_active: false,
+          recording_url: imageUrl,
+          ended_at: new Date().toISOString(),
+          started_at: new Date().toISOString(),
+        });
+      }
       
       setBody('');
       removeMedia();
       setExpanded(false);
       setExpiryHours(null);
       setCapsuleDays(null);
+      setPublishAsReplay(false);
+      setReplayTitle('');
       
       toast({
         title: capsuleDays 
