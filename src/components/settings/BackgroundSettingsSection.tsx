@@ -46,18 +46,19 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
       if (!user) throw new Error('Not authenticated');
       const ext = file.name.split('.').pop();
       const fileName = `bg-${type}-${Date.now()}.${ext}`;
-      const path = `${user.id}/${fileName}`;
+      const storagePath = `${user.id}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(path, file, { contentType: file.type });
+        .from('backgrounds')
+        .upload(storagePath, file, { contentType: file.type, upsert: true });
 
       if (uploadError) throw uploadError;
 
-      const { data } = supabase.storage.from('avatars').getPublicUrl(path);
-      onUpdate(data.publicUrl);
+      // Store the storage path (not a public URL) — signed URLs will be generated on read
+      onUpdate(`storage:${storagePath}`);
       toast.success(`Fond ${label} mis à jour !`);
     } catch (err) {
+      console.error('Background upload error:', err);
       toast.error('Erreur lors de l\'upload');
     } finally {
       setUploading(false);
