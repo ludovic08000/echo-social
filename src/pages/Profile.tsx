@@ -1,6 +1,6 @@
 import { useParams, Link } from 'react-router-dom';
 import { useCustomBackground } from '@/hooks/useCustomBackground';
-import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake, ShieldAlert, Crown } from 'lucide-react';
+import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake, ShieldAlert, Crown, LogOut } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
 import { CreatePost } from '@/components/CreatePost';
@@ -618,7 +618,7 @@ export default function Profile() {
                    {isCreator && <TipButton creatorId={userId!} creatorName={profile.name} />}
                   <Button 
                     variant="secondary" 
-                    className="flex-1 rounded-xl h-10 text-sm"
+                    className="rounded-xl h-10 text-sm"
                     onClick={() => {
                       setActiveTab('albums');
                       setSelectedAlbum(null);
@@ -626,6 +626,17 @@ export default function Profile() {
                   >
                     <FolderOpen className="w-4 h-4 mr-2" />
                     Mes albums
+                  </Button>
+                  <Button 
+                    variant="destructive" 
+                    className="rounded-xl h-10 text-sm"
+                    onClick={async () => {
+                      await supabase.auth.signOut();
+                      navigate('/login');
+                    }}
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Déconnexion
                   </Button>
                 </>
               ) : (
