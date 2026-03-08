@@ -3,11 +3,15 @@ import { useSellerProfile, useCreateSellerProfile, useSellerProducts, useDeleteP
 import { useSellerOrders } from '@/hooks/useSellerOrders';
 import { CreateProductDialog } from './CreateProductDialog';
 import { OrderTracking } from './OrderTracking';
+import { SalesAnalytics } from './SalesAnalytics';
+import { OrdersTable } from './OrdersTable';
+import { AIProductHelper } from './AIProductHelper';
+import { AISalesCoach } from './AISalesCoach';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Store, Package, TrendingUp, Trash2, Eye, Truck, Loader2, CheckCircle2, Video, ShieldCheck, ShieldAlert, Upload, FileText } from 'lucide-react';
+import { Store, Package, TrendingUp, Trash2, Eye, Truck, Loader2, CheckCircle2, Video, ShieldCheck, ShieldAlert, Upload, FileText, BarChart3, Bot, Sparkles } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -35,8 +39,8 @@ export function SellerDashboard() {
       weightGrams <= 5000 ? 2.8 : 4.5;
     return Math.round((basePerParcel + weightExtra) * 100) / 100;
   };
-  const [sellerTab, setSellerTab] = useState<'products' | 'orders'>(
-    searchParams.get('sellerTab') === 'orders' ? 'orders' : 'products'
+  const [sellerTab, setSellerTab] = useState<string>(
+    searchParams.get('sellerTab') || 'products'
   );
 
   const paidOrders = useMemo(
@@ -282,15 +286,27 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
         </Card>
       </div>
 
-      <Tabs value={sellerTab} onValueChange={(value) => setSellerTab(value as 'products' | 'orders')}>
-        <TabsList className="w-full">
-          <TabsTrigger value="products" className="flex-1 gap-1.5 text-xs">
-            <Package className="w-3.5 h-3.5" />
+      <Tabs value={sellerTab} onValueChange={setSellerTab}>
+        <TabsList className="w-full grid grid-cols-5">
+          <TabsTrigger value="products" className="gap-1 text-[10px] px-1">
+            <Package className="w-3 h-3" />
             Produits
           </TabsTrigger>
-          <TabsTrigger value="orders" className="flex-1 gap-1.5 text-xs">
-            <Truck className="w-3.5 h-3.5" />
-            Commandes {paidOrders.length > 0 ? `(${paidOrders.length})` : ''}
+          <TabsTrigger value="orders" className="gap-1 text-[10px] px-1">
+            <Truck className="w-3 h-3" />
+            Commandes
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="gap-1 text-[10px] px-1">
+            <BarChart3 className="w-3 h-3" />
+            Stats
+          </TabsTrigger>
+          <TabsTrigger value="ai-desc" className="gap-1 text-[10px] px-1">
+            <Sparkles className="w-3 h-3" />
+            IA Desc
+          </TabsTrigger>
+          <TabsTrigger value="ai-coach" className="gap-1 text-[10px] px-1">
+            <Bot className="w-3 h-3" />
+            Coach
           </TabsTrigger>
         </TabsList>
 
@@ -467,6 +483,31 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
               ))}
             </div>
           )}
+        </TabsContent>
+
+        {/* Analytics Tab */}
+        <TabsContent value="analytics" className="mt-3">
+          <SalesAnalytics
+            orders={orders}
+            totalRevenue={seller.total_revenue || 0}
+            totalSales={seller.total_sales || 0}
+          />
+        </TabsContent>
+
+        {/* AI Description Tab */}
+        <TabsContent value="ai-desc" className="mt-3">
+          <AIProductHelper />
+        </TabsContent>
+
+        {/* AI Coach Tab */}
+        <TabsContent value="ai-coach" className="mt-3">
+          <AISalesCoach
+            sellerName={seller.store_name}
+            totalSales={seller.total_sales || 0}
+            totalRevenue={seller.total_revenue || 0}
+            productCount={products.length}
+            orderCount={paidOrders.length}
+          />
         </TabsContent>
       </Tabs>
 
