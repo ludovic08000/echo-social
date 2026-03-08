@@ -14,8 +14,8 @@ export function CartSheet() {
     const price = item.products?.price ?? 0;
     return sum + price * item.quantity;
   }, 0);
-  const commission = subtotal * 0.15;
-  const total = subtotal;
+  const buyerFee = subtotal * 0.05;
+  const total = subtotal + buyerFee;
 
   return (
     <Sheet>
@@ -94,6 +94,10 @@ export function CartSheet() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Sous-total</span>
                   <span>{subtotal.toFixed(2)}€</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Frais de service (5%)</span>
+                  <span>{buyerFee.toFixed(2)}€</span>
                 </div>
                 <div className="flex justify-between font-bold text-base pt-1">
                   <span>Total</span>
