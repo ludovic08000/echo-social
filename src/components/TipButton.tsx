@@ -7,7 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { useIsCreatorRevenueEnabled } from '@/hooks/usePlatformStats';
+import { useIsCreatorRevenueEnabled, useCreatorEligibility } from '@/hooks/usePlatformStats';
 
 interface TipButtonProps {
   creatorId: string;
