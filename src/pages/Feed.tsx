@@ -152,6 +152,9 @@ export default function Feed() {
 
   return (
     <AppLayout fullWidth>
+      {feedBgStyle && (
+        <div className="fixed inset-0 -z-10 opacity-30" style={feedBgStyle} />
+      )}
       <div className="flex justify-center">
         <div className="w-full flex justify-center gap-6 xl:gap-10">
           <div className="flex-1 max-w-[680px] min-w-0">
