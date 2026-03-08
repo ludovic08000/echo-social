@@ -114,7 +114,7 @@ export default function Signup() {
 
     const fullName = `${firstName.trim()} ${lastName.trim()}`;
     const dobString = format(dateOfBirth, 'yyyy-MM-dd');
-    const { error, data: signUpData } = await signUp(email, password, fullName, dobString);
+    const { error } = await signUp(email, password, fullName, dobString);
 
     if (error) {
       toast({
