@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { Room, RoomEvent, Track, RemoteTrackPublication } from 'livekit-client';
 import { getLiveKitToken } from '@/lib/livekit';
 import { requestMediaPermissions, acquireWakeLock, releaseWakeLock } from '@/lib/platformPermissions';
+import { toast } from 'sonner';
 
 export type CallType = 'audio' | 'video';
 export type CallState = 'idle' | 'connecting' | 'connected' | 'ended';
