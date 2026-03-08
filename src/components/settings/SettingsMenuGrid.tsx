@@ -70,6 +70,7 @@ export function SettingsMenuGrid({ activeTab, onTabChange }: SettingsMenuGridPro
     { id: 'pages', label: t('settings.pages'), desc: t('settings.pagesDesc'), icon: FileText },
     { id: 'privacy', label: t('settings.privacy'), desc: t('settings.privacyDesc'), icon: Shield },
     { id: 'notifications', label: t('settings.notifications'), desc: t('settings.notificationsDesc'), icon: Bell },
+    { id: 'parental', label: 'Contrôle parental', desc: 'Code PIN et filtrage de contenu', icon: Baby },
   ];
 
   return (

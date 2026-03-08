@@ -131,6 +131,18 @@ export default function Settings() {
             </section>
           </div>
         )}
+
+        {activeTab === 'parental' && (
+          <div className="animate-fade-in">
+            <section className="premium-card p-5">
+              <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                <Baby className="w-4 h-4 text-pink-500" />
+                Contrôle parental
+              </h2>
+              <ParentalControlPanel />
+            </section>
+          </div>
+        )}
       </div>
     </AppLayout>
   );
