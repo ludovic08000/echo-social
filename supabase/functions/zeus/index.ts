@@ -730,7 +730,7 @@ Date et heure : ${new Date().toLocaleString("fr-FR")}`;
     
     // First call — may trigger tool use
     let resp = await callAI(apiKey, {
-      model: "google/gemini-2.5-pro",
+      model: "google/gemini-3.1-pro-preview",
       messages,
       tools: ZEUS_TOOLS,
       stream: false,
