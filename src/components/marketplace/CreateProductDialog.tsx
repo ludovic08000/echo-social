@@ -122,6 +122,7 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
     setColor('');
     setShippingType('standard');
     setShippingPrice('');
+    setWeightGrams('');
     setCountry('FR');
     setRegion('');
     setCity('');
