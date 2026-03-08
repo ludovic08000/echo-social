@@ -358,14 +358,13 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   useEffect(() => {
     if (!negotiationProduct && convNegotiations.length > 0) {
       const neg = convNegotiations[0];
-      const prod = neg.products;
-      if (prod) {
+      if (neg.product) {
         setNegotiationContext({
-          id: prod.id,
-          title: prod.title,
-          price: prod.price,
-          thumbnail_url: prod.thumbnail_url,
-          seller_profiles: prod.seller_profiles,
+          id: neg.product.id,
+          title: neg.product.title,
+          price: neg.product.price,
+          thumbnail_url: neg.product.thumbnail_url,
+          seller_profiles: neg.seller_profile,
         }, conversationId);
       }
     }
