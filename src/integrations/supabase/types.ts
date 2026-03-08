@@ -2230,6 +2230,7 @@ export type Database = {
           title: string
           updated_at: string
           view_count: number
+          weight_grams: number | null
         }
         Insert: {
           category?: string
@@ -2260,6 +2261,7 @@ export type Database = {
           title: string
           updated_at?: string
           view_count?: number
+          weight_grams?: number | null
         }
         Update: {
           category?: string
@@ -2290,6 +2292,7 @@ export type Database = {
           title?: string
           updated_at?: string
           view_count?: number
+          weight_grams?: number | null
         }
         Relationships: [
           {
