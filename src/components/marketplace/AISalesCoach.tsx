@@ -88,7 +88,7 @@ export function AISalesCoach({
 
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/seller-ai-coach`,
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/zeus`,
         {
           method: 'POST',
           headers: {
