@@ -304,7 +304,7 @@ export function SellerDashboard() {
                     </div>
 
                     {/* Actions */}
-                    {order.status === 'paid' && (
+                    {(order.status === 'paid' || (order.status === 'shipped' && !order.shipping_label_url)) && (
                       <Button
                         size="sm"
                         className="w-full"
@@ -316,7 +316,7 @@ export function SellerDashboard() {
                         ) : (
                           <Truck className="w-4 h-4 mr-2" />
                         )}
-                        Éditer & créer étiquette Mondial Relay
+                        {order.status === 'shipped' ? 'Régénérer l’étiquette Mondial Relay' : 'Éditer & créer étiquette Mondial Relay'}
                       </Button>
                     )}
 

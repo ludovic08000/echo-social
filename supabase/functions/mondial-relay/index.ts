@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
-import md5 from "npm:blueimp-md5@2.19.0";
+import md5Lib from "npm:blueimp-md5@2.19.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -168,7 +168,7 @@ function md5Hex(str: string): string {
 
 function buildSignature(params: Record<string, string>, privateKey: string): string {
   const concat = Object.values(params).join('') + privateKey;
-  return md5(concat).toUpperCase();
+  return md5Lib(concat).toUpperCase();
 }
 
 async function callMondialRelay(method: string, params: Record<string, string>): Promise<string> {
@@ -399,7 +399,7 @@ serve(async (req) => {
         'TAvisage', 'TReprise', 'Montage', 'TRDV', 'Assurance', 'Instructions', 'Texte',
       ] as const;
       const creationSignatureBase = creationEtiquetteOrder.map((key) => params[key] ?? '').join('');
-      params.Security = md5(`${creationSignatureBase}${privateKey}`).toUpperCase();
+      params.Security = md5Lib(`${creationSignatureBase}${privateKey}`).toUpperCase();
 
       const xml = await callMondialRelay("WSI2_CreationEtiquette", params);
       const stat = extractXmlValue(xml, 'STAT');
