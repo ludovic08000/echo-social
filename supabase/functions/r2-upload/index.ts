@@ -41,11 +41,10 @@ Deno.serve(async (req) => {
       throw new Error("R2 configuration incomplete");
     }
 
-    if (accessKeyId.length !== 32) {
-      throw new Error("Invalid R2_ACCESS_KEY_ID format (expected 32 chars)");
-    }
-
-    const endpoint = `https://${accountId}.r2.cloudflarestorage.com`;
+    // Support regional R2 endpoints (e.g. eu.r2.cloudflarestorage.com)
+    const r2Region = Deno.env.get("R2_REGION")?.trim() || "";
+    const regionPrefix = r2Region ? `${r2Region}.` : "";
+    const endpoint = `https://${accountId}.${regionPrefix}r2.cloudflarestorage.com`;
 
     // --- DELETE ---
     if (req.method === "DELETE") {
@@ -65,7 +64,7 @@ Deno.serve(async (req) => {
       const credentialScope = `${shortDate}/${region}/s3/aws4_request`;
 
       const emptyHash = await sha256Hex(new Uint8Array(0));
-      const host = `${accountId}.r2.cloudflarestorage.com`;
+      const host = `${accountId}.${regionPrefix}r2.cloudflarestorage.com`;
       const headers: Record<string, string> = {
         host,
         "x-amz-content-sha256": emptyHash,
@@ -106,7 +105,7 @@ Deno.serve(async (req) => {
 
     const payloadHash = await sha256Hex(new Uint8Array(fileBuffer));
 
-    const host = `${accountId}.r2.cloudflarestorage.com`;
+    const host = `${accountId}.${regionPrefix}r2.cloudflarestorage.com`;
     const headers: Record<string, string> = {
       host,
       "x-amz-content-sha256": payloadHash,
