@@ -74,8 +74,8 @@ Deno.serve(async (req) => {
       const { path } = await req.json();
       if (!path) throw new Error("No path provided");
 
-      // Security: only allow deleting own files
-      if (!path.includes(`/${user.id}/`)) {
+      // Security: only allow deleting own files (check both old and new path formats)
+      if (!path.includes(`/${user.id}/`) && !path.includes(`${userFolder}/`)) {
         throw new Error("Unauthorized: can only delete own files");
       }
 
