@@ -1661,29 +1661,49 @@ function ZeusSection() {
     return `### ⚡ Réponse\n\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``;
   };
 
+  // Keep conversation history for admin chat context
+  const chatHistory = useRef<{role: string; content: string}[]>([]);
+
+  const streamSSE = async (resp: Response, prefix = '') => {
+    let content = ''; const reader = resp.body!.getReader(); const decoder = new TextDecoder(); let buf = '';
+    while (true) { const { done, value } = await reader.read(); if (done) break; buf += decoder.decode(value, { stream: true }); let idx;
+      while ((idx = buf.indexOf('\n')) !== -1) { let line = buf.slice(0, idx); buf = buf.slice(idx + 1); if (line.endsWith('\r')) line = line.slice(0, -1); if (!line.startsWith('data: ')) continue; const j = line.slice(6).trim(); if (j === '[DONE]') break;
+        try { const c = JSON.parse(j).choices?.[0]?.delta?.content; if (c) { content += c; setMessages(p => { const last = p[p.length-1]; if (last?.role === 'assistant') return p.map((m,i) => i === p.length-1 ? {...m, content: prefix + content} : m); return [...p, {role:'assistant' as const, content: prefix + content}]; }); } } catch {} } }
+    return content;
+  };
+
   const send = useCallback(async () => {
     const text = input.trim(); if (!text || streaming) return;
     setInput(''); setMessages(p => [...p, { role: 'user', content: text }]); setStreaming(true);
     try {
       const { domain, action, extra } = inferDomainAction(text);
       if (domain === '_status') {
-        setMessages(p => [...p, { role: 'assistant', content: `### ⚡ Zeus Status\n\n| Domaine | Actions |\n|---|---|\n|**content**|summarize, translate, correct, improve|\n|**post**|improve, formal, casual, shorter, longer|\n|**moderation**|moderate_message|\n|**ads**|chat, generate_ad, moderate_ad|\n|**seller**|generate_description, coach_chat|\n|**photo**|analyze_photo, compare_photos|\n|**agent**|chat agents|\n\n🟢 Opérationnel • 🧠 Gemini 3 Flash` }]);
+        setMessages(p => [...p, { role: 'assistant', content: `### ⚡ Zeus Status\n\n| Domaine | Actions |\n|---|---|\n|**content**|summarize, translate, correct, improve|\n|**post**|improve, formal, casual, shorter, longer|\n|**moderation**|moderate_message|\n|**ads**|chat, generate_ad, moderate_ad|\n|**seller**|generate_description, coach_chat|\n|**photo**|analyze_photo, compare_photos|\n|**agent**|chat agents|\n|**admin**|chat, stats, search_users|\n\n🟢 Opérationnel • 🧠 Gemini 3 Flash` }]);
         setStreaming(false); return;
       }
-      if (domain === 'seller' && action === 'generate_description') {
-        const { data: { session } } = await supabase.auth.getSession();
-        const resp = await fetch(ZEUS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` }, body: JSON.stringify({ domain, action, ...extra }) });
-        if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || 'Erreur');
-        if (resp.headers.get('content-type')?.includes('event-stream')) {
-          let content = ''; const reader = resp.body!.getReader(); const decoder = new TextDecoder(); let buf = '';
-          while (true) { const { done, value } = await reader.read(); if (done) break; buf += decoder.decode(value, { stream: true }); let idx;
-            while ((idx = buf.indexOf('\n')) !== -1) { let line = buf.slice(0, idx); buf = buf.slice(idx + 1); if (line.endsWith('\r')) line = line.slice(0, -1); if (!line.startsWith('data: ')) continue; const j = line.slice(6).trim(); if (j === '[DONE]') break;
-              try { const c = JSON.parse(j).choices?.[0]?.delta?.content; if (c) { content += c; setMessages(p => { const last = p[p.length-1]; if (last?.role === 'assistant') return p.map((m,i) => i === p.length-1 ? {...m, content: `### 📝 Description\n\n${content}`} : m); return [...p, {role:'assistant' as const,content:`### 📝 Description\n\n${content}`}]; }); } } catch {} } }
-          setStreaming(false); return;
-        }
-      }
+
       const { data: { session } } = await supabase.auth.getSession();
-      const resp = await fetch(ZEUS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` }, body: JSON.stringify({ domain, action, ...extra }) });
+      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` };
+
+      // Admin chat: streaming with conversation history
+      if (domain === 'admin' && action === 'chat') {
+        chatHistory.current.push({ role: 'user', content: text });
+        const resp = await fetch(ZEUS_URL, { method: 'POST', headers, body: JSON.stringify({ domain, action, messages: chatHistory.current }) });
+        if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || 'Erreur');
+        const assistantContent = await streamSSE(resp);
+        chatHistory.current.push({ role: 'assistant', content: assistantContent });
+        setStreaming(false); return;
+      }
+
+      // Streaming responses (seller descriptions)
+      if (domain === 'seller' && action === 'generate_description') {
+        const resp = await fetch(ZEUS_URL, { method: 'POST', headers, body: JSON.stringify({ domain, action, ...extra }) });
+        if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || 'Erreur');
+        if (resp.headers.get('content-type')?.includes('event-stream')) { await streamSSE(resp, '### 📝 Description\n\n'); setStreaming(false); return; }
+      }
+
+      // Non-streaming
+      const resp = await fetch(ZEUS_URL, { method: 'POST', headers, body: JSON.stringify({ domain, action, ...extra }) });
       if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || `Erreur ${resp.status}`);
       const data = await resp.json();
       setMessages(p => [...p, { role: 'assistant', content: formatResult(domain, action, data) }]);
