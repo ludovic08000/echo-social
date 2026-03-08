@@ -203,6 +203,9 @@ export function AppearanceSettingsPanel() {
           <Switch checked={animationsEnabled} onCheckedChange={setAnimationsEnabled} />
         </div>
       </div>
+
+      {/* Background customization */}
+      <BackgroundSettingsSection />
     </div>
   );
 }
