@@ -1265,7 +1265,10 @@ function VerificationsSection() {
                   </TableCell>
                   <TableCell>
                     {v.id_document_url ? (
-                      <a href={v.id_document_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline">Voir</a>
+                      <Button size="sm" variant="link" className="text-xs p-0 h-auto" onClick={async () => {
+                        const { data } = await supabase.storage.from('id-documents').createSignedUrl(v.id_document_url, 300);
+                        if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+                      }}>Voir</Button>
                     ) : (
                       <span className="text-xs text-muted-foreground">-</span>
                     )}
