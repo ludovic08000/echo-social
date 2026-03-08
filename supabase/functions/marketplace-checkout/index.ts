@@ -74,7 +74,9 @@ serve(async (req) => {
         .select("id, title, price, seller_id, thumbnail_url, weight_grams, stock_quantity, is_active")
         .in("id", productIds);
 
-      if (prodError || !dbProducts?.length) throw new Error("Produits introuvables");
+      console.log("Product query:", { productIds, prodError, count: dbProducts?.length });
+      if (prodError) throw new Error(`Erreur DB produits: ${prodError.message}`);
+      if (!dbProducts?.length) throw new Error(`Produits introuvables pour IDs: ${productIds.join(", ")}`);
 
       // Verify all products exist and are available
       const verifiedItems = [];
