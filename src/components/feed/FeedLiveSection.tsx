@@ -82,23 +82,11 @@ function LiveCard({ item }: { item: { id: string; title: string; thumbnail_url: 
     <Link
       to={`/live/${item.id}`}
       className="relative flex-shrink-0 w-[110px] h-[160px] rounded-xl overflow-hidden bg-black group"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      onMouseEnter={() => videoRef.current?.play().catch(() => {})}
+      onMouseLeave={() => { if (videoRef.current) { videoRef.current.pause(); videoRef.current.currentTime = 0; } }}
     >
       {/* Background: video preview > thumbnail > gradient placeholder */}
-      {/* Thumbnail image (always shown as base layer if available) */}
-      {(hasThumbnail || hasVideo) && (
-        <img
-          src={item.thumbnail_url || undefined}
-          alt={item.title}
-          loading="lazy"
-          className="absolute inset-0 w-full h-full object-cover"
-          style={{ display: item.thumbnail_url ? 'block' : 'none' }}
-        />
-      )}
-
-      {/* Video only loads on hover for perf */}
-      {hasVideo && isHovering && (
+      {hasVideo ? (
         <video
           ref={videoRef}
           src={item.recording_url!}
@@ -106,12 +94,17 @@ function LiveCard({ item }: { item: { id: string; title: string; thumbnail_url: 
           muted
           loop
           playsInline
-          preload="none"
-          autoPlay
+          preload="metadata"
+          poster={item.thumbnail_url || undefined}
         />
-      )}
-
-      {!hasThumbnail && !hasVideo && (
+      ) : hasThumbnail ? (
+        <img
+          src={item.thumbnail_url!}
+          alt={item.title}
+          loading="lazy"
+          className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+        />
+      ) : (
         <div className={cn(
           "absolute inset-0 flex flex-col items-center justify-center gap-2",
           item.isLive
