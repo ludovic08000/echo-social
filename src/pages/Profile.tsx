@@ -540,6 +540,7 @@ export default function Profile() {
             <div className="flex items-center gap-2">
               <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">{profile.name}</h1>
               {isCreator && <CreatorBadge size="lg" />}
+              {targetIsMinor && <MinorProtectedBadge />}
             </div>
             
             {/* Stats row */}
