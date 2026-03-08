@@ -169,6 +169,31 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
     }
   };
 
+  const createMondialRelayShipment = async (order: any) => {
+    setCreatingShipment(order.id);
+    try {
+      const weightGrams = Math.max(100, Number(orderWeights[order.id]) || 500);
+      const { data, error } = await supabase.functions.invoke('mondial-relay', {
+        body: {
+          action: 'create_shipment',
+          order_id: order.id,
+          package: { weight_grams: weightGrams },
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast.success(`✅ Expédition créée ! N° suivi : ${data.tracking_number}`);
+      if (data.label_url) {
+        window.open(data.label_url, '_blank');
+      }
+      refetchOrders();
+    } catch (e: any) {
+      toast.error(e.message || "Erreur lors de la création de l'expédition");
+    } finally {
+      setCreatingShipment(null);
+    }
+  };
 
   if (isLoading) {
     return <div className="space-y-4"><div className="skeleton h-32 w-full" /><div className="skeleton h-32 w-full" /></div>;
