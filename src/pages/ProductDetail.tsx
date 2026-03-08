@@ -304,7 +304,7 @@ export default function ProductDetailPage() {
             disabled={!canAddToCart}
           >
             <ShoppingCart className="w-4 h-4 mr-2" />
-            {isOwnProduct ? 'Votre produit' : isOutOfStock ? 'Épuisé' : cartBlockedBySingleStock ? 'Déjà au panier' : 'Ajouter au panier'}
+            {isOwnProduct ? 'Votre produit' : isOutOfStock ? 'Épuisé' : isAlreadyInCart ? 'Déjà au panier' : 'Ajouter au panier'}
           </Button>
         </div>
       </div>
