@@ -366,8 +366,11 @@ serve(async (req) => {
         LIV_Rel_Pays: order.shipping_relay_country || 'FR',
         LIV_Rel: order.shipping_relay_id || '',
         TAvisage: '',
-        TRepworking: '',
-        TInstructions: '',
+        TReprise: '',
+        Montage: '',
+        TRDV: '',
+        Assurance: '',
+        Instructions: '',
         Texte: '',
       };
 
