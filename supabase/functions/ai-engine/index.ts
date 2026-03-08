@@ -52,6 +52,11 @@ serve(async (req) => {
     const { action, text, context, feedback } = body;
     const user_id = authUser.id; // Always use authenticated user ID, never trust client
 
+    // Input sanitization: cap text length to prevent abuse
+    const MAX_TEXT_LENGTH = 5000;
+    const safeText = typeof text === "string" ? text.slice(0, MAX_TEXT_LENGTH) : "";
+    const safeContext = context && typeof context === "object" ? context : {};
+
     if (!action || typeof action !== "string") {
       return new Response(
         JSON.stringify({ error: "Missing 'action' parameter" }),
@@ -60,8 +65,8 @@ serve(async (req) => {
     }
 
     // ── Server-side cache check for moderation ──
-    if (action === "moderate" && text) {
-      const contentHash = hashContent(text.trim().toLowerCase());
+    if (action === "moderate" && safeText) {
+      const contentHash = hashContent(safeText.trim().toLowerCase());
       const { data: cached } = await supabase
         .from("ai_moderation_cache")
         .select("result")
@@ -109,7 +114,7 @@ serve(async (req) => {
 
 Be culturally aware. Consider French slang and context. Do NOT over-flag casual language.
 Only output valid JSON, nothing else.${learnedRulesContext}`;
-        userPrompt = text || "";
+        userPrompt = safeText;
         break;
       }
 
@@ -123,7 +128,7 @@ Only output valid JSON, nothing else.${learnedRulesContext}`;
 - "engagement_prediction": string ("high", "medium", "low")
 - "virality_score": number 0-100
 Only output valid JSON.`;
-        userPrompt = text || "";
+        userPrompt = safeText;
         break;
       }
 
@@ -136,7 +141,7 @@ Only output valid JSON.`;
 - "fatigue_risk": string ("low", "medium", "high")
 - "personality_type": string (detected personality archetype)
 Only output valid JSON.`;
-        userPrompt = JSON.stringify(context || {});
+        userPrompt = JSON.stringify(safeContext);
         break;
       }
 
@@ -206,7 +211,7 @@ Only output valid JSON.`;
 - "recommended_actions": string[] (what actions to take)
 - "trust_score": number 0-100 (overall trust score)
 Only output valid JSON.`;
-        userPrompt = JSON.stringify(context || {});
+        userPrompt = JSON.stringify(safeContext);
         break;
       }
 
@@ -215,7 +220,7 @@ Only output valid JSON.`;
 - "replies": string[] (exactly 3 suggested replies, short and natural)
 - "tone": string (detected conversation tone)
 Only output valid JSON. Replies should be in the same language as the conversation.`;
-        userPrompt = text || "";
+        userPrompt = safeText;
         break;
       }
 
@@ -228,7 +233,7 @@ Only output valid JSON. Replies should be in the same language as the conversati
 - "readability_after": number 0-100
 - "engagement_boost_estimate": number (percentage increase in expected engagement)
 Only output valid JSON. Keep the same language and tone.`;
-        userPrompt = text || "";
+        userPrompt = safeText;
         break;
       }
 
@@ -274,8 +279,8 @@ Only output valid JSON. Keep the same language and tone.`;
     const result = await callAI(LOVABLE_API_KEY, systemPrompt, userPrompt, model);
 
     // Cache moderation results server-side (6 hours instead of 1)
-    if (action === "moderate" && result && text) {
-      const contentHash = hashContent(text.trim().toLowerCase());
+    if (action === "moderate" && result && safeText) {
+      const contentHash = hashContent(safeText.trim().toLowerCase());
       await supabase.from("ai_moderation_cache").upsert({
         content_hash: contentHash,
         result,

@@ -214,6 +214,20 @@ Réponds UNIQUEMENT avec la fonction tool_call fournie.`,
         });
       }
 
+      // SECURITY: Verify user is a participant of this conversation
+      const { data: participant } = await supabase
+        .from("conversation_participants")
+        .select("id")
+        .eq("conversation_id", conversationId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!participant) {
+        return new Response(JSON.stringify({ error: "Vous ne faites pas partie de cette conversation" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       // Update all pending messages in this conversation to delivered
       const { error } = await supabase
         .from("messages")
@@ -235,6 +249,20 @@ Réponds UNIQUEMENT avec la fonction tool_call fournie.`,
         return new Response(JSON.stringify({ error: "conversationId required" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // SECURITY: Verify user is a participant of this conversation
+      const { data: participant } = await supabase
+        .from("conversation_participants")
+        .select("id")
+        .eq("conversation_id", conversationId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!participant) {
+        return new Response(JSON.stringify({ error: "Vous ne faites pas partie de cette conversation" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
