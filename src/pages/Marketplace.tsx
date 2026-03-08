@@ -352,11 +352,40 @@ export default function Marketplace() {
                   />
                 )}
               </div>
-            ) : (
+            ) : category !== 'all' ? (
               <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
                 {sortedProducts.map((product) => (
                   <ProductCard key={product.id} product={product} compact />
                 ))}
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {CATEGORIES.filter(c => c.value !== 'all').map((cat) => {
+                  const catProducts = sortedProducts.filter((p: any) => p.category === cat.value);
+                  if (catProducts.length === 0) return null;
+                  return (
+                    <div key={cat.value} className="space-y-2.5">
+                      <div className="flex items-center justify-between px-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">{cat.icon}</span>
+                          <h2 className="font-bold text-sm text-foreground">{cat.label}</h2>
+                          <span className="text-[10px] font-medium text-muted-foreground bg-secondary/60 px-2 py-0.5 rounded-full">{catProducts.length}</span>
+                        </div>
+                        <button
+                          onClick={() => setCategory(cat.value)}
+                          className="text-[11px] font-semibold text-primary hover:underline"
+                        >
+                          Tout voir
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                        {catProducts.slice(0, 6).map((product: any) => (
+                          <ProductCard key={product.id} product={product} compact />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </TabsContent>
