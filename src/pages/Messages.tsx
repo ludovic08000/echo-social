@@ -148,13 +148,15 @@ function ReactionPicker({ onReact, visible }: { onReact: (emoji: string) => void
 
 // ─── Message Context Menu ────────────────────────────────
 function MessageActions({ 
-  isMe, onReply, onReact, onCopy, onDelete, visible, onClose 
+  isMe, onReply, onReact, onCopy, onDeleteForMe, onDeleteForEveryone, onReport, visible, onClose 
 }: { 
   isMe: boolean; 
   onReply: () => void; 
   onReact: (emoji: string) => void;
   onCopy: () => void; 
-  onDelete?: () => void; 
+  onDeleteForMe: () => void;
+  onDeleteForEveryone?: () => void;
+  onReport: () => void;
   visible: boolean; 
   onClose: () => void;
 }) {
@@ -180,16 +182,24 @@ function MessageActions({
           ))}
         </div>
         {/* Actions */}
-        <div className="glass shadow-xl rounded-xl border border-border/30 overflow-hidden min-w-[160px]">
+        <div className="glass shadow-xl rounded-xl border border-border/30 overflow-hidden min-w-[180px]">
           <button onClick={() => { onReply(); onClose(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-secondary/60 transition-colors">
             <Reply className="w-4 h-4 text-muted-foreground" /> Répondre
           </button>
           <button onClick={() => { onCopy(); onClose(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-secondary/60 transition-colors">
             <Copy className="w-4 h-4 text-muted-foreground" /> Copier
           </button>
-          {isMe && onDelete && (
-            <button onClick={() => { onDelete(); onClose(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors">
-              <Trash2 className="w-4 h-4" /> Supprimer
+          <button onClick={() => { onDeleteForMe(); onClose(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-secondary/60 transition-colors">
+            <Trash2 className="w-4 h-4 text-muted-foreground" /> Supprimer pour moi
+          </button>
+          {isMe && onDeleteForEveryone && (
+            <button onClick={() => { onDeleteForEveryone(); onClose(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors">
+              <Trash2 className="w-4 h-4" /> Supprimer pour tous
+            </button>
+          )}
+          {!isMe && (
+            <button onClick={() => { onReport(); onClose(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-amber-600 hover:bg-amber-500/10 transition-colors">
+              <Flag className="w-4 h-4" /> Signaler
             </button>
           )}
         </div>
