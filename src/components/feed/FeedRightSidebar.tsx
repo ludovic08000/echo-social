@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom';
-import { MessageCircle, Search, Users, UserPlus, Check, X, Sparkles, Zap } from 'lucide-react';
+import { MessageCircle, Search, Users, UserPlus, Check, X, Sparkles, Zap, Radio, Eye, Play } from 'lucide-react';
 import { useFriendships, useRespondToFriendRequest } from '@/hooks/useFriendships';
 import { useConversations } from '@/hooks/useMessages';
+import { useLiveStreams } from '@/hooks/useLiveStreams';
 import { UserAvatar } from '@/components/UserAvatar';
 import { useAuth } from '@/lib/auth';
 import { useState, useMemo } from 'react';
