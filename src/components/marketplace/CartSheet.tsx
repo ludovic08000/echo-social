@@ -221,8 +221,8 @@ export function CartSheet() {
 
                   {selectedRelay && (
                     <p className="text-[11px] text-muted-foreground px-2 py-1">
-                      Livraison estimée : <span className="font-semibold text-foreground">{FLAT_SHIPPING_ESTIMATE.toFixed(2)}€</span>
-                      <br />Le montant exact sera calculé par le vendeur selon le poids du colis.
+                      Livraison Mondial Relay : <span className="font-semibold text-foreground">{shippingEstimate.toFixed(2)}€</span>
+                      <br />Calculé selon le poids des produits.
                     </p>
                   )}
                 </div>
