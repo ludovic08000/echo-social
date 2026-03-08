@@ -608,6 +608,29 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                                     </div>
                                   </button>
                                 )}
+                                {!isMe && (
+                                  <button
+                                    onClick={async () => {
+                                      await supabase.from('abuse_reports').insert({
+                                        reporter_id: user!.id,
+                                        reported_user_id: msg.sender_id,
+                                        report_type: 'message',
+                                        description: `Message signalé: "${msg.body.slice(0, 200)}"`,
+                                      });
+                                      setDeleteMenuMsgId(null);
+                                      toast.success('Message signalé');
+                                    }}
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs hover:bg-amber-500/5 transition-all text-left group/btn"
+                                  >
+                                    <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center group-hover/btn:bg-amber-500/20 transition-colors">
+                                      <Flag className="w-3.5 h-3.5 text-amber-600" />
+                                    </div>
+                                    <div>
+                                      <p className="font-medium text-amber-600">Signaler</p>
+                                      <p className="text-[10px] text-muted-foreground">Signaler ce contenu inapproprié</p>
+                                    </div>
+                                  </button>
+                                )}
                               </div>
                               <div className="px-2 pb-2">
                                 <button
