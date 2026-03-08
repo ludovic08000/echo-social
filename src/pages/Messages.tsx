@@ -495,8 +495,16 @@ function ConversationList() {
                 )}
               >
                 <div className="relative flex-shrink-0">
-                  <UserAvatar src={conv.participant.avatar_url} alt={conv.participant.name} size="lg" />
-                  <div className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 border-[2.5px] border-background" />
+                  {conv.is_group ? (
+                    <div className="w-[52px] h-[52px] rounded-full bg-gradient-to-br from-primary/20 to-accent/30 flex items-center justify-center text-lg">
+                      👥
+                    </div>
+                  ) : (
+                    <>
+                      <UserAvatar src={conv.participant.avatar_url} alt={conv.participant.name} size="lg" />
+                      <div className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 border-[2.5px] border-background" />
+                    </>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
