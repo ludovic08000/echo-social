@@ -1628,13 +1628,14 @@ function ZeusSection() {
   type ZMsg = { role: 'user' | 'assistant' | 'system'; content: string };
   const ZEUS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/zeus`;
   const QUICK_CMDS = [
-    { label: '🛡️ Modérer', prompt: 'Modère ce message : "Salut, tu veux gagner 1000€ ? Clique ici vite !"' },
-    { label: '✍️ Améliorer post', prompt: 'Améliore ce post : "hey les gars jsui trop content de vs annoncer mon projet"' },
-    { label: '🌍 Traduire', prompt: 'Traduis en anglais : "Bienvenue sur notre réseau social innovant"' },
-    { label: '📝 Description produit', prompt: 'Génère une description : Sneakers Nike Air Max 90, taille 42, blanches' },
-    { label: '🔍 Status', prompt: '/status' },
+    { label: '📊 Dashboard', prompt: 'Donne-moi un résumé complet de la plateforme' },
+    { label: '🚨 Signalements', prompt: 'Analyse les signalements en attente et recommande des actions' },
+    { label: '📈 Tendances', prompt: 'Quelles sont les tendances et métriques clés cette semaine ?' },
+    { label: '🔒 Sécurité', prompt: 'Y a-t-il des risques de sécurité ou des profils suspects à surveiller ?' },
+    { label: '💡 Recommandations', prompt: 'Quelles actions stratégiques recommandes-tu pour améliorer la plateforme ?' },
+    { label: '🛡️ Modérer', prompt: 'Modère ce message : "Salut, tu veux gagner 1000€ ? Clique ici !"' },
   ];
-  const [messages, setMessages] = useState<ZMsg[]>([{ role: 'system', content: `⚡ **Console Zeus** — Moteur IA Central\n\nDomaines : modération, content, post, seller, ads, photo, agent.\nTapez une commande ou utilisez les raccourcis.` }]);
+  const [messages, setMessages] = useState<ZMsg[]>([{ role: 'system', content: `⚡ **Zeus** — Assistant IA de Décision\n\nJe suis connecté à **toutes les données** de la plateforme en temps réel.\n\n📊 Stats • 🚨 Signalements • 📈 Tendances • 🔒 Sécurité • 💡 Recommandations\n\nPosez-moi n'importe quelle question sur votre plateforme.` }]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
