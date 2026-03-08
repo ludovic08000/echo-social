@@ -846,8 +846,10 @@ Tu peux appeler des outils pour interroger la base en temps réel :
 - \`get_marketplace_stats\` : Stats marketplace
 - \`get_engagement_metrics\` : Métriques d'engagement
 - \`get_growth_metrics\` : Croissance et rétention
+- \`simulate_platform_load\` : **Simulation de charge réseau** — Estime les capacités max (utilisateurs simultanés, lives, posts/min, messages/min, commandes) selon 5 scénarios : current, peak (x3), stress (x10), growth_10x, growth_100x. Détecte les goulots d'étranglement et recommande des optimisations.
 
 Utilise-les activement pour enrichir tes analyses. Ne te contente pas du snapshot initial.
+Pour les simulations, appelle TOUJOURS l'outil \`simulate_platform_load\` pour fournir des données réelles. Ne devine jamais les chiffres.
 
 ${platformContext}
 
