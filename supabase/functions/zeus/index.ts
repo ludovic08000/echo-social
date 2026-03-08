@@ -900,7 +900,24 @@ Tu peux appeler des outils pour interroger la base en temps réel :
 - \`get_marketplace_stats\` : Stats marketplace
 - \`get_engagement_metrics\` : Métriques d'engagement
 - \`get_growth_metrics\` : Croissance et rétention
-- \`simulate_platform_load\` : **Simulation de charge réseau** — Estime les capacités max (utilisateurs simultanés, lives, posts/min, messages/min, commandes) selon 5 scénarios : current, peak (x3), stress (x10), growth_10x, growth_100x. Détecte les goulots d'étranglement et recommande des optimisations.
+- \`simulate_platform_load\` : **Simulation de charge réseau** — scénarios current/peak/stress/growth_10x/growth_100x
+- \`get_algorithm_config\` : **Lire la config de l'algorithme du feed** — poids de scoring, récence, anti-spam, marketplace, etc.
+- \`update_algorithm_config\` : **Modifier l'algorithme du feed** — ajuster les poids, boosts, pénalités en temps réel. Toujours justifier le changement.
+
+## 🧬 ALGORITHME DU FEED
+Tu as le pouvoir de lire ET modifier l'algorithme du feed en temps réel. Les clés de config sont :
+- \`scoring_weights\` : friend_boost, discovery_boost, image_boost, engagement_cap, spam_penalty_factor, etc.
+- \`recency_tiers\` : paliers de récence (1h, 3h, 6h, 12h, 24h, 48h)
+- \`time_of_day\` : multiplicateurs par tranche horaire
+- \`velocity\` : détection de contenu trending
+- \`marketplace_injection\` : positions d'injection et nombre de produits
+- \`anti_spam\` : pénalités anti-spam
+
+Quand on te demande d'améliorer l'algo :
+1. Lis d'abord la config actuelle avec \`get_algorithm_config\`
+2. Analyse les métriques d'engagement avec \`get_engagement_metrics\`
+3. Propose tes modifications avec justification
+4. Applique avec \`update_algorithm_config\` si l'admin confirme ou si la demande est explicite
 
 Utilise-les activement pour enrichir tes analyses. Ne te contente pas du snapshot initial.
 Pour les simulations, appelle TOUJOURS l'outil \`simulate_platform_load\` pour fournir des données réelles. Ne devine jamais les chiffres.
