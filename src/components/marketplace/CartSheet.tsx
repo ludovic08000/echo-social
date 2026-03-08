@@ -287,7 +287,7 @@ export function CartSheet() {
                 variant="outline"
                 className="w-full text-xs"
                 onClick={() => handleCheckout(true)}
-                disabled={isCheckingOut || cart.length === 0 || checkoutBlockedByRelay}
+                disabled={isCheckingOut || cart.length === 0 || (hasPhysical && !selectedRelay)}
               >
                 🧪 Commande test (sans paiement)
               </Button>
