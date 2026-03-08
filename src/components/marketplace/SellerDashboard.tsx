@@ -401,6 +401,23 @@ export function SellerDashboard() {
                     {order.tracking_number && (
                       <OrderTracking trackingNumber={order.tracking_number} />
                     )}
+
+                    {order.status === 'shipped' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full border-green-500/30 text-green-600 hover:bg-green-500/10"
+                        onClick={() => markAsDelivered(order)}
+                        disabled={markingDelivered === order.id}
+                      >
+                        {markingDelivered === order.id ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4 mr-2" />
+                        )}
+                        Marquer comme livré
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               ))}
