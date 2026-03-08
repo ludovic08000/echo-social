@@ -148,7 +148,18 @@ function LiveSlide({ item, isVisible }: { item: AllLiveItem; isVisible: boolean 
         />
       ) : (
         <div className="absolute inset-0">
-          {item.thumbnail_url ? (
+          {item.recording_url ? (
+            <video
+              ref={replayVideoRef}
+              src={item.recording_url}
+              className="absolute inset-0 w-full h-full object-cover"
+              loop
+              muted
+              playsInline
+              autoPlay={isVisible}
+              poster={item.thumbnail_url || undefined}
+            />
+          ) : item.thumbnail_url ? (
             <>
               <img
                 src={item.thumbnail_url}
@@ -160,12 +171,6 @@ function LiveSlide({ item, isVisible }: { item: AllLiveItem; isVisible: boolean 
           ) : (
             <div className="absolute inset-0 bg-gradient-to-b from-primary/20 via-black to-black" />
           )}
-          {/* Play button overlay for replays */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-20 h-20 rounded-full bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/20">
-              <Play className="w-9 h-9 text-white ml-1" />
-            </div>
-          </div>
         </div>
       )}
 
