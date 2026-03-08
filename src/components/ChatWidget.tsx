@@ -303,7 +303,21 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const conversation = conversations?.find(c => c.id === conversationId);
 
   // Call hook & sound
-  const call = useCall();
+  const [showVoicemailPrompt, setShowVoicemailPrompt] = useState(false);
+  const call = useCall({
+    onCallEnded: useCallback((info: CallEndInfo) => {
+      // Send a system message about the call
+      const callMsg = info.wasMissed
+        ? `📞 CALL:missed|${info.type}`
+        : `📞 CALL:ended|${info.type}|dur:${info.duration}`;
+      sendMessage.mutate({ conversationId, body: callMsg });
+
+      // If the call was missed, offer voicemail
+      if (info.wasMissed) {
+        setShowVoicemailPrompt(true);
+      }
+    }, [conversationId]),
+  });
   const playSound = useRealtimeNotificationSound();
   const prevMsgCountRef = useRef(0);
 
