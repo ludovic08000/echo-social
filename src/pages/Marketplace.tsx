@@ -54,6 +54,9 @@ const CATEGORIES = [
   { value: 'home', label: 'Maison', icon: '🏠' },
   { value: 'sports', label: 'Sport', icon: '⚽' },
   { value: 'books', label: 'Livres', icon: '📚' },
+  { value: 'services', label: 'Services', icon: '🛠️' },
+  { value: 'digital', label: 'Numérique', icon: '💾' },
+  { value: 'general', label: 'Autre', icon: '📦' },
 ];
 
 const SORT_OPTIONS = [
