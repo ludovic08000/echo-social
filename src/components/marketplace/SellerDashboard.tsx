@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSellerProfile, useCreateSellerProfile, useSellerProducts, useDeleteProduct } from '@/hooks/useMarketplace';
 import { useSellerOrders } from '@/hooks/useSellerOrders';
 import { CreateProductDialog } from './CreateProductDialog';
@@ -43,6 +43,7 @@ export function SellerDashboard() {
   const [creatingLabel, setCreatingLabel] = useState(false);
   const [labelEditorOpen, setLabelEditorOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
+  const [sellerTab, setSellerTab] = useState<'products' | 'orders'>('products');
   const [labelForm, setLabelForm] = useState({
     weightGrams: '500',
     parcels: '1',
@@ -56,6 +57,17 @@ export function SellerDashboard() {
     senderPhone: '',
     senderEmail: '',
   });
+
+  const paidOrders = useMemo(
+    () => orders.filter((o: any) => o.status === 'paid' || o.status === 'shipped' || o.status === 'delivered'),
+    [orders],
+  );
+
+  useEffect(() => {
+    if (paidOrders.length > 0) {
+      setSellerTab('orders');
+    }
+  }, [paidOrders.length]);
 
   const handleCreateLabel = async (orderId: string, payload: ShipmentPayload) => {
     setCreatingLabel(true);
@@ -161,8 +173,6 @@ export function SellerDashboard() {
     );
   }
 
-  const paidOrders = orders.filter((o: any) => o.status === 'paid' || o.status === 'shipped' || o.status === 'delivered');
-
   return (
     <div className="space-y-6">
       {/* Stats */}
@@ -190,7 +200,7 @@ export function SellerDashboard() {
         </Card>
       </div>
 
-      <Tabs defaultValue="products">
+      <Tabs value={sellerTab} onValueChange={(value) => setSellerTab(value as 'products' | 'orders')}>
         <TabsList className="w-full">
           <TabsTrigger value="products" className="flex-1 gap-1.5 text-xs">
             <Package className="w-3.5 h-3.5" />
@@ -198,7 +208,7 @@ export function SellerDashboard() {
           </TabsTrigger>
           <TabsTrigger value="orders" className="flex-1 gap-1.5 text-xs">
             <Truck className="w-3.5 h-3.5" />
-            Commandes
+            Commandes {paidOrders.length > 0 ? `(${paidOrders.length})` : ''}
           </TabsTrigger>
         </TabsList>
 
