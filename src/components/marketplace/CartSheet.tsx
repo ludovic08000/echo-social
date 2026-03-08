@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Loader2, ShieldCheck, MapPin, ChevronDown, ChevronUp } from 'lucide-react';
 import { useCart, useUpdateCartItem, useRemoveFromCart } from '@/hooks/useMarketplace';
 import { Separator } from '@/components/ui/separator';
@@ -17,6 +18,17 @@ interface SelectedRelay {
   country: string;
 }
 
+const estimateRelayShipping = (weightGrams: number, parcels: number) => {
+  const basePerParcel = 4.2;
+  const weightExtra =
+    weightGrams <= 500 ? 0 :
+    weightGrams <= 1000 ? 0.8 :
+    weightGrams <= 2000 ? 1.6 :
+    weightGrams <= 5000 ? 2.8 : 4.5;
+
+  return Math.round((basePerParcel + weightExtra) * parcels * 100) / 100;
+};
+
 export function CartSheet() {
   const { data: cart = [] } = useCart();
   const updateItem = useUpdateCartItem();
@@ -24,6 +36,8 @@ export function CartSheet() {
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [selectedRelay, setSelectedRelay] = useState<SelectedRelay | null>(null);
   const [showRelayPicker, setShowRelayPicker] = useState(false);
+  const [packageWeight, setPackageWeight] = useState('500');
+  const [packageParcels, setPackageParcels] = useState('1');
 
   // Check if cart has physical products
   const hasPhysical = cart.some((item) => item.products?.product_type === 'physical');
@@ -34,7 +48,14 @@ export function CartSheet() {
     return sum + price * item.quantity;
   }, 0);
   const buyerFee = Math.round(subtotal * 0.05 * 100) / 100;
-  const total = subtotal + buyerFee;
+
+  const weightGrams = Math.max(100, Number(packageWeight) || 500);
+  const parcelsCount = Math.max(1, Number(packageParcels) || 1);
+  const shippingEstimate = hasPhysical && selectedRelay
+    ? estimateRelayShipping(weightGrams, parcelsCount)
+    : 0;
+
+  const total = subtotal + buyerFee + shippingEstimate;
 
   const handleCheckout = async (testMode = false) => {
     if (cart.length === 0) return;
@@ -65,9 +86,17 @@ export function CartSheet() {
         country: selectedRelay.country,
       } : null;
 
+      const packageData = hasPhysical && selectedRelay
+        ? {
+            weight_grams: weightGrams,
+            parcels: parcelsCount,
+            shipping_estimate: shippingEstimate,
+          }
+        : null;
+
       if (testMode) {
         const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
-          body: { action: 'test_checkout', items, relay: relayData },
+          body: { action: 'test_checkout', items, relay: relayData, package: packageData },
         });
         if (error) throw error;
         if (data?.error) throw new Error(data.error);
@@ -77,7 +106,7 @@ export function CartSheet() {
       }
 
       const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
-        body: { action: 'create_checkout', items, relay: relayData },
+        body: { action: 'create_checkout', items, relay: relayData, package: packageData },
       });
 
       if (error) throw error;
@@ -202,6 +231,37 @@ export function CartSheet() {
                       }}
                     />
                   )}
+
+                  {selectedRelay && (
+                    <div className="rounded-lg border border-border/60 bg-card/60 p-3 space-y-2">
+                      <p className="text-xs font-medium">Détails colis pour estimation</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <p className="text-[11px] text-muted-foreground">Poids (g)</p>
+                          <Input
+                            type="number"
+                            min={100}
+                            value={packageWeight}
+                            onChange={(e) => setPackageWeight(e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[11px] text-muted-foreground">Nombre de colis</p>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={packageParcels}
+                            onChange={(e) => setPackageParcels(e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        Estimation livraison Mondial Relay : <span className="font-semibold text-foreground">{shippingEstimate.toFixed(2)}€</span>
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -217,6 +277,12 @@ export function CartSheet() {
                   <span className="text-muted-foreground">Frais de service (5%)</span>
                   <span>{buyerFee.toFixed(2)}€</span>
                 </div>
+                {hasPhysical && selectedRelay && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Livraison estimée</span>
+                    <span>{shippingEstimate.toFixed(2)}€</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-bold text-base pt-1">
                   <span>Total</span>
                   <span>{total.toFixed(2)}€</span>
