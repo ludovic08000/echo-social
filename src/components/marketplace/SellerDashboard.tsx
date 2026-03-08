@@ -42,6 +42,7 @@ export function SellerDashboard() {
   const [storeName, setStoreName] = useState('');
   const [shippingOrderId, setShippingOrderId] = useState<string | null>(null);
   const [creatingLabel, setCreatingLabel] = useState(false);
+  const [markingDelivered, setMarkingDelivered] = useState<string | null>(null);
   const [labelEditorOpen, setLabelEditorOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [sellerTab, setSellerTab] = useState<'products' | 'orders'>(
