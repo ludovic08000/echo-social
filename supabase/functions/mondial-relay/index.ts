@@ -427,6 +427,7 @@ serve(async (req) => {
         .update({
           tracking_number: trackingNumber,
           shipping_label_url: labelUrl,
+          shipping_weight_grams: weight,
           shipped_at: new Date().toISOString(),
           status: "shipped",
         })
