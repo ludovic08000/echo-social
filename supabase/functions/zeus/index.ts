@@ -761,6 +761,39 @@ async function executeZeusTool(name: string, args: any, supabase: any): Promise<
 
         return JSON.stringify(sim);
       }
+      case "get_algorithm_config": {
+        let q = supabase.from("feed_algorithm_config").select("key, value, description, updated_at");
+        if (args.key) q = q.eq("key", args.key);
+        const { data, error } = await q;
+        if (error) return JSON.stringify({ error: error.message });
+        return JSON.stringify({ config: data || [] });
+      }
+      case "update_algorithm_config": {
+        // Read current value
+        const { data: current, error: readErr } = await supabase
+          .from("feed_algorithm_config")
+          .select("value")
+          .eq("key", args.key)
+          .maybeSingle();
+        if (readErr || !current) return JSON.stringify({ error: `Config "${args.key}" introuvable` });
+
+        // Merge updates
+        const merged = { ...current.value, ...args.updates };
+        const { error: updateErr } = await supabase
+          .from("feed_algorithm_config")
+          .update({ value: merged, updated_at: new Date().toISOString() })
+          .eq("key", args.key);
+        if (updateErr) return JSON.stringify({ error: updateErr.message });
+
+        return JSON.stringify({
+          success: true,
+          key: args.key,
+          reason: args.reason,
+          previous: current.value,
+          new_value: merged,
+          changed_fields: Object.keys(args.updates),
+        });
+      }
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
