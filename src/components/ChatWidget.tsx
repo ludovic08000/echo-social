@@ -4,7 +4,7 @@ import {
   ArrowLeft, Send, Search, Plus, X, Phone, Video, Mic, MicOff,
   Smile, Check, CheckCheck, Minus, Camera, Reply, Copy, Trash2,
   ChevronDown, Sparkles, MoreVertical, ThumbsUp, ImageIcon, PhoneOff, PhoneMissed,
-  Flag, Forward, Wand2, Languages, SpellCheck, PenLine, Tag, ArrowRightLeft, CreditCard, XIcon
+  Flag, Forward, Wand2, Languages, SpellCheck, PenLine, Tag, ArrowRightLeft, CreditCard, XIcon, MapPin, Truck
 } from 'lucide-react';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -25,6 +25,7 @@ import { useCall, formatCallDuration, type CallEndInfo } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
 import { GifPicker } from '@/components/chat/GifPicker';
 import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
+import { RelayPointPicker } from '@/components/marketplace/RelayPointPicker';
 import { useRealtimeNotificationSound } from '@/hooks/useNotificationSounds';
 import { toast } from 'sonner';
 
@@ -435,15 +436,29 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     });
   };
 
+  const [showRelayPicker, setShowRelayPicker] = useState(false);
+  const [selectedRelay, setSelectedRelay] = useState<any>(null);
+  const [negPayLoading, setNegPayLoading] = useState(false);
+
+  const estimateShipping = (weightGrams: number) => {
+    const base = 4.2;
+    const extra = weightGrams <= 500 ? 0 : weightGrams <= 1000 ? 0.8 : weightGrams <= 2000 ? 1.6 : weightGrams <= 5000 ? 2.8 : 4.5;
+    return Math.round((base + extra) * 100) / 100;
+  };
+
   const handlePayNegotiated = async () => {
     if (!acceptedNeg) return;
+    setNegPayLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
-        body: { action: 'negotiation_checkout', negotiationId: acceptedNeg.id },
-      });
+      const payload: any = { action: 'negotiation_checkout', negotiationId: acceptedNeg.id };
+      if (selectedRelay) {
+        payload.relay = selectedRelay;
+      }
+      const { data, error } = await supabase.functions.invoke('marketplace-checkout', { body: payload });
       if (error || data?.error) throw new Error(data?.error || 'Erreur');
       if (data?.url) window.location.href = data.url;
     } catch (e: any) { toast.error(e.message || 'Erreur paiement'); }
+    finally { setNegPayLoading(false); }
   };
 
   // Call hook & sound
@@ -967,13 +982,64 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           )}
 
           {acceptedNeg && !isSeller && (
-            <div className="mt-2 flex items-center gap-2">
-              <Check className="w-3.5 h-3.5 text-emerald-600" />
-              <span className="text-[10px] font-semibold text-emerald-700 flex-1">
-                Prix négocié: <b>{(acceptedNeg.counter_price || acceptedNeg.offered_price).toFixed(2)} €</b>
-              </span>
-              <Button size="sm" className="h-7 rounded-xl text-[10px] gap-1 premium-button" onClick={handlePayNegotiated}>
-                <CreditCard className="w-3 h-3" /> Payer
+            <div className="mt-2 space-y-2">
+              <div className="flex items-center gap-1.5">
+                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="text-[10px] font-semibold text-emerald-700">Prix négocié accepté</span>
+              </div>
+              
+              {/* Price breakdown */}
+              <div className="bg-secondary/60 rounded-lg p-2 space-y-1 text-[10px]">
+                <div className="flex justify-between">
+                  <span>Prix négocié</span>
+                  <span className="font-semibold">{(acceptedNeg.counter_price || acceptedNeg.offered_price).toFixed(2)} €</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Frais de service (5%)</span>
+                  <span>{((acceptedNeg.counter_price || acceptedNeg.offered_price) * 0.05).toFixed(2)} €</span>
+                </div>
+                {selectedRelay && (
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Livraison Mondial Relay</span>
+                    <span>{estimateShipping(500).toFixed(2)} €</span>
+                  </div>
+                )}
+                <div className="border-t border-border/30 pt-1 flex justify-between font-bold">
+                  <span>Total</span>
+                  <span>
+                    {((acceptedNeg.counter_price || acceptedNeg.offered_price) * 1.05 + (selectedRelay ? estimateShipping(500) : 0)).toFixed(2)} €
+                  </span>
+                </div>
+              </div>
+
+              {/* Relay point selection */}
+              <div className="space-y-1.5">
+                {selectedRelay ? (
+                  <div className="flex items-center gap-1.5 bg-primary/5 rounded-lg p-1.5 text-[10px]">
+                    <MapPin className="w-3 h-3 text-primary flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold truncate">{selectedRelay.name}</p>
+                      <p className="text-muted-foreground truncate">{selectedRelay.address}, {selectedRelay.postcode} {selectedRelay.city}</p>
+                    </div>
+                    <button onClick={() => setSelectedRelay(null)} className="text-muted-foreground hover:text-foreground">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <Button size="sm" variant="outline" className="w-full h-7 text-[10px] rounded-lg gap-1"
+                    onClick={() => setShowRelayPicker(true)}>
+                    <Truck className="w-3 h-3" /> Choisir un point relais
+                  </Button>
+                )}
+              </div>
+
+              <Button size="sm" className="w-full h-8 rounded-xl text-[10px] gap-1 premium-button"
+                onClick={handlePayNegotiated} disabled={negPayLoading}>
+                {negPayLoading ? (
+                  <div className="w-3.5 h-3.5 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" />
+                ) : (
+                  <><CreditCard className="w-3.5 h-3.5" /> Payer {((acceptedNeg.counter_price || acceptedNeg.offered_price) * 1.05 + (selectedRelay ? estimateShipping(500) : 0)).toFixed(2)} €</>
+                )}
               </Button>
             </div>
           )}
@@ -1018,6 +1084,31 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       )}
 
+      {/* Relay Point Picker for negotiation payment */}
+      {showRelayPicker && (
+        <div className="mx-2 mt-1 mb-1 border border-border/40 rounded-xl overflow-hidden bg-background shadow-lg">
+          <div className="flex items-center justify-between px-3 py-1.5 bg-primary/5 border-b border-border/30">
+            <span className="text-[10px] font-semibold flex items-center gap-1"><MapPin className="w-3 h-3" /> Point Relais</span>
+            <button onClick={() => setShowRelayPicker(false)}><X className="w-3 h-3" /></button>
+          </div>
+          <div className="max-h-[200px] overflow-y-auto">
+            <RelayPointPicker
+              selectedId={selectedRelay?.id}
+              onSelect={(point) => {
+                setSelectedRelay({
+                  id: point.id,
+                  name: point.name,
+                  address: point.address,
+                  postcode: point.postcode,
+                  city: point.city,
+                  country: point.country,
+                });
+                setShowRelayPicker(false);
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {replyTo && (
         <div className="mx-2 mb-1 bg-secondary/80 rounded-lg px-3 py-1.5 flex items-center gap-2">
