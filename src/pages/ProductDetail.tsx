@@ -280,6 +280,16 @@ export default function ProductDetailPage() {
             <p className="text-lg font-extrabold tracking-tight">{product.price.toFixed(2)} €</p>
             {hasDiscount && <p className="text-[11px] text-muted-foreground line-through">{product.compare_at_price!.toFixed(2)} €</p>}
           </div>
+          {!isOwnProduct && !isOutOfStock && (
+            <Button
+              variant="outline"
+              className="h-12 rounded-2xl text-sm font-bold gap-1.5 border-primary/30"
+              onClick={() => setShowNegotiation(true)}
+            >
+              <Tag className="w-4 h-4" />
+              Négocier
+            </Button>
+          )}
           <Button
             className="premium-button flex-1 h-12 text-sm font-bold rounded-2xl"
             onClick={() => addToCart.mutate({ productId: product.id })}
@@ -290,6 +300,15 @@ export default function ProductDetailPage() {
           </Button>
         </div>
       </div>
+
+      {/* Negotiation Chat */}
+      {product && seller && (
+        <NegotiationChat
+          open={showNegotiation}
+          onOpenChange={setShowNegotiation}
+          product={product as any}
+        />
+      )}
     </AppLayout>
   );
 }
