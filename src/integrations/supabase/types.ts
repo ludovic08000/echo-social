@@ -1640,6 +1640,30 @@ export type Database = {
           },
         ]
       }
+      minor_contact_logs: {
+        Row: {
+          adult_user_id: string
+          contact_type: string
+          created_at: string
+          id: string
+          minor_user_id: string
+        }
+        Insert: {
+          adult_user_id: string
+          contact_type?: string
+          created_at?: string
+          id?: string
+          minor_user_id: string
+        }
+        Update: {
+          adult_user_id?: string
+          contact_type?: string
+          created_at?: string
+          id?: string
+          minor_user_id?: string
+        }
+        Relationships: []
+      }
       negotiations: {
         Row: {
           buyer_id: string
@@ -3294,6 +3318,7 @@ export type Database = {
         Args: { conv_id: string; uid: string }
         Returns: boolean
       }
+      is_user_minor: { Args: { p_user_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
