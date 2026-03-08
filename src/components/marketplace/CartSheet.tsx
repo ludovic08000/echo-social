@@ -209,42 +209,12 @@ export function CartSheet() {
                     />
                   )}
 
-                  <div ref={packageSectionRef} className="rounded-lg border border-border/60 bg-card/60 p-3 space-y-2">
-                    <p className="text-xs font-medium">Détails colis pour estimation</p>
-                    {!selectedRelay ? (
-                      <p className="text-[11px] text-muted-foreground">
-                        Sélectionne d’abord un point relais pour afficher l’édition du poids et des colis.
-                      </p>
-                    ) : (
-                      <>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1">
-                            <p className="text-[11px] text-muted-foreground">Poids (g)</p>
-                            <Input
-                              type="number"
-                              min={100}
-                              value={packageWeight}
-                              onChange={(e) => setPackageWeight(e.target.value)}
-                              className="h-8 text-xs"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <p className="text-[11px] text-muted-foreground">Nombre de colis</p>
-                            <Input
-                              type="number"
-                              min={1}
-                              value={packageParcels}
-                              onChange={(e) => setPackageParcels(e.target.value)}
-                              className="h-8 text-xs"
-                            />
-                          </div>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground">
-                          Estimation livraison Mondial Relay : <span className="font-semibold text-foreground">{shippingEstimate.toFixed(2)}€</span>
-                        </p>
-                      </>
-                    )}
-                  </div>
+                  {selectedRelay && (
+                    <p className="text-[11px] text-muted-foreground px-2 py-1">
+                      Livraison estimée : <span className="font-semibold text-foreground">{FLAT_SHIPPING_ESTIMATE.toFixed(2)}€</span>
+                      <br />Le montant exact sera calculé par le vendeur selon le poids du colis.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
