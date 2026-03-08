@@ -1,17 +1,19 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { useProduct, useAddToCart } from '@/hooks/useMarketplace';
 import { useAuth } from '@/lib/auth';
 import { useProductFavorites, useToggleFavorite } from '@/hooks/useProductFavorites';
 import { ProductReviews } from '@/components/marketplace/ProductReviews';
-import { NegotiationChat } from '@/components/marketplace/NegotiationChat';
+import { useChatWidget } from '@/components/ChatWidgetContext';
+import { useCreateConversation } from '@/hooks/useMessages';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ShoppingCart, BadgeCheck, Star, ArrowLeft, Package, Zap, Wrench, Heart, Store, ChevronLeft, ChevronRight, Truck, MapPin, Download, Shield, MessageCircle, Share2, Tag } from 'lucide-react';
 import { SEOHead } from '@/components/SEOHead';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 const TYPE_LABELS: Record<string, { label: string; icon: any }> = {
   physical: { label: 'Physique', icon: Package },
@@ -35,7 +37,27 @@ export default function ProductDetailPage() {
   const { data: favorites = [] } = useProductFavorites();
   const toggleFav = useToggleFavorite();
   const [imgIndex, setImgIndex] = useState(0);
-  const [showNegotiation, setShowNegotiation] = useState(false);
+  const { openNegotiation } = useChatWidget();
+  const createConversation = useCreateConversation();
+  const [negLoading, setNegLoading] = useState(false);
+
+  const handleOpenNegotiation = useCallback(async () => {
+    if (!product || !user) return;
+    const seller = product.seller_profiles;
+    const sellerUserId = (seller as any)?.user_id;
+    if (!sellerUserId) { toast.error('Vendeur introuvable'); return; }
+    if (sellerUserId === user.id) { toast.error('Vous ne pouvez pas négocier votre propre produit'); return; }
+    
+    setNegLoading(true);
+    try {
+      const conv = await createConversation.mutateAsync(sellerUserId);
+      openNegotiation(product as any, conv.id);
+    } catch {
+      toast.error('Erreur ouverture conversation');
+    } finally {
+      setNegLoading(false);
+    }
+  }, [product, user, createConversation, openNegotiation]);
 
   if (isLoading) {
     return (
@@ -114,7 +136,6 @@ export default function ProductDetailPage() {
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
-              {/* Dots */}
               <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 bg-background/60 backdrop-blur-sm rounded-full px-2 py-1">
                 {images.map((_: string, i: number) => (
                   <button
@@ -127,7 +148,6 @@ export default function ProductDetailPage() {
             </>
           )}
 
-          {/* Badges */}
           <div className="absolute top-4 left-4 flex flex-col gap-1.5">
             {hasDiscount && (
               <span className="bg-destructive text-destructive-foreground text-xs font-bold px-2.5 py-1 rounded-xl shadow-md">
@@ -141,7 +161,6 @@ export default function ProductDetailPage() {
           </div>
         </div>
 
-        {/* Thumbnails strip */}
         {images.length > 1 && (
           <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1">
             {images.map((img: string, i: number) => (
@@ -159,19 +178,14 @@ export default function ProductDetailPage() {
           </div>
         )}
 
-        {/* Info section */}
         <div className="space-y-3">
           <h1 className="text-xl font-bold leading-tight">{product.title}</h1>
-
-          {/* Price block */}
           <div className="flex items-baseline gap-2.5">
             <span className="text-3xl font-extrabold text-foreground tracking-tight">{product.price.toFixed(2)} €</span>
             {hasDiscount && (
               <span className="text-base text-muted-foreground line-through">{product.compare_at_price!.toFixed(2)} €</span>
             )}
           </div>
-
-          {/* Rating */}
           {product.rating_count > 0 && (
             <div className="flex items-center gap-1.5">
               <div className="flex">
@@ -183,23 +197,15 @@ export default function ProductDetailPage() {
               <span className="text-sm text-muted-foreground">({product.rating_count} avis)</span>
             </div>
           )}
-
-          {/* Size, Color, Stock badges */}
           <div className="flex flex-wrap gap-1.5">
-            {product.size && (
-              <Badge variant="outline" className="rounded-xl text-xs">Taille: {product.size}</Badge>
-            )}
-            {product.color && (
-              <Badge variant="outline" className="rounded-xl text-xs">Couleur: {product.color}</Badge>
-            )}
+            {product.size && <Badge variant="outline" className="rounded-xl text-xs">Taille: {product.size}</Badge>}
+            {product.color && <Badge variant="outline" className="rounded-xl text-xs">Couleur: {product.color}</Badge>}
             {product.stock_quantity !== null && (
               <Badge variant={isOutOfStock ? "destructive" : "outline"} className="rounded-xl text-xs">
                 {isOutOfStock ? 'Épuisé' : `${product.stock_quantity} en stock`}
               </Badge>
             )}
           </div>
-
-          {/* Shipping & Protection cards */}
           <div className="grid grid-cols-2 gap-2">
             <div className="flex items-center gap-2 p-3 rounded-2xl bg-secondary/40 border border-border/30">
               <ShippingIcon className="w-5 h-5 text-primary flex-shrink-0" />
@@ -222,7 +228,6 @@ export default function ProductDetailPage() {
 
         <Separator />
 
-        {/* Description */}
         {product.description && (
           <div>
             <h2 className="font-bold text-sm mb-2">Description</h2>
@@ -232,7 +237,6 @@ export default function ProductDetailPage() {
 
         <Separator />
 
-        {/* Seller card */}
         {seller && (
           <div className="p-4 rounded-2xl bg-card border border-border/40 shadow-[var(--shadow-sm)]">
             <div className="flex items-center gap-3">
@@ -259,7 +263,8 @@ export default function ProductDetailPage() {
                 </div>
               </div>
               <Button variant="outline" size="sm" className="rounded-xl text-xs gap-1"
-                onClick={() => setShowNegotiation(true)}>
+                onClick={handleOpenNegotiation}
+                disabled={negLoading}>
                 <MessageCircle className="w-3.5 h-3.5" />
                 Contact
               </Button>
@@ -269,7 +274,6 @@ export default function ProductDetailPage() {
 
         <Separator />
 
-        {/* Reviews */}
         <ProductReviews productId={product.id} />
       </div>
 
@@ -284,7 +288,8 @@ export default function ProductDetailPage() {
             <Button
               variant="outline"
               className="h-12 rounded-2xl text-sm font-bold gap-1.5 border-primary/30"
-              onClick={() => setShowNegotiation(true)}
+              onClick={handleOpenNegotiation}
+              disabled={negLoading}
             >
               <Tag className="w-4 h-4" />
               Négocier
@@ -300,15 +305,6 @@ export default function ProductDetailPage() {
           </Button>
         </div>
       </div>
-
-      {/* Negotiation Chat */}
-      {product && seller && (
-        <NegotiationChat
-          open={showNegotiation}
-          onOpenChange={setShowNegotiation}
-          product={product as any}
-        />
-      )}
     </AppLayout>
   );
 }

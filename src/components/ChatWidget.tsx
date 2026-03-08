@@ -4,14 +4,16 @@ import {
   ArrowLeft, Send, Search, Plus, X, Phone, Video, Mic, MicOff,
   Smile, Check, CheckCheck, Minus, Camera, Reply, Copy, Trash2,
   ChevronDown, Sparkles, MoreVertical, ThumbsUp, ImageIcon, PhoneOff, PhoneMissed,
-  Flag, Forward, Wand2, Languages, SpellCheck, PenLine
+  Flag, Forward, Wand2, Languages, SpellCheck, PenLine, Tag, ArrowRightLeft, CreditCard, XIcon
 } from 'lucide-react';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, useDeleteMessageForMe, useDeleteMessageForEveryone, useHasPendingMessages, useAcceptMessageRequest, useRejectMessageRequest, type Message } from '@/hooks/useMessages';
+import { useNegotiations, useCreateNegotiation, useRespondNegotiation, useAcceptCounterOffer, type Negotiation } from '@/hooks/useNegotiations';
 import { useFriendships } from '@/hooks/useFriendships';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
@@ -346,8 +348,85 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { goBack, closeChat, minimizeChat } = useChatWidget();
+  const { goBack, closeChat, minimizeChat, state: chatState } = useChatWidget();
   const conversation = conversations?.find(c => c.id === conversationId);
+  const negotiationProduct = chatState.negotiationProduct;
+
+  // Negotiation hooks
+  const { data: negotiations = [] } = useNegotiations(negotiationProduct?.id);
+  const createNeg = useCreateNegotiation();
+  const respondNeg = useRespondNegotiation();
+  const acceptCounter = useAcceptCounterOffer();
+  const [showOfferInput, setShowOfferInput] = useState(false);
+  const [offerPrice, setOfferPrice] = useState('');
+  const [counterInput, setCounterInput] = useState('');
+  const [counterNegId, setCounterNegId] = useState<string | null>(null);
+
+  const seller = negotiationProduct?.seller_profiles;
+  const isSeller = seller && (seller as any).user_id === user?.id;
+
+  const myNegotiation = useMemo(() =>
+    negotiations.find(n => n.buyer_id === user?.id && ['pending', 'counter'].includes(n.status)),
+    [negotiations, user]
+  );
+  const acceptedNeg = useMemo(() =>
+    negotiations.find(n => n.buyer_id === user?.id && n.status === 'accepted'),
+    [negotiations, user]
+  );
+  const pendingForSeller = useMemo(() =>
+    negotiations.filter(n => n.status === 'pending' || n.status === 'counter'),
+    [negotiations]
+  );
+
+  const handleMakeOffer = async () => {
+    const price = parseFloat(offerPrice);
+    if (!negotiationProduct || !seller) return;
+    if (isNaN(price) || price <= 0) { toast.error('Prix invalide'); return; }
+    if (price >= negotiationProduct.price) { toast.error('Votre offre doit être inférieure au prix'); return; }
+    createNeg.mutate({
+      productId: negotiationProduct.id,
+      sellerProfileId: seller.id,
+      originalPrice: negotiationProduct.price,
+      offeredPrice: price,
+      conversationId,
+    }, {
+      onSuccess: () => {
+        setShowOfferInput(false);
+        setOfferPrice('');
+        sendMessage.mutate({ conversationId, body: `💰 OFFRE: ${price.toFixed(2)} € pour "${negotiationProduct.title}" (prix: ${negotiationProduct.price.toFixed(2)} €)` });
+      },
+    });
+  };
+
+  const handleSellerRespond = (neg: Negotiation, action: 'accepted' | 'rejected') => {
+    respondNeg.mutate({ negotiationId: neg.id, action }, {
+      onSuccess: () => {
+        const msg = action === 'accepted'
+          ? `✅ OFFRE ACCEPTÉE: ${neg.offered_price.toFixed(2)} € pour "${negotiationProduct?.title}"`
+          : `❌ OFFRE REFUSÉE pour "${negotiationProduct?.title}"`;
+        sendMessage.mutate({ conversationId, body: msg });
+      },
+    });
+  };
+
+  const handleCounterOffer = (neg: Negotiation, counterPrice: number) => {
+    respondNeg.mutate({ negotiationId: neg.id, action: 'counter', counterPrice }, {
+      onSuccess: () => {
+        sendMessage.mutate({ conversationId, body: `🔄 CONTRE-OFFRE: ${counterPrice.toFixed(2)} € pour "${negotiationProduct?.title}"` });
+      },
+    });
+  };
+
+  const handlePayNegotiated = async () => {
+    if (!acceptedNeg) return;
+    try {
+      const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
+        body: { action: 'negotiation_checkout', negotiationId: acceptedNeg.id },
+      });
+      if (error || data?.error) throw new Error(data?.error || 'Erreur');
+      if (data?.url) window.location.href = data.url;
+    } catch (e: any) { toast.error(e.message || 'Erreur paiement'); }
+  };
 
   // Call hook & sound
   const [showVoicemailPrompt, setShowVoicemailPrompt] = useState(false);
@@ -534,7 +613,123 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       )}
 
-      {/* Messages */}
+      {/* Negotiation product banner */}
+      {negotiationProduct && (
+        <div className="mx-2 mt-2 bg-primary/5 border border-primary/20 rounded-xl px-3 py-2">
+          <div className="flex items-center gap-2">
+            {negotiationProduct.thumbnail_url && (
+              <img src={negotiationProduct.thumbnail_url} className="w-10 h-10 rounded-lg object-cover" alt="" />
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-bold truncate">{negotiationProduct.title}</p>
+              <p className="text-[10px] text-muted-foreground">{seller?.store_name} · {negotiationProduct.price.toFixed(2)} €</p>
+            </div>
+            {!isSeller && !myNegotiation && !acceptedNeg && (
+              <Button size="sm" className="h-7 text-[10px] rounded-xl gap-1" onClick={() => setShowOfferInput(true)}>
+                <Tag className="w-3 h-3" /> Offrir
+              </Button>
+            )}
+          </div>
+
+          {/* Offer input */}
+          {showOfferInput && (
+            <div className="flex gap-1.5 mt-2">
+              <Input
+                type="number" step="0.01" min="0"
+                value={offerPrice}
+                onChange={e => setOfferPrice(e.target.value)}
+                placeholder={`Max ${negotiationProduct.price.toFixed(2)} €`}
+                className="h-7 text-xs rounded-lg flex-1"
+              />
+              <Button size="sm" className="h-7 text-[10px] rounded-lg" onClick={handleMakeOffer} disabled={createNeg.isPending}>
+                Envoyer
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-lg" onClick={() => setShowOfferInput(false)}>
+                <X className="w-3 h-3" />
+              </Button>
+            </div>
+          )}
+
+          {/* Buyer: pending offer */}
+          {myNegotiation && !isSeller && (
+            <div className="mt-2 text-[10px]">
+              {myNegotiation.status === 'pending' && (
+                <p className="text-muted-foreground">⏳ Votre offre de <b className="text-foreground">{myNegotiation.offered_price.toFixed(2)} €</b> est en attente</p>
+              )}
+              {myNegotiation.status === 'counter' && (
+                <div className="space-y-1.5">
+                  <p>🔄 Contre-offre du vendeur: <b className="text-foreground">{myNegotiation.counter_price?.toFixed(2)} €</b></p>
+                  <div className="flex gap-1">
+                    <Button size="sm" className="h-6 text-[10px] rounded-full px-2.5"
+                      onClick={() => acceptCounter.mutate({ negotiationId: myNegotiation.id }, {
+                        onSuccess: () => sendMessage.mutate({ conversationId, body: `✅ CONTRE-OFFRE ACCEPTÉE: ${myNegotiation.counter_price?.toFixed(2)} €` })
+                      })}>
+                      <Check className="w-3 h-3 mr-0.5" /> Accepter
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-6 text-[10px] rounded-full px-2.5"
+                      onClick={() => respondNeg.mutate({ negotiationId: myNegotiation.id, action: 'rejected' })}>
+                      <XIcon className="w-3 h-3 mr-0.5" /> Refuser
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Buyer: accepted - pay button */}
+          {acceptedNeg && !isSeller && (
+            <div className="mt-2 flex items-center gap-2">
+              <Check className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="text-[10px] font-semibold text-emerald-700 flex-1">
+                Prix négocié: <b>{(acceptedNeg.counter_price || acceptedNeg.offered_price).toFixed(2)} €</b>
+              </span>
+              <Button size="sm" className="h-7 rounded-xl text-[10px] gap-1 premium-button" onClick={handlePayNegotiated}>
+                <CreditCard className="w-3 h-3" /> Payer
+              </Button>
+            </div>
+          )}
+
+          {/* Seller: pending offers to respond */}
+          {isSeller && pendingForSeller.map(neg => (
+            <div key={neg.id} className="mt-2 bg-amber-500/10 rounded-lg p-2 text-[10px]">
+              <p className="font-semibold mb-1">
+                {neg.status === 'pending'
+                  ? `💰 Offre: ${neg.offered_price.toFixed(2)} € (prix: ${neg.original_price.toFixed(2)} €)`
+                  : `🔄 Attente réponse à votre contre-offre de ${neg.counter_price?.toFixed(2)} €`}
+              </p>
+              {neg.status === 'pending' && (
+                <>
+                  <div className="flex gap-1">
+                    <Button size="sm" className="h-6 text-[10px] rounded-full px-2" onClick={() => handleSellerRespond(neg, 'accepted')}>
+                      <Check className="w-3 h-3 mr-0.5" /> Accepter
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-6 text-[10px] rounded-full px-2" onClick={() => setCounterNegId(neg.id)}>
+                      <ArrowRightLeft className="w-3 h-3 mr-0.5" /> Contre-offre
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-6 text-[10px] rounded-full px-2 text-destructive" onClick={() => handleSellerRespond(neg, 'rejected')}>
+                      <XIcon className="w-3 h-3" />
+                    </Button>
+                  </div>
+                  {counterNegId === neg.id && (
+                    <div className="flex gap-1 mt-1.5">
+                      <Input type="number" step="0.01" min="0" value={counterInput} onChange={e => setCounterInput(e.target.value)}
+                        placeholder="Votre prix" className="h-6 text-[10px] rounded-lg flex-1" />
+                      <Button size="sm" className="h-6 text-[10px] rounded-lg" onClick={() => {
+                        const p = parseFloat(counterInput);
+                        if (isNaN(p) || p <= 0) return;
+                        handleCounterOffer(neg, p);
+                        setCounterNegId(null);
+                        setCounterInput('');
+                      }}>OK</Button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto overflow-x-visible px-3 py-2 space-y-0.5 relative">
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
@@ -574,7 +769,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                   const isFirstInGroup = !prevMsg || prevMsg.sender_id !== msg.sender_id;
                   const isLastInGroup = !nextMsg || nextMsg.sender_id !== msg.sender_id;
                   const reactions = messageReactions[msg.id] || [];
-                  const isBigEmoji = isSingleEmoji(msg.body);
+                   const isBigEmoji = isSingleEmoji(msg.body);
+                   const isNegotiationMsg = msg.body.startsWith('💰 OFFRE:') || msg.body.startsWith('✅ OFFRE') || msg.body.startsWith('❌ OFFRE') || msg.body.startsWith('🔄 CONTRE') || msg.body.startsWith('✅ CONTRE');
 
                   return (
                     <div
@@ -748,6 +944,13 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                                 </div>
                               );
                             })()}
+                          </div>
+                        ) : isNegotiationMsg ? (
+                          <div
+                            onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
+                            className="cursor-pointer select-none px-3 py-2 text-xs break-words leading-relaxed rounded-2xl bg-amber-500/10 border border-amber-500/30 text-foreground"
+                          >
+                            <MessageBodyWithLinks body={msg.body} isMe={false} />
                           </div>
                         ) : (
                           <div
