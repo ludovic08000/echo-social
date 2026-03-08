@@ -174,12 +174,22 @@ export function FeedLiveSection() {
                   <Clock className="w-2.5 h-2.5" />
                   Replay
                 </span>
-                {replay.total_views > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-sm text-white text-[10px] flex items-center gap-1">
-                    <Eye className="w-2.5 h-2.5" />
-                    {replay.total_views}
-                  </span>
-                )}
+                <div className="flex items-center gap-1">
+                  {user && user.id === replay.user_id && (
+                    <button
+                      onClick={(e) => handleDelete(e, replay.id)}
+                      className="p-1 rounded-full bg-black/60 backdrop-blur-sm text-white hover:bg-destructive transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                  {replay.total_views > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-sm text-white text-[10px] flex items-center gap-1">
+                      <Eye className="w-2.5 h-2.5" />
+                      {replay.total_views}
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="absolute bottom-0 left-0 right-0 p-2.5 bg-gradient-to-t from-black/90 via-black/50 to-transparent z-10">
