@@ -57,7 +57,7 @@ serve(async (req) => {
               name: `Campagne pub: ${campaign_title || "ForSure Ads"}`,
               description: `Budget publicitaire ForSure Ads`,
             },
-            unit_amount: Math.round(amount * 100), // Convert to cents
+            unit_amount: Math.round(numAmount * 100), // Convert to cents
           },
           quantity: 1,
         },

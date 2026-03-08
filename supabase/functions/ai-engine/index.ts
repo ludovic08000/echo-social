@@ -61,6 +61,13 @@ serve(async (req) => {
       });
     }
 
+    // Rate limit
+    if (!checkRateLimit(authUser.id)) {
+      return new Response(JSON.stringify({ error: "Trop de requêtes IA, réessayez dans un moment" }), {
+        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const body = await req.json();
     const { action, text, context, feedback } = body;
     const user_id = authUser.id; // Always use authenticated user ID, never trust client

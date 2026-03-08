@@ -48,6 +48,13 @@ serve(async (req) => {
       });
     }
 
+    // Rate limit
+    if (!checkRateLimit(user.id)) {
+      return new Response(JSON.stringify({ error: "Trop de requêtes, réessayez dans un moment" }), {
+        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
