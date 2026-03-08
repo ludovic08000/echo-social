@@ -16,6 +16,7 @@ export interface LiveStream {
   category: string;
   hashtags: string[];
   started_at: string | null;
+  recording_url: string | null;
   created_at: string;
   // Joined data
   host?: {
