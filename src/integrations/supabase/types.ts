@@ -1795,6 +1795,8 @@ export type Database = {
           id: string
           notes: string | null
           order_number: string
+          packing_video_status: string
+          packing_video_url: string | null
           paid_at: string | null
           payment_intent_id: string | null
           shipped_at: string | null
@@ -1824,6 +1826,8 @@ export type Database = {
           id?: string
           notes?: string | null
           order_number: string
+          packing_video_status?: string
+          packing_video_url?: string | null
           paid_at?: string | null
           payment_intent_id?: string | null
           shipped_at?: string | null
@@ -1853,6 +1857,8 @@ export type Database = {
           id?: string
           notes?: string | null
           order_number?: string
+          packing_video_status?: string
+          packing_video_url?: string | null
           paid_at?: string | null
           payment_intent_id?: string | null
           shipped_at?: string | null
