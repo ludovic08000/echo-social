@@ -535,9 +535,19 @@ serve(async (req) => {
             findDeepValue(first, (key) => /shipmentnumber|expeditionnum|numeroexpedition/i.test(key)) ||
             null;
 
+          // Extract label URL from labelField.outputField (PdfUrl) or deep search
+          const labelField = first?.labelListField?.labelField;
           labelUrl =
-            findDeepValue(first, (key) => /pdfurl|labellink|labelurl|label/i.test(key)) ||
+            labelField?.outputField ||
+            labelField?.output ||
+            findDeepValue(first, (key) => /^output(field)?$/i.test(key)) ||
+            findDeepValue(first, (key) => /pdfurl|labellink|labelurl/i.test(key)) ||
             null;
+
+          // If still null but we have a shipment number, the sandbox may not generate PDFs
+          if (!labelUrl) {
+            console.log("No label URL found. labelField keys:", labelField ? Object.keys(labelField) : "N/A");
+          }
         }
         if (!labelUrl) {
           labelUrl = result?.LabelLink || result?.labelLink || null;
