@@ -17,6 +17,9 @@ import { ReactionType } from '@/hooks/useReactions';
 import { ShareButton } from './ShareButton';
 import { generatePostUrl } from '@/lib/urlUtils';
 import { useAIContent } from '@/hooks/useAIContent';
+import { useCurrentUserIsMinor } from '@/hooks/useMinorProtection';
+import { useReportUser } from '@/hooks/useTrustAndSafety';
+import { toast } from 'sonner';
 import {
   DropdownMenu,
   DropdownMenuContent,
