@@ -336,7 +336,115 @@ serve(async (req) => {
       });
     }
 
-    // test_checkout removed for security — all payments go through Stripe
+    // ── NEGOTIATION CHECKOUT ──
+    if (action === "negotiation_checkout") {
+      const { negotiationId } = body;
+      if (!negotiationId) throw new Error("negotiationId requis");
+
+      // Fetch negotiation
+      const { data: neg, error: negError } = await supabase
+        .from("negotiations")
+        .select("*, products(id, title, price, seller_id, thumbnail_url, weight_grams, stock_quantity)")
+        .eq("id", negotiationId)
+        .single();
+
+      if (negError || !neg) throw new Error("Négociation introuvable");
+      if (neg.buyer_id !== userId) throw new Error("Vous n'êtes pas l'acheteur de cette négociation");
+      if (neg.status !== "accepted") throw new Error("Cette négociation n'est pas acceptée");
+
+      const product = neg.products;
+      if (!product) throw new Error("Produit introuvable");
+
+      const agreedPrice = Number(neg.offered_price);
+      const commission = Math.round(agreedPrice * COMMISSION_RATE * 100) / 100;
+      const total = agreedPrice + commission;
+
+      const orderNumber = `ORD-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+
+      const { data: order, error: orderError } = await supabase
+        .from("orders")
+        .insert({
+          buyer_id: userId,
+          order_number: orderNumber,
+          subtotal: agreedPrice,
+          total,
+          commission_rate: COMMISSION_RATE,
+          commission_amount: commission,
+          status: "pending",
+          notes: `Prix négocié (original: ${product.price}€)`,
+        })
+        .select()
+        .single();
+
+      if (orderError) throw new Error(`Erreur création commande: ${orderError.message}`);
+
+      const itemCommission = Math.round(agreedPrice * COMMISSION_RATE * 100) / 100;
+      await supabase.from("order_items").insert({
+        order_id: order.id,
+        product_id: product.id,
+        seller_id: product.seller_id,
+        title: product.title,
+        price: agreedPrice,
+        quantity: 1,
+        subtotal: agreedPrice,
+        commission_amount: itemCommission,
+        seller_payout: agreedPrice - itemCommission,
+        status: "pending",
+      });
+
+      // Update negotiation with order_id
+      await supabase.from("negotiations").update({ order_id: order.id, status: "paid" }).eq("id", negotiationId);
+
+      const customers = await stripe.customers.list({ email: userEmail, limit: 1 });
+      let customerId: string | undefined;
+      if (customers.data.length > 0) customerId = customers.data[0].id;
+
+      const origin = req.headers.get("origin") || "https://calm-connect-05.lovable.app";
+
+      const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+        {
+          price_data: {
+            currency: "eur",
+            product_data: {
+              name: `${product.title} (prix négocié)`,
+              images: product.thumbnail_url ? [product.thumbnail_url] : [],
+            },
+            unit_amount: Math.round(agreedPrice * 100),
+          },
+          quantity: 1,
+        },
+      ];
+
+      if (commission > 0) {
+        lineItems.push({
+          price_data: {
+            currency: "eur",
+            product_data: { name: "Frais de service ForSure (5%)", images: [] },
+            unit_amount: Math.round(commission * 100),
+          },
+          quantity: 1,
+        });
+      }
+
+      const session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        customer_email: customerId ? undefined : userEmail,
+        line_items: lineItems,
+        mode: "payment",
+        success_url: `${origin}/marketplace?order_success=${order.id}`,
+        cancel_url: `${origin}/marketplace?order_canceled=true`,
+        metadata: { user_id: userId, order_id: order.id, order_number: orderNumber, negotiation_id: negotiationId },
+      });
+
+      if (session.payment_intent) {
+        await supabase.from("orders").update({ payment_intent_id: session.payment_intent as string }).eq("id", order.id);
+      }
+
+      return new Response(JSON.stringify({ url: session.url, orderId: order.id }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
 
     return new Response(JSON.stringify({ error: "Action invalide" }), {
       status: 400,
