@@ -721,7 +721,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                                   )
                             )}
                           >
-                            {msg.body}
+                            <MessageBodyWithLinks body={msg.body} isMe={isMe} />
                           </div>
                         )}
 
