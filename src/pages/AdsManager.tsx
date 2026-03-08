@@ -89,8 +89,9 @@ function AdChatCreator() {
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('ad-assistant', {
+      const { data, error } = await supabase.functions.invoke('zeus', {
         body: {
+          domain: 'ads',
           action: 'chat',
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
         },
