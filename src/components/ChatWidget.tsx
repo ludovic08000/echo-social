@@ -55,6 +55,36 @@ const MESSAGE_REACTIONS = [
   { emoji: '🔥', label: 'fire' },
 ];
 
+const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/g;
+
+function MessageBodyWithLinks({ body, isMe }: { body: string; isMe: boolean }) {
+  const parts = body.split(URL_REGEX);
+  if (parts.length === 1) return <>{body}</>;
+  return (
+    <>
+      {parts.map((part, i) =>
+        URL_REGEX.test(part) ? (
+          <a
+            key={i}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            className={cn(
+              'underline break-all',
+              isMe ? 'text-primary-foreground/90 hover:text-primary-foreground' : 'text-primary hover:text-primary/80'
+            )}
+          >
+            {part.length > 50 ? part.slice(0, 47) + '…' : part}
+          </a>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  );
+}
+
 const EMOJI_CATEGORIES = [
   { label: '😀 Visages', emojis: ['😀','😂','🤣','😍','🥰','😘','😎','🤩','🥳','😇','🤗','🤭','😏','😌','🥺','😢','😭','😡','🤯','🫠','😴','🤑','🫡','🫶'] },
   { label: '❤️ Cœurs', emojis: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','💖','💝','💘','💕','💗','💓','❤️‍🔥','💔','🫀'] },
