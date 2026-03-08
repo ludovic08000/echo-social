@@ -687,19 +687,33 @@ function ChatView({ conversationId }: { conversationId: string }) {
             </Button>
           </Link>
           {conversation && (
-            <Link to={`/profile/${conversation.participant.user_id}`} className="flex items-center gap-3 flex-1 min-w-0">
-              <div className="relative">
-                <UserAvatar src={conversation.participant.avatar_url} alt={conversation.participant.name} size="md" />
-                <div className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-background ring-2 ring-emerald-500/20" />
+            conversation.is_group ? (
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/30 flex items-center justify-center text-lg flex-shrink-0">
+                  👥
+                </div>
+                <div className="min-w-0">
+                  <span className="text-sm font-semibold block truncate">{conversation.name || 'Groupe'}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {conversation.participants ? `${conversation.participants.length + 1} membres` : 'Groupe'}
+                  </span>
+                </div>
               </div>
-              <div className="min-w-0">
-                <span className="text-sm font-semibold block truncate">{conversation.participant.name}</span>
-                <span className="text-[10px] text-emerald-500 font-medium flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  En ligne
-                </span>
-              </div>
-            </Link>
+            ) : (
+              <Link to={`/profile/${conversation.participant.user_id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="relative">
+                  <UserAvatar src={conversation.participant.avatar_url} alt={conversation.participant.name} size="md" />
+                  <div className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-background ring-2 ring-emerald-500/20" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-sm font-semibold block truncate">{conversation.participant.name}</span>
+                  <span className="text-[10px] text-emerald-500 font-medium flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    En ligne
+                  </span>
+                </div>
+              </Link>
+            )
           )}
           {/* Call buttons */}
           <div className="flex items-center gap-0.5">
