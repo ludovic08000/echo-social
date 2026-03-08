@@ -3,35 +3,28 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 
-type BucketName = 'avatars' | 'post-images' | 'videos' | 'products';
+type MediaFolder = 'avatars' | 'post-images' | 'videos' | 'products';
 
-interface UseImageUploadOptions {
-  bucket: BucketName;
+interface UseR2UploadOptions {
+  folder: MediaFolder;
   onSuccess?: (url: string) => void;
   maxSizeMB?: number;
 }
 
-export function useImageUpload({ bucket, onSuccess, maxSizeMB = 5 }: UseImageUploadOptions) {
+export function useR2Upload({ folder, onSuccess, maxSizeMB = 5 }: UseR2UploadOptions) {
   const { user } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
 
   const upload = async (file: File): Promise<string | null> => {
     if (!user) {
-      toast.error('Vous devez être connecté pour uploader une image');
+      toast.error('Vous devez être connecté pour uploader un fichier');
       return null;
     }
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      toast.error('Seules les images sont autorisées');
-      return null;
-    }
-
-    // Validate file size
     const maxSizeBytes = maxSizeMB * 1024 * 1024;
     if (file.size > maxSizeBytes) {
-      toast.error(`L'image ne doit pas dépasser ${maxSizeMB}MB`);
+      toast.error(`Le fichier ne doit pas dépasser ${maxSizeMB}MB`);
       return null;
     }
 
@@ -41,7 +34,7 @@ export function useImageUpload({ bucket, onSuccess, maxSizeMB = 5 }: UseImageUpl
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('folder', bucket);
+      formData.append('folder', folder);
 
       setProgress(30);
 
@@ -60,7 +53,7 @@ export function useImageUpload({ bucket, onSuccess, maxSizeMB = 5 }: UseImageUpl
         }
       );
 
-      setProgress(70);
+      setProgress(80);
 
       if (!response.ok) {
         const err = await response.json();
@@ -69,13 +62,12 @@ export function useImageUpload({ bucket, onSuccess, maxSizeMB = 5 }: UseImageUpl
 
       const result = await response.json();
       setProgress(100);
-      
-      toast.success('Image uploadée avec succès');
+
+      toast.success('Fichier uploadé avec succès');
       onSuccess?.(result.url);
-      
       return result.url;
     } catch (error: any) {
-      console.error('Upload failed:', error);
+      console.error('R2 upload failed:', error);
       toast.error(error.message || "Erreur lors de l'upload");
       return null;
     } finally {
@@ -84,9 +76,5 @@ export function useImageUpload({ bucket, onSuccess, maxSizeMB = 5 }: UseImageUpl
     }
   };
 
-  return {
-    upload,
-    isUploading,
-    progress,
-  };
+  return { upload, isUploading, progress };
 }
