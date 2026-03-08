@@ -10,7 +10,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { useRef } from 'react';
+import { useRef, useCallback } from 'react';
 
 interface ReplayStream {
   id: string;
@@ -66,6 +66,25 @@ function LiveCard({ item }: { item: { id: string; title: string; thumbnail_url: 
   const { user } = useAuth();
   const deleteLive = useDeleteLive();
 
+  // Lazy-load video src on hover to save bandwidth
+  const handleMouseEnter = useCallback(() => {
+    const v = videoRef.current;
+    if (v && item.recording_url) {
+      if (!v.src || v.src === '') {
+        v.src = item.recording_url;
+      }
+      v.play().catch(() => {});
+    }
+  }, [item.recording_url]);
+
+  const handleMouseLeave = useCallback(() => {
+    const v = videoRef.current;
+    if (v) {
+      v.pause();
+      v.currentTime = 0;
+    }
+  }, []);
+
   const handleDelete = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -82,19 +101,18 @@ function LiveCard({ item }: { item: { id: string; title: string; thumbnail_url: 
     <Link
       to={`/live/${item.id}`}
       className="relative flex-shrink-0 w-[110px] h-[160px] rounded-xl overflow-hidden bg-black group"
-      onMouseEnter={() => videoRef.current?.play().catch(() => {})}
-      onMouseLeave={() => { if (videoRef.current) { videoRef.current.pause(); videoRef.current.currentTime = 0; } }}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       {/* Background: video preview > thumbnail > gradient placeholder */}
       {hasVideo ? (
         <video
           ref={videoRef}
-          src={item.recording_url!}
           className="absolute inset-0 w-full h-full object-cover"
           muted
           loop
           playsInline
-          preload="metadata"
+          preload="none"
           poster={item.thumbnail_url || undefined}
         />
       ) : hasThumbnail ? (
