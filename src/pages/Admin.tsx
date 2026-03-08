@@ -1634,36 +1634,131 @@ function ZeusSection() {
     { label: '💰 Revenus', prompt: 'Analyse détaillée des revenus : MRR, commandes, tips, commissions. Identifie les leviers de monétisation sous-exploités' },
     { label: '🔒 Audit Sécurité', prompt: 'Lance un audit sécurité complet : profils suspects, trust scores faibles, tentatives de fraude, comptes bannis, vérifications en attente' },
     { label: '🛍️ Marketplace', prompt: 'Analyse la marketplace : produits, vendeurs, catégories populaires, prix moyens, et recommandations pour booster les ventes' },
-    { label: '🎯 Engagement', prompt: 'Métriques d\'engagement de la semaine : likes, commentaires, lives, messages, stories. Quels contenus performent le mieux ?' },
+    { label: '🧬 Optimiser Algo', prompt: 'Analyse les métriques d\'engagement et la config actuelle de l\'algo du feed, puis propose des optimisations concrètes' },
     { label: '💡 Stratégie', prompt: 'En te basant sur toutes les données disponibles, propose un plan d\'action stratégique pour les 30 prochains jours avec objectifs mesurables' },
   ];
-  const [messages, setMessages] = useState<ZMsg[]>([{ role: 'system', content: `⚡ **Zeus v2** — Cerveau Stratégique ForSure\n\nJe suis propulsé par **Gemini 3.1 Pro** avec accès en temps réel à toutes vos données.\n\n🧠 **Capacités** : Analyse de données • Détection de risques • Recommandations stratégiques • Audit sécurité • Recherche utilisateurs\n\n🛠️ **Outils** : Je peux interroger la base en temps réel pour affiner mes analyses (revenus, engagement, croissance, marketplace, profils).\n\nPosez-moi n'importe quelle question.` }]);
+  const [messages, setMessages] = useState<ZMsg[]>([{ role: 'system', content: `⚡ **Zeus v2** — Assistant Stratégique Proactif\n\nJe suis propulsé par **Gemini 3.1 Pro** avec accès en temps réel à toutes vos données.\n\n🧠 **Mode proactif** : Je vous fais des propositions d'optimisation sans que vous ayez à demander. Vous validez ou refusez chaque action.\n\n🛠️ **Outils** : Analyse de données, détection de risques, tuning algorithme, simulation de charge.\n\n💡 Commencez par me demander un dashboard ou dites-moi simplement "Quoi de neuf ?"` }]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
+  const [pendingProposals, setPendingProposals] = useState<Map<string, { action: string; key: string; updates: any; reason: string }>>(new Map());
+  const [appliedProposals, setAppliedProposals] = useState<Set<string>>(new Set());
+  const [rejectedProposals, setRejectedProposals] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [messages]);
 
+  const parseProposals = useCallback((content: string) => {
+    const regex = /\[ZEUS_PROPOSAL\]\s*\n([\s\S]*?)\[\/ZEUS_PROPOSAL\]/g;
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+      const block = match[1];
+      const actionMatch = block.match(/action:\s*(.+)/);
+      const keyMatch = block.match(/key:\s*(.+)/);
+      const updatesMatch = block.match(/updates:\s*({[\s\S]*?})/);
+      const reasonMatch = block.match(/reason:\s*(.+)/);
+      if (actionMatch && keyMatch && updatesMatch && reasonMatch) {
+        const id = `${keyMatch[1].trim()}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        try {
+          const updates = JSON.parse(updatesMatch[1].trim());
+          setPendingProposals(prev => {
+            const next = new Map(prev);
+            next.set(id, { action: actionMatch[1].trim(), key: keyMatch[1].trim(), updates, reason: reasonMatch[1].trim() });
+            return next;
+          });
+        } catch {}
+      }
+    }
+  }, []);
+
+  const applyProposal = useCallback(async (proposalId: string) => {
+    const proposal = pendingProposals.get(proposalId);
+    if (!proposal) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(ZEUS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ domain: 'admin', action: 'apply_proposal', proposalAction: proposal.action, key: proposal.key, updates: proposal.updates, reason: proposal.reason }),
+      });
+      if (!resp.ok) throw new Error('Erreur application');
+      setAppliedProposals(prev => new Set(prev).add(proposalId));
+      setMessages(prev => [...prev, { role: 'system', content: `✅ **Proposition appliquée** : ${proposal.reason}\n\nClé \`${proposal.key}\` mise à jour.` }]);
+      toast({ title: '✅ Proposition Zeus appliquée', description: proposal.reason });
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    }
+  }, [pendingProposals]);
+
+  const rejectProposal = useCallback((proposalId: string) => {
+    setRejectedProposals(prev => new Set(prev).add(proposalId));
+    const proposal = pendingProposals.get(proposalId);
+    setMessages(prev => [...prev, { role: 'system', content: `❌ **Proposition refusée** : ${proposal?.reason || ''}` }]);
+  }, [pendingProposals]);
+
+  const renderContent = useCallback((content: string) => {
+    const parts = content.split(/(\[ZEUS_PROPOSAL\][\s\S]*?\[\/ZEUS_PROPOSAL\])/g);
+    return parts.map((part, i) => {
+      const proposalMatch = part.match(/\[ZEUS_PROPOSAL\]\s*\n([\s\S]*?)\[\/ZEUS_PROPOSAL\]/);
+      if (proposalMatch) {
+        const block = proposalMatch[1];
+        const keyMatch = block.match(/key:\s*(.+)/);
+        const updatesMatch = block.match(/updates:\s*({[\s\S]*?})/);
+        const reasonMatch = block.match(/reason:\s*(.+)/);
+        const key = keyMatch?.[1]?.trim() || '';
+        const reason = reasonMatch?.[1]?.trim() || '';
+        let updates: any = {};
+        try { updates = JSON.parse(updatesMatch?.[1]?.trim() || '{}'); } catch {}
+
+        const proposalId = Array.from(pendingProposals.entries()).find(
+          ([, p]) => p.key === key && p.reason === reason
+        )?.[0];
+        const isApplied = proposalId ? appliedProposals.has(proposalId) : false;
+        const isRejected = proposalId ? rejectedProposals.has(proposalId) : false;
+
+        return (
+          <div key={i} className="my-3 rounded-xl border-2 border-amber-500/30 bg-amber-500/5 p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Zap className="w-4 h-4 text-amber-400" />
+              <span className="text-xs font-bold text-amber-400 uppercase">Proposition Zeus</span>
+            </div>
+            <p className="text-sm font-medium mb-1">{reason}</p>
+            <div className="text-xs text-muted-foreground mb-2">
+              <span className="font-mono bg-muted/50 px-1.5 py-0.5 rounded">{key}</span>
+              {' → '}
+              <span className="font-mono">{JSON.stringify(updates)}</span>
+            </div>
+            {isApplied ? (
+              <Badge className="bg-green-500/20 text-green-400 border-green-500/30">✅ Appliquée</Badge>
+            ) : isRejected ? (
+              <Badge variant="outline" className="text-red-400 border-red-500/30">❌ Refusée</Badge>
+            ) : proposalId ? (
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => applyProposal(proposalId)} className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs h-7">✅ Valider</Button>
+                <Button size="sm" variant="outline" onClick={() => rejectProposal(proposalId)} className="gap-1 text-xs h-7 border-red-500/30 text-red-400 hover:bg-red-500/10">❌ Refuser</Button>
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+      return <ReactMarkdown key={i}>{part}</ReactMarkdown>;
+    });
+  }, [pendingProposals, appliedProposals, rejectedProposals, applyProposal, rejectProposal]);
+
   const inferDomainAction = (text: string) => {
     const lower = text.toLowerCase();
     if (lower.startsWith('/status')) return { domain: '_status', action: 'status', extra: {} };
-    // Explicit moderation request
     if ((lower.includes('modèr') || lower.includes('moder')) && (lower.includes('"') || lower.includes('«') || lower.includes(':'))) {
       const m = text.match(/[«"""](.+?)[»"""]|:\s*[«"""]?(.+)/); return { domain: 'moderation', action: 'moderate_message', extra: { messageBody: m?.[1] || m?.[2] || text } };
     }
-    // Default: admin chat with full platform context
     return { domain: 'admin', action: 'chat', extra: {} };
   };
 
   const formatResult = (domain: string, action: string, data: any): string => {
     if (domain === 'moderation') return `### 🛡️ Modération\n| | |\n|---|---|\n|**Statut**|${data.safe ? '✅ Sûr' : '⚠️ Dangereux'}|\n|**Catégorie**|${data.category || 'safe'}|\n|**Raison**|${data.reason || 'Aucune'}|`;
-    if (domain === 'post') return `### ✍️ Post Amélioré\n\n${data.improved_text || JSON.stringify(data)}${data.corrections?.length ? `\n\n**Corrections :** ${data.corrections.join(', ')}` : ''}`;
-    if (domain === 'content') return `### 📝 Résultat\n\n${data.result || JSON.stringify(data)}`;
     return `### ⚡ Réponse\n\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``;
   };
 
-  // Keep conversation history for admin chat context
   const chatHistory = useRef<{role: string; content: string}[]>([]);
 
   const streamSSE = async (resp: Response, prefix = '') => {
@@ -1671,6 +1766,7 @@ function ZeusSection() {
     while (true) { const { done, value } = await reader.read(); if (done) break; buf += decoder.decode(value, { stream: true }); let idx;
       while ((idx = buf.indexOf('\n')) !== -1) { let line = buf.slice(0, idx); buf = buf.slice(idx + 1); if (line.endsWith('\r')) line = line.slice(0, -1); if (!line.startsWith('data: ')) continue; const j = line.slice(6).trim(); if (j === '[DONE]') break;
         try { const c = JSON.parse(j).choices?.[0]?.delta?.content; if (c) { content += c; setMessages(p => { const last = p[p.length-1]; if (last?.role === 'assistant') return p.map((m,i) => i === p.length-1 ? {...m, content: prefix + content} : m); return [...p, {role:'assistant' as const, content: prefix + content}]; }); } } catch {} } }
+    parseProposals(content);
     return content;
   };
 
@@ -1680,14 +1776,13 @@ function ZeusSection() {
     try {
       const { domain, action, extra } = inferDomainAction(text);
       if (domain === '_status') {
-        setMessages(p => [...p, { role: 'assistant', content: `### ⚡ Zeus v2 Status\n\n| Domaine | Actions |\n|---|---|\n|**content**|summarize, translate, correct, improve|\n|**post**|improve, formal, casual, shorter, longer|\n|**moderation**|moderate_message|\n|**ads**|chat, generate_ad, moderate_ad|\n|**seller**|generate_description, coach_chat|\n|**photo**|analyze_photo, compare_photos|\n|**agent**|chat agents|\n|**admin**|chat (🧠 tool-calling), stats, search_users|\n\n### 🛠️ Outils Zeus\n| Outil | Description |\n|---|---|\n|search_users|Recherche utilisateurs|\n|get_user_details|Détails complet d'un profil|\n|get_reports_by_type|Filtrer signalements|\n|get_revenue_analytics|Analytics revenus|\n|get_marketplace_stats|Stats marketplace|\n|get_engagement_metrics|Métriques engagement|\n|get_growth_metrics|Croissance & rétention|\n\n🟢 Opérationnel • 🧠 Gemini 3.1 Pro + Tool Calling` }]);
+        setMessages(p => [...p, { role: 'assistant', content: `### ⚡ Zeus v2 — Mode Proactif\n\n🟢 Opérationnel • 🧠 Gemini 3.1 Pro • Propositions avec validation admin` }]);
         setStreaming(false); return;
       }
 
       const { data: { session } } = await supabase.auth.getSession();
       const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` };
 
-      // Admin chat: streaming with conversation history
       if (domain === 'admin' && action === 'chat') {
         chatHistory.current.push({ role: 'user', content: text });
         const resp = await fetch(ZEUS_URL, { method: 'POST', headers, body: JSON.stringify({ domain, action, messages: chatHistory.current }) });
@@ -1697,21 +1792,13 @@ function ZeusSection() {
         setStreaming(false); return;
       }
 
-      // Streaming responses (seller descriptions)
-      if (domain === 'seller' && action === 'generate_description') {
-        const resp = await fetch(ZEUS_URL, { method: 'POST', headers, body: JSON.stringify({ domain, action, ...extra }) });
-        if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || 'Erreur');
-        if (resp.headers.get('content-type')?.includes('event-stream')) { await streamSSE(resp, '### 📝 Description\n\n'); setStreaming(false); return; }
-      }
-
-      // Non-streaming
       const resp = await fetch(ZEUS_URL, { method: 'POST', headers, body: JSON.stringify({ domain, action, ...extra }) });
       if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || `Erreur ${resp.status}`);
       const data = await resp.json();
       setMessages(p => [...p, { role: 'assistant', content: formatResult(domain, action, data) }]);
     } catch (e: any) { setMessages(p => [...p, { role: 'assistant', content: `### ❌ Erreur\n\n${e.message}` }]); }
     finally { setStreaming(false); }
-  }, [input, streaming]);
+  }, [input, streaming, parseProposals]);
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
@@ -1720,18 +1807,20 @@ function ZeusSection() {
           <Zap className="w-5 h-5 text-amber-400" />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-foreground">Zeus — Assistant de Décision</h2>
-          <p className="text-[11px] text-muted-foreground">Accès total plateforme • Analyse en temps réel • Recommandations IA</p>
+          <h2 className="text-lg font-bold text-foreground">Zeus — Assistant Stratégique Proactif</h2>
+          <p className="text-[11px] text-muted-foreground">Propose • Vous validez • Il applique</p>
         </div>
-        <Badge variant="outline" className="ml-auto text-[10px] border-amber-500/30 text-amber-400">LIVE</Badge>
+        <Badge variant="outline" className="ml-auto text-[10px] border-amber-500/30 text-amber-400">PROACTIF</Badge>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3 mb-3 pr-1">
         {messages.map((msg, i) => (
           <div key={i} className={cn('flex gap-2', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
             {msg.role !== 'user' && <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500/20 to-primary/20 border border-amber-500/30 flex items-center justify-center shrink-0 mt-1"><Zap className="w-3.5 h-3.5 text-amber-400" /></div>}
-            <div className={cn('max-w-[85%] rounded-2xl px-3 py-2.5 text-sm', msg.role === 'user' ? 'bg-primary text-primary-foreground rounded-br-md' : 'bg-card border border-border rounded-bl-md')}>
-              <div className="prose prose-sm max-w-none dark:prose-invert text-inherit"><ReactMarkdown>{msg.content}</ReactMarkdown></div>
+            <div className={cn('max-w-[85%] rounded-2xl px-3 py-2.5 text-sm', msg.role === 'user' ? 'bg-primary text-primary-foreground rounded-br-md' : msg.role === 'system' ? 'bg-amber-500/5 border border-amber-500/20 rounded-bl-md' : 'bg-card border border-border rounded-bl-md')}>
+              <div className="prose prose-sm max-w-none dark:prose-invert text-inherit">
+                {msg.role === 'assistant' ? renderContent(msg.content) : <ReactMarkdown>{msg.content}</ReactMarkdown>}
+              </div>
             </div>
             {msg.role === 'user' && <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0 mt-1"><Users className="w-3.5 h-3.5 text-primary" /></div>}
           </div>
@@ -1748,7 +1837,7 @@ function ZeusSection() {
 
       <div className="flex gap-2 items-end mt-1">
         <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-          placeholder="Commandez Zeus..." className="flex-1 min-h-[42px] max-h-[100px] resize-none text-sm rounded-xl border border-input bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring" rows={1} />
+          placeholder="Commandez Zeus ou laissez-le proposer des améliorations..." className="flex-1 min-h-[42px] max-h-[100px] resize-none text-sm rounded-xl border border-input bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring" rows={1} />
         <Button onClick={send} disabled={!input.trim() || streaming} className="h-[42px] w-[42px] shrink-0 bg-gradient-to-br from-amber-500 to-primary" size="icon">
           {streaming ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ChevronRight className="w-4 h-4" />}
         </Button>
