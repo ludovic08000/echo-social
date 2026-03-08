@@ -95,6 +95,10 @@ export function CartSheet() {
                   <span className="text-muted-foreground">Sous-total</span>
                   <span>{subtotal.toFixed(2)}€</span>
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Frais de service (5%)</span>
+                  <span>{buyerFee.toFixed(2)}€</span>
+                </div>
                 <div className="flex justify-between font-bold text-base pt-1">
                   <span>Total</span>
                   <span>{total.toFixed(2)}€</span>
