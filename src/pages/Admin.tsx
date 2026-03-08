@@ -1650,6 +1650,7 @@ export default function Admin() {
       case 'stats': return <StatsSection />;
       case 'subscriptions': return <SubscriptionsSection />;
       case 'ai': return <AISection />;
+      case 'zeus': return <ZeusSection />;
       case 'security': return <SecuritySection />;
       case 'settings': return <SettingsSection />;
     }
