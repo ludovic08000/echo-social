@@ -13,6 +13,7 @@ import { AppearanceSettingsPanel } from '@/components/settings/AppearanceSetting
 import { WellbeingSettingsPanel } from '@/components/settings/WellbeingSettingsPanel';
 import { ContentPreferencesPanel } from '@/components/settings/ContentPreferencesPanel';
 import { AccessibilitySettingsPanel } from '@/components/settings/AccessibilitySettingsPanel';
+import { ParentalControlPanel } from '@/components/settings/ParentalControlPanel';
 import { Button } from '@/components/ui/button';
 
 export default function Settings() {
