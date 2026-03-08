@@ -50,9 +50,11 @@ serve(async (req) => {
       status: 200,
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
+    const msg = (error as Error).message;
+    const isValidation = ["No authorization", "Authentication error", "not authenticated", "Aucun compte"].some(s => msg.includes(s));
+    return new Response(JSON.stringify({ error: msg }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500,
+      status: isValidation ? 400 : 500,
     });
   }
 });

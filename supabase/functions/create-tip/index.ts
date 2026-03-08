@@ -109,9 +109,11 @@ serve(async (req) => {
       status: 200,
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    const msg = (error as Error).message;
+    const isValidation = ["Non connecté", "Montant minimum", "Créateur non spécifié", "n'est pas créateur"].some(s => msg.includes(s));
+    return new Response(JSON.stringify({ error: msg }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500,
+      status: isValidation ? 400 : 500,
     });
   }
 });
