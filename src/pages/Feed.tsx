@@ -269,6 +269,20 @@ export default function Feed() {
               </motion.div>
             ) : (
               <>
+                {/* Parental control banner */}
+                {isMinor && !isUnlocked && (
+                  <div className="px-4 mb-3">
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-pink-500/10 border border-pink-500/20">
+                      <Lock className="w-4 h-4 text-pink-500 shrink-0" />
+                      <p className="text-xs text-muted-foreground flex-1">
+                        Mode protégé actif — certains contenus sont filtrés.
+                      </p>
+                      <Button size="sm" variant="outline" className="text-xs h-7 rounded-lg" onClick={() => requestUnlock()}>
+                        Déverrouiller
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-3 px-4">
                   {posts.map((post, index) => (
                     <div key={post.id}>
