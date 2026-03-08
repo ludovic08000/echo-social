@@ -35,3 +35,24 @@ verify_jwt = false
 
 [functions.r2-upload]
 verify_jwt = false
+
+[functions.marketplace-checkout]
+verify_jwt = false
+
+[functions.message-moderation]
+verify_jwt = false
+
+[functions.create-checkout]
+verify_jwt = false
+
+[functions.check-subscription]
+verify_jwt = false
+
+[functions.create-tip]
+verify_jwt = false
+
+[functions.customer-portal]
+verify_jwt = false
+
+[functions.cleanup-lives]
+verify_jwt = false

@@ -19,18 +19,24 @@ serve(async (req) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  const userClient = createClient(
-    supabaseUrl,
-    Deno.env.get("SUPABASE_ANON_KEY") ?? ""
-  );
-
   try {
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) throw new Error("Non authentifié");
+    if (!authHeader?.startsWith("Bearer ")) {
+      throw new Error("Non authentifié");
+    }
+
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
 
     const token = authHeader.replace("Bearer ", "");
-    const { data: { user } } = await userClient.auth.getUser(token);
-    if (!user?.email) throw new Error("Utilisateur non authentifié");
+    const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token);
+    if (claimsError || !claimsData?.claims) throw new Error("Utilisateur non authentifié");
+
+    const userId = claimsData.claims.sub as string;
+    const userEmail = claimsData.claims.email as string;
+    if (!userEmail) throw new Error("Email utilisateur requis");
 
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
       apiVersion: "2025-08-27.basil",
@@ -61,7 +67,7 @@ serve(async (req) => {
       const total = subtotal + commission;
 
       // Find or create Stripe customer
-      const customers = await stripe.customers.list({ email: user.email, limit: 1 });
+      const customers = await stripe.customers.list({ email: userEmail, limit: 1 });
       let customerId: string | undefined;
       if (customers.data.length > 0) {
         customerId = customers.data[0].id;
@@ -104,7 +110,7 @@ serve(async (req) => {
       const { data: order, error: orderError } = await supabase
         .from("orders")
         .insert({
-          buyer_id: user.id,
+          buyer_id: userId,
           order_number: orderNumber,
           subtotal,
           total,
@@ -139,13 +145,13 @@ serve(async (req) => {
       // Create Stripe Checkout session
       const session = await stripe.checkout.sessions.create({
         customer: customerId,
-        customer_email: customerId ? undefined : user.email,
+        customer_email: customerId ? undefined : userEmail,
         line_items: lineItems,
         mode: "payment",
         success_url: `${origin}/marketplace?order_success=${order.id}`,
         cancel_url: `${origin}/marketplace?order_canceled=true`,
         metadata: {
-          user_id: user.id,
+          user_id: userId,
           order_id: order.id,
           order_number: orderNumber,
         },
@@ -174,7 +180,7 @@ serve(async (req) => {
         .from("orders")
         .select("*")
         .eq("id", orderId)
-        .eq("buyer_id", user.id)
+        .eq("buyer_id", userId)
         .single();
 
       if (!order) throw new Error("Commande introuvable");
@@ -200,7 +206,7 @@ serve(async (req) => {
             .eq("order_id", orderId);
 
           // Clear the buyer's cart
-          await supabase.from("cart_items").delete().eq("user_id", user.id);
+          await supabase.from("cart_items").delete().eq("user_id", userId);
 
           return new Response(JSON.stringify({ paid: true }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
