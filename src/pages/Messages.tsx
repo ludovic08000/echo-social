@@ -845,7 +845,23 @@ function ChatView({ conversationId }: { conversationId: string }) {
                           onReply={() => setReplyTo(msg)}
                           onReact={(emoji) => handleReact(msg.id, emoji)}
                           onCopy={() => handleCopy(msg.body)}
-                          onDelete={isMe ? () => toast.info('Suppression non disponible en démo') : undefined}
+                          onDeleteForMe={() => {
+                            deleteForMe.mutate({ messageId: msg.id, conversationId });
+                            toast.success('Message supprimé pour vous');
+                          }}
+                          onDeleteForEveryone={isMe ? () => {
+                            deleteForEveryone.mutate({ messageId: msg.id, conversationId });
+                            toast.success('Message supprimé pour tous');
+                          } : undefined}
+                          onReport={async () => {
+                            await supabase.from('abuse_reports').insert({
+                              reporter_id: user!.id,
+                              reported_user_id: msg.sender_id,
+                              report_type: 'message',
+                              description: `Message signalé: "${msg.body.slice(0, 200)}"`,
+                            });
+                            toast.success('Message signalé. Merci pour votre vigilance.');
+                          }}
                         />
 
                         {/* Image message */}
