@@ -37,21 +37,8 @@ export function CartSheet() {
   }, 0);
   const buyerFee = Math.round(subtotal * 0.05 * 100) / 100;
 
-  const weightGrams = Math.max(100, Number(packageWeight) || 500);
-  const parcelsCount = Math.max(1, Number(packageParcels) || 1);
-  const shippingEstimate = hasPhysical && selectedRelay
-    ? estimateRelayShipping(weightGrams, parcelsCount)
-    : 0;
+  const shippingEstimate = hasPhysical && selectedRelay ? FLAT_SHIPPING_ESTIMATE : 0;
   const checkoutBlockedByRelay = hasPhysical && !selectedRelay;
-
-  const total = subtotal + buyerFee + shippingEstimate;
-
-  useEffect(() => {
-    if (!selectedRelay) return;
-    requestAnimationFrame(() => {
-      packageSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
-  }, [selectedRelay]);
 
   const handleCheckout = async (testMode = false) => {
     if (cart.length === 0) return;
