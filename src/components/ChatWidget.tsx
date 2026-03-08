@@ -338,6 +338,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({});
+  const [showAIMenu, setShowAIMenu] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
