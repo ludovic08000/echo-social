@@ -141,6 +141,17 @@ export default function Marketplace() {
                 <p className="text-primary-foreground/70 text-xs mt-0.5">Achetez, vendez, échangez</p>
               </div>
               <div className="flex items-center gap-2">
+                {seller && pendingLabelsCount > 0 && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setActiveTab('seller')}
+                    className="h-9 rounded-xl text-xs gap-1.5"
+                  >
+                    <Truck className="w-4 h-4" />
+                    Étiquettes ({pendingLabelsCount})
+                  </Button>
+                )}
                 <button
                   onClick={() => setShowLocationFilter(!showLocationFilter)}
                   className="w-9 h-9 rounded-xl bg-primary-foreground/15 backdrop-blur-sm flex items-center justify-center text-primary-foreground hover:bg-primary-foreground/25 transition-colors"
