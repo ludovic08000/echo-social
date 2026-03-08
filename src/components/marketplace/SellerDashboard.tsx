@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSellerProfile, useCreateSellerProfile, useSellerProducts, useDeleteProduct } from '@/hooks/useMarketplace';
 import { useSellerOrders } from '@/hooks/useSellerOrders';
 import { CreateProductDialog } from './CreateProductDialog';
@@ -10,7 +10,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Store, Package, TrendingUp, Trash2, Eye, Truck, Download, Loader2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -33,6 +33,7 @@ interface ShipmentPayload {
 }
 
 export function SellerDashboard() {
+  const [searchParams] = useSearchParams();
   const { data: seller, isLoading } = useSellerProfile();
   const { data: products = [] } = useSellerProducts();
   const { data: orders = [] } = useSellerOrders();
@@ -43,7 +44,9 @@ export function SellerDashboard() {
   const [creatingLabel, setCreatingLabel] = useState(false);
   const [labelEditorOpen, setLabelEditorOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
-  const [sellerTab, setSellerTab] = useState<'products' | 'orders'>('products');
+  const [sellerTab, setSellerTab] = useState<'products' | 'orders'>(
+    searchParams.get('sellerTab') === 'orders' ? 'orders' : 'products'
+  );
   const [labelForm, setLabelForm] = useState({
     weightGrams: '500',
     parcels: '1',
@@ -57,6 +60,7 @@ export function SellerDashboard() {
     senderPhone: '',
     senderEmail: '',
   });
+  const autoOpenedOrderRef = useRef<string | null>(null);
 
   const paidOrders = useMemo(
     () => orders.filter((o: any) => o.status === 'paid' || o.status === 'shipped' || o.status === 'delivered'),
@@ -64,10 +68,14 @@ export function SellerDashboard() {
   );
 
   useEffect(() => {
+    if (searchParams.get('sellerTab') === 'orders') {
+      setSellerTab('orders');
+      return;
+    }
     if (paidOrders.length > 0) {
       setSellerTab('orders');
     }
-  }, [paidOrders.length]);
+  }, [searchParams, paidOrders.length]);
 
   const handleCreateLabel = async (orderId: string, payload: ShipmentPayload) => {
     setCreatingLabel(true);
