@@ -18,6 +18,7 @@ import { Coffee, X, Sparkles } from 'lucide-react';
 import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgorithm';
 import { Button } from '@/components/ui/button';
 import { useActiveAds } from '@/hooks/useAdCampaigns';
+import { useCustomBackground } from '@/hooks/useCustomBackground';
 
 const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'live' | 'media' | 'marketplace'> = {
   1: 'live',
