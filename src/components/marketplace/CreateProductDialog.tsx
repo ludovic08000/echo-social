@@ -30,6 +30,15 @@ const COLORS = [
   'Noir', 'Blanc', 'Rouge', 'Bleu', 'Vert', 'Jaune', 'Rose', 'Violet', 'Orange', 'Gris', 'Marron', 'Beige', 'Multicolore', 'Autre',
 ];
 
+const CONDITIONS = [
+  { value: 'new', label: 'Neuf' },
+  { value: 'like_new', label: 'Comme neuf' },
+  { value: 'very_good', label: 'Très bon état' },
+  { value: 'good', label: 'Bon état' },
+  { value: 'fair', label: 'État correct' },
+  { value: 'for_parts', label: 'Pour pièces' },
+];
+
 const SIZES = [
   'XS', 'S', 'M', 'L', 'XL', 'XXL', 'Unique', 'Sur mesure',
 ];
@@ -38,7 +47,6 @@ const SHIPPING_TYPES = [
   { value: 'standard', label: 'Standard (3-5j)' },
   { value: 'express', label: 'Express (1-2j)' },
   { value: 'pickup', label: 'Retrait en main propre' },
-  { value: 'digital', label: 'Livraison numérique' },
   { value: 'free', label: 'Gratuit' },
 ];
 
