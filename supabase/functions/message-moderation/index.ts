@@ -58,8 +58,47 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Skip AI for very short messages (< 15 chars) — too short to be harmful, use basic check
-      if (messageBody.length < 15) {
+      // ── Check if the recipient is a minor ──
+      let recipientIsMinor = false;
+      if (messageId) {
+        const { data: msg } = await supabase
+          .from("messages")
+          .select("conversation_id")
+          .eq("id", messageId)
+          .maybeSingle();
+
+        if (msg) {
+          const { data: otherParticipant } = await supabase
+            .from("conversation_participants")
+            .select("user_id")
+            .eq("conversation_id", msg.conversation_id)
+            .neq("user_id", user.id)
+            .maybeSingle();
+
+          if (otherParticipant) {
+            const { data: minorCheck } = await supabase
+              .from("parental_controls")
+              .select("is_active")
+              .eq("user_id", otherParticipant.user_id)
+              .eq("is_active", true)
+              .maybeSingle();
+
+            recipientIsMinor = !!minorCheck;
+
+            // Log adult-minor contact for detection
+            if (recipientIsMinor) {
+              await supabase.from("minor_contact_logs").insert({
+                adult_user_id: user.id,
+                minor_user_id: otherParticipant.user_id,
+                contact_type: "message",
+              });
+            }
+          }
+        }
+      }
+
+      // Skip AI for very short messages (< 15 chars) — unless recipient is minor
+      if (messageBody.length < 15 && !recipientIsMinor) {
         const result = basicModeration(messageBody);
         if (!result.safe && messageId) {
           await supabase.from("messages").update({ status: "blocked" }).eq("id", messageId);
@@ -70,7 +109,8 @@ Deno.serve(async (req) => {
       }
 
       // Check cache first
-      const contentHash = await hashContent(messageBody);
+      const cacheKey = recipientIsMinor ? `minor:${messageBody}` : messageBody;
+      const contentHash = await hashContent(cacheKey);
       const { data: cached } = await supabase
         .from("ai_moderation_cache")
         .select("result")
@@ -92,7 +132,9 @@ Deno.serve(async (req) => {
       const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
       if (!LOVABLE_API_KEY) {
         // Fallback: basic keyword-based moderation
-        const result = basicModeration(messageBody);
+        const result = recipientIsMinor
+          ? basicMinorModeration(messageBody)
+          : basicModeration(messageBody);
         if (!result.safe && messageId) {
           await supabase.from("messages").update({ status: "blocked" }).eq("id", messageId);
         }
@@ -101,6 +143,33 @@ Deno.serve(async (req) => {
         });
       }
 
+      // ── Build the AI prompt based on context ──
+      const systemPrompt = recipientIsMinor
+        ? `Tu es un système de protection des mineurs pour un réseau social français.
+Tu analyses les messages envoyés par des adultes à des mineurs de moins de 16 ans.
+Tu dois détecter les comportements de grooming et les tentatives de manipulation :
+
+CATÉGORIES DANGEREUSES :
+- grooming : flatterie excessive, compliments sur le physique, tentative de créer un lien spécial ("notre secret"), normalisation de sujets adultes
+- isolation : tentative d'éloigner le mineur de ses parents/amis ("ne dis pas à tes parents", "on peut parler ailleurs ?")
+- personal_info : demande d'informations personnelles (adresse, école, photos, numéro de téléphone, localisation)
+- inappropriate : contenu sexuel, allusions sexuelles, langage inapproprié pour un mineur
+- manipulation : chantage émotionnel, menaces voilées, culpabilisation
+- scam : arnaque, phishing
+- harassment : harcèlement, insultes
+- safe : message normal et approprié
+
+IMPORTANT : Sois très vigilant. En cas de doute, signale le message. La sécurité du mineur prime.
+Réponds UNIQUEMENT avec la fonction tool_call fournie.`
+        : `Tu es un modérateur de contenu pour une messagerie de réseau social français.
+Analyse le message et détermine s'il est sûr ou dangereux.
+Catégories dangereuses : spam, harcèlement, arnaque/phishing, contenu sexuel explicite, menaces, discours haineux, publicité non sollicitée.
+Réponds UNIQUEMENT avec la fonction tool_call fournie.`;
+
+      const categories = recipientIsMinor
+        ? ["grooming", "isolation", "personal_info", "inappropriate", "manipulation", "scam", "harassment", "safe"]
+        : ["spam", "harassment", "scam", "explicit", "threats", "hate_speech", "unsolicited_ads", "safe"];
+
       const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -108,19 +177,10 @@ Deno.serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash-lite",
+          model: "google/gemini-2.5-flash",
           messages: [
-            {
-              role: "system",
-              content: `Tu es un modérateur de contenu pour une messagerie de réseau social français.
-Analyse le message et détermine s'il est sûr ou dangereux.
-Catégories dangereuses : spam, harcèlement, arnaque/phishing, contenu sexuel explicite, menaces, discours haineux, publicité non sollicitée.
-Réponds UNIQUEMENT avec la fonction tool_call fournie.`,
-            },
-            {
-              role: "user",
-              content: `Analyse ce message : "${messageBody.slice(0, 500)}"`,
-            },
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `Analyse ce message : "${messageBody.slice(0, 500)}"` },
           ],
           tools: [
             {
@@ -135,12 +195,17 @@ Réponds UNIQUEMENT avec la fonction tool_call fournie.`,
                     reason: { type: "string", description: "Brief explanation in French if unsafe, null if safe" },
                     category: {
                       type: "string",
-                      enum: ["spam", "harassment", "scam", "explicit", "threats", "hate_speech", "unsolicited_ads", "safe"],
+                      enum: categories,
                       description: "Category of the content",
                     },
                     confidence: { type: "number", description: "Confidence score 0-100" },
+                    severity: {
+                      type: "string",
+                      enum: ["low", "medium", "high", "critical"],
+                      description: "Severity level of the detected issue",
+                    },
                   },
-                  required: ["safe", "category", "confidence"],
+                  required: ["safe", "category", "confidence", "severity"],
                   additionalProperties: false,
                 },
               },
@@ -151,8 +216,9 @@ Réponds UNIQUEMENT avec la fonction tool_call fournie.`,
       });
 
       if (!aiResponse.ok) {
-        // Fallback to basic moderation on AI failure
-        const result = basicModeration(messageBody);
+        const result = recipientIsMinor
+          ? basicMinorModeration(messageBody)
+          : basicModeration(messageBody);
         if (!result.safe && messageId) {
           await supabase.from("messages").update({ status: "blocked" }).eq("id", messageId);
         }
@@ -162,7 +228,7 @@ Réponds UNIQUEMENT avec la fonction tool_call fournie.`,
       }
 
       const aiData = await aiResponse.json();
-      let moderationResult = { safe: true, reason: null as string | null, category: "safe", confidence: 50 };
+      let moderationResult = { safe: true, reason: null as string | null, category: "safe", confidence: 50, severity: "low" as string };
 
       try {
         const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
@@ -173,32 +239,49 @@ Réponds UNIQUEMENT avec la fonction tool_call fournie.`,
         // If parsing fails, default to safe
       }
 
-      // Cache the result (6 hours instead of 1)
+      // Cache the result (6 hours, but only 1h for minor-related)
+      const cacheDuration = recipientIsMinor ? 1 * 60 * 60 * 1000 : 6 * 60 * 60 * 1000;
       await supabase.from("ai_moderation_cache").insert({
         content_hash: contentHash,
         result: moderationResult,
-        expires_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
+        expires_at: new Date(Date.now() + cacheDuration).toISOString(),
       });
 
-      // If unsafe and high confidence, block the message
-      if (!moderationResult.safe && moderationResult.confidence >= 70 && messageId) {
+      // ── Determine blocking threshold ──
+      // For minors: lower threshold (50% confidence) and immediate action on critical
+      const blockThreshold = recipientIsMinor ? 50 : 70;
+      const shouldBlock = !moderationResult.safe && moderationResult.confidence >= blockThreshold;
+
+      if (shouldBlock && messageId) {
         await supabase.from("messages").update({ status: "blocked" }).eq("id", messageId);
 
         // Flag user trust score
+        const flagPrefix = recipientIsMinor ? "⚠️ MINOR PROTECTION" : "Message blocked";
         await supabase
           .from("trust_scores")
           .update({
             is_flagged: true,
-            flag_reason: `Message blocked: ${moderationResult.category} - ${moderationResult.reason}`,
+            flag_reason: `${flagPrefix}: ${moderationResult.category} - ${moderationResult.reason}`,
             updated_at: new Date().toISOString(),
           })
           .eq("user_id", user.id);
+
+        // For critical severity towards minors, auto-create abuse report
+        if (recipientIsMinor && (moderationResult.severity === "critical" || moderationResult.severity === "high")) {
+          await supabase.from("abuse_reports").insert({
+            reporter_id: user.id, // system-generated
+            reported_user_id: user.id,
+            report_type: `ai_minor_protection_${moderationResult.category}`,
+            description: `[AUTO] IA a détecté un message dangereux envers un mineur. Catégorie: ${moderationResult.category}. Raison: ${moderationResult.reason}. Sévérité: ${moderationResult.severity}. Confiance: ${moderationResult.confidence}%`,
+          });
+        }
       }
 
       return new Response(JSON.stringify({
         safe: moderationResult.safe,
         reason: moderationResult.reason,
         category: moderationResult.category,
+        minorProtection: recipientIsMinor,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -331,6 +414,53 @@ function basicModeration(text: string): { safe: boolean; reason: string | null; 
   for (const pattern of spamPatterns) {
     if (pattern.test(text)) {
       return { safe: false, reason: "Message identifié comme spam", category: "spam" };
+    }
+  }
+
+  return { safe: true, reason: null, category: "safe" };
+}
+
+// Fallback moderation for messages to minors (no AI)
+function basicMinorModeration(text: string): { safe: boolean; reason: string | null; category: string } {
+  const lower = text.toLowerCase();
+
+  // First run basic moderation
+  const basic = basicModeration(text);
+  if (!basic.safe) return basic;
+
+  // Grooming patterns
+  const groomingPatterns = [
+    /t'es\s+(trop\s+)?(belle|beau|mignon|mignonne|sexy|jolie|joli|canon)/i,
+    /envoie\s+(moi\s+)?(une|ta|des)\s+(photo|image|selfie|vidéo)/i,
+    /dis\s+(pas|rien)\s+(à|aux)\s+(tes\s+)?(parents|père|mère|mama|papa|famille)/i,
+    /notre\s+secret/i,
+    /on\s+peut\s+(se\s+)?(voir|rencontrer|retrouver)/i,
+    /tu\s+habites?\s+(où|ou)/i,
+    /quel(le)?\s+(âge|école|collège|lycée)/i,
+    /(ton|ta)\s+(numéro|tel|téléphone|insta|snap|whatsapp|tiktok)/i,
+    /je\s+suis\s+(ton|ta)\s+(ami|copain|copine|confident)/i,
+    /t'inquiète\s+pas.*entre\s+nous/i,
+    /personne\s+(ne\s+)?saura/i,
+    /webcam|cam[éè]ra|facetime/i,
+  ];
+
+  for (const pattern of groomingPatterns) {
+    if (pattern.test(lower)) {
+      return { safe: false, reason: "Message suspect détecté envers un mineur", category: "grooming" };
+    }
+  }
+
+  // Isolation patterns
+  const isolationPatterns = [
+    /ne\s+(dis|parle|raconte)\s+(rien|pas|jamais)\s+(à|aux)/i,
+    /tes\s+parents\s+(ne\s+)?(compren|savent|doivent)/i,
+    /viens\s+(sur|en)\s+(privé|dm|mp)/i,
+    /on\s+(parle|discute)\s+(ailleurs|autre\s+part)/i,
+  ];
+
+  for (const pattern of isolationPatterns) {
+    if (pattern.test(lower)) {
+      return { safe: false, reason: "Tentative d'isolement détectée envers un mineur", category: "isolation" };
     }
   }
 
