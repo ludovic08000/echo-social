@@ -1,9 +1,18 @@
 import { createContext, useContext, useState, ReactNode, useCallback } from 'react';
 
+export interface NegotiationProduct {
+  id: string;
+  title: string;
+  price: number;
+  thumbnail_url?: string;
+  seller_profiles?: { id: string; store_name: string; user_id?: string; store_logo_url?: string };
+}
+
 interface ChatWidgetState {
   isOpen: boolean;
   conversationId: string | null;
   isMinimized: boolean;
+  negotiationProduct: NegotiationProduct | null;
 }
 
 interface ChatWidgetContextType {
@@ -13,6 +22,7 @@ interface ChatWidgetContextType {
   minimizeChat: () => void;
   restoreChat: () => void;
   openConversation: (conversationId: string) => void;
+  openNegotiation: (product: NegotiationProduct, conversationId: string) => void;
   goBack: () => void;
 }
 
@@ -23,14 +33,15 @@ export function ChatWidgetProvider({ children }: { children: ReactNode }) {
     isOpen: false,
     conversationId: null,
     isMinimized: false,
+    negotiationProduct: null,
   });
 
   const openChat = useCallback((conversationId?: string) => {
-    setState({ isOpen: true, conversationId: conversationId || null, isMinimized: false });
+    setState({ isOpen: true, conversationId: conversationId || null, isMinimized: false, negotiationProduct: null });
   }, []);
 
   const closeChat = useCallback(() => {
-    setState({ isOpen: false, conversationId: null, isMinimized: false });
+    setState({ isOpen: false, conversationId: null, isMinimized: false, negotiationProduct: null });
   }, []);
 
   const minimizeChat = useCallback(() => {
@@ -42,15 +53,19 @@ export function ChatWidgetProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const openConversation = useCallback((conversationId: string) => {
-    setState({ isOpen: true, conversationId, isMinimized: false });
+    setState(prev => ({ isOpen: true, conversationId, isMinimized: false, negotiationProduct: prev.negotiationProduct }));
+  }, []);
+
+  const openNegotiation = useCallback((product: NegotiationProduct, conversationId: string) => {
+    setState({ isOpen: true, conversationId, isMinimized: false, negotiationProduct: product });
   }, []);
 
   const goBack = useCallback(() => {
-    setState(prev => ({ ...prev, conversationId: null }));
+    setState(prev => ({ ...prev, conversationId: null, negotiationProduct: null }));
   }, []);
 
   return (
-    <ChatWidgetContext.Provider value={{ state, openChat, closeChat, minimizeChat, restoreChat, openConversation, goBack }}>
+    <ChatWidgetContext.Provider value={{ state, openChat, closeChat, minimizeChat, restoreChat, openConversation, openNegotiation, goBack }}>
       {children}
     </ChatWidgetContext.Provider>
   );
