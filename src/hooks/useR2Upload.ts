@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
+import { uploadToR2 } from '@/lib/r2';
 
-type MediaFolder = 'avatars' | 'post-images' | 'videos' | 'products';
+type MediaFolder = 'avatars' | 'images' | 'videos' | 'products' | 'stories' | 'backgrounds' | 'documents' | 'voice' | 'lives' | 'feed';
 
 interface UseR2UploadOptions {
   folder: MediaFolder;
@@ -32,40 +32,13 @@ export function useR2Upload({ folder, onSuccess, maxSizeMB = 5 }: UseR2UploadOpt
     setProgress(10);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('folder', folder);
-
       setProgress(30);
-
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('No session');
-
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/r2-upload`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: formData,
-        }
-      );
-
-      setProgress(80);
-
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Upload failed');
-      }
-
-      const result = await response.json();
+      const { url } = await uploadToR2(file, folder);
       setProgress(100);
 
       toast.success('Fichier uploadé avec succès');
-      onSuccess?.(result.url);
-      return result.url;
+      onSuccess?.(url);
+      return url;
     } catch (error: any) {
       console.error('R2 upload failed:', error);
       toast.error(error.message || "Erreur lors de l'upload");

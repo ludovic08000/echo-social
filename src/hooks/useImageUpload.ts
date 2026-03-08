@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
+import { uploadToR2 } from '@/lib/r2';
 
-type BucketName = 'avatars' | 'post-images' | 'videos' | 'products';
+type MediaFolder = 'avatars' | 'images' | 'videos' | 'products' | 'stories' | 'backgrounds' | 'documents' | 'voice' | 'lives' | 'feed';
 
 interface UseImageUploadOptions {
-  bucket: BucketName;
+  bucket: MediaFolder;
   onSuccess?: (url: string) => void;
   maxSizeMB?: number;
 }
@@ -22,13 +22,11 @@ export function useImageUpload({ bucket, onSuccess, maxSizeMB = 5 }: UseImageUpl
       return null;
     }
 
-    // Validate file type
     if (!file.type.startsWith('image/')) {
       toast.error('Seules les images sont autorisées');
       return null;
     }
 
-    // Validate file size
     const maxSizeBytes = maxSizeMB * 1024 * 1024;
     if (file.size > maxSizeBytes) {
       toast.error(`L'image ne doit pas dépasser ${maxSizeMB}MB`);
@@ -39,41 +37,13 @@ export function useImageUpload({ bucket, onSuccess, maxSizeMB = 5 }: UseImageUpl
     setProgress(10);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('folder', bucket);
-
       setProgress(30);
-
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('No session');
-
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/r2-upload`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: formData,
-        }
-      );
-
-      setProgress(70);
-
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Upload failed');
-      }
-
-      const result = await response.json();
+      const { url } = await uploadToR2(file, bucket);
       setProgress(100);
       
       toast.success('Image uploadée avec succès');
-      onSuccess?.(result.url);
-      
-      return result.url;
+      onSuccess?.(url);
+      return url;
     } catch (error: any) {
       console.error('Upload failed:', error);
       toast.error(error.message || "Erreur lors de l'upload");
@@ -84,9 +54,5 @@ export function useImageUpload({ bucket, onSuccess, maxSizeMB = 5 }: UseImageUpl
     }
   };
 
-  return {
-    upload,
-    isUploading,
-    progress,
-  };
+  return { upload, isUploading, progress };
 }
