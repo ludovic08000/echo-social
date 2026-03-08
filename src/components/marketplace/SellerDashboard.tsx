@@ -286,15 +286,27 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
         </Card>
       </div>
 
-      <Tabs value={sellerTab} onValueChange={(value) => setSellerTab(value as 'products' | 'orders')}>
-        <TabsList className="w-full">
-          <TabsTrigger value="products" className="flex-1 gap-1.5 text-xs">
-            <Package className="w-3.5 h-3.5" />
+      <Tabs value={sellerTab} onValueChange={setSellerTab}>
+        <TabsList className="w-full grid grid-cols-5">
+          <TabsTrigger value="products" className="gap-1 text-[10px] px-1">
+            <Package className="w-3 h-3" />
             Produits
           </TabsTrigger>
-          <TabsTrigger value="orders" className="flex-1 gap-1.5 text-xs">
-            <Truck className="w-3.5 h-3.5" />
-            Commandes {paidOrders.length > 0 ? `(${paidOrders.length})` : ''}
+          <TabsTrigger value="orders" className="gap-1 text-[10px] px-1">
+            <Truck className="w-3 h-3" />
+            Commandes
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="gap-1 text-[10px] px-1">
+            <BarChart3 className="w-3 h-3" />
+            Stats
+          </TabsTrigger>
+          <TabsTrigger value="ai-desc" className="gap-1 text-[10px] px-1">
+            <Sparkles className="w-3 h-3" />
+            IA Desc
+          </TabsTrigger>
+          <TabsTrigger value="ai-coach" className="gap-1 text-[10px] px-1">
+            <Bot className="w-3 h-3" />
+            Coach
           </TabsTrigger>
         </TabsList>
 
