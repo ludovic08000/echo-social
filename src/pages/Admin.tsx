@@ -1868,6 +1868,22 @@ function ZeusSection() {
           <p className="text-[11px] text-muted-foreground">Propose • Vous validez • Il applique</p>
         </div>
         <Badge variant="outline" className="ml-auto text-[10px] border-amber-500/30 text-amber-400">PROACTIF</Badge>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-xs text-muted-foreground h-7 gap-1"
+          onClick={() => {
+            conversationIdRef.current = null;
+            chatHistory.current = [];
+            isInitialLoad.current = true;
+            setMessages([WELCOME_MSG]);
+            setPendingProposals(new Map());
+            setAppliedProposals(new Set());
+            setRejectedProposals(new Set());
+          }}
+        >
+          ✨ Nouvelle
+        </Button>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3 mb-3 pr-1">
