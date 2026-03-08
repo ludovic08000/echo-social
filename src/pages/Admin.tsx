@@ -1658,12 +1658,17 @@ function ZeusSection() {
       const updatesMatch = block.match(/updates:\s*({[\s\S]*?})/);
       const reasonMatch = block.match(/reason:\s*(.+)/);
       if (actionMatch && keyMatch && updatesMatch && reasonMatch) {
+        const rawAction = actionMatch[1].trim();
+        const normalizedAction = rawAction
+          .split('|')[0]
+          .replace(/[`\s]/g, '')
+          .replace(/\.$/, '');
         const id = `${keyMatch[1].trim()}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
         try {
           const updates = JSON.parse(updatesMatch[1].trim());
           setPendingProposals(prev => {
             const next = new Map(prev);
-            next.set(id, { action: actionMatch[1].trim(), key: keyMatch[1].trim(), updates, reason: reasonMatch[1].trim() });
+            next.set(id, { action: normalizedAction, key: keyMatch[1].trim(), updates, reason: reasonMatch[1].trim() });
             return next;
           });
         } catch {}
