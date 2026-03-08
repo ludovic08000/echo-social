@@ -178,7 +178,7 @@ function LiveSlide({ item, isVisible, backTo }: { item: AllLiveItem; isVisible: 
       <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/70 to-transparent z-20 pointer-events-none">
         <div className="flex items-center justify-between pointer-events-auto">
           <button
-            onClick={() => navigate('/lives')}
+            onClick={() => navigate(backTo)}
             className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white"
           >
             <ArrowLeft className="w-5 h-5" />
