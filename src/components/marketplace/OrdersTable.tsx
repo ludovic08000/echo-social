@@ -4,7 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Package, Search, Truck, CheckCircle2, Clock, MapPin, ExternalLink } from 'lucide-react';
+import { Package, Search, Truck, CheckCircle2, Clock, MapPin, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
+import { OrderTracking } from './OrderTracking';
 
 interface OrdersTableProps {
   orders: any[];
@@ -22,6 +23,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
 export function OrdersTable({ orders, viewMode }: OrdersTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [expandedTracking, setExpandedTracking] = useState<string | null>(null);
 
   const filtered = orders.filter((o: any) => {
     const matchSearch = !search || o.order_number?.toLowerCase().includes(search.toLowerCase()) ||
@@ -68,6 +70,7 @@ export function OrdersTable({ orders, viewMode }: OrdersTableProps) {
           {filtered.map((order: any) => {
             const status = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
             const items = order.order_items || [];
+            const isExpanded = expandedTracking === order.id;
 
             return (
               <Card key={order.id} className="overflow-hidden">
@@ -96,19 +99,37 @@ export function OrdersTable({ orders, viewMode }: OrdersTableProps) {
                     ))}
                   </div>
 
-                  {/* Tracking */}
+                  {/* Tracking number + expand button */}
                   {order.tracking_number && (
-                    <div className="flex items-center gap-2 text-xs bg-secondary/50 rounded-lg px-2.5 py-1.5">
-                      <Truck className="w-3.5 h-3.5 text-primary flex-shrink-0" />
-                      <span className="font-mono text-[11px]">{order.tracking_number}</span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-5 w-5 ml-auto"
-                        onClick={() => window.open(`https://www.mondialrelay.fr/suivi-de-colis/?NumeroExpedition=${order.tracking_number}`, '_blank')}
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => setExpandedTracking(isExpanded ? null : order.id)}
+                        className="flex items-center gap-2 text-xs bg-secondary/50 rounded-lg px-2.5 py-1.5 w-full hover:bg-secondary/70 transition-colors"
                       >
-                        <ExternalLink className="w-3 h-3" />
-                      </Button>
+                        <Truck className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                        <span className="font-mono text-[11px]">{order.tracking_number}</span>
+                        <div className="ml-auto flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              window.open(`https://www.mondialrelay.fr/suivi-de-colis/?NumeroExpedition=${order.tracking_number}`, '_blank');
+                            }}
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </Button>
+                          {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        </div>
+                      </button>
+
+                      {/* Expanded tracking timeline */}
+                      {isExpanded && (
+                        <div className="border border-border/40 rounded-lg p-3">
+                          <OrderTracking trackingNumber={order.tracking_number} />
+                        </div>
+                      )}
                     </div>
                   )}
 
