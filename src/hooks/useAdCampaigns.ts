@@ -141,8 +141,9 @@ export function useCreateAdCampaign() {
       duration_type: DurationType;
     }) => {
       // 1. Moderate content
-      const { data: modResult } = await supabase.functions.invoke('ad-assistant', {
+      const { data: modResult } = await supabase.functions.invoke('zeus', {
         body: {
+          domain: 'ads',
           action: 'moderate_ad',
           ad_title: input.title,
           ad_body: input.body,
@@ -244,8 +245,8 @@ export function useAdAIAssistant() {
       ad_title?: string;
       ad_body?: string;
     }) => {
-      const { data, error } = await supabase.functions.invoke('ad-assistant', {
-        body: input,
+      const { data, error } = await supabase.functions.invoke('zeus', {
+        body: { domain: 'ads', ...input },
       });
       if (error) throw error;
       return data;

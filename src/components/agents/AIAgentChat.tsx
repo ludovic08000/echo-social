@@ -186,7 +186,7 @@ export function AIAgentChat({ agent, onBack }: Props) {
     setIsStreaming(true);
 
     try {
-      const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/agent-chat`;
+      const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/zeus`;
       const { data: { session } } = await supabase.auth.getSession();
 
       const resp = await fetch(CHAT_URL, {
@@ -197,6 +197,8 @@ export function AIAgentChat({ agent, onBack }: Props) {
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         },
         body: JSON.stringify({
+          domain: 'agent',
+          action: 'agent_chat',
           agent_id: agent.id,
           conversation_id: conversationId,
           message: userMsg,

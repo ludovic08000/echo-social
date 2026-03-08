@@ -89,8 +89,9 @@ function AdChatCreator() {
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('ad-assistant', {
+      const { data, error } = await supabase.functions.invoke('zeus', {
         body: {
+          domain: 'ads',
           action: 'chat',
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
         },
@@ -266,8 +267,8 @@ function AdChatCreator() {
                             if (!generatedAd) return;
                             setGeneratingImage(true);
                             try {
-                              const { data } = await supabase.functions.invoke('ad-assistant', {
-                                body: { action: 'generate_image', title: generatedAd.title, description: generatedAd.body },
+                              const { data } = await supabase.functions.invoke('zeus', {
+                                body: { domain: 'ads', action: 'generate_image', title: generatedAd.title, description: generatedAd.body },
                               });
                               if (data?.image_url) { setImageUrl(data.image_url); setVideoUrl(''); }
                               else toast.error("Échec de la génération");
@@ -296,8 +297,8 @@ function AdChatCreator() {
                         if (!generatedAd) return;
                         setGeneratingImage(true);
                         try {
-                          const { data } = await supabase.functions.invoke('ad-assistant', {
-                            body: { action: 'generate_image', title: generatedAd.title, description: generatedAd.body },
+                          const { data } = await supabase.functions.invoke('zeus', {
+                            body: { domain: 'ads', action: 'generate_image', title: generatedAd.title, description: generatedAd.body },
                           });
                           if (data?.image_url) setImageUrl(data.image_url);
                           else toast.error("Échec de la génération");

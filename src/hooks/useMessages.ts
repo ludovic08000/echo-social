@@ -271,8 +271,8 @@ export function useSendMessage() {
 
       // AI moderation (async, non-blocking)
       if (!isSpecialMessage && data?.id) {
-        supabase.functions.invoke('message-moderation', {
-          body: { action: 'moderate_message', messageBody: sanitizedBody, messageId: data.id },
+        supabase.functions.invoke('zeus', {
+          body: { domain: 'moderation', action: 'moderate_message', messageBody: sanitizedBody, messageId: data.id },
         }).catch(() => {});
       }
 
@@ -505,8 +505,8 @@ export function useAcceptMessageRequest() {
 
   return useMutation({
     mutationFn: async (conversationId: string) => {
-      const { data, error } = await supabase.functions.invoke('message-moderation', {
-        body: { action: 'accept_request', conversationId },
+      const { data, error } = await supabase.functions.invoke('zeus', {
+        body: { domain: 'moderation', action: 'accept_request', conversationId },
       });
       if (error) throw error;
       return data;
@@ -525,8 +525,8 @@ export function useRejectMessageRequest() {
 
   return useMutation({
     mutationFn: async (conversationId: string) => {
-      const { data, error } = await supabase.functions.invoke('message-moderation', {
-        body: { action: 'reject_request', conversationId },
+      const { data, error } = await supabase.functions.invoke('zeus', {
+        body: { domain: 'moderation', action: 'reject_request', conversationId },
       });
       if (error) throw error;
       return data;

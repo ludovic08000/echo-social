@@ -1152,8 +1152,8 @@ function VerificationsSection() {
     try {
       // userId is now derived from JWT server-side
       const [analyzeRes, compareRes] = await Promise.all([
-        supabase.functions.invoke('photo-guard', { body: { action: 'analyze_photo', imageUrl: avatarUrl } }),
-        supabase.functions.invoke('photo-guard', { body: { action: 'compare_photos' } }),
+        supabase.functions.invoke('zeus', { body: { domain: 'photo', action: 'analyze_photo', imageUrl: avatarUrl } }),
+        supabase.functions.invoke('zeus', { body: { domain: 'photo', action: 'compare_photos' } }),
       ]);
       setAnalysisResults(prev => ({
         ...prev,

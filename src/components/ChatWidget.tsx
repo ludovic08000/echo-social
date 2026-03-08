@@ -532,7 +532,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       const reqBody: Record<string, string> = { action, text: newMessage.trim() };
       if (action === 'translate') reqBody.targetLanguage = 'en';
       if (tone) reqBody.tone = tone;
-      const { data, error } = await supabase.functions.invoke('ai-content', { body: reqBody });
+      const { data, error } = await supabase.functions.invoke('zeus', { body: { domain: 'content', ...reqBody } });
       trackAICall(`chat-${action}`, Math.round(performance.now() - start), !error && !data?.error);
       if (error || data?.error) { toast.error(data?.error || 'Erreur IA'); return; }
       if (data?.result) setAiSuggestion(data.result);

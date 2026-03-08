@@ -88,7 +88,7 @@ export function AISalesCoach({
 
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/seller-ai-coach`,
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/zeus`,
         {
           method: 'POST',
           headers: {
@@ -96,6 +96,7 @@ export function AISalesCoach({
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
           body: JSON.stringify({
+            domain: 'seller',
             action: 'coach_chat',
             messages: allMessages,
             context,
