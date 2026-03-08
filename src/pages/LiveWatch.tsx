@@ -80,7 +80,7 @@ function useAllLives() {
 }
 
 // ─── Single Live Slide ─────────────────────────────────────────
-function LiveSlide({ item, isVisible }: { item: AllLiveItem; isVisible: boolean }) {
+function LiveSlide({ item, isVisible, backTo }: { item: AllLiveItem; isVisible: boolean; backTo: string }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const replayVideoRef = useRef<HTMLVideoElement>(null);
