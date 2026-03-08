@@ -58,6 +58,17 @@ Deno.serve(async (req) => {
         });
       }
 
+      // Skip AI for very short messages (< 15 chars) — too short to be harmful, use basic check
+      if (messageBody.length < 15) {
+        const result = basicModeration(messageBody);
+        if (!result.safe && messageId) {
+          await supabase.from("messages").update({ status: "blocked" }).eq("id", messageId);
+        }
+        return new Response(JSON.stringify(result), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       // Check cache first
       const contentHash = await hashContent(messageBody);
       const { data: cached } = await supabase
