@@ -1,8 +1,17 @@
 import { Link } from 'react-router-dom';
-import { Heart, BadgeCheck, Star, Eye } from 'lucide-react';
+import { Heart, BadgeCheck, Star, Eye, Package } from 'lucide-react';
 import { useAddToCart } from '@/hooks/useMarketplace';
 import { useProductFavorites, useToggleFavorite } from '@/hooks/useProductFavorites';
 import { cn } from '@/lib/utils';
+
+const CONDITION_LABELS: Record<string, string> = {
+  new: 'Neuf',
+  like_new: 'Comme neuf',
+  very_good: 'Très bon état',
+  good: 'Bon état',
+  fair: 'État correct',
+  for_parts: 'Pour pièces',
+};
 
 interface ProductCardProps {
   product: any;
@@ -45,9 +54,9 @@ export function ProductCard({ product, compact }: ProductCardProps) {
               -{discountPercent}%
             </span>
           )}
-          {product.product_type !== 'physical' && (
-            <span className="bg-primary/90 text-primary-foreground text-[9px] font-semibold px-2 py-0.5 rounded-lg uppercase tracking-wide">
-              {product.product_type === 'digital' ? 'Digital' : 'Service'}
+          {product.condition && (
+            <span className="bg-background/80 backdrop-blur-sm text-foreground text-[9px] font-semibold px-2 py-0.5 rounded-lg">
+              {CONDITION_LABELS[product.condition] || product.condition}
             </span>
           )}
         </div>
@@ -123,6 +132,14 @@ export function ProductCard({ product, compact }: ProductCardProps) {
             </span>
           )}
         </div>
+
+        {/* Weight info */}
+        {!compact && product.weight_grams && (
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <Package className="w-3 h-3" />
+            <span>{product.weight_grams >= 1000 ? `${(product.weight_grams / 1000).toFixed(1)} kg` : `${product.weight_grams}g`}</span>
+          </div>
+        )}
 
         {/* Shipping info */}
         {!compact && product.shipping_type === 'free' && (

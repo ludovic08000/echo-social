@@ -2206,6 +2206,7 @@ export type Database = {
           city: string | null
           color: string | null
           compare_at_price: number | null
+          condition: string | null
           country: string | null
           created_at: string
           description: string | null
@@ -2237,6 +2238,7 @@ export type Database = {
           city?: string | null
           color?: string | null
           compare_at_price?: number | null
+          condition?: string | null
           country?: string | null
           created_at?: string
           description?: string | null
@@ -2268,6 +2270,7 @@ export type Database = {
           city?: string | null
           color?: string | null
           compare_at_price?: number | null
+          condition?: string | null
           country?: string | null
           created_at?: string
           description?: string | null

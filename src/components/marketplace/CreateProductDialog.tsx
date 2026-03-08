@@ -30,6 +30,15 @@ const COLORS = [
   'Noir', 'Blanc', 'Rouge', 'Bleu', 'Vert', 'Jaune', 'Rose', 'Violet', 'Orange', 'Gris', 'Marron', 'Beige', 'Multicolore', 'Autre',
 ];
 
+const CONDITIONS = [
+  { value: 'new', label: 'Neuf' },
+  { value: 'like_new', label: 'Comme neuf' },
+  { value: 'very_good', label: 'Très bon état' },
+  { value: 'good', label: 'Bon état' },
+  { value: 'fair', label: 'État correct' },
+  { value: 'for_parts', label: 'Pour pièces' },
+];
+
 const SIZES = [
   'XS', 'S', 'M', 'L', 'XL', 'XXL', 'Unique', 'Sur mesure',
 ];
@@ -38,7 +47,6 @@ const SHIPPING_TYPES = [
   { value: 'standard', label: 'Standard (3-5j)' },
   { value: 'express', label: 'Express (1-2j)' },
   { value: 'pickup', label: 'Retrait en main propre' },
-  { value: 'digital', label: 'Livraison numérique' },
   { value: 'free', label: 'Gratuit' },
 ];
 
@@ -53,7 +61,8 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [category, setCategory] = useState('general');
-  const [productType, setProductType] = useState<'physical' | 'digital' | 'service'>('physical');
+  const [productType] = useState<'physical'>('physical');
+  const [condition, setCondition] = useState('good');
   const [stock, setStock] = useState('');
   const [thumbnailUrl, setThumbnailUrl] = useState('');
   const [size, setSize] = useState('');
@@ -155,7 +164,10 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
   };
 
   const handleSubmit = () => {
-    if (!title.trim() || !price) return;
+    if (!title.trim() || !price || !weightGrams) {
+      if (!weightGrams) toast.error('Veuillez indiquer le poids du produit');
+      return;
+    }
     createProduct.mutate(
       {
         seller_id: sellerId,
@@ -163,15 +175,16 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
         description: description.trim() || undefined,
         price: parseFloat(price),
         category,
-        product_type: productType,
+        product_type: 'physical',
         thumbnail_url: thumbnailUrl || undefined,
         images: thumbnailUrl ? [thumbnailUrl] : undefined,
         stock_quantity: stock ? parseInt(stock) : undefined,
         size: size || undefined,
         color: color || undefined,
+        condition,
         shipping_type: shippingType,
         shipping_price: shippingPrice ? parseFloat(shippingPrice) : 0,
-        weight_grams: weightGrams ? parseInt(weightGrams) : undefined,
+        weight_grams: parseInt(weightGrams),
         country,
         region: region || undefined,
         city: city || undefined,
@@ -190,7 +203,7 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
     setDescription('');
     setPrice('');
     setCategory('general');
-    setProductType('physical');
+    setCondition('good');
     setStock('');
     setThumbnailUrl('');
     setSize('');
@@ -301,7 +314,7 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
               </div>
             </div>
 
-            {/* Category & Type */}
+            {/* Category & Condition */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Catégorie</Label>
@@ -315,13 +328,13 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
                 </Select>
               </div>
               <div>
-                <Label>Type</Label>
-                <Select value={productType} onValueChange={(v: any) => setProductType(v)}>
+                <Label>État *</Label>
+                <Select value={condition} onValueChange={setCondition}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="physical">Physique</SelectItem>
-                    <SelectItem value="digital">Numérique</SelectItem>
-                    <SelectItem value="service">Service</SelectItem>
+                    {CONDITIONS.map((c) => (
+                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

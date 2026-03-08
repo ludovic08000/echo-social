@@ -135,12 +135,13 @@ export function useCreateProduct() {
       description?: string;
       price: number;
       category: string;
-      product_type: 'physical' | 'digital' | 'service';
+      product_type: 'physical';
       images?: string[];
       thumbnail_url?: string;
       stock_quantity?: number;
       size?: string;
       color?: string;
+      condition?: string;
       shipping_type?: string;
       shipping_price?: number;
       weight_grams?: number;
