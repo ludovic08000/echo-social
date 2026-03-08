@@ -250,6 +250,27 @@ serve(async (req) => {
             .update({ status: "paid" })
             .eq("order_id", orderId);
 
+          // Notify sellers
+          const { data: orderItems } = await supabase
+            .from("order_items")
+            .select("seller_id")
+            .eq("order_id", orderId);
+          const sellerIds = [...new Set((orderItems || []).map((i: any) => i.seller_id))];
+          for (const sellerId of sellerIds) {
+            const { data: sellerProfile } = await supabase
+              .from("seller_profiles")
+              .select("user_id")
+              .eq("id", sellerId)
+              .single();
+            if (sellerProfile) {
+              await supabase.from("notifications").insert({
+                user_id: sellerProfile.user_id,
+                actor_id: userId,
+                type: "sale",
+              });
+            }
+          }
+
           // Clear the buyer's cart
           await supabase.from("cart_items").delete().eq("user_id", userId);
 
