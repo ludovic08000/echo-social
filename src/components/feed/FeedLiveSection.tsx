@@ -57,8 +57,10 @@ function useRecentReplays() {
         host: profileMap.get(l.user_id),
       })) as ReplayStream[];
     },
+    staleTime: 2 * 60_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
-}
 
 export function FeedLiveSection() {
   const { user } = useAuth();

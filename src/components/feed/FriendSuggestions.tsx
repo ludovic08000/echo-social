@@ -35,6 +35,8 @@ export function FriendSuggestions() {
       return (data || []) as Suggestion[];
     },
     enabled: !!user,
+    staleTime: 5 * 60_000,
+    gcTime: 10 * 60_000,
   });
 
   if (isLoading || !suggestions || suggestions.length === 0) return null;
