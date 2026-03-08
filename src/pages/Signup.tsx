@@ -127,8 +127,8 @@ export default function Signup() {
     }
 
     // Save parental control if minor
-    const age = differenceInYears(new Date(), dateOfBirth);
-    if (age < 16 && parentalPin) {
+    const userAge = differenceInYears(new Date(), dateOfBirth);
+    if (userAge < 16 && parentalPin) {
       try {
         const encoder = new TextEncoder();
         const data = encoder.encode(parentalPin + 'forsure-parental-salt');
