@@ -5,11 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Plus, Upload, ShoppingBag } from 'lucide-react';
+import { Plus, Upload, Sparkles, Loader2, Check } from 'lucide-react';
 import { useCreateProduct } from '@/hooks/useMarketplace';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { COUNTRIES, GEO_DATA } from '@/lib/geoData';
+import { toast } from 'sonner';
+import ReactMarkdown from 'react-markdown';
 
 const CATEGORIES = [
   { value: 'general', label: 'Général' },
