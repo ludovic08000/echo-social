@@ -17,6 +17,7 @@ interface ReplayStream {
   total_views: number;
   category: string | null;
   ended_at: string | null;
+  user_id: string;
   host?: { name: string; avatar_url: string | null };
 }
 
