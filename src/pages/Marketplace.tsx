@@ -28,8 +28,6 @@ const CATEGORIES = [
   { value: 'beauty', label: 'Beauté', icon: '💄' },
   { value: 'home', label: 'Maison', icon: '🏠' },
   { value: 'sports', label: 'Sport', icon: '⚽' },
-  { value: 'digital', label: 'Digital', icon: '💻' },
-  { value: 'services', label: 'Services', icon: '🔧' },
   { value: 'books', label: 'Livres', icon: '📚' },
 ];
 
