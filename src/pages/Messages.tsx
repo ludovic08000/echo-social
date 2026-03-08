@@ -562,7 +562,7 @@ function ConversationList() {
 // ─── Share Content Picker ─────────────────────────────────
 function ShareContentPicker({ onShare, onClose }: { onShare: (text: string) => void; onClose: () => void }) {
   const [tab, setTab] = useState<'posts' | 'products' | 'lives'>('posts');
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<Array<{ id: string; body?: string; title?: string; price?: number; image_url?: string; image_urls?: string[]; is_active?: boolean; created_at: string }>>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
