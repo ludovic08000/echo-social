@@ -89,11 +89,12 @@ serve(async (req) => {
 
     switch (action.type) {
       case "publish_post": {
+        const body = (action.body || "").substring(0, 5000);
         const { data, error } = await supabase
           .from("posts")
           .insert({
             user_id: userId,
-            body: action.body || "",
+            body,
             image_url: imageUrl,
           })
           .select("id")
