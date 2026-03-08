@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Gift, Loader2, Heart, Star, Flame, Crown, Diamond, Zap, Rocket, Music } from 'lucide-react';
+import { Gift, Loader2, Heart, Star, Flame, Crown, Diamond, Zap, Rocket, Music, Lock } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useIsCreatorRevenueEnabled } from '@/hooks/usePlatformStats';
 
 interface TipButtonProps {
   creatorId: string;
@@ -26,11 +27,21 @@ const GIFTS = [
 
 export function TipButton({ creatorId, creatorName }: TipButtonProps) {
   const { user } = useAuth();
+  const { enabled: revenueEnabled } = useIsCreatorRevenueEnabled();
   const [open, setOpen] = useState(false);
   const [selectedGift, setSelectedGift] = useState<typeof GIFTS[0] | null>(null);
   const [customAmount, setCustomAmount] = useState('');
   const [showCustom, setShowCustom] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  if (!revenueEnabled) {
+    return (
+      <Button variant="ghost" size="sm" disabled className="gap-1.5 text-muted-foreground">
+        <Lock className="w-4 h-4" />
+        Tips bientôt
+      </Button>
+    );
+  }
 
   const finalAmount = showCustom ? parseFloat(customAmount) : selectedGift?.amount || 0;
   const isValid = finalAmount >= 1;
