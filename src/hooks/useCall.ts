@@ -129,6 +129,7 @@ export function useCall(options?: UseCallOptions) {
       }
     } catch (err) {
       console.error('Call error:', err);
+      toast.error('Impossible de lancer l\'appel. Vérifiez votre connexion.');
       setCallState('ended');
       releaseWakeLock();
     }
