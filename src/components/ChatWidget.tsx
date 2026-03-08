@@ -945,6 +945,13 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                               );
                             })()}
                           </div>
+                        ) : isNegotiationMsg ? (
+                          <div
+                            onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
+                            className="cursor-pointer select-none px-3 py-2 text-xs break-words leading-relaxed rounded-2xl bg-amber-500/10 border border-amber-500/30 text-foreground"
+                          >
+                            <MessageBodyWithLinks body={msg.body} isMe={false} />
+                          </div>
                         ) : (
                           <div
                             onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
