@@ -5,11 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Plus, Upload, ShoppingBag } from 'lucide-react';
+import { Plus, Upload, Sparkles, Loader2, Check } from 'lucide-react';
 import { useCreateProduct } from '@/hooks/useMarketplace';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { COUNTRIES, GEO_DATA } from '@/lib/geoData';
+import { toast } from 'sonner';
+import ReactMarkdown from 'react-markdown';
 
 const CATEGORIES = [
   { value: 'general', label: 'Général' },
@@ -62,6 +64,8 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
   const [country, setCountry] = useState('FR');
   const [region, setRegion] = useState('');
   const [city, setCity] = useState('');
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiResult, setAiResult] = useState('');
 
   const regions = useMemo(() => {
     const data = GEO_DATA[country];
@@ -78,6 +82,77 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
     bucket: 'products',
     onSuccess: (url) => setThumbnailUrl(url),
   });
+
+  const generateAIDescription = async () => {
+    if (!title.trim()) {
+      toast.error('Remplissez le titre du produit d\'abord');
+      return;
+    }
+    setAiGenerating(true);
+    setAiResult('');
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/seller-ai-coach`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({
+            action: 'generate_description',
+            productInfo: title.trim() + (description.trim() ? ` — ${description.trim()}` : ''),
+            category,
+            price: price ? parseFloat(price) : undefined,
+          }),
+        }
+      );
+      if (!response.ok) throw new Error('Erreur IA');
+      if (!response.body) throw new Error('Pas de réponse');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let full = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buffer.indexOf('\n')) !== -1) {
+          let line = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 1);
+          if (line.endsWith('\r')) line = line.slice(0, -1);
+          if (!line.startsWith('data: ') || line.trim() === '') continue;
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === '[DONE]') break;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) {
+              full += content;
+              setAiResult(full);
+            }
+          } catch {}
+        }
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'Erreur lors de la génération');
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
+  const applyAIDescription = () => {
+    // Strip markdown formatting for clean text in the description field
+    const clean = aiResult
+      .replace(/#{1,6}\s/g, '')
+      .replace(/\*\*/g, '')
+      .replace(/\*/g, '')
+      .trim();
+    setDescription(clean);
+    setAiResult('');
+    toast.success('Description appliquée !');
+  };
 
   const handleSubmit = () => {
     if (!title.trim() || !price) return;
@@ -126,6 +201,8 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
     setCountry('FR');
     setRegion('');
     setCity('');
+    setAiResult('');
+    setAiGenerating(false);
   };
 
   return (
@@ -171,10 +248,45 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
               <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Nom du produit" className="mt-1" />
             </div>
 
-            {/* Description */}
-            <div>
-              <Label>Description</Label>
-              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Décrivez votre produit..." className="mt-1" rows={3} />
+            {/* Description + AI */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Description</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs gap-1"
+                  onClick={generateAIDescription}
+                  disabled={aiGenerating || !title.trim()}
+                >
+                  {aiGenerating ? (
+                    <><Loader2 className="w-3 h-3 animate-spin" /> Génération...</>
+                  ) : (
+                    <><Sparkles className="w-3 h-3" /> Générer avec l'IA</>
+                  )}
+                </Button>
+              </div>
+              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Décrivez votre produit ou utilisez l'IA ✨" className="mt-1" rows={3} />
+              
+              {aiResult && (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2">
+                  <p className="text-[11px] font-medium text-primary flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" /> Suggestion IA — vérifiez puis validez
+                  </p>
+                  <div className="text-xs prose prose-sm max-w-none">
+                    <ReactMarkdown>{aiResult}</ReactMarkdown>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" className="flex-1 h-7 text-xs" onClick={applyAIDescription}>
+                      <Check className="w-3 h-3 mr-1" /> Utiliser cette description
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setAiResult('')}>
+                      Ignorer
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Price & Stock */}
