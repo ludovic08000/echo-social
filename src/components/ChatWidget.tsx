@@ -769,7 +769,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                   const isFirstInGroup = !prevMsg || prevMsg.sender_id !== msg.sender_id;
                   const isLastInGroup = !nextMsg || nextMsg.sender_id !== msg.sender_id;
                   const reactions = messageReactions[msg.id] || [];
-                  const isBigEmoji = isSingleEmoji(msg.body);
+                   const isBigEmoji = isSingleEmoji(msg.body);
+                   const isNegotiationMsg = msg.body.startsWith('💰 OFFRE:') || msg.body.startsWith('✅ OFFRE') || msg.body.startsWith('❌ OFFRE') || msg.body.startsWith('🔄 CONTRE') || msg.body.startsWith('✅ CONTRE');
 
                   return (
                     <div
