@@ -207,6 +207,16 @@ export function useAddToCart() {
   return useMutation({
     mutationFn: async ({ productId, quantity = 1 }: { productId: string; quantity?: number }) => {
       if (!user) throw new Error('Non connecté');
+
+      // Prevent seller from buying their own product
+      const { data: product } = await supabase
+        .from('products')
+        .select('seller_id, seller_profiles(user_id)')
+        .eq('id', productId)
+        .single();
+      if (product?.seller_profiles && (product.seller_profiles as any).user_id === user.id) {
+        throw new Error('Vous ne pouvez pas acheter votre propre produit');
+      }
       // Check if already in cart
       const { data: existing } = await supabase
         .from('cart_items')

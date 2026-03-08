@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { useProduct, useAddToCart } from '@/hooks/useMarketplace';
+import { useAuth } from '@/lib/auth';
 import { useProductFavorites, useToggleFavorite } from '@/hooks/useProductFavorites';
 import { ProductReviews } from '@/components/marketplace/ProductReviews';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,7 @@ const SHIPPING_LABELS: Record<string, { label: string; icon: any }> = {
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: product, isLoading } = useProduct(id);
+  const { user } = useAuth();
   const addToCart = useAddToCart();
   const { data: favorites = [] } = useProductFavorites();
   const toggleFav = useToggleFavorite();
@@ -65,6 +67,7 @@ export default function ProductDetailPage() {
   const shippingInfo = SHIPPING_LABELS[product.shipping_type] || SHIPPING_LABELS.standard;
   const ShippingIcon = shippingInfo.icon;
   const isOutOfStock = product.stock_quantity !== null && product.stock_quantity <= 0;
+  const isOwnProduct = user && seller && (seller as any).user_id === user.id;
 
   return (
     <AppLayout>
@@ -277,10 +280,10 @@ export default function ProductDetailPage() {
           <Button
             className="premium-button flex-1 h-12 text-sm font-bold rounded-2xl"
             onClick={() => addToCart.mutate({ productId: product.id })}
-            disabled={addToCart.isPending || isOutOfStock}
+            disabled={addToCart.isPending || isOutOfStock || !!isOwnProduct}
           >
             <ShoppingCart className="w-4 h-4 mr-2" />
-            {isOutOfStock ? 'Épuisé' : 'Ajouter au panier'}
+            {isOwnProduct ? 'Votre produit' : isOutOfStock ? 'Épuisé' : 'Ajouter au panier'}
           </Button>
         </div>
       </div>
