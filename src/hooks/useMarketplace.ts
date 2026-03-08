@@ -10,9 +10,9 @@ export interface LocationFilter {
   scope?: 'local' | 'region' | 'country' | 'europe';
 }
 
-export function useProducts(category?: string, search?: string, location?: LocationFilter) {
+export function useProducts(category?: string, search?: string, location?: LocationFilter, limit?: number) {
   return useQuery({
-    queryKey: ['products', category, search, location],
+    queryKey: ['products', category, search, location, limit],
     queryFn: async () => {
       let query = supabase
         .from('products')
@@ -39,12 +39,18 @@ export function useProducts(category?: string, search?: string, location?: Locat
           query = query.eq('city', location.city);
         }
       }
-      // scope 'europe' = no country filter → show all
+
+      // Apply limit if specified (for feed widgets)
+      if (limit) {
+        query = query.limit(limit);
+      }
 
       const { data, error } = await query;
       if (error) throw error;
       return data;
     },
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
   });
 }
 

@@ -7,7 +7,7 @@ import { rotateMarketplaceProducts } from '@/lib/feedAlgorithm';
 import { useMemo } from 'react';
 
 export function FeedMarketplaceSection() {
-  const { data: products = [] } = useProducts();
+  const { data: products = [] } = useProducts(undefined, undefined, undefined, 12);
   
   // Fair rotation: different sellers get exposure at different times
   const featured = useMemo(() => {

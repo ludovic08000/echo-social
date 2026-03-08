@@ -35,16 +35,15 @@ export function usePosts() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
+  // Realtime: only listen for new posts (INSERT), not every like/comment change
+  // Likes/comments counts update on next staleTime refresh — saves massive DB reads
   useEffect(() => {
     const channel = supabase
       .channel('posts-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, () => {
         queryClient.invalidateQueries({ queryKey: ['posts'] });
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, () => {
-        queryClient.invalidateQueries({ queryKey: ['posts'] });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, () => {
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'posts' }, () => {
         queryClient.invalidateQueries({ queryKey: ['posts'] });
       })
       .subscribe();
@@ -208,8 +207,10 @@ export function usePosts() {
     },
     initialPageParam: 0,
     enabled: !!user,
-    staleTime: 15000,
-    refetchInterval: 60000,
+    staleTime: 60_000,       // 1 min cache — avoid refetch on every tab focus
+    gcTime: 5 * 60_000,      // Keep in memory 5 min
+    refetchInterval: 120_000, // Refresh every 2 min instead of 1
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -275,6 +276,8 @@ export function useUserPosts(userId: string) {
       });
     },
     enabled: !!userId,
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
   });
 }
 

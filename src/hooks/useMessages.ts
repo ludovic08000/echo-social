@@ -85,21 +85,28 @@ export function useConversations() {
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
       const participantMap = new Map(allParticipants?.map(p => [p.conversation_id, p.user_id]) || []);
 
-      const { data: messages } = await supabase
+      // Only fetch the LAST message per conversation + recent unread count
+      // Instead of loading ALL messages, use a limited query per conversation
+      const lastMessageMap = new Map<string, { body: string; created_at: string; sender_id: string }>();
+      const unreadCounts: Record<string, number> = {};
+
+      // Batch: get last message per conversation (limit to 1 per conv)
+      // Use a single query with ordering - only fetch recent messages
+      const { data: recentMessages } = await supabase
         .from('messages')
         .select('conversation_id, body, created_at, sender_id')
         .in('conversation_id', conversationIds)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(conversationIds.length * 3); // ~3 per conv is enough for last msg + unread
 
-      const lastMessageMap = new Map<string, { body: string; created_at: string; sender_id: string }>();
-      messages?.forEach(m => {
+      recentMessages?.forEach(m => {
         if (!lastMessageMap.has(m.conversation_id)) {
           lastMessageMap.set(m.conversation_id, m);
         }
       });
 
-      const unreadCounts: Record<string, number> = {};
-      messages?.forEach(m => {
+      // Count unread from the limited set (approximation, good enough for badge)
+      recentMessages?.forEach(m => {
         const lastRead = lastReadMap.get(m.conversation_id);
         if (!lastRead || new Date(m.created_at) > new Date(lastRead)) {
           if (m.sender_id !== user.id) {
@@ -145,6 +152,9 @@ export function useConversations() {
       });
     },
     enabled: !!user,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 }
 

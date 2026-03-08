@@ -69,6 +69,9 @@ export function useNotifications() {
       });
     },
     enabled: !!user,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -90,7 +93,9 @@ export function useUnreadCount() {
       return count || 0;
     },
     enabled: !!user,
-    refetchInterval: 30000,
+    staleTime: 30_000,
+    refetchInterval: 60_000, // Check unread every 60s instead of 30s
+    refetchOnWindowFocus: false,
   });
 }
 
