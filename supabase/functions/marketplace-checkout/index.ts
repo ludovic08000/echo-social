@@ -40,12 +40,11 @@ serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) throw new Error("Utilisateur non authentifié");
+    const { data: userData, error: userError } = await userClient.auth.getUser();
+    if (userError || !userData?.user) throw new Error("Utilisateur non authentifié");
 
-    const userId = claimsData.claims.sub as string;
-    const userEmail = claimsData.claims.email as string;
+    const userId = userData.user.id;
+    const userEmail = userData.user.email;
     if (!userEmail) throw new Error("Email utilisateur requis");
 
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
@@ -283,6 +282,27 @@ serve(async (req) => {
             }
           }
 
+          // Decrement stock for purchased products
+          const { data: paidItems } = await supabase
+            .from("order_items")
+            .select("product_id, quantity")
+            .eq("order_id", orderId);
+          if (paidItems) {
+            for (const pi of paidItems) {
+              const { data: prod } = await supabase
+                .from("products")
+                .select("stock_quantity")
+                .eq("id", pi.product_id)
+                .single();
+              if (prod?.stock_quantity !== null && prod?.stock_quantity !== undefined) {
+                await supabase
+                  .from("products")
+                  .update({ stock_quantity: Math.max(0, prod.stock_quantity - pi.quantity) })
+                  .eq("id", pi.product_id);
+              }
+            }
+          }
+
           // Clear the buyer's cart
           await supabase.from("cart_items").delete().eq("user_id", userId);
 
@@ -389,6 +409,23 @@ serve(async (req) => {
             actor_id: userId,
             type: "sale",
           });
+        }
+      }
+
+      // Decrement stock for purchased products (test mode)
+      for (const item of items) {
+        if (item.product_id) {
+          const { data: prod } = await supabase
+            .from("products")
+            .select("stock_quantity")
+            .eq("id", item.product_id)
+            .single();
+          if (prod?.stock_quantity !== null && prod?.stock_quantity !== undefined) {
+            await supabase
+              .from("products")
+              .update({ stock_quantity: Math.max(0, prod.stock_quantity - (item.quantity || 1)) })
+              .eq("id", item.product_id);
+          }
         }
       }
 

@@ -480,7 +480,6 @@ export default function Marketplace() {
                     </div>
 
                     {/* Tracking */}
-                    {/* Tracking */}
                     {order.tracking_number ? (
                       <button
                         onClick={() => window.open(`https://www.mondialrelay.fr/suivi-de-colis/?NumeroExpedition=${order.tracking_number}`, '_blank')}
