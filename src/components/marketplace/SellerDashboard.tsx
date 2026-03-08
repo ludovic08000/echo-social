@@ -484,6 +484,31 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
             </div>
           )}
         </TabsContent>
+
+        {/* Analytics Tab */}
+        <TabsContent value="analytics" className="mt-3">
+          <SalesAnalytics
+            orders={orders}
+            totalRevenue={seller.total_revenue || 0}
+            totalSales={seller.total_sales || 0}
+          />
+        </TabsContent>
+
+        {/* AI Description Tab */}
+        <TabsContent value="ai-desc" className="mt-3">
+          <AIProductHelper />
+        </TabsContent>
+
+        {/* AI Coach Tab */}
+        <TabsContent value="ai-coach" className="mt-3">
+          <AISalesCoach
+            sellerName={seller.store_name}
+            totalSales={seller.total_sales || 0}
+            totalRevenue={seller.total_revenue || 0}
+            productCount={products.length}
+            orderCount={paidOrders.length}
+          />
+        </TabsContent>
       </Tabs>
 
     </div>
