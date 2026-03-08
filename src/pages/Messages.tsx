@@ -576,7 +576,7 @@ function ShareContentPicker({ onShare, onClose }: { onShare: (text: string) => v
         setItems((data as any[]) || []);
       } else {
         const { data } = await supabase.from('live_streams').select('id, title, user_id, is_active, created_at').eq('is_active', true).order('created_at', { ascending: false }).limit(10);
-        setItems(data || []);
+        setItems((data as any[]) || []);
       }
       setLoading(false);
     };
