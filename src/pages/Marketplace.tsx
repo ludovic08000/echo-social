@@ -54,10 +54,11 @@ export default function Marketplace() {
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'browse');
   const [sortBy, setSortBy] = useState('recent');
 
-  // Handle order success - verify payment
+  // Handle order success - verify payment and open seller view directly
   useEffect(() => {
     const orderId = searchParams.get('order_success');
     if (orderId) {
+      setActiveTab('seller');
       supabase.functions.invoke('marketplace-checkout', {
         body: { action: 'verify_payment', orderId },
       }).then(({ data }) => {
