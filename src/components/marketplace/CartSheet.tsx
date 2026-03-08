@@ -38,7 +38,7 @@ export function CartSheet() {
   const buyerFee = Math.round(subtotal * 0.05 * 100) / 100;
 
   const shippingEstimate = hasPhysical && selectedRelay ? FLAT_SHIPPING_ESTIMATE : 0;
-  const checkoutBlockedByRelay = hasPhysical && !selectedRelay;
+  const total = subtotal + buyerFee + shippingEstimate;
 
   const handleCheckout = async (testMode = false) => {
     if (cart.length === 0) return;
