@@ -274,7 +274,7 @@ export function CartSheet() {
               <Button
                 className="w-full premium-button"
                 onClick={() => handleCheckout(false)}
-                disabled={isCheckingOut || cart.length === 0 || checkoutBlockedByRelay}
+                disabled={isCheckingOut || cart.length === 0 || (hasPhysical && !selectedRelay)}
               >
                 {isCheckingOut ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
