@@ -65,8 +65,8 @@ serve(async (req) => {
     }
 
     // ── Server-side cache check for moderation ──
-    if (action === "moderate" && text) {
-      const contentHash = hashContent(text.trim().toLowerCase());
+    if (action === "moderate" && safeText) {
+      const contentHash = hashContent(safeText.trim().toLowerCase());
       const { data: cached } = await supabase
         .from("ai_moderation_cache")
         .select("result")
