@@ -9,29 +9,7 @@ const corsHeaders = {
 
 const MR_WSDL = "https://api.mondialrelay.com/Web_Services.asmx";
 
-function md5(input: string): string {
-  // Simple MD5 for signature — use Web Crypto
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  let hash = 0x67452301;
-  let h1 = 0xefcdab89;
-  let h2 = 0x98badcfe;
-  let h3 = 0x10325476;
-  // Fallback: we'll use a proper approach with crypto
-  return input; // placeholder — we'll use the real crypto below
-}
-
-// Mondial Relay uses MD5 for signature verification
-async function computeMD5(input: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const hashBuffer = await crypto.subtle.digest("MD-5", data).catch(() => null);
-  
-  // MD5 is not available in Web Crypto, use a manual implementation
-  return md5Hex(input);
-}
-
-// Compact MD5 implementation
+// Compact MD5 implementation (Web Crypto does not support MD5)
 function md5Hex(str: string): string {
   function md5cycle(x: number[], k: number[]) {
     let a = x[0], b = x[1], c = x[2], d = x[3];
