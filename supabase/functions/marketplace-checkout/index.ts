@@ -282,6 +282,27 @@ serve(async (req) => {
             }
           }
 
+          // Decrement stock for purchased products
+          const { data: paidItems } = await supabase
+            .from("order_items")
+            .select("product_id, quantity")
+            .eq("order_id", orderId);
+          if (paidItems) {
+            for (const pi of paidItems) {
+              const { data: prod } = await supabase
+                .from("products")
+                .select("stock_quantity")
+                .eq("id", pi.product_id)
+                .single();
+              if (prod?.stock_quantity !== null && prod?.stock_quantity !== undefined) {
+                await supabase
+                  .from("products")
+                  .update({ stock_quantity: Math.max(0, prod.stock_quantity - pi.quantity) })
+                  .eq("id", pi.product_id);
+              }
+            }
+          }
+
           // Clear the buyer's cart
           await supabase.from("cart_items").delete().eq("user_id", userId);
 
