@@ -252,13 +252,13 @@ export default function Marketplace() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="w-full bg-secondary/50 rounded-xl p-1 h-auto">
-            <TabsTrigger value="browse" className="flex-1 rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm py-2.5 text-xs font-semibold gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" />
+          <TabsList className="w-full bg-card/80 backdrop-blur-md rounded-2xl p-1.5 h-auto border border-border/30 shadow-[var(--shadow-sm)]">
+            <TabsTrigger value="browse" className="flex-1 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-[0_4px_16px_hsl(var(--primary)/0.3)] py-3 text-xs font-bold gap-2 transition-all duration-300">
+              <Sparkles className="w-4 h-4" />
               Explorer
             </TabsTrigger>
-            <TabsTrigger value="seller" className="flex-1 rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm py-2.5 text-xs font-semibold gap-1.5">
-              <Store className="w-3.5 h-3.5" />
+            <TabsTrigger value="seller" className="flex-1 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-[0_4px_16px_hsl(var(--primary)/0.3)] py-3 text-xs font-bold gap-2 transition-all duration-300">
+              <Store className="w-4 h-4" />
               Ma boutique
             </TabsTrigger>
           </TabsList>
