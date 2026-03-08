@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useProfile } from '@/hooks/useProfile';
-import { supabase } from '@/integrations/supabase/client';
 
 const GRADIENT_MAP: Record<string, string> = {
   'gradient:from-orange-400,via-pink-500,to-purple-600': 'linear-gradient(135deg, #fb923c, #ec4899, #9333ea)',
@@ -13,36 +12,6 @@ const GRADIENT_MAP: Record<string, string> = {
   'gradient:from-gray-100,via-gray-200,to-gray-300': 'linear-gradient(135deg, #f3f4f6, #e5e7eb, #d1d5db)',
 };
 
-// Signed URL cache to avoid re-generating on every render
-const signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
-const SIGNED_URL_DURATION = 3600; // 1 hour in seconds
-const CACHE_BUFFER = 300; // refresh 5 min before expiry
-
-async function getSignedUrl(storagePath: string): Promise<string | null> {
-  const cached = signedUrlCache.get(storagePath);
-  const now = Date.now() / 1000;
-
-  if (cached && cached.expiresAt - CACHE_BUFFER > now) {
-    return cached.url;
-  }
-
-  const { data, error } = await supabase.storage
-    .from('backgrounds')
-    .createSignedUrl(storagePath, SIGNED_URL_DURATION);
-
-  if (error || !data?.signedUrl) {
-    console.error('Failed to create signed URL:', error);
-    return null;
-  }
-
-  signedUrlCache.set(storagePath, {
-    url: data.signedUrl,
-    expiresAt: now + SIGNED_URL_DURATION,
-  });
-
-  return data.signedUrl;
-}
-
 export function getBackgroundStyle(url: string | null | undefined): React.CSSProperties | undefined {
   if (!url) return undefined;
 
@@ -51,13 +20,7 @@ export function getBackgroundStyle(url: string | null | undefined): React.CSSPro
     return css ? { background: css } : undefined;
   }
 
-  // For storage: paths, the signed URL is resolved async via the hook
-  // This function handles already-resolved URLs
-  if (url.startsWith('storage:')) {
-    return undefined; // Will be handled by the hook
-  }
-
-  // Legacy public URLs (backward compat)
+  // R2 public URLs or any direct image URL
   return {
     backgroundImage: `url(${url})`,
     backgroundSize: 'cover',
@@ -72,41 +35,7 @@ export function useCustomBackground(type: 'profile' | 'feed') {
   const [resolvedStyle, setResolvedStyle] = useState<React.CSSProperties | undefined>(undefined);
 
   useEffect(() => {
-    if (!url) {
-      setResolvedStyle(undefined);
-      return;
-    }
-
-    if (url.startsWith('gradient:')) {
-      const css = GRADIENT_MAP[url];
-      setResolvedStyle(css ? { background: css } : undefined);
-      return;
-    }
-
-    if (url.startsWith('storage:')) {
-      const storagePath = url.replace('storage:', '');
-      getSignedUrl(storagePath).then((signedUrl) => {
-        if (signedUrl) {
-          setResolvedStyle({
-            backgroundImage: `url(${signedUrl})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundAttachment: 'fixed',
-          });
-        } else {
-          setResolvedStyle(undefined);
-        }
-      });
-      return;
-    }
-
-    // Legacy public URLs
-    setResolvedStyle({
-      backgroundImage: `url(${url})`,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
-      backgroundAttachment: 'fixed',
-    });
+    setResolvedStyle(getBackgroundStyle(url));
   }, [url]);
 
   return resolvedStyle;
