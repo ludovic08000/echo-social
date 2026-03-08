@@ -1,8 +1,17 @@
 import { Link } from 'react-router-dom';
-import { Heart, BadgeCheck, Star, Eye } from 'lucide-react';
+import { Heart, BadgeCheck, Star, Eye, Package } from 'lucide-react';
 import { useAddToCart } from '@/hooks/useMarketplace';
 import { useProductFavorites, useToggleFavorite } from '@/hooks/useProductFavorites';
 import { cn } from '@/lib/utils';
+
+const CONDITION_LABELS: Record<string, string> = {
+  new: 'Neuf',
+  like_new: 'Comme neuf',
+  very_good: 'Très bon état',
+  good: 'Bon état',
+  fair: 'État correct',
+  for_parts: 'Pour pièces',
+};
 
 interface ProductCardProps {
   product: any;
