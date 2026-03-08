@@ -25,7 +25,11 @@ export function CartSheet() {
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [selectedRelay, setSelectedRelay] = useState<SelectedRelay | null>(null);
   const [showRelayPicker, setShowRelayPicker] = useState(false);
-  const FLAT_SHIPPING_ESTIMATE = 4.90;
+  const estimateRelayShipping = (weightGrams: number) => {
+    const base = 4.2;
+    const extra = weightGrams <= 500 ? 0 : weightGrams <= 1000 ? 0.8 : weightGrams <= 2000 ? 1.6 : weightGrams <= 5000 ? 2.8 : 4.5;
+    return Math.round((base + extra) * 100) / 100;
+  };
 
   // Check if cart has physical products
   const hasPhysical = cart.some((item) => item.products?.product_type === 'physical');
@@ -37,7 +41,13 @@ export function CartSheet() {
   }, 0);
   const buyerFee = Math.round(subtotal * 0.05 * 100) / 100;
 
-  const shippingEstimate = hasPhysical && selectedRelay ? FLAT_SHIPPING_ESTIMATE : 0;
+  // Calculate shipping from product weights
+  const shippingTotal = cart.reduce((sum, item) => {
+    if (item.products?.product_type !== 'physical') return sum;
+    const w = (item.products as any)?.weight_grams || 500;
+    return sum + estimateRelayShipping(w) * item.quantity;
+  }, 0);
+  const shippingEstimate = hasPhysical && selectedRelay ? shippingTotal : 0;
   const total = subtotal + buyerFee + shippingEstimate;
 
   const handleCheckout = async (testMode = false) => {
@@ -211,8 +221,8 @@ export function CartSheet() {
 
                   {selectedRelay && (
                     <p className="text-[11px] text-muted-foreground px-2 py-1">
-                      Livraison estimée : <span className="font-semibold text-foreground">{FLAT_SHIPPING_ESTIMATE.toFixed(2)}€</span>
-                      <br />Le montant exact sera calculé par le vendeur selon le poids du colis.
+                      Livraison Mondial Relay : <span className="font-semibold text-foreground">{shippingEstimate.toFixed(2)}€</span>
+                      <br />Calculé selon le poids des produits.
                     </p>
                   )}
                 </div>
@@ -232,7 +242,7 @@ export function CartSheet() {
                 </div>
                 {hasPhysical && selectedRelay && (
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Livraison estimée</span>
+                    <span className="text-muted-foreground">Livraison Mondial Relay</span>
                     <span>{shippingEstimate.toFixed(2)}€</span>
                   </div>
                 )}

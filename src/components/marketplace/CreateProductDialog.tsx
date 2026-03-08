@@ -58,6 +58,7 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
   const [color, setColor] = useState('');
   const [shippingType, setShippingType] = useState('standard');
   const [shippingPrice, setShippingPrice] = useState('');
+  const [weightGrams, setWeightGrams] = useState('');
   const [country, setCountry] = useState('FR');
   const [region, setRegion] = useState('');
   const [city, setCity] = useState('');
@@ -95,6 +96,7 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
         color: color || undefined,
         shipping_type: shippingType,
         shipping_price: shippingPrice ? parseFloat(shippingPrice) : 0,
+        weight_grams: weightGrams ? parseInt(weightGrams) : undefined,
         country,
         region: region || undefined,
         city: city || undefined,
@@ -120,6 +122,7 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
     setColor('');
     setShippingType('standard');
     setShippingPrice('');
+    setWeightGrams('');
     setCountry('FR');
     setRegion('');
     setCity('');
@@ -237,6 +240,25 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+            )}
+
+            {/* Weight (for physical) */}
+            {productType === 'physical' && (
+              <div>
+                <Label>Poids du produit (grammes) *</Label>
+                <Select value={weightGrams} onValueChange={setWeightGrams}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Sélectionner le poids" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="250">250g</SelectItem>
+                    <SelectItem value="500">500g</SelectItem>
+                    <SelectItem value="1000">1 kg</SelectItem>
+                    <SelectItem value="2000">2 kg</SelectItem>
+                    <SelectItem value="5000">5 kg</SelectItem>
+                    <SelectItem value="10000">10 kg</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground mt-1">Les frais Mondial Relay seront calculés automatiquement</p>
               </div>
             )}
 

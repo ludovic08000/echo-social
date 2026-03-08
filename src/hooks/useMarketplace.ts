@@ -143,6 +143,7 @@ export function useCreateProduct() {
       color?: string;
       shipping_type?: string;
       shipping_price?: number;
+      weight_grams?: number;
       country?: string;
       region?: string;
       city?: string;
@@ -189,7 +190,7 @@ export function useCart() {
       if (!user) return [];
       const { data, error } = await supabase
         .from('cart_items')
-        .select('*, products(id, title, price, thumbnail_url, images, stock_quantity, seller_id, product_type, seller_profiles(store_name))')
+        .select('*, products(id, title, price, thumbnail_url, images, stock_quantity, seller_id, product_type, weight_grams, seller_profiles(store_name))')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
       if (error) throw error;
