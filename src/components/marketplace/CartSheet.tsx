@@ -36,9 +36,7 @@ export function CartSheet() {
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [selectedRelay, setSelectedRelay] = useState<SelectedRelay | null>(null);
   const [showRelayPicker, setShowRelayPicker] = useState(false);
-  const [packageWeight, setPackageWeight] = useState('500');
-  const [packageParcels, setPackageParcels] = useState('1');
-  const packageSectionRef = useRef<HTMLDivElement | null>(null);
+  const FLAT_SHIPPING_ESTIMATE = 4.90;
 
   // Check if cart has physical products
   const hasPhysical = cart.some((item) => item.products?.product_type === 'physical');

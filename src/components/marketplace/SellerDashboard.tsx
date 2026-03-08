@@ -24,6 +24,17 @@ export function SellerDashboard() {
   const [markingDelivered, setMarkingDelivered] = useState<string | null>(null);
   const [uploadingVideo, setUploadingVideo] = useState<string | null>(null);
   const [analyzingVideo, setAnalyzingVideo] = useState<string | null>(null);
+  const [orderWeights, setOrderWeights] = useState<Record<string, string>>({});
+
+  const estimateRelayShipping = (weightGrams: number) => {
+    const basePerParcel = 4.2;
+    const weightExtra =
+      weightGrams <= 500 ? 0 :
+      weightGrams <= 1000 ? 0.8 :
+      weightGrams <= 2000 ? 1.6 :
+      weightGrams <= 5000 ? 2.8 : 4.5;
+    return Math.round((basePerParcel + weightExtra) * 100) / 100;
+  };
   const [sellerTab, setSellerTab] = useState<'products' | 'orders'>(
     searchParams.get('sellerTab') === 'orders' ? 'orders' : 'products'
   );
