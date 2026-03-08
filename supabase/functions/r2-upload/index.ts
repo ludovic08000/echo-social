@@ -25,14 +25,24 @@ Deno.serve(async (req) => {
     if (authError || !user) throw new Error("Not authenticated");
 
     // R2 config
-    const accountId = Deno.env.get("R2_ACCOUNT_ID")!;
-    const accessKeyId = Deno.env.get("R2_ACCESS_KEY_ID")!;
-    const secretAccessKey = Deno.env.get("R2_SECRET_ACCESS_KEY")!;
-    const bucketName = Deno.env.get("R2_BUCKET_NAME")!;
-    const publicUrl = Deno.env.get("R2_PUBLIC_URL")!;
+    const accountId = Deno.env.get("R2_ACCOUNT_ID")?.trim() ?? "";
+    let accessKeyId = Deno.env.get("R2_ACCESS_KEY_ID")?.trim() ?? "";
+    let secretAccessKey = Deno.env.get("R2_SECRET_ACCESS_KEY")?.trim() ?? "";
+    const bucketName = Deno.env.get("R2_BUCKET_NAME")?.trim() ?? "";
+    const publicUrl = Deno.env.get("R2_PUBLIC_URL")?.trim() ?? "";
+
+    // Auto-heal common misconfiguration: swapped access key / secret key
+    if (accessKeyId.length === 64 && secretAccessKey.length === 32) {
+      [accessKeyId, secretAccessKey] = [secretAccessKey, accessKeyId];
+      console.warn("R2 credentials appeared swapped; using corrected order at runtime");
+    }
 
     if (!accountId || !accessKeyId || !secretAccessKey || !bucketName || !publicUrl) {
       throw new Error("R2 configuration incomplete");
+    }
+
+    if (accessKeyId.length !== 32) {
+      throw new Error("Invalid R2_ACCESS_KEY_ID format (expected 32 chars)");
     }
 
     const endpoint = `https://${accountId}.r2.cloudflarestorage.com`;
