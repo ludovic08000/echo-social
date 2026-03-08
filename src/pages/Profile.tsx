@@ -614,7 +614,8 @@ export default function Profile() {
                         Créateur
                       </Button>
                     </Link>
-                  )}
+                   )}
+                   {isCreator && <TipButton creatorId={userId!} creatorName={profile.name} />}
                   <Button 
                     variant="secondary" 
                     className="flex-1 rounded-xl h-10 text-sm"
