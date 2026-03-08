@@ -316,6 +316,8 @@ function LiveSlide({ item, isVisible }: { item: AllLiveItem; isVisible: boolean 
 // ─── Main: TikTok-style vertical scroll ─────────────────────────
 export default function LiveWatch() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const fromFeed = searchParams.get('from') === 'feed';
   const navigate = useNavigate();
   const { data: allLives, isLoading } = useAllLives();
 
