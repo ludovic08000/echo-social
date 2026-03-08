@@ -2675,6 +2675,48 @@ export type Database = {
           },
         ]
       }
+      tips: {
+        Row: {
+          amount: number
+          commission_amount: number
+          commission_rate: number
+          created_at: string
+          creator_id: string
+          creator_payout: number
+          id: string
+          message: string | null
+          status: string
+          stripe_session_id: string | null
+          tipper_id: string
+        }
+        Insert: {
+          amount: number
+          commission_amount: number
+          commission_rate?: number
+          created_at?: string
+          creator_id: string
+          creator_payout: number
+          id?: string
+          message?: string | null
+          status?: string
+          stripe_session_id?: string | null
+          tipper_id: string
+        }
+        Update: {
+          amount?: number
+          commission_amount?: number
+          commission_rate?: number
+          created_at?: string
+          creator_id?: string
+          creator_payout?: number
+          id?: string
+          message?: string | null
+          status?: string
+          stripe_session_id?: string | null
+          tipper_id?: string
+        }
+        Relationships: []
+      }
       trust_scores: {
         Row: {
           account_age_score: number
