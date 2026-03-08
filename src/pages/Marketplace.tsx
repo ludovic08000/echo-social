@@ -22,13 +22,6 @@ import { COUNTRIES, GEO_DATA } from '@/lib/geoData';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { CreateProductDialog } from '@/components/marketplace/CreateProductDialog';
-import { useSellerProfile } from '@/hooks/useMarketplace';
-import { useProductFavorites } from '@/hooks/useProductFavorites';
-import { cn } from '@/lib/utils';
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { COUNTRIES, GEO_DATA } from '@/lib/geoData';
 
 const CATEGORIES = [
   { value: 'all', label: 'Tout', icon: '🔥' },
