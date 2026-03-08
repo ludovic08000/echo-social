@@ -215,9 +215,10 @@ Deno.serve(async (req) => {
     const cleanFolder = folder.replace(/[^a-zA-Z0-9\-_]/g, "");
     if (!cleanFolder) throw new Error("Invalid folder name");
 
-    // ─── Validate MIME type ───
+    // ─── Validate MIME type (strip codec params like "video/webm;codecs=vp9,opus") ───
+    const baseMime = file.type.split(";")[0].trim();
     const allowedMimes = ALLOWED_MIME_TYPES[cleanFolder] || ALLOWED_MIME_TYPES["uploads"];
-    if (!allowedMimes.includes(file.type)) {
+    if (!allowedMimes.includes(baseMime)) {
       return new Response(JSON.stringify({
         error: `Type de fichier non autorisé: ${file.type}. Types acceptés: ${allowedMimes.join(", ")}`,
       }), {
