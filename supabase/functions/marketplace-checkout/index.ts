@@ -233,6 +233,71 @@ serve(async (req) => {
       });
     }
 
+    // ── TEST CHECKOUT (skip Stripe) ──
+    if (action === "test_checkout") {
+      const { items, relay } = body;
+      if (!items?.length) throw new Error("Panier vide");
+
+      const subtotal = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
+      const commission = Math.round(subtotal * COMMISSION_RATE * 100) / 100;
+      const total = subtotal + commission;
+
+      const orderNumber = `TEST-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+
+      const orderData: any = {
+        buyer_id: userId,
+        order_number: orderNumber,
+        subtotal,
+        total,
+        commission_rate: COMMISSION_RATE,
+        commission_amount: commission,
+        status: "paid",
+        paid_at: new Date().toISOString(),
+      };
+
+      if (relay?.id) {
+        orderData.shipping_method = 'mondial_relay';
+        orderData.shipping_relay_id = relay.id;
+        orderData.shipping_relay_name = relay.name;
+        orderData.shipping_relay_address = relay.address;
+        orderData.shipping_relay_postcode = relay.postcode;
+        orderData.shipping_relay_city = relay.city;
+        orderData.shipping_relay_country = relay.country || 'FR';
+      }
+
+      const { data: order, error: orderError } = await supabase
+        .from("orders")
+        .insert(orderData)
+        .select()
+        .single();
+
+      if (orderError) throw new Error(`Erreur création commande: ${orderError.message}`);
+
+      for (const item of items) {
+        const itemSubtotal = item.price * item.quantity;
+        const itemCommission = Math.round(itemSubtotal * COMMISSION_RATE * 100) / 100;
+        await supabase.from("order_items").insert({
+          order_id: order.id,
+          product_id: item.product_id,
+          seller_id: item.seller_id,
+          title: item.title,
+          price: item.price,
+          quantity: item.quantity,
+          subtotal: itemSubtotal,
+          commission_amount: itemCommission,
+          seller_payout: itemSubtotal - itemCommission,
+          status: "paid",
+        });
+      }
+
+      // Clear cart
+      await supabase.from("cart_items").delete().eq("user_id", userId);
+
+      return new Response(JSON.stringify({ success: true, orderId: order.id, orderNumber }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(JSON.stringify({ error: "Action invalide" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
