@@ -435,15 +435,29 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     });
   };
 
+  const [showRelayPicker, setShowRelayPicker] = useState(false);
+  const [selectedRelay, setSelectedRelay] = useState<any>(null);
+  const [negPayLoading, setNegPayLoading] = useState(false);
+
+  const estimateShipping = (weightGrams: number) => {
+    const base = 4.2;
+    const extra = weightGrams <= 500 ? 0 : weightGrams <= 1000 ? 0.8 : weightGrams <= 2000 ? 1.6 : weightGrams <= 5000 ? 2.8 : 4.5;
+    return Math.round((base + extra) * 100) / 100;
+  };
+
   const handlePayNegotiated = async () => {
     if (!acceptedNeg) return;
+    setNegPayLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
-        body: { action: 'negotiation_checkout', negotiationId: acceptedNeg.id },
-      });
+      const payload: any = { action: 'negotiation_checkout', negotiationId: acceptedNeg.id };
+      if (selectedRelay) {
+        payload.relay = selectedRelay;
+      }
+      const { data, error } = await supabase.functions.invoke('marketplace-checkout', { body: payload });
       if (error || data?.error) throw new Error(data?.error || 'Erreur');
       if (data?.url) window.location.href = data.url;
     } catch (e: any) { toast.error(e.message || 'Erreur paiement'); }
+    finally { setNegPayLoading(false); }
   };
 
   // Call hook & sound
