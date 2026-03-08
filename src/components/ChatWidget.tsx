@@ -348,9 +348,28 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { goBack, closeChat, minimizeChat, state: chatState } = useChatWidget();
+  const { goBack, closeChat, minimizeChat, state: chatState, openNegotiation: setNegotiationContext } = useChatWidget();
   const conversation = conversations?.find(c => c.id === conversationId);
   const negotiationProduct = chatState.negotiationProduct;
+
+  // Auto-load negotiation context from conversation if not set
+  const { data: convNegotiations = [] } = useNegotiationsByConversation(!negotiationProduct ? conversationId : undefined);
+  
+  useEffect(() => {
+    if (!negotiationProduct && convNegotiations.length > 0) {
+      const neg = convNegotiations[0];
+      const prod = neg.products;
+      if (prod) {
+        setNegotiationContext({
+          id: prod.id,
+          title: prod.title,
+          price: prod.price,
+          thumbnail_url: prod.thumbnail_url,
+          seller_profiles: prod.seller_profiles,
+        }, conversationId);
+      }
+    }
+  }, [negotiationProduct, convNegotiations, conversationId, setNegotiationContext]);
 
   // Negotiation hooks
   const { data: negotiations = [] } = useNegotiations(negotiationProduct?.id);
