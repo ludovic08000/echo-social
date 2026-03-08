@@ -3084,6 +3084,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_view_order: {
+        Args: { _buyer_id: string; _order_id: string }
+        Returns: boolean
+      }
+      can_view_order_item: {
+        Args: { _order_id: string; _seller_id: string }
+        Returns: boolean
+      }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       generate_order_number: { Args: never; Returns: string }
       get_friend_suggestions: {
