@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 
 const PREDEFINED_BACKGROUNDS = [
@@ -36,7 +36,7 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      toast({ title: 'Format non supporté', variant: 'destructive' });
+      toast.error('Format non supporté');
       return;
     }
 
@@ -54,9 +54,9 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
 
       const { data } = supabase.storage.from('avatars').getPublicUrl(path);
       onUpdate(data.publicUrl);
-      toast({ title: `Fond ${label} mis à jour !` });
+      toast.success(`Fond ${label} mis à jour !`);
     } catch (err) {
-      toast({ title: 'Erreur lors de l\'upload', variant: 'destructive' });
+      toast.error('Erreur lors de l\'upload');
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -65,7 +65,7 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
 
   const handleSelect = (bg: typeof PREDEFINED_BACKGROUNDS[0]) => {
     onUpdate(bg.url || null);
-    toast({ title: bg.url ? `Fond "${bg.label}" appliqué` : `Fond ${label} supprimé` });
+    toast.success(bg.url ? `Fond "${bg.label}" appliqué` : `Fond ${label} supprimé`);
   };
 
   const isSelected = (bg: typeof PREDEFINED_BACKGROUNDS[0]) => {
@@ -167,15 +167,15 @@ export function BackgroundSettingsSection() {
 
       <BackgroundPicker
         type="profile"
-        currentUrl={(profile as any).profile_bg_url}
-        onUpdate={(url) => updateProfile.mutate({ profile_bg_url: url } as any)}
+        currentUrl={profile.profile_bg_url}
+        onUpdate={(url) => updateProfile.mutate({ profile_bg_url: url })}
         isUpdating={updateProfile.isPending}
       />
 
       <BackgroundPicker
         type="feed"
-        currentUrl={(profile as any).feed_bg_url}
-        onUpdate={(url) => updateProfile.mutate({ feed_bg_url: url } as any)}
+        currentUrl={profile.feed_bg_url}
+        onUpdate={(url) => updateProfile.mutate({ feed_bg_url: url })}
         isUpdating={updateProfile.isPending}
       />
     </div>
