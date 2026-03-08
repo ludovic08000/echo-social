@@ -1637,7 +1637,8 @@ function ZeusSection() {
     { label: '🧬 Optimiser Algo', prompt: 'Analyse les métriques d\'engagement et la config actuelle de l\'algo du feed, puis propose des optimisations concrètes' },
     { label: '💡 Stratégie', prompt: 'En te basant sur toutes les données disponibles, propose un plan d\'action stratégique pour les 30 prochains jours avec objectifs mesurables' },
   ];
-  const [messages, setMessages] = useState<ZMsg[]>([{ role: 'system', content: `⚡ **Zeus v2** — Assistant Stratégique Proactif\n\nJe suis propulsé par **Gemini 3.1 Pro** avec accès en temps réel à toutes vos données.\n\n🧠 **Mode proactif** : Je vous fais des propositions d'optimisation sans que vous ayez à demander. Vous validez ou refusez chaque action.\n\n🛠️ **Outils** : Analyse de données, détection de risques, tuning algorithme, simulation de charge.\n\n💡 Commencez par me demander un dashboard ou dites-moi simplement "Quoi de neuf ?"` }]);
+  const WELCOME_MSG: ZMsg = { role: 'system', content: `⚡ **Zeus v2** — Assistant Stratégique Proactif\n\nJe suis propulsé par **Gemini 3.1 Pro** avec accès en temps réel à toutes vos données.\n\n🧠 **Mode proactif** : Je vous fais des propositions d'optimisation sans que vous ayez à demander. Vous validez ou refusez chaque action.\n\n🛠️ **Outils** : Analyse de données, détection de risques, tuning algorithme, simulation de charge.\n\n💡 Commencez par me demander un dashboard ou dites-moi simplement "Quoi de neuf ?"` };
+  const [messages, setMessages] = useState<ZMsg[]>([WELCOME_MSG]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [pendingProposals, setPendingProposals] = useState<Map<string, { action: string; key: string; updates: any; reason: string }>>(new Map());
@@ -1645,8 +1646,55 @@ function ZeusSection() {
   const [rejectedProposals, setRejectedProposals] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const conversationIdRef = useRef<string | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load last conversation on mount
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from('zeus_conversations')
+        .select('id, messages')
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data?.messages && Array.isArray(data.messages) && data.messages.length > 1) {
+        conversationIdRef.current = data.id;
+        setMessages(data.messages as ZMsg[]);
+        // Restore chatHistory for context continuity
+        chatHistory.current = (data.messages as ZMsg[]).filter((m: ZMsg) => m.role === 'user' || m.role === 'assistant');
+      }
+    })();
+  }, []);
+
+  // Auto-save conversation (debounced)
+  const saveConversation = useCallback(async (msgs: ZMsg[]) => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || msgs.length <= 1) return;
+      const firstUserMsg = msgs.find(m => m.role === 'user');
+      const title = firstUserMsg ? firstUserMsg.content.slice(0, 80) : 'Conversation Zeus';
+      if (conversationIdRef.current) {
+        await supabase.from('zeus_conversations').update({ messages: msgs as any, title, updated_at: new Date().toISOString() }).eq('id', conversationIdRef.current);
+      } else {
+        const { data } = await supabase.from('zeus_conversations').insert({ user_id: user.id, messages: msgs as any, title }).select('id').single();
+        if (data) conversationIdRef.current = data.id;
+      }
+    }, 1500);
+  }, []);
 
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [messages]);
+
+  // Save whenever messages change (after initial load)
+  const isInitialLoad = useRef(true);
+  useEffect(() => {
+    if (isInitialLoad.current) { isInitialLoad.current = false; return; }
+    if (messages.length > 1) saveConversation(messages);
+  }, [messages, saveConversation]);
 
   const parseProposals = useCallback((content: string) => {
     const regex = /\[ZEUS_PROPOSAL\]\s*\n([\s\S]*?)\[\/ZEUS_PROPOSAL\]/g;
