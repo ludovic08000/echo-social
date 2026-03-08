@@ -133,6 +133,14 @@ export function ProductCard({ product, compact }: ProductCardProps) {
           )}
         </div>
 
+        {/* Weight info */}
+        {!compact && product.weight_grams && (
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <Package className="w-3 h-3" />
+            <span>{product.weight_grams >= 1000 ? `${(product.weight_grams / 1000).toFixed(1)} kg` : `${product.weight_grams}g`}</span>
+          </div>
+        )}
+
         {/* Shipping info */}
         {!compact && product.shipping_type === 'free' && (
           <span className="text-[10px] font-medium text-primary bg-primary/8 px-1.5 py-0.5 rounded-md inline-block">
