@@ -325,90 +325,87 @@ serve(async (req) => {
       const senderPhone = sender?.phone || "0600000000";
       const senderEmail = sender?.email || "support@forsure.app";
 
-      // Build API v2 shipment payload
-      const shipmentPayload = {
-        OutputFormat: "PdfA4",
-        OutputType: "QRCode",
-        BrandIdAPI: v2BrandId,
-        ShipmentsList: [
-          {
-            OrderNo: order.order_number || `ORD-${order_id.substring(0, 8)}`,
-            CustomerNo: order.buyer_id.substring(0, 9),
-            ParcelCount: 1,
-            DeliveryMode: {
-              Mode: "24R",
-              Location: order.shipping_relay_id || relay_id || "",
-            },
-            CollectionMode: {
-              Mode: "REL",
-              Location: relay_id || order.shipping_relay_id || "",
-            },
-            Sender: {
-              Language: "FR",
-              Title: "",
-              Firstname: senderName.split(" ")[0] || "Vendeur",
-              Lastname: senderName.split(" ").slice(1).join(" ") || "ForSure",
-              Streetname: senderAddress,
-              AddressAdd1: "",
-              AddressAdd2: "",
-              AddressAdd3: "",
-              CountryCode: senderCountry,
-              PostCode: senderPostcode,
-              City: senderCity,
-              PhoneNo: senderPhone,
-              MobileNo: senderPhone,
-              Email: senderEmail,
-            },
-            Recipient: {
-              Language: "FR",
-              Title: "",
-              Firstname: (order.shipping_relay_name || "Client").split(" ")[0] || "Client",
-              Lastname: (order.shipping_relay_name || "").split(" ").slice(1).join(" ") || "",
-              Streetname: order.shipping_relay_address || "",
-              AddressAdd1: "",
-              AddressAdd2: "",
-              AddressAdd3: "",
-              CountryCode: order.shipping_relay_country || "FR",
-              PostCode: order.shipping_relay_postcode || "",
-              City: order.shipping_relay_city || "",
-              PhoneNo: "",
-              MobileNo: "",
-              Email: "",
-            },
-            Parcels: [
-              {
-                Content: "Commande marketplace",
-                Weight: {
-                  Value: weight,
-                  Unit: "gr",
-                },
-                ...(shipment.length_cm ? {
-                  Length: { Value: Number(shipment.length_cm), Unit: "cm" },
-                } : {}),
-                ...(shipment.width_cm ? {
-                  Width: { Value: Number(shipment.width_cm), Unit: "cm" },
-                } : {}),
-                ...(shipment.height_cm ? {
-                  Height: { Value: Number(shipment.height_cm), Unit: "cm" },
-                } : {}),
-              },
-            ],
-          },
-        ],
-      };
+      // Build API v2 XML payload (the dual-carrier API expects XML, not JSON)
+      const orderNo = order.order_number || `ORD-${order_id.substring(0, 8)}`;
+      const customerNo = order.buyer_id.substring(0, 9);
+      const relayLocation = order.shipping_relay_id || relay_id || "";
+      const senderFirstname = senderName.split(" ")[0] || "Vendeur";
+      const senderLastname = senderName.split(" ").slice(1).join(" ") || "ForSure";
+      const recipientName = order.shipping_relay_name || "Client";
+      const recipientFirstname = recipientName.split(" ")[0] || "Client";
+      const recipientLastname = recipientName.split(" ").slice(1).join(" ") || "";
 
-      console.log("API v2 payload:", JSON.stringify(shipmentPayload));
+      const escXml = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-      // Call API v2 REST with Basic Auth
-      const basicAuth = btoa(`${v2Login}:${v2Password}`);
+      const xmlPayload = `<?xml version="1.0" encoding="utf-8"?>
+<ShipmentCreationRequest xmlns="http://www.example.org/Request">
+  <Context>
+    <Login>${escXml(v2Login.trim())}</Login>
+    <Password>${escXml(v2Password.trim())}</Password>
+    <CustomerId>${escXml(v2BrandId.trim())}</CustomerId>
+    <Culture>fr-FR</Culture>
+    <VersionAPI>1.0</VersionAPI>
+  </Context>
+  <OutputOptions>
+    <OutputFormat>PdfA4</OutputFormat>
+    <OutputType>QRCode</OutputType>
+  </OutputOptions>
+  <ShipmentsList>
+    <Shipment>
+      <OrderNo>${escXml(orderNo)}</OrderNo>
+      <CustomerNo>${escXml(customerNo)}</CustomerNo>
+      <ParcelCount>1</ParcelCount>
+      <DeliveryMode>
+        <Mode>24R</Mode>
+        <Location>${escXml(relayLocation)}</Location>
+      </DeliveryMode>
+      <CollectionMode>
+        <Mode>REL</Mode>
+        <Location>${escXml(relayLocation)}</Location>
+      </CollectionMode>
+      <Sender>
+        <Language>FR</Language>
+        <Firstname>${escXml(senderFirstname)}</Firstname>
+        <Lastname>${escXml(senderLastname)}</Lastname>
+        <Streetname>${escXml(senderAddress)}</Streetname>
+        <CountryCode>${escXml(senderCountry)}</CountryCode>
+        <PostCode>${escXml(senderPostcode)}</PostCode>
+        <City>${escXml(senderCity)}</City>
+        <PhoneNo>${escXml(senderPhone)}</PhoneNo>
+        <MobileNo>${escXml(senderPhone)}</MobileNo>
+        <Email>${escXml(senderEmail)}</Email>
+      </Sender>
+      <Recipient>
+        <Language>FR</Language>
+        <Firstname>${escXml(recipientFirstname)}</Firstname>
+        <Lastname>${escXml(recipientLastname)}</Lastname>
+        <Streetname>${escXml(order.shipping_relay_address || "")}</Streetname>
+        <CountryCode>${escXml(order.shipping_relay_country || "FR")}</CountryCode>
+        <PostCode>${escXml(order.shipping_relay_postcode || "")}</PostCode>
+        <City>${escXml(order.shipping_relay_city || "")}</City>
+      </Recipient>
+      <Parcels>
+        <Parcel>
+          <Content>Commande marketplace</Content>
+          <Weight>
+            <Value>${weight}</Value>
+            <Unit>gr</Unit>
+          </Weight>
+        </Parcel>
+      </Parcels>
+    </Shipment>
+  </ShipmentsList>
+</ShipmentCreationRequest>`;
+
+      console.log("API v2 XML payload:", xmlPayload);
+
       const apiResponse = await fetch(MR_API_V2, {
         method: "POST",
         headers: {
-          "Authorization": `Basic ${basicAuth}`,
-          "Content-Type": "application/json",
-          "Accept": "application/json",
+          "Content-Type": "application/xml; charset=utf-8",
+          "Accept": "application/xml, application/json",
         },
-        body: JSON.stringify(shipmentPayload),
+        body: xmlPayload,
       });
 
       const responseText = await apiResponse.text();
