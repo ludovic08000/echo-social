@@ -128,7 +128,7 @@ Only output valid JSON, nothing else.${learnedRulesContext}`;
 - "engagement_prediction": string ("high", "medium", "low")
 - "virality_score": number 0-100
 Only output valid JSON.`;
-        userPrompt = text || "";
+        userPrompt = safeText;
         break;
       }
 
