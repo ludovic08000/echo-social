@@ -56,7 +56,7 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
       onUpdate(data.publicUrl);
       toast.success(`Fond ${label} mis à jour !`);
     } catch (err) {
-      toast({ title: 'Erreur lors de l\'upload', variant: 'destructive' });
+      toast.error('Erreur lors de l\'upload');
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
