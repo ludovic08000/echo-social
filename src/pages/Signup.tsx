@@ -114,7 +114,7 @@ export default function Signup() {
 
     const fullName = `${firstName.trim()} ${lastName.trim()}`;
     const dobString = format(dateOfBirth, 'yyyy-MM-dd');
-    const { error } = await signUp(email, password, fullName, dobString);
+    const { error, data: signUpData } = await signUp(email, password, fullName, dobString);
 
     if (error) {
       toast({
@@ -124,6 +124,30 @@ export default function Signup() {
       });
       setIsLoading(false);
       return;
+    }
+
+    // Save parental control if minor
+    const age = differenceInYears(new Date(), dateOfBirth);
+    if (age < 16 && parentalPin) {
+      try {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(parentalPin + 'forsure-parental-salt');
+        const hash = await crypto.subtle.digest('SHA-256', data);
+        const pinHash = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+        // Wait a moment for user to be created
+        const { data: { user: newUser } } = await supabase.auth.getUser();
+        if (newUser) {
+          await supabase.from('parental_controls').insert({
+            user_id: newUser.id,
+            pin_hash: pinHash,
+            is_minor: true,
+            allowed_categories: ['education', 'sport', 'gaming', 'musique', 'art', 'humour'],
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to save parental control', e);
+      }
     }
 
     toast({
