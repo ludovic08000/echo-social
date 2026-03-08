@@ -272,13 +272,17 @@ export default function Feed() {
                 {/* Parental control banner */}
                 {isMinor && !isUnlocked && (
                   <div className="px-4 mb-3">
-                    <div className="flex items-center gap-3 p-3 rounded-xl bg-pink-500/10 border border-pink-500/20">
-                      <Lock className="w-4 h-4 text-pink-500 shrink-0" />
-                      <p className="text-xs text-muted-foreground flex-1">
-                        Mode protégé actif — certains contenus sont filtrés.
-                      </p>
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-primary/5 border border-primary/20">
+                      <Shield className="w-5 h-5 text-primary shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-xs font-medium text-foreground">🛡️ Mode protégé actif</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Contenus filtrés • Messages d'inconnus bloqués • Profil privé
+                        </p>
+                      </div>
                       <Button size="sm" variant="outline" className="text-xs h-7 rounded-lg" onClick={() => requestUnlock()}>
-                        Déverrouiller
+                        <Lock className="w-3 h-3 mr-1" />
+                        PIN
                       </Button>
                     </div>
                   </div>
