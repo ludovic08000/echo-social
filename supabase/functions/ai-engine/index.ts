@@ -141,7 +141,7 @@ Only output valid JSON.`;
 - "fatigue_risk": string ("low", "medium", "high")
 - "personality_type": string (detected personality archetype)
 Only output valid JSON.`;
-        userPrompt = JSON.stringify(context || {});
+        userPrompt = JSON.stringify(safeContext);
         break;
       }
 
