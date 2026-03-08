@@ -393,7 +393,7 @@ export default function LiveWatch() {
           key={item.id}
           className="w-full h-screen snap-start snap-always"
         >
-          <LiveSlide item={item} isVisible={index === currentIndex} />
+          <LiveSlide item={item} isVisible={index === currentIndex} backTo={fromFeed ? '/feed' : '/lives'} />
         </div>
       ))}
     </div>
