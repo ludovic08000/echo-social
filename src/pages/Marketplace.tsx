@@ -51,6 +51,23 @@ export default function Marketplace() {
   const [category, setCategory] = useState('all');
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'browse');
   const [sortBy, setSortBy] = useState('recent');
+
+  // Handle order success - verify payment
+  useEffect(() => {
+    const orderId = searchParams.get('order_success');
+    if (orderId) {
+      supabase.functions.invoke('marketplace-checkout', {
+        body: { action: 'verify_payment', orderId },
+      }).then(({ data }) => {
+        if (data?.paid) {
+          toast.success('🎉 Commande confirmée ! Merci pour votre achat.');
+        }
+      }).catch(() => {});
+    }
+    if (searchParams.get('order_canceled')) {
+      toast.error('Commande annulée.');
+    }
+  }, [searchParams]);
   const [showSearch, setShowSearch] = useState(false);
   const [showLocationFilter, setShowLocationFilter] = useState(false);
   const [locationScope, setLocationScope] = useState<'local' | 'region' | 'country' | 'europe'>('country');
