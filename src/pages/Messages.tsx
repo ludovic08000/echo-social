@@ -1002,6 +1002,17 @@ function ChatView({ conversationId }: { conversationId: string }) {
         </div>
       )}
 
+      {/* Share Content Picker */}
+      {showSharePicker && (
+        <ShareContentPicker
+          onShare={(shareText) => {
+            sendMessage.mutate({ conversationId, body: shareText });
+            setShowSharePicker(false);
+          }}
+          onClose={() => setShowSharePicker(false)}
+        />
+      )}
+
       {/* Premium Input Bar */}
       <div className="sticky bottom-0 glass border-t border-border/30 safe-area-pb">
         <form onSubmit={handleSend} className="flex items-center gap-2 px-3 py-2.5">
@@ -1018,6 +1029,16 @@ function ChatView({ conversationId }: { conversationId: string }) {
               ) : (
                 <Camera className="w-5 h-5" />
               )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowSharePicker(v => !v)}
+              className={cn(
+                "w-9 h-9 rounded-full flex items-center justify-center transition-all",
+                showSharePicker ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary hover:bg-primary/10"
+              )}
+            >
+              <Forward className="w-5 h-5" />
             </button>
           </div>
 
