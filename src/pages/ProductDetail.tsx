@@ -280,10 +280,10 @@ export default function ProductDetailPage() {
           <Button
             className="premium-button flex-1 h-12 text-sm font-bold rounded-2xl"
             onClick={() => addToCart.mutate({ productId: product.id })}
-            disabled={addToCart.isPending || isOutOfStock}
+            disabled={addToCart.isPending || isOutOfStock || !!isOwnProduct}
           >
             <ShoppingCart className="w-4 h-4 mr-2" />
-            {isOutOfStock ? 'Épuisé' : 'Ajouter au panier'}
+            {isOwnProduct ? 'Votre produit' : isOutOfStock ? 'Épuisé' : 'Ajouter au panier'}
           </Button>
         </div>
       </div>
