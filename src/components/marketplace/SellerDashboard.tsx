@@ -427,9 +427,9 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
                               Frais Mondial Relay estimés : <span className="font-semibold text-foreground">{estimateRelayShipping(Math.max(100, Number(orderWeights[order.id]) || 500)).toFixed(2)}€</span>
                             </p>
                           </div>
-                          <Button size="sm" className="w-full" onClick={() => generateDeliverySlip(order)}>
-                            <FileText className="w-4 h-4 mr-2" />
-                            Générer le bordereau de livraison (PDF)
+                          <Button size="sm" variant="premium" className="w-full" onClick={() => generateDeliverySlip(order)}>
+                             <FileText className="w-4 h-4 mr-2" />
+                             Générer le bordereau de livraison (PDF)
                           </Button>
                           {!order.tracking_number && order.shipping_relay_id && (
                             <Button
