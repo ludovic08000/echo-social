@@ -235,7 +235,10 @@ serve(async (req) => {
 
     // ── SEARCH RELAY POINTS ──
     if (action === "search_points") {
-      const { postcode, country = "FR" } = body;
+      const rawPostcode = typeof body.postcode === "string" ? body.postcode : "";
+      const rawCountry = typeof body.country === "string" ? body.country : "FR";
+      const postcode = rawPostcode.trim();
+      const country = rawCountry.trim().toUpperCase() || "FR";
       if (!postcode) throw new Error("Code postal requis");
 
       const params: Record<string, string> = {
@@ -260,7 +263,15 @@ serve(async (req) => {
       const stat = extractXmlValue(xml, 'STAT');
 
       if (stat !== '0') {
-        throw new Error(`Mondial Relay erreur code ${stat}`);
+        const detail = extractXmlValue(xml, 'Erreur') || extractXmlValue(xml, 'Message') || extractXmlValue(xml, 'Libelle') || '';
+        console.error('WSI4_PointRelais_Recherche failed', {
+          stat,
+          detail,
+          enseigneLength: enseigne.length,
+          postcode,
+          country,
+        });
+        throw new Error(`Mondial Relay erreur code ${stat}${detail ? `: ${detail}` : ''}`);
       }
 
       const points = extractRelayPoints(xml);
