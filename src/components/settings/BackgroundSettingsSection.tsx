@@ -114,7 +114,7 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
           disabled={uploading || isUpdating}
           className={cn(
             "aspect-[3/4] rounded-xl border-2 border-dashed border-border/50 transition-all duration-200 flex flex-col items-center justify-center gap-1 hover:border-primary/50 hover:bg-primary/5",
-            currentUrl && !currentUrl.startsWith('gradient:') && "border-primary bg-primary/5"
+            currentUrl && !currentUrl.startsWith('gradient:') && currentUrl !== '' && "border-primary bg-primary/5"
           )}
         >
           {uploading ? (
