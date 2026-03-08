@@ -271,8 +271,8 @@ export function useSendMessage() {
 
       // AI moderation (async, non-blocking)
       if (!isSpecialMessage && data?.id) {
-        supabase.functions.invoke('message-moderation', {
-          body: { action: 'moderate_message', messageBody: sanitizedBody, messageId: data.id },
+        supabase.functions.invoke('zeus', {
+          body: { domain: 'moderation', action: 'moderate_message', messageBody: sanitizedBody, messageId: data.id },
         }).catch(() => {});
       }
 

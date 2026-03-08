@@ -71,8 +71,8 @@ export function CreatePost() {
     setAiLoading(true);
     setAiResult(null);
     try {
-      const { data, error } = await supabase.functions.invoke('post-assistant', {
-        body: { text: body, action },
+      const { data, error } = await supabase.functions.invoke('zeus', {
+        body: { domain: 'post', text: body, action },
       });
       if (error) throw error;
       if (data.error) throw new Error(data.error);

@@ -63,8 +63,8 @@ export function useAIContent() {
     setTranslateLoading(true);
     const start = performance.now();
     try {
-      const { data, error } = await supabase.functions.invoke('ai-content', {
-        body: { action: 'translate', text, targetLanguage: lang },
+      const { data, error } = await supabase.functions.invoke('zeus', {
+        body: { domain: 'content', action: 'translate', text, targetLanguage: lang },
       });
       trackAICall('auto-translator', Math.round(performance.now() - start), !error && !data?.error);
       if (error) throw error;
