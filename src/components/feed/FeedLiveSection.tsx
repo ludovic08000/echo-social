@@ -93,8 +93,8 @@ function LiveCard({ item }: { item: { id: string; title: string; thumbnail_url: 
     <Link
       to={`/live/${item.id}`}
       className="relative flex-shrink-0 w-[110px] h-[160px] rounded-xl overflow-hidden bg-black group"
-      onMouseEnter={() => videoRef.current?.play().catch(() => {})}
-      onMouseLeave={() => { if (videoRef.current) { videoRef.current.pause(); videoRef.current.currentTime = 0; } }}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       {/* Background: video preview > thumbnail > gradient placeholder */}
       {hasVideo ? (
