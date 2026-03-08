@@ -207,8 +207,10 @@ export function usePosts() {
     },
     initialPageParam: 0,
     enabled: !!user,
-    staleTime: 15000,
-    refetchInterval: 60000,
+    staleTime: 60_000,       // 1 min cache — avoid refetch on every tab focus
+    gcTime: 5 * 60_000,      // Keep in memory 5 min
+    refetchInterval: 120_000, // Refresh every 2 min instead of 1
+    refetchOnWindowFocus: false,
   });
 }
 
