@@ -261,13 +261,17 @@ Deno.serve(async (req) => {
 
     // ─── Validate magic bytes for images ───
     if (file.type.startsWith("image/")) {
-      const header = new Uint8Array(fileBuffer.slice(0, 8));
+      const header = new Uint8Array(fileBuffer.slice(0, 12));
       if (!validateImageMagicBytes(header, file.type)) {
-        return new Response(JSON.stringify({
-          error: "Le contenu du fichier ne correspond pas au type déclaré",
-        }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        // Fallback: accept if magic bytes match ANY known image format
+        const isAnyImage = isKnownImageMagicBytes(header);
+        if (!isAnyImage) {
+          return new Response(JSON.stringify({
+            error: "Le contenu du fichier ne correspond pas au type déclaré",
+          }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
       }
     }
 
@@ -330,7 +334,23 @@ function validateImageMagicBytes(header: Uint8Array, mime: string): boolean {
   if (mime === "image/webp") {
     return header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46;
   }
-  return true; // Unknown format, allow
+  return true; // Unknown image format, allow
+}
+
+function isKnownImageMagicBytes(header: Uint8Array): boolean {
+  // JPEG
+  if (header[0] === 0xFF && header[1] === 0xD8 && header[2] === 0xFF) return true;
+  // PNG
+  if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47) return true;
+  // GIF
+  if (header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46) return true;
+  // WEBP (RIFF)
+  if (header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46) return true;
+  // BMP
+  if (header[0] === 0x42 && header[1] === 0x4D) return true;
+  // HEIC/HEIF (ftyp box)
+  if (header[4] === 0x66 && header[5] === 0x74 && header[6] === 0x79 && header[7] === 0x70) return true;
+  return false;
 }
 
 // ─── AWS Signature V4 helpers ───
