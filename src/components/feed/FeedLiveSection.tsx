@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Radio, Eye, Play, Clock, Trash2 } from 'lucide-react';
+import { Radio, Eye, Play, Clock, Trash2, Video } from 'lucide-react';
 import { useLiveStreams, useDeleteLive } from '@/hooks/useLiveStreams';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -10,11 +10,13 @@ import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { useRef, useEffect } from 'react';
 
 interface ReplayStream {
   id: string;
   title: string;
   thumbnail_url: string | null;
+  recording_url: string | null;
   total_views: number;
   category: string | null;
   ended_at: string | null;
@@ -28,7 +30,7 @@ function useRecentReplays() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('live_streams')
-        .select('id, title, thumbnail_url, total_views, category, ended_at, user_id')
+        .select('id, title, thumbnail_url, recording_url, total_views, category, ended_at, user_id')
         .eq('is_active', false)
         .not('ended_at', 'is', null)
         .order('ended_at', { ascending: false })
@@ -58,34 +60,152 @@ function useRecentReplays() {
   });
 }
 
-export function FeedLiveSection() {
+// Mini video card that autoplays on hover
+function LiveCard({ item }: { item: { id: string; title: string; thumbnail_url: string | null; recording_url?: string | null; isLive: boolean; viewer_count: number; user_id: string; ended_at: string | null; host?: { name: string; avatar_url: string | null } }; }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
   const { user } = useAuth();
-  const { data: lives } = useLiveStreams();
-  const { data: replays } = useRecentReplays();
   const deleteLive = useDeleteLive();
 
-  const hasLives = lives && lives.length > 0;
-  const hasReplays = replays && replays.length > 0;
-
-  const handleDelete = (e: React.MouseEvent, liveId: string) => {
+  const handleDelete = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (!confirm('Supprimer ce replay ?')) return;
-    deleteLive.mutate(liveId, {
+    deleteLive.mutate(item.id, {
       onSuccess: () => toast({ title: 'Replay supprimé' }),
     });
   };
 
+  const hasVideo = !!item.recording_url;
+  const hasThumbnail = !!item.thumbnail_url;
+
+  return (
+    <Link
+      to={`/live/${item.id}`}
+      className="relative flex-shrink-0 w-[110px] h-[160px] rounded-xl overflow-hidden bg-black group"
+      onMouseEnter={() => videoRef.current?.play().catch(() => {})}
+      onMouseLeave={() => { if (videoRef.current) { videoRef.current.pause(); videoRef.current.currentTime = 0; } }}
+    >
+      {/* Background: video preview > thumbnail > gradient placeholder */}
+      {hasVideo ? (
+        <video
+          ref={videoRef}
+          src={item.recording_url!}
+          className="absolute inset-0 w-full h-full object-cover"
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          poster={item.thumbnail_url || undefined}
+        />
+      ) : hasThumbnail ? (
+        <img
+          src={item.thumbnail_url!}
+          alt={item.title}
+          className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+        />
+      ) : (
+        <div className={cn(
+          "absolute inset-0 flex flex-col items-center justify-center gap-2",
+          item.isLive
+            ? "bg-gradient-to-br from-destructive/30 via-destructive/10 to-black"
+            : "bg-gradient-to-br from-primary/20 via-accent/10 to-black"
+        )}>
+          <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur flex items-center justify-center">
+            {item.isLive ? (
+              <Radio className="w-5 h-5 text-white animate-pulse" />
+            ) : (
+              <Video className="w-5 h-5 text-white/70" />
+            )}
+          </div>
+          <UserAvatar src={item.host?.avatar_url} alt={item.host?.name} size="xs" />
+        </div>
+      )}
+
+      {/* Darkened bottom gradient for text readability */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+
+      {/* Top badge */}
+      <div className="absolute top-1.5 left-1.5 right-1.5 flex items-center justify-between z-10">
+        {item.isLive ? (
+          <span className="px-1.5 py-0.5 rounded bg-destructive text-white text-[8px] font-bold flex items-center gap-0.5 shadow-lg">
+            <Radio className="w-2 h-2 animate-pulse" />
+            LIVE
+          </span>
+        ) : (
+          <span className="px-1.5 py-0.5 rounded bg-black/50 backdrop-blur-sm text-white/80 text-[8px] font-medium flex items-center gap-0.5">
+            <Clock className="w-2 h-2" />
+            Replay
+          </span>
+        )}
+        {!item.isLive && user?.id === item.user_id && (
+          <button
+            onClick={handleDelete}
+            className="p-1 rounded bg-black/50 backdrop-blur-sm text-white/80 hover:bg-destructive transition-colors"
+          >
+            <Trash2 className="w-2.5 h-2.5" />
+          </button>
+        )}
+      </div>
+
+      {/* Viewers */}
+      {item.viewer_count > 0 && (
+        <div className="absolute top-1.5 right-1.5 z-10">
+          <span className="px-1.5 py-0.5 rounded bg-black/50 backdrop-blur-sm text-white/80 text-[8px] flex items-center gap-0.5">
+            <Eye className="w-2 h-2" />
+            {item.viewer_count}
+          </span>
+        </div>
+      )}
+
+      {/* Bottom info */}
+      <div className="absolute bottom-0 left-0 right-0 p-2 z-10">
+        <div className="flex items-center gap-1.5 mb-0.5">
+          {(hasVideo || hasThumbnail) && (
+            <UserAvatar src={item.host?.avatar_url} alt={item.host?.name} size="xs" />
+          )}
+          <span className="text-white text-[9px] font-semibold truncate">
+            {item.host?.name || 'Utilisateur'}
+          </span>
+        </div>
+        <p className="text-white/70 text-[9px] line-clamp-2 leading-tight">{item.title}</p>
+        {!item.isLive && item.ended_at && (
+          <p className="text-white/40 text-[7px] mt-0.5">
+            {formatDistanceToNow(new Date(item.ended_at), { addSuffix: true, locale: fr })}
+          </p>
+        )}
+      </div>
+
+      {/* Play icon overlay for videos */}
+      {hasVideo && (
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
+          <div className="w-8 h-8 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
+            <Play className="w-4 h-4 text-white ml-0.5" />
+          </div>
+        </div>
+      )}
+
+      {/* Hover overlay */}
+      <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 transition-colors" />
+    </Link>
+  );
+}
+
+export function FeedLiveSection() {
+  const { data: lives } = useLiveStreams();
+  const { data: replays } = useRecentReplays();
+
+  const hasLives = lives && lives.length > 0;
+  const hasReplays = replays && replays.length > 0;
+
   if (!hasLives && !hasReplays) return null;
 
   const allItems = [
-    ...(lives || []).map(l => ({ ...l, isLive: true, ended_at: null as string | null })),
+    ...(lives || []).map(l => ({ ...l, isLive: true, ended_at: null as string | null, recording_url: l.recording_url || null })),
     ...(replays || []).map(r => ({ ...r, isLive: false, viewer_count: r.total_views, is_active: false })),
   ];
 
   return (
     <article className="bg-card border border-border/20 rounded-2xl overflow-hidden">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 pt-3 pb-2">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-lg bg-destructive/10 flex items-center justify-center">
@@ -105,88 +225,11 @@ export function FeedLiveSection() {
         </Link>
       </div>
 
-      {/* Horizontal scroll cards */}
       <div className="px-3 pb-3">
         <ScrollArea className="w-full">
           <div className="flex gap-2.5 pb-1">
             {allItems.map((item) => (
-              <Link
-                key={item.id}
-                to={`/live/${item.id}`}
-                className="relative flex-shrink-0 w-[110px] h-[160px] rounded-xl overflow-hidden bg-black group"
-              >
-                {/* Thumbnail / Placeholder */}
-                {item.thumbnail_url ? (
-                  <img
-                    src={item.thumbnail_url}
-                    alt={item.title}
-                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                ) : (
-                  <div className={cn(
-                    "absolute inset-0 flex items-center justify-center",
-                    item.isLive
-                      ? "bg-gradient-to-b from-destructive/40 to-black/90"
-                      : "bg-gradient-to-b from-primary/20 to-black/90"
-                  )}>
-                    <div className="w-9 h-9 rounded-full bg-white/10 backdrop-blur flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <Play className="w-4 h-4 text-white ml-0.5" />
-                    </div>
-                  </div>
-                )}
-
-                {/* Top badge */}
-                <div className="absolute top-1.5 left-1.5 right-1.5 flex items-center justify-between z-10">
-                  {item.isLive ? (
-                    <span className="px-1.5 py-0.5 rounded bg-destructive text-white text-[8px] font-bold flex items-center gap-0.5 shadow-lg">
-                      <Radio className="w-2 h-2 animate-pulse" />
-                      LIVE
-                    </span>
-                  ) : (
-                    <span className="px-1.5 py-0.5 rounded bg-black/50 backdrop-blur-sm text-white/80 text-[8px] font-medium flex items-center gap-0.5">
-                      <Clock className="w-2 h-2" />
-                      Replay
-                    </span>
-                  )}
-                  {!item.isLive && user?.id === item.user_id && (
-                    <button
-                      onClick={(e) => handleDelete(e, item.id)}
-                      className="p-1 rounded bg-black/50 backdrop-blur-sm text-white/80 hover:bg-destructive transition-colors"
-                    >
-                      <Trash2 className="w-2.5 h-2.5" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Viewers badge */}
-                {(item.viewer_count || 0) > 0 && (
-                  <div className="absolute top-1.5 right-1.5 z-10">
-                    <span className="px-1.5 py-0.5 rounded bg-black/50 backdrop-blur-sm text-white/80 text-[8px] flex items-center gap-0.5">
-                      <Eye className="w-2 h-2" />
-                      {item.viewer_count}
-                    </span>
-                  </div>
-                )}
-
-                {/* Bottom info */}
-                <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/95 via-black/60 to-transparent z-10">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <UserAvatar src={item.host?.avatar_url} alt={item.host?.name} size="xs" />
-                    <span className="text-white text-[9px] font-semibold truncate">
-                      {item.host?.name || 'Utilisateur'}
-                    </span>
-                  </div>
-                  <p className="text-white/70 text-[9px] line-clamp-2 leading-tight">{item.title}</p>
-                  {!item.isLive && item.ended_at && (
-                    <p className="text-white/40 text-[7px] mt-0.5">
-                      {formatDistanceToNow(new Date(item.ended_at), { addSuffix: true, locale: fr })}
-                    </p>
-                  )}
-                </div>
-
-                {/* Hover */}
-                <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 transition-colors" />
-              </Link>
+              <LiveCard key={item.id} item={item} />
             ))}
           </div>
           <ScrollBar orientation="horizontal" />
