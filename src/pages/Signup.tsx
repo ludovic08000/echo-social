@@ -297,12 +297,52 @@ export default function Signup() {
               </div>
             </div>
 
+            {/* Parental control step for minors */}
+            {showParentalStep && (
+              <div className="space-y-3 p-4 rounded-xl bg-pink-500/5 border border-pink-500/20 animate-fade-in">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <Shield className="w-4 h-4 text-pink-500" />
+                  Protection parentale
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  L'utilisateur a moins de 16 ans. Un parent doit définir un code PIN à 4 chiffres pour le contrôle parental.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Code PIN</Label>
+                    <Input
+                      type={showParentalPin ? 'text' : 'password'}
+                      value={parentalPin}
+                      onChange={(e) => setParentalPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                      placeholder="• • • •"
+                      maxLength={4}
+                      className="text-center text-lg tracking-[0.5em] font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Confirmer</Label>
+                    <Input
+                      type={showParentalPin ? 'text' : 'password'}
+                      value={parentalPinConfirm}
+                      onChange={(e) => setParentalPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                      placeholder="• • • •"
+                      maxLength={4}
+                      className="text-center text-lg tracking-[0.5em] font-mono"
+                    />
+                  </div>
+                </div>
+                <button type="button" onClick={() => setShowParentalPin(!showParentalPin)} className="text-xs text-primary hover:underline">
+                  {showParentalPin ? 'Masquer' : 'Afficher'} le code
+                </button>
+              </div>
+            )}
+
             <Button
               type="submit"
               disabled={isLoading || !acceptedTerms || !acceptedPrivacy}
               className="pulse-button-gradient w-full"
             >
-              {isLoading ? t('signup.submitting') : t('signup.submit')}
+              {isLoading ? t('signup.submitting') : showParentalStep ? 'Créer le compte avec protection' : t('signup.submit')}
             </Button>
           </form>
 
