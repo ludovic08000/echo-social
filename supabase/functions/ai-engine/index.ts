@@ -114,7 +114,7 @@ serve(async (req) => {
 
 Be culturally aware. Consider French slang and context. Do NOT over-flag casual language.
 Only output valid JSON, nothing else.${learnedRulesContext}`;
-        userPrompt = text || "";
+        userPrompt = safeText;
         break;
       }
 
