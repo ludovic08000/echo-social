@@ -492,11 +492,51 @@ serve(async (req) => {
         const shipments = result?.ShipmentsList || result?.shipmentsListField || [];
         if (shipments.length > 0) {
           const first = shipments[0];
-          trackingNumber = first.ShipmentNumber || first.shipmentNumber || first.ExpeditionNum || null;
-          const parcels = first.Parcels || first.parcels || [];
-          if (parcels.length > 0) {
-            labelUrl = parcels[0].Label || parcels[0].label || null;
-          }
+
+          const labelValues = first?.labelListField?.labelField?.rawContentField?.["<LabelValues>k__BackingField"] || [];
+          const expeditionValue = labelValues.find((entry: any) =>
+            String(entry?.["<Key>k__BackingField"] || "").toLowerCase().includes("numeroexpedition")
+          );
+
+          const findDeepValue = (node: any, keyMatcher: (key: string) => boolean): string | null => {
+            const seen = new Set<any>();
+            const walk = (value: any): string | null => {
+              if (!value || typeof value !== "object") return null;
+              if (seen.has(value)) return null;
+              seen.add(value);
+
+              if (Array.isArray(value)) {
+                for (const item of value) {
+                  const found = walk(item);
+                  if (found) return found;
+                }
+                return null;
+              }
+
+              for (const [k, v] of Object.entries(value)) {
+                if (keyMatcher(k) && typeof v === "string" && v.trim()) {
+                  return v.trim();
+                }
+                const found = walk(v);
+                if (found) return found;
+              }
+              return null;
+            };
+            return walk(node);
+          };
+
+          trackingNumber =
+            first.ShipmentNumber ||
+            first.shipmentNumber ||
+            first.ExpeditionNum ||
+            first.shipmentNumberField ||
+            expeditionValue?.["<Value>k__BackingField"] ||
+            findDeepValue(first, (key) => /shipmentnumber|expeditionnum|numeroexpedition/i.test(key)) ||
+            null;
+
+          labelUrl =
+            findDeepValue(first, (key) => /pdfurl|labellink|labelurl|label/i.test(key)) ||
+            null;
         }
         if (!labelUrl) {
           labelUrl = result?.LabelLink || result?.labelLink || null;
