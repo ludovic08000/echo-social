@@ -328,7 +328,6 @@ serve(async (req) => {
       // Build API v2 XML payload (the dual-carrier API expects XML, not JSON)
       const orderNo = order.order_number || `ORD-${order_id.substring(0, 8)}`;
       const customerNo = order.buyer_id.substring(0, 9);
-      const relayLocation = order.shipping_relay_id || relay_id || "";
       const senderFirstname = senderName.split(" ")[0] || "Vendeur";
       const senderLastname = senderName.split(" ").slice(1).join(" ") || "ForSure";
       const recipientName = order.shipping_relay_name || "Client";
@@ -336,6 +335,33 @@ serve(async (req) => {
       const recipientLastname = recipientName.split(" ").slice(1).join(" ") || "";
 
       const escXml = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+      const normalizeMode = (mode: unknown, fallback: string) => {
+        const cleaned = typeof mode === "string" ? mode.trim().toUpperCase() : "";
+        return cleaned || fallback;
+      };
+
+      const formatRelayLocation = (raw: unknown, country: string) => {
+        const cleaned = String(raw ?? "").trim().toUpperCase().replace(/\s+/g, "");
+        if (!cleaned) return "";
+        if (cleaned.includes("-")) return cleaned;
+        const countryCode = (country || "FR").trim().toUpperCase();
+        return `${countryCode}-${cleaned}`;
+      };
+
+      const deliveryMode = normalizeMode(body?.delivery_mode, "24R");
+      const collectionMode = normalizeMode(body?.collection_mode, "CCC");
+      const rawRelayLocation = order.shipping_relay_id || relay_id || "";
+      const relayLocation = formatRelayLocation(rawRelayLocation, order.shipping_relay_country || "FR");
+
+      if (["24R", "24L", "DRI"].includes(deliveryMode) && !relayLocation) {
+        throw new Error("Point relais manquant ou invalide pour le mode de livraison sélectionné");
+      }
+
+      const deliveryLocationAttr = relayLocation ? ` Location="${escXml(relayLocation)}"` : "";
+      const collectionLocationAttr = collectionMode === "REL" && relayLocation
+        ? ` Location="${escXml(relayLocation)}"`
+        : "";
 
       // Format phone to international format (+33...)
       const formatPhone = (phone: string): string => {
@@ -355,7 +381,7 @@ serve(async (req) => {
     <VersionAPI>1.0</VersionAPI>
   </Context>
   <OutputOptions>
-    <OutputFormat>A4</OutputFormat>
+    <OutputFormat>10x15</OutputFormat>
     <OutputType>PdfUrl</OutputType>
   </OutputOptions>
   <ShipmentsList>
@@ -364,8 +390,8 @@ serve(async (req) => {
       <CustomerNo>${escXml(customerNo)}</CustomerNo>
       <ParcelCount>1</ParcelCount>
       <ShipmentValue Currency="EUR" Amount="0"/>
-      <DeliveryMode Mode="24R" Location="${escXml(relayLocation)}"/>
-      <CollectionMode Mode="REL" Location="${escXml(relayLocation)}"/>
+      <DeliveryMode Mode="${escXml(deliveryMode)}"${deliveryLocationAttr}/>
+      <CollectionMode Mode="${escXml(collectionMode)}"${collectionLocationAttr}/>
       <Parcels>
         <Parcel>
           <Content>Commande marketplace</Content>
