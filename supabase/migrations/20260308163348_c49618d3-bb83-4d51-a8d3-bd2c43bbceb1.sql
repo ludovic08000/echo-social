@@ -1,0 +1,1 @@
+UPDATE products SET weight_grams = 2000 WHERE id = '857f346d-7dc5-4c34-8917-11fb08e91101';
