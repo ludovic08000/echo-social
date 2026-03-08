@@ -6,7 +6,7 @@ import { groupNotifications, type GroupedNotification } from '@/lib/feedAlgorith
 export interface Notification {
   id: string;
   user_id: string;
-  type: 'like' | 'comment';
+  type: 'like' | 'comment' | 'sale' | 'friend_request' | 'friend_accepted' | 'message' | 'reaction' | 'story_view';
   actor_id: string;
   post_id: string | null;
   read_at: string | null;
