@@ -27,6 +27,14 @@ export function useCall(options?: UseCallOptions) {
   const localVideoRef = useRef<HTMLDivElement | null>(null);
   const remoteVideoRef = useRef<HTMLDivElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const callStateRef = useRef<CallState>('idle');
+  const durationRef = useRef(0);
+  const callTypeRef = useRef<CallType>('audio');
+
+  // Keep refs in sync
+  useEffect(() => { callStateRef.current = callState; }, [callState]);
+  useEffect(() => { durationRef.current = duration; }, [duration]);
+  useEffect(() => { callTypeRef.current = callType; }, [callType]);
 
   // Duration timer
   useEffect(() => {
