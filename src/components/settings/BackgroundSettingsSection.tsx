@@ -145,9 +145,12 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
       </div>
 
       {/* Preview of custom uploaded bg */}
-      {currentUrl && !currentUrl.startsWith('gradient:') && (
+      {currentUrl && currentUrl.startsWith('storage:') && previewUrl && (
         <div className="relative rounded-xl overflow-hidden h-16">
-          <img src={currentUrl} alt="Fond actuel" className="w-full h-full object-cover" />
+          <img src={previewUrl} alt="Fond actuel" className="w-full h-full object-cover" />
+          <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/50 text-[8px] text-white flex items-center gap-1">
+            🔒 URL signée
+          </div>
           <button
             onClick={() => onUpdate(null)}
             className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-destructive transition-colors"
