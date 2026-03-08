@@ -92,7 +92,7 @@ export default function Marketplace() {
   const cities = useMemo(() => {
     const data = GEO_DATA[selectedCountry];
     if (!data || !selectedRegion) return [];
-    return (data[selectedRegion] || []).map(v => v.nom).sort();
+    return (data[selectedRegion] || []).filter(v => v.population >= 30000).map(v => v.nom).sort();
   }, [selectedCountry, selectedRegion]);
 
   const { data: products = [], isLoading } = useProducts(category, search, locationFilter);
