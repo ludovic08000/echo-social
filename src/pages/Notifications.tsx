@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Heart, MessageCircle, Check } from 'lucide-react';
+import { Heart, MessageCircle, Check, ShoppingBag } from 'lucide-react';
 import { useNotifications, useMarkAsRead } from '@/hooks/useNotifications';
 import { AppLayout } from '@/components/AppLayout';
 import { UserAvatar } from '@/components/UserAvatar';
