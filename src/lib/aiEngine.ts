@@ -337,6 +337,7 @@ export function getCategoryLabel(cat: AICategory): string {
     wellbeing: 'Bien-être',
     commerce: 'Commerce',
     moderation: 'Modération',
+    security: 'Sécurité',
   };
   return labels[cat];
 }
