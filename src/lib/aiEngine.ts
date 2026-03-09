@@ -350,6 +350,7 @@ export function getCategoryColor(cat: AICategory): string {
     wellbeing: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
     commerce: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
     moderation: 'bg-red-500/20 text-red-400 border-red-500/30',
+    security: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
   };
   return colors[cat];
 }
