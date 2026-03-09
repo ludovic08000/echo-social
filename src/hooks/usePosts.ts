@@ -32,8 +32,6 @@ const PAGE_SIZE = 10;
 
 export function usePosts() {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
-
 
   return useInfiniteQuery({
     queryKey: ['posts', 'friends-feed', user?.id],
