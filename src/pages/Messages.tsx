@@ -938,6 +938,27 @@ function ChatView({ conversationId }: { conversationId: string }) {
         </div>
       </header>
 
+      {/* Pinned messages banner */}
+      {(() => {
+        const pinned = messages?.filter(m => pinnedMessages.has(m.id)) || [];
+        if (pinned.length === 0) return null;
+        return (
+          <div className="sticky top-14 z-30 glass border-b border-border/20 px-4 py-2 animate-in slide-in-from-top-2">
+            <div className="flex items-center gap-2">
+              <Pin className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+              <p className="text-xs text-foreground font-medium truncate flex-1">
+                📌 {pinned.length === 1 ? pinned[0].body.slice(0, 60) : `${pinned.length} messages épinglés`}
+              </p>
+              {pinned.length === 1 && (
+                <button onClick={() => setPinnedMessages(prev => { const n = new Set(prev); n.delete(pinned[0].id); return n; })} className="text-muted-foreground hover:text-foreground">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Messages area */}
       <div
         ref={scrollContainerRef}
