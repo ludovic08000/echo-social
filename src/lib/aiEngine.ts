@@ -214,6 +214,62 @@ const AI_MODULE_REGISTRY: Omit<AIModule, 'metrics'>[] = [
     icon: 'Shuffle',
     capabilities: ['Pénalité auteur', 'Rotation contenu', 'Bulle de filtre brisée'],
   },
+
+  // ── SECURITY INTELLIGENCE ──
+  {
+    id: 'intrusion-detector',
+    name: 'Détection d\'Intrusion',
+    description: 'Analyse en temps réel des tentatives d\'intrusion : brute-force, injection SQL, XSS, CSRF et escalade de privilèges.',
+    category: 'security',
+    status: 'active',
+    icon: 'ShieldAlert',
+    capabilities: ['Anti brute-force', 'Détection SQL injection', 'Anti XSS', 'Anti CSRF', 'Alertes temps réel'],
+  },
+  {
+    id: 'ip-analyzer',
+    name: 'Analyse IP & Géolocalisation',
+    description: 'Surveillance des adresses IP, détection VPN/Tor/proxy, géolocalisation et blocage automatique des IP malveillantes.',
+    category: 'security',
+    status: 'active',
+    icon: 'Globe',
+    capabilities: ['Log IP', 'Détection VPN/Tor', 'Géolocalisation', 'Blacklist auto', 'Corrélation multi-comptes'],
+  },
+  {
+    id: 'packet-inspector',
+    name: 'Inspecteur de Paquets',
+    description: 'Analyse deep packet inspection (DPI) des requêtes HTTP pour détecter payloads malveillants et traffic anormal.',
+    category: 'security',
+    status: 'active',
+    icon: 'Network',
+    capabilities: ['DPI HTTP', 'Détection payloads', 'Analyse headers', 'Rate limiting adaptatif', 'Signature matching'],
+  },
+  {
+    id: 'vuln-scanner',
+    name: 'Scanner de Vulnérabilités',
+    description: 'Scan automatisé des endpoints, dépendances et configurations pour identifier et corriger les failles de sécurité.',
+    category: 'security',
+    status: 'active',
+    icon: 'ScanSearch',
+    capabilities: ['Scan endpoints', 'Audit dépendances', 'OWASP Top 10', 'Auto-correction', 'Rapport détaillé'],
+  },
+  {
+    id: 'ddos-shield',
+    name: 'Bouclier Anti-DDoS',
+    description: 'Protection contre les attaques par déni de service avec rate limiting intelligent et absorption de trafic.',
+    category: 'security',
+    status: 'active',
+    icon: 'ShieldOff',
+    capabilities: ['Rate limiting IA', 'Absorption trafic', 'Challenge CAPTCHA', 'Blackhole routing', 'Alertes seuil'],
+  },
+  {
+    id: 'session-guardian',
+    name: 'Gardien de Sessions',
+    description: 'Détection de vol de session, hijacking JWT, et anomalies comportementales dans les sessions utilisateur.',
+    category: 'security',
+    status: 'active',
+    icon: 'KeyRound',
+    capabilities: ['Anti session hijack', 'Anomalie JWT', 'Fingerprint session', 'Révocation auto', 'Logs audit'],
+  },
 ];
 
 // ── Metrics tracking ──
