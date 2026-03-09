@@ -1987,6 +1987,7 @@ export default function Admin() {
   const renderSection = () => {
     switch (section) {
       case 'dashboard': return <DashboardSection />;
+      case 'health': return <PlatformHealthDashboard />;
       case 'users': return <UsersSection />;
       case 'posts': return <PostsSection />;
       case 'reports': return <ReportsSection />;
