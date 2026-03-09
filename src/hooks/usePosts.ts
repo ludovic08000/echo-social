@@ -209,9 +209,9 @@ export function usePosts() {
     },
     initialPageParam: 0,
     enabled: !!user,
-    staleTime: 60_000,       // 1 min cache — avoid refetch on every tab focus
-    gcTime: 5 * 60_000,      // Keep in memory 5 min
-    refetchInterval: 120_000, // Refresh every 2 min instead of 1
+    staleTime: 5 * 60_000,       // Keep stable feed cache longer on mobile/iOS
+    gcTime: 10 * 60_000,
+    refetchInterval: false,      // Prevent background reorder while user scrolls
     refetchOnWindowFocus: false,
   });
 }

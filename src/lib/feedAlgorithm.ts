@@ -222,8 +222,9 @@ export function scorePost(
     score -= (prefs.diversityBoost / 100) * (8 + 6 * authorAppearances);
   }
 
-  // ── 11. CONTROLLED RANDOMIZATION (higher for fresh content) ──
-  score += Math.random() * (ageHours < 6 ? 10 : 5);
+  // ── 11. CONTROLLED RANDOMIZATION ──
+  // Disabled for feed stability on mobile (prevents reorder-induced scroll jumps)
+  // score += Math.random() * (ageHours < 6 ? 10 : 5);
 
   return score;
 }
