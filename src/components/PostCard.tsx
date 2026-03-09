@@ -208,7 +208,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
         
         {post.image_url && (
           <div className="relative w-full overflow-hidden bg-muted/40 aspect-[4/5] sm:aspect-video">
-            {!mediaLoaded && (
+            {!mediaLoaded && !(isMobile && isVideoPost) && (
               <div className="absolute inset-0 skeleton" />
             )}
             {isVideoPost ? (
