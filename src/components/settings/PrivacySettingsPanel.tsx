@@ -437,6 +437,12 @@ export function PrivacySettingsPanel() {
       <section className="space-y-4">
         <RestrictedFriendsPanel />
       </section>
+
+      {/* Data Export */}
+      <DataExportSection />
+
+      {/* Account Deletion */}
+      <AccountDeletionSection />
     </div>
   );
 }
