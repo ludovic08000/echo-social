@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { useActiveAds } from '@/hooks/useAdCampaigns';
 import { useCustomBackground } from '@/hooks/useCustomBackground';
 import { useParentalGate } from '@/components/ParentalGate';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'media' | 'marketplace'> = {
   2: 'marketplace',
