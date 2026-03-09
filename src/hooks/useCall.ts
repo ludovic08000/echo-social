@@ -30,6 +30,7 @@ export function useCall(options?: UseCallOptions) {
   const callStateRef = useRef<CallState>('idle');
   const durationRef = useRef(0);
   const callTypeRef = useRef<CallType>('audio');
+  const noAnswerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep refs in sync
   useEffect(() => { callStateRef.current = callState; }, [callState]);
@@ -114,6 +115,11 @@ export function useCall(options?: UseCallOptions) {
 
       room.on(RoomEvent.ParticipantConnected, () => {
         setCallState('connected');
+        // Clear the no-answer timeout
+        if (noAnswerTimeoutRef.current) {
+          clearTimeout(noAnswerTimeoutRef.current);
+          noAnswerTimeoutRef.current = null;
+        }
       });
 
       await room.connect(url, token);
@@ -143,6 +149,21 @@ export function useCall(options?: UseCallOptions) {
         setCallState('connected');
       } else {
         setCallState('connecting');
+        // Auto-end after 30s if no one joins
+        noAnswerTimeoutRef.current = setTimeout(() => {
+          toast.error("Pas de réponse");
+          // Disconnect room directly since endCall may not be stable yet
+          if (roomRef.current) {
+            roomRef.current.disconnect();
+            roomRef.current = null;
+          }
+          if (localVideoRef.current) localVideoRef.current.innerHTML = '';
+          if (remoteVideoRef.current) remoteVideoRef.current.innerHTML = '';
+          setCallState('idle');
+          setDuration(0);
+          releaseWakeLock();
+          options?.onCallEnded?.({ type: callTypeRef.current, duration: 0, wasMissed: true });
+        }, 30000);
       }
     } catch (err) {
       console.error('Call error:', err);
@@ -157,6 +178,10 @@ export function useCall(options?: UseCallOptions) {
     const endDuration = durationRef.current;
     const endType = callTypeRef.current;
 
+    if (noAnswerTimeoutRef.current) {
+      clearTimeout(noAnswerTimeoutRef.current);
+      noAnswerTimeoutRef.current = null;
+    }
     if (roomRef.current) {
       roomRef.current.disconnect();
       roomRef.current = null;

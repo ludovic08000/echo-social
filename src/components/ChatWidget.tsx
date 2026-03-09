@@ -464,8 +464,14 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
   // Call hook & sound
   const [showVoicemailPrompt, setShowVoicemailPrompt] = useState(false);
+  const activeCallIdRef = useRef<string | null>(null);
   const call = useCall({
     onCallEnded: useCallback((info: CallEndInfo) => {
+      // End the signaling record
+      if (activeCallIdRef.current) {
+        endActiveCall(activeCallIdRef.current);
+        activeCallIdRef.current = null;
+      }
       // Send a system message about the call
       const callMsg = info.wasMissed
         ? `📞 CALL:missed|${info.type}`
@@ -611,7 +617,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           <button onClick={async () => {
             const participantId = conversation?.participant?.user_id;
             if (participantId && user?.id) {
-              await signalOutgoingCall(conversationId, user.id, participantId, 'audio');
+              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'audio');
+              if (callId) activeCallIdRef.current = callId;
             }
             call.startCall(conversationId, 'audio');
           }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
@@ -620,7 +627,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           <button onClick={async () => {
             const participantId = conversation?.participant?.user_id;
             if (participantId && user?.id) {
-              await signalOutgoingCall(conversationId, user.id, participantId, 'video');
+              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'video');
+              if (callId) activeCallIdRef.current = callId;
             }
             call.startCall(conversationId, 'video');
           }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
