@@ -886,6 +886,15 @@ function SettingsSection() {
         </Card>
         <Card>
           <CardContent className="p-6">
+            <h3 className="font-semibold text-foreground mb-2">🧹 Nettoyage R2 (fichiers orphelins)</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Scanne tous les fichiers stockés sur R2 et supprime ceux qui ne sont plus référencés dans la base de données.
+            </p>
+            <R2CleanupButton />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
             <h3 className="font-semibold text-foreground mb-2">Plateforme</h3>
             <p className="text-sm text-muted-foreground">Version ForSure Admin v1.0</p>
           </CardContent>
