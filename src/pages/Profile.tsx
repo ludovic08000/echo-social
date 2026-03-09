@@ -607,7 +607,7 @@ export default function Profile() {
             )}
 
             {/* Action buttons */}
-            <div className="flex gap-3 mt-5">
+            <div className="flex gap-2 mt-5 overflow-x-auto scrollbar-hide pb-1 -mx-4 px-4">
               {isOwnProfile ? (
                 <>
                   <Link to="/settings" className="flex-1">
