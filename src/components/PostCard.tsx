@@ -303,12 +303,12 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
         <div className="relative flex items-center justify-between px-4 py-2 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
             {post.likes_count > 0 && (
-              <motion.div className="flex items-center gap-1" initial={{ scale: 0 }} animate={{ scale: 1 }}>
+              <div className="flex items-center gap-1">
                 <div className="w-[18px] h-[18px] rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-[0_2px_6px_hsl(220_70%_50%/0.3)]">
                   <ThumbsUp className="w-2.5 h-2.5 text-primary-foreground" />
                 </div>
                 <span className="font-medium">{post.likes_count}</span>
-              </motion.div>
+              </div>
             )}
           </div>
           {post.comments_count > 0 && (
@@ -329,7 +329,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
             variant="facebook"
           />
           
-          <motion.div className="flex-1" whileTap={{ scale: 0.95 }}>
+          <div className="flex-1">
             <Button
               variant="ghost"
               size="sm"
@@ -339,9 +339,9 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
               <MessageCircle className="w-[18px] h-[18px]" />
               <span className="font-medium">Commenter</span>
             </Button>
-          </motion.div>
+          </div>
           
-          <motion.div className="flex-1" whileTap={{ scale: 0.95 }}>
+          <div className="flex-1">
             <ShareButton
               url={postUrl}
               title={`Post de ${post.profile.name}`}
@@ -351,7 +351,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
               showLabel
               className="w-full h-11 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs"
             />
-          </motion.div>
+          </div>
         </div>
       )}
     </article>
