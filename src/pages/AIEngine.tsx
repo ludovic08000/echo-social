@@ -80,23 +80,30 @@ export default function AIEngine() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="w-full grid grid-cols-4 h-11">
-            <TabsTrigger value="modules" className="text-xs sm:text-sm">
-              <Cpu className="w-3.5 h-3.5 mr-1.5" />Modules
-            </TabsTrigger>
-            <TabsTrigger value="security" className="text-xs sm:text-sm">
-              <ShieldAlert className="w-3.5 h-3.5 mr-1.5" />Sécurité
-            </TabsTrigger>
-            <TabsTrigger value="playground" className="text-xs sm:text-sm">
-              <Wand2 className="w-3.5 h-3.5 mr-1.5" />Playground
-            </TabsTrigger>
-            <TabsTrigger value="learning" className="text-xs sm:text-sm">
-              <GraduationCap className="w-3.5 h-3.5 mr-1.5" />Apprentissage
-            </TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto no-scrollbar">
+            <TabsList className="inline-flex h-11 min-w-full">
+              <TabsTrigger value="modules" className="text-xs sm:text-sm">
+                <Cpu className="w-3.5 h-3.5 mr-1" />Modules
+              </TabsTrigger>
+              <TabsTrigger value="metrics" className="text-xs sm:text-sm">
+                <BarChart3 className="w-3.5 h-3.5 mr-1" />Métriques
+              </TabsTrigger>
+              <TabsTrigger value="security" className="text-xs sm:text-sm">
+                <ShieldAlert className="w-3.5 h-3.5 mr-1" />Sécurité
+              </TabsTrigger>
+              <TabsTrigger value="abtesting" className="text-xs sm:text-sm">
+                <FlaskConical className="w-3.5 h-3.5 mr-1" />A/B Tests
+              </TabsTrigger>
+              <TabsTrigger value="playground" className="text-xs sm:text-sm">
+                <Wand2 className="w-3.5 h-3.5 mr-1" />Playground
+              </TabsTrigger>
+              <TabsTrigger value="learning" className="text-xs sm:text-sm">
+                <GraduationCap className="w-3.5 h-3.5 mr-1" />Apprentissage
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="modules" className="space-y-4 mt-4">
-            {/* Category filter */}
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
               {CATEGORIES.map(cat => (
                 <button
@@ -113,7 +120,6 @@ export default function AIEngine() {
                 </button>
               ))}
             </div>
-
             <div className="grid gap-3">
               {filtered.map(mod => (
                 <ModuleCard
@@ -126,8 +132,16 @@ export default function AIEngine() {
             </div>
           </TabsContent>
 
+          <TabsContent value="metrics" className="mt-4">
+            <MetricsDashboard modules={modules} />
+          </TabsContent>
+
           <TabsContent value="security" className="mt-4">
             <SecurityDashboard />
+          </TabsContent>
+
+          <TabsContent value="abtesting" className="mt-4">
+            <ABTestingDashboard />
           </TabsContent>
 
           <TabsContent value="playground" className="mt-4">
