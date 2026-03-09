@@ -200,7 +200,7 @@ export function usePosts() {
       // Append deferred at end
       diversified.push(...deferred);
 
-      const paged = diversified.slice(from, to + 1);
+      const paged = diversified.slice(0, PAGE_SIZE);
       return paged.map(({ _score, ...post }) => post);
     },
     getNextPageParam: (lastPage, pages) => {
