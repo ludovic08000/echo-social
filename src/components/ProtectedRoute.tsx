@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
-import { isPublicRoute } from '@/lib/urlUtils';
+import { useProfile } from '@/hooks/useProfile';
+import { AgeFlaggedScreen } from '@/components/AgeFlaggedScreen';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -9,9 +10,10 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { user, loading } = useAuth();
   const location = useLocation();
+  const { data: profile, isLoading: profileLoading } = useProfile();
 
   // Show loading state
-  if (loading) {
+  if (loading || (user && profileLoading)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
@@ -24,8 +26,12 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   // If not authenticated and trying to access protected route
   if (!user) {
-    // Save the attempted URL to redirect back after login
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+
+  // If age verification flagged, show blocking screen (except on onboarding)
+  if (profile && (profile.age_verification_status === 'flagged' || profile.age_verification_status === 'pending') && location.pathname !== '/onboarding') {
+    return <AgeFlaggedScreen />;
   }
 
   return <>{children}</>;
