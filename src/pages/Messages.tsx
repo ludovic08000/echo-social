@@ -1031,6 +1031,21 @@ function ChatView({ conversationId }: { conversationId: string }) {
                           onReply={() => setReplyTo(msg)}
                           onReact={(emoji) => handleReact(msg.id, emoji)}
                           onCopy={() => handleCopy(msg.body)}
+                          onForward={() => setForwardMsg(msg)}
+                          onPin={() => {
+                            setPinnedMessages(prev => {
+                              const next = new Set(prev);
+                              if (next.has(msg.id)) {
+                                next.delete(msg.id);
+                                toast.success('Message désépinglé');
+                              } else {
+                                next.add(msg.id);
+                                toast.success('Message épinglé 📌');
+                              }
+                              return next;
+                            });
+                          }}
+                          isPinned={pinnedMessages.has(msg.id)}
                           onDeleteForMe={() => {
                             deleteForMe.mutate({ messageId: msg.id, conversationId });
                             toast.success('Message supprimé pour vous');
