@@ -148,7 +148,7 @@ Deno.serve(async (req) => {
     const { data: profile } = await serviceClient
       .from("profiles")
       .select("name")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .single();
 
     const rawName = profile?.name || "user";
