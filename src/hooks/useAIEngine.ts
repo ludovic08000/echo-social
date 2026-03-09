@@ -80,13 +80,23 @@ export function useAIEngine() {
     setModuleLoading(moduleId, true);
     const start = performance.now();
     try {
-      // Refresh session to prevent 401 errors
-      await supabase.auth.refreshSession();
-
-      const { data, error } = await supabase.functions.invoke('ai-engine', {
-        // No user_id sent — the edge function extracts it from the JWT token server-side
+      // Attempt the call — SDK attaches the current session token automatically
+      let { data, error } = await supabase.functions.invoke('ai-engine', {
         body: { action, ...body },
       });
+
+      // If auth error, refresh session once and retry
+      if (error && (error.message?.includes('401') || error.message?.includes('auth') || error.message?.includes('Non authentifié'))) {
+        const { error: refreshErr } = await supabase.auth.refreshSession();
+        if (!refreshErr) {
+          const retry = await supabase.functions.invoke('ai-engine', {
+            body: { action, ...body },
+          });
+          data = retry.data;
+          error = retry.error;
+        }
+      }
+
       const elapsed = Math.round(performance.now() - start);
       const success = !error && !data?.error && data?.result;
       trackAICall(moduleId, elapsed, !!success);
