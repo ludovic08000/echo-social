@@ -16,12 +16,15 @@ import {
   Send, AlertTriangle, ThumbsUp, ThumbsDown, Loader2, Eye, BookOpen,
   Globe, Network, ScanSearch, ShieldOff, KeyRound, ShieldAlert,
   Bug, Radio, Wifi, Lock, ServerCrash, AlertCircle,
+  FlaskConical, Play, Pause, Trash2, Plus, Target,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useABTests, type ABTest } from '@/hooks/useABTests';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   FileText, Languages, Sparkles, BellRing, ShoppingBag, Crown,
