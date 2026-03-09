@@ -147,11 +147,24 @@ export function CreatePost() {
 
     try {
       let imageUrl: string | undefined;
+      let thumbnailUrl: string | null = null;
 
       if (media) {
         const folder = mediaType === 'video' ? 'videos' : 'post-images';
         const { url } = await uploadToR2(media, folder);
         imageUrl = url;
+
+        // Always generate a thumbnail for video posts so iOS can show a poster
+        if (mediaType === 'video') {
+          try {
+            const thumbBlob = await generateVideoThumbnail(media);
+            const thumbFile = new File([thumbBlob], 'thumbnail.jpg', { type: 'image/jpeg' });
+            const { url: thumbUrl } = await uploadToR2(thumbFile, 'thumbnails');
+            thumbnailUrl = thumbUrl;
+          } catch (e) {
+            console.warn('Thumbnail generation failed', e);
+          }
+        }
       }
 
       let expiresAt: string | undefined;
