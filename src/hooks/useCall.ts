@@ -178,6 +178,7 @@ export function useCall(options?: UseCallOptions) {
   }, [options]);
 
   const endCall = useCallback(() => {
+    manualEndRef.current = true;
     const wasMissed = callStateRef.current !== 'connected';
     const endDuration = durationRef.current;
     const endType = callTypeRef.current;
