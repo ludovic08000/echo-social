@@ -315,14 +315,12 @@ export default function Feed() {
                 )}
                 <div className="space-y-3 px-4">
                   {posts.map((post, index) => (
-                    <div key={post.id}>
+                    <div key={post.id} style={POST_CELL_STYLE}>
                       {isMobile ? (
-                        <div>
-                          <PostCard
-                            post={post}
-                            onCommentClick={() => navigate(`/post/${post.id}`)}
-                          />
-                        </div>
+                        <PostCard
+                          post={post}
+                          onCommentClick={() => navigate(`/post/${post.id}`)}
+                        />
                       ) : (
                         <motion.div
                           custom={index}
