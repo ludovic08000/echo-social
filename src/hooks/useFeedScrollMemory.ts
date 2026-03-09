@@ -62,7 +62,7 @@ export function useFeedScrollMemory(storageKey = 'feed-scroll-memory') {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         saveScroll();
-      if (isAppleMobileWebKit()) {
+      } else if (isAppleMobileWebKit()) {
         restoreScroll();
       }
     };
