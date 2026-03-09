@@ -285,8 +285,13 @@ function ReportsSection() {
 
   const updateReport = useMutation({
     mutationFn: async ({ id, status, resolution }: { id: string; status: string; resolution: string }) => {
-      const { error } = await supabase.from('abuse_reports').update({ status, resolution, reviewed_at: new Date().toISOString() }).eq('id', id);
-      if (error) throw error;
+      if (status === 'dismissed') {
+        const { error } = await supabase.from('abuse_reports').delete().eq('id', id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('abuse_reports').update({ status, resolution, reviewed_at: new Date().toISOString() }).eq('id', id);
+        if (error) throw error;
+      }
     },
     onSuccess: () => { toast({ title: 'Signalement traité' }); queryClient.invalidateQueries({ queryKey: ['admin-reports'] }); },
   });
