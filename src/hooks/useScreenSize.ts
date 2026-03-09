@@ -22,6 +22,8 @@ export function useScreenSize() {
   );
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     let rafId: number;
 
     const handleResize = () => {
@@ -33,9 +35,13 @@ export function useScreenSize() {
       });
     };
 
-    window.addEventListener('resize', handleResize);
+    window.addEventListener('resize', handleResize, { passive: true });
+    window.addEventListener('orientationchange', handleResize, { passive: true });
+    handleResize();
+
     return () => {
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
       cancelAnimationFrame(rafId);
     };
   }, []);
