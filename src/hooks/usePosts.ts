@@ -302,13 +302,42 @@ export function useDeletePost() {
 
   return useMutation({
     mutationFn: async (postId: string) => {
+      // Fetch the post to get media URL before deleting
+      const { data: post } = await supabase
+        .from('posts')
+        .select('image_url')
+        .eq('id', postId)
+        .single();
+
       const { error } = await supabase.from('posts').delete().eq('id', postId);
       if (error) throw error;
+
+      // Delete media from R2 if present
+      if (post?.image_url) {
+        try {
+          const { deleteFromR2 } = await import('@/lib/r2');
+          const pathMatch = extractR2Path(post.image_url);
+          if (pathMatch) await deleteFromR2(pathMatch);
+        } catch (e) {
+          console.error('R2 media cleanup error:', e);
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['posts'] });
     },
   });
+}
+
+/** Extract R2 file path from a full R2 public URL */
+function extractR2Path(url: string): string | null {
+  try {
+    const u = new URL(url);
+    // Remove leading slash
+    return u.pathname.replace(/^\//, '');
+  } catch {
+    return null;
+  }
 }
 
 export function useToggleLike() {

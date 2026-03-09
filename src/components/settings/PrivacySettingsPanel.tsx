@@ -38,11 +38,36 @@ function PurgeFeedSection() {
     if (!user) return;
     setPurging(true);
     try {
+      // Fetch all posts with media to delete from R2
+      const { data: posts } = await supabase
+        .from('posts')
+        .select('id, image_url')
+        .eq('user_id', user.id);
+
+      // Delete from DB
       const { error } = await supabase
         .from('posts')
         .delete()
         .eq('user_id', user.id);
       if (error) throw error;
+
+      // Cleanup R2 media in background
+      if (posts && posts.length > 0) {
+        const { deleteFromR2 } = await import('@/lib/r2');
+        const mediaUrls = posts
+          .filter(p => p.image_url)
+          .map(p => p.image_url as string);
+        
+        for (const url of mediaUrls) {
+          try {
+            const path = new URL(url).pathname.replace(/^\//, '');
+            if (path) await deleteFromR2(path);
+          } catch (e) {
+            console.error('R2 cleanup error:', e);
+          }
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: ['posts'] });
       queryClient.invalidateQueries({ queryKey: ['user-posts'] });
       toast({ title: 'Toutes vos publications ont été supprimées' });
