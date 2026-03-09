@@ -326,6 +326,7 @@ function WidgetConversationList() {
 // ─── Chat View (inside widget) ───────────────────────────
 function WidgetChatView({ conversationId }: { conversationId: string }) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { data: conversations } = useConversations();
   const { data: messages, isLoading } = useMessages(conversationId);
   const sendMessage = useSendMessage();
