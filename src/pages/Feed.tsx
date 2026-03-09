@@ -125,7 +125,9 @@ export default function Feed() {
       const adIndex = Math.floor(index / 6) % activeAds.length;
       const ad = activeAds[adIndex];
       if (ad) {
-        return (
+        return isMobile ? (
+          <SponsoredPostCard ad={ad} />
+        ) : (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -139,18 +141,25 @@ export default function Feed() {
     }
     
     if (!type) return null;
-    return (
+
+    const content = (
+      <>
+        {type === 'reels' && <FeedReelsSection />}
+        {type === 'suggestions' && <FriendSuggestions />}
+        {type === 'suggestions_city' && <FriendSuggestionsByCity />}
+        {type === 'media' && <FeedMediaSection />}
+        {type === 'marketplace' && <FeedMarketplaceSection />}
+      </>
+    );
+
+    return isMobile ? content : (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true, margin: '-50px' }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
       >
-        {type === 'reels' && <FeedReelsSection />}
-        {type === 'suggestions' && <FriendSuggestions />}
-        {type === 'suggestions_city' && <FriendSuggestionsByCity />}
-        {type === 'media' && <FeedMediaSection />}
-        {type === 'marketplace' && <FeedMarketplaceSection />}
+        {content}
       </motion.div>
     );
   };
