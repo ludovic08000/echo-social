@@ -113,7 +113,6 @@ export function ParentalControlPanel() {
         <p className="text-sm text-muted-foreground">
           Définissez un code PIN à 8 chiffres minimum pour protéger l'accès aux contenus sensibles. Les mineurs ne verront que les catégories autorisées.
         </p>
-        </p>
       </div>
 
       {/* PIN setup */}
