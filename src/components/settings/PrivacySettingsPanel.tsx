@@ -4,6 +4,7 @@ import { usePrivacySettings, useUpdatePrivacySettings } from '@/hooks/usePrivacy
 import { RestrictedFriendsPanel } from './RestrictedFriendsPanel';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -11,8 +12,85 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth';
+import { useQueryClient } from '@tanstack/react-query';
+
+function PurgeFeedSection() {
+  const { user } = useAuth();
+  const [purging, setPurging] = useState(false);
+  const queryClient = useQueryClient();
+
+  const handlePurge = async () => {
+    if (!user) return;
+    setPurging(true);
+    try {
+      const { error } = await supabase
+        .from('posts')
+        .delete()
+        .eq('user_id', user.id);
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ['posts'] });
+      queryClient.invalidateQueries({ queryKey: ['user-posts'] });
+      toast({ title: 'Toutes vos publications ont été supprimées' });
+    } catch {
+      toast({ title: 'Erreur lors de la purge', variant: 'destructive' });
+    } finally {
+      setPurging(false);
+    }
+  };
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center gap-2">
+        <Trash2 className="w-5 h-5 text-destructive" />
+        <h3 className="font-semibold">Purger mon feed</h3>
+      </div>
+      <div className="pl-7">
+        <div className="p-4 rounded-xl border border-destructive/20 bg-destructive/5 space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Supprimer définitivement <strong>toutes vos publications</strong>. Cette action est irréversible.
+          </p>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" size="sm" className="gap-2" disabled={purging}>
+                <AlertTriangle className="w-4 h-4" />
+                {purging ? 'Suppression…' : 'Supprimer toutes mes publications'}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Êtes-vous sûr ?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Toutes vos publications, images et commentaires associés seront supprimés définitivement. Cette action ne peut pas être annulée.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Annuler</AlertDialogCancel>
+                <AlertDialogAction onClick={handlePurge} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  Tout supprimer
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 const VISIBILITY_OPTIONS = [
   { value: 'public', label: 'Tout le monde' },
