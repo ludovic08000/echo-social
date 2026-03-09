@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, CalendarIcon, Shield } from 'lucide-react';
-import { format, differenceInYears } from 'date-fns';
-import { fr } from 'date-fns/locale';
+import { Eye, EyeOff, Shield } from 'lucide-react';
+import { differenceInYears } from 'date-fns';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
@@ -10,11 +9,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
-import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
+
+const MONTHS = [
+  'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+  'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
+];
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -22,7 +24,9 @@ export default function Signup() {
   const { t } = useTranslation();
   const [lastName, setLastName] = useState('');
   const [firstName, setFirstName] = useState('');
-  const [dateOfBirth, setDateOfBirth] = useState<Date>();
+  const [birthDay, setBirthDay] = useState('');
+  const [birthMonth, setBirthMonth] = useState('');
+  const [birthYear, setBirthYear] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -34,52 +38,53 @@ export default function Signup() {
   const [parentalPinConfirm, setParentalPinConfirm] = useState('');
   const [showParentalPin, setShowParentalPin] = useState(false);
 
+  const currentYear = new Date().getFullYear();
+  const years = useMemo(() => Array.from({ length: currentYear - 1920 + 1 }, (_, i) => currentYear - i), [currentYear]);
+
+  const daysInMonth = useMemo(() => {
+    if (!birthMonth || !birthYear) return 31;
+    return new Date(Number(birthYear), Number(birthMonth), 0).getDate();
+  }, [birthMonth, birthYear]);
+
+  const days = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => i + 1), [daysInMonth]);
+
   if (user) {
     return <Navigate to="/feed" replace />;
   }
+
+  const getDateOfBirth = (): Date | null => {
+    if (!birthDay || !birthMonth || !birthYear) return null;
+    return new Date(Number(birthYear), Number(birthMonth) - 1, Number(birthDay));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!lastName.trim() || !firstName.trim()) {
-      toast({
-        title: 'Champs requis',
-        description: 'Le nom et le prénom sont obligatoires.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Champs requis', description: 'Le nom et le prénom sont obligatoires.', variant: 'destructive' });
       return;
     }
 
+    const dateOfBirth = getDateOfBirth();
     if (!dateOfBirth) {
-      toast({
-        title: 'Date de naissance requise',
-        description: 'Veuillez indiquer votre date de naissance.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Date de naissance requise', description: 'Veuillez indiquer votre date de naissance.', variant: 'destructive' });
       return;
     }
 
-    // Check minimum age (13 years)
     const today = new Date();
     const age = differenceInYears(today, dateOfBirth);
     const minDate = new Date(today.getFullYear() - 13, today.getMonth(), today.getDate());
     if (dateOfBirth > minDate) {
-      toast({
-        title: 'Âge minimum requis',
-        description: 'Vous devez avoir au moins 13 ans pour vous inscrire.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Âge minimum requis', description: 'Vous devez avoir au moins 13 ans pour vous inscrire.', variant: 'destructive' });
       return;
     }
 
-    // If under 16, show parental control step first
     const isMinor = age < 16;
     if (isMinor && !showParentalStep) {
       setShowParentalStep(true);
       return;
     }
 
-    // Validate parental PIN if minor
     if (isMinor && showParentalStep) {
       if (parentalPin.length < 8 || !/^\d{8,12}$/.test(parentalPin)) {
         toast({ title: 'Code invalide', description: 'Le code parental doit être composé de 8 chiffres minimum', variant: 'destructive' });
@@ -92,40 +97,27 @@ export default function Signup() {
     }
 
     if (!acceptedTerms || !acceptedPrivacy) {
-      toast({
-        title: 'Conditions requises',
-        description: 'Veuillez accepter les CGU et la politique de confidentialité pour continuer.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Conditions requises', description: 'Veuillez accepter les CGU et la politique de confidentialité pour continuer.', variant: 'destructive' });
       return;
     }
-    
+
     if (password.length < 6) {
-      toast({
-        title: t('signup.passwordTooShort'),
-        description: t('signup.passwordMinLength'),
-        variant: 'destructive',
-      });
+      toast({ title: t('signup.passwordTooShort'), description: t('signup.passwordMinLength'), variant: 'destructive' });
       return;
     }
 
     setIsLoading(true);
 
     const fullName = `${firstName.trim()} ${lastName.trim()}`;
-    const dobString = format(dateOfBirth, 'yyyy-MM-dd');
+    const dobString = `${birthYear}-${birthMonth.padStart(2, '0')}-${birthDay.padStart(2, '0')}`;
     const { error } = await signUp(email, password, fullName, dobString);
 
     if (error) {
-      toast({
-        title: t('common.error'),
-        description: error.message,
-        variant: 'destructive',
-      });
+      toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
       setIsLoading(false);
       return;
     }
 
-    // Save parental control if minor — PIN is hashed server-side
     const userAge = differenceInYears(new Date(), dateOfBirth);
     if (userAge < 16 && parentalPin) {
       try {
@@ -144,10 +136,7 @@ export default function Signup() {
       }
     }
 
-    toast({
-      title: t('signup.welcome'),
-      description: t('signup.welcomeDesc'),
-    });
+    toast({ title: t('signup.welcome'), description: t('signup.welcomeDesc') });
     navigate('/onboarding');
   };
 
@@ -165,94 +154,62 @@ export default function Signup() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="lastName">Nom *</Label>
-                <Input
-                  id="lastName"
-                  type="text"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  placeholder="Dupont"
-                  className="pulse-input"
-                  required
-                />
+                <Input id="lastName" type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Dupont" className="pulse-input" required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="firstName">Prénom *</Label>
-                <Input
-                  id="firstName"
-                  type="text"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  placeholder="Jean"
-                  className="pulse-input"
-                  required
-                />
+                <Input id="firstName" type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Jean" className="pulse-input" required />
               </div>
             </div>
 
             <div className="space-y-2">
               <Label>Date de naissance *</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "w-full justify-start text-left font-normal pulse-input",
-                      !dateOfBirth && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateOfBirth ? format(dateOfBirth, "d MMMM yyyy", { locale: fr }) : "Sélectionner une date"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={dateOfBirth}
-                    onSelect={setDateOfBirth}
-                    disabled={(date) =>
-                      date > new Date() || date < new Date("1900-01-01")
-                    }
-                    defaultMonth={new Date(2000, 0)}
-                    captionLayout="dropdown-buttons"
-                    fromYear={1920}
-                    toYear={new Date().getFullYear()}
-                    className={cn("p-3 pointer-events-auto")}
-                  />
-                </PopoverContent>
-              </Popover>
+              <div className="grid grid-cols-3 gap-2">
+                <Select value={birthDay} onValueChange={setBirthDay}>
+                  <SelectTrigger className="pulse-input">
+                    <SelectValue placeholder="Jour" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-48">
+                    {days.map((d) => (
+                      <SelectItem key={d} value={String(d)}>{d}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={birthMonth} onValueChange={setBirthMonth}>
+                  <SelectTrigger className="pulse-input">
+                    <SelectValue placeholder="Mois" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-48">
+                    {MONTHS.map((m, i) => (
+                      <SelectItem key={i} value={String(i + 1)}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={birthYear} onValueChange={setBirthYear}>
+                  <SelectTrigger className="pulse-input">
+                    <SelectValue placeholder="Année" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-48">
+                    {years.map((y) => (
+                      <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="email">{t('signup.email')} *</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder={t('signup.emailPlaceholder')}
-                className="pulse-input"
-                required
-              />
+              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('signup.emailPlaceholder')} className="pulse-input" required />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="password">{t('signup.password')} *</Label>
               <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={t('signup.passwordPlaceholder')}
-                  className="pulse-input pr-10"
-                  required
-                  minLength={6}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
+                <Input id="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('signup.passwordPlaceholder')} className="pulse-input pr-10" required minLength={6} />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
@@ -261,41 +218,26 @@ export default function Signup() {
             {/* Legal checkboxes */}
             <div className="space-y-3 pt-2">
               <div className="flex items-start gap-3">
-                <Checkbox
-                  id="terms"
-                  checked={acceptedTerms}
-                  onCheckedChange={(v) => setAcceptedTerms(v === true)}
-                  className="mt-0.5"
-                />
+                <Checkbox id="terms" checked={acceptedTerms} onCheckedChange={(v) => setAcceptedTerms(v === true)} className="mt-0.5" />
                 <label htmlFor="terms" className="text-sm text-muted-foreground leading-tight cursor-pointer">
                   J'ai lu et j'accepte les{' '}
-                  <Link to="/legal/terms" className="text-primary hover:underline" target="_blank">
-                    Conditions Générales d'Utilisation
-                  </Link>
+                  <Link to="/legal/terms" className="text-primary hover:underline" target="_blank">Conditions Générales d'Utilisation</Link>
                 </label>
               </div>
-
               <div className="flex items-start gap-3">
-                <Checkbox
-                  id="privacy"
-                  checked={acceptedPrivacy}
-                  onCheckedChange={(v) => setAcceptedPrivacy(v === true)}
-                  className="mt-0.5"
-                />
+                <Checkbox id="privacy" checked={acceptedPrivacy} onCheckedChange={(v) => setAcceptedPrivacy(v === true)} className="mt-0.5" />
                 <label htmlFor="privacy" className="text-sm text-muted-foreground leading-tight cursor-pointer">
                   J'ai lu et j'accepte la{' '}
-                  <Link to="/legal/privacy" className="text-primary hover:underline" target="_blank">
-                    Politique de Confidentialité
-                  </Link>
+                  <Link to="/legal/privacy" className="text-primary hover:underline" target="_blank">Politique de Confidentialité</Link>
                 </label>
               </div>
             </div>
 
             {/* Parental control step for minors */}
             {showParentalStep && (
-              <div className="space-y-3 p-4 rounded-xl bg-pink-500/5 border border-pink-500/20 animate-fade-in">
+              <div className="space-y-3 p-4 rounded-xl bg-destructive/5 border border-destructive/20 animate-fade-in">
                 <div className="flex items-center gap-2 text-sm font-semibold">
-                  <Shield className="w-4 h-4 text-pink-500" />
+                  <Shield className="w-4 h-4 text-destructive" />
                   Protection parentale
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -304,25 +246,11 @@ export default function Signup() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">Code PIN</Label>
-                    <Input
-                      type={showParentalPin ? 'text' : 'password'}
-                      value={parentalPin}
-                      onChange={(e) => setParentalPin(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                      placeholder="8 chiffres min."
-                      maxLength={12}
-                      className="text-center text-lg tracking-[0.3em] font-mono"
-                    />
+                    <Input type={showParentalPin ? 'text' : 'password'} value={parentalPin} onChange={(e) => setParentalPin(e.target.value.replace(/\D/g, '').slice(0, 12))} placeholder="8 chiffres min." maxLength={12} className="text-center text-lg tracking-[0.3em] font-mono" />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Confirmer</Label>
-                    <Input
-                      type={showParentalPin ? 'text' : 'password'}
-                      value={parentalPinConfirm}
-                      onChange={(e) => setParentalPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                      placeholder="8 chiffres min."
-                      maxLength={12}
-                      className="text-center text-lg tracking-[0.3em] font-mono"
-                    />
+                    <Input type={showParentalPin ? 'text' : 'password'} value={parentalPinConfirm} onChange={(e) => setParentalPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 12))} placeholder="8 chiffres min." maxLength={12} className="text-center text-lg tracking-[0.3em] font-mono" />
                   </div>
                 </div>
                 <button type="button" onClick={() => setShowParentalPin(!showParentalPin)} className="text-xs text-primary hover:underline">
@@ -331,20 +259,14 @@ export default function Signup() {
               </div>
             )}
 
-            <Button
-              type="submit"
-              disabled={isLoading || !acceptedTerms || !acceptedPrivacy}
-              className="pulse-button-gradient w-full"
-            >
+            <Button type="submit" disabled={isLoading || !acceptedTerms || !acceptedPrivacy} className="pulse-button-gradient w-full">
               {isLoading ? t('signup.submitting') : showParentalStep ? 'Créer le compte avec protection' : t('signup.submit')}
             </Button>
           </form>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
             {t('signup.hasAccount')}{' '}
-            <Link to="/login" className="pulse-link font-medium">
-              {t('signup.loginLink')}
-            </Link>
+            <Link to="/login" className="pulse-link font-medium">{t('signup.loginLink')}</Link>
           </p>
         </div>
       </div>
