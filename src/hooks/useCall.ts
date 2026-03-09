@@ -191,6 +191,7 @@ export function useCall(options?: UseCallOptions) {
 
   const endCall = useCallback(() => {
     manualEndRef.current = true;
+    hadRemoteParticipantRef.current = false;
     const wasMissed = callStateRef.current !== 'connected';
     const endDuration = durationRef.current;
     const endType = callTypeRef.current;
