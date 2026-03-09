@@ -391,7 +391,7 @@ serve(async (req) => {
       <OrderNo>${escXml(orderNo)}</OrderNo>
       <CustomerNo>${escXml(customerNo)}</CustomerNo>
       <ParcelCount>1</ParcelCount>
-      <ShipmentValue Currency="EUR" Amount="0"/>
+      <ShipmentValue Currency="EUR" Amount="${Math.round(order.subtotal * 100)}"/>
       <DeliveryMode Mode="${escXml(deliveryMode)}"${deliveryLocationAttr}/>
       <CollectionMode Mode="${escXml(collectionMode)}"${collectionLocationAttr}/>
       <Parcels>
