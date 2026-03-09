@@ -765,12 +765,22 @@ function ChatView({ conversationId }: { conversationId: string }) {
   const [showSharePicker, setShowSharePicker] = useState(false);
   const [pinnedMessages, setPinnedMessages] = useState<Set<string>>(new Set());
   const [forwardMsg, setForwardMsg] = useState<Message | null>(null);
+  const [showGroupPanel, setShowGroupPanel] = useState(false);
+  const [showInvitePanel, setShowInvitePanel] = useState(false);
+  const [inviteSearch, setInviteSearch] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const conversation = conversations?.find(c => c.id === conversationId);
+  const isGroup = conversation?.is_group || false;
+  const leaveGroup = useLeaveGroup();
+  const addMembers = useAddGroupMembers();
+  const removeMember = useRemoveGroupMember();
+  const { data: groupMembers = [] } = useGroupMembers(isGroup ? conversationId : undefined);
+  const { friends: allFriends } = useFriendships();
+  const navigate = useNavigate();
 
   const { upload, isUploading } = useImageUpload({
     bucket: 'post-images',
