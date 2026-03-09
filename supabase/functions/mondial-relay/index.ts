@@ -501,7 +501,7 @@ serve(async (req) => {
           const statusList = parsed?.statusListField || parsed?.StatusList || [];
           return statusList.find((item: any) => {
             const level = String(item?.levelField || item?.Level || '').toLowerCase();
-            return level === 'error';
+            return level.includes('error') || level.includes('critical');
           }) || null;
         } catch {
           return null;
