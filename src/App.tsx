@@ -14,7 +14,7 @@ import { useIncomingCall, endActiveCall } from "@/hooks/useIncomingCall";
 import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { useCall } from "@/hooks/useCall";
 import { CallOverlay } from "@/components/CallOverlay";
-import { useCallback, useRef } from "react";
+import { Suspense, useCallback, useRef } from "react";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -127,6 +127,7 @@ function AppContent() {
           <Sonner />
           <BrowserRouter>
             <IncomingCallHandler />
+            <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
             <Routes>
               {/* Public routes */}
               <Route path="/" element={<PublicOnlyRoute><Landing /></PublicOnlyRoute>} />
@@ -171,6 +172,7 @@ function AppContent() {
               {/* 404 */}
               <Route path="*" element={<NotFound />} />
             </Routes>
+            </Suspense>
             <ChatWidget />
           </BrowserRouter>
         </TooltipProvider>
