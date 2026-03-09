@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tansta
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { ReactionType } from '@/hooks/useReactions';
-import { useEffect } from 'react';
 import {
   scorePost,
   loadContentPrefs,
@@ -33,23 +32,6 @@ const PAGE_SIZE = 10;
 
 export function usePosts() {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
-
-  // Realtime: only listen for new posts (INSERT), not every like/comment change
-  // Likes/comments counts update on next staleTime refresh — saves massive DB reads
-  useEffect(() => {
-    const channel = supabase
-      .channel('posts-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, () => {
-        queryClient.invalidateQueries({ queryKey: ['posts'] });
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'posts' }, () => {
-        queryClient.invalidateQueries({ queryKey: ['posts'] });
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [queryClient]);
 
   return useInfiniteQuery({
     queryKey: ['posts', 'friends-feed', user?.id],
@@ -213,6 +195,7 @@ export function usePosts() {
     gcTime: 10 * 60_000,
     refetchInterval: false,      // Prevent background reorder while user scrolls
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }
 
