@@ -292,6 +292,10 @@ serve(async (req) => {
       const v2Password = Deno.env.get("MONDIAL_RELAY_V2_PASSWORD") ?? "";
       const v2BrandId = Deno.env.get("MONDIAL_RELAY_V2_BRAND_ID") ?? "";
 
+      const forceSandbox = (Deno.env.get("MONDIAL_RELAY_SANDBOX") ?? "").trim().toLowerCase() === "true";
+      const autoSandboxFromLogin = /business-api\.mondialrelay\.com/i.test(v2Login);
+      const mrApiV2Endpoint = forceSandbox || autoSandboxFromLogin ? MR_API_V2_SANDBOX : MR_API_V2_PROD;
+
       if (!v2Login || !v2Password || !v2BrandId) {
         throw new Error("Configuration API v2 Mondial Relay manquante (login/password/brand_id)");
       }
