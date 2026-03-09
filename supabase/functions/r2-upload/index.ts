@@ -128,8 +128,10 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } }
     );
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) throw new Error("Not authenticated");
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+    const userId = claimsData?.claims?.sub as string | undefined;
+    if (claimsError || !userId) throw new Error("Not authenticated");
 
     // ─── Rate limit ───
     if (!checkRateLimit(user.id)) {
