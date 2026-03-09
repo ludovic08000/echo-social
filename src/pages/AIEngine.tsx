@@ -24,7 +24,9 @@ import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useABTests, type ABTest } from '@/hooks/useABTests';
+import { useNeuralMetrics, useTrustScores, useFeedConfig } from '@/hooks/useNeuralMetrics';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { Input } from '@/components/ui/input';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   FileText, Languages, Sparkles, BellRing, ShoppingBag, Crown,
