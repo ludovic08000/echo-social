@@ -48,6 +48,7 @@ import AdsManager from "./pages/AdsManager";
 import AIAgents from "./pages/AIAgents";
 import Admin from "./pages/Admin";
 import CreatorUpgrade from "./pages/CreatorUpgrade";
+import Onboarding from "./pages/Onboarding";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();

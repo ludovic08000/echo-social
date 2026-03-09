@@ -148,7 +148,7 @@ export default function Signup() {
       title: t('signup.welcome'),
       description: t('signup.welcomeDesc'),
     });
-    navigate('/feed');
+    navigate('/onboarding');
   };
 
   return (
