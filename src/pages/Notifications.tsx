@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -8,6 +9,65 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
+interface GroupedNotification {
+  key: string;
+  type: string;
+  post_id: string | null;
+  actors: { name: string; avatar_url: string | null }[];
+  count: number;
+  created_at: string;
+  read_at: string | null;
+  ids: string[];
+}
+
+function groupNotifications(notifications: any[]): GroupedNotification[] {
+  const groups = new Map<string, GroupedNotification>();
+
+  for (const n of notifications) {
+    const key = `${n.type}-${n.post_id || 'no-post'}`;
+    const existing = groups.get(key);
+    if (existing) {
+      if (!existing.actors.some(a => a.name === n.actor.name)) {
+        existing.actors.push({ name: n.actor.name, avatar_url: n.actor.avatar_url });
+      }
+      existing.count++;
+      existing.ids.push(n.id);
+      if (!n.read_at) existing.read_at = null;
+      if (new Date(n.created_at) > new Date(existing.created_at)) {
+        existing.created_at = n.created_at;
+      }
+    } else {
+      groups.set(key, {
+        key,
+        type: n.type,
+        post_id: n.post_id,
+        actors: [{ name: n.actor.name, avatar_url: n.actor.avatar_url }],
+        count: 1,
+        created_at: n.created_at,
+        read_at: n.read_at,
+        ids: [n.id],
+      });
+    }
+  }
+
+  return Array.from(groups.values()).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+}
+
+function getNotificationText(group: GroupedNotification): string {
+  const othersCount = group.count - 1;
+
+  const action =
+    group.type === 'like' ? 'aimé votre post' :
+    group.type === 'sale' ? 'acheté un de vos produits 🎉' :
+    'commenté votre post';
+
+  if (othersCount === 0) return `a ${action}`;
+  if (othersCount === 1) return `et ${group.actors[1]?.name || '1 autre'} ont ${action}`;
+  return `et ${othersCount} autres ont ${action}`;
+}
+
 export default function Notifications() {
   const { data: notifications, isLoading } = useNotifications();
   const markAsRead = useMarkAsRead();
@@ -17,6 +77,11 @@ export default function Notifications() {
   };
 
   const unreadCount = notifications?.filter(n => !n.read_at).length || 0;
+
+  const grouped = useMemo(
+    () => groupNotifications(notifications || []),
+    [notifications]
+  );
 
   return (
     <AppLayout>
@@ -49,44 +114,50 @@ export default function Notifications() {
             </div>
           ))}
         </div>
-      ) : notifications?.length === 0 ? (
+      ) : grouped.length === 0 ? (
         <div className="pulse-card p-8 text-center">
           <p className="text-muted-foreground">Aucune notification</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {notifications?.map((notification) => (
+          {grouped.map((group) => (
             <Link
-              key={notification.id}
-              to={notification.type === 'sale' ? '/marketplace?sellerTab=orders' : notification.post_id ? `/post/${notification.post_id}` : '#'}
+              key={group.key}
+              to={group.type === 'sale' ? '/marketplace?sellerTab=orders' : group.post_id ? `/post/${group.post_id}` : '#'}
               onClick={() => {
-                if (!notification.read_at) {
-                  markAsRead.mutate(notification.id);
+                if (!group.read_at) {
+                  group.ids.forEach(id => markAsRead.mutate(id));
                 }
               }}
             >
               <div
                 className={cn(
                   'pulse-card p-4 flex items-center gap-3 transition-colors hover:bg-secondary/50',
-                  !notification.read_at && 'bg-accent/50'
+                  !group.read_at && 'bg-accent/50'
                 )}
               >
                 <div className="relative">
-                  <UserAvatar
-                    src={notification.actor.avatar_url}
-                    alt={notification.actor.name}
-                    size="md"
-                  />
+                  <div className="flex -space-x-2">
+                    {group.actors.slice(0, 3).map((actor, i) => (
+                      <UserAvatar
+                        key={i}
+                        src={actor.avatar_url}
+                        alt={actor.name}
+                        size="md"
+                        className={cn(i > 0 && 'ring-2 ring-background')}
+                      />
+                    ))}
+                  </div>
                   <div
                     className={cn(
                       'absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center',
-                      notification.type === 'like' ? 'bg-primary' :
-                      notification.type === 'sale' ? 'bg-green-500' : 'bg-secondary'
+                      group.type === 'like' ? 'bg-primary' :
+                      group.type === 'sale' ? 'bg-green-500' : 'bg-secondary'
                     )}
                   >
-                    {notification.type === 'like' ? (
+                    {group.type === 'like' ? (
                       <Heart className="w-3 h-3 text-primary-foreground fill-current" />
-                    ) : notification.type === 'sale' ? (
+                    ) : group.type === 'sale' ? (
                       <ShoppingBag className="w-3 h-3 text-white" />
                     ) : (
                       <MessageCircle className="w-3 h-3 text-secondary-foreground" />
@@ -96,20 +167,18 @@ export default function Notifications() {
 
                 <div className="flex-1 min-w-0">
                   <p className="text-sm">
-                    <span className="font-medium">{notification.actor.name}</span>{' '}
-                    {notification.type === 'like' ? 'a aimé votre post' :
-                     notification.type === 'sale' ? 'a acheté un de vos produits 🎉' :
-                     'a commenté votre post'}
+                    <span className="font-medium">{group.actors[0].name}</span>{' '}
+                    {getNotificationText(group)}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {formatDistanceToNow(new Date(notification.created_at), {
+                    {formatDistanceToNow(new Date(group.created_at), {
                       addSuffix: true,
                       locale: fr,
                     })}
                   </p>
                 </div>
 
-                {!notification.read_at && (
+                {!group.read_at && (
                   <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
                 )}
               </div>

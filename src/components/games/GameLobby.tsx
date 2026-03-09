@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, forwardRef } from 'react';
 import { Bot, Users, Swords, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useFriendships } from '@/hooks/useFriendships';
@@ -14,14 +14,14 @@ interface GameLobbyProps {
   onStart: (mode: GameMode, difficulty?: AIDifficulty, friendId?: string, friendName?: string) => void;
 }
 
-export default function GameLobby({ gameName, gameIcon, onStart }: GameLobbyProps) {
+const GameLobby = forwardRef<HTMLDivElement, GameLobbyProps>(function GameLobby({ gameName, gameIcon, onStart }, ref) {
   const [step, setStep] = useState<'mode' | 'difficulty' | 'friend'>('mode');
   const { data: friendsData, isLoading } = useFriendships();
 
   const friends = friendsData?.friends || [];
 
   return (
-    <div className="flex flex-col items-center gap-6 py-6">
+    <div ref={ref} className="flex flex-col items-center gap-6 py-6">
       {/* Game title */}
       <div className="text-center">
         <div className="text-5xl mb-3">{gameIcon}</div>
@@ -144,4 +144,6 @@ export default function GameLobby({ gameName, gameIcon, onStart }: GameLobbyProp
       )}
     </div>
   );
-}
+});
+
+export default GameLobby;
