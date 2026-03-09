@@ -239,81 +239,64 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
       </Link>
 
       {/* AI Actions */}
-      <AnimatePresence>
-        {post.body && (aiSummariesEnabled || autoTranslateEnabled) && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            className="relative px-4 pb-2 flex flex-wrap gap-1.5"
-          >
-            {aiSummariesEnabled && post.body.length >= 100 && (
-              <motion.button
-                whileHover={{ scale: 1.05, y: -1 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleSummarize}
-                disabled={summaryLoading}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-medium transition-all border backdrop-blur-sm",
-                  summary
-                    ? "bg-primary/10 text-primary border-primary/30 shadow-[0_2px_8px_hsl(220_70%_50%/0.12)]"
-                    : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60 hover:border-primary/20 hover:shadow-[0_2px_8px_hsl(220_70%_50%/0.08)]"
-                )}
-              >
-                {summaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                {summary ? 'Masquer résumé' : 'Résumer'}
-              </motion.button>
-            )}
-            {autoTranslateEnabled && (
-              <motion.button
-                whileHover={{ scale: 1.05, y: -1 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleTranslate}
-                disabled={translateLoading}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-medium transition-all border backdrop-blur-sm",
-                  translation
-                    ? "bg-primary/10 text-primary border-primary/30 shadow-[0_2px_8px_hsl(220_70%_50%/0.12)]"
-                    : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60 hover:border-primary/20 hover:shadow-[0_2px_8px_hsl(220_70%_50%/0.08)]"
-                )}
-              >
-                {translateLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3 h-3" />}
-                {translation ? 'Original' : 'Traduire'}
-              </motion.button>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {post.body && (aiSummariesEnabled || autoTranslateEnabled) && (
+        <div className="relative px-4 pb-2 flex flex-wrap gap-1.5">
+          {aiSummariesEnabled && post.body.length >= 100 && (
+            <button
+              onClick={handleSummarize}
+              disabled={summaryLoading}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-medium transition-all border backdrop-blur-sm",
+                summary
+                  ? "bg-primary/10 text-primary border-primary/30 shadow-[0_2px_8px_hsl(220_70%_50%/0.12)]"
+                  : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60 hover:border-primary/20 hover:shadow-[0_2px_8px_hsl(220_70%_50%/0.08)]"
+              )}
+            >
+              {summaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+              {summary ? 'Masquer résumé' : 'Résumer'}
+            </button>
+          )}
+          {autoTranslateEnabled && (
+            <button
+              onClick={handleTranslate}
+              disabled={translateLoading}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-medium transition-all border backdrop-blur-sm",
+                translation
+                  ? "bg-primary/10 text-primary border-primary/30 shadow-[0_2px_8px_hsl(220_70%_50%/0.12)]"
+                  : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60 hover:border-primary/20 hover:shadow-[0_2px_8px_hsl(220_70%_50%/0.08)]"
+              )}
+            >
+              {translateLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3 h-3" />}
+              {translation ? 'Original' : 'Traduire'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* AI Results */}
-      <AnimatePresence>
-        {(summary || translation) && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="relative px-4 pb-3 space-y-2"
-          >
-            {summary && (
-              <div className="p-3 rounded-xl glass border-primary/20 shadow-[0_2px_12px_hsl(220_70%_50%/0.06)]">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <Sparkles className="w-3 h-3 text-primary" />
-                  <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Résumé IA</span>
-                </div>
-                <p className="text-sm text-foreground leading-relaxed">{summary}</p>
+      {(summary || translation) && (
+        <div className="relative px-4 pb-3 space-y-2">
+          {summary && (
+            <div className="p-3 rounded-xl glass border-primary/20 shadow-[0_2px_12px_hsl(220_70%_50%/0.06)]">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Sparkles className="w-3 h-3 text-primary" />
+                <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Résumé IA</span>
               </div>
-            )}
-            {translation && (
-              <div className="p-3 rounded-xl glass border-primary/20 shadow-[0_2px_12px_hsl(220_70%_50%/0.06)]">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <Languages className="w-3 h-3 text-primary" />
-                  <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Traduction</span>
-                </div>
-                <p className="text-sm text-foreground leading-relaxed">{translation}</p>
+              <p className="text-sm text-foreground leading-relaxed">{summary}</p>
+            </div>
+          )}
+          {translation && (
+            <div className="p-3 rounded-xl glass border-primary/20 shadow-[0_2px_12px_hsl(220_70%_50%/0.06)]">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Languages className="w-3 h-3 text-primary" />
+                <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Traduction</span>
               </div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <p className="text-sm text-foreground leading-relaxed">{translation}</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Reactions Count */}
       {(post.likes_count > 0 || post.comments_count > 0) && (
