@@ -80,8 +80,12 @@ export function useAIEngine() {
     setModuleLoading(moduleId, true);
     const start = performance.now();
     try {
+      // Refresh session to prevent 401 errors
+      await supabase.auth.refreshSession();
+
       const { data, error } = await supabase.functions.invoke('ai-engine', {
-        body: { action, user_id: user?.id, ...body },
+        // No user_id sent — the edge function extracts it from the JWT token server-side
+        body: { action, ...body },
       });
       const elapsed = Math.round(performance.now() - start);
       const success = !error && !data?.error && data?.result;
@@ -101,7 +105,7 @@ export function useAIEngine() {
     } finally {
       setModuleLoading(moduleId, false);
     }
-  }, [user?.id]);
+  }, []);
 
   // ── Moderation (cache géré côté serveur + skip court côté client) ──
   const moderate = useCallback(async (text: string): Promise<ModerationResult | null> => {
