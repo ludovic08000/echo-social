@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { useIsMinorWithParentalControl, useVerifyParentalPin } from '@/hooks/useParentalControl';
+import { useIsMinorWithParentalControl, useVerifyParentalPin, PIN_MIN_LENGTH, PIN_MAX_LENGTH } from '@/hooks/useParentalControl';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';

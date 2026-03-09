@@ -2,6 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 
+export const PIN_MIN_LENGTH = 8;
+export const PIN_MAX_LENGTH = 12;
 export const ALLOWED_MINOR_CATEGORIES = ['education', 'sport', 'gaming', 'musique', 'art', 'humour'] as const;
 
 export const CATEGORY_LABELS: Record<string, string> = {
