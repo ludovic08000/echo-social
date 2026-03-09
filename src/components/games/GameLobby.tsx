@@ -25,7 +25,7 @@ const GameLobby = forwardRef<HTMLDivElement, GameLobbyProps>(function GameLobby(
   const friends = friendsData?.friends || [];
 
   return (
-    <div className="flex flex-col items-center gap-6 py-6">
+    <div ref={ref} className="flex flex-col items-center gap-6 py-6">
       {/* Game title */}
       <div className="text-center">
         <div className="text-5xl mb-3">{gameIcon}</div>
