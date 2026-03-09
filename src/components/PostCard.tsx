@@ -122,14 +122,17 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
                 </span>
               </Link>
               {timeLeft && (
-                <motion.span
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-medium backdrop-blur-sm"
-                >
-                  <Timer className="w-2.5 h-2.5" />
-                  {timeLeft}
-                </motion.span>
+                isMobile ? (
+                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-medium backdrop-blur-sm">
+                    <Timer className="w-2.5 h-2.5" />
+                    {timeLeft}
+                  </span>
+                ) : (
+                  <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-medium backdrop-blur-sm">
+                    <Timer className="w-2.5 h-2.5" />
+                    {timeLeft}
+                  </motion.span>
+                )
               )}
             </div>
           </div>
