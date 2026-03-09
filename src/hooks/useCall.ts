@@ -31,6 +31,7 @@ export function useCall(options?: UseCallOptions) {
   const durationRef = useRef(0);
   const callTypeRef = useRef<CallType>('audio');
   const noAnswerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const manualEndRef = useRef(false);
 
   // Keep refs in sync
   useEffect(() => { callStateRef.current = callState; }, [callState]);
@@ -71,6 +72,7 @@ export function useCall(options?: UseCallOptions) {
     setDuration(0);
     setIsMuted(false);
     setIsCameraOff(false);
+    manualEndRef.current = false;
 
     try {
       // Keep screen awake during call
@@ -105,10 +107,13 @@ export function useCall(options?: UseCallOptions) {
       });
 
       room.on(RoomEvent.Disconnected, () => {
+        // Skip if endCall was already called manually
+        if (manualEndRef.current) return;
         const wasMissed = callStateRef.current !== 'connected';
         const endDuration = durationRef.current;
         const endType = callTypeRef.current;
-        setCallState('ended');
+        setCallState('idle');
+        setDuration(0);
         releaseWakeLock();
         options?.onCallEnded?.({ type: endType, duration: endDuration, wasMissed });
       });
@@ -174,6 +179,7 @@ export function useCall(options?: UseCallOptions) {
   }, [options]);
 
   const endCall = useCallback(() => {
+    manualEndRef.current = true;
     const wasMissed = callStateRef.current !== 'connected';
     const endDuration = durationRef.current;
     const endType = callTypeRef.current;
