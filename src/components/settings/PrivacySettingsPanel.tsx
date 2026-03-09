@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Shield, Eye, MessageCircle, Heart, Search, BarChart3, Ghost, Globe, Lock, Trash2, AlertTriangle } from 'lucide-react';
 import { usePrivacySettings, useUpdatePrivacySettings } from '@/hooks/usePrivacySettings';
 import { RestrictedFriendsPanel } from './RestrictedFriendsPanel';
+import { AccountDeletionSection, DataExportSection } from './AccountManagementSections';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
