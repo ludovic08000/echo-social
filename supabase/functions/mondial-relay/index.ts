@@ -566,9 +566,9 @@ serve(async (req) => {
           attemptedRelayLocations.add(candidate);
 
           const xmlPayload = buildXmlPayload(candidate);
-          console.log("API v2 retry with SOAP relay candidate:", { order_id, relayCandidate: candidate });
+          console.log("API v2 retry with SOAP relay candidate:", { order_id, relayCandidate: candidate, endpoint: mrApiV2Endpoint });
 
-          const currentResponse = await fetch(MR_API_V2, {
+          const currentResponse = await fetch(mrApiV2Endpoint, {
             method: "POST",
             headers: {
               "Content-Type": "application/xml; charset=utf-8",
