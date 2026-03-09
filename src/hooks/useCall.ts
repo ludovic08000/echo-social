@@ -121,11 +121,19 @@ export function useCall(options?: UseCallOptions) {
       });
 
       room.on(RoomEvent.ParticipantConnected, () => {
+        hadRemoteParticipantRef.current = true;
         setCallState('connected');
         // Clear the no-answer timeout
         if (noAnswerTimeoutRef.current) {
           clearTimeout(noAnswerTimeoutRef.current);
           noAnswerTimeoutRef.current = null;
+        }
+      });
+
+      room.on(RoomEvent.ParticipantDisconnected, () => {
+        // If the remote party left, terminate locally to avoid being stuck in "connected"
+        if (!manualEndRef.current && hadRemoteParticipantRef.current && room.remoteParticipants.size === 0) {
+          room.disconnect();
         }
       });
 
