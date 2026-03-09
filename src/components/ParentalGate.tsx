@@ -83,21 +83,22 @@ export function ParentalGateProvider({ children }: { children: ReactNode }) {
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Ce contenu est protégé par le contrôle parental. Entrez le code PIN pour y accéder.
+            Ce contenu est protégé par le contrôle parental. Entrez le code PIN (8 chiffres min.) pour y accéder.
           </p>
           <Input
             type="password"
             value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-            placeholder="• • • •"
-            maxLength={4}
-            className="text-center text-xl tracking-[0.5em] font-mono"
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, PIN_MAX_LENGTH))}
+            placeholder="• • • • • • • •"
+            maxLength={PIN_MAX_LENGTH}
+            className="text-center text-xl tracking-[0.3em] font-mono"
             onKeyDown={(e) => e.key === 'Enter' && handleVerify()}
             autoFocus
           />
-          <Button onClick={handleVerify} disabled={pin.length !== 4 || verifyPin.isPending} className="w-full">
+          <Button onClick={handleVerify} disabled={pin.length < PIN_MIN_LENGTH || verifyPin.isPending} className="w-full">
             <Shield className="w-4 h-4 mr-2" />
             {verifyPin.isPending ? 'Vérification...' : 'Déverrouiller'}
+          </Button>
           </Button>
         </DialogContent>
       </Dialog>

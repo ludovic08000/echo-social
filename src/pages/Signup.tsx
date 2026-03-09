@@ -35,8 +35,7 @@ export default function Signup() {
   const [showParentalPin, setShowParentalPin] = useState(false);
 
   if (user) {
-    navigate('/feed');
-    return null;
+    return <Navigate to="/feed" replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
