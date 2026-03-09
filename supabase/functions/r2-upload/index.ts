@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ─── Security constants ───
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB absolute max
+const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB absolute max
 const ALLOWED_MIME_TYPES: Record<string, string[]> = {
   avatars:     ["image/jpeg", "image/png", "image/webp", "image/gif"],
   images:      ["image/jpeg", "image/png", "image/webp", "image/gif"],
