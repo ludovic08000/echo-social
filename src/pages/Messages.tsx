@@ -1320,6 +1320,21 @@ function ChatView({ conversationId }: { conversationId: string }) {
         onSwitchToVideo={switchToVideo}
         onSwitchCamera={switchCamera}
       />
+
+      {/* Forward dialog */}
+      <ForwardMessageDialog
+        open={!!forwardMsg}
+        onOpenChange={(v) => { if (!v) setForwardMsg(null); }}
+        messageBody={forwardMsg?.body || ''}
+        onForward={(targetConvId) => {
+          if (forwardMsg) {
+            const forwardBody = `↪️ Message transféré:\n"${forwardMsg.body}"`;
+            sendMessage.mutate({ conversationId: targetConvId, body: forwardBody });
+            toast.success('Message transféré');
+            setForwardMsg(null);
+          }
+        }}
+      />
     </div>
   );
 }
