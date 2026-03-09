@@ -134,7 +134,7 @@ Deno.serve(async (req) => {
     if (claimsError || !userId) throw new Error("Not authenticated");
 
     // ─── Rate limit ───
-    if (!checkRateLimit(user.id)) {
+    if (!checkRateLimit(userId)) {
       return new Response(JSON.stringify({ error: "Trop de requêtes. Réessayez dans un moment." }), {
         status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

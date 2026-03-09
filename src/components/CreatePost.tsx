@@ -103,11 +103,11 @@ export function CreatePost() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video') => {
     const file = e.target.files?.[0];
     if (file) {
-      const maxSize = type === 'video' ? 50 * 1024 * 1024 : 5 * 1024 * 1024;
+      const maxSize = type === 'video' ? 200 * 1024 * 1024 : 5 * 1024 * 1024;
       if (file.size > maxSize) {
         toast({
           title: 'Fichier trop volumineux',
-          description: type === 'video' ? 'Taille max : 50 Mo' : 'Taille max : 5 Mo',
+          description: type === 'video' ? 'Taille max : 200 Mo' : 'Taille max : 5 Mo',
           variant: 'destructive',
         });
         return;
