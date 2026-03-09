@@ -647,7 +647,7 @@ export default function Profile() {
                   </Link>
                   <Button 
                     variant="destructive" 
-                    className="rounded-xl h-10 text-sm"
+                    className="rounded-xl h-10 text-sm whitespace-nowrap shrink-0"
                     onClick={async () => {
                       await supabase.auth.signOut();
                       navigate('/login');
