@@ -586,7 +586,10 @@ export function CreatePost() {
                         className="h-9 px-5 text-xs rounded-xl bg-primary text-primary-foreground shadow-[0_2px_12px_hsl(220_70%_50%/0.3)] hover:shadow-[0_4px_20px_hsl(220_70%_50%/0.4)] hover:-translate-y-0.5 transition-all duration-300 btn-shine"
                       >
                         {isUploading ? (
-                          <span className="animate-pulse">Publication…</span>
+                          <span className="flex items-center gap-1.5 animate-pulse">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            {uploadStep || 'Publication…'}
+                          </span>
                         ) : (
                           <>
                             <Send className="w-3.5 h-3.5 mr-1.5" />
