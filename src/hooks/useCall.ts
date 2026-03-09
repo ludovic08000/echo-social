@@ -54,12 +54,6 @@ export function useCall(options?: UseCallOptions) {
   }, [callState]);
 
   const startCall = useCallback(async (conversationId: string, type: CallType) => {
-    // Calls need direct browser context (camera/mic are often blocked in embedded preview iframes)
-    if (typeof window !== 'undefined' && window.self !== window.top) {
-      toast.error('Les appels audio/vidéo ne sont pas disponibles dans la preview intégrée. Ouvrez l’app publiée pour tester.');
-      return;
-    }
-
     // Request permissions before connecting
     const perms = await requestMediaPermissions({
       audio: true,
@@ -67,7 +61,7 @@ export function useCall(options?: UseCallOptions) {
     });
 
     if (!perms.granted) {
-      toast.error(perms.error || 'Impossible d\'accéder au micro/caméra');
+      toast.error(perms.error || "Impossible d'accéder au micro/caméra");
       return;
     }
 
@@ -152,7 +146,7 @@ export function useCall(options?: UseCallOptions) {
       }
     } catch (err) {
       console.error('Call error:', err);
-      toast.error('Impossible de lancer l\'appel. Vérifiez votre connexion.');
+      toast.error("Impossible de lancer l'appel. Vérifiez votre connexion.");
       setCallState('ended');
       releaseWakeLock();
     }

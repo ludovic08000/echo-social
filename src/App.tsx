@@ -3,13 +3,18 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "@/lib/auth";
+import { AuthProvider, useAuth } from "@/lib/auth";
 import { ParentalGateProvider } from "@/components/ParentalGate";
 import { I18nProvider } from "@/lib/i18n";
-import { ChatWidgetProvider } from "@/components/ChatWidgetContext";
+import { ChatWidgetProvider, useChatWidget } from "@/components/ChatWidgetContext";
 import { ChatWidget } from "@/components/ChatWidget";
 import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
+import { useIncomingCall } from "@/hooks/useIncomingCall";
+import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
+import { useCall } from "@/hooks/useCall";
+import { CallOverlay } from "@/components/CallOverlay";
+import { useCallback } from "react";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -47,6 +52,60 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+/** Global incoming call listener — renders the ringing UI + handles accept */
+function IncomingCallHandler() {
+  const { user } = useAuth();
+  const { incomingCall, acceptCall, declineCall } = useIncomingCall();
+  const { openChat } = useChatWidget();
+
+  const call = useCall({
+    onCallEnded: useCallback(() => {}, []),
+  });
+
+  const handleAccept = useCallback(async () => {
+    const accepted = await acceptCall();
+    if (!accepted) return;
+
+    // Open the chat with the caller
+    openChat(accepted.conversation_id);
+
+    // Start the call (join the LiveKit room)
+    call.startCall(accepted.conversation_id, accepted.call_type);
+  }, [acceptCall, openChat, call]);
+
+  if (!user) return null;
+
+  return (
+    <>
+      {incomingCall && (
+        <IncomingCallOverlay
+          call={incomingCall}
+          onAccept={handleAccept}
+          onDecline={declineCall}
+        />
+      )}
+      {call.callState !== 'idle' && (
+        <CallOverlay
+          callState={call.callState}
+          callType={call.callType}
+          isMuted={call.isMuted}
+          isCameraOff={call.isCameraOff}
+          duration={call.duration}
+          participantName={incomingCall?.caller_name || 'Appelant'}
+          participantAvatar={incomingCall?.caller_avatar}
+          localVideoRef={call.localVideoRef}
+          remoteVideoRef={call.remoteVideoRef}
+          onEndCall={call.endCall}
+          onToggleMute={call.toggleMute}
+          onToggleCamera={call.toggleCamera}
+          onSwitchToVideo={call.switchToVideo}
+          onSwitchCamera={call.switchCamera}
+        />
+      )}
+    </>
+  );
+}
+
 function AppContent() {
   useSettingsInit();
   return (
@@ -57,6 +116,7 @@ function AppContent() {
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <IncomingCallHandler />
             <Routes>
               {/* Public routes */}
               <Route path="/" element={<PublicOnlyRoute><Landing /></PublicOnlyRoute>} />
