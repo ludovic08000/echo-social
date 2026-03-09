@@ -484,6 +484,36 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       }
     }, [conversationId]),
   });
+
+  // Listen for callee declining/cancelling the call → auto-end on caller side
+  useEffect(() => {
+    const callId = activeCallIdRef.current;
+    if (!callId || call.callState === 'idle') return;
+
+    const channel = supabase
+      .channel(`call-status-${callId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'active_calls',
+          filter: `id=eq.${callId}`,
+        },
+        (payload) => {
+          const updated = payload.new as any;
+          if (updated.status === 'declined' || updated.status === 'cancelled' || updated.status === 'ended') {
+            call.endCall();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [call.callState]);
+
   const playSound = useRealtimeNotificationSound();
   const prevMsgCountRef = useRef(0);
 
