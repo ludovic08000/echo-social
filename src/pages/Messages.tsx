@@ -539,7 +539,13 @@ function ConversationList() {
                       "text-xs truncate flex-1",
                       conv.unread_count > 0 ? "text-foreground font-medium" : "text-muted-foreground"
                     )}>
-                      {conv.last_message?.body || 'Démarrez la conversation…'}
+                      {conv.last_message?.body
+                        ? conv.last_message.body.startsWith('📞 CALL:missed|')
+                          ? `📞 Appel ${conv.last_message.body.includes('video') ? 'vidéo' : 'audio'} manqué`
+                          : conv.last_message.body.startsWith('📞 CALL:ended|')
+                            ? `📞 Appel ${conv.last_message.body.includes('video') ? 'vidéo' : 'audio'} terminé`
+                            : conv.last_message.body
+                        : 'Démarrez la conversation…'}
                     </p>
                     {conv.unread_count > 0 && (
                       <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center flex-shrink-0 shadow-sm shadow-primary/30">
