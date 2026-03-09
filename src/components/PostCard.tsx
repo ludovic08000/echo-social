@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from 'react';
+import { useEffect, useRef, useState, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -21,6 +21,7 @@ import { useCurrentUserIsMinor } from '@/hooks/useMinorProtection';
 import { useReportUser } from '@/hooks/useTrustAndSafety';
 import { toast } from 'sonner';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { isAppleMobileWebKit } from '@/lib/platform';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,9 +48,19 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const { data: isMinorUser } = useCurrentUserIsMinor();
   const reportUser = useReportUser();
   const isMobile = useIsMobile();
+  const isAppleWebKit = isAppleMobileWebKit();
 
   const postUrl = generatePostUrl(post.id);
   const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
+  const shouldDeferVideo = isVideoPost && isAppleWebKit;
+
+  const [videoEnabled, setVideoEnabled] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    setMediaLoaded(false);
+    setVideoEnabled(false);
+  }, [post.id]);
 
   useEffect(() => {
     if (!post.expires_at) return;
@@ -208,7 +219,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         
         {post.image_url && (
           <div className="relative w-full overflow-hidden bg-muted/40 aspect-[4/5] sm:aspect-video">
-            {!mediaLoaded && !(isMobile && isVideoPost) && (
+            {!mediaLoaded && !(isVideoPost && (isMobile || (shouldDeferVideo && !videoEnabled))) && (
               <div className="absolute inset-0 skeleton" />
             )}
             {isVideoPost ? (
@@ -219,17 +230,35 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                     <span className="text-xs font-medium text-foreground">Lire la vidéo</span>
                   </div>
                 </div>
+              ) : shouldDeferVideo && !videoEnabled ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setVideoEnabled(true);
+                  }}
+                  className="absolute inset-0 flex items-center justify-center bg-muted/70"
+                >
+                  <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-background/80 border border-border/40">
+                    <Play className="w-4 h-4 text-foreground" />
+                    <span className="text-xs font-medium text-foreground">Charger la vidéo</span>
+                  </div>
+                </button>
               ) : (
                 <video
+                  ref={videoRef}
                   src={post.image_url}
                   controls
                   playsInline
-                  preload="metadata"
+                  preload={shouldDeferVideo ? 'none' : 'metadata'}
                   className={cn(
                     "absolute inset-0 w-full h-full object-cover bg-muted transition-opacity duration-300",
                     mediaLoaded ? "opacity-100" : "opacity-0"
                   )}
                   onLoadedData={() => setMediaLoaded(true)}
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
                 />
               )
             ) : (
