@@ -875,7 +875,8 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
       return new Response(JSON.stringify({ success: true, action: "whitelist_staff", user_id: resolvedUserId, trust_score: targetTrustScore, reason }), { headers: { ...cors, "Content-Type": "application/json" } });
     }
 
-    return new Response(JSON.stringify({ error: "Action non supportée", proposalAction, normalizedProposalAction, key: !!key, updates: !!updates }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    // Generic proposals that don't need DB changes — just acknowledge
+    return new Response(JSON.stringify({ success: true, action: normalizedProposalAction, message: "Proposition notée et validée par l'admin.", key, reason }), { headers: { ...cors, "Content-Type": "application/json" } });
   }
 
   if (action === "chat") {
