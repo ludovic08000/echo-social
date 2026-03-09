@@ -45,15 +45,21 @@ export function ParentalGateProvider({ children }: { children: ReactNode }) {
   }, [isUnlocked]);
 
   const handleVerify = async () => {
-    if (pin.length !== 4) return;
-    const valid = await verifyPin.mutateAsync(pin);
-    if (valid) {
-      setIsUnlocked(true);
-      setShowDialog(false);
-      toast({ title: '🔓 Accès déverrouillé', description: 'Session parentale active' });
-      onSuccessCallback?.();
-    } else {
-      toast({ title: 'Code incorrect', variant: 'destructive' });
+    if (pin.length < PIN_MIN_LENGTH) return;
+    try {
+      const valid = await verifyPin.mutateAsync(pin);
+      if (valid) {
+        setIsUnlocked(true);
+        setShowDialog(false);
+        toast({ title: '🔓 Accès déverrouillé', description: 'Session parentale active' });
+        onSuccessCallback?.();
+      } else {
+        toast({ title: 'Code incorrect', variant: 'destructive' });
+        setPin('');
+      }
+    } catch (err: any) {
+      const msg = err?.message?.includes('429') ? 'Trop de tentatives. Réessayez dans 5 minutes.' : 'Erreur de vérification';
+      toast({ title: msg, variant: 'destructive' });
       setPin('');
     }
   };
