@@ -14,6 +14,7 @@ const ALLOWED_MIME_TYPES: Record<string, string[]> = {
   voice:       ["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg"],
   lives:       ["image/jpeg", "image/png", "image/webp", "video/webm", "video/mp4"],
   feed:        ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"],
+  thumbnails:  ["image/jpeg", "image/png", "image/webp"],
   uploads:     ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"],
 };
 const FOLDER_MAX_SIZES: Record<string, number> = {
