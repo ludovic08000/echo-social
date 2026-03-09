@@ -25,9 +25,15 @@ export async function uploadToR2(
 
   const fileName = customFileName || (file instanceof File ? file.name : `file-${Date.now()}.bin`);
 
-  // Large files → presigned direct upload
+  // Large files → try presigned direct upload, fallback to proxy
   if (file.size >= PRESIGN_THRESHOLD) {
-    return uploadPresigned(file, category, fileName, session.access_token, onProgress);
+    try {
+      return await uploadPresigned(file, category, fileName, session.access_token, onProgress);
+    } catch (err) {
+      console.warn('Presigned upload failed, falling back to proxy:', err);
+      // Fallback to proxy (works up to ~50MB via edge function)
+      return uploadProxy(file, category, fileName, session.access_token, onProgress);
+    }
   }
 
   // Small files → proxy (existing path)
