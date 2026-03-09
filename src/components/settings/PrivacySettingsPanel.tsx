@@ -1,5 +1,6 @@
 import { Shield, Eye, MessageCircle, Heart, Search, BarChart3, Ghost } from 'lucide-react';
 import { usePrivacySettings, useUpdatePrivacySettings } from '@/hooks/usePrivacySettings';
+import { RestrictedFriendsPanel } from './RestrictedFriendsPanel';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -273,6 +274,10 @@ export function PrivacySettingsPanel() {
             />
           </div>
         </div>
+      </section>
+      {/* Restricted Friends */}
+      <section className="space-y-4">
+        <RestrictedFriendsPanel />
       </section>
     </div>
   );
