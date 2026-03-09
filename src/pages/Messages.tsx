@@ -759,6 +759,8 @@ function ChatView({ conversationId }: { conversationId: string }) {
   const [isTyping, setIsTyping] = useState(false);
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [showSharePicker, setShowSharePicker] = useState(false);
+  const [pinnedMessages, setPinnedMessages] = useState<Set<string>>(new Set());
+  const [forwardMsg, setForwardMsg] = useState<Message | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
