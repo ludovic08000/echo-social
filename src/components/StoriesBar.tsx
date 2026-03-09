@@ -184,15 +184,9 @@ export function StoriesBar() {
     return (
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
         {[1, 2, 3, 4].map((i) => (
-          <motion.div 
-            key={i} 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.08 }}
-            className="flex-shrink-0 w-[72px]"
-          >
+          <div key={i} className="flex-shrink-0 w-[72px]">
             <div className="w-[72px] h-[72px] rounded-2xl skeleton" />
-          </motion.div>
+          </div>
         ))}
       </div>
     );
@@ -202,22 +196,16 @@ export function StoriesBar() {
     <>
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
         {/* Add Story Button */}
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="flex-shrink-0 flex flex-col items-center gap-1"
-        >
-          <motion.button
-            whileHover={{ scale: 1.08, y: -2 }}
-            whileTap={{ scale: 0.95 }}
+        <div className="flex-shrink-0 flex flex-col items-center gap-1">
+          <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isCreating}
-            className="relative w-[68px] h-[68px] rounded-2xl bg-secondary/40 border border-dashed border-primary/30 flex items-center justify-center transition-all duration-300 hover:bg-primary/5 hover:border-primary/50 hover:shadow-[0_4px_16px_hsl(220_70%_50%/0.12)] group"
+            className="relative w-[68px] h-[68px] rounded-2xl bg-secondary/40 border border-dashed border-primary/30 flex items-center justify-center transition-all duration-300 hover:bg-primary/5 hover:border-primary/50 group"
           >
             <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
               <Plus className={cn("w-5 h-5 text-primary", isCreating && "animate-spin")} />
             </div>
-          </motion.button>
+          </button>
           <span className="text-[10px] text-muted-foreground font-medium">Story</span>
           <input
             ref={fileInputRef}
@@ -226,17 +214,12 @@ export function StoriesBar() {
             className="hidden"
             onChange={handleFileSelect}
           />
-        </motion.div>
+        </div>
 
         {/* Stories */}
-        {groupedStories?.map((group, i) => (
-          <motion.button
+        {groupedStories?.map((group) => (
+          <button
             key={group.user_id}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: (i + 1) * 0.05 }}
-            whileHover={{ scale: 1.06, y: -2 }}
-            whileTap={{ scale: 0.95 }}
             onClick={() => openStory(group)}
             className="flex-shrink-0 flex flex-col items-center gap-1"
           >
@@ -249,7 +232,7 @@ export function StoriesBar() {
               <div className="p-[2px] rounded-[14px] bg-background">
                 <div className="w-[60px] h-[60px] rounded-xl overflow-hidden">
                   {group.profile.avatar_url ? (
-                    <img src={group.profile.avatar_url} alt={group.profile.name} className="w-full h-full object-cover transition-transform duration-300 hover:scale-110" />
+                    <img src={group.profile.avatar_url} alt={group.profile.name} className="w-full h-full object-cover" loading="lazy" />
                   ) : (
                     <UserAvatar src={null} alt={group.profile.name} size="lg" />
                   )}
@@ -259,7 +242,7 @@ export function StoriesBar() {
             <span className="text-[10px] text-muted-foreground truncate w-[68px] text-center font-medium">
               {group.user_id === user?.id ? 'Ma story' : group.profile.name.split(' ')[0]}
             </span>
-          </motion.button>
+          </button>
         ))}
       </div>
 

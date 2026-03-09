@@ -145,7 +145,10 @@ export function useLiveStreams() {
         host: profileMap.get(live.user_id),
       })) as LiveStream[];
     },
-    refetchInterval: 10000, // Refresh toutes les 10s pour les lives
+    refetchInterval: 60_000, // Refresh every 60s (was 10s — too aggressive for mobile)
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 }
 

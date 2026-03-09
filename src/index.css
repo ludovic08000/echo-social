@@ -172,7 +172,6 @@
   .premium-card {
     @apply bg-card rounded-2xl border border-border/40 transition-all duration-300;
     box-shadow: var(--shadow-md);
-    backdrop-filter: blur(8px);
     background: linear-gradient(
       145deg,
       hsl(var(--card)) 0%,
@@ -268,11 +267,18 @@
     left: 125%;
   }
 
-  /* Glass button */
+  /* Glass button — no blur on mobile */
   .btn-glass {
-    @apply backdrop-blur-xl border border-border/30 rounded-xl px-5 py-2.5 font-semibold transition-all duration-300;
-    background: hsl(var(--card) / 0.6);
+    @apply border border-border/30 rounded-xl px-5 py-2.5 font-semibold transition-all duration-300;
+    background: hsl(var(--card) / 0.85);
     box-shadow: 0 2px 12px hsl(220 30% 10% / 0.06), inset 0 1px 0 hsl(0 0% 100% / 0.08);
+  }
+
+  @media (min-width: 768px) {
+    .btn-glass {
+      @apply backdrop-blur-xl;
+      background: hsl(var(--card) / 0.6);
+    }
   }
 
   .btn-glass:hover {
@@ -421,13 +427,23 @@
     background-clip: text;
   }
 
-  /* Glassmorphism effect */
+  /* Glassmorphism effect — no backdrop-blur on mobile to preserve GPU memory */
   .glass {
-    @apply bg-card/80 backdrop-blur-xl border border-border/30;
+    @apply bg-card/90 border border-border/30;
   }
 
   .glass-dark {
-    @apply bg-background/60 backdrop-blur-xl border border-border/20;
+    @apply bg-background/80 border border-border/20;
+  }
+
+  /* Enable blur only on desktop where GPU memory is abundant */
+  @media (min-width: 768px) {
+    .glass {
+      @apply backdrop-blur-xl bg-card/80;
+    }
+    .glass-dark {
+      @apply backdrop-blur-xl bg-background/60;
+    }
   }
 }
 
@@ -535,23 +551,16 @@
 
 /* ── iOS WebKit GPU & memory optimisations ── */
 @supports (-webkit-touch-callout: none) {
-  /* Force GPU compositing on feed scroll container */
-  .space-y-3 > div {
-    content-visibility: auto;
-    contain-intrinsic-size: auto 420px;
-    contain: layout style paint;
-  }
-
   /* Reduce repaints during momentum scroll */
   body {
     -webkit-overflow-scrolling: touch;
   }
 
-  /* Disable heavy backdrop-filter on low-memory situations */
-  @media (max-resolution: 2dppx) {
-    .glass {
-      backdrop-filter: none !important;
-      -webkit-backdrop-filter: none !important;
-    }
+  /* Disable ALL backdrop-filter on iOS to prevent GPU memory exhaustion */
+  .glass,
+  .glass-dark,
+  .btn-glass {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 }

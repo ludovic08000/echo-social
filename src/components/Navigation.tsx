@@ -60,9 +60,9 @@ export function MobileNav() {
       {/* Menu étendu */}
       {showMore && (
         <div className="fixed inset-0 z-[60]" onClick={() => setShowMore(false)}>
-          <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
+          <div className="absolute inset-0 bg-background/70" />
           <div className="absolute bottom-[68px] left-3 right-3 safe-area-pb z-[61] animate-slide-up">
-            <div className="bg-card/95 backdrop-blur-2xl rounded-3xl border border-border/30 shadow-[var(--shadow-xl)] p-4">
+            <div className="bg-card/95 rounded-3xl border border-border/30 shadow-[var(--shadow-xl)] p-4">
               <div className="grid grid-cols-4 gap-3">
                 {[
                   { path: '/groups', icon: Users, label: 'Groupes' },
@@ -100,8 +100,9 @@ export function MobileNav() {
 
       <nav className={cn(
         "fixed bottom-0 left-0 right-0 z-50 safe-area-pb transition-transform duration-300",
-        "bg-card/85 backdrop-blur-2xl border-t border-border/15",
-        "shadow-[0_-8px_40px_hsl(var(--background)/0.6)]",
+        "bg-card/95 border-t border-border/15",
+        "md:bg-card/85 md:backdrop-blur-2xl",
+        "shadow-[0_-4px_20px_hsl(var(--background)/0.5)]",
         navHidden && "translate-y-full"
       )}>
         <div className="flex items-end justify-evenly h-[60px] pb-1">
@@ -111,7 +112,6 @@ export function MobileNav() {
           {/* Bouton Créer — premium central */}
           <Link to="/create" className="flex flex-col items-center -mt-4 w-[56px]">
             <div className="relative">
-              <div className="absolute inset-[-4px] rounded-2xl bg-primary/25 blur-lg animate-pulse" />
               <div className="relative w-[46px] h-[46px] rounded-2xl bg-[image:var(--premium-gradient)] text-primary-foreground flex items-center justify-center shadow-[var(--shadow-gold)] active:scale-90 transition-all duration-200 border border-primary-foreground/10">
                 <Plus className="w-6 h-6 stroke-[3]" />
               </div>
