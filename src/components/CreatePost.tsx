@@ -5,6 +5,7 @@ import { useCreatePost } from '@/hooks/usePosts';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
 import { uploadToR2 } from '@/lib/r2';
+import { useAgeVerification } from '@/hooks/useAgeVerification';
 import { generateVideoThumbnail } from '@/lib/videoThumbnail';
 import { isVideoCompatible } from '@/lib/videoCompat';
 import { supabase } from '@/integrations/supabase/client';
@@ -42,6 +43,7 @@ export function CreatePost() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { data: profile } = useProfile();
+  const { verifyAge } = useAgeVerification();
   const createPost = useCreatePost();
   const [body, setBody] = useState('');
   const [expanded, setExpanded] = useState(false);
@@ -180,6 +182,11 @@ export function CreatePost() {
             setUploadPercent(p.percent);
           });
           imageUrl = url;
+
+          // Background age verification on first image post
+          if (!profile?.age_verified && media.type.startsWith('image/')) {
+            verifyAge(url);
+          }
         }
       }
 

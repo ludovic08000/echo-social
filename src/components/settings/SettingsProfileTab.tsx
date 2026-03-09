@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
+import { useAgeVerification } from '@/hooks/useAgeVerification';
 import { supabase } from '@/integrations/supabase/client';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,7 @@ export function SettingsProfileTab() {
   const { data: profile } = useProfile();
   const updateProfile = useUpdateProfile();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { verifyAge } = useAgeVerification();
 
   const [name, setName] = useState('');
   const [bio, setBio] = useState('');
@@ -50,6 +52,11 @@ export function SettingsProfileTab() {
       const { url } = await uploadToR2(file, 'avatars');
       await updateProfile.mutateAsync({ avatar_url: url + '?t=' + Date.now() });
       toast({ title: t('settings.photoUpdated') });
+
+      // Background age verification on first photo
+      if (!profile?.age_verified) {
+        verifyAge(url);
+      }
     } catch (error) {
       toast({ title: t('common.error'), variant: 'destructive' });
     } finally {
