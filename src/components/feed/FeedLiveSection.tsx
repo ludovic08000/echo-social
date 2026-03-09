@@ -66,15 +66,18 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
   const videoRef = useRef<HTMLVideoElement>(null);
   const { user } = useAuth();
   const deleteLive = useDeleteLive();
+  const isMobile = useIsMobile();
 
   const handleMouseEnter = useCallback(() => {
+    if (isMobile) return;
     videoRef.current?.play().catch(() => {});
-  }, []);
+  }, [isMobile]);
 
   const handleMouseLeave = useCallback(() => {
+    if (isMobile) return;
     const v = videoRef.current;
     if (v) { v.pause(); v.currentTime = 0; }
-  }, []);
+  }, [isMobile]);
 
   const handleDelete = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -85,7 +88,8 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
     });
   };
 
-  const hasVideo = !!item.recording_url;
+  // On mobile, NEVER render <video> elements — use thumbnail or placeholder only
+  const hasVideo = !isMobile && !!item.recording_url;
   const hasThumbnail = !!item.thumbnail_url;
 
   // Build link: for replays with video, go to TikTok-style player with ?from=feed
@@ -98,7 +102,7 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Background: video preview > thumbnail > gradient placeholder */}
+      {/* Background: video preview (desktop only) > thumbnail > gradient placeholder */}
       {hasVideo ? (
         <video
           ref={videoRef}
@@ -107,7 +111,7 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
           muted
           loop
           playsInline
-          preload="metadata"
+          preload="none"
           poster={item.thumbnail_url || undefined}
         />
       ) : hasThumbnail ? (
