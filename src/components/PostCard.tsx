@@ -201,9 +201,9 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
         )}
         
         {post.image_url && (
-          <div className="relative w-full overflow-hidden">
+          <div className="relative w-full overflow-hidden bg-muted/40 aspect-[4/5] sm:aspect-video">
             {!mediaLoaded && (
-              <div className="w-full h-64 skeleton" />
+              <div className="absolute inset-0 skeleton" />
             )}
             {/\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url) ? (
               <video
@@ -212,20 +212,21 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
                 playsInline
                 preload="metadata"
                 className={cn(
-                  "w-full max-h-[520px] bg-muted",
-                  mediaLoaded ? "opacity-100" : "opacity-0 h-0"
+                  "absolute inset-0 w-full h-full object-cover bg-muted transition-opacity duration-300",
+                  mediaLoaded ? "opacity-100" : "opacity-0"
                 )}
                 onLoadedData={() => setMediaLoaded(true)}
               />
             ) : (
               <img
                 src={post.image_url}
-                alt="Post image"
+                alt="Image du post"
                 className={cn(
-                  "w-full object-cover max-h-[520px]",
-                  mediaLoaded ? "opacity-100" : "opacity-0 h-0"
+                  "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
+                  mediaLoaded ? "opacity-100" : "opacity-0"
                 )}
                 onLoad={() => setMediaLoaded(true)}
+                loading="lazy"
               />
             )}
           </div>

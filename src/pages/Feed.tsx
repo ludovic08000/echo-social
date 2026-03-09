@@ -301,18 +301,27 @@ export default function Feed() {
                 <div className="space-y-3 px-4">
                   {posts.map((post, index) => (
                     <div key={post.id}>
-                      <motion.div
-                        custom={index}
-                        variants={postVariants}
-                        initial="hidden"
-                        whileInView="visible"
-                        viewport={{ once: true, margin: '-30px' }}
-                      >
-                        <PostCard
-                          post={post}
-                          onCommentClick={() => navigate(`/post/${post.id}`)}
-                        />
-                      </motion.div>
+                      {isMobile ? (
+                        <div>
+                          <PostCard
+                            post={post}
+                            onCommentClick={() => navigate(`/post/${post.id}`)}
+                          />
+                        </div>
+                      ) : (
+                        <motion.div
+                          custom={index}
+                          variants={postVariants}
+                          initial="hidden"
+                          whileInView="visible"
+                          viewport={{ once: true, margin: '-30px' }}
+                        >
+                          <PostCard
+                            post={post}
+                            onCommentClick={() => navigate(`/post/${post.id}`)}
+                          />
+                        </motion.div>
+                      )}
                       {renderInjection(index)}
                     </div>
                   ))}
