@@ -950,6 +950,15 @@ function ChatView({ conversationId }: { conversationId: string }) {
             >
               <Video className="w-4 h-4" />
             </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-full text-primary hover:bg-primary/10"
+              onClick={() => setShowNewChat(true)}
+              title="Nouveau message / groupe"
+            >
+              <Plus className="w-4 h-4" />
+            </Button>
           </div>
         </div>
       </header>
