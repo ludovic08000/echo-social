@@ -608,10 +608,22 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           )}
         </div>
         <div className="flex items-center gap-0">
-          <button onClick={() => call.startCall(conversationId, 'audio')} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
+          <button onClick={async () => {
+            const participantId = conversation?.participant?.user_id;
+            if (participantId && user?.id) {
+              await signalOutgoingCall(conversationId, user.id, participantId, 'audio');
+            }
+            call.startCall(conversationId, 'audio');
+          }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
             <Phone className="w-3.5 h-3.5" />
           </button>
-          <button onClick={() => call.startCall(conversationId, 'video')} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
+          <button onClick={async () => {
+            const participantId = conversation?.participant?.user_id;
+            if (participantId && user?.id) {
+              await signalOutgoingCall(conversationId, user.id, participantId, 'video');
+            }
+            call.startCall(conversationId, 'video');
+          }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
             <Video className="w-3.5 h-3.5" />
           </button>
           <button onClick={minimizeChat} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
