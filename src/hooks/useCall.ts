@@ -74,6 +74,7 @@ export function useCall(options?: UseCallOptions) {
     setIsMuted(false);
     setIsCameraOff(false);
     manualEndRef.current = false;
+    hadRemoteParticipantRef.current = false;
 
     try {
       // Keep screen awake during call
