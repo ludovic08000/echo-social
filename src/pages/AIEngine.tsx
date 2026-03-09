@@ -323,32 +323,120 @@ function AIPlayground() {
 // ── Learning Dashboard ──
 function LearningDashboard() {
   const { feedbackHistory, learnedRules, loadFeedbackHistory } = useAIEngine();
+  const [newRule, setNewRule] = useState('');
+  const [newPattern, setNewPattern] = useState('');
+  const [addingRule, setAddingRule] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
 
   useEffect(() => {
     loadFeedbackHistory();
+  }, [loadFeedbackHistory]);
+
+  const handleAddRule = useCallback(async () => {
+    if (!newRule.trim()) return;
+    setAddingRule(true);
+    try {
+      const { error } = await supabase.from('ai_learned_rules').insert({
+        rule: newRule.trim(),
+        pattern: newPattern.trim() || null,
+      });
+      if (error) throw error;
+      setNewRule('');
+      setNewPattern('');
+      setShowAddForm(false);
+      loadFeedbackHistory();
+    } catch (e) {
+      console.error('Error adding rule:', e);
+    } finally {
+      setAddingRule(false);
+    }
+  }, [newRule, newPattern, loadFeedbackHistory]);
+
+  const handleDeleteRule = useCallback(async (id: string) => {
+    try {
+      await supabase.from('ai_learned_rules').delete().eq('id', id);
+      loadFeedbackHistory();
+    } catch (e) {
+      console.error('Error deleting rule:', e);
+    }
   }, [loadFeedbackHistory]);
 
   return (
     <div className="space-y-4">
       {/* Learned rules */}
       <div className="rounded-2xl border border-border bg-card p-4">
-        <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-          <GraduationCap className="w-4 h-4 text-primary" />
-          Règles auto-apprises
-          <Badge variant="outline" className="text-[10px] ml-auto">{learnedRules.length} règles</Badge>
-        </h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <GraduationCap className="w-4 h-4 text-primary" />
+            Règles de modération
+            <Badge variant="outline" className="text-[10px]">{learnedRules.length}</Badge>
+          </h3>
+          <button
+            onClick={() => setShowAddForm(!showAddForm)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            {showAddForm ? <AlertTriangle className="w-3 h-3" /> : <Zap className="w-3 h-3" />}
+            {showAddForm ? 'Annuler' : 'Ajouter une règle'}
+          </button>
+        </div>
+
+        {/* Add rule form */}
+        {showAddForm && (
+          <div className="mb-4 p-3 rounded-xl border border-primary/20 bg-primary/5 space-y-3">
+            <div>
+              <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Règle de modération *</label>
+              <Textarea
+                value={newRule}
+                onChange={e => setNewRule(e.target.value)}
+                placeholder="Ex: Bloquer les messages contenant des liens de phishing connus"
+                className="min-h-[60px] resize-none text-xs"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Pattern / Regex (optionnel)</label>
+              <input
+                type="text"
+                value={newPattern}
+                onChange={e => setNewPattern(e.target.value)}
+                placeholder="Ex: (bit\.ly|tinyurl\.com)/[a-z0-9]+"
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+            <button
+              onClick={handleAddRule}
+              disabled={!newRule.trim() || addingRule}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              {addingRule ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+              {addingRule ? 'Ajout...' : 'Enregistrer la règle'}
+            </button>
+          </div>
+        )}
+
         {learnedRules.length === 0 ? (
           <div className="text-center py-6">
             <Brain className="w-10 h-10 mx-auto text-muted-foreground/30 mb-2" />
-            <p className="text-xs text-muted-foreground">Aucune règle apprise pour le moment.</p>
-            <p className="text-[10px] text-muted-foreground mt-1">Utilisez le Playground et donnez du feedback pour entraîner l'IA.</p>
+            <p className="text-xs text-muted-foreground">Aucune règle définie pour le moment.</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Ajoutez des règles ou utilisez le Playground pour entraîner l'IA.</p>
           </div>
         ) : (
-          <div className="space-y-1.5 max-h-60 overflow-y-auto">
-            {learnedRules.map((rule, i) => (
-              <div key={i} className="flex items-start gap-2 text-xs p-2 rounded-lg bg-accent/30 border border-border">
+          <div className="space-y-1.5 max-h-72 overflow-y-auto">
+            {learnedRules.map((rule) => (
+              <div key={rule.id} className="flex items-start gap-2 text-xs p-2.5 rounded-lg bg-accent/30 border border-border group">
                 <BookOpen className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                <span className="text-muted-foreground">{typeof rule === 'string' ? rule : rule.rule}</span>
+                <div className="flex-1 min-w-0">
+                  <span className="text-foreground">{rule.rule}</span>
+                  {rule.pattern && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5 font-mono truncate">Pattern: {rule.pattern}</p>
+                  )}
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteRule(rule.id); }}
+                  className="opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive/80 transition-opacity shrink-0"
+                  title="Supprimer"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                </button>
               </div>
             ))}
           </div>
