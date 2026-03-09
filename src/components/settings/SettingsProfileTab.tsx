@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
+import { useAgeVerification } from '@/hooks/useAgeVerification';
 import { supabase } from '@/integrations/supabase/client';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
