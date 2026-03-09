@@ -10,11 +10,11 @@ import { ChatWidgetProvider, useChatWidget } from "@/components/ChatWidgetContex
 import { ChatWidget } from "@/components/ChatWidget";
 import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
-import { useIncomingCall } from "@/hooks/useIncomingCall";
+import { useIncomingCall, endActiveCall } from "@/hooks/useIncomingCall";
 import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { useCall } from "@/hooks/useCall";
 import { CallOverlay } from "@/components/CallOverlay";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
