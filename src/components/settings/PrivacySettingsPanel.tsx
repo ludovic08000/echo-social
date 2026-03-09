@@ -1,4 +1,4 @@
-import { Shield, Eye, MessageCircle, Heart, Search, BarChart3, Ghost } from 'lucide-react';
+import { Shield, Eye, MessageCircle, Heart, Search, BarChart3, Ghost, Globe, Lock } from 'lucide-react';
 import { usePrivacySettings, useUpdatePrivacySettings } from '@/hooks/usePrivacySettings';
 import { RestrictedFriendsPanel } from './RestrictedFriendsPanel';
 import { Label } from '@/components/ui/label';
@@ -81,6 +81,55 @@ export function PrivacySettingsPanel() {
         </div>
       </section>
 
+      {/* Account Mode: Public / Private */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          {settings.profile_visibility === 'public' ? (
+            <Globe className="w-5 h-5 text-primary" />
+          ) : (
+            <Lock className="w-5 h-5 text-primary" />
+          )}
+          <h3 className="font-semibold">Mode du compte</h3>
+        </div>
+        <div className="pl-7 grid grid-cols-2 gap-3">
+          <button
+            onClick={() => {
+              handleUpdate('profile_visibility', 'public');
+              handleUpdate('posts_visibility', 'public');
+              handleUpdate('friends_list_visibility', 'public');
+            }}
+            className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+              settings.profile_visibility === 'public'
+                ? 'border-primary bg-primary/10 shadow-sm'
+                : 'border-border/50 bg-secondary/20 hover:bg-secondary/40'
+            }`}
+          >
+            <Globe className={`w-6 h-6 ${settings.profile_visibility === 'public' ? 'text-primary' : 'text-muted-foreground'}`} />
+            <span className="text-sm font-semibold">Public</span>
+            <p className="text-xs text-muted-foreground text-center">
+              Tout le monde peut voir votre profil, feed et liste d'amis
+            </p>
+          </button>
+          <button
+            onClick={() => {
+              handleUpdate('profile_visibility', 'friends');
+              handleUpdate('posts_visibility', 'friends');
+              handleUpdate('friends_list_visibility', 'friends');
+            }}
+            className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+              settings.profile_visibility === 'friends'
+                ? 'border-primary bg-primary/10 shadow-sm'
+                : 'border-border/50 bg-secondary/20 hover:bg-secondary/40'
+            }`}
+          >
+            <Lock className={`w-6 h-6 ${settings.profile_visibility === 'friends' ? 'text-primary' : 'text-muted-foreground'}`} />
+            <span className="text-sm font-semibold">Privé</span>
+            <p className="text-xs text-muted-foreground text-center">
+              Seuls vos amis peuvent voir votre profil, feed et liste d'amis
+            </p>
+          </button>
+        </div>
+      </section>
       {/* Profile Visibility */}
       <section className="space-y-4">
         <div className="flex items-center gap-2">
