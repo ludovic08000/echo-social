@@ -325,6 +325,10 @@ export function PrivacySettingsPanel() {
           </div>
         </div>
       </section>
+
+      {/* Purge Feed */}
+      <PurgeFeedSection />
+
       {/* Restricted Friends */}
       <section className="space-y-4">
         <RestrictedFriendsPanel />
