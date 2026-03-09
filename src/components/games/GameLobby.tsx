@@ -147,5 +147,6 @@ const GameLobby = forwardRef<HTMLDivElement, GameLobbyProps>(function GameLobby(
         </div>
       )}
     </div>
-  );
-}
+});
+
+export default GameLobby;
