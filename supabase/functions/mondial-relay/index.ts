@@ -8,7 +8,9 @@ const corsHeaders = {
 };
 
 const MR_WSDL = "https://api.mondialrelay.com/Web_Services.asmx";
-const MR_API_V2 = "https://connect-api.mondialrelay.com/api/shipment";
+const MR_API_V2_PROD = "https://connect-api.mondialrelay.com/api/shipment";
+const MR_API_V2_SANDBOX = "https://connect-api-sandbox.mondialrelay.com/api/shipment";
+const MR_API_V2 = Deno.env.get("MONDIAL_RELAY_SANDBOX") === "true" ? MR_API_V2_SANDBOX : MR_API_V2_PROD;
 
 // Compact MD5 implementation (Web Crypto does not support MD5)
 function md5Hex(str: string): string {
@@ -341,18 +343,18 @@ serve(async (req) => {
         return cleaned || fallback;
       };
 
-      const formatRelayLocation = (raw: unknown, country: string) => {
-        const cleaned = String(raw ?? "").trim().toUpperCase().replace(/\s+/g, "");
+      const formatRelayLocation = (raw: unknown) => {
+        const cleaned = String(raw ?? "").trim().replace(/\s+/g, "");
         if (!cleaned) return "";
-        if (cleaned.includes("-")) return cleaned;
-        const countryCode = (country || "FR").trim().toUpperCase();
-        return `${countryCode}-${cleaned}`;
+        // Remove country prefix if present (e.g. "FR-062691" -> "062691")
+        const parts = cleaned.split("-");
+        return parts.length > 1 ? parts[parts.length - 1] : cleaned;
       };
 
       const deliveryMode = normalizeMode(body?.delivery_mode, "24R");
       const collectionMode = normalizeMode(body?.collection_mode, "CCC");
       const rawRelayLocation = order.shipping_relay_id || relay_id || "";
-      const relayLocation = formatRelayLocation(rawRelayLocation, order.shipping_relay_country || "FR");
+      const relayLocation = formatRelayLocation(rawRelayLocation);
 
       if (["24R", "24L", "DRI"].includes(deliveryMode) && !relayLocation) {
         throw new Error("Point relais manquant ou invalide pour le mode de livraison sélectionné");
@@ -389,7 +391,7 @@ serve(async (req) => {
       <OrderNo>${escXml(orderNo)}</OrderNo>
       <CustomerNo>${escXml(customerNo)}</CustomerNo>
       <ParcelCount>1</ParcelCount>
-      <ShipmentValue Currency="EUR" Amount="0"/>
+      <ShipmentValue Currency="EUR" Amount="${Math.round(order.subtotal * 100)}"/>
       <DeliveryMode Mode="${escXml(deliveryMode)}"${deliveryLocationAttr}/>
       <CollectionMode Mode="${escXml(collectionMode)}"${collectionLocationAttr}/>
       <Parcels>
