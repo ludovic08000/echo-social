@@ -75,15 +75,17 @@ export function usePosts() {
       const allowedUserIds = [user.id, ...friendIds];
       const now = new Date().toISOString();
 
-      // Fetch larger pool for scoring
+      // Fetch page-local pool for scoring (stable pagination)
       const poolSize = PAGE_SIZE * 3;
+      const fetchFrom = from;
+      const fetchTo = from + poolSize - 1;
       const { data: posts, error } = await supabase
         .from('posts')
         .select('id, user_id, body, image_url, created_at, expires_at')
         .in('user_id', allowedUserIds)
         .or(`expires_at.is.null,expires_at.gt.${now}`)
         .order('created_at', { ascending: false })
-        .range(0, Math.max(to, poolSize - 1));
+        .range(fetchFrom, fetchTo);
 
       if (error) throw error;
       if (!posts || posts.length === 0) return [];
@@ -198,7 +200,7 @@ export function usePosts() {
       // Append deferred at end
       diversified.push(...deferred);
 
-      const paged = diversified.slice(from, to + 1);
+      const paged = diversified.slice(0, PAGE_SIZE);
       return paged.map(({ _score, ...post }) => post);
     },
     getNextPageParam: (lastPage, pages) => {
@@ -207,9 +209,9 @@ export function usePosts() {
     },
     initialPageParam: 0,
     enabled: !!user,
-    staleTime: 60_000,       // 1 min cache — avoid refetch on every tab focus
-    gcTime: 5 * 60_000,      // Keep in memory 5 min
-    refetchInterval: 120_000, // Refresh every 2 min instead of 1
+    staleTime: 5 * 60_000,       // Keep stable feed cache longer on mobile/iOS
+    gcTime: 10 * 60_000,
+    refetchInterval: false,      // Prevent background reorder while user scrolls
     refetchOnWindowFocus: false,
   });
 }
