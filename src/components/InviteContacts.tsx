@@ -11,16 +11,86 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useContactSync, MatchedContact, UnmatchedContact } from '@/hooks/useContactSync';
 import { useSendFriendRequest } from '@/hooks/useFriendships';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth';
 
 const INVITE_MESSAGE = `Rejoins-moi sur Forsure, le réseau social de confiance ! 🚀\nTélécharge l'app ici : https://calm-connect-05.lovable.app`;
 
-export function InviteContacts() {
+function normalizePhone(phone: string): string {
+  let clean = phone.replace(/[\s\-().]/g, '');
+  if (clean.startsWith('0') && clean.length === 10) {
+    clean = '+33' + clean.slice(1);
+  }
+  if (!clean.startsWith('+')) {
+    clean = '+' + clean;
+  }
+  return clean;
+}
+
+/** Web fallback: manual phone search */
+function WebPhoneSearch() {
   const navigate = useNavigate();
-  const { isNative, loading, synced, matched, unmatched, syncContacts } = useContactSync();
+  const { user } = useAuth();
   const sendRequest = useSendFriendRequest();
-  const [search, setSearch] = useState('');
-  const [selectedInvites, setSelectedInvites] = useState<Set<string>>(new Set());
+  const [phoneInput, setPhoneInput] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [results, setResults] = useState<MatchedContact[]>([]);
+  const [searched, setSearched] = useState(false);
   const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
+
+  const handleSearch = async () => {
+    if (!phoneInput.trim() || !user) return;
+
+    setSearching(true);
+    setSearched(false);
+
+    try {
+      // Support multiple numbers separated by commas or newlines
+      const rawNumbers = phoneInput
+        .split(/[,\n;]+/)
+        .map(n => n.trim())
+        .filter(n => n.length >= 6);
+
+      const normalized = rawNumbers.map(normalizePhone);
+
+      const { data: matches, error } = await supabase.rpc('match_contacts_by_phone', {
+        p_user_id: user.id,
+        p_phone_numbers: normalized,
+      });
+
+      if (error) throw error;
+
+      const matchedResults: MatchedContact[] = (matches || []).map((m: any) => ({
+        user_id: m.user_id,
+        name: m.name,
+        avatar_url: m.avatar_url,
+        phone_number: m.phone_number,
+        is_friend: m.is_friend,
+        contact_name: m.name,
+      }));
+
+      setResults(matchedResults);
+      setSearched(true);
+
+      if (matchedResults.length === 0) {
+        toast({ title: 'Aucun résultat', description: 'Ce numéro n\'est pas inscrit sur Forsure' });
+      }
+    } catch {
+      toast({ title: 'Erreur', variant: 'destructive' });
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleAddFriend = async (userId: string) => {
+    try {
+      await sendRequest.mutateAsync(userId);
+      setSentRequests(prev => new Set(prev).add(userId));
+      toast({ title: '🤝 Demande envoyée !' });
+    } catch {
+      toast({ title: 'Erreur', variant: 'destructive' });
+    }
+  };
 
   const handleWebShare = async () => {
     try {
@@ -34,6 +104,101 @@ export function InviteContacts() {
       toast({ title: 'Lien copié !', description: 'Partagez-le avec vos amis' });
     }
   };
+
+  return (
+    <div className="flex flex-col p-4 gap-4">
+      {/* Phone search */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+            <Phone className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-sm">Chercher par numéro</h3>
+            <p className="text-xs text-muted-foreground">Entrez un ou plusieurs numéros de téléphone</p>
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <Input
+            placeholder="06 12 34 56 78"
+            value={phoneInput}
+            onChange={e => setPhoneInput(e.target.value)}
+            className="flex-1"
+            type="tel"
+          />
+          <Button onClick={handleSearch} disabled={searching || !phoneInput.trim()} size="sm" className="gap-1.5">
+            {searching ? (
+              <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Search className="w-4 h-4" />
+            )}
+            Chercher
+          </Button>
+        </div>
+        <p className="text-[10px] text-muted-foreground">
+          Séparez plusieurs numéros par des virgules
+        </p>
+      </div>
+
+      {/* Results */}
+      {searched && results.length > 0 && (
+        <div className="border border-border rounded-xl overflow-hidden divide-y divide-border">
+          {results.map(contact => (
+            <div key={contact.user_id} className="flex items-center gap-3 p-3">
+              <button onClick={() => navigate(`/profile/${contact.user_id}`)} className="shrink-0">
+                <UserAvatar src={contact.avatar_url} alt={contact.name} size="md" />
+              </button>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{contact.name}</p>
+                <p className="text-xs text-muted-foreground">Sur Forsure</p>
+              </div>
+              {contact.is_friend ? (
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5 text-primary" /> Ami
+                </span>
+              ) : sentRequests.has(contact.user_id) ? (
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5" /> Envoyé
+                </span>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleAddFriend(contact.user_id)}
+                  disabled={sendRequest.isPending}
+                  className="gap-1 text-xs"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  Ajouter
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Share link */}
+      <div className="flex flex-col items-center gap-3 pt-2 border-t border-border">
+        <p className="text-xs text-muted-foreground text-center">
+          Ou invitez vos amis à rejoindre Forsure
+        </p>
+        <Button onClick={handleWebShare} variant="outline" className="gap-2 w-full">
+          <Send className="w-4 h-4" />
+          Partager le lien d'invitation
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export function InviteContacts() {
+  const navigate = useNavigate();
+  const { isNative, loading, synced, matched, unmatched, syncContacts } = useContactSync();
+  const sendRequest = useSendFriendRequest();
+  const [search, setSearch] = useState('');
+  const [selectedInvites, setSelectedInvites] = useState<Set<string>>(new Set());
+  const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
 
   const handleAddFriend = async (userId: string) => {
     try {
@@ -82,26 +247,9 @@ export function InviteContacts() {
     c.phone.includes(search)
   );
 
-  // Web fallback
+  // Web fallback — show phone search + share
   if (!isNative) {
-    return (
-      <div className="flex flex-col items-center justify-center p-8 gap-4 text-center">
-        <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-          <UserPlus className="w-8 h-8 text-primary" />
-        </div>
-        <h3 className="font-semibold text-lg">Invitez vos amis</h3>
-        <p className="text-sm text-muted-foreground max-w-xs">
-          Partagez le lien de Forsure avec vos proches
-        </p>
-        <Button onClick={handleWebShare} className="gap-2">
-          <Send className="w-4 h-4" />
-          Partager le lien
-        </Button>
-        <p className="text-xs text-muted-foreground mt-2">
-          📱 Sur l'app mobile, synchronisez votre répertoire pour retrouver vos amis
-        </p>
-      </div>
-    );
+    return <WebPhoneSearch />;
   }
 
   // Not synced yet
