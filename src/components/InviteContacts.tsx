@@ -27,8 +27,12 @@ function normalizePhone(phone: string): string {
   return clean;
 }
 
-/** Check if Contact Picker API is available */
+/** Check if Contact Picker API is available (not supported on iOS Safari) */
 function hasContactPicker(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (isIOS) return false;
   return 'contacts' in navigator && 'ContactsManager' in window;
 }
 
