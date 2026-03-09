@@ -20,6 +20,7 @@ import { useAIContent } from '@/hooks/useAIContent';
 import { useCurrentUserIsMinor } from '@/hooks/useMinorProtection';
 import { useReportUser } from '@/hooks/useTrustAndSafety';
 import { toast } from 'sonner';
+import { useIsMobile } from '@/hooks/use-mobile';
 import {
   DropdownMenu,
   DropdownMenuContent,
