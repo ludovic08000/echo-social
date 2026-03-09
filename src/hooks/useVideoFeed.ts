@@ -117,17 +117,39 @@ export function useVideoFeed(limit: number = 10) {
     queryFn: async () => {
       if (!user) return [];
 
+      const lightweightMode = limit <= 6;
+      const poolSize = lightweightMode ? Math.max(limit, 6) : Math.min(40, Math.max(limit * 4, 16));
+
       // 1. Récupérer les vidéos
       const { data: videos, error: videosError } = await supabase
         .from('short_videos')
         .select('*')
         .eq('is_public', true)
         .order('created_at', { ascending: false })
-        .limit(100); // Pool plus large pour l'algo
+        .limit(poolSize);
 
       if (videosError) throw videosError;
       if (!videos || videos.length === 0) return [];
 
+      // Mode léger (iPhone/feed): éviter les requêtes algorithmiques coûteuses
+      if (lightweightMode) {
+        const authorIds = [...new Set(videos.map(v => v.user_id))];
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('user_id, name, avatar_url')
+          .in('user_id', authorIds);
+
+        const profileMap = new Map(
+          (profiles || []).map(p => [p.user_id, { name: p.name, avatar_url: p.avatar_url }])
+        );
+
+        return videos.slice(0, limit).map(video => ({
+          ...video,
+          author: profileMap.get(video.user_id),
+          is_liked: false,
+          is_saved: false,
+        })) as ShortVideo[];
+      }
       // 2. Récupérer les intérêts de l'utilisateur
       const { data: interests } = await supabase
         .from('user_interests')
@@ -218,7 +240,6 @@ export function useVideoFeed(limit: number = 10) {
 // Hook pour enregistrer une vue
 export function useRecordVideoView() {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ 
@@ -276,7 +297,7 @@ export function useRecordVideoView() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['video-feed'] });
+      // Ne pas invalider ici: chaque vue/replay peut spammer le refresh et rendre iPhone instable
     },
   });
 }
