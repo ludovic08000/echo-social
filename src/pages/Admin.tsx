@@ -861,6 +861,43 @@ function SecuritySection() {
   );
 }
 
+// ─── R2 CLEANUP BUTTON ───
+function R2CleanupButton() {
+  const [cleaning, setCleaning] = useState(false);
+  const [result, setResult] = useState<{ total_files: number; orphaned: number; deleted: number } | null>(null);
+
+  const handleCleanup = async () => {
+    setCleaning(true);
+    setResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('r2-cleanup');
+      if (error) throw error;
+      setResult(data);
+      toast({ title: `${data.deleted} fichier(s) orphelin(s) supprimé(s) sur ${data.total_files} total` });
+    } catch (e) {
+      toast({ title: 'Erreur lors du nettoyage', variant: 'destructive' });
+    } finally {
+      setCleaning(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <Button variant="outline" onClick={handleCleanup} disabled={cleaning} className="gap-2">
+        <RefreshCw className={cn("w-4 h-4", cleaning && "animate-spin")} />
+        {cleaning ? 'Analyse en cours…' : 'Lancer le nettoyage'}
+      </Button>
+      {result && (
+        <div className="text-xs text-muted-foreground space-y-0.5">
+          <p>📁 Fichiers scannés : <strong>{result.total_files}</strong></p>
+          <p>🗑️ Orphelins trouvés : <strong>{result.orphaned}</strong></p>
+          <p>✅ Supprimés : <strong>{result.deleted}</strong></p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── PARAMÈTRES ───
 function SettingsSection() {
   return (
