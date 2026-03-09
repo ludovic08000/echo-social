@@ -30,6 +30,8 @@ export function useCall(options?: UseCallOptions) {
   const callStateRef = useRef<CallState>('idle');
   const durationRef = useRef(0);
   const callTypeRef = useRef<CallType>('audio');
+  const noAnswerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const callTypeRef = useRef<CallType>('audio');
 
   // Keep refs in sync
   useEffect(() => { callStateRef.current = callState; }, [callState]);
