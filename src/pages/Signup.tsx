@@ -81,8 +81,8 @@ export default function Signup() {
 
     // Validate parental PIN if minor
     if (isMinor && showParentalStep) {
-      if (parentalPin.length !== 4 || !/^\d{4}$/.test(parentalPin)) {
-        toast({ title: 'Code invalide', description: 'Le code parental doit être composé de 4 chiffres', variant: 'destructive' });
+      if (parentalPin.length < 8 || !/^\d{8,12}$/.test(parentalPin)) {
+        toast({ title: 'Code invalide', description: 'Le code parental doit être composé de 8 chiffres minimum', variant: 'destructive' });
         return;
       }
       if (parentalPin !== parentalPinConfirm) {
