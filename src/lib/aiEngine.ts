@@ -14,7 +14,7 @@ export interface AIModule {
   capabilities: string[];
 }
 
-export type AICategory = 'content' | 'social' | 'games' | 'wellbeing' | 'commerce' | 'moderation';
+export type AICategory = 'content' | 'social' | 'games' | 'wellbeing' | 'commerce' | 'moderation' | 'security';
 
 export interface AIModuleMetrics {
   totalCalls: number;
