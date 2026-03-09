@@ -126,23 +126,18 @@ export default function Signup() {
       return;
     }
 
-    // Save parental control if minor
+    // Save parental control if minor — PIN is hashed server-side
     const userAge = differenceInYears(new Date(), dateOfBirth);
     if (userAge < 16 && parentalPin) {
       try {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(parentalPin + 'forsure-parental-salt');
-        const hash = await crypto.subtle.digest('SHA-256', data);
-        const pinHash = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-
-        // Wait a moment for user to be created
         const { data: { user: newUser } } = await supabase.auth.getUser();
         if (newUser) {
-          await supabase.from('parental_controls').insert({
-            user_id: newUser.id,
-            pin_hash: pinHash,
-            is_minor: true,
-            allowed_categories: ['education', 'sport', 'gaming', 'musique', 'art', 'humour'],
+          await supabase.functions.invoke('verify-parental-pin', {
+            body: {
+              action: 'set',
+              pin: parentalPin,
+              allowed_categories: ['education', 'sport', 'gaming', 'musique', 'art', 'humour'],
+            },
           });
         }
       } catch (e) {

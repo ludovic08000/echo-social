@@ -3498,6 +3498,18 @@ export type Database = {
           user_id: string
         }[]
       }
+      get_parental_controls: {
+        Args: { p_user_id: string }
+        Returns: {
+          allowed_categories: string[]
+          created_at: string
+          id: string
+          is_active: boolean
+          is_minor: boolean
+          updated_at: string
+          user_id: string
+        }[]
+      }
       get_public_trust_score: { Args: { p_user_id: string }; Returns: number }
       get_safe_live_stream: {
         Args: { p_live_id: string }

@@ -2,14 +2,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 
-// Simple hash for PIN (not crypto-grade but sufficient for parental PIN)
-async function hashPin(pin: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(pin + 'forsure-parental-salt');
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
 export const ALLOWED_MINOR_CATEGORIES = ['education', 'sport', 'gaming', 'musique', 'art', 'humour'] as const;
 
 export const CATEGORY_LABELS: Record<string, string> = {
@@ -28,9 +20,10 @@ export function useParentalControl() {
     queryKey: ['parental-control', user?.id],
     queryFn: async () => {
       if (!user) return null;
+      // Only fetch non-sensitive fields — pin_hash is excluded by RLS
       const { data, error } = await supabase
         .from('parental_controls')
-        .select('*')
+        .select('id, user_id, is_active, is_minor, allowed_categories, created_at, updated_at')
         .eq('user_id', user.id)
         .maybeSingle();
       if (error) throw error;
@@ -43,40 +36,21 @@ export function useParentalControl() {
 
 export function useSetParentalPin() {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
 
   return useMutation({
     mutationFn: async ({ pin, allowedCategories }: { pin: string; allowedCategories?: string[] }) => {
-      if (!user) throw new Error('Not authenticated');
-      const pinHash = await hashPin(pin);
+      // PIN is sent to the server — hashing happens server-side only
+      const { data, error } = await supabase.functions.invoke('verify-parental-pin', {
+        body: {
+          action: 'set',
+          pin,
+          allowed_categories: allowedCategories || ALLOWED_MINOR_CATEGORIES as unknown as string[],
+        },
+      });
 
-      // Check if already exists
-      const { data: existing } = await supabase
-        .from('parental_controls')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (existing) {
-        const { error } = await supabase
-          .from('parental_controls')
-          .update({
-            pin_hash: pinHash,
-            allowed_categories: allowedCategories || ALLOWED_MINOR_CATEGORIES as unknown as string[],
-            updated_at: new Date().toISOString(),
-          })
-          .eq('user_id', user.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('parental_controls')
-          .insert({
-            user_id: user.id,
-            pin_hash: pinHash,
-            allowed_categories: allowedCategories || ALLOWED_MINOR_CATEGORIES as unknown as string[],
-          });
-        if (error) throw error;
-      }
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['parental-control'] });
@@ -85,23 +59,27 @@ export function useSetParentalPin() {
 }
 
 export function useVerifyParentalPin() {
-  const { user } = useAuth();
-
   return useMutation({
-    mutationFn: async (pin: string) => {
-      if (!user) throw new Error('Not authenticated');
-      const pinHash = await hashPin(pin);
+    mutationFn: async (pin: string): Promise<boolean> => {
+      // PIN is verified server-side — no hash exposed to client
+      let { data, error } = await supabase.functions.invoke('verify-parental-pin', {
+        body: { action: 'verify', pin },
+      });
 
-      const { data, error } = await supabase
-        .from('parental_controls')
-        .select('pin_hash')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      // Retry on auth error
+      if (error && (error.message?.includes('401') || error.message?.includes('auth'))) {
+        const { error: refreshErr } = await supabase.auth.refreshSession();
+        if (!refreshErr) {
+          const retry = await supabase.functions.invoke('verify-parental-pin', {
+            body: { action: 'verify', pin },
+          });
+          data = retry.data;
+          error = retry.error;
+        }
+      }
 
       if (error) throw error;
-      if (!data) throw new Error('No parental control found');
-
-      return data.pin_hash === pinHash;
+      return !!data?.ok;
     },
   });
 }
@@ -111,7 +89,7 @@ export function useIsMinorWithParentalControl() {
 
   return {
     isMinor: !!parentalControl?.is_active,
-    allowedCategories: parentalControl?.allowed_categories || [],
+    allowedCategories: (parentalControl as any)?.allowed_categories || [],
     isLoading,
   };
 }
