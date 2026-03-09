@@ -82,19 +82,29 @@ export function useIncomingCall() {
   useEffect(() => {
     if (!user?.id) return;
 
-    // Check for existing ringing calls on mount
+    // Check for existing ringing calls on mount (only recent ones, < 30s old)
     const checkExisting = async () => {
+      const thirtySecondsAgo = new Date(Date.now() - 30000).toISOString();
       const { data } = await supabase
         .from('active_calls')
         .select('*')
         .eq('callee_id', user.id)
         .eq('status', 'ringing')
+        .gte('created_at', thirtySecondsAgo)
         .order('created_at', { ascending: false })
         .limit(1);
 
       if (data?.[0]) {
         handleIncomingCall(data[0]);
       }
+
+      // Clean up stale ringing calls (older than 30s)
+      await supabase
+        .from('active_calls')
+        .update({ status: 'cancelled', ended_at: new Date().toISOString() })
+        .eq('callee_id', user.id)
+        .eq('status', 'ringing')
+        .lt('created_at', thirtySecondsAgo);
     };
     checkExisting();
 
