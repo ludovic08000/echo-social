@@ -128,11 +128,13 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } }
     );
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) throw new Error("Not authenticated");
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+    const userId = claimsData?.claims?.sub as string | undefined;
+    if (claimsError || !userId) throw new Error("Not authenticated");
 
     // ─── Rate limit ───
-    if (!checkRateLimit(user.id)) {
+    if (!checkRateLimit(userId)) {
       return new Response(JSON.stringify({ error: "Trop de requêtes. Réessayez dans un moment." }), {
         status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -146,7 +148,7 @@ Deno.serve(async (req) => {
     const { data: profile } = await serviceClient
       .from("profiles")
       .select("name")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .single();
 
     const rawName = profile?.name || "user";
@@ -158,7 +160,7 @@ Deno.serve(async (req) => {
       .replace(/\s+/g, "-")
       .toLowerCase()
       || "user";
-    const userFolder = `${sanitizedName}-${user.id.substring(0, 8)}`;
+    const userFolder = `${sanitizedName}-${userId.substring(0, 8)}`;
 
     // ─── R2 config ───
     const accountId = Deno.env.get("R2_ACCOUNT_ID")?.trim() ?? "";

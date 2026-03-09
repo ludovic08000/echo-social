@@ -80,9 +80,11 @@ Deno.serve(async (req) => {
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
     });
-    const { data: { user }, error: authErr } = await supabase.auth.getUser();
-    if (authErr || !user) throw new Error("Non authentifié");
-    if (!checkRateLimit(user.id)) {
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+    const userId = claimsData?.claims?.sub as string | undefined;
+    if (claimsError || !userId) throw new Error("Non authentifié");
+    if (!checkRateLimit(userId)) {
       return new Response(JSON.stringify({ error: "Trop de requêtes" }), { status: 429, headers: { ...h, "Content-Type": "application/json" } });
     }
 
@@ -99,10 +101,10 @@ Deno.serve(async (req) => {
 
     // User folder
     const serviceClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const { data: profile } = await serviceClient.from("profiles").select("name").eq("user_id", user.id).single();
+    const { data: profile } = await serviceClient.from("profiles").select("name").eq("user_id", userId).single();
     const rawName = profile?.name || "user";
     const sanitizedName = rawName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase() || "user";
-    const userFolder = `${sanitizedName}-${user.id.substring(0, 8)}`;
+    const userFolder = `${sanitizedName}-${userId.substring(0, 8)}`;
 
     const ext = filename.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "").substring(0, 5) || "bin";
     const filePath = `${userFolder}/${cleanFolder}/${Date.now()}.${ext}`;
