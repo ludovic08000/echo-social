@@ -611,7 +611,7 @@ export default function Profile() {
               {isOwnProfile ? (
                 <>
                   <Link to="/settings" className="shrink-0">
-                    <Button className="w-full rounded-xl h-10 text-sm whitespace-nowrap">
+                    <Button className="rounded-xl h-10 text-sm whitespace-nowrap">
                       <Edit2 className="w-4 h-4 mr-2" />
                       Modifier le profil
                     </Button>
