@@ -186,14 +186,14 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                   Supprimer
                 </DropdownMenuItem>
               )}
-              {isMinorUser && !isOwner && (
+              {!isOwner && (
                 <DropdownMenuItem 
                   onClick={async () => {
                     try {
                       await reportUser.mutateAsync({
                         reportedUserId: post.user_id,
                         reportType: 'inappropriate_content',
-                        description: `Signalement mineur - post ${post.id}`,
+                        description: `Signalement - post ${post.id}`,
                       });
                       toast.success('✅ Signalement envoyé !');
                     } catch {
@@ -203,7 +203,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                   className="text-destructive"
                 >
                   <ShieldAlert className="w-4 h-4 mr-2" />
-                  🛡️ Signaler ce contenu
+                  Signaler ce contenu
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
