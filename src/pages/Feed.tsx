@@ -314,30 +314,35 @@ export default function Feed() {
                   </div>
                 )}
                 <div className="space-y-3 px-4">
-                  {posts.map((post, index) => (
-                    <div key={post.id} style={POST_CELL_STYLE}>
-                      {isMobile ? (
-                        <PostCard
-                          post={post}
-                          onCommentClick={() => navigate(`/post/${post.id}`)}
-                        />
-                      ) : (
-                        <motion.div
-                          custom={index}
-                          variants={postVariants}
-                          initial="hidden"
-                          whileInView="visible"
-                          viewport={{ once: true, margin: '-30px' }}
-                        >
+                  {posts.map((post, index) => {
+                    const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
+                    const cellStyle = isVideoPost ? undefined : POST_CELL_STYLE;
+
+                    return (
+                      <div key={post.id} style={cellStyle}>
+                        {isMobile ? (
                           <PostCard
                             post={post}
                             onCommentClick={() => navigate(`/post/${post.id}`)}
                           />
-                        </motion.div>
-                      )}
-                      {renderInjection(index)}
-                    </div>
-                  ))}
+                        ) : (
+                          <motion.div
+                            custom={index}
+                            variants={postVariants}
+                            initial="hidden"
+                            whileInView="visible"
+                            viewport={{ once: true, margin: '-30px' }}
+                          >
+                            <PostCard
+                              post={post}
+                              onCommentClick={() => navigate(`/post/${post.id}`)}
+                            />
+                          </motion.div>
+                        )}
+                        {renderInjection(index)}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <div ref={loadMoreRef} className="h-1" />

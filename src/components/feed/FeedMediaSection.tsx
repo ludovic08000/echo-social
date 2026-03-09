@@ -12,6 +12,8 @@ interface MediaPost {
   created_at: string;
 }
 
+const VIDEO_RE = /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i;
+
 export function FeedMediaSection() {
   const { user } = useAuth();
 
@@ -41,7 +43,10 @@ export function FeedMediaSection() {
         .limit(10);
 
       if (error) throw error;
-      return (data || []) as MediaPost[];
+
+      // iOS WebKit can crash when a video URL is loaded inside an <img>.
+      // Keep this section strictly image-only.
+      return ((data || []) as MediaPost[]).filter(p => p.image_url && !VIDEO_RE.test(p.image_url));
     },
     enabled: !!user,
   });
@@ -72,6 +77,7 @@ export function FeedMediaSection() {
                   src={post.image_url}
                   alt=""
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  loading="lazy"
                 />
               </Link>
             ))}
