@@ -240,7 +240,6 @@ export function useVideoFeed(limit: number = 10) {
 // Hook pour enregistrer une vue
 export function useRecordVideoView() {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ 
