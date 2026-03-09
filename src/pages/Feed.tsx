@@ -121,7 +121,7 @@ export default function Feed() {
     const type = INJECTION_MAP[index];
     
     // Inject sponsored post every ~6 posts
-    if (activeAds?.length && index > 0 && index % 6 === 0) {
+    if (!isMobile && activeAds?.length && index > 0 && index % 6 === 0) {
       const adIndex = Math.floor(index / 6) % activeAds.length;
       const ad = activeAds[adIndex];
       if (ad) {
