@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePosts } from '@/hooks/usePosts';
 import { AppLayout } from '@/components/AppLayout';
@@ -21,6 +21,7 @@ import { useActiveAds } from '@/hooks/useAdCampaigns';
 import { useCustomBackground } from '@/hooks/useCustomBackground';
 import { useParentalGate } from '@/components/ParentalGate';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useFeedScrollMemory } from '@/hooks/useFeedScrollMemory';
 
 const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'media' | 'marketplace'> = {
   2: 'marketplace',
@@ -59,16 +60,18 @@ export default function Feed() {
   const { isMinor, isUnlocked, requestUnlock } = useParentalGate();
   const isMobile = useIsMobile();
 
+  useFeedScrollMemory('feed-main-scroll');
+
   // Deduplicate posts across pages to prevent React key warnings
-  const posts = (() => {
+  const posts = useMemo(() => {
     const all = data?.pages.flat() || [];
     const seen = new Set<string>();
-    return all.filter(p => {
+    return all.filter((p) => {
       if (seen.has(p.id)) return false;
       seen.add(p.id);
       return true;
     });
-  })();
+  }, [data?.pages]);
 
   useEffect(() => {
     const interval = setInterval(() => {
