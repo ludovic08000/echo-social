@@ -1040,11 +1040,11 @@ function ChatView({ conversationId }: { conversationId: string }) {
                     >
                       {/* Avatar */}
                       {!isMe && (
-                        <div className="w-7 flex-shrink-0">
+                        <Link to={`/profile/${msg.sender_id}`} className="w-7 flex-shrink-0">
                           {isLastInGroup && (
                             <UserAvatar src={msg.profile.avatar_url} alt={msg.profile.name} size="xs" />
                           )}
-                        </div>
+                        </Link>
                       )}
 
                       <div className={cn('max-w-[75%] flex flex-col relative', isMe ? 'items-end' : 'items-start')}>
