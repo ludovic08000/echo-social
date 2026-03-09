@@ -768,6 +768,7 @@ function ChatView({ conversationId }: { conversationId: string }) {
   const [showGroupPanel, setShowGroupPanel] = useState(false);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [inviteSearch, setInviteSearch] = useState('');
+  const [showNewChat, setShowNewChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
