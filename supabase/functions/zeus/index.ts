@@ -1161,6 +1161,7 @@ Tu peux appeler des outils pour interroger la base en temps réel :
 - \`simulate_platform_load\` : Simulation de charge réseau
 - \`get_algorithm_config\` : Lire la config de l'algorithme du feed (LECTURE LIBRE)
 - \`update_algorithm_config\` : ⚠️ **NE PAS UTILISER DIRECTEMENT** — propose via [ZEUS_PROPOSAL] à la place
+- \`run_security_audit\` : 🛡️ Audit de sécurité complet — teste les refus (RLS, accès), permissions (rôles, mineurs), falsifications (documents IA, multi-comptes, fingerprints) et cas limites (orphelins, stock, cache expiré). Scopes: all, refusals, permissions, falsifications, edge_cases
 
 ## 🧬 ALGORITHME DU FEED
 Tu peux lire la config avec \`get_algorithm_config\`. Les clés sont :
