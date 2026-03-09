@@ -26,9 +26,10 @@ const ICON_MAP: Record<string, React.ElementType> = {
   FileText, Languages, Sparkles, BellRing, ShoppingBag, Crown,
   Circle, Grid3X3, Hash, Heart, Shield, Shuffle, ShieldCheck,
   HeartPulse, GraduationCap, UserSearch, Wand2, MessageSquareText, Compass,
+  Globe, Network, ScanSearch, ShieldOff, KeyRound, ShieldAlert,
 };
 
-const CATEGORIES: (AICategory | 'all')[] = ['all', 'moderation', 'content', 'social', 'games', 'wellbeing', 'commerce'];
+const CATEGORIES: (AICategory | 'all')[] = ['all', 'security', 'moderation', 'content', 'social', 'games', 'wellbeing', 'commerce'];
 
 export default function AIEngine() {
   const [selectedCategory, setSelectedCategory] = useState<AICategory | 'all'>('all');
