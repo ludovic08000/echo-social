@@ -138,6 +138,9 @@ export function useIncomingCall() {
   useEffect(() => {
     if (!user?.id) return;
 
+    // Required on iOS: unlock audio context after first user interaction
+    primeAudioForIOS();
+
     // Check for existing ringing calls on mount (only recent ones, < 30s old)
     const checkExisting = async () => {
       const thirtySecondsAgo = new Date(Date.now() - 30000).toISOString();
