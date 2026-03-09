@@ -144,6 +144,14 @@ export default function AIEngine() {
             <MetricsDashboard modules={modules} />
           </TabsContent>
 
+          <TabsContent value="feed" className="mt-4">
+            <FeedConfigDashboard />
+          </TabsContent>
+
+          <TabsContent value="trust" className="mt-4">
+            <TrustScoreDashboard />
+          </TabsContent>
+
           <TabsContent value="security" className="mt-4">
             <SecurityDashboard />
           </TabsContent>
