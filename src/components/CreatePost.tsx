@@ -182,7 +182,11 @@ export function CreatePost() {
             setUploadPercent(p.percent);
           });
           imageUrl = url;
-        }
+
+          // Background age verification on first image post
+          if (!profile?.age_verified && media.type.startsWith('image/')) {
+            verifyAge(url);
+          }
       }
 
       let expiresAt: string | undefined;
