@@ -153,17 +153,19 @@ export function CreatePost() {
 
       if (media) {
         if (mediaType === 'video') {
-          // Parallel: upload video + generate thumbnail simultaneously
           setUploadStep('Envoi de la vidéo…');
+          setUploadPercent(0);
           const [videoResult, thumbBlob] = await Promise.all([
-            uploadToR2(media, 'videos'),
+            uploadToR2(media, 'videos', undefined, (p) => {
+              setUploadPercent(p.percent);
+              setUploadStep(`Envoi de la vidéo… ${p.percent}%`);
+            }),
             generateVideoThumbnail(media).catch(() => null),
           ]);
           imageUrl = videoResult.url;
 
-          // Upload thumbnail (much smaller, fast)
           if (thumbBlob) {
-            setUploadStep('Génération de la miniature…');
+            setUploadStep('Miniature…');
             try {
               const thumbFile = new File([thumbBlob], 'thumbnail.jpg', { type: 'image/jpeg' });
               const { url: thumbUrl } = await uploadToR2(thumbFile, 'thumbnails');
@@ -174,7 +176,9 @@ export function CreatePost() {
           }
         } else {
           setUploadStep('Envoi de l\'image…');
-          const { url } = await uploadToR2(media, 'post-images');
+          const { url } = await uploadToR2(media, 'post-images', undefined, (p) => {
+            setUploadPercent(p.percent);
+          });
           imageUrl = url;
         }
       }
