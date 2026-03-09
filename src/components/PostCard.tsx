@@ -366,4 +366,10 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
       )}
     </article>
   );
-}
+}, (prev, next) => {
+  return prev.post.id === next.post.id
+    && prev.post.likes_count === next.post.likes_count
+    && prev.post.comments_count === next.post.comments_count
+    && prev.post.is_liked === next.post.is_liked
+    && prev.post.user_reaction === next.post.user_reaction;
+});
