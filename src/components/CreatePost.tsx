@@ -151,20 +151,30 @@ export function CreatePost() {
       let thumbnailUrl: string | null = null;
 
       if (media) {
-        const folder = mediaType === 'video' ? 'videos' : 'post-images';
-        const { url } = await uploadToR2(media, folder);
-        imageUrl = url;
-
-        // Always generate a thumbnail for video posts so iOS can show a poster
         if (mediaType === 'video') {
-          try {
-            const thumbBlob = await generateVideoThumbnail(media);
-            const thumbFile = new File([thumbBlob], 'thumbnail.jpg', { type: 'image/jpeg' });
-            const { url: thumbUrl } = await uploadToR2(thumbFile, 'thumbnails');
-            thumbnailUrl = thumbUrl;
-          } catch (e) {
-            console.warn('Thumbnail generation failed', e);
+          // Parallel: upload video + generate thumbnail simultaneously
+          setUploadStep('Envoi de la vidéo…');
+          const [videoResult, thumbBlob] = await Promise.all([
+            uploadToR2(media, 'videos'),
+            generateVideoThumbnail(media).catch(() => null),
+          ]);
+          imageUrl = videoResult.url;
+
+          // Upload thumbnail (much smaller, fast)
+          if (thumbBlob) {
+            setUploadStep('Génération de la miniature…');
+            try {
+              const thumbFile = new File([thumbBlob], 'thumbnail.jpg', { type: 'image/jpeg' });
+              const { url: thumbUrl } = await uploadToR2(thumbFile, 'thumbnails');
+              thumbnailUrl = thumbUrl;
+            } catch (e) {
+              console.warn('Thumbnail upload failed', e);
+            }
           }
+        } else {
+          setUploadStep('Envoi de l\'image…');
+          const { url } = await uploadToR2(media, 'post-images');
+          imageUrl = url;
         }
       }
 
@@ -182,20 +192,11 @@ export function CreatePost() {
         publishAt = date.toISOString();
       }
 
+      setUploadStep('Publication…');
       await createPost.mutateAsync({ body: body.trim(), imageUrl, expiresAt, publishAt });
 
-      // Also create a replay entry if toggle is on
-      if (publishAsReplay && mediaType === 'video' && imageUrl && media) {
-        let thumbnailUrl: string | null = null;
-        try {
-          const thumbBlob = await generateVideoThumbnail(media);
-          const thumbFile = new File([thumbBlob], 'thumbnail.jpg', { type: 'image/jpeg' });
-          const { url } = await uploadToR2(thumbFile, 'thumbnails');
-          thumbnailUrl = url;
-        } catch (e) {
-          console.warn('Thumbnail generation failed, continuing without', e);
-        }
-
+      // Reuse the same thumbnail for replay (no duplicate generation!)
+      if (publishAsReplay && mediaType === 'video' && imageUrl) {
         await supabase.from('live_streams').insert({
           user_id: user.id,
           title: replayTitle.trim() || body.trim() || 'Replay',
