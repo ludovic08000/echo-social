@@ -1086,6 +1086,14 @@ function ChatView({ conversationId }: { conversationId: string }) {
                           }}
                         />
 
+                        {/* Pin indicator */}
+                        {pinnedMessages.has(msg.id) && (
+                          <div className={cn("flex items-center gap-1 mb-0.5", isMe ? "flex-row-reverse" : "")}>
+                            <Pin className="w-3 h-3 text-primary" />
+                            <span className="text-[10px] text-primary font-medium">Épinglé</span>
+                          </div>
+                        )}
+
                         {/* Image message */}
                         {isImage && (
                           <div className="rounded-2xl overflow-hidden mb-1 shadow-sm">
