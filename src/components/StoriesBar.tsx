@@ -184,15 +184,9 @@ export function StoriesBar() {
     return (
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
         {[1, 2, 3, 4].map((i) => (
-          <motion.div 
-            key={i} 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.08 }}
-            className="flex-shrink-0 w-[72px]"
-          >
+          <div key={i} className="flex-shrink-0 w-[72px]">
             <div className="w-[72px] h-[72px] rounded-2xl skeleton" />
-          </motion.div>
+          </div>
         ))}
       </div>
     );
