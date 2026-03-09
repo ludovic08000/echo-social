@@ -768,6 +768,7 @@ function ChatView({ conversationId }: { conversationId: string }) {
   const [showGroupPanel, setShowGroupPanel] = useState(false);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [inviteSearch, setInviteSearch] = useState('');
+  const [showNewChat, setShowNewChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -948,6 +949,15 @@ function ChatView({ conversationId }: { conversationId: string }) {
               disabled={callState !== 'idle'}
             >
               <Video className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-full text-primary hover:bg-primary/10"
+              onClick={() => setShowNewChat(true)}
+              title="Nouveau message / groupe"
+            >
+              <Plus className="w-4 h-4" />
             </Button>
           </div>
         </div>
@@ -1467,6 +1477,9 @@ function ChatView({ conversationId }: { conversationId: string }) {
           }
         }}
       />
+
+      {/* New conversation / group dialog */}
+      <NewConversationDialog open={showNewChat} onOpenChange={setShowNewChat} />
     </div>
   );
 }
