@@ -24,6 +24,7 @@ export interface Conversation {
   updated_at: string;
   is_group: boolean;
   name: string | null;
+  created_by?: string | null;
   participant: {
     user_id: string;
     name: string;
