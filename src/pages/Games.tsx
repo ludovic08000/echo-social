@@ -4,16 +4,25 @@ import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import ChessGame from '@/components/games/ChessGame';
 import CheckersGame from '@/components/games/CheckersGame';
 import TicTacToeGame from '@/components/games/TicTacToeGame';
 import Connect4Game from '@/components/games/Connect4Game';
+import BattleshipGame from '@/components/games/BattleshipGame';
+import MemoryGame from '@/components/games/MemoryGame';
+import SnakeGame from '@/components/games/SnakeGame';
+import TetrisGame from '@/components/games/TetrisGame';
 
 const GAMES = [
   { id: 'chess', label: '♟️ Échecs', component: ChessGame },
   { id: 'checkers', label: '🔴 Dames', component: CheckersGame },
   { id: 'tictactoe', label: '❌ Morpion', component: TicTacToeGame },
   { id: 'connect4', label: '🟡 P4', component: Connect4Game },
+  { id: 'battleship', label: '⚓ Naval', component: BattleshipGame },
+  { id: 'memory', label: '🧠 Memory', component: MemoryGame },
+  { id: 'snake', label: '🐍 Snake', component: SnakeGame },
+  { id: 'tetris', label: '🧱 Tetris', component: TetrisGame },
 ];
 
 export default function Games() {
@@ -34,17 +43,20 @@ export default function Games() {
         </header>
 
         <Tabs value={activeGame} onValueChange={setActiveGame}>
-          <TabsList className="w-full grid grid-cols-4 mb-4 h-auto p-1 rounded-xl bg-muted/50">
-            {GAMES.map(g => (
-              <TabsTrigger
-                key={g.id}
-                value={g.id}
-                className="text-xs py-2.5 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all"
-              >
-                {g.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+          <ScrollArea className="w-full mb-4">
+            <TabsList className="inline-flex w-max gap-1 h-auto p-1 rounded-xl bg-muted/50">
+              {GAMES.map(g => (
+                <TabsTrigger
+                  key={g.id}
+                  value={g.id}
+                  className="text-xs py-2.5 px-3 rounded-lg whitespace-nowrap data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all"
+                >
+                  {g.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <ScrollBar orientation="horizontal" />
+          </ScrollArea>
           {GAMES.map(g => (
             <TabsContent key={g.id} value={g.id} className="mt-0">
               <g.component />
