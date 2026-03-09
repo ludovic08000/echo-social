@@ -24,23 +24,28 @@ export function ParentalControlPanel() {
   const hasExistingPin = !!parentalControl;
 
   const handleUnlock = async () => {
-    if (!currentPin || currentPin.length !== 4) {
-      toast({ title: 'Code invalide', description: 'Entrez le code PIN à 4 chiffres', variant: 'destructive' });
+    if (!currentPin || currentPin.length < PIN_MIN_LENGTH) {
+      toast({ title: 'Code invalide', description: `Entrez le code PIN à ${PIN_MIN_LENGTH} chiffres minimum`, variant: 'destructive' });
       return;
     }
-    const valid = await verifyPin.mutateAsync(currentPin);
-    if (valid) {
-      setUnlocked(true);
-      setCategories(parentalControl?.allowed_categories || [...ALLOWED_MINOR_CATEGORIES]);
-      toast({ title: '🔓 Déverrouillé' });
-    } else {
-      toast({ title: 'Code incorrect', variant: 'destructive' });
+    try {
+      const valid = await verifyPin.mutateAsync(currentPin);
+      if (valid) {
+        setUnlocked(true);
+        setCategories(parentalControl?.allowed_categories || [...ALLOWED_MINOR_CATEGORIES]);
+        toast({ title: '🔓 Déverrouillé' });
+      } else {
+        toast({ title: 'Code incorrect', variant: 'destructive' });
+      }
+    } catch (err: any) {
+      const msg = err?.message?.includes('429') ? 'Trop de tentatives. Réessayez dans 5 minutes.' : 'Erreur de vérification';
+      toast({ title: msg, variant: 'destructive' });
     }
   };
 
   const handleSave = async () => {
-    if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
-      toast({ title: 'Code invalide', description: 'Le code doit être composé de 4 chiffres', variant: 'destructive' });
+    if (newPin.length < PIN_MIN_LENGTH || !/^\d+$/.test(newPin)) {
+      toast({ title: 'Code invalide', description: `Le code doit être composé de ${PIN_MIN_LENGTH} chiffres minimum`, variant: 'destructive' });
       return;
     }
     if (newPin !== confirmPin) {
