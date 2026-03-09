@@ -44,9 +44,7 @@ Deno.serve(async (req) => {
     if (action === "full" || action === "duplicates") {
       // ── DUPLICATE DETECTION ──
       // 1. Profiles with same name (potential duplicates)
-      const { data: dupNames } = await svc.rpc("execute_sql" as any, {}) 
-        .throwOnError()
-        .select("*");
+      // Query profiles directly instead of using execute_sql
       
       // Fallback: query profiles grouped by name
       const { data: allProfiles } = await svc
