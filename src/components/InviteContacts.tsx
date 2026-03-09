@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Share } from '@capacitor/share';
-import { UserPlus, Search, Check, Send, Phone, Users, ArrowRight } from 'lucide-react';
+import { UserPlus, Search, Check, Send, Phone, Users, ArrowRight, Upload, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -27,6 +27,26 @@ function normalizePhone(phone: string): string {
   return clean;
 }
 
+/** Parse phone numbers from a vCard (.vcf) file content */
+function parseVCardPhones(vcfContent: string): string[] {
+  const phones: string[] = [];
+  const seen = new Set<string>();
+  // Match TEL lines in vCard format (handles TEL;TYPE=...:number and TEL:number)
+  const telRegex = /^TEL[^:]*:(.+)$/gim;
+  let match;
+  while ((match = telRegex.exec(vcfContent)) !== null) {
+    const raw = match[1].trim().replace(/[\s\-().]/g, '');
+    if (raw.length >= 6) {
+      const normalized = normalizePhone(raw);
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        phones.push(normalized);
+      }
+    }
+  }
+  return phones;
+}
+
 /** Check if Contact Picker API is available (not supported on iOS Safari) */
 function hasContactPicker(): boolean {
   if (typeof navigator === 'undefined') return false;
@@ -36,7 +56,13 @@ function hasContactPicker(): boolean {
   return 'contacts' in navigator && 'ContactsManager' in window;
 }
 
-/** Web fallback: contact picker or manual phone search */
+function isIOSDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+/** Web fallback: contact picker, vCard import, or manual phone search */
 function WebPhoneSearch() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -47,6 +73,8 @@ function WebPhoneSearch() {
   const [searched, setSearched] = useState(false);
   const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
   const [pickerSupported] = useState(hasContactPicker);
+  const [isIOS] = useState(isIOSDevice);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const searchPhones = async (phones: string[]) => {
     if (!user || phones.length === 0) return;
@@ -71,6 +99,8 @@ function WebPhoneSearch() {
       setSearched(true);
       if (matchedResults.length === 0) {
         toast({ title: 'Aucun résultat', description: 'Aucun numéro trouvé sur Forsure' });
+      } else {
+        toast({ title: `${matchedResults.length} contact(s) trouvé(s) sur Forsure !` });
       }
     } catch {
       toast({ title: 'Erreur', variant: 'destructive' });
@@ -102,6 +132,25 @@ function WebPhoneSearch() {
     }
   };
 
+  const handleVCardImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const phones = parseVCardPhones(text);
+      if (phones.length === 0) {
+        toast({ title: 'Aucun numéro trouvé', description: 'Le fichier ne contient pas de numéros valides' });
+        return;
+      }
+      toast({ title: `${phones.length} numéro(s) détecté(s)`, description: 'Recherche en cours...' });
+      await searchPhones(phones);
+    } catch {
+      toast({ title: 'Erreur de lecture', description: 'Impossible de lire le fichier', variant: 'destructive' });
+    }
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const handleManualSearch = async () => {
     if (!phoneInput.trim()) return;
     const rawNumbers = phoneInput
@@ -123,7 +172,7 @@ function WebPhoneSearch() {
 
   return (
     <div className="flex flex-col p-4 gap-4">
-      {/* Contact Picker button (if supported) */}
+      {/* Contact Picker button (Android Chrome) */}
       {pickerSupported && (
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
@@ -146,8 +195,8 @@ function WebPhoneSearch() {
         </div>
       )}
 
-      {/* Manual phone search */}
-      <div className="flex flex-col gap-2">
+      {/* vCard import (especially useful on iOS) */}
+      <div className="flex flex-col gap-3">
         {pickerSupported && (
           <div className="relative flex items-center gap-2 py-1">
             <div className="flex-1 border-t border-border" />
@@ -155,6 +204,62 @@ function WebPhoneSearch() {
             <div className="flex-1 border-t border-border" />
           </div>
         )}
+        <div className="flex items-center gap-2">
+          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+            <Upload className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-sm">Importer vos contacts</h3>
+            <p className="text-xs text-muted-foreground">
+              {isIOS
+                ? 'Depuis Contacts → sélectionnez → Partager → fichier .vcf'
+                : 'Importez un fichier vCard (.vcf) depuis votre répertoire'}
+            </p>
+          </div>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".vcf,text/vcard,text/x-vcard"
+          onChange={handleVCardImport}
+          className="hidden"
+        />
+        <Button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={searching}
+          variant="outline"
+          className="gap-2 w-full"
+        >
+          {searching ? (
+            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <FileText className="w-4 h-4" />
+          )}
+          {searching ? 'Analyse en cours...' : 'Choisir un fichier .vcf'}
+        </Button>
+        {isIOS && (
+          <div className="bg-muted/50 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
+            <p className="font-medium text-foreground">Comment faire sur iPhone :</p>
+            <ol className="list-decimal list-inside space-y-0.5">
+              <li>Ouvrez l'app <strong>Contacts</strong></li>
+              <li>Sélectionnez les contacts à partager</li>
+              <li>Appuyez sur <strong>Partager</strong></li>
+              <li>Choisissez <strong>Enregistrer dans Fichiers</strong></li>
+              <li>Revenez ici et importez le fichier .vcf</li>
+            </ol>
+          </div>
+        )}
+      </div>
+
+      {/* Separator */}
+      <div className="relative flex items-center gap-2 py-1">
+        <div className="flex-1 border-t border-border" />
+        <span className="text-xs text-muted-foreground">ou</span>
+        <div className="flex-1 border-t border-border" />
+      </div>
+
+      {/* Manual phone search */}
+      <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
             <Search className="w-5 h-5 text-primary" />
