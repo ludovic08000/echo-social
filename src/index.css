@@ -267,11 +267,18 @@
     left: 125%;
   }
 
-  /* Glass button */
+  /* Glass button — no blur on mobile */
   .btn-glass {
-    @apply backdrop-blur-xl border border-border/30 rounded-xl px-5 py-2.5 font-semibold transition-all duration-300;
-    background: hsl(var(--card) / 0.6);
+    @apply border border-border/30 rounded-xl px-5 py-2.5 font-semibold transition-all duration-300;
+    background: hsl(var(--card) / 0.85);
     box-shadow: 0 2px 12px hsl(220 30% 10% / 0.06), inset 0 1px 0 hsl(0 0% 100% / 0.08);
+  }
+
+  @media (min-width: 768px) {
+    .btn-glass {
+      @apply backdrop-blur-xl;
+      background: hsl(var(--card) / 0.6);
+    }
   }
 
   .btn-glass:hover {

@@ -217,14 +217,9 @@ export function StoriesBar() {
         </div>
 
         {/* Stories */}
-        {groupedStories?.map((group, i) => (
-          <motion.button
+        {groupedStories?.map((group) => (
+          <button
             key={group.user_id}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: (i + 1) * 0.05 }}
-            whileHover={{ scale: 1.06, y: -2 }}
-            whileTap={{ scale: 0.95 }}
             onClick={() => openStory(group)}
             className="flex-shrink-0 flex flex-col items-center gap-1"
           >
@@ -237,7 +232,7 @@ export function StoriesBar() {
               <div className="p-[2px] rounded-[14px] bg-background">
                 <div className="w-[60px] h-[60px] rounded-xl overflow-hidden">
                   {group.profile.avatar_url ? (
-                    <img src={group.profile.avatar_url} alt={group.profile.name} className="w-full h-full object-cover transition-transform duration-300 hover:scale-110" />
+                    <img src={group.profile.avatar_url} alt={group.profile.name} className="w-full h-full object-cover" loading="lazy" />
                   ) : (
                     <UserAvatar src={null} alt={group.profile.name} size="lg" />
                   )}
@@ -247,7 +242,7 @@ export function StoriesBar() {
             <span className="text-[10px] text-muted-foreground truncate w-[68px] text-center font-medium">
               {group.user_id === user?.id ? 'Ma story' : group.profile.name.split(' ')[0]}
             </span>
-          </motion.button>
+          </button>
         ))}
       </div>
 
