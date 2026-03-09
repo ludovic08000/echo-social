@@ -953,7 +953,116 @@ function ChatView({ conversationId }: { conversationId: string }) {
         </div>
       </header>
 
-      {/* Pinned messages banner */}
+      {/* Group Management Panel */}
+      {isGroup && showGroupPanel && (
+        <div className="border-b border-border/30 bg-card animate-in slide-in-from-top-2">
+          <div className="px-4 py-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold flex items-center gap-2">
+                <Users className="w-4 h-4 text-primary" />
+                Membres ({groupMembers.length})
+              </h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowInvitePanel(!showInvitePanel)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  Inviter
+                </button>
+                <button
+                  onClick={async () => {
+                    if (confirm('Voulez-vous vraiment quitter ce groupe ?')) {
+                      try {
+                        await leaveGroup.mutateAsync(conversationId);
+                        toast.success('Vous avez quitté le groupe');
+                        navigate('/messages');
+                      } catch { toast.error('Erreur'); }
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-destructive/10 text-destructive text-xs font-medium hover:bg-destructive/20 transition-colors"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  Quitter
+                </button>
+              </div>
+            </div>
+
+            {/* Members list */}
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {groupMembers.map(member => (
+                <div key={member.user_id} className="flex items-center gap-2.5 py-1.5 px-2 rounded-xl hover:bg-secondary/40 transition-colors">
+                  <Link to={`/profile/${member.user_id}`}>
+                    <UserAvatar src={member.avatar_url} alt={member.name} size="sm" />
+                  </Link>
+                  <Link to={`/profile/${member.user_id}`} className="flex-1 min-w-0">
+                    <span className="text-xs font-medium truncate block">{member.name}</span>
+                    {conversation?.created_by === member.user_id && (
+                      <span className="text-[10px] text-primary flex items-center gap-0.5"><Crown className="w-2.5 h-2.5" /> Admin</span>
+                    )}
+                  </Link>
+                  {conversation?.created_by === user?.id && member.user_id !== user?.id && (
+                    <button
+                      onClick={async () => {
+                        if (confirm(`Retirer ${member.name} du groupe ?`)) {
+                          try {
+                            await removeMember.mutateAsync({ conversationId, userId: member.user_id });
+                            toast.success(`${member.name} a été retiré`);
+                          } catch { toast.error('Erreur'); }
+                        }
+                      }}
+                      className="p-1.5 rounded-full hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      <UserMinus className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Invite friends panel */}
+            {showInvitePanel && (
+              <div className="border-t border-border/20 pt-3 space-y-2">
+                <input
+                  value={inviteSearch}
+                  onChange={e => setInviteSearch(e.target.value)}
+                  placeholder="Rechercher un ami à inviter…"
+                  className="w-full bg-secondary/60 rounded-xl px-3 py-2 text-xs outline-none placeholder:text-muted-foreground"
+                />
+                <div className="space-y-1 max-h-36 overflow-y-auto">
+                  {allFriends
+                    .filter(f => {
+                      const alreadyMember = groupMembers.some(m => m.user_id === f.profile.user_id);
+                      const matchesSearch = !inviteSearch.trim() || f.profile.name.toLowerCase().includes(inviteSearch.toLowerCase());
+                      return !alreadyMember && matchesSearch;
+                    })
+                    .map(f => (
+                      <div key={f.profile.user_id} className="flex items-center gap-2.5 py-1.5 px-2 rounded-xl hover:bg-secondary/40">
+                        <UserAvatar src={f.profile.avatar_url} alt={f.profile.name} size="sm" />
+                        <span className="text-xs font-medium flex-1 truncate">{f.profile.name}</span>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await addMembers.mutateAsync({ conversationId, memberIds: [f.profile.user_id] });
+                              toast.success(`${f.profile.name} ajouté au groupe !`);
+                            } catch { toast.error('Erreur'); }
+                          }}
+                          className="px-2.5 py-1 rounded-full bg-primary text-primary-foreground text-[10px] font-medium hover:bg-primary/90 transition-colors"
+                        >
+                          Inviter
+                        </button>
+                      </div>
+                    ))}
+                  {allFriends.filter(f => !groupMembers.some(m => m.user_id === f.profile.user_id)).length === 0 && (
+                    <p className="text-xs text-muted-foreground text-center py-3">Tous vos amis sont déjà dans le groupe</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {(() => {
         const pinned = messages?.filter(m => pinnedMessages.has(m.id)) || [];
         if (pinned.length === 0) return null;
