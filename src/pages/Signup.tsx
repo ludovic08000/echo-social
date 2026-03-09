@@ -18,9 +18,9 @@ export default function Signup() {
   const navigate = useNavigate();
   const { signUp, user } = useAuth();
   const { t } = useTranslation();
-  const [lastName, setLastName] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [dateOfBirth, setDateOfBirth] = useState<Date>();
+  const [birthDay, setBirthDay] = useState('');
+  const [birthMonth, setBirthMonth] = useState('');
+  const [birthYear, setBirthYear] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
