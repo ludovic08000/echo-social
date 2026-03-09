@@ -629,17 +629,17 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         <div className="flex items-center gap-2 flex-1 min-w-0">
           {conversation && (
             <>
-              <div className="relative flex-shrink-0">
+              <Link to={`/profile/${conversation.participant.user_id}`} className="relative flex-shrink-0">
                 <UserAvatar src={conversation.participant.avatar_url} alt={conversation.participant.name} size="sm" />
                 <div className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 border border-primary" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold truncate">{conversation.participant.name}</p>
+              </Link>
+              <Link to={`/profile/${conversation.participant.user_id}`} className="min-w-0">
+                <p className="text-xs font-semibold truncate hover:underline">{conversation.participant.name}</p>
                 <p className="text-[9px] opacity-80 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                   En ligne
                 </p>
-              </div>
+              </Link>
             </>
           )}
         </div>
