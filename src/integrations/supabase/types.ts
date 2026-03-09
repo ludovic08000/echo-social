@@ -14,6 +14,66 @@ export type Database = {
   }
   public: {
     Tables: {
+      ab_tests: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          ended_at: string | null
+          id: string
+          name: string
+          results_a: Json | null
+          results_b: Json | null
+          started_at: string | null
+          status: string
+          target_metric: string
+          test_type: string
+          traffic_split: number
+          updated_at: string
+          variant_a: Json
+          variant_b: Json
+          winner: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          ended_at?: string | null
+          id?: string
+          name: string
+          results_a?: Json | null
+          results_b?: Json | null
+          started_at?: string | null
+          status?: string
+          target_metric?: string
+          test_type?: string
+          traffic_split?: number
+          updated_at?: string
+          variant_a?: Json
+          variant_b?: Json
+          winner?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          ended_at?: string | null
+          id?: string
+          name?: string
+          results_a?: Json | null
+          results_b?: Json | null
+          started_at?: string | null
+          status?: string
+          target_metric?: string
+          test_type?: string
+          traffic_split?: number
+          updated_at?: string
+          variant_a?: Json
+          variant_b?: Json
+          winner?: string | null
+        }
+        Relationships: []
+      }
       abuse_reports: {
         Row: {
           created_at: string
@@ -505,6 +565,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ai_metrics_log: {
+        Row: {
+          created_at: string
+          id: string
+          metadata: Json | null
+          metric_type: string
+          module_id: string
+          value: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          metric_type?: string
+          module_id: string
+          value?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          metric_type?: string
+          module_id?: string
+          value?: number
+        }
+        Relationships: []
       }
       ai_moderation_cache: {
         Row: {
