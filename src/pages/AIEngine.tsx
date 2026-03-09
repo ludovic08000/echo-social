@@ -13,6 +13,8 @@ import {
   ChevronRight, CheckCircle2, Clock, BarChart3, TrendingUp, ShieldCheck,
   HeartPulse, GraduationCap, UserSearch, Wand2, MessageSquareText, Compass,
   Send, AlertTriangle, ThumbsUp, ThumbsDown, Loader2, Eye, BookOpen,
+  Globe, Network, ScanSearch, ShieldOff, KeyRound, ShieldAlert,
+  Bug, Radio, Wifi, Lock, ServerCrash, AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
