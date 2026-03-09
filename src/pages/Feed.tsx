@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { useActiveAds } from '@/hooks/useAdCampaigns';
 import { useCustomBackground } from '@/hooks/useCustomBackground';
 import { useParentalGate } from '@/components/ParentalGate';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'media' | 'marketplace'> = {
   2: 'marketplace',
@@ -56,6 +57,7 @@ export default function Feed() {
   const { data: activeAds } = useActiveAds();
   const feedBgStyle = useCustomBackground('feed');
   const { isMinor, isUnlocked, requestUnlock } = useParentalGate();
+  const isMobile = useIsMobile();
 
   // Deduplicate posts across pages to prevent React key warnings
   const posts = (() => {
@@ -299,18 +301,27 @@ export default function Feed() {
                 <div className="space-y-3 px-4">
                   {posts.map((post, index) => (
                     <div key={post.id}>
-                      <motion.div
-                        custom={index}
-                        variants={postVariants}
-                        initial="hidden"
-                        whileInView="visible"
-                        viewport={{ once: true, margin: '-30px' }}
-                      >
-                        <PostCard
-                          post={post}
-                          onCommentClick={() => navigate(`/post/${post.id}`)}
-                        />
-                      </motion.div>
+                      {isMobile ? (
+                        <div>
+                          <PostCard
+                            post={post}
+                            onCommentClick={() => navigate(`/post/${post.id}`)}
+                          />
+                        </div>
+                      ) : (
+                        <motion.div
+                          custom={index}
+                          variants={postVariants}
+                          initial="hidden"
+                          whileInView="visible"
+                          viewport={{ once: true, margin: '-30px' }}
+                        >
+                          <PostCard
+                            post={post}
+                            onCommentClick={() => navigate(`/post/${post.id}`)}
+                          />
+                        </motion.div>
+                      )}
                       {renderInjection(index)}
                     </div>
                   ))}
