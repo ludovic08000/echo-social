@@ -1,15 +1,27 @@
 import { useState, useEffect, useRef } from 'react';
 
+function isAppleMobileWebKit() {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  const isIPadOSDesktopUA = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+  return isIOS || isIPadOSDesktopUA;
+}
+
 /**
  * Returns true when the bottom nav should be hidden (user scrolling down).
- * Shows again when scrolling up or near the top.
- * Uses a ref for lastScrollY to avoid re-creating the listener on every scroll.
+ * On iOS/iPadOS Safari we keep nav stable to avoid bounce/jitter.
  */
 export function useScrollHideNav(threshold = 18) {
   const [hidden, setHidden] = useState(false);
   const lastScrollY = useRef(0);
 
   useEffect(() => {
+    if (isAppleMobileWebKit()) {
+      setHidden(false);
+      return;
+    }
+
     let ticking = false;
 
     const handleScroll = () => {
@@ -20,7 +32,6 @@ export function useScrollHideNav(threshold = 18) {
         const last = lastScrollY.current;
         const delta = currentY - last;
 
-        // Ignore tiny iOS/Safari bounce oscillations
         if (Math.abs(delta) < threshold) {
           ticking = false;
           return;
