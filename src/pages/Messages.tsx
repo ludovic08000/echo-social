@@ -4,7 +4,7 @@ import {
   ArrowLeft, Send, Search, Plus, ImageIcon, Smile, Check, CheckCheck, 
   X, Phone, Video, Mic, MicOff, Reply, Heart, ThumbsUp, Laugh, 
   Flame, Sparkles, Camera, Paperclip, MoreVertical, Trash2, Copy,
-  ChevronDown, Flag, Share2, Forward
+  ChevronDown, Flag, Share2, Forward, Pin, PinOff
 } from 'lucide-react';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -148,7 +148,7 @@ function ReactionPicker({ onReact, visible }: { onReact: (emoji: string) => void
 
 // ─── Message Context Menu ────────────────────────────────
 function MessageActions({ 
-  isMe, onReply, onReact, onCopy, onDeleteForMe, onDeleteForEveryone, onReport, visible, onClose 
+  isMe, onReply, onReact, onCopy, onDeleteForMe, onDeleteForEveryone, onReport, onForward, onPin, isPinned, visible, onClose 
 }: { 
   isMe: boolean; 
   onReply: () => void; 
@@ -157,6 +157,9 @@ function MessageActions({
   onDeleteForMe: () => void;
   onDeleteForEveryone?: () => void;
   onReport: () => void;
+  onForward: () => void;
+  onPin: () => void;
+  isPinned: boolean;
   visible: boolean; 
   onClose: () => void;
 }) {
@@ -182,13 +185,21 @@ function MessageActions({
           ))}
         </div>
         {/* Actions */}
-        <div className="glass shadow-xl rounded-xl border border-border/30 overflow-hidden min-w-[180px]">
+        <div className="glass shadow-xl rounded-xl border border-border/30 overflow-hidden min-w-[200px]">
           <button onClick={() => { onReply(); onClose(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-secondary/60 transition-colors">
             <Reply className="w-4 h-4 text-muted-foreground" /> Répondre
+          </button>
+          <button onClick={() => { onForward(); onClose(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-secondary/60 transition-colors">
+            <Forward className="w-4 h-4 text-muted-foreground" /> Transférer
+          </button>
+          <button onClick={() => { onPin(); onClose(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-secondary/60 transition-colors">
+            {isPinned ? <PinOff className="w-4 h-4 text-muted-foreground" /> : <Pin className="w-4 h-4 text-muted-foreground" />}
+            {isPinned ? 'Désépingler' : 'Épingler'}
           </button>
           <button onClick={() => { onCopy(); onClose(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-secondary/60 transition-colors">
             <Copy className="w-4 h-4 text-muted-foreground" /> Copier
           </button>
+          <div className="h-px bg-border/20 mx-2" />
           <button onClick={() => { onDeleteForMe(); onClose(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-secondary/60 transition-colors">
             <Trash2 className="w-4 h-4 text-muted-foreground" /> Supprimer pour moi
           </button>
@@ -205,6 +216,77 @@ function MessageActions({
         </div>
       </div>
     </>
+  );
+}
+
+// ─── Forward Message Dialog ──────────────────────────────
+function ForwardMessageDialog({ 
+  open, onOpenChange, messageBody, onForward 
+}: { 
+  open: boolean; 
+  onOpenChange: (v: boolean) => void; 
+  messageBody: string;
+  onForward: (conversationId: string) => void;
+}) {
+  const { data: conversations } = useConversations();
+  const [search, setSearch] = useState('');
+
+  const filtered = useMemo(() => {
+    if (!conversations) return [];
+    if (!search.trim()) return conversations;
+    const q = search.toLowerCase();
+    return conversations.filter(c => 
+      c.participant.name.toLowerCase().includes(q) || 
+      (c.name && c.name.toLowerCase().includes(q))
+    );
+  }, [conversations, search]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md max-h-[70vh] flex flex-col p-0 gap-0 rounded-2xl">
+        <DialogHeader className="p-4 pb-0">
+          <DialogTitle className="text-base font-bold">Transférer le message</DialogTitle>
+        </DialogHeader>
+        <div className="px-4 pt-3 pb-1">
+          <div className="glass rounded-xl px-3 py-2 mb-2 border border-border/20">
+            <p className="text-xs text-muted-foreground line-clamp-2">{messageBody}</p>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Rechercher…"
+              className="w-full bg-secondary/60 rounded-xl pl-9 pr-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors"
+              autoFocus
+            />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 pb-4">
+          {!filtered.length ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">Aucune conversation</div>
+          ) : (
+            filtered.map(conv => (
+              <button
+                key={conv.id}
+                onClick={() => { onForward(conv.id); onOpenChange(false); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-secondary/60 active:scale-[0.98] transition-all"
+              >
+                {conv.is_group ? (
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/30 flex items-center justify-center text-lg flex-shrink-0">👥</div>
+                ) : (
+                  <UserAvatar src={conv.participant.avatar_url} alt={conv.participant.name} size="md" />
+                )}
+                <span className="text-sm font-medium truncate flex-1 text-left">
+                  {conv.is_group ? (conv.name || 'Groupe') : conv.participant.name}
+                </span>
+                <Forward className="w-4 h-4 text-primary flex-shrink-0" />
+              </button>
+            ))
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -677,6 +759,8 @@ function ChatView({ conversationId }: { conversationId: string }) {
   const [isTyping, setIsTyping] = useState(false);
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [showSharePicker, setShowSharePicker] = useState(false);
+  const [pinnedMessages, setPinnedMessages] = useState<Set<string>>(new Set());
+  const [forwardMsg, setForwardMsg] = useState<Message | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -854,6 +938,27 @@ function ChatView({ conversationId }: { conversationId: string }) {
         </div>
       </header>
 
+      {/* Pinned messages banner */}
+      {(() => {
+        const pinned = messages?.filter(m => pinnedMessages.has(m.id)) || [];
+        if (pinned.length === 0) return null;
+        return (
+          <div className="sticky top-14 z-30 glass border-b border-border/20 px-4 py-2 animate-in slide-in-from-top-2">
+            <div className="flex items-center gap-2">
+              <Pin className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+              <p className="text-xs text-foreground font-medium truncate flex-1">
+                📌 {pinned.length === 1 ? pinned[0].body.slice(0, 60) : `${pinned.length} messages épinglés`}
+              </p>
+              {pinned.length === 1 && (
+                <button onClick={() => setPinnedMessages(prev => { const n = new Set(prev); n.delete(pinned[0].id); return n; })} className="text-muted-foreground hover:text-foreground">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Messages area */}
       <div
         ref={scrollContainerRef}
@@ -947,6 +1052,21 @@ function ChatView({ conversationId }: { conversationId: string }) {
                           onReply={() => setReplyTo(msg)}
                           onReact={(emoji) => handleReact(msg.id, emoji)}
                           onCopy={() => handleCopy(msg.body)}
+                          onForward={() => setForwardMsg(msg)}
+                          onPin={() => {
+                            setPinnedMessages(prev => {
+                              const next = new Set(prev);
+                              if (next.has(msg.id)) {
+                                next.delete(msg.id);
+                                toast.success('Message désépinglé');
+                              } else {
+                                next.add(msg.id);
+                                toast.success('Message épinglé 📌');
+                              }
+                              return next;
+                            });
+                          }}
+                          isPinned={pinnedMessages.has(msg.id)}
                           onDeleteForMe={() => {
                             deleteForMe.mutate({ messageId: msg.id, conversationId });
                             toast.success('Message supprimé pour vous');
@@ -965,6 +1085,14 @@ function ChatView({ conversationId }: { conversationId: string }) {
                             toast.success('Message signalé. Merci pour votre vigilance.');
                           }}
                         />
+
+                        {/* Pin indicator */}
+                        {pinnedMessages.has(msg.id) && (
+                          <div className={cn("flex items-center gap-1 mb-0.5", isMe ? "flex-row-reverse" : "")}>
+                            <Pin className="w-3 h-3 text-primary" />
+                            <span className="text-[10px] text-primary font-medium">Épinglé</span>
+                          </div>
+                        )}
 
                         {/* Image message */}
                         {isImage && (
@@ -1199,6 +1327,21 @@ function ChatView({ conversationId }: { conversationId: string }) {
         onToggleCamera={toggleCamera}
         onSwitchToVideo={switchToVideo}
         onSwitchCamera={switchCamera}
+      />
+
+      {/* Forward dialog */}
+      <ForwardMessageDialog
+        open={!!forwardMsg}
+        onOpenChange={(v) => { if (!v) setForwardMsg(null); }}
+        messageBody={forwardMsg?.body || ''}
+        onForward={(targetConvId) => {
+          if (forwardMsg) {
+            const forwardBody = `↪️ Message transféré:\n"${forwardMsg.body}"`;
+            sendMessage.mutate({ conversationId: targetConvId, body: forwardBody });
+            toast.success('Message transféré');
+            setForwardMsg(null);
+          }
+        }}
       />
     </div>
   );
