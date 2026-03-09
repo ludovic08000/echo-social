@@ -27,7 +27,12 @@ function normalizePhone(phone: string): string {
   return clean;
 }
 
-/** Web fallback: manual phone search */
+/** Check if Contact Picker API is available */
+function hasContactPicker(): boolean {
+  return 'contacts' in navigator && 'ContactsManager' in window;
+}
+
+/** Web fallback: contact picker or manual phone search */
 function WebPhoneSearch() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -37,29 +42,19 @@ function WebPhoneSearch() {
   const [results, setResults] = useState<MatchedContact[]>([]);
   const [searched, setSearched] = useState(false);
   const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
+  const [pickerSupported] = useState(hasContactPicker);
 
-  const handleSearch = async () => {
-    if (!phoneInput.trim() || !user) return;
-
+  const searchPhones = async (phones: string[]) => {
+    if (!user || phones.length === 0) return;
     setSearching(true);
     setSearched(false);
-
     try {
-      // Support multiple numbers separated by commas or newlines
-      const rawNumbers = phoneInput
-        .split(/[,\n;]+/)
-        .map(n => n.trim())
-        .filter(n => n.length >= 6);
-
-      const normalized = rawNumbers.map(normalizePhone);
-
+      const normalized = phones.map(normalizePhone);
       const { data: matches, error } = await supabase.rpc('match_contacts_by_phone', {
         p_user_id: user.id,
         p_phone_numbers: normalized,
       });
-
       if (error) throw error;
-
       const matchedResults: MatchedContact[] = (matches || []).map((m: any) => ({
         user_id: m.user_id,
         name: m.name,
@@ -68,18 +63,48 @@ function WebPhoneSearch() {
         is_friend: m.is_friend,
         contact_name: m.name,
       }));
-
       setResults(matchedResults);
       setSearched(true);
-
       if (matchedResults.length === 0) {
-        toast({ title: 'Aucun résultat', description: 'Ce numéro n\'est pas inscrit sur Forsure' });
+        toast({ title: 'Aucun résultat', description: 'Aucun numéro trouvé sur Forsure' });
       }
     } catch {
       toast({ title: 'Erreur', variant: 'destructive' });
     } finally {
       setSearching(false);
     }
+  };
+
+  const handlePickContacts = async () => {
+    try {
+      const contacts = await (navigator as any).contacts.select(
+        ['tel'],
+        { multiple: true }
+      );
+      const phones: string[] = [];
+      for (const c of contacts) {
+        for (const tel of (c.tel || [])) {
+          const clean = tel.replace(/[\s\-().]/g, '');
+          if (clean.length >= 6) phones.push(clean);
+        }
+      }
+      if (phones.length === 0) {
+        toast({ title: 'Aucun numéro', description: 'Les contacts sélectionnés n\'ont pas de numéro' });
+        return;
+      }
+      await searchPhones(phones);
+    } catch {
+      // User cancelled picker
+    }
+  };
+
+  const handleManualSearch = async () => {
+    if (!phoneInput.trim()) return;
+    const rawNumbers = phoneInput
+      .split(/[,\n;]+/)
+      .map(n => n.trim())
+      .filter(n => n.length >= 6);
+    await searchPhones(rawNumbers);
   };
 
   const handleAddFriend = async (userId: string) => {
@@ -92,33 +117,49 @@ function WebPhoneSearch() {
     }
   };
 
-  const handleWebShare = async () => {
-    try {
-      await navigator.share?.({
-        title: 'Rejoins Forsure !',
-        text: INVITE_MESSAGE,
-        url: 'https://calm-connect-05.lovable.app',
-      });
-    } catch {
-      await navigator.clipboard.writeText(INVITE_MESSAGE);
-      toast({ title: 'Lien copié !', description: 'Partagez-le avec vos amis' });
-    }
-  };
-
   return (
     <div className="flex flex-col p-4 gap-4">
-      {/* Phone search */}
+      {/* Contact Picker button (if supported) */}
+      {pickerSupported && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <Users className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-sm">Depuis vos contacts</h3>
+              <p className="text-xs text-muted-foreground">Sélectionnez des contacts pour les retrouver sur Forsure</p>
+            </div>
+          </div>
+          <Button onClick={handlePickContacts} disabled={searching} className="gap-2 w-full">
+            {searching ? (
+              <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Phone className="w-4 h-4" />
+            )}
+            {searching ? 'Recherche...' : 'Accéder à mes contacts'}
+          </Button>
+        </div>
+      )}
+
+      {/* Manual phone search */}
       <div className="flex flex-col gap-2">
+        {pickerSupported && (
+          <div className="relative flex items-center gap-2 py-1">
+            <div className="flex-1 border-t border-border" />
+            <span className="text-xs text-muted-foreground">ou</span>
+            <div className="flex-1 border-t border-border" />
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-            <Phone className="w-5 h-5 text-primary" />
+            <Search className="w-5 h-5 text-primary" />
           </div>
           <div>
             <h3 className="font-semibold text-sm">Chercher par numéro</h3>
             <p className="text-xs text-muted-foreground">Entrez un ou plusieurs numéros de téléphone</p>
           </div>
         </div>
-
         <div className="flex gap-2">
           <Input
             placeholder="06 12 34 56 78"
@@ -127,7 +168,7 @@ function WebPhoneSearch() {
             className="flex-1"
             type="tel"
           />
-          <Button onClick={handleSearch} disabled={searching || !phoneInput.trim()} size="sm" className="gap-1.5">
+          <Button onClick={handleManualSearch} disabled={searching || !phoneInput.trim()} size="sm" className="gap-1.5">
             {searching ? (
               <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
             ) : (
@@ -177,17 +218,6 @@ function WebPhoneSearch() {
           ))}
         </div>
       )}
-
-      {/* Share link */}
-      <div className="flex flex-col items-center gap-3 pt-2 border-t border-border">
-        <p className="text-xs text-muted-foreground text-center">
-          Ou invitez vos amis à rejoindre Forsure
-        </p>
-        <Button onClick={handleWebShare} variant="outline" className="gap-2 w-full">
-          <Send className="w-4 h-4" />
-          Partager le lien d'invitation
-        </Button>
-      </div>
     </div>
   );
 }
