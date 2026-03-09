@@ -665,6 +665,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
             <Video className="w-3.5 h-3.5" />
           </button>
+          <button onClick={() => { closeChat(); navigate(`/messages/${conversationId}`); }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors" title="Agrandir">
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
           <button onClick={minimizeChat} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
             <Minus className="w-3.5 h-3.5" />
           </button>
