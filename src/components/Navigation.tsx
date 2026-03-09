@@ -60,9 +60,9 @@ export function MobileNav() {
       {/* Menu étendu */}
       {showMore && (
         <div className="fixed inset-0 z-[60]" onClick={() => setShowMore(false)}>
-          <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
+          <div className="absolute inset-0 bg-background/70" />
           <div className="absolute bottom-[68px] left-3 right-3 safe-area-pb z-[61] animate-slide-up">
-            <div className="bg-card/95 backdrop-blur-2xl rounded-3xl border border-border/30 shadow-[var(--shadow-xl)] p-4">
+            <div className="bg-card/95 rounded-3xl border border-border/30 shadow-[var(--shadow-xl)] p-4">
               <div className="grid grid-cols-4 gap-3">
                 {[
                   { path: '/groups', icon: Users, label: 'Groupes' },
