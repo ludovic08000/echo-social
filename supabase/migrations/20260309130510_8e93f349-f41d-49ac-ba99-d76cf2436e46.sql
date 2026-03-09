@@ -1,0 +1,1 @@
+UPDATE profiles SET age_verification_status = 'verified' WHERE user_id = '98c32ea4-faae-4c87-b8d4-8a0ea9e7be7e';
