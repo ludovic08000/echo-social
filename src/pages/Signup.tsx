@@ -299,7 +299,7 @@ export default function Signup() {
                   Protection parentale
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  L'utilisateur a moins de 16 ans. Un parent doit définir un code PIN à 4 chiffres pour le contrôle parental.
+                  L'utilisateur a moins de 16 ans. Un parent doit définir un code PIN à 8 chiffres minimum pour le contrôle parental.
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
@@ -307,10 +307,10 @@ export default function Signup() {
                     <Input
                       type={showParentalPin ? 'text' : 'password'}
                       value={parentalPin}
-                      onChange={(e) => setParentalPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                      placeholder="• • • •"
-                      maxLength={4}
-                      className="text-center text-lg tracking-[0.5em] font-mono"
+                      onChange={(e) => setParentalPin(e.target.value.replace(/\D/g, '').slice(0, 12))}
+                      placeholder="8 chiffres min."
+                      maxLength={12}
+                      className="text-center text-lg tracking-[0.3em] font-mono"
                     />
                   </div>
                   <div className="space-y-1">
@@ -318,10 +318,10 @@ export default function Signup() {
                     <Input
                       type={showParentalPin ? 'text' : 'password'}
                       value={parentalPinConfirm}
-                      onChange={(e) => setParentalPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                      placeholder="• • • •"
-                      maxLength={4}
-                      className="text-center text-lg tracking-[0.5em] font-mono"
+                      onChange={(e) => setParentalPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 12))}
+                      placeholder="8 chiffres min."
+                      maxLength={12}
+                      className="text-center text-lg tracking-[0.3em] font-mono"
                     />
                   </div>
                 </div>
