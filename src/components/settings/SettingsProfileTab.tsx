@@ -20,6 +20,7 @@ export function SettingsProfileTab() {
   const { data: profile } = useProfile();
   const updateProfile = useUpdateProfile();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { verifyAge } = useAgeVerification();
 
   const [name, setName] = useState('');
   const [bio, setBio] = useState('');
