@@ -609,7 +609,7 @@ export function CreatePost() {
             className="flex items-center justify-around px-4 py-2.5 border-t border-border/20"
           >
             <input type="file" ref={fileInputRef} onChange={(e) => handleFileChange(e, 'image')} accept="image/*" className="hidden" />
-            <input type="file" ref={videoInputRef} onChange={(e) => handleFileChange(e, 'video')} accept="video/*" className="hidden" />
+            <input type="file" ref={videoInputRef} onChange={(e) => handleFileChange(e, 'video')} accept="video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v" className="hidden" />
             {[
               { onClick: () => fileInputRef.current?.click(), icon: Image, label: 'Photo', iconColor: 'text-primary/70', hoverColor: 'hover:text-primary' },
               { onClick: () => videoInputRef.current?.click(), icon: Video, label: 'Vidéo', iconColor: 'text-destructive/70', hoverColor: 'hover:text-destructive' },
