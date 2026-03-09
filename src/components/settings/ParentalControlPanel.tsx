@@ -111,7 +111,8 @@ export function ParentalControlPanel() {
       <div className="flex items-center gap-3 p-4 rounded-xl bg-primary/5 border border-primary/10">
         <Shield className="w-5 h-5 text-primary shrink-0" />
         <p className="text-sm text-muted-foreground">
-          Définissez un code PIN à 4 chiffres pour protéger l'accès aux contenus sensibles. Les mineurs ne verront que les catégories autorisées.
+          Définissez un code PIN à 8 chiffres minimum pour protéger l'accès aux contenus sensibles. Les mineurs ne verront que les catégories autorisées.
+        </p>
         </p>
       </div>
 
