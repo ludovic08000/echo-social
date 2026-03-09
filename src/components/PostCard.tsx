@@ -49,6 +49,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
   const isMobile = useIsMobile();
 
   const postUrl = generatePostUrl(post.id);
+  const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
 
   useEffect(() => {
     if (!post.expires_at) return;
