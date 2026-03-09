@@ -1022,16 +1022,27 @@ Date et heure : ${new Date().toLocaleString("fr-FR")}`;
     
     // First call — may trigger tool use
     let resp = await callAI(apiKey, {
-      model: "google/gemini-3.1-pro-preview",
+      model: "google/gemini-2.5-flash",
       messages,
       tools: ZEUS_TOOLS,
       stream: false,
     });
     let errResp = aiError(resp.status, cors);
     if (errResp) return errResp;
-    if (!resp.ok) throw new Error("AI error");
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "Unknown AI error");
+      console.error("Zeus AI error:", resp.status, errText);
+      throw new Error(`AI error ${resp.status}`);
+    }
 
-    let aiData = await resp.json();
+    let aiText = await resp.text();
+    let aiData: any;
+    try {
+      aiData = JSON.parse(aiText);
+    } catch {
+      console.error("Zeus JSON parse error, body length:", aiText.length, "preview:", aiText.slice(0, 200));
+      throw new Error("Invalid AI response");
+    }
     let choice = aiData.choices?.[0];
     let toolCalls = choice?.message?.tool_calls;
     let loopCount = 0;
