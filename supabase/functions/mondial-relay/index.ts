@@ -320,10 +320,10 @@ serve(async (req) => {
         : (order.shipping_weight_grams || 500);
 
       const senderName = sender?.name || "Vendeur ForSure";
-      const senderAddress = sender?.address || order.shipping_relay_address || "10 RUE DE TEST";
-      const senderCity = sender?.city || order.shipping_relay_city || "PARIS";
-      const senderPostcode = sender?.postcode || order.shipping_relay_postcode || "75001";
-      const senderCountry = sender?.country || order.shipping_relay_country || "FR";
+      const senderAddress = sender?.address || "10 RUE DE TEST";
+      const senderCity = sender?.city || "PARIS";
+      const senderPostcode = sender?.postcode || "75001";
+      const senderCountry = sender?.country || "FR";
       const senderPhone = sender?.phone || "0600000000";
       const senderEmail = sender?.email || "support@forsure.app";
 
