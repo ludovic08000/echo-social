@@ -39,6 +39,8 @@ export interface Profile {
   creator_tier: string | null;
   profile_bg_url: string | null;
   feed_bg_url: string | null;
+  age_verified: boolean;
+  age_verification_status: string;
   created_at: string;
   updated_at: string;
 }
