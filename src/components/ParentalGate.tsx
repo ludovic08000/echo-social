@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { useIsMinorWithParentalControl, useVerifyParentalPin } from '@/hooks/useParentalControl';
+import { useIsMinorWithParentalControl, useVerifyParentalPin, PIN_MIN_LENGTH, PIN_MAX_LENGTH } from '@/hooks/useParentalControl';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -45,15 +45,21 @@ export function ParentalGateProvider({ children }: { children: ReactNode }) {
   }, [isUnlocked]);
 
   const handleVerify = async () => {
-    if (pin.length !== 4) return;
-    const valid = await verifyPin.mutateAsync(pin);
-    if (valid) {
-      setIsUnlocked(true);
-      setShowDialog(false);
-      toast({ title: '🔓 Accès déverrouillé', description: 'Session parentale active' });
-      onSuccessCallback?.();
-    } else {
-      toast({ title: 'Code incorrect', variant: 'destructive' });
+    if (pin.length < PIN_MIN_LENGTH) return;
+    try {
+      const valid = await verifyPin.mutateAsync(pin);
+      if (valid) {
+        setIsUnlocked(true);
+        setShowDialog(false);
+        toast({ title: '🔓 Accès déverrouillé', description: 'Session parentale active' });
+        onSuccessCallback?.();
+      } else {
+        toast({ title: 'Code incorrect', variant: 'destructive' });
+        setPin('');
+      }
+    } catch (err: any) {
+      const msg = err?.message?.includes('429') ? 'Trop de tentatives. Réessayez dans 5 minutes.' : 'Erreur de vérification';
+      toast({ title: msg, variant: 'destructive' });
       setPin('');
     }
   };
@@ -77,19 +83,19 @@ export function ParentalGateProvider({ children }: { children: ReactNode }) {
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Ce contenu est protégé par le contrôle parental. Entrez le code PIN pour y accéder.
+            Ce contenu est protégé par le contrôle parental. Entrez le code PIN (8 chiffres min.) pour y accéder.
           </p>
           <Input
             type="password"
             value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-            placeholder="• • • •"
-            maxLength={4}
-            className="text-center text-xl tracking-[0.5em] font-mono"
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, PIN_MAX_LENGTH))}
+            placeholder="• • • • • • • •"
+            maxLength={PIN_MAX_LENGTH}
+            className="text-center text-xl tracking-[0.3em] font-mono"
             onKeyDown={(e) => e.key === 'Enter' && handleVerify()}
             autoFocus
           />
-          <Button onClick={handleVerify} disabled={pin.length !== 4 || verifyPin.isPending} className="w-full">
+          <Button onClick={handleVerify} disabled={pin.length < PIN_MIN_LENGTH || verifyPin.isPending} className="w-full">
             <Shield className="w-4 h-4 mr-2" />
             {verifyPin.isPending ? 'Vérification...' : 'Déverrouiller'}
           </Button>

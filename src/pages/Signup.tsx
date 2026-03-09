@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, CalendarIcon, Shield } from 'lucide-react';
 import { format, differenceInYears } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -35,8 +35,7 @@ export default function Signup() {
   const [showParentalPin, setShowParentalPin] = useState(false);
 
   if (user) {
-    navigate('/feed');
-    return null;
+    return <Navigate to="/feed" replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -82,8 +81,8 @@ export default function Signup() {
 
     // Validate parental PIN if minor
     if (isMinor && showParentalStep) {
-      if (parentalPin.length !== 4 || !/^\d{4}$/.test(parentalPin)) {
-        toast({ title: 'Code invalide', description: 'Le code parental doit être composé de 4 chiffres', variant: 'destructive' });
+      if (parentalPin.length < 8 || !/^\d{8,12}$/.test(parentalPin)) {
+        toast({ title: 'Code invalide', description: 'Le code parental doit être composé de 8 chiffres minimum', variant: 'destructive' });
         return;
       }
       if (parentalPin !== parentalPinConfirm) {
@@ -300,7 +299,7 @@ export default function Signup() {
                   Protection parentale
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  L'utilisateur a moins de 16 ans. Un parent doit définir un code PIN à 4 chiffres pour le contrôle parental.
+                  L'utilisateur a moins de 16 ans. Un parent doit définir un code PIN à 8 chiffres minimum pour le contrôle parental.
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
@@ -308,10 +307,10 @@ export default function Signup() {
                     <Input
                       type={showParentalPin ? 'text' : 'password'}
                       value={parentalPin}
-                      onChange={(e) => setParentalPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                      placeholder="• • • •"
-                      maxLength={4}
-                      className="text-center text-lg tracking-[0.5em] font-mono"
+                      onChange={(e) => setParentalPin(e.target.value.replace(/\D/g, '').slice(0, 12))}
+                      placeholder="8 chiffres min."
+                      maxLength={12}
+                      className="text-center text-lg tracking-[0.3em] font-mono"
                     />
                   </div>
                   <div className="space-y-1">
@@ -319,10 +318,10 @@ export default function Signup() {
                     <Input
                       type={showParentalPin ? 'text' : 'password'}
                       value={parentalPinConfirm}
-                      onChange={(e) => setParentalPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                      placeholder="• • • •"
-                      maxLength={4}
-                      className="text-center text-lg tracking-[0.5em] font-mono"
+                      onChange={(e) => setParentalPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 12))}
+                      placeholder="8 chiffres min."
+                      maxLength={12}
+                      className="text-center text-lg tracking-[0.3em] font-mono"
                     />
                   </div>
                 </div>

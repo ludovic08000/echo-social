@@ -59,3 +59,31 @@ verify_jwt = false
 
 [functions.ad-checkout]
 verify_jwt = false
+
+[functions.verify-parental-pin]
+verify_jwt = false
+
+[functions.verify-packing-video]
+verify_jwt = false
+
+[functions.zeus]
+verify_jwt = false
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+[functions.platform-health]
+verify_jwt = false
+
+[functions.data-export]
+verify_jwt = false
+
+[functions.mondial-relay]
+verify_jwt = false
+
+[functions.r2-cleanup]
+verify_jwt = false
+
+[functions.seller-ai-coach]
+verify_jwt = false
+

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
@@ -12,6 +12,7 @@ import loginBg from '@/assets/login-bg.png';
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { signIn, user } = useAuth();
   const { t } = useTranslation();
   const [email, setEmail] = useState('');
@@ -20,8 +21,8 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
 
   if (user) {
-    navigate('/feed');
-    return null;
+    const from = (location.state as { from?: string })?.from || '/feed';
+    return <Navigate to={from} replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {

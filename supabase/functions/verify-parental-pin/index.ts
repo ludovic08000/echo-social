@@ -1,6 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 
+// In-memory rate limiting (per isolate; for production, use Redis or DB)
+const failedAttempts = new Map<string, { count: number; resetAt: number }>();
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 5 * 60_000; // 5 minutes
+
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
@@ -20,7 +25,6 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Verify user identity from JWT
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -34,32 +38,48 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { action, pin, allowed_categories } = body;
 
-    // Service client for DB operations (bypasses RLS)
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // ── Server-side PIN hashing with per-user salt ──
     async function hashPinServer(rawPin: string, userId: string): Promise<string> {
       const encoder = new TextEncoder();
-      // Use user ID as salt — unique per user, not guessable
       const data = encoder.encode(rawPin + userId + "forsure-parental-v2");
       const hash = await crypto.subtle.digest("SHA-256", data);
       return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
     }
 
-    // Validate PIN format
+    // Validate PIN format: 8 digits minimum
     if (pin !== undefined) {
-      if (typeof pin !== "string" || !/^\d{4,6}$/.test(pin)) {
-        return new Response(JSON.stringify({ error: "PIN invalide (4 à 6 chiffres requis)" }), {
+      if (typeof pin !== "string" || !/^\d{8,12}$/.test(pin)) {
+        return new Response(JSON.stringify({ error: "PIN invalide (8 à 12 chiffres requis)" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     }
 
-    // ── Rate limiting on verify: max 5 attempts per minute ──
-    if (action === "verify") {
-      const oneMinAgo = new Date(Date.now() - 60_000).toISOString();
-      // We track attempts via a simple in-memory map per user
-      // For production, use a DB counter or Redis
+    // ── Rate limiting on verify ──
+    function checkRateLimit(userId: string): boolean {
+      const now = Date.now();
+      const entry = failedAttempts.get(userId);
+      if (entry && now < entry.resetAt && entry.count >= MAX_ATTEMPTS) {
+        return false; // locked out
+      }
+      if (entry && now >= entry.resetAt) {
+        failedAttempts.delete(userId);
+      }
+      return true;
+    }
+
+    function recordFailedAttempt(userId: string) {
+      const now = Date.now();
+      const entry = failedAttempts.get(userId) || { count: 0, resetAt: now + LOCKOUT_MS };
+      entry.count += 1;
+      entry.resetAt = now + LOCKOUT_MS;
+      failedAttempts.set(userId, entry);
+    }
+
+    function clearFailedAttempts(userId: string) {
+      failedAttempts.delete(userId);
     }
 
     switch (action) {
@@ -76,7 +96,6 @@ Deno.serve(async (req) => {
           ? allowed_categories
           : ["education", "sport", "gaming", "musique", "art", "humour"];
 
-        // Upsert
         const { data: existing } = await supabase
           .from("parental_controls")
           .select("id")
@@ -105,6 +124,7 @@ Deno.serve(async (req) => {
           if (error) throw error;
         }
 
+        console.log(`[parental-pin] set ok user=${user.id}`);
         return new Response(JSON.stringify({ ok: true }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -115,6 +135,14 @@ Deno.serve(async (req) => {
         if (!pin) {
           return new Response(JSON.stringify({ error: "PIN requis" }), {
             status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // Rate limit check
+        if (!checkRateLimit(user.id)) {
+          console.warn(`[parental-pin] rate-limited user=${user.id}`);
+          return new Response(JSON.stringify({ ok: false, error: "Trop de tentatives. Réessayez dans 5 minutes." }), {
+            status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
 
@@ -133,10 +161,9 @@ Deno.serve(async (req) => {
           });
         }
 
-        // Constant-time comparison to prevent timing attacks
         const match = pinHash === data.pin_hash;
 
-        // Also support legacy hash format for migration
+        // Legacy hash migration (old 4-digit salt)
         let legacyMatch = false;
         if (!match) {
           const legacyEncoder = new TextEncoder();
@@ -145,7 +172,6 @@ Deno.serve(async (req) => {
           const legacyHash = Array.from(new Uint8Array(legacyHashBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
           legacyMatch = legacyHash === data.pin_hash;
 
-          // If legacy match, migrate to new hash format
           if (legacyMatch) {
             await supabase
               .from("parental_controls")
@@ -154,7 +180,17 @@ Deno.serve(async (req) => {
           }
         }
 
-        return new Response(JSON.stringify({ ok: match || legacyMatch }), {
+        const success = match || legacyMatch;
+
+        if (success) {
+          clearFailedAttempts(user.id);
+          console.log(`[parental-pin] verify ok user=${user.id}`);
+        } else {
+          recordFailedAttempt(user.id);
+          console.warn(`[parental-pin] verify failed user=${user.id}`);
+        }
+
+        return new Response(JSON.stringify({ ok: success }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -165,10 +201,10 @@ Deno.serve(async (req) => {
         });
     }
   } catch (e) {
-    console.error("verify-parental-pin error:", e);
+    console.error("[parental-pin] error:", e instanceof Error ? e.message : "unknown");
     const corsHeaders = getCorsHeaders(req);
     return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Erreur serveur" }),
+      JSON.stringify({ error: "Erreur serveur" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
