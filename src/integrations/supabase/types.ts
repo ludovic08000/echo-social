@@ -2599,6 +2599,8 @@ export type Database = {
       }
       profiles: {
         Row: {
+          age_verification_status: string
+          age_verified: boolean
           avatar_url: string | null
           bio: string | null
           city: string | null
@@ -2630,6 +2632,8 @@ export type Database = {
           work: string | null
         }
         Insert: {
+          age_verification_status?: string
+          age_verified?: boolean
           avatar_url?: string | null
           bio?: string | null
           city?: string | null
@@ -2661,6 +2665,8 @@ export type Database = {
           work?: string | null
         }
         Update: {
+          age_verification_status?: string
+          age_verified?: boolean
           avatar_url?: string | null
           bio?: string | null
           city?: string | null
