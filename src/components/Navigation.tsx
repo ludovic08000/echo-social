@@ -100,8 +100,9 @@ export function MobileNav() {
 
       <nav className={cn(
         "fixed bottom-0 left-0 right-0 z-50 safe-area-pb transition-transform duration-300",
-        "bg-card/85 backdrop-blur-2xl border-t border-border/15",
-        "shadow-[0_-8px_40px_hsl(var(--background)/0.6)]",
+        "bg-card/95 border-t border-border/15",
+        "md:bg-card/85 md:backdrop-blur-2xl",
+        "shadow-[0_-4px_20px_hsl(var(--background)/0.5)]",
         navHidden && "translate-y-full"
       )}>
         <div className="flex items-end justify-evenly h-[60px] pb-1">
