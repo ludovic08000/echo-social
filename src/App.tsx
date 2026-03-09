@@ -58,8 +58,15 @@ function IncomingCallHandler() {
   const { incomingCall, acceptCall, declineCall } = useIncomingCall();
   const { openChat } = useChatWidget();
 
+  const activeIncomingCallIdRef = useRef<string | null>(null);
+
   const call = useCall({
-    onCallEnded: useCallback(() => {}, []),
+    onCallEnded: useCallback(() => {
+      if (activeIncomingCallIdRef.current) {
+        endActiveCall(activeIncomingCallIdRef.current);
+        activeIncomingCallIdRef.current = null;
+      }
+    }, []),
   });
 
   const handleAccept = useCallback(async () => {
