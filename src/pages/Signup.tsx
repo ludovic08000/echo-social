@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, CalendarIcon, Shield } from 'lucide-react';
 import { format, differenceInYears } from 'date-fns';
 import { fr } from 'date-fns/locale';
