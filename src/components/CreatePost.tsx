@@ -108,6 +108,20 @@ export function CreatePost() {
         });
         return;
       }
+
+      // Validate video codec compatibility (iOS rejects WebM/VP9)
+      if (type === 'video') {
+        const compat = isVideoCompatible(file);
+        if (!compat.ok) {
+          toast({
+            title: 'Format vidéo incompatible',
+            description: compat.reason,
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
+
       setMedia(file);
       setMediaType(type);
       setMediaPreview(URL.createObjectURL(file));
