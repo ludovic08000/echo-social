@@ -22,6 +22,7 @@ import { useReportUser } from '@/hooks/useTrustAndSafety';
 import { toast } from 'sonner';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { isAppleMobileWebKit } from '@/lib/platform';
+import { isVideoUrlSafeForIOS } from '@/lib/videoCompat';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,7 +53,8 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
 
   const postUrl = generatePostUrl(post.id);
   const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
-  const shouldDeferVideo = isVideoPost && isAppleWebKit;
+  const isIOSUnsafeVideo = Boolean(isVideoPost && isAppleWebKit && post.image_url && !isVideoUrlSafeForIOS(post.image_url));
+  const shouldDeferVideo = isVideoPost && isAppleWebKit && !isIOSUnsafeVideo;
 
   const [videoEnabled, setVideoEnabled] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -219,11 +221,18 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         
         {post.image_url && (
           <div className="relative w-full overflow-hidden bg-muted/40 aspect-[4/5] sm:aspect-video">
-            {!mediaLoaded && !(isVideoPost && (isMobile || (shouldDeferVideo && !videoEnabled))) && (
+            {!mediaLoaded && !(isVideoPost && (isMobile || isIOSUnsafeVideo || (shouldDeferVideo && !videoEnabled))) && (
               <div className="absolute inset-0 skeleton" />
             )}
             {isVideoPost ? (
-              isMobile ? (
+              isIOSUnsafeVideo ? (
+                <div className="absolute inset-0 flex items-center justify-center bg-muted/70">
+                  <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-background/80 border border-border/40">
+                    <Play className="w-4 h-4 text-foreground" />
+                    <span className="text-xs font-medium text-foreground">Vidéo non compatible iPhone</span>
+                  </div>
+                </div>
+              ) : isMobile ? (
                 <div className="absolute inset-0 flex items-center justify-center bg-muted/70">
                   <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-background/80 border border-border/40">
                     <Play className="w-4 h-4 text-foreground" />
