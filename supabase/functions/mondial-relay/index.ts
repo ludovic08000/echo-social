@@ -341,18 +341,18 @@ serve(async (req) => {
         return cleaned || fallback;
       };
 
-      const formatRelayLocation = (raw: unknown, country: string) => {
-        const cleaned = String(raw ?? "").trim().toUpperCase().replace(/\s+/g, "");
+      const formatRelayLocation = (raw: unknown) => {
+        const cleaned = String(raw ?? "").trim().replace(/\s+/g, "");
         if (!cleaned) return "";
-        if (cleaned.includes("-")) return cleaned;
-        const countryCode = (country || "FR").trim().toUpperCase();
-        return `${countryCode}-${cleaned}`;
+        // Remove country prefix if present (e.g. "FR-062691" -> "062691")
+        const parts = cleaned.split("-");
+        return parts.length > 1 ? parts[parts.length - 1] : cleaned;
       };
 
       const deliveryMode = normalizeMode(body?.delivery_mode, "24R");
       const collectionMode = normalizeMode(body?.collection_mode, "CCC");
       const rawRelayLocation = order.shipping_relay_id || relay_id || "";
-      const relayLocation = formatRelayLocation(rawRelayLocation, order.shipping_relay_country || "FR");
+      const relayLocation = formatRelayLocation(rawRelayLocation);
 
       if (["24R", "24L", "DRI"].includes(deliveryMode) && !relayLocation) {
         throw new Error("Point relais manquant ou invalide pour le mode de livraison sélectionné");
