@@ -291,7 +291,41 @@ export function useCreatePost() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (newPost) => {
+      // Immediately prepend the new post to the feed cache so it shows without refresh
+      queryClient.setQueriesData<any>(
+        { queryKey: ['posts', 'friends-feed'] },
+        (old: any) => {
+          if (!old?.pages) return old;
+          // Build a minimal enriched post for the cache
+          const profile = queryClient.getQueryData<any>(['profile', user?.id]);
+          const optimisticPost = {
+            id: newPost.id,
+            user_id: newPost.user_id,
+            body: newPost.body,
+            image_url: newPost.image_url,
+            created_at: newPost.created_at,
+            expires_at: newPost.expires_at || null,
+            profile: {
+              name: profile?.name || user?.user_metadata?.name || 'Moi',
+              avatar_url: profile?.avatar_url || null,
+              mood_emoji: profile?.mood_emoji || null,
+            },
+            likes_count: 0,
+            comments_count: 0,
+            is_liked: false,
+            user_reaction: null,
+          };
+          return {
+            ...old,
+            pages: [
+              [optimisticPost, ...old.pages[0]],
+              ...old.pages.slice(1),
+            ],
+          };
+        }
+      );
+      // Also invalidate to get accurate data on next fetch
       queryClient.invalidateQueries({ queryKey: ['posts'] });
     },
   });
