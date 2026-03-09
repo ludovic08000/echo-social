@@ -86,18 +86,18 @@ export function ParentalControlPanel() {
         <div className="space-y-2">
           <Label>Code PIN parental</Label>
           <div className="flex gap-2">
-            <Input
+             <Input
               type={showPin ? 'text' : 'password'}
               value={currentPin}
-              onChange={(e) => setCurrentPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-              placeholder="• • • •"
-              maxLength={4}
-              className="text-center text-lg tracking-[0.5em] font-mono max-w-[160px]"
+              onChange={(e) => setCurrentPin(e.target.value.replace(/\D/g, '').slice(0, PIN_MAX_LENGTH))}
+              placeholder="• • • • • • • •"
+              maxLength={PIN_MAX_LENGTH}
+              className="text-center text-lg tracking-[0.3em] font-mono max-w-[240px]"
             />
             <Button variant="ghost" size="icon" onClick={() => setShowPin(!showPin)}>
               {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </Button>
-            <Button onClick={handleUnlock} disabled={currentPin.length !== 4}>
+            <Button onClick={handleUnlock} disabled={currentPin.length < PIN_MIN_LENGTH}>
               Déverrouiller
             </Button>
           </div>
