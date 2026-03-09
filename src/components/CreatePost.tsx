@@ -6,6 +6,7 @@ import { useProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
 import { uploadToR2 } from '@/lib/r2';
 import { generateVideoThumbnail } from '@/lib/videoThumbnail';
+import { isVideoCompatible } from '@/lib/videoCompat';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { UserAvatar } from './UserAvatar';
