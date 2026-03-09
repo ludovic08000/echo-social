@@ -152,7 +152,17 @@ export function useCall(options?: UseCallOptions) {
         // Auto-end after 30s if no one joins
         noAnswerTimeoutRef.current = setTimeout(() => {
           toast.error("Pas de réponse");
-          endCallInternal();
+          // Disconnect room directly since endCall may not be stable yet
+          if (roomRef.current) {
+            roomRef.current.disconnect();
+            roomRef.current = null;
+          }
+          if (localVideoRef.current) localVideoRef.current.innerHTML = '';
+          if (remoteVideoRef.current) remoteVideoRef.current.innerHTML = '';
+          setCallState('idle');
+          setDuration(0);
+          releaseWakeLock();
+          options?.onCallEnded?.({ type: callTypeRef.current, duration: 0, wasMissed: true });
         }, 30000);
       }
     } catch (err) {
