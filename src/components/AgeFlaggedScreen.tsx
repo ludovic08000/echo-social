@@ -70,7 +70,43 @@ export function AgeFlaggedScreen() {
     try {
       const { url } = await uploadToR2(file, 'documents');
 
-      // Update the identity verification record with the document
+      // 🔒 AI verification: detect fake / AI-generated documents
+      const { data: verifyResult, error: verifyError } = await supabase.functions.invoke('verify-id-document', {
+        body: { imageUrl: url },
+      });
+
+      if (verifyError) {
+        console.warn('Document verification error:', verifyError);
+        // Don't block on verification error — proceed with manual review
+      } else if (verifyResult && !verifyResult.valid) {
+        // Document rejected by AI
+        const reason = verifyResult.reason || 'Document suspect détecté';
+        const details = verifyResult.details || {};
+
+        let description = reason;
+        if (details.is_ai_generated) {
+          description = '🚨 Ce document semble avoir été généré par une intelligence artificielle. Veuillez fournir un vrai document.';
+        } else if (details.is_manipulated) {
+          description = '🚨 Ce document semble avoir été modifié ou falsifié. Veuillez fournir un document original.';
+        } else if (details.is_screen_photo) {
+          description = '📱 Veuillez photographier directement votre document, pas un écran.';
+        } else if (!details.is_valid_format) {
+          description = '❌ Ce document ne correspond pas à un format officiel reconnu.';
+        }
+
+        toast({
+          title: 'Document rejeté',
+          description,
+          variant: 'destructive',
+          duration: 10000,
+        });
+        setIsUploadingId(false);
+        // Reset the input
+        e.target.value = '';
+        return;
+      }
+
+      // Document accepted — update the identity verification record
       const { error } = await supabase
         .from('identity_verifications')
         .update({ id_document_url: url, status: 'pending' })
