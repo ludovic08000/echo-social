@@ -43,6 +43,7 @@ function useIsAdmin() {
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { key: 'health', label: 'Santé Plateforme', icon: Activity },
   { key: 'users', label: 'Utilisateurs', icon: Users },
   { key: 'posts', label: 'Publications', icon: FileText },
   { key: 'reports', label: 'Signalements', icon: Flag },
