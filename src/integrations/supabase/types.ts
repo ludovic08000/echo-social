@@ -3446,6 +3446,33 @@ export type Database = {
       }
     }
     Views: {
+      anonymous_wall_messages_public: {
+        Row: {
+          author_id: string | null
+          created_at: string | null
+          id: string | null
+          is_approved: boolean | null
+          message: string | null
+          target_user_id: string | null
+        }
+        Insert: {
+          author_id?: never
+          created_at?: string | null
+          id?: string | null
+          is_approved?: boolean | null
+          message?: string | null
+          target_user_id?: string | null
+        }
+        Update: {
+          author_id?: never
+          created_at?: string | null
+          id?: string | null
+          is_approved?: boolean | null
+          message?: string | null
+          target_user_id?: string | null
+        }
+        Relationships: []
+      }
       anonymous_wall_messages_safe: {
         Row: {
           author_id: string | null
