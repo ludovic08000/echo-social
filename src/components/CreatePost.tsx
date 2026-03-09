@@ -6,6 +6,7 @@ import { useProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
 import { uploadToR2 } from '@/lib/r2';
 import { generateVideoThumbnail } from '@/lib/videoThumbnail';
+import { isVideoCompatible } from '@/lib/videoCompat';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { UserAvatar } from './UserAvatar';
@@ -107,6 +108,20 @@ export function CreatePost() {
         });
         return;
       }
+
+      // Validate video codec compatibility (iOS rejects WebM/VP9)
+      if (type === 'video') {
+        const compat = isVideoCompatible(file);
+        if (!compat.ok) {
+          toast({
+            title: 'Format vidéo incompatible',
+            description: compat.reason,
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
+
       setMedia(file);
       setMediaType(type);
       setMediaPreview(URL.createObjectURL(file));
@@ -132,11 +147,24 @@ export function CreatePost() {
 
     try {
       let imageUrl: string | undefined;
+      let thumbnailUrl: string | null = null;
 
       if (media) {
         const folder = mediaType === 'video' ? 'videos' : 'post-images';
         const { url } = await uploadToR2(media, folder);
         imageUrl = url;
+
+        // Always generate a thumbnail for video posts so iOS can show a poster
+        if (mediaType === 'video') {
+          try {
+            const thumbBlob = await generateVideoThumbnail(media);
+            const thumbFile = new File([thumbBlob], 'thumbnail.jpg', { type: 'image/jpeg' });
+            const { url: thumbUrl } = await uploadToR2(thumbFile, 'thumbnails');
+            thumbnailUrl = thumbUrl;
+          } catch (e) {
+            console.warn('Thumbnail generation failed', e);
+          }
+        }
       }
 
       let expiresAt: string | undefined;
@@ -437,7 +465,7 @@ export function CreatePost() {
                   
                   <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/20">
                     <input type="file" ref={fileInputRef} onChange={(e) => handleFileChange(e, 'image')} accept="image/*" className="hidden" />
-                    <input type="file" ref={videoInputRef} onChange={(e) => handleFileChange(e, 'video')} accept="video/*" className="hidden" />
+                    <input type="file" ref={videoInputRef} onChange={(e) => handleFileChange(e, 'video')} accept="video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v" className="hidden" />
                     
                     <div className="flex gap-0.5">
                       {[
@@ -581,7 +609,7 @@ export function CreatePost() {
             className="flex items-center justify-around px-4 py-2.5 border-t border-border/20"
           >
             <input type="file" ref={fileInputRef} onChange={(e) => handleFileChange(e, 'image')} accept="image/*" className="hidden" />
-            <input type="file" ref={videoInputRef} onChange={(e) => handleFileChange(e, 'video')} accept="video/*" className="hidden" />
+            <input type="file" ref={videoInputRef} onChange={(e) => handleFileChange(e, 'video')} accept="video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v" className="hidden" />
             {[
               { onClick: () => fileInputRef.current?.click(), icon: Image, label: 'Photo', iconColor: 'text-primary/70', hoverColor: 'hover:text-primary' },
               { onClick: () => videoInputRef.current?.click(), icon: Video, label: 'Vidéo', iconColor: 'text-destructive/70', hoverColor: 'hover:text-destructive' },
