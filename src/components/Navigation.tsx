@@ -112,7 +112,6 @@ export function MobileNav() {
           {/* Bouton Créer — premium central */}
           <Link to="/create" className="flex flex-col items-center -mt-4 w-[56px]">
             <div className="relative">
-              <div className="absolute inset-[-4px] rounded-2xl bg-primary/25 blur-lg animate-pulse" />
               <div className="relative w-[46px] h-[46px] rounded-2xl bg-[image:var(--premium-gradient)] text-primary-foreground flex items-center justify-center shadow-[var(--shadow-gold)] active:scale-90 transition-all duration-200 border border-primary-foreground/10">
                 <Plus className="w-6 h-6 stroke-[3]" />
               </div>
