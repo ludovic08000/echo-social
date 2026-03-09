@@ -99,7 +99,6 @@ export function ParentalGateProvider({ children }: { children: ReactNode }) {
             <Shield className="w-4 h-4 mr-2" />
             {verifyPin.isPending ? 'Vérification...' : 'Déverrouiller'}
           </Button>
-          </Button>
         </DialogContent>
       </Dialog>
     </ParentalContext.Provider>
