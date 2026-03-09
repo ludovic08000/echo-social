@@ -57,7 +57,16 @@ export default function Feed() {
   const feedBgStyle = useCustomBackground('feed');
   const { isMinor, isUnlocked, requestUnlock } = useParentalGate();
 
-  const posts = data?.pages.flat() || [];
+  // Deduplicate posts across pages to prevent React key warnings
+  const posts = (() => {
+    const all = data?.pages.flat() || [];
+    const seen = new Set<string>();
+    return all.filter(p => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+  })();
 
   useEffect(() => {
     const interval = setInterval(() => {
