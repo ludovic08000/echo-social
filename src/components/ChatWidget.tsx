@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Send, Search, Plus, X, Phone, Video, Mic, MicOff,
   Smile, Check, CheckCheck, Minus, Camera, Reply, Copy, Trash2,
