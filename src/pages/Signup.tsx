@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, CalendarIcon, Shield } from 'lucide-react';
-import { format, differenceInYears } from 'date-fns';
-import { fr } from 'date-fns/locale';
+import { differenceInYears } from 'date-fns';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
