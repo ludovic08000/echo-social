@@ -75,15 +75,17 @@ export function usePosts() {
       const allowedUserIds = [user.id, ...friendIds];
       const now = new Date().toISOString();
 
-      // Fetch larger pool for scoring
+      // Fetch page-local pool for scoring (stable pagination)
       const poolSize = PAGE_SIZE * 3;
+      const fetchFrom = from;
+      const fetchTo = from + poolSize - 1;
       const { data: posts, error } = await supabase
         .from('posts')
         .select('id, user_id, body, image_url, created_at, expires_at')
         .in('user_id', allowedUserIds)
         .or(`expires_at.is.null,expires_at.gt.${now}`)
         .order('created_at', { ascending: false })
-        .range(0, Math.max(to, poolSize - 1));
+        .range(fetchFrom, fetchTo);
 
       if (error) throw error;
       if (!posts || posts.length === 0) return [];
