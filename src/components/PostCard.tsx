@@ -48,9 +48,19 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const { data: isMinorUser } = useCurrentUserIsMinor();
   const reportUser = useReportUser();
   const isMobile = useIsMobile();
+  const isAppleWebKit = isAppleMobileWebKit();
 
   const postUrl = generatePostUrl(post.id);
   const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
+  const shouldDeferVideo = isVideoPost && isAppleWebKit;
+
+  const [videoEnabled, setVideoEnabled] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    setMediaLoaded(false);
+    setVideoEnabled(false);
+  }, [post.id]);
 
   useEffect(() => {
     if (!post.expires_at) return;
