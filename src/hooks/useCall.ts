@@ -106,10 +106,13 @@ export function useCall(options?: UseCallOptions) {
       });
 
       room.on(RoomEvent.Disconnected, () => {
+        // Skip if endCall was already called manually
+        if (manualEndRef.current) return;
         const wasMissed = callStateRef.current !== 'connected';
         const endDuration = durationRef.current;
         const endType = callTypeRef.current;
-        setCallState('ended');
+        setCallState('idle');
+        setDuration(0);
         releaseWakeLock();
         options?.onCallEnded?.({ type: endType, duration: endDuration, wasMissed });
       });
