@@ -203,32 +203,25 @@ export default function Feed() {
               )}
             </AnimatePresence>
 
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
-              className="px-4"
-            >
-              <StoriesBar />
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.05 }}
-              className="px-4"
-            >
-              <FeedLiveSection />
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.1 }}
-              className="px-4"
-            >
-              <CreatePost />
-            </motion.div>
+            {isMobile ? (
+              <>
+                <div className="px-4"><StoriesBar /></div>
+                <div className="px-4"><FeedLiveSection /></div>
+                <div className="px-4"><CreatePost /></div>
+              </>
+            ) : (
+              <>
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="px-4">
+                  <StoriesBar />
+                </motion.div>
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.05 }} className="px-4">
+                  <FeedLiveSection />
+                </motion.div>
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }} className="px-4">
+                  <CreatePost />
+                </motion.div>
+              </>
+            )}
 
             {isLoading ? (
               <div className="space-y-3 px-4">
