@@ -114,6 +114,11 @@ export function useCall(options?: UseCallOptions) {
 
       room.on(RoomEvent.ParticipantConnected, () => {
         setCallState('connected');
+        // Clear the no-answer timeout
+        if (noAnswerTimeoutRef.current) {
+          clearTimeout(noAnswerTimeoutRef.current);
+          noAnswerTimeoutRef.current = null;
+        }
       });
 
       await room.connect(url, token);
@@ -143,6 +148,11 @@ export function useCall(options?: UseCallOptions) {
         setCallState('connected');
       } else {
         setCallState('connecting');
+        // Auto-end after 30s if no one joins
+        noAnswerTimeoutRef.current = setTimeout(() => {
+          toast.error("Pas de réponse");
+          endCallInternal();
+        }, 30000);
       }
     } catch (err) {
       console.error('Call error:', err);
