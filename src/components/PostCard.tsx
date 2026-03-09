@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark, ShieldAlert } from 'lucide-react';
+import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark, ShieldAlert, Play } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Post, useDeletePost } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
@@ -49,6 +49,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
   const isMobile = useIsMobile();
 
   const postUrl = generatePostUrl(post.id);
+  const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
 
   useEffect(() => {
     if (!post.expires_at) return;
@@ -207,21 +208,30 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
         
         {post.image_url && (
           <div className="relative w-full overflow-hidden bg-muted/40 aspect-[4/5] sm:aspect-video">
-            {!mediaLoaded && (
+            {!mediaLoaded && !(isMobile && isVideoPost) && (
               <div className="absolute inset-0 skeleton" />
             )}
-            {/\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url) ? (
-              <video
-                src={post.image_url}
-                controls
-                playsInline
-                preload={isMobile ? 'none' : 'metadata'}
-                className={cn(
-                  "absolute inset-0 w-full h-full object-cover bg-muted transition-opacity duration-300",
-                  mediaLoaded ? "opacity-100" : "opacity-0"
-                )}
-                onLoadedData={() => setMediaLoaded(true)}
-              />
+            {isVideoPost ? (
+              isMobile ? (
+                <div className="absolute inset-0 flex items-center justify-center bg-muted/70">
+                  <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-background/80 border border-border/40">
+                    <Play className="w-4 h-4 text-foreground" />
+                    <span className="text-xs font-medium text-foreground">Lire la vidéo</span>
+                  </div>
+                </div>
+              ) : (
+                <video
+                  src={post.image_url}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className={cn(
+                    "absolute inset-0 w-full h-full object-cover bg-muted transition-opacity duration-300",
+                    mediaLoaded ? "opacity-100" : "opacity-0"
+                  )}
+                  onLoadedData={() => setMediaLoaded(true)}
+                />
+              )
             ) : (
               <img
                 src={post.image_url}
