@@ -178,6 +178,10 @@ export function useCall(options?: UseCallOptions) {
     const endDuration = durationRef.current;
     const endType = callTypeRef.current;
 
+    if (noAnswerTimeoutRef.current) {
+      clearTimeout(noAnswerTimeoutRef.current);
+      noAnswerTimeoutRef.current = null;
+    }
     if (roomRef.current) {
       roomRef.current.disconnect();
       roomRef.current = null;
