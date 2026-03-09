@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/hooks/use-toast';
-import { useParentalControl, useSetParentalPin, useVerifyParentalPin, CATEGORY_LABELS, ALLOWED_MINOR_CATEGORIES, PIN_MIN_LENGTH, PIN_MAX_LENGTH } from '@/hooks/useParentalControl';
+import { useParentalControl, useSetParentalPin, useVerifyParentalPin, CATEGORY_LABELS, ALLOWED_MINOR_CATEGORIES, PIN_MIN_LENGTH, PIN_MAX_LENGTH, PIN_MIN_LENGTH, PIN_MAX_LENGTH } from '@/hooks/useParentalControl';
 
 export function ParentalControlPanel() {
   const { data: parentalControl, isLoading } = useParentalControl();
