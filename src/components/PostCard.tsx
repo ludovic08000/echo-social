@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -34,7 +34,7 @@ interface PostCardProps {
   onCommentClick?: () => void;
 }
 
-export function PostCard({ post, showActions = true, onCommentClick }: PostCardProps) {
+export const PostCard = memo(function PostCard({ post, showActions = true, onCommentClick }: PostCardProps) {
   const { user } = useAuth();
   const deletePost = useDeletePost();
   const { data: isPostAuthorCreator } = useIsCreator(post.user_id);
@@ -366,4 +366,10 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
       )}
     </article>
   );
-}
+}, (prev, next) => {
+  return prev.post.id === next.post.id
+    && prev.post.likes_count === next.post.likes_count
+    && prev.post.comments_count === next.post.comments_count
+    && prev.post.is_liked === next.post.is_liked
+    && prev.post.user_reaction === next.post.user_reaction;
+});

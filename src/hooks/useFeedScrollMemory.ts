@@ -34,16 +34,23 @@ export function useFeedScrollMemory(storageKey = 'feed-scroll-memory') {
       }
     };
 
+    // Throttle scroll saves to max once every 300ms to reduce CPU pressure
+    let lastSaveTime = 0;
+    const THROTTLE_MS = 300;
+
     const saveScroll = () => {
       try {
         const snapshot: ScrollSnapshot = { y: window.scrollY, t: Date.now() };
         sessionStorage.setItem(storageKey, JSON.stringify(snapshot));
+        lastSaveTime = snapshot.t;
       } catch {
         // noop
       }
     };
 
     const scheduleSave = () => {
+      const now = Date.now();
+      if (now - lastSaveTime < THROTTLE_MS) return;
       if (rafId !== null) return;
       rafId = window.requestAnimationFrame(() => {
         saveScroll();

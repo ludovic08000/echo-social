@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePosts } from '@/hooks/usePosts';
 import { AppLayout } from '@/components/AppLayout';
@@ -6,13 +6,8 @@ import { CreatePost } from '@/components/CreatePost';
 import { PostCard } from '@/components/PostCard';
 import { StoriesBar } from '@/components/StoriesBar';
 import { useNavigate } from 'react-router-dom';
-import { FriendSuggestions } from '@/components/feed/FriendSuggestions';
-import { FriendSuggestionsByCity } from '@/components/feed/FriendSuggestionsByCity';
 import { FeedRightSidebar } from '@/components/feed/FeedRightSidebar';
 import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
-import { FeedReelsSection } from '@/components/feed/FeedReelsSection';
-import { FeedMarketplaceSection } from '@/components/feed/FeedMarketplaceSection';
-import { FeedMediaSection } from '@/components/feed/FeedMediaSection';
 import { SponsoredPostCard } from '@/components/feed/SponsoredPostCard';
 import { Coffee, X, Sparkles, Lock, Shield } from 'lucide-react';
 import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgorithm';
@@ -22,6 +17,13 @@ import { useCustomBackground } from '@/hooks/useCustomBackground';
 import { useParentalGate } from '@/components/ParentalGate';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useFeedScrollMemory } from '@/hooks/useFeedScrollMemory';
+
+// Lazy-load heavy injection components — only loaded when scrolled into view
+const FriendSuggestions = lazy(() => import('@/components/feed/FriendSuggestions').then(m => ({ default: m.FriendSuggestions })));
+const FriendSuggestionsByCity = lazy(() => import('@/components/feed/FriendSuggestionsByCity').then(m => ({ default: m.FriendSuggestionsByCity })));
+const FeedReelsSection = lazy(() => import('@/components/feed/FeedReelsSection').then(m => ({ default: m.FeedReelsSection })));
+const FeedMarketplaceSection = lazy(() => import('@/components/feed/FeedMarketplaceSection').then(m => ({ default: m.FeedMarketplaceSection })));
+const FeedMediaSection = lazy(() => import('@/components/feed/FeedMediaSection').then(m => ({ default: m.FeedMediaSection })));
 
 const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'media' | 'marketplace'> = {
   2: 'marketplace',
@@ -46,6 +48,17 @@ const postVariants = {
       ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number],
     },
   }),
+};
+
+/**
+ * CSS containment style for each post cell.
+ * `content-visibility: auto` lets the browser skip layout/paint for offscreen posts,
+ * drastically reducing memory & GPU pressure on iOS WebKit.
+ */
+const POST_CELL_STYLE: React.CSSProperties = {
+  contentVisibility: 'auto' as any,
+  containIntrinsicSize: 'auto 420px' as any,
+  contain: 'layout style paint',
 };
 
 export default function Feed() {
@@ -120,17 +133,14 @@ export default function Feed() {
     }
   }, [posts.length]);
 
-  const renderInjection = (index: number) => {
+  const renderInjection = useCallback((index: number) => {
     const type = INJECTION_MAP[index];
     
-    // Inject sponsored post every ~6 posts
     if (!isMobile && activeAds?.length && index > 0 && index % 6 === 0) {
       const adIndex = Math.floor(index / 6) % activeAds.length;
       const ad = activeAds[adIndex];
       if (ad) {
-        return isMobile ? (
-          <SponsoredPostCard ad={ad} />
-        ) : (
+        return (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -146,13 +156,13 @@ export default function Feed() {
     if (!type) return null;
 
     const content = (
-      <>
+      <Suspense fallback={<div className="h-32 skeleton rounded-2xl" />}>
         {type === 'reels' && <FeedReelsSection />}
         {type === 'suggestions' && <FriendSuggestions />}
         {type === 'suggestions_city' && <FriendSuggestionsByCity />}
         {type === 'media' && <FeedMediaSection />}
         {type === 'marketplace' && <FeedMarketplaceSection />}
-      </>
+      </Suspense>
     );
 
     return isMobile ? content : (
@@ -165,7 +175,7 @@ export default function Feed() {
         {content}
       </motion.div>
     );
-  };
+  }, [isMobile, activeAds]);
 
   const dismissPause = () => {
     setShowPauseReminder(false);
@@ -305,14 +315,12 @@ export default function Feed() {
                 )}
                 <div className="space-y-3 px-4">
                   {posts.map((post, index) => (
-                    <div key={post.id}>
+                    <div key={post.id} style={POST_CELL_STYLE}>
                       {isMobile ? (
-                        <div>
-                          <PostCard
-                            post={post}
-                            onCommentClick={() => navigate(`/post/${post.id}`)}
-                          />
-                        </div>
+                        <PostCard
+                          post={post}
+                          onCommentClick={() => navigate(`/post/${post.id}`)}
+                        />
                       ) : (
                         <motion.div
                           custom={index}
