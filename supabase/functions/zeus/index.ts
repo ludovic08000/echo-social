@@ -807,6 +807,159 @@ async function executeZeusTool(name: string, args: any, supabase: any): Promise<
           changed_fields: Object.keys(args.updates),
         });
       }
+      case "run_security_audit": {
+        const scope = args.scope || "all";
+        const results: Record<string, any> = {};
+
+        // ── 1. REFUSALS: Test RLS & unauthorized access patterns ──
+        if (scope === "all" || scope === "refusals") {
+          // Check for profiles without trust scores (missing auto-insert)
+          const { count: profilesCount } = await supabase.from("profiles").select("id", { count: "exact", head: true });
+          const { count: trustCount } = await supabase.from("trust_scores").select("id", { count: "exact", head: true });
+          const missingTrustScores = (profilesCount || 0) - (trustCount || 0);
+
+          // Check for blocked messages (RLS enforcement working)
+          const { count: blockedMsgs } = await supabase.from("messages").select("id", { count: "exact", head: true }).eq("status", "blocked");
+          const { count: pendingMsgs } = await supabase.from("messages").select("id", { count: "exact", head: true }).eq("status", "pending");
+
+          // Check identity verifications that expired without response
+          const { data: expiredVerifs } = await supabase.from("identity_verifications").select("id, reported_user_id, deadline_at, status").eq("status", "pending").lt("deadline_at", new Date().toISOString()).limit(20);
+
+          results.refusals = {
+            missing_trust_scores: missingTrustScores,
+            blocked_messages: blockedMsgs || 0,
+            pending_message_requests: pendingMsgs || 0,
+            expired_verifications: (expiredVerifs || []).length,
+            expired_verification_details: (expiredVerifs || []).map((v: any) => ({ id: v.id, user: v.reported_user_id?.slice(0, 8) + "...", deadline: v.deadline_at })),
+            status: missingTrustScores > 5 || (expiredVerifs || []).length > 0 ? "🔴 PROBLÈMES DÉTECTÉS" : "🟢 OK",
+          };
+        }
+
+        // ── 2. PERMISSIONS: Role checks, minor protections ──
+        if (scope === "all" || scope === "permissions") {
+          const { data: admins } = await supabase.from("user_roles").select("user_id, role").eq("role", "admin");
+          const { data: minorsActive } = await supabase.from("parental_controls").select("user_id").eq("is_active", true);
+          
+          // Check minors without parental controls who have flagged profiles
+          const { data: flaggedMinors } = await supabase.from("profiles").select("user_id, name, age_verification_status").eq("age_verification_status", "flagged");
+
+          // Check if any minor has pending identity verification
+          const minorIds = (minorsActive || []).map((m: any) => m.user_id);
+          let minorsWithPendingVerif = 0;
+          if (minorIds.length > 0) {
+            const { count } = await supabase.from("identity_verifications").select("id", { count: "exact", head: true }).in("reported_user_id", minorIds.slice(0, 50)).eq("status", "pending");
+            minorsWithPendingVerif = count || 0;
+          }
+
+          // Check for users with admin role but no profile
+          const adminIds = (admins || []).map((a: any) => a.user_id);
+          let orphanAdmins = 0;
+          if (adminIds.length > 0) {
+            const { data: adminProfiles } = await supabase.from("profiles").select("user_id").in("user_id", adminIds);
+            orphanAdmins = adminIds.length - (adminProfiles || []).length;
+          }
+
+          results.permissions = {
+            total_admins: (admins || []).length,
+            orphan_admin_roles: orphanAdmins,
+            active_minors_protected: (minorsActive || []).length,
+            flagged_age_profiles: (flaggedMinors || []).length,
+            flagged_details: (flaggedMinors || []).slice(0, 10).map((f: any) => ({ user: f.user_id?.slice(0, 8) + "...", name: f.name, status: f.age_verification_status })),
+            minors_pending_verification: minorsWithPendingVerif,
+            status: orphanAdmins > 0 || (flaggedMinors || []).length > 3 ? "🟡 ATTENTION" : "🟢 OK",
+          };
+        }
+
+        // ── 3. FALSIFICATIONS: Fake documents, multi-accounts, suspicious fingerprints ──
+        if (scope === "all" || scope === "falsifications") {
+          // Rejected identity documents (fraud attempts)
+          const { data: rejectedVerifs } = await supabase.from("identity_verifications").select("id, reported_user_id, admin_note, status, created_at").eq("status", "rejected").order("created_at", { ascending: false }).limit(20);
+
+          // Fraud abuse reports
+          const { data: fraudReports } = await supabase.from("abuse_reports").select("id, reported_user_id, report_type, description, status, created_at").eq("report_type", "fraud").order("created_at", { ascending: false }).limit(20);
+
+          // Multi-account detection: fingerprints shared across multiple users
+          const { data: fingerprints } = await supabase.from("device_fingerprints").select("fingerprint_hash, user_id").limit(1000);
+          const fpMap: Record<string, Set<string>> = {};
+          (fingerprints || []).forEach((fp: any) => {
+            if (!fpMap[fp.fingerprint_hash]) fpMap[fp.fingerprint_hash] = new Set();
+            fpMap[fp.fingerprint_hash].add(fp.user_id);
+          });
+          const multiAccountFingerprints = Object.entries(fpMap).filter(([_, users]) => users.size > 1).map(([hash, users]) => ({
+            fingerprint: hash.slice(0, 12) + "...",
+            user_count: users.size,
+            users: Array.from(users).map(u => u.slice(0, 8) + "..."),
+          }));
+
+          // AI-generated document attempts (from abuse_reports with ai_minor_ prefix or fraud type)
+          const { count: aiDocFraud } = await supabase.from("abuse_reports").select("id", { count: "exact", head: true }).eq("report_type", "fraud").ilike("description", "%IA%");
+
+          results.falsifications = {
+            rejected_documents: (rejectedVerifs || []).length,
+            rejected_details: (rejectedVerifs || []).slice(0, 5).map((v: any) => ({ user: v.reported_user_id?.slice(0, 8) + "...", note: (v.admin_note || "").slice(0, 100) })),
+            fraud_reports_total: (fraudReports || []).length,
+            fraud_pending: (fraudReports || []).filter((r: any) => r.status === "pending").length,
+            multi_account_fingerprints: multiAccountFingerprints.length,
+            multi_account_details: multiAccountFingerprints.slice(0, 10),
+            ai_generated_doc_attempts: aiDocFraud || 0,
+            status: multiAccountFingerprints.length > 3 || (aiDocFraud || 0) > 0 ? "🔴 FRAUDES DÉTECTÉES" : (rejectedVerifs || []).length > 0 ? "🟡 SURVEILLÉ" : "🟢 OK",
+          };
+        }
+
+        // ── 4. EDGE CASES: Rate limits, orphan data, inconsistencies ──
+        if (scope === "all" || scope === "edge_cases") {
+          // Orphan conversations (no participants)
+          const { data: allConvs } = await supabase.from("conversations").select("id").limit(500);
+          let orphanConvs = 0;
+          if (allConvs?.length) {
+            for (const conv of allConvs.slice(0, 100)) {
+              const { count } = await supabase.from("conversation_participants").select("id", { count: "exact", head: true }).eq("conversation_id", conv.id);
+              if (!count || count === 0) orphanConvs++;
+            }
+          }
+
+          // Posts by deleted/banned users
+          const { data: bannedUsers } = await supabase.from("banned_users").select("user_id").eq("is_active", true);
+          const bannedIds = (bannedUsers || []).map((b: any) => b.user_id);
+          let postsFromBanned = 0;
+          if (bannedIds.length > 0) {
+            const { count } = await supabase.from("posts").select("id", { count: "exact", head: true }).in("user_id", bannedIds.slice(0, 50));
+            postsFromBanned = count || 0;
+          }
+
+          // Expired AI moderation cache entries
+          const { count: expiredCache } = await supabase.from("ai_moderation_cache").select("id", { count: "exact", head: true }).lt("expires_at", new Date().toISOString());
+
+          // Products with 0 or negative stock still active
+          const { data: badProducts } = await supabase.from("products").select("id, title, stock_quantity").eq("is_active", true).lte("stock_quantity", 0);
+
+          // Users with trust score 0 still active
+          const { data: zeroTrust } = await supabase.from("trust_scores").select("user_id, trust_score, is_flagged, flag_reason").lte("trust_score", 10).limit(20);
+
+          results.edge_cases = {
+            orphan_conversations: orphanConvs,
+            posts_from_banned_users: postsFromBanned,
+            expired_cache_entries: expiredCache || 0,
+            active_products_no_stock: (badProducts || []).length,
+            bad_products_details: (badProducts || []).slice(0, 5).map((p: any) => ({ id: p.id?.slice(0, 8) + "...", title: p.title, stock: p.stock_quantity })),
+            very_low_trust_users: (zeroTrust || []).length,
+            low_trust_details: (zeroTrust || []).slice(0, 5).map((t: any) => ({ user: t.user_id?.slice(0, 8) + "...", score: t.trust_score, flagged: t.is_flagged, reason: t.flag_reason })),
+            status: orphanConvs > 5 || postsFromBanned > 0 || (badProducts || []).length > 0 ? "🟡 NETTOYAGE REQUIS" : "🟢 OK",
+          };
+        }
+
+        // Global security score
+        const statuses = Object.values(results).map((r: any) => r.status || "");
+        const hasRed = statuses.some(s => s.includes("🔴"));
+        const hasYellow = statuses.some(s => s.includes("🟡"));
+        results.global = {
+          security_score: hasRed ? "🔴 CRITIQUE" : hasYellow ? "🟡 ATTENTION" : "🟢 SAIN",
+          timestamp: new Date().toISOString(),
+          scope,
+        };
+
+        return JSON.stringify(results);
+      }
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
