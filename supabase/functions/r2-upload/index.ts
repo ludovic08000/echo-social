@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ─── Security constants ───
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB absolute max
+const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB absolute max
 const ALLOWED_MIME_TYPES: Record<string, string[]> = {
   avatars:     ["image/jpeg", "image/png", "image/webp", "image/gif"],
   images:      ["image/jpeg", "image/png", "image/webp", "image/gif"],
@@ -20,15 +20,15 @@ const ALLOWED_MIME_TYPES: Record<string, string[]> = {
 const FOLDER_MAX_SIZES: Record<string, number> = {
   avatars: 5 * 1024 * 1024,
   images: 10 * 1024 * 1024,
-  "post-images": 50 * 1024 * 1024,
-  videos: 50 * 1024 * 1024,
+  "post-images": 200 * 1024 * 1024,
+  videos: 200 * 1024 * 1024,
   products: 5 * 1024 * 1024,
   stories: 10 * 1024 * 1024,
   backgrounds: 5 * 1024 * 1024,
   documents: 10 * 1024 * 1024,
   voice: 5 * 1024 * 1024,
-  lives: 50 * 1024 * 1024,
-  feed: 50 * 1024 * 1024,
+  lives: 200 * 1024 * 1024,
+  feed: 200 * 1024 * 1024,
   thumbnails: 2 * 1024 * 1024,
   uploads: 10 * 1024 * 1024,
 };
