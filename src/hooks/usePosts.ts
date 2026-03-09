@@ -195,7 +195,7 @@ export function usePosts() {
     gcTime: 10 * 60_000,
     refetchInterval: false,      // Prevent background reorder while user scrolls
     refetchOnWindowFocus: false,
-  });
+    refetchOnReconnect: false,
 }
 
 export function useUserPosts(userId: string) {
