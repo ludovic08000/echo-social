@@ -275,6 +275,10 @@ export function PrivacySettingsPanel() {
           </div>
         </div>
       </section>
+      {/* Restricted Friends */}
+      <section className="space-y-4">
+        <RestrictedFriendsPanel />
+      </section>
     </div>
   );
 }
