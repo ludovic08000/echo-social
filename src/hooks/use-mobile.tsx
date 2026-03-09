@@ -3,41 +3,33 @@ import * as React from "react";
 const MOBILE_BREAKPOINT = 768;
 
 export function useIsMobile() {
-  const getIsMobile = React.useCallback(() => {
-    if (typeof window === "undefined") return false;
-    return window.innerWidth < MOBILE_BREAKPOINT;
-  }, []);
-
-  const [isMobile, setIsMobile] = React.useState<boolean>(getIsMobile);
+  const [isMobile, setIsMobile] = React.useState<boolean>(
+    typeof window !== "undefined" ? window.innerWidth < MOBILE_BREAKPOINT : false
+  );
 
   React.useEffect(() => {
-    if (typeof window === "undefined") return;
+    const update = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
 
     const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
-    const onChange = () => setIsMobile(getIsMobile());
 
-    // Modern browsers
     if (typeof mql.addEventListener === "function") {
-      mql.addEventListener("change", onChange);
+      mql.addEventListener("change", update);
     } else {
-      // Older Safari fallback
-      mql.addListener(onChange);
+      mql.addListener(update);
     }
 
-    window.addEventListener("resize", onChange, { passive: true });
-    window.addEventListener("orientationchange", onChange, { passive: true });
-    onChange();
+    window.addEventListener("orientationchange", update, { passive: true });
+    update();
 
     return () => {
       if (typeof mql.removeEventListener === "function") {
-        mql.removeEventListener("change", onChange);
+        mql.removeEventListener("change", update);
       } else {
-        mql.removeListener(onChange);
+        mql.removeListener(update);
       }
-      window.removeEventListener("resize", onChange);
-      window.removeEventListener("orientationchange", onChange);
+      window.removeEventListener("orientationchange", update);
     };
-  }, [getIsMobile]);
+  }, []);
 
   return isMobile;
 }
