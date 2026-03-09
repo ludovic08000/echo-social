@@ -236,6 +236,7 @@ export function CreatePost() {
       });
     } finally {
       setIsUploading(false);
+      setUploadStep(null);
     }
   };
 
