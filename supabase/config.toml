@@ -87,3 +87,5 @@ verify_jwt = false
 [functions.seller-ai-coach]
 verify_jwt = false
 
+[functions.r2-presign]
+verify_jwt = false
