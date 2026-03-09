@@ -2639,6 +2639,39 @@ export type Database = {
         }
         Relationships: []
       }
+      restricted_friends: {
+        Row: {
+          created_at: string
+          id: string
+          restrict_feed: boolean
+          restrict_messages: boolean
+          restrict_profile: boolean
+          restrict_stories: boolean
+          restricted_user_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          restrict_feed?: boolean
+          restrict_messages?: boolean
+          restrict_profile?: boolean
+          restrict_stories?: boolean
+          restricted_user_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          restrict_feed?: boolean
+          restrict_messages?: boolean
+          restrict_profile?: boolean
+          restrict_stories?: boolean
+          restricted_user_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       security_logs: {
         Row: {
           created_at: string
@@ -3409,6 +3442,10 @@ export type Database = {
       }
       is_conversation_participant: {
         Args: { conv_id: string; uid: string }
+        Returns: boolean
+      }
+      is_restricted_by: {
+        Args: { p_owner_id: string; p_viewer_id: string }
         Returns: boolean
       }
       is_user_minor: { Args: { p_user_id: string }; Returns: boolean }
