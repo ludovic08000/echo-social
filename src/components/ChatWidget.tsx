@@ -23,6 +23,7 @@ import { useChatWidget } from './ChatWidgetContext';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { useCall, formatCallDuration, type CallEndInfo } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
+import { signalOutgoingCall, endActiveCall } from '@/hooks/useIncomingCall';
 import { GifPicker } from '@/components/chat/GifPicker';
 import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { RelayPointPicker } from '@/components/marketplace/RelayPointPicker';
