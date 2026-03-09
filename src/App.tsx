@@ -10,11 +10,11 @@ import { ChatWidgetProvider, useChatWidget } from "@/components/ChatWidgetContex
 import { ChatWidget } from "@/components/ChatWidget";
 import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
-import { useIncomingCall } from "@/hooks/useIncomingCall";
+import { useIncomingCall, endActiveCall } from "@/hooks/useIncomingCall";
 import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { useCall } from "@/hooks/useCall";
 import { CallOverlay } from "@/components/CallOverlay";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -58,8 +58,15 @@ function IncomingCallHandler() {
   const { incomingCall, acceptCall, declineCall } = useIncomingCall();
   const { openChat } = useChatWidget();
 
+  const activeIncomingCallIdRef = useRef<string | null>(null);
+
   const call = useCall({
-    onCallEnded: useCallback(() => {}, []),
+    onCallEnded: useCallback(() => {
+      if (activeIncomingCallIdRef.current) {
+        endActiveCall(activeIncomingCallIdRef.current);
+        activeIncomingCallIdRef.current = null;
+      }
+    }, []),
   });
 
   const handleAccept = useCallback(async () => {
@@ -68,6 +75,8 @@ function IncomingCallHandler() {
 
     // Open the chat with the caller
     openChat(accepted.conversation_id);
+
+    activeIncomingCallIdRef.current = accepted.id;
 
     // Start the call (join the LiveKit room)
     call.startCall(accepted.conversation_id, accepted.call_type);

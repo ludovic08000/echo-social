@@ -32,6 +32,7 @@ export function useCall(options?: UseCallOptions) {
   const callTypeRef = useRef<CallType>('audio');
   const noAnswerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const manualEndRef = useRef(false);
+  const hadRemoteParticipantRef = useRef(false);
 
   // Keep refs in sync
   useEffect(() => { callStateRef.current = callState; }, [callState]);
@@ -73,6 +74,7 @@ export function useCall(options?: UseCallOptions) {
     setIsMuted(false);
     setIsCameraOff(false);
     manualEndRef.current = false;
+    hadRemoteParticipantRef.current = false;
 
     try {
       // Keep screen awake during call
@@ -119,11 +121,19 @@ export function useCall(options?: UseCallOptions) {
       });
 
       room.on(RoomEvent.ParticipantConnected, () => {
+        hadRemoteParticipantRef.current = true;
         setCallState('connected');
         // Clear the no-answer timeout
         if (noAnswerTimeoutRef.current) {
           clearTimeout(noAnswerTimeoutRef.current);
           noAnswerTimeoutRef.current = null;
+        }
+      });
+
+      room.on(RoomEvent.ParticipantDisconnected, () => {
+        // If the remote party left, terminate locally to avoid being stuck in "connected"
+        if (!manualEndRef.current && hadRemoteParticipantRef.current && room.remoteParticipants.size === 0) {
+          room.disconnect();
         }
       });
 
@@ -151,6 +161,7 @@ export function useCall(options?: UseCallOptions) {
 
       // If someone is already in the room, we're connected
       if (room.remoteParticipants.size > 0) {
+        hadRemoteParticipantRef.current = true;
         setCallState('connected');
       } else {
         setCallState('connecting');
@@ -180,6 +191,7 @@ export function useCall(options?: UseCallOptions) {
 
   const endCall = useCallback(() => {
     manualEndRef.current = true;
+    hadRemoteParticipantRef.current = false;
     const wasMissed = callStateRef.current !== 'connected';
     const endDuration = durationRef.current;
     const endType = callTypeRef.current;
