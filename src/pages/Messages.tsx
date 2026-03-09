@@ -4,7 +4,7 @@ import {
   ArrowLeft, Send, Search, Plus, ImageIcon, Smile, Check, CheckCheck, 
   X, Phone, Video, Mic, MicOff, Reply, Heart, ThumbsUp, Laugh, 
   Flame, Sparkles, Camera, Paperclip, MoreVertical, Trash2, Copy,
-  ChevronDown, Flag, Share2, Forward, Pin, PinOff
+  ChevronDown, Flag, Share2, Forward, Pin, PinOff, Users, UserPlus, LogOut, Crown, UserMinus
 } from 'lucide-react';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -12,7 +12,7 @@ import { AppLayout } from '@/components/AppLayout';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, useCreateGroupConversation, useDeleteMessageForMe, useDeleteMessageForEveryone, type Message } from '@/hooks/useMessages';
+import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, useCreateGroupConversation, useDeleteMessageForMe, useDeleteMessageForEveryone, useLeaveGroup, useAddGroupMembers, useRemoveGroupMember, useGroupMembers, type Message } from '@/hooks/useMessages';
 import { supabase } from '@/integrations/supabase/client';
 import { useFriendships } from '@/hooks/useFriendships';
 import { useAuth } from '@/lib/auth';
@@ -765,12 +765,23 @@ function ChatView({ conversationId }: { conversationId: string }) {
   const [showSharePicker, setShowSharePicker] = useState(false);
   const [pinnedMessages, setPinnedMessages] = useState<Set<string>>(new Set());
   const [forwardMsg, setForwardMsg] = useState<Message | null>(null);
+  const [showGroupPanel, setShowGroupPanel] = useState(false);
+  const [showInvitePanel, setShowInvitePanel] = useState(false);
+  const [inviteSearch, setInviteSearch] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const conversation = conversations?.find(c => c.id === conversationId);
+  const isGroup = conversation?.is_group || false;
+  const leaveGroup = useLeaveGroup();
+  const addMembers = useAddGroupMembers();
+  const removeMember = useRemoveGroupMember();
+  const { data: groupMembers = [] } = useGroupMembers(isGroup ? conversationId : undefined);
+  const { data: friendsData } = useFriendships();
+  const allFriends = friendsData?.friends || [];
+  const navigate = useNavigate();
 
   const { upload, isUploading } = useImageUpload({
     bucket: 'post-images',
@@ -891,17 +902,17 @@ function ChatView({ conversationId }: { conversationId: string }) {
           </Link>
           {conversation && (
             conversation.is_group ? (
-              <div className="flex items-center gap-3 flex-1 min-w-0">
+              <button onClick={() => setShowGroupPanel(!showGroupPanel)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/30 flex items-center justify-center text-lg flex-shrink-0">
                   👥
                 </div>
                 <div className="min-w-0">
                   <span className="text-sm font-semibold block truncate">{conversation.name || 'Groupe'}</span>
                   <span className="text-[10px] text-muted-foreground">
-                    {conversation.participants ? `${conversation.participants.length + 1} membres` : 'Groupe'}
+                    {groupMembers.length} membres · Appuyez pour gérer
                   </span>
                 </div>
-              </div>
+              </button>
             ) : (
               <Link to={`/profile/${conversation.participant.user_id}`} className="flex items-center gap-3 flex-1 min-w-0">
                 <div className="relative">
@@ -942,7 +953,116 @@ function ChatView({ conversationId }: { conversationId: string }) {
         </div>
       </header>
 
-      {/* Pinned messages banner */}
+      {/* Group Management Panel */}
+      {isGroup && showGroupPanel && (
+        <div className="border-b border-border/30 bg-card animate-in slide-in-from-top-2">
+          <div className="px-4 py-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold flex items-center gap-2">
+                <Users className="w-4 h-4 text-primary" />
+                Membres ({groupMembers.length})
+              </h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowInvitePanel(!showInvitePanel)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  Inviter
+                </button>
+                <button
+                  onClick={async () => {
+                    if (confirm('Voulez-vous vraiment quitter ce groupe ?')) {
+                      try {
+                        await leaveGroup.mutateAsync(conversationId);
+                        toast.success('Vous avez quitté le groupe');
+                        navigate('/messages');
+                      } catch { toast.error('Erreur'); }
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-destructive/10 text-destructive text-xs font-medium hover:bg-destructive/20 transition-colors"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  Quitter
+                </button>
+              </div>
+            </div>
+
+            {/* Members list */}
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {groupMembers.map(member => (
+                <div key={member.user_id} className="flex items-center gap-2.5 py-1.5 px-2 rounded-xl hover:bg-secondary/40 transition-colors">
+                  <Link to={`/profile/${member.user_id}`}>
+                    <UserAvatar src={member.avatar_url} alt={member.name} size="sm" />
+                  </Link>
+                  <Link to={`/profile/${member.user_id}`} className="flex-1 min-w-0">
+                    <span className="text-xs font-medium truncate block">{member.name}</span>
+                    {conversation?.created_by === member.user_id && (
+                      <span className="text-[10px] text-primary flex items-center gap-0.5"><Crown className="w-2.5 h-2.5" /> Admin</span>
+                    )}
+                  </Link>
+                  {conversation?.created_by === user?.id && member.user_id !== user?.id && (
+                    <button
+                      onClick={async () => {
+                        if (confirm(`Retirer ${member.name} du groupe ?`)) {
+                          try {
+                            await removeMember.mutateAsync({ conversationId, userId: member.user_id });
+                            toast.success(`${member.name} a été retiré`);
+                          } catch { toast.error('Erreur'); }
+                        }
+                      }}
+                      className="p-1.5 rounded-full hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      <UserMinus className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Invite friends panel */}
+            {showInvitePanel && (
+              <div className="border-t border-border/20 pt-3 space-y-2">
+                <input
+                  value={inviteSearch}
+                  onChange={e => setInviteSearch(e.target.value)}
+                  placeholder="Rechercher un ami à inviter…"
+                  className="w-full bg-secondary/60 rounded-xl px-3 py-2 text-xs outline-none placeholder:text-muted-foreground"
+                />
+                <div className="space-y-1 max-h-36 overflow-y-auto">
+                  {allFriends
+                    .filter(f => {
+                      const alreadyMember = groupMembers.some(m => m.user_id === f.profile.user_id);
+                      const matchesSearch = !inviteSearch.trim() || f.profile.name.toLowerCase().includes(inviteSearch.toLowerCase());
+                      return !alreadyMember && matchesSearch;
+                    })
+                    .map(f => (
+                      <div key={f.profile.user_id} className="flex items-center gap-2.5 py-1.5 px-2 rounded-xl hover:bg-secondary/40">
+                        <UserAvatar src={f.profile.avatar_url} alt={f.profile.name} size="sm" />
+                        <span className="text-xs font-medium flex-1 truncate">{f.profile.name}</span>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await addMembers.mutateAsync({ conversationId, memberIds: [f.profile.user_id] });
+                              toast.success(`${f.profile.name} ajouté au groupe !`);
+                            } catch { toast.error('Erreur'); }
+                          }}
+                          className="px-2.5 py-1 rounded-full bg-primary text-primary-foreground text-[10px] font-medium hover:bg-primary/90 transition-colors"
+                        >
+                          Inviter
+                        </button>
+                      </div>
+                    ))}
+                  {allFriends.filter(f => !groupMembers.some(m => m.user_id === f.profile.user_id)).length === 0 && (
+                    <p className="text-xs text-muted-foreground text-center py-3">Tous vos amis sont déjà dans le groupe</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {(() => {
         const pinned = messages?.filter(m => pinnedMessages.has(m.id)) || [];
         if (pinned.length === 0) return null;

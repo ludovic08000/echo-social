@@ -24,6 +24,7 @@ export interface Conversation {
   updated_at: string;
   is_group: boolean;
   name: string | null;
+  created_by?: string | null;
   participant: {
     user_id: string;
     name: string;
@@ -140,6 +141,7 @@ export function useConversations() {
           updated_at: conv.updated_at,
           is_group: isGroup,
           name: groupName,
+          created_by: (conv as any).created_by || null,
           participant: firstParticipant || {
             user_id: '',
             name: 'Unknown',
@@ -536,5 +538,88 @@ export function useRejectMessageRequest() {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       queryClient.invalidateQueries({ queryKey: ['pending-messages'] });
     },
+  });
+}
+
+export function useLeaveGroup() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async (conversationId: string) => {
+      if (!user) throw new Error('Not authenticated');
+      const { error } = await supabase
+        .from('conversation_participants')
+        .delete()
+        .eq('conversation_id', conversationId)
+        .eq('user_id', user.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}
+
+export function useAddGroupMembers() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ conversationId, memberIds }: { conversationId: string; memberIds: string[] }) => {
+      const participants = memberIds.map(uid => ({
+        conversation_id: conversationId,
+        user_id: uid,
+      }));
+      const { error } = await supabase
+        .from('conversation_participants')
+        .insert(participants);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}
+
+export function useRemoveGroupMember() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ conversationId, userId }: { conversationId: string; userId: string }) => {
+      const { error } = await supabase
+        .from('conversation_participants')
+        .delete()
+        .eq('conversation_id', conversationId)
+        .eq('user_id', userId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}
+
+export function useGroupMembers(conversationId: string | undefined) {
+  return useQuery({
+    queryKey: ['group-members', conversationId],
+    queryFn: async () => {
+      if (!conversationId) return [];
+      const { data, error } = await supabase
+        .from('conversation_participants')
+        .select('user_id')
+        .eq('conversation_id', conversationId);
+      if (error) throw error;
+      
+      const userIds = data.map(d => d.user_id);
+      if (userIds.length === 0) return [];
+      
+      const { data: profiles, error: pErr } = await supabase
+        .from('profiles')
+        .select('user_id, name, avatar_url')
+        .in('user_id', userIds);
+      if (pErr) throw pErr;
+      return profiles || [];
+    },
+    enabled: !!conversationId,
   });
 }
