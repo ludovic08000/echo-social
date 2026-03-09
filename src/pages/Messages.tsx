@@ -902,17 +902,17 @@ function ChatView({ conversationId }: { conversationId: string }) {
           </Link>
           {conversation && (
             conversation.is_group ? (
-              <div className="flex items-center gap-3 flex-1 min-w-0">
+              <button onClick={() => setShowGroupPanel(!showGroupPanel)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/30 flex items-center justify-center text-lg flex-shrink-0">
                   👥
                 </div>
                 <div className="min-w-0">
                   <span className="text-sm font-semibold block truncate">{conversation.name || 'Groupe'}</span>
                   <span className="text-[10px] text-muted-foreground">
-                    {conversation.participants ? `${conversation.participants.length + 1} membres` : 'Groupe'}
+                    {groupMembers.length} membres · Appuyez pour gérer
                   </span>
                 </div>
-              </div>
+              </button>
             ) : (
               <Link to={`/profile/${conversation.participant.user_id}`} className="flex items-center gap-3 flex-1 min-w-0">
                 <div className="relative">
