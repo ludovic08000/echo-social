@@ -464,8 +464,14 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
   // Call hook & sound
   const [showVoicemailPrompt, setShowVoicemailPrompt] = useState(false);
+  const activeCallIdRef = useRef<string | null>(null);
   const call = useCall({
     onCallEnded: useCallback((info: CallEndInfo) => {
+      // End the signaling record
+      if (activeCallIdRef.current) {
+        endActiveCall(activeCallIdRef.current);
+        activeCallIdRef.current = null;
+      }
       // Send a system message about the call
       const callMsg = info.wasMissed
         ? `📞 CALL:missed|${info.type}`
