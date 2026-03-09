@@ -779,7 +779,8 @@ function ChatView({ conversationId }: { conversationId: string }) {
   const addMembers = useAddGroupMembers();
   const removeMember = useRemoveGroupMember();
   const { data: groupMembers = [] } = useGroupMembers(isGroup ? conversationId : undefined);
-  const { friends: allFriends } = useFriendships();
+  const { data: friendsData } = useFriendships();
+  const allFriends = friendsData?.friends || [];
   const navigate = useNavigate();
 
   const { upload, isUploading } = useImageUpload({
