@@ -420,13 +420,23 @@
     background-clip: text;
   }
 
-  /* Glassmorphism effect */
+  /* Glassmorphism effect — no backdrop-blur on mobile to preserve GPU memory */
   .glass {
-    @apply bg-card/80 backdrop-blur-xl border border-border/30;
+    @apply bg-card/90 border border-border/30;
   }
 
   .glass-dark {
-    @apply bg-background/60 backdrop-blur-xl border border-border/20;
+    @apply bg-background/80 border border-border/20;
+  }
+
+  /* Enable blur only on desktop where GPU memory is abundant */
+  @media (min-width: 768px) {
+    .glass {
+      @apply backdrop-blur-xl bg-card/80;
+    }
+    .glass-dark {
+      @apply backdrop-blur-xl bg-background/60;
+    }
   }
 }
 
