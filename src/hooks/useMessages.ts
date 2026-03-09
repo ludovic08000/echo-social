@@ -141,6 +141,7 @@ export function useConversations() {
           updated_at: conv.updated_at,
           is_group: isGroup,
           name: groupName,
+          created_by: (conv as any).created_by || null,
           participant: firstParticipant || {
             user_id: '',
             name: 'Unknown',
