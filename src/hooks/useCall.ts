@@ -72,6 +72,7 @@ export function useCall(options?: UseCallOptions) {
     setDuration(0);
     setIsMuted(false);
     setIsCameraOff(false);
+    manualEndRef.current = false;
 
     try {
       // Keep screen awake during call
