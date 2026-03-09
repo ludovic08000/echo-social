@@ -541,6 +541,19 @@ const ZEUS_TOOLS = [
       },
     },
   },
+  {
+    type: "function", function: {
+      name: "run_security_audit", description: "Exécuter un audit de sécurité complet de la plateforme. Teste les refus (RLS, accès non-autorisés), les permissions (rôles admin, mineurs), les falsifications (documents IA, multi-comptes, fingerprints suspects) et les cas limites (rate limiting, données orphelines, incohérences).",
+      parameters: {
+        type: "object",
+        properties: {
+          scope: { type: "string", enum: ["all", "refusals", "permissions", "falsifications", "edge_cases"], description: "Périmètre de l'audit" },
+        },
+        required: ["scope"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // Execute Zeus tool calls against the database
