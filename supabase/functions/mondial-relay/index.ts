@@ -8,7 +8,9 @@ const corsHeaders = {
 };
 
 const MR_WSDL = "https://api.mondialrelay.com/Web_Services.asmx";
-const MR_API_V2 = "https://connect-api.mondialrelay.com/api/shipment";
+const MR_API_V2_PROD = "https://connect-api.mondialrelay.com/api/shipment";
+const MR_API_V2_SANDBOX = "https://connect-api-sandbox.mondialrelay.com/api/shipment";
+const MR_API_V2 = Deno.env.get("MONDIAL_RELAY_SANDBOX") === "true" ? MR_API_V2_SANDBOX : MR_API_V2_PROD;
 
 // Compact MD5 implementation (Web Crypto does not support MD5)
 function md5Hex(str: string): string {
