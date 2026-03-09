@@ -76,6 +76,8 @@ function IncomingCallHandler() {
     // Open the chat with the caller
     openChat(accepted.conversation_id);
 
+    activeIncomingCallIdRef.current = accepted.id;
+
     // Start the call (join the LiveKit room)
     call.startCall(accepted.conversation_id, accepted.call_type);
   }, [acceptCall, openChat, call]);

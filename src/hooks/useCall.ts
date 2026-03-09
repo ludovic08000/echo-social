@@ -32,6 +32,7 @@ export function useCall(options?: UseCallOptions) {
   const callTypeRef = useRef<CallType>('audio');
   const noAnswerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const manualEndRef = useRef(false);
+  const hadRemoteParticipantRef = useRef(false);
 
   // Keep refs in sync
   useEffect(() => { callStateRef.current = callState; }, [callState]);
