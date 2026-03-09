@@ -20,8 +20,8 @@ const ALLOWED_MIME_TYPES: Record<string, string[]> = {
 const FOLDER_MAX_SIZES: Record<string, number> = {
   avatars: 5 * 1024 * 1024,
   images: 10 * 1024 * 1024,
-  "post-images": 50 * 1024 * 1024,
-  videos: 50 * 1024 * 1024,
+  "post-images": 200 * 1024 * 1024,
+  videos: 200 * 1024 * 1024,
   products: 5 * 1024 * 1024,
   stories: 10 * 1024 * 1024,
   backgrounds: 5 * 1024 * 1024,
