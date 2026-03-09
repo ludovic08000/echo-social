@@ -1477,6 +1477,9 @@ function ChatView({ conversationId }: { conversationId: string }) {
           }
         }}
       />
+
+      {/* New conversation / group dialog */}
+      <NewConversationDialog open={showNewChat} onOpenChange={setShowNewChat} />
     </div>
   );
 }
