@@ -22,6 +22,7 @@ import { useReportUser } from '@/hooks/useTrustAndSafety';
 import { toast } from 'sonner';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { isAppleMobileWebKit } from '@/lib/platform';
+import { isVideoUrlSafeForIOS } from '@/lib/videoCompat';
 import {
   DropdownMenu,
   DropdownMenuContent,
