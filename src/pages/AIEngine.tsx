@@ -201,28 +201,7 @@ export default function AIEngine() {
 
 // ── Metrics Dashboard ──
 function MetricsDashboard({ modules }: { modules: ReturnType<typeof getAIModules> }) {
-  const [chartData, setChartData] = useState<{ time: string; calls: number; latency: number; errors: number; threats: number }[]>([]);
-
-  useEffect(() => {
-    const generateData = () => {
-      const now = new Date();
-      const data = [];
-      for (let i = 23; i >= 0; i--) {
-        const h = new Date(now.getTime() - i * 3600000);
-        data.push({
-          time: h.toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' }),
-          calls: Math.floor(Math.random() * 500 + 200),
-          latency: Math.floor(Math.random() * 80 + 40),
-          errors: Math.floor(Math.random() * 15),
-          threats: Math.floor(Math.random() * 30),
-        });
-      }
-      setChartData(data);
-    };
-    generateData();
-    const iv = setInterval(generateData, 30000);
-    return () => clearInterval(iv);
-  }, []);
+  const { chartData } = useNeuralMetrics();
 
   const avgLatency = modules.filter(m => m.metrics.totalCalls > 0).reduce((s, m) => s + m.metrics.avgResponseMs, 0) / Math.max(1, modules.filter(m => m.metrics.totalCalls > 0).length);
   const avgSuccess = modules.filter(m => m.metrics.totalCalls > 0).reduce((s, m) => s + m.metrics.successRate, 0) / Math.max(1, modules.filter(m => m.metrics.totalCalls > 0).length);
@@ -251,6 +230,7 @@ function MetricsDashboard({ modules }: { modules: ReturnType<typeof getAIModules
       <div className="rounded-2xl border border-border bg-card p-4">
         <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
           <Activity className="w-4 h-4 text-primary" /> Appels IA — dernières 24h
+          <span className="ml-auto text-[10px] text-muted-foreground flex items-center gap-1"><Radio className="w-3 h-3 text-emerald-400 animate-pulse" />Temps réel (30s)</span>
         </h3>
         <div className="h-40">
           <ResponsiveContainer width="100%" height="100%">
@@ -337,7 +317,249 @@ function MetricsDashboard({ modules }: { modules: ReturnType<typeof getAIModules
           </div>
           <div className="flex-1">
             <h4 className="text-sm font-semibold text-foreground">Connecté à Zeus</h4>
-            <p className="text-[11px] text-muted-foreground">Zeus peut ajuster les poids du feed, la sensibilité de modération et les paramètres de chaque module en temps réel.</p>
+            <p className="text-[11px] text-muted-foreground">Zeus ajuste les poids du feed, la sensibilité de modération et les paramètres de chaque module en temps réel via l'API bidirectionnelle.</p>
+          </div>
+          <a href="/admin" className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+            Ouvrir Zeus
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Feed Config Dashboard ──
+function FeedConfigDashboard() {
+  const { config, loading, updateConfig } = useFeedConfig();
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+
+  const handleSave = useCallback(async (key: string) => {
+    try {
+      const parsed = JSON.parse(editValue);
+      const ok = await updateConfig(key, parsed);
+      if (ok) setEditingKey(null);
+    } catch { /* invalid JSON */ }
+  }, [editValue, updateConfig]);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-border bg-card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-primary" />
+            Configuration de l'algorithme de feed
+            <Badge variant="outline" className="text-[10px]">{config.length} paramètres</Badge>
+          </h3>
+          <a href="/admin" className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-medium bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors">
+            <Brain className="w-3 h-3" /> Zeus peut ajuster
+          </a>
+        </div>
+
+        {loading ? (
+          <div className="py-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" /></div>
+        ) : config.length === 0 ? (
+          <div className="text-center py-6">
+            <Sparkles className="w-10 h-10 mx-auto text-muted-foreground/30 mb-2" />
+            <p className="text-xs text-muted-foreground">Aucune configuration de feed définie.</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Zeus peut créer et ajuster les paramètres de l'algorithme via le panneau admin.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {config.map(entry => (
+              <div key={entry.key} className="rounded-xl p-3 bg-accent/20 border border-border">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-foreground font-mono">{entry.key}</span>
+                    {entry.description && (
+                      <span className="text-[10px] text-muted-foreground">— {entry.description}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground">{new Date(entry.updated_at).toLocaleDateString('fr')}</span>
+                    {editingKey === entry.key ? (
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => handleSave(entry.key)} className="px-2 py-0.5 rounded text-[10px] bg-primary text-primary-foreground hover:bg-primary/90">
+                          <CheckCircle2 className="w-3 h-3" />
+                        </button>
+                        <button onClick={() => setEditingKey(null)} className="px-2 py-0.5 rounded text-[10px] bg-muted text-muted-foreground hover:bg-muted/80">
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <button onClick={() => { setEditingKey(entry.key); setEditValue(JSON.stringify(entry.value, null, 2)); }}
+                        className="px-2 py-0.5 rounded text-[10px] bg-accent text-accent-foreground hover:bg-accent/80 border border-border">
+                        Modifier
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {editingKey === entry.key ? (
+                  <Textarea value={editValue} onChange={e => setEditValue(e.target.value)}
+                    className="min-h-[60px] text-xs font-mono resize-none mt-1" />
+                ) : (
+                  <pre className="text-[11px] text-muted-foreground font-mono bg-background/50 rounded-lg p-2 overflow-x-auto max-h-24">
+                    {JSON.stringify(entry.value, null, 2)}
+                  </pre>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="grid sm:grid-cols-3 gap-3">
+        <div className="rounded-xl p-3 border border-border bg-card">
+          <div className="flex items-center gap-2 mb-1"><Target className="w-3.5 h-3.5 text-primary" /><span className="text-[11px] text-muted-foreground">Anti-spam</span></div>
+          <p className="text-lg font-bold text-foreground">Actif</p>
+          <p className="text-[10px] text-muted-foreground">Répétitions, liens, majuscules</p>
+        </div>
+        <div className="rounded-xl p-3 border border-border bg-card">
+          <div className="flex items-center gap-2 mb-1"><Shuffle className="w-3.5 h-3.5 text-primary" /><span className="text-[11px] text-muted-foreground">Diversité</span></div>
+          <p className="text-lg font-bold text-foreground">Actif</p>
+          <p className="text-[10px] text-muted-foreground">Anti-biais, rotation auteurs</p>
+        </div>
+        <div className="rounded-xl p-3 border border-border bg-card">
+          <div className="flex items-center gap-2 mb-1"><Clock className="w-3.5 h-3.5 text-primary" /><span className="text-[11px] text-muted-foreground">Récence</span></div>
+          <p className="text-lg font-bold text-foreground">Dynamique</p>
+          <p className="text-[10px] text-muted-foreground">Boost heures de pointe</p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+            <Brain className="w-5 h-5 text-primary" />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-sm font-semibold text-foreground">Zeus × Feed Engine</h4>
+            <p className="text-[11px] text-muted-foreground">Zeus lit et propose des ajustements de configuration via [ZEUS_PROPOSAL]. Chaque modification est validée par l'admin avant application.</p>
+          </div>
+          <a href="/admin" className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+            Ouvrir Zeus
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Trust Score Dashboard ──
+function TrustScoreDashboard() {
+  const { scores, loading } = useTrustScores();
+  const [selectedUser, setSelectedUser] = useState<string | null>(null);
+  const [trustResult, setTrustResult] = useState<{ trust_score: number; breakdown: Record<string, number> } | null>(null);
+  const [computing, setComputing] = useState(false);
+
+  const computeTrust = useCallback(async (userId: string) => {
+    setComputing(true);
+    setSelectedUser(userId);
+    try {
+      const { data, error } = await supabase.functions.invoke('trust-score', {
+        body: { user_id: userId },
+      });
+      if (!error && data) setTrustResult(data);
+    } catch (e) {
+      console.error('Trust score error:', e);
+    } finally {
+      setComputing(false);
+    }
+  }, []);
+
+  const getTrustColor = (score: number) => {
+    if (score >= 80) return 'text-emerald-400 border-emerald-500/30';
+    if (score >= 50) return 'text-amber-400 border-amber-500/30';
+    return 'text-red-400 border-red-500/30';
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-border bg-card p-4">
+        <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+          <UserSearch className="w-4 h-4 text-primary" />
+          Profils à risque
+          <Badge variant="outline" className="text-[10px]">{scores.length} flaggés</Badge>
+        </h3>
+
+        {loading ? (
+          <div className="py-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" /></div>
+        ) : scores.length === 0 ? (
+          <div className="text-center py-6">
+            <ShieldCheck className="w-10 h-10 mx-auto text-muted-foreground/30 mb-2" />
+            <p className="text-xs text-muted-foreground">Aucun profil à risque détecté.</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Le trust score est calculé par l'edge function trust-score en combinant âge du compte, transactions, signalements et vérification d'identité.</p>
+          </div>
+        ) : (
+          <div className="space-y-1.5 max-h-72 overflow-y-auto">
+            {scores.map(s => (
+              <button key={s.user_id} onClick={() => computeTrust(s.user_id)}
+                className={cn("w-full flex items-center gap-2 text-xs p-2.5 rounded-lg bg-accent/20 border transition-colors text-left",
+                  selectedUser === s.user_id ? "border-primary/40 bg-primary/5" : "border-border hover:border-primary/20")}>
+                <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center border text-xs font-bold", getTrustColor(s.trust_score))}>
+                  {s.trust_score}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium text-foreground truncate block">{s.name}</span>
+                  <span className="text-[10px] text-muted-foreground">{s.city || 'Ville inconnue'} • {s.user_id.slice(0, 8)}…</span>
+                </div>
+                {s.flag_reason && (
+                  <Badge variant="outline" className="text-[9px] border-red-500/30 text-red-400 shrink-0">{s.flag_reason}</Badge>
+                )}
+                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Trust detail panel */}
+      {(computing || trustResult) && (
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+            <Eye className="w-4 h-4 text-primary" />
+            Détail Trust Score
+          </h3>
+          {computing ? (
+            <div className="py-6 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" /><p className="text-xs text-muted-foreground mt-2">Calcul en cours…</p></div>
+          ) : trustResult ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-4 p-3 rounded-xl bg-accent/20 border border-border">
+                <div className="relative w-14 h-14">
+                  <svg className="w-14 h-14 -rotate-90" viewBox="0 0 56 56">
+                    <circle cx="28" cy="28" r="24" fill="none" stroke="hsl(var(--muted))" strokeWidth="4" />
+                    <circle cx="28" cy="28" r="24" fill="none" stroke="hsl(var(--primary))" strokeWidth="4"
+                      strokeDasharray={`${trustResult.trust_score * 1.508} 151`} strokeLinecap="round" />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-primary">{trustResult.trust_score}</span>
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-foreground">Trust Score : {trustResult.trust_score}/100</p>
+                  <p className="text-[10px] text-muted-foreground">Calculé via edge function trust-score</p>
+                </div>
+              </div>
+              {trustResult.breakdown && (
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.entries(trustResult.breakdown).map(([key, val]) => (
+                    <div key={key} className="rounded-lg p-2 bg-accent/10 border border-border">
+                      <span className="text-[10px] text-muted-foreground capitalize">{key.replace(/_/g, ' ')}</span>
+                      <p className="text-sm font-bold text-foreground">{val as number}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+            <Brain className="w-5 h-5 text-primary" />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-sm font-semibold text-foreground">Zeus × Trust Score</h4>
+            <p className="text-[11px] text-muted-foreground">Zeus peut analyser un profil en profondeur, évaluer le risque comportemental et recommander des actions (surveillance, restriction, bannissement).</p>
           </div>
           <a href="/admin" className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
             Ouvrir Zeus
