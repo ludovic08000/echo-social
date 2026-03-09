@@ -16,8 +16,11 @@ interface SEOHeadProps {
 export function SEOHead({ title, description, image, url, type = 'website', username }: SEOHeadProps) {
   useEffect(() => {
     const siteName = 'Forsure';
+    const siteBase = 'https://forsure.fans';
     const fullTitle = title ? `${title} — ${siteName}` : siteName;
     const desc = description || 'Le réseau social éthique, sans tracking publicitaire.';
+    const pageUrl = url || `${siteBase}${window.location.pathname}`;
+    const ogImage = image || `${siteBase}/og-image.png`;
 
     document.title = fullTitle;
 
@@ -35,17 +38,27 @@ export function SEOHead({ title, description, image, url, type = 'website', user
       el.setAttribute('content', content);
     };
 
+    // Canonical link
+    let canonical = document.querySelector('link[rel="canonical"]');
+    if (!canonical) {
+      canonical = document.createElement('link');
+      canonical.setAttribute('rel', 'canonical');
+      document.head.appendChild(canonical);
+    }
+    canonical.setAttribute('href', pageUrl);
+
     setMeta('description', desc);
     setMeta('og:title', fullTitle);
     setMeta('og:description', desc);
     setMeta('og:type', type);
     setMeta('og:site_name', siteName);
-    if (image) setMeta('og:image', image);
-    if (url) setMeta('og:url', url);
+    setMeta('og:image', ogImage);
+    setMeta('og:url', pageUrl);
+    setMeta('og:locale', 'fr_FR');
     setMeta('twitter:card', image ? 'summary_large_image' : 'summary');
     setMeta('twitter:title', fullTitle);
     setMeta('twitter:description', desc);
-    if (image) setMeta('twitter:image', image);
+    setMeta('twitter:image', ogImage);
 
     // JSON-LD structured data
     let jsonLd = document.querySelector('#seo-jsonld');
@@ -61,7 +74,7 @@ export function SEOHead({ title, description, image, url, type = 'website', user
       '@type': type === 'profile' ? 'Person' : 'WebPage',
       name: title || siteName,
       description: desc,
-      url: url || window.location.href,
+      url: pageUrl,
     };
     if (username) structuredData.alternateName = `@${username}`;
     if (image) structuredData.image = image;
