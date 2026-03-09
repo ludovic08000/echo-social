@@ -160,7 +160,7 @@ Deno.serve(async (req) => {
       .replace(/\s+/g, "-")
       .toLowerCase()
       || "user";
-    const userFolder = `${sanitizedName}-${user.id.substring(0, 8)}`;
+    const userFolder = `${sanitizedName}-${userId.substring(0, 8)}`;
 
     // ─── R2 config ───
     const accountId = Deno.env.get("R2_ACCOUNT_ID")?.trim() ?? "";
