@@ -175,7 +175,7 @@ export function ParentalControlPanel() {
 
       <Button
         onClick={handleSave}
-        disabled={newPin.length !== 4 || setPin.isPending}
+        disabled={newPin.length < PIN_MIN_LENGTH || setPin.isPending}
         className="w-full"
       >
         {setPin.isPending ? 'Enregistrement...' : (
