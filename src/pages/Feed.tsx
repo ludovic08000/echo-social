@@ -133,17 +133,14 @@ export default function Feed() {
     }
   }, [posts.length]);
 
-  const renderInjection = (index: number) => {
+  const renderInjection = useCallback((index: number) => {
     const type = INJECTION_MAP[index];
     
-    // Inject sponsored post every ~6 posts
     if (!isMobile && activeAds?.length && index > 0 && index % 6 === 0) {
       const adIndex = Math.floor(index / 6) % activeAds.length;
       const ad = activeAds[adIndex];
       if (ad) {
-        return isMobile ? (
-          <SponsoredPostCard ad={ad} />
-        ) : (
+        return (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -159,13 +156,13 @@ export default function Feed() {
     if (!type) return null;
 
     const content = (
-      <>
+      <Suspense fallback={<div className="h-32 skeleton rounded-2xl" />}>
         {type === 'reels' && <FeedReelsSection />}
         {type === 'suggestions' && <FriendSuggestions />}
         {type === 'suggestions_city' && <FriendSuggestionsByCity />}
         {type === 'media' && <FeedMediaSection />}
         {type === 'marketplace' && <FeedMarketplaceSection />}
-      </>
+      </Suspense>
     );
 
     return isMobile ? content : (
@@ -178,7 +175,7 @@ export default function Feed() {
         {content}
       </motion.div>
     );
-  };
+  }, [isMobile, activeAds]);
 
   const dismissPause = () => {
     setShowPauseReminder(false);
