@@ -634,10 +634,18 @@ serve(async (req) => {
         const statusList = result?.statusListField || result?.StatusList || [];
         const blockingError = statusList.find((item: any) => {
           const level = String(item?.levelField || item?.Level || '').toLowerCase();
-          return level === 'error';
+          return level.includes('error') || level.includes('critical');
         });
         if (blockingError) {
-          throw new Error(`Erreur API v2 (${blockingError.codeField || blockingError.Code || '?' }): ${blockingError.messageField || blockingError.Message || 'Erreur inconnue'}`);
+          const code = String(blockingError.codeField || blockingError.Code || '?');
+          const message = blockingError.messageField || blockingError.Message || 'Erreur inconnue';
+          if (code === '10055') {
+            throw new Error("Point relais non accepté par le compte transporteur (code 10055). Choisissez un autre point relais ou vérifiez l'activation du produit 24R.");
+          }
+          if (code === '10025') {
+            throw new Error("Point relais invalide pour ce mode de livraison (code 10025). Sélectionnez un autre point relais.");
+          }
+          throw new Error(`Erreur API v2 (${code}): ${message}`);
         }
 
         const shipments = result?.ShipmentsList || result?.shipmentsListField || [];
