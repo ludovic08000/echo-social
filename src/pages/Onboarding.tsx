@@ -47,10 +47,13 @@ export default function Onboarding() {
     try {
       const rows = selected.map(interest => ({
         user_id: user.id,
-        interest,
+        interest_type: 'category',
+        interest_value: interest,
+        explicit: true,
+        weight: 1,
       }));
 
-      const { error } = await supabase.from('user_interests').upsert(rows, { onConflict: 'user_id,interest' });
+      const { error } = await supabase.from('user_interests').upsert(rows, { onConflict: 'user_id,interest_type,interest_value' } as any);
       if (error) throw error;
 
       toast({ title: 'Bienvenue sur ForSure ! 🎉' });
