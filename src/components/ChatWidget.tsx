@@ -611,7 +611,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           <button onClick={async () => {
             const participantId = conversation?.participant?.user_id;
             if (participantId && user?.id) {
-              await signalOutgoingCall(conversationId, user.id, participantId, 'audio');
+              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'audio');
+              if (callId) activeCallIdRef.current = callId;
             }
             call.startCall(conversationId, 'audio');
           }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
@@ -620,7 +621,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           <button onClick={async () => {
             const participantId = conversation?.participant?.user_id;
             if (participantId && user?.id) {
-              await signalOutgoingCall(conversationId, user.id, participantId, 'video');
+              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'video');
+              if (callId) activeCallIdRef.current = callId;
             }
             call.startCall(conversationId, 'video');
           }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
