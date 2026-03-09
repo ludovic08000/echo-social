@@ -60,16 +60,18 @@ export default function Feed() {
   const { isMinor, isUnlocked, requestUnlock } = useParentalGate();
   const isMobile = useIsMobile();
 
+  useFeedScrollMemory('feed-main-scroll');
+
   // Deduplicate posts across pages to prevent React key warnings
-  const posts = (() => {
+  const posts = useMemo(() => {
     const all = data?.pages.flat() || [];
     const seen = new Set<string>();
-    return all.filter(p => {
+    return all.filter((p) => {
       if (seen.has(p.id)) return false;
       seen.add(p.id);
       return true;
     });
-  })();
+  }, [data?.pages]);
 
   useEffect(() => {
     const interval = setInterval(() => {
