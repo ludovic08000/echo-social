@@ -20,6 +20,7 @@ import { useAIContent } from '@/hooks/useAIContent';
 import { useCurrentUserIsMinor } from '@/hooks/useMinorProtection';
 import { useReportUser } from '@/hooks/useTrustAndSafety';
 import { toast } from 'sonner';
+import { useIsMobile } from '@/hooks/use-mobile';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,6 +46,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
   const [saved, setSaved] = useState(false);
   const { data: isMinorUser } = useCurrentUserIsMinor();
   const reportUser = useReportUser();
+  const isMobile = useIsMobile();
 
   const postUrl = generatePostUrl(post.id);
 
@@ -120,14 +122,17 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
                 </span>
               </Link>
               {timeLeft && (
-                <motion.span
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-medium backdrop-blur-sm"
-                >
-                  <Timer className="w-2.5 h-2.5" />
-                  {timeLeft}
-                </motion.span>
+                isMobile ? (
+                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-medium backdrop-blur-sm">
+                    <Timer className="w-2.5 h-2.5" />
+                    {timeLeft}
+                  </span>
+                ) : (
+                  <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-medium backdrop-blur-sm">
+                    <Timer className="w-2.5 h-2.5" />
+                    {timeLeft}
+                  </motion.span>
+                )
               )}
             </div>
           </div>
@@ -210,7 +215,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
                 src={post.image_url}
                 controls
                 playsInline
-                preload="metadata"
+                preload={isMobile ? 'none' : 'metadata'}
                 className={cn(
                   "absolute inset-0 w-full h-full object-cover bg-muted transition-opacity duration-300",
                   mediaLoaded ? "opacity-100" : "opacity-0"
@@ -234,93 +239,76 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
       </Link>
 
       {/* AI Actions */}
-      <AnimatePresence>
-        {post.body && (aiSummariesEnabled || autoTranslateEnabled) && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            className="relative px-4 pb-2 flex flex-wrap gap-1.5"
-          >
-            {aiSummariesEnabled && post.body.length >= 100 && (
-              <motion.button
-                whileHover={{ scale: 1.05, y: -1 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleSummarize}
-                disabled={summaryLoading}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-medium transition-all border backdrop-blur-sm",
-                  summary
-                    ? "bg-primary/10 text-primary border-primary/30 shadow-[0_2px_8px_hsl(220_70%_50%/0.12)]"
-                    : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60 hover:border-primary/20 hover:shadow-[0_2px_8px_hsl(220_70%_50%/0.08)]"
-                )}
-              >
-                {summaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                {summary ? 'Masquer résumé' : 'Résumer'}
-              </motion.button>
-            )}
-            {autoTranslateEnabled && (
-              <motion.button
-                whileHover={{ scale: 1.05, y: -1 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleTranslate}
-                disabled={translateLoading}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-medium transition-all border backdrop-blur-sm",
-                  translation
-                    ? "bg-primary/10 text-primary border-primary/30 shadow-[0_2px_8px_hsl(220_70%_50%/0.12)]"
-                    : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60 hover:border-primary/20 hover:shadow-[0_2px_8px_hsl(220_70%_50%/0.08)]"
-                )}
-              >
-                {translateLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3 h-3" />}
-                {translation ? 'Original' : 'Traduire'}
-              </motion.button>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {post.body && (aiSummariesEnabled || autoTranslateEnabled) && (
+        <div className="relative px-4 pb-2 flex flex-wrap gap-1.5">
+          {aiSummariesEnabled && post.body.length >= 100 && (
+            <button
+              onClick={handleSummarize}
+              disabled={summaryLoading}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-medium transition-all border backdrop-blur-sm",
+                summary
+                  ? "bg-primary/10 text-primary border-primary/30 shadow-[0_2px_8px_hsl(220_70%_50%/0.12)]"
+                  : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60 hover:border-primary/20 hover:shadow-[0_2px_8px_hsl(220_70%_50%/0.08)]"
+              )}
+            >
+              {summaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+              {summary ? 'Masquer résumé' : 'Résumer'}
+            </button>
+          )}
+          {autoTranslateEnabled && (
+            <button
+              onClick={handleTranslate}
+              disabled={translateLoading}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-medium transition-all border backdrop-blur-sm",
+                translation
+                  ? "bg-primary/10 text-primary border-primary/30 shadow-[0_2px_8px_hsl(220_70%_50%/0.12)]"
+                  : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60 hover:border-primary/20 hover:shadow-[0_2px_8px_hsl(220_70%_50%/0.08)]"
+              )}
+            >
+              {translateLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3 h-3" />}
+              {translation ? 'Original' : 'Traduire'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* AI Results */}
-      <AnimatePresence>
-        {(summary || translation) && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="relative px-4 pb-3 space-y-2"
-          >
-            {summary && (
-              <div className="p-3 rounded-xl glass border-primary/20 shadow-[0_2px_12px_hsl(220_70%_50%/0.06)]">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <Sparkles className="w-3 h-3 text-primary" />
-                  <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Résumé IA</span>
-                </div>
-                <p className="text-sm text-foreground leading-relaxed">{summary}</p>
+      {(summary || translation) && (
+        <div className="relative px-4 pb-3 space-y-2">
+          {summary && (
+            <div className="p-3 rounded-xl glass border-primary/20 shadow-[0_2px_12px_hsl(220_70%_50%/0.06)]">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Sparkles className="w-3 h-3 text-primary" />
+                <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Résumé IA</span>
               </div>
-            )}
-            {translation && (
-              <div className="p-3 rounded-xl glass border-primary/20 shadow-[0_2px_12px_hsl(220_70%_50%/0.06)]">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <Languages className="w-3 h-3 text-primary" />
-                  <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Traduction</span>
-                </div>
-                <p className="text-sm text-foreground leading-relaxed">{translation}</p>
+              <p className="text-sm text-foreground leading-relaxed">{summary}</p>
+            </div>
+          )}
+          {translation && (
+            <div className="p-3 rounded-xl glass border-primary/20 shadow-[0_2px_12px_hsl(220_70%_50%/0.06)]">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Languages className="w-3 h-3 text-primary" />
+                <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Traduction</span>
               </div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <p className="text-sm text-foreground leading-relaxed">{translation}</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Reactions Count */}
       {(post.likes_count > 0 || post.comments_count > 0) && (
         <div className="relative flex items-center justify-between px-4 py-2 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
             {post.likes_count > 0 && (
-              <motion.div className="flex items-center gap-1" initial={{ scale: 0 }} animate={{ scale: 1 }}>
+              <div className="flex items-center gap-1">
                 <div className="w-[18px] h-[18px] rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-[0_2px_6px_hsl(220_70%_50%/0.3)]">
                   <ThumbsUp className="w-2.5 h-2.5 text-primary-foreground" />
                 </div>
                 <span className="font-medium">{post.likes_count}</span>
-              </motion.div>
+              </div>
             )}
           </div>
           {post.comments_count > 0 && (
@@ -341,7 +329,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
             variant="facebook"
           />
           
-          <motion.div className="flex-1" whileTap={{ scale: 0.95 }}>
+          <div className="flex-1">
             <Button
               variant="ghost"
               size="sm"
@@ -351,9 +339,9 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
               <MessageCircle className="w-[18px] h-[18px]" />
               <span className="font-medium">Commenter</span>
             </Button>
-          </motion.div>
+          </div>
           
-          <motion.div className="flex-1" whileTap={{ scale: 0.95 }}>
+          <div className="flex-1">
             <ShareButton
               url={postUrl}
               title={`Post de ${post.profile.name}`}
@@ -363,7 +351,7 @@ export function PostCard({ post, showActions = true, onCommentClick }: PostCardP
               showLabel
               className="w-full h-11 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs"
             />
-          </motion.div>
+          </div>
         </div>
       )}
     </article>
