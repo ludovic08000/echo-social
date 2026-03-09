@@ -5,6 +5,7 @@ import { useCreatePost } from '@/hooks/usePosts';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
 import { uploadToR2 } from '@/lib/r2';
+import { useAgeVerification } from '@/hooks/useAgeVerification';
 import { generateVideoThumbnail } from '@/lib/videoThumbnail';
 import { isVideoCompatible } from '@/lib/videoCompat';
 import { supabase } from '@/integrations/supabase/client';
