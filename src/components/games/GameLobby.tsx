@@ -19,10 +19,6 @@ const GameLobby = forwardRef<HTMLDivElement, GameLobbyProps>(function GameLobby(
   const { data: friendsData, isLoading } = useFriendships();
 
   const friends = friendsData?.friends || [];
-  const [step, setStep] = useState<'mode' | 'difficulty' | 'friend'>('mode');
-  const { data: friendsData, isLoading } = useFriendships();
-
-  const friends = friendsData?.friends || [];
 
   return (
     <div ref={ref} className="flex flex-col items-center gap-6 py-6">
