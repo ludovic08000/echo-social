@@ -161,6 +161,7 @@ export function useCall(options?: UseCallOptions) {
 
       // If someone is already in the room, we're connected
       if (room.remoteParticipants.size > 0) {
+        hadRemoteParticipantRef.current = true;
         setCallState('connected');
       } else {
         setCallState('connecting');
