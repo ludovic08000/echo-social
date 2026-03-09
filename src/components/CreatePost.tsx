@@ -187,6 +187,7 @@ export function CreatePost() {
           if (!profile?.age_verified && media.type.startsWith('image/')) {
             verifyAge(url);
           }
+        }
       }
 
       let expiresAt: string | undefined;
