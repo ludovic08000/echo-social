@@ -76,9 +76,12 @@ export default function AIEngine() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="w-full grid grid-cols-3 h-11">
+          <TabsList className="w-full grid grid-cols-4 h-11">
             <TabsTrigger value="modules" className="text-xs sm:text-sm">
               <Cpu className="w-3.5 h-3.5 mr-1.5" />Modules
+            </TabsTrigger>
+            <TabsTrigger value="security" className="text-xs sm:text-sm">
+              <ShieldAlert className="w-3.5 h-3.5 mr-1.5" />Sécurité
             </TabsTrigger>
             <TabsTrigger value="playground" className="text-xs sm:text-sm">
               <Wand2 className="w-3.5 h-3.5 mr-1.5" />Playground
@@ -117,6 +120,10 @@ export default function AIEngine() {
                 />
               ))}
             </div>
+          </TabsContent>
+
+          <TabsContent value="security" className="mt-4">
+            <SecurityDashboard />
           </TabsContent>
 
           <TabsContent value="playground" className="mt-4">
