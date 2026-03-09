@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tansta
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { ReactionType } from '@/hooks/useReactions';
-import { useEffect } from 'react';
 import {
   scorePost,
   loadContentPrefs,
