@@ -4,7 +4,7 @@ import {
   ArrowLeft, Send, Search, Plus, ImageIcon, Smile, Check, CheckCheck, 
   X, Phone, Video, Mic, MicOff, Reply, Heart, ThumbsUp, Laugh, 
   Flame, Sparkles, Camera, Paperclip, MoreVertical, Trash2, Copy,
-  ChevronDown, Flag, Share2, Forward
+  ChevronDown, Flag, Share2, Forward, Pin, PinOff
 } from 'lucide-react';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
