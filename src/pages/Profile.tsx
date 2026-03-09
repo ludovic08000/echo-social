@@ -617,7 +617,7 @@ export default function Profile() {
                     </Button>
                   </Link>
                   {!isCreator && (
-                    <Link to="/creator">
+                    <Link to="/creator" className="shrink-0">
                       <Button 
                         variant="outline" 
                         className="rounded-xl h-10 text-sm border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
