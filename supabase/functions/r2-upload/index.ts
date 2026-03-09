@@ -54,6 +54,8 @@ function checkRateLimit(userId: string): boolean {
 const ALLOWED_ORIGINS_LIST = [
   'https://calm-connect-05.lovable.app',
   'https://id-preview--14bf9f2a-b211-4bff-8f3c-1cd3d8a0a907.lovable.app',
+  'https://forsure.fans',
+  'https://www.forsure.fans',
 ];
 
 function getCorsHeaders(req: Request): Record<string, string> {
