@@ -2,6 +2,42 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 
+let sharedAudioContext: AudioContext | null = null;
+let audioPrimed = false;
+
+function primeAudioForIOS() {
+  if (audioPrimed) return;
+
+  const unlock = async () => {
+    try {
+      if (!sharedAudioContext) {
+        sharedAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      if (sharedAudioContext.state === 'suspended') {
+        await sharedAudioContext.resume();
+      }
+
+      // Play a silent frame once to unlock playback on iOS Safari
+      const buffer = sharedAudioContext.createBuffer(1, 1, 22050);
+      const source = sharedAudioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(sharedAudioContext.destination);
+      source.start(0);
+
+      audioPrimed = true;
+      window.removeEventListener('touchstart', unlock);
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    } catch {
+      // keep listeners until a successful unlock
+    }
+  };
+
+  window.addEventListener('touchstart', unlock, { passive: true });
+  window.addEventListener('pointerdown', unlock, { passive: true });
+  window.addEventListener('keydown', unlock);
+}
+
 export interface IncomingCall {
   id: string;
   conversation_id: string;
@@ -16,55 +52,75 @@ export interface IncomingCall {
 /** Ring tone — plays a looping tone until stopped */
 function createRingtone(): { play: () => void; stop: () => void } {
   let audioCtx: AudioContext | null = null;
-  let oscillator: OscillatorNode | null = null;
+  let oscillatorA: OscillatorNode | null = null;
+  let oscillatorB: OscillatorNode | null = null;
   let gainNode: GainNode | null = null;
   let intervalId: ReturnType<typeof setInterval> | null = null;
 
-  const play = () => {
+  const play = async () => {
     try {
-      audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioCtx = sharedAudioContext ?? new (window.AudioContext || (window as any).webkitAudioContext)();
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
+
       gainNode = audioCtx.createGain();
       gainNode.connect(audioCtx.destination);
       gainNode.gain.value = 0;
 
-      // Create a pleasant ring pattern
-      let on = true;
+      // iOS-friendly double ring pattern
       const ring = () => {
         if (!audioCtx || !gainNode) return;
-        if (on) {
-          oscillator = audioCtx.createOscillator();
-          oscillator.type = 'sine';
-          oscillator.frequency.value = 440;
-          oscillator.connect(gainNode);
-          oscillator.start();
-          gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
-          // Double ring pattern
-          gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
-          gainNode.gain.setValueAtTime(0, audioCtx.currentTime + 0.4);
-          gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime + 0.6);
-          gainNode.gain.setValueAtTime(0, audioCtx.currentTime + 1.0);
-        }
-        on = !on;
+
+        oscillatorA = audioCtx.createOscillator();
+        oscillatorB = audioCtx.createOscillator();
+
+        oscillatorA.type = 'sine';
+        oscillatorB.type = 'sine';
+        oscillatorA.frequency.value = 440;
+        oscillatorB.frequency.value = 554;
+
+        oscillatorA.connect(gainNode);
+        oscillatorB.connect(gainNode);
+
+        const t0 = audioCtx.currentTime;
+        gainNode.gain.cancelScheduledValues(t0);
+        gainNode.gain.setValueAtTime(0, t0);
+        gainNode.gain.linearRampToValueAtTime(0.22, t0 + 0.02);
+        gainNode.gain.linearRampToValueAtTime(0, t0 + 0.35);
+        gainNode.gain.setValueAtTime(0, t0 + 0.55);
+        gainNode.gain.linearRampToValueAtTime(0.22, t0 + 0.62);
+        gainNode.gain.linearRampToValueAtTime(0, t0 + 0.95);
+
+        oscillatorA.start(t0);
+        oscillatorB.start(t0);
+        oscillatorA.stop(t0 + 1.0);
+        oscillatorB.stop(t0 + 1.0);
       };
 
       ring();
       intervalId = setInterval(ring, 2000);
     } catch {
-      // Audio not available
+      // Audio unavailable (or blocked by browser)
     }
   };
 
   const stop = () => {
     if (intervalId) clearInterval(intervalId);
     try {
-      oscillator?.stop();
-      oscillator?.disconnect();
+      oscillatorA?.stop();
+      oscillatorA?.disconnect();
     } catch {}
     try {
-      audioCtx?.close();
+      oscillatorB?.stop();
+      oscillatorB?.disconnect();
     } catch {}
-    audioCtx = null;
-    oscillator = null;
+    try {
+      gainNode?.disconnect();
+    } catch {}
+
+    oscillatorA = null;
+    oscillatorB = null;
     gainNode = null;
     intervalId = null;
   };
@@ -81,6 +137,9 @@ export function useIncomingCall() {
   // Listen for incoming calls via realtime
   useEffect(() => {
     if (!user?.id) return;
+
+    // Required on iOS: unlock audio context after first user interaction
+    primeAudioForIOS();
 
     // Check for existing ringing calls on mount (only recent ones, < 30s old)
     const checkExisting = async () => {
