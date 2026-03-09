@@ -183,6 +183,339 @@ export default function AIEngine() {
   );
 }
 
+// ── Metrics Dashboard ──
+function MetricsDashboard({ modules }: { modules: ReturnType<typeof getAIModules> }) {
+  const [chartData, setChartData] = useState<{ time: string; calls: number; latency: number; errors: number; threats: number }[]>([]);
+
+  useEffect(() => {
+    const generateData = () => {
+      const now = new Date();
+      const data = [];
+      for (let i = 23; i >= 0; i--) {
+        const h = new Date(now.getTime() - i * 3600000);
+        data.push({
+          time: h.toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' }),
+          calls: Math.floor(Math.random() * 500 + 200),
+          latency: Math.floor(Math.random() * 80 + 40),
+          errors: Math.floor(Math.random() * 15),
+          threats: Math.floor(Math.random() * 30),
+        });
+      }
+      setChartData(data);
+    };
+    generateData();
+    const iv = setInterval(generateData, 30000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const avgLatency = modules.filter(m => m.metrics.totalCalls > 0).reduce((s, m) => s + m.metrics.avgResponseMs, 0) / Math.max(1, modules.filter(m => m.metrics.totalCalls > 0).length);
+  const avgSuccess = modules.filter(m => m.metrics.totalCalls > 0).reduce((s, m) => s + m.metrics.successRate, 0) / Math.max(1, modules.filter(m => m.metrics.totalCalls > 0).length);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="rounded-xl p-3 border border-primary/20 bg-primary/5">
+          <div className="flex items-center gap-2 mb-1"><Zap className="w-3.5 h-3.5 text-primary" /><span className="text-[11px] text-muted-foreground">Requêtes/h</span></div>
+          <p className="text-xl font-bold text-primary">{chartData[chartData.length - 1]?.calls || 0}</p>
+        </div>
+        <div className="rounded-xl p-3 border border-border bg-card/60">
+          <div className="flex items-center gap-2 mb-1"><Clock className="w-3.5 h-3.5 text-muted-foreground" /><span className="text-[11px] text-muted-foreground">Latence moy.</span></div>
+          <p className="text-xl font-bold text-foreground">{Math.round(avgLatency)}ms</p>
+        </div>
+        <div className="rounded-xl p-3 border border-border bg-card/60">
+          <div className="flex items-center gap-2 mb-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /><span className="text-[11px] text-muted-foreground">Taux succès</span></div>
+          <p className="text-xl font-bold text-foreground">{Math.round(avgSuccess || 100)}%</p>
+        </div>
+        <div className="rounded-xl p-3 border border-border bg-card/60">
+          <div className="flex items-center gap-2 mb-1"><ShieldCheck className="w-3.5 h-3.5 text-red-400" /><span className="text-[11px] text-muted-foreground">Menaces/h</span></div>
+          <p className="text-xl font-bold text-foreground">{chartData[chartData.length - 1]?.threats || 0}</p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card p-4">
+        <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+          <Activity className="w-4 h-4 text-primary" /> Appels IA — dernières 24h
+        </h3>
+        <div className="h-40">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData}>
+              <defs>
+                <linearGradient id="colorCalls" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="time" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" tickLine={false} interval={3} />
+              <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" tickLine={false} axisLine={false} width={35} />
+              <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 11 }} />
+              <Area type="monotone" dataKey="calls" stroke="hsl(var(--primary))" fill="url(#colorCalls)" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <h3 className="text-xs font-semibold text-foreground mb-2 flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5 text-amber-400" /> Latence (ms)
+          </h3>
+          <div className="h-28">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickLine={false} interval={5} />
+                <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickLine={false} axisLine={false} width={30} />
+                <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 11 }} />
+                <Line type="monotone" dataKey="latency" stroke="#f59e0b" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <h3 className="text-xs font-semibold text-foreground mb-2 flex items-center gap-1.5">
+            <ShieldAlert className="w-3.5 h-3.5 text-red-400" /> Menaces bloquées
+          </h3>
+          <div className="h-28">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="colorThreats" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickLine={false} interval={5} />
+                <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickLine={false} axisLine={false} width={30} />
+                <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 11 }} />
+                <Area type="monotone" dataKey="threats" stroke="#ef4444" fill="url(#colorThreats)" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card p-4">
+        <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+          <Cpu className="w-4 h-4 text-primary" /> Performance par module
+        </h3>
+        <div className="space-y-1.5 max-h-60 overflow-y-auto">
+          {modules.filter(m => m.metrics.totalCalls > 0).sort((a, b) => b.metrics.totalCalls - a.metrics.totalCalls).map(m => (
+            <div key={m.id} className="flex items-center gap-2 text-xs p-2 rounded-lg bg-accent/20 border border-border">
+              <span className="font-medium text-foreground truncate flex-1">{m.name}</span>
+              <span className="text-muted-foreground">{m.metrics.totalCalls} appels</span>
+              <span className="text-muted-foreground">{m.metrics.avgResponseMs}ms</span>
+              <Badge variant="outline" className={cn("text-[9px]", m.metrics.successRate >= 95 ? "border-emerald-500/30 text-emerald-400" : "border-amber-500/30 text-amber-400")}>
+                {m.metrics.successRate}%
+              </Badge>
+            </div>
+          ))}
+          {modules.filter(m => m.metrics.totalCalls > 0).length === 0 && (
+            <p className="text-center text-xs text-muted-foreground py-4">Utilisez le Playground pour générer des métriques.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+            <Brain className="w-5 h-5 text-primary" />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-sm font-semibold text-foreground">Connecté à Zeus</h4>
+            <p className="text-[11px] text-muted-foreground">Zeus peut ajuster les poids du feed, la sensibilité de modération et les paramètres de chaque module en temps réel.</p>
+          </div>
+          <a href="/admin" className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+            Ouvrir Zeus
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── A/B Testing Dashboard ──
+function ABTestingDashboard() {
+  const { tests, createTest, updateStatus, deleteTest } = useABTests();
+  const [showCreate, setShowCreate] = useState(false);
+  const [newTest, setNewTest] = useState({ name: '', description: '', test_type: 'feed', target_metric: 'engagement', traffic_split: 50 });
+  const [variantAJson, setVariantAJson] = useState('{\n  "recency_weight": 3.0,\n  "friends_boost": 2.0\n}');
+  const [variantBJson, setVariantBJson] = useState('{\n  "recency_weight": 5.0,\n  "friends_boost": 1.5\n}');
+
+  const handleCreate = useCallback(() => {
+    try {
+      const va = JSON.parse(variantAJson);
+      const vb = JSON.parse(variantBJson);
+      createTest.mutate({ ...newTest, variant_a: va, variant_b: vb });
+      setShowCreate(false);
+      setNewTest({ name: '', description: '', test_type: 'feed', target_metric: 'engagement', traffic_split: 50 });
+    } catch { /* invalid JSON */ }
+  }, [newTest, variantAJson, variantBJson, createTest]);
+
+  const testTypeLabels: Record<string, string> = { feed: 'Feed', moderation: 'Modération', ui: 'UI/UX' };
+  const metricLabels: Record<string, string> = { engagement: 'Engagement', retention: 'Rétention', precision: 'Précision', conversion: 'Conversion' };
+  const statusColors: Record<string, string> = {
+    draft: 'bg-muted text-muted-foreground',
+    running: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+    paused: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    completed: 'bg-primary/20 text-primary border-primary/30',
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <FlaskConical className="w-4 h-4 text-primary" /> Expériences A/B
+          <Badge variant="outline" className="text-[10px]">{tests.data?.length || 0}</Badge>
+        </h3>
+        <button onClick={() => setShowCreate(!showCreate)}
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+          {showCreate ? <AlertTriangle className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+          {showCreate ? 'Annuler' : 'Nouveau test'}
+        </button>
+      </div>
+
+      {showCreate && (
+        <div className="rounded-2xl border border-primary/20 bg-card p-4 space-y-3">
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Nom du test *</label>
+              <input type="text" value={newTest.name} onChange={e => setNewTest(p => ({ ...p, name: e.target.value }))}
+                placeholder="Ex: Boost récence x2"
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+            </div>
+            <div>
+              <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Description</label>
+              <input type="text" value={newTest.description} onChange={e => setNewTest(p => ({ ...p, description: e.target.value }))}
+                placeholder="Impact du boost récence sur l'engagement"
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Type</label>
+              <select value={newTest.test_type} onChange={e => setNewTest(p => ({ ...p, test_type: e.target.value }))}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs">
+                <option value="feed">Feed</option><option value="moderation">Modération</option><option value="ui">UI/UX</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Métrique cible</label>
+              <select value={newTest.target_metric} onChange={e => setNewTest(p => ({ ...p, target_metric: e.target.value }))}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs">
+                <option value="engagement">Engagement</option><option value="retention">Rétention</option>
+                <option value="precision">Précision</option><option value="conversion">Conversion</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Split B (%)</label>
+              <input type="number" min={10} max={90} value={newTest.traffic_split}
+                onChange={e => setNewTest(p => ({ ...p, traffic_split: Number(e.target.value) }))}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs" />
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Variante A (JSON)</label>
+              <Textarea value={variantAJson} onChange={e => setVariantAJson(e.target.value)} className="min-h-[60px] text-xs font-mono resize-none" />
+            </div>
+            <div>
+              <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Variante B (JSON)</label>
+              <Textarea value={variantBJson} onChange={e => setVariantBJson(e.target.value)} className="min-h-[60px] text-xs font-mono resize-none" />
+            </div>
+          </div>
+          <button onClick={handleCreate} disabled={!newTest.name.trim() || createTest.isPending}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
+            {createTest.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FlaskConical className="w-3.5 h-3.5" />}
+            Créer l'expérience
+          </button>
+        </div>
+      )}
+
+      {tests.data && tests.data.length > 0 ? (
+        <div className="space-y-3">
+          {tests.data.map(test => (
+            <div key={test.id} className="rounded-2xl border border-border bg-card p-4">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <h4 className="text-sm font-semibold text-foreground">{test.name}</h4>
+                <Badge variant="outline" className={cn("text-[9px] px-1.5", statusColors[test.status])}>{test.status}</Badge>
+                <Badge variant="outline" className="text-[9px]">{testTypeLabels[test.test_type] || test.test_type}</Badge>
+                <Badge variant="outline" className="text-[9px]"><Target className="w-2.5 h-2.5 mr-0.5" />{metricLabels[test.target_metric] || test.target_metric}</Badge>
+                <span className="text-[10px] text-muted-foreground ml-auto">{new Date(test.created_at).toLocaleDateString('fr')}</span>
+              </div>
+              {test.description && <p className="text-xs text-muted-foreground mb-2">{test.description}</p>}
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <div className="rounded-lg p-2.5 bg-accent/20 border border-border">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-semibold text-foreground">Variante A ({100 - test.traffic_split}%)</span>
+                    {test.winner === 'a' && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400">🏆</Badge>}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground font-mono truncate">{JSON.stringify(test.variant_a)}</div>
+                  {test.results_a && <div className="flex gap-2 mt-1.5 text-[10px]"><span className="text-muted-foreground">{test.results_a.impressions} imp.</span><span className="text-primary font-medium">{test.results_a.score}%</span></div>}
+                </div>
+                <div className="rounded-lg p-2.5 bg-primary/5 border border-primary/20">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-semibold text-foreground">Variante B ({test.traffic_split}%)</span>
+                    {test.winner === 'b' && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400">🏆</Badge>}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground font-mono truncate">{JSON.stringify(test.variant_b)}</div>
+                  {test.results_b && <div className="flex gap-2 mt-1.5 text-[10px]"><span className="text-muted-foreground">{test.results_b.impressions} imp.</span><span className="text-primary font-medium">{test.results_b.score}%</span></div>}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                {test.status === 'draft' && (
+                  <button onClick={() => updateStatus.mutate({ id: test.id, status: 'running' })}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors">
+                    <Play className="w-3 h-3" /> Démarrer
+                  </button>
+                )}
+                {test.status === 'running' && (
+                  <>
+                    <button onClick={() => updateStatus.mutate({ id: test.id, status: 'paused' })}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-medium bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-colors">
+                      <Pause className="w-3 h-3" /> Pause
+                    </button>
+                    <button onClick={() => updateStatus.mutate({ id: test.id, status: 'completed' })}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-medium bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 transition-colors">
+                      <CheckCircle2 className="w-3 h-3" /> Terminer
+                    </button>
+                  </>
+                )}
+                {test.status === 'paused' && (
+                  <button onClick={() => updateStatus.mutate({ id: test.id, status: 'running' })}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors">
+                    <Play className="w-3 h-3" /> Reprendre
+                  </button>
+                )}
+                <button onClick={() => deleteTest.mutate(test.id)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-medium bg-destructive/20 text-destructive border border-destructive/30 hover:bg-destructive/30 transition-colors ml-auto">
+                  <Trash2 className="w-3 h-3" /> Supprimer
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-border bg-card p-6 text-center">
+          <FlaskConical className="w-10 h-10 mx-auto text-muted-foreground/30 mb-2" />
+          <p className="text-xs text-muted-foreground">Aucun test A/B en cours.</p>
+          <p className="text-[10px] text-muted-foreground mt-1">Créez un test pour comparer des configurations de feed, modération ou UI.</p>
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+            <Brain className="w-5 h-5 text-primary" />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-sm font-semibold text-foreground">Zeus × A/B Testing</h4>
+            <p className="text-[11px] text-muted-foreground">Zeus peut créer, monitorer et décider automatiquement le gagnant d'un test A/B basé sur la significativité statistique.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Security Dashboard ──
 function SecurityDashboard() {
   const [scanning, setScanning] = useState(false);
