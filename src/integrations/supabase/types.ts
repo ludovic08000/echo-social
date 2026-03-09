@@ -1981,7 +1981,7 @@ export type Database = {
           id: string
           order_id: string
           price: number
-          product_id: string
+          product_id: string | null
           quantity: number
           seller_id: string
           seller_payout: number
@@ -1995,7 +1995,7 @@ export type Database = {
           id?: string
           order_id: string
           price: number
-          product_id: string
+          product_id?: string | null
           quantity?: number
           seller_id: string
           seller_payout: number
@@ -2009,7 +2009,7 @@ export type Database = {
           id?: string
           order_id?: string
           price?: number
-          product_id?: string
+          product_id?: string | null
           quantity?: number
           seller_id?: string
           seller_payout?: number
