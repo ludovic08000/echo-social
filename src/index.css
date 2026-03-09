@@ -172,7 +172,6 @@
   .premium-card {
     @apply bg-card rounded-2xl border border-border/40 transition-all duration-300;
     box-shadow: var(--shadow-md);
-    backdrop-filter: blur(8px);
     background: linear-gradient(
       145deg,
       hsl(var(--card)) 0%,
