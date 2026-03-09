@@ -125,10 +125,10 @@ export function ParentalControlPanel() {
             <Input
               type={showPin ? 'text' : 'password'}
               value={newPin}
-              onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-              placeholder="• • • •"
-              maxLength={4}
-              className="text-center text-lg tracking-[0.5em] font-mono"
+              onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, PIN_MAX_LENGTH))}
+              placeholder="• • • • • • • •"
+              maxLength={PIN_MAX_LENGTH}
+              className="text-center text-lg tracking-[0.3em] font-mono"
             />
           </div>
           <div className="space-y-1.5">
@@ -136,10 +136,10 @@ export function ParentalControlPanel() {
             <Input
               type={showPin ? 'text' : 'password'}
               value={confirmPin}
-              onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-              placeholder="• • • •"
-              maxLength={4}
-              className="text-center text-lg tracking-[0.5em] font-mono"
+              onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, PIN_MAX_LENGTH))}
+              placeholder="• • • • • • • •"
+              maxLength={PIN_MAX_LENGTH}
+              className="text-center text-lg tracking-[0.3em] font-mono"
             />
           </div>
         </div>
