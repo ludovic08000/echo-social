@@ -48,6 +48,7 @@ import AdsManager from "./pages/AdsManager";
 import AIAgents from "./pages/AIAgents";
 import Admin from "./pages/Admin";
 import CreatorUpgrade from "./pages/CreatorUpgrade";
+import Onboarding from "./pages/Onboarding";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -133,6 +134,7 @@ function AppContent() {
               <Route path="/signup" element={<PublicOnlyRoute><Signup /></PublicOnlyRoute>} />
               <Route path="/legal/terms" element={<LegalTerms />} />
               <Route path="/legal/privacy" element={<PrivacyPolicy />} />
+              <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
               
               {/* Protected routes */}
               <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
