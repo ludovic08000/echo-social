@@ -465,7 +465,7 @@ export function CreatePost() {
                   
                   <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/20">
                     <input type="file" ref={fileInputRef} onChange={(e) => handleFileChange(e, 'image')} accept="image/*" className="hidden" />
-                    <input type="file" ref={videoInputRef} onChange={(e) => handleFileChange(e, 'video')} accept="video/*" className="hidden" />
+                    <input type="file" ref={videoInputRef} onChange={(e) => handleFileChange(e, 'video')} accept="video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v" className="hidden" />
                     
                     <div className="flex gap-0.5">
                       {[
