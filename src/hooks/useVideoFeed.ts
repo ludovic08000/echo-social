@@ -298,7 +298,7 @@ export function useRecordVideoView() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['video-feed'] });
+      // Ne pas invalider ici: chaque vue/replay peut spammer le refresh et rendre iPhone instable
     },
   });
 }
