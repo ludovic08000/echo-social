@@ -34,7 +34,7 @@ interface PostCardProps {
   onCommentClick?: () => void;
 }
 
-export function PostCard({ post, showActions = true, onCommentClick }: PostCardProps) {
+export const PostCard = memo(function PostCard({ post, showActions = true, onCommentClick }: PostCardProps) {
   const { user } = useAuth();
   const deletePost = useDeletePost();
   const { data: isPostAuthorCreator } = useIsCreator(post.user_id);
