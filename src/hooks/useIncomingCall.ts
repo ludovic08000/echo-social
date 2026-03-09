@@ -2,6 +2,42 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 
+let sharedAudioContext: AudioContext | null = null;
+let audioPrimed = false;
+
+function primeAudioForIOS() {
+  if (audioPrimed) return;
+
+  const unlock = async () => {
+    try {
+      if (!sharedAudioContext) {
+        sharedAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      if (sharedAudioContext.state === 'suspended') {
+        await sharedAudioContext.resume();
+      }
+
+      // Play a silent frame once to unlock playback on iOS Safari
+      const buffer = sharedAudioContext.createBuffer(1, 1, 22050);
+      const source = sharedAudioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(sharedAudioContext.destination);
+      source.start(0);
+
+      audioPrimed = true;
+      window.removeEventListener('touchstart', unlock);
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    } catch {
+      // keep listeners until a successful unlock
+    }
+  };
+
+  window.addEventListener('touchstart', unlock, { passive: true });
+  window.addEventListener('pointerdown', unlock, { passive: true });
+  window.addEventListener('keydown', unlock);
+}
+
 export interface IncomingCall {
   id: string;
   conversation_id: string;
