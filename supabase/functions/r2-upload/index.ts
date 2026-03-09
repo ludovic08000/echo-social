@@ -14,12 +14,13 @@ const ALLOWED_MIME_TYPES: Record<string, string[]> = {
   voice:       ["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg"],
   lives:       ["image/jpeg", "image/png", "image/webp", "video/webm", "video/mp4"],
   feed:        ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"],
+  thumbnails:  ["image/jpeg", "image/png", "image/webp"],
   uploads:     ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"],
 };
 const FOLDER_MAX_SIZES: Record<string, number> = {
   avatars: 5 * 1024 * 1024,
   images: 10 * 1024 * 1024,
-  "post-images": 10 * 1024 * 1024,
+  "post-images": 50 * 1024 * 1024,
   videos: 50 * 1024 * 1024,
   products: 5 * 1024 * 1024,
   stories: 10 * 1024 * 1024,
@@ -27,7 +28,8 @@ const FOLDER_MAX_SIZES: Record<string, number> = {
   documents: 10 * 1024 * 1024,
   voice: 5 * 1024 * 1024,
   lives: 50 * 1024 * 1024,
-  feed: 10 * 1024 * 1024,
+  feed: 50 * 1024 * 1024,
+  thumbnails: 2 * 1024 * 1024,
   uploads: 10 * 1024 * 1024,
 };
 
