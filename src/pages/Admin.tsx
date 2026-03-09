@@ -22,6 +22,7 @@ import { fr } from 'date-fns/locale';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { cn } from '@/lib/utils';
+import { PlatformHealthDashboard } from '@/components/admin/PlatformHealthDashboard';
 
 function useIsAdmin() {
   const { user } = useAuth();
@@ -43,6 +44,7 @@ function useIsAdmin() {
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { key: 'health', label: 'Santé Plateforme', icon: Activity },
   { key: 'users', label: 'Utilisateurs', icon: Users },
   { key: 'posts', label: 'Publications', icon: FileText },
   { key: 'reports', label: 'Signalements', icon: Flag },
@@ -1985,6 +1987,7 @@ export default function Admin() {
   const renderSection = () => {
     switch (section) {
       case 'dashboard': return <DashboardSection />;
+      case 'health': return <PlatformHealthDashboard />;
       case 'users': return <UsersSection />;
       case 'posts': return <PostsSection />;
       case 'reports': return <ReportsSection />;
