@@ -659,7 +659,7 @@ export default function Profile() {
                 </>
               ) : (
                 <>
-                  <div className="flex-1">
+                  <div className="shrink-0">
                     <FriendshipButton userId={userId!} />
                   </div>
                   <Button variant="secondary" className="flex-1 rounded-xl h-10 text-sm">
