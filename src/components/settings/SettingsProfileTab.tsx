@@ -52,6 +52,11 @@ export function SettingsProfileTab() {
       const { url } = await uploadToR2(file, 'avatars');
       await updateProfile.mutateAsync({ avatar_url: url + '?t=' + Date.now() });
       toast({ title: t('settings.photoUpdated') });
+
+      // Background age verification on first photo
+      if (!profile?.age_verified) {
+        verifyAge(url);
+      }
     } catch (error) {
       toast({ title: t('common.error'), variant: 'destructive' });
     } finally {
