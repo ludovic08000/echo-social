@@ -11,6 +11,7 @@ import { fr } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useRef, useCallback } from 'react';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface ReplayStream {
   id: string;
