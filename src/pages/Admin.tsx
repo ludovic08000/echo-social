@@ -22,6 +22,7 @@ import { fr } from 'date-fns/locale';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { cn } from '@/lib/utils';
+import { PlatformHealthDashboard } from '@/components/admin/PlatformHealthDashboard';
 
 function useIsAdmin() {
   const { user } = useAuth();
