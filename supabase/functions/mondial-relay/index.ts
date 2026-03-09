@@ -344,11 +344,13 @@ serve(async (req) => {
       };
 
       const formatRelayLocation = (raw: unknown) => {
-        const cleaned = String(raw ?? "").trim().replace(/\s+/g, "");
+        const cleaned = String(raw ?? "")
+          .trim()
+          .toUpperCase()
+          .replace(/\s+/g, "")
+          .replace(/[^A-Z0-9-]/g, "");
         if (!cleaned) return "";
-        // Remove country prefix if present (e.g. "FR-062691" -> "062691")
-        const parts = cleaned.split("-");
-        return parts.length > 1 ? parts[parts.length - 1] : cleaned;
+        return cleaned;
       };
 
       const deliveryMode = normalizeMode(body?.delivery_mode, "24R");
@@ -360,10 +362,65 @@ serve(async (req) => {
         throw new Error("Point relais manquant ou invalide pour le mode de livraison sélectionné");
       }
 
-      const deliveryLocationAttr = relayLocation ? ` Location="${escXml(relayLocation)}"` : "";
-      const collectionLocationAttr = collectionMode === "REL" && relayLocation
-        ? ` Location="${escXml(relayLocation)}"`
-        : "";
+      const relayCountry = String(order.shipping_relay_country || "FR").trim().toUpperCase() || "FR";
+      const relayPostcode = String(order.shipping_relay_postcode || "").trim();
+
+      const buildRelayCandidates = (value: string, countryCode: string): string[] => {
+        const result: string[] = [];
+        const pushUnique = (candidate: string) => {
+          if (!candidate) return;
+          if (!result.includes(candidate)) result.push(candidate);
+        };
+
+        const normalized = formatRelayLocation(value);
+        if (!normalized) return result;
+
+        pushUnique(normalized);
+
+        const parts = normalized.split("-");
+        const last = parts[parts.length - 1];
+        if (last && last !== normalized) {
+          pushUnique(last);
+        }
+
+        if (!normalized.startsWith(`${countryCode}-`)) {
+          pushUnique(`${countryCode}-${last || normalized}`);
+        }
+        if (!normalized.startsWith(countryCode)) {
+          pushUnique(`${countryCode}${last || normalized}`);
+        }
+
+        return result;
+      };
+
+      const getSoapRelayCandidates = async (postcode: string, countryCode: string): Promise<string[]> => {
+        if (!postcode) return [];
+        const params: Record<string, string> = {
+          Enseigne: enseigne,
+          Pays: countryCode,
+          CP: postcode,
+          Latitude: '',
+          Longitude: '',
+          Taille: '',
+          Poids: '',
+          Action: '',
+          DelaiEnvoi: '0',
+          RayonRecherche: '',
+          TypeActivite: '',
+          NACE: '',
+          NombreResultats: '10',
+        };
+        params.Security = buildSignature(params, privateKey);
+
+        const xml = await callMondialRelay("WSI4_PointRelais_Recherche", params);
+        const stat = extractXmlValue(xml, 'STAT');
+        if (stat !== '0') return [];
+
+        const points = extractRelayPoints(xml);
+        return points
+          .map((point) => formatRelayLocation(point?.id))
+          .filter(Boolean);
+      };
 
       // Format phone to international format (+33...)
       const formatPhone = (phone: string): string => {
@@ -373,7 +430,13 @@ serve(async (req) => {
         return '+33' + cleaned;
       };
 
-      const xmlPayload = `<?xml version="1.0" encoding="utf-8"?>
+      const buildXmlPayload = (deliveryLocation: string) => {
+        const deliveryLocationAttr = deliveryLocation ? ` Location="${escXml(deliveryLocation)}"` : "";
+        const collectionLocationAttr = collectionMode === "REL" && deliveryLocation
+          ? ` Location="${escXml(deliveryLocation)}"`
+          : "";
+
+        return `<?xml version="1.0" encoding="utf-8"?>
 <ShipmentCreationRequest xmlns="http://www.example.org/Request">
   <Context>
     <Login>${escXml(v2Login.trim())}</Login>
@@ -420,27 +483,110 @@ serve(async (req) => {
           <Firstname>${escXml(recipientFirstname)}</Firstname>
           <Lastname>${escXml(recipientLastname)}</Lastname>
           <Streetname>${escXml(order.shipping_relay_address || "")}</Streetname>
-          <CountryCode>${escXml(order.shipping_relay_country || "FR")}</CountryCode>
-          <PostCode>${escXml(order.shipping_relay_postcode || "")}</PostCode>
+          <CountryCode>${escXml(relayCountry)}</CountryCode>
+          <PostCode>${escXml(relayPostcode)}</PostCode>
           <City>${escXml(order.shipping_relay_city || "")}</City>
         </Address>
       </Recipient>
     </Shipment>
   </ShipmentsList>
 </ShipmentCreationRequest>`;
+      };
 
-      console.log("API v2 XML payload:", xmlPayload);
+      const extractBlockingStatus = (rawResponseText: string) => {
+        try {
+          const parsed = JSON.parse(rawResponseText);
+          const statusList = parsed?.statusListField || parsed?.StatusList || [];
+          return statusList.find((item: any) => {
+            const level = String(item?.levelField || item?.Level || '').toLowerCase();
+            return level === 'error';
+          }) || null;
+        } catch {
+          return null;
+        }
+      };
 
-      const apiResponse = await fetch(MR_API_V2, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/xml; charset=utf-8",
-          "Accept": "application/xml, application/json",
-        },
-        body: xmlPayload,
-      });
+      let responseText = "";
+      let apiResponse: Response | null = null;
+      const attemptedRelayLocations = new Set<string>();
+      let relayCandidates = buildRelayCandidates(relayLocation, relayCountry);
 
-      const responseText = await apiResponse.text();
+      if (relayCandidates.length === 0 && ["24R", "24L", "DRI"].includes(deliveryMode)) {
+        relayCandidates = [relayLocation];
+      }
+
+      for (const candidate of relayCandidates) {
+        if (!candidate || attemptedRelayLocations.has(candidate)) continue;
+        attemptedRelayLocations.add(candidate);
+
+        const xmlPayload = buildXmlPayload(candidate);
+        console.log("API v2 request summary:", {
+          order_id,
+          deliveryMode,
+          collectionMode,
+          relayCandidate: candidate,
+          relayPostcode,
+          relayCountry,
+          endpoint: MR_API_V2,
+        });
+
+        const currentResponse = await fetch(MR_API_V2, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/xml; charset=utf-8",
+            "Accept": "application/xml, application/json",
+          },
+          body: xmlPayload,
+        });
+
+        const currentText = await currentResponse.text();
+        const blockingStatus = extractBlockingStatus(currentText);
+
+        apiResponse = currentResponse;
+        responseText = currentText;
+
+        if (!blockingStatus) break;
+
+        const statusCode = String(blockingStatus.codeField || blockingStatus.Code || "");
+        if (statusCode === "10025" || statusCode === "10055") {
+          continue;
+        }
+
+        break;
+      }
+
+      const finalBlockingStatus = extractBlockingStatus(responseText);
+      if (finalBlockingStatus && (String(finalBlockingStatus.codeField || finalBlockingStatus.Code || "") === "10025" || String(finalBlockingStatus.codeField || finalBlockingStatus.Code || "") === "10055") && relayPostcode) {
+        const soapCandidates = await getSoapRelayCandidates(relayPostcode, relayCountry);
+        for (const candidate of soapCandidates) {
+          if (!candidate || attemptedRelayLocations.has(candidate)) continue;
+          attemptedRelayLocations.add(candidate);
+
+          const xmlPayload = buildXmlPayload(candidate);
+          console.log("API v2 retry with SOAP relay candidate:", { order_id, relayCandidate: candidate });
+
+          const currentResponse = await fetch(MR_API_V2, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/xml; charset=utf-8",
+              "Accept": "application/xml, application/json",
+            },
+            body: xmlPayload,
+          });
+
+          const currentText = await currentResponse.text();
+          apiResponse = currentResponse;
+          responseText = currentText;
+
+          const blockingStatus = extractBlockingStatus(currentText);
+          if (!blockingStatus) break;
+        }
+      }
+
+      if (!apiResponse) {
+        throw new Error("Impossible de créer l'expédition: aucune réponse API");
+      }
+
       console.log("API v2 response status:", apiResponse.status, "body length:", responseText.length);
       console.log("API v2 response body (full):", responseText);
 
