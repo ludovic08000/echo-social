@@ -57,6 +57,7 @@ export default function Feed() {
   const { data: activeAds } = useActiveAds();
   const feedBgStyle = useCustomBackground('feed');
   const { isMinor, isUnlocked, requestUnlock } = useParentalGate();
+  const isMobile = useIsMobile();
 
   // Deduplicate posts across pages to prevent React key warnings
   const posts = (() => {
