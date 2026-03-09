@@ -90,6 +90,12 @@ export default function AIEngine() {
               <TabsTrigger value="metrics" className="text-xs sm:text-sm">
                 <BarChart3 className="w-3.5 h-3.5 mr-1" />Métriques
               </TabsTrigger>
+              <TabsTrigger value="feed" className="text-xs sm:text-sm">
+                <Sparkles className="w-3.5 h-3.5 mr-1" />Feed
+              </TabsTrigger>
+              <TabsTrigger value="trust" className="text-xs sm:text-sm">
+                <ShieldCheck className="w-3.5 h-3.5 mr-1" />Trust
+              </TabsTrigger>
               <TabsTrigger value="security" className="text-xs sm:text-sm">
                 <ShieldAlert className="w-3.5 h-3.5 mr-1" />Sécurité
               </TabsTrigger>
