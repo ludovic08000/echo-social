@@ -148,7 +148,7 @@ function ReactionPicker({ onReact, visible }: { onReact: (emoji: string) => void
 
 // ─── Message Context Menu ────────────────────────────────
 function MessageActions({ 
-  isMe, onReply, onReact, onCopy, onDeleteForMe, onDeleteForEveryone, onReport, visible, onClose 
+  isMe, onReply, onReact, onCopy, onDeleteForMe, onDeleteForEveryone, onReport, onForward, onPin, isPinned, visible, onClose 
 }: { 
   isMe: boolean; 
   onReply: () => void; 
@@ -157,6 +157,9 @@ function MessageActions({
   onDeleteForMe: () => void;
   onDeleteForEveryone?: () => void;
   onReport: () => void;
+  onForward: () => void;
+  onPin: () => void;
+  isPinned: boolean;
   visible: boolean; 
   onClose: () => void;
 }) {
@@ -182,13 +185,21 @@ function MessageActions({
           ))}
         </div>
         {/* Actions */}
-        <div className="glass shadow-xl rounded-xl border border-border/30 overflow-hidden min-w-[180px]">
+        <div className="glass shadow-xl rounded-xl border border-border/30 overflow-hidden min-w-[200px]">
           <button onClick={() => { onReply(); onClose(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-secondary/60 transition-colors">
             <Reply className="w-4 h-4 text-muted-foreground" /> Répondre
+          </button>
+          <button onClick={() => { onForward(); onClose(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-secondary/60 transition-colors">
+            <Forward className="w-4 h-4 text-muted-foreground" /> Transférer
+          </button>
+          <button onClick={() => { onPin(); onClose(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-secondary/60 transition-colors">
+            {isPinned ? <PinOff className="w-4 h-4 text-muted-foreground" /> : <Pin className="w-4 h-4 text-muted-foreground" />}
+            {isPinned ? 'Désépingler' : 'Épingler'}
           </button>
           <button onClick={() => { onCopy(); onClose(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-secondary/60 transition-colors">
             <Copy className="w-4 h-4 text-muted-foreground" /> Copier
           </button>
+          <div className="h-px bg-border/20 mx-2" />
           <button onClick={() => { onDeleteForMe(); onClose(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-secondary/60 transition-colors">
             <Trash2 className="w-4 h-4 text-muted-foreground" /> Supprimer pour moi
           </button>
@@ -205,6 +216,77 @@ function MessageActions({
         </div>
       </div>
     </>
+  );
+}
+
+// ─── Forward Message Dialog ──────────────────────────────
+function ForwardMessageDialog({ 
+  open, onOpenChange, messageBody, onForward 
+}: { 
+  open: boolean; 
+  onOpenChange: (v: boolean) => void; 
+  messageBody: string;
+  onForward: (conversationId: string) => void;
+}) {
+  const { data: conversations } = useConversations();
+  const [search, setSearch] = useState('');
+
+  const filtered = useMemo(() => {
+    if (!conversations) return [];
+    if (!search.trim()) return conversations;
+    const q = search.toLowerCase();
+    return conversations.filter(c => 
+      c.participant.name.toLowerCase().includes(q) || 
+      (c.name && c.name.toLowerCase().includes(q))
+    );
+  }, [conversations, search]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md max-h-[70vh] flex flex-col p-0 gap-0 rounded-2xl">
+        <DialogHeader className="p-4 pb-0">
+          <DialogTitle className="text-base font-bold">Transférer le message</DialogTitle>
+        </DialogHeader>
+        <div className="px-4 pt-3 pb-1">
+          <div className="glass rounded-xl px-3 py-2 mb-2 border border-border/20">
+            <p className="text-xs text-muted-foreground line-clamp-2">{messageBody}</p>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Rechercher…"
+              className="w-full bg-secondary/60 rounded-xl pl-9 pr-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors"
+              autoFocus
+            />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 pb-4">
+          {!filtered.length ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">Aucune conversation</div>
+          ) : (
+            filtered.map(conv => (
+              <button
+                key={conv.id}
+                onClick={() => { onForward(conv.id); onOpenChange(false); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-secondary/60 active:scale-[0.98] transition-all"
+              >
+                {conv.is_group ? (
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/30 flex items-center justify-center text-lg flex-shrink-0">👥</div>
+                ) : (
+                  <UserAvatar src={conv.participant.avatar_url} alt={conv.participant.name} size="md" />
+                )}
+                <span className="text-sm font-medium truncate flex-1 text-left">
+                  {conv.is_group ? (conv.name || 'Groupe') : conv.participant.name}
+                </span>
+                <Forward className="w-4 h-4 text-primary flex-shrink-0" />
+              </button>
+            ))
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
