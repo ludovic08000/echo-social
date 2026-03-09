@@ -50,6 +50,7 @@ export function CreatePost() {
   const [mediaType, setMediaType] = useState<'image' | 'video' | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStep, setUploadStep] = useState<string | null>(null);
+  const [uploadPercent, setUploadPercent] = useState(0);
   const [expiryHours, setExpiryHours] = useState<number | null>(null);
   const [capsuleDays, setCapsuleDays] = useState<number | null>(null);
   const [publishAsReplay, setPublishAsReplay] = useState(false);
