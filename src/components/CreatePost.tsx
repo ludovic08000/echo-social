@@ -43,6 +43,7 @@ export function CreatePost() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { data: profile } = useProfile();
+  const { verifyAge } = useAgeVerification();
   const createPost = useCreatePost();
   const [body, setBody] = useState('');
   const [expanded, setExpanded] = useState(false);
