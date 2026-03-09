@@ -232,14 +232,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                     <span className="text-xs font-medium text-foreground">Vidéo non compatible iPhone</span>
                   </div>
                 </div>
-              ) : isMobile ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-muted/70">
-                  <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-background/80 border border-border/40">
-                    <Play className="w-4 h-4 text-foreground" />
-                    <span className="text-xs font-medium text-foreground">Lire la vidéo</span>
-                  </div>
-                </div>
-              ) : shouldDeferVideo && !videoEnabled ? (
+              ) : (isMobile || (shouldDeferVideo && !videoEnabled)) && !videoEnabled ? (
                 <button
                   type="button"
                   onClick={(e) => {
