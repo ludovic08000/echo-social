@@ -1371,7 +1371,29 @@ Date et heure : ${new Date().toLocaleString("fr-FR")}`;
 // BASIC MODERATION FALLBACKS
 // ═══════════════════════════════════════════════════════════════
 function basicModeration(text: string): { safe: boolean; reason: string | null; category: string } {
-  const lower = text.toLowerCase();
+  const lower = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  
+  // French profanity / insults detection
+  const profanity = [
+    /\b(put(?:e|ain|1n)|pute)\b/i,
+    /\b(merde|emmerder?|demerde)\b/i,
+    /\b(connard|connasse|con(?:nerie)?)\b/i,
+    /\b(enculer?|encule|nique|niquer|ntm|ntm|nique\s*ta\s*m)/i,
+    /\b(salop(?:e|ard)?|batar(?:d|de?))\b/i,
+    /\b(fdp|fils?\s*de\s*pute)\b/i,
+    /\b(pd|pedal(?:e)?|tapette|tafiole)\b/i,
+    /\b(negr(?:o|e)|bougnoule|youpin|bamboula|raton)\b/i,
+    /\b(ta\s*gueule|ferme[\s-]*la|tg|ftg|vtf|vtff|vaf)\b/i,
+    /\b(bordel(?:de)?|putain)\b/i,
+    /\b(couille|couillon|branleur|branleuse)\b/i,
+    /\b(bouff?on(?:ne)?|debile|abruti(?:e)?|cretin(?:e)?)\b/i,
+    /\b(troud(?:u|uc)|petasse|poufiasse|grognasse)\b/i,
+    /\b(casse[\s-]*toi|degage|va\s*te\s*faire)\b/i,
+    /\b(fuck|shit|bitch|asshole|dickhead|bastard|cunt)\b/i,
+  ];
+  for (const p of profanity) if (p.test(lower)) return { safe: false, reason: "Langage inapproprié", category: "inappropriate" };
+
+  // Scam patterns
   const scam = [/gagn(ez|er)\s+\d+\s*€/i, /cliquez?\s+ici\s+pour\s+gagner/i, /envoyez?\s+(moi\s+)?(votre|ton)\s+(numéro|carte|code|mot\s+de\s+passe)/i, /bitcoin|crypto\s+gratuit/i, /bit\.ly|tinyurl/i];
   for (const p of scam) if (p.test(lower)) return { safe: false, reason: "Arnaque détectée", category: "scam" };
   if (/(.)\1{10,}/.test(text) || /(https?:\/\/[^\s]+\s*){4,}/i.test(text)) return { safe: false, reason: "Spam", category: "spam" };
