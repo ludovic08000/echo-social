@@ -71,7 +71,7 @@ function PurgeFeedSection() {
 
       queryClient.invalidateQueries({ queryKey: ['posts'] });
       queryClient.invalidateQueries({ queryKey: ['user-posts'] });
-      toast({ title: 'Toutes vos publications ont été supprimées' });
+      
     } catch {
       toast({ title: 'Erreur lors de la purge', variant: 'destructive' });
     } finally {
