@@ -89,3 +89,6 @@ verify_jwt = false
 
 [functions.r2-presign]
 verify_jwt = false
+
+[functions.admin-delete-user]
+verify_jwt = false
