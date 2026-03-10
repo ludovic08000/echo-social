@@ -1318,6 +1318,89 @@ function basicMinorModeration(text: string): { safe: boolean; reason: string | n
   return { safe: true, reason: null, category: "safe" };
 }
 
+// ── POST MODERATION: Check posts for hate speech, harmful content ──
+async function handlePostModeration(apiKey: string, body: any, userId: string, supabase: any, cors: Record<string, string>) {
+  const { postId, text, imageUrl } = body;
+  if (!text && !imageUrl) return new Response(JSON.stringify({ safe: true }), { headers: { ...cors, "Content-Type": "application/json" } });
+
+  // Quick basic check first
+  if (text) {
+    const basic = basicModeration(text);
+    if (!basic.safe) {
+      // Record strike
+      const zeusMsg = `Hey ! 🙏 J'ai remarqué que ton contenu contient des éléments qui ne respectent pas notre communauté (${basic.reason}). ForSure est un espace bienveillant. Si ça se reproduit, ton compte pourrait être suspendu. N'hésite pas à reformuler, je suis là pour t'aider ! ⚡`;
+      if (postId) {
+        await supabase.from("content_strikes").insert({ user_id: userId, post_id: postId, reason: basic.reason, severity: "warning", zeus_message: zeusMsg });
+      }
+      return new Response(JSON.stringify({ safe: false, reason: basic.reason, zeus_message: zeusMsg }), { headers: { ...cors, "Content-Type": "application/json" } });
+    }
+  }
+
+  // AI moderation for nuanced content
+  if (text && text.length > 10) {
+    const resp = await callAI(apiKey, {
+      model: "google/gemini-2.5-flash-lite",
+      messages: [
+        { role: "system", content: `Tu es un modérateur bienveillant. Analyse ce contenu et détermine s'il contient du discours haineux, du harcèlement, des menaces, de la discrimination ou du contenu inapproprié. Réponds UNIQUEMENT via l'outil moderate_post.` },
+        { role: "user", content: text },
+      ],
+      tools: [{
+        type: "function",
+        function: {
+          name: "moderate_post",
+          description: "Résultat de la modération du post",
+          parameters: {
+            type: "object",
+            properties: {
+              safe: { type: "boolean", description: "true si le contenu est acceptable" },
+              category: { type: "string", enum: ["safe", "hate_speech", "harassment", "threats", "discrimination", "inappropriate", "spam"] },
+              reason_fr: { type: "string", description: "Explication en français de pourquoi le contenu n'est pas acceptable (vide si safe)" },
+              severity: { type: "string", enum: ["info", "warning", "critical"] },
+            },
+            required: ["safe", "category", "reason_fr", "severity"],
+            additionalProperties: false,
+          },
+        },
+      }],
+      tool_choice: { type: "function", function: { name: "moderate_post" } },
+    });
+
+    const errResp = aiError(resp.status, cors);
+    if (errResp) return errResp;
+    if (!resp.ok) return new Response(JSON.stringify({ safe: true }), { headers: { ...cors, "Content-Type": "application/json" } });
+
+    const data = await resp.json();
+    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+    if (toolCall?.function?.name === "moderate_post") {
+      try {
+        const result = JSON.parse(toolCall.function.arguments);
+        if (!result.safe) {
+          // Check strike count for escalation
+          const { count } = await supabase.from("content_strikes").select("*", { count: "exact", head: true }).eq("user_id", userId);
+          const strikeCount = count || 0;
+
+          let zeusMsg: string;
+          if (strikeCount >= 2) {
+            zeusMsg = `⚠️ C'est la ${strikeCount + 1}ème fois que je détecte du contenu inapproprié (${result.reason_fr}). Ton compte risque d'être suspendu. Je t'encourage vraiment à exprimer tes idées de manière respectueuse. Je suis là si tu veux en parler ! ⚡`;
+          } else {
+            zeusMsg = `Hey ! 🙏 Ton contenu semble contenir ${result.reason_fr}. ForSure est un espace de bienveillance et de respect mutuel. Je t'invite à reformuler pour que ta voix soit entendue positivement. Si tu as besoin d'en discuter, je suis là ! ⚡`;
+          }
+
+          if (postId) {
+            await supabase.from("content_strikes").insert({
+              user_id: userId, post_id: postId, reason: result.reason_fr, severity: result.severity, zeus_message: zeusMsg,
+            });
+          }
+
+          return new Response(JSON.stringify({ safe: false, reason: result.reason_fr, category: result.category, zeus_message: zeusMsg, strike_count: strikeCount + 1 }), { headers: { ...cors, "Content-Type": "application/json" } });
+        }
+      } catch {}
+    }
+  }
+
+  return new Response(JSON.stringify({ safe: true }), { headers: { ...cors, "Content-Type": "application/json" } });
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN ROUTER
 // ═══════════════════════════════════════════════════════════════
@@ -1344,12 +1427,12 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { domain, action } = body;
 
-    if (!domain || !action) {
-      return new Response(JSON.stringify({ error: "⚡ Zeus requires 'domain' and 'action' parameters. Domains: content, post, moderation, ads, seller, photo, agent" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    if (!domain) {
+      return new Response(JSON.stringify({ error: "⚡ Zeus requires 'domain' parameter." }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     // Rate limit per domain
-    const limitMap: Record<string, number> = { content: 20, post: 15, moderation: 30, ads: 10, seller: 10, photo: 5, agent: 20, admin: 30 };
+    const limitMap: Record<string, number> = { content: 20, post: 15, moderation: 30, ads: 10, seller: 10, photo: 5, agent: 20, admin: 30, "post-moderation": 30 };
     if (!checkRateLimit(`${user.id}:${domain}`, limitMap[domain] || 15)) {
       return new Response(JSON.stringify({ error: "Trop de requêtes, réessayez." }), { status: 429, headers: { ...cors, "Content-Type": "application/json" } });
     }
@@ -1358,6 +1441,7 @@ Deno.serve(async (req) => {
       case "content": return await handleContent(LOVABLE_API_KEY, body, cors);
       case "post": return await handlePostAssistant(LOVABLE_API_KEY, body, cors);
       case "moderation": return await handleModeration(LOVABLE_API_KEY, body, user.id, supabase, cors);
+      case "post-moderation": return await handlePostModeration(LOVABLE_API_KEY, body, user.id, supabase, cors);
       case "ads": return await handleAds(LOVABLE_API_KEY, body, cors);
       case "seller": return await handleSeller(LOVABLE_API_KEY, body, user.id, supabase, cors);
       case "photo": return await handlePhotoGuard(LOVABLE_API_KEY, body, user.id, supabase, cors);
