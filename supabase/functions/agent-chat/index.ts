@@ -405,12 +405,31 @@ serve(async (req) => {
     // Combine agent's own system prompt with action capabilities, date/time and user context
     const fullSystemPrompt = agent.system_prompt + "\n\n" + ACTION_SYSTEM_PROMPT + dateTimeContext + userContext;
 
-    const messages = [
+    const aiMessages: any[] = [
       { role: "system", content: fullSystemPrompt },
       ...(history || []).map((m: any) => ({ role: m.role, content: m.content })),
     ];
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    // Web search tool definition
+    const webSearchTool = {
+      type: "function",
+      function: {
+        name: "web_search",
+        description: "Rechercher des informations sur internet en temps réel. Utilise cette fonction quand l'utilisateur pose une question nécessitant des données actuelles, des actualités, des définitions, des tendances, ou toute information que tu ne possèdes pas dans tes données d'entraînement.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "La requête de recherche en langage naturel" },
+            language: { type: "string", enum: ["fr", "en"], description: "Langue préférée des résultats" },
+          },
+          required: ["query"],
+          additionalProperties: false,
+        },
+      },
+    };
+
+    // First call with tools
+    let response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${LOVABLE_API_KEY}`,
@@ -418,23 +437,118 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: "google/gemini-3-flash-preview",
-        messages,
-        stream: true,
+        messages: aiMessages,
+        tools: [webSearchTool],
+        stream: false,
       }),
     });
 
     if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Trop de requêtes, réessayez." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Crédits IA insuffisants." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+      if (response.status === 429) return new Response(JSON.stringify({ error: "Trop de requêtes, réessayez." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (response.status === 402) return new Response(JSON.stringify({ error: "Crédits IA insuffisants." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       throw new Error("AI gateway error");
+    }
+
+    let aiData = await response.json();
+    let choice = aiData.choices?.[0];
+    let toolCalls = choice?.message?.tool_calls;
+
+    // Tool call loop (max 3 iterations)
+    let iterations = 0;
+    while (toolCalls && toolCalls.length > 0 && iterations < 3) {
+      iterations++;
+      aiMessages.push(choice.message);
+
+      const toolResults = await Promise.all(
+        toolCalls.map(async (tc: any) => {
+          if (tc.function.name === "web_search") {
+            const args = JSON.parse(tc.function.arguments || "{}");
+            const query = args.query || "";
+            const lang = args.language || "fr";
+            try {
+              const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=${lang === "fr" ? "fr-fr" : "us-en"}`;
+              const searchResp = await fetch(searchUrl, {
+                headers: { "User-Agent": "Mozilla/5.0 (compatible; ZeusBot/1.0)" },
+              });
+              const html = await searchResp.text();
+
+              const results: { title: string; snippet: string; url: string }[] = [];
+              const resultRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+              let match;
+              while ((match = resultRegex.exec(html)) && results.length < 8) {
+                const url = decodeURIComponent(match[1].replace(/.*uddg=/, "").replace(/&.*/, ""));
+                const title = match[2].replace(/<[^>]+>/g, "").trim();
+                const snippet = match[3].replace(/<[^>]+>/g, "").trim();
+                if (title && snippet) results.push({ title, snippet, url });
+              }
+
+              if (results.length === 0) {
+                return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ note: "Aucun résultat web trouvé. Réponds avec tes connaissances.", query }) };
+              }
+
+              return {
+                role: "tool",
+                tool_call_id: tc.id,
+                content: JSON.stringify({
+                  query, results_count: results.length,
+                  results: results.map((r: any) => ({ title: r.title, snippet: r.snippet, source: r.url })),
+                  instruction: "Synthétise ces résultats de manière claire et cite les sources avec des liens cliquables.",
+                }),
+              };
+            } catch (err) {
+              return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ error: "Recherche échouée", query }) };
+            }
+          }
+          return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ error: "Unknown tool" }) };
+        })
+      );
+      aiMessages.push(...toolResults);
+
+      response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-3-flash-preview",
+          messages: aiMessages,
+          tools: [webSearchTool],
+          stream: false,
+        }),
+      });
+
+      if (!response.ok) throw new Error("AI gateway error in tool loop");
+      aiData = await response.json();
+      choice = aiData.choices?.[0];
+      toolCalls = choice?.message?.tool_calls;
+    }
+
+    // Now stream the final response for better UX
+    const finalContent = choice?.message?.content || "Je n'ai pas pu générer de réponse.";
+    const streamResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-3-flash-preview",
+        messages: [
+          { role: "system", content: fullSystemPrompt },
+          ...(history || []).map((m: any) => ({ role: m.role, content: m.content })),
+          { role: "assistant", content: finalContent },
+          { role: "user", content: "Reproduis exactement ta dernière réponse, sans rien modifier." },
+        ],
+        stream: true,
+      }),
+    });
+
+    if (!streamResponse.ok) {
+      // Fallback: return non-streamed
+      await supabase.from("ai_agent_messages").insert({ conversation_id: convId, role: "assistant", content: finalContent });
+      if (agent.slug === "zeus-companion") pushToMessenger(supabase, userId!, finalContent);
+      return new Response(JSON.stringify({ result: finalContent }), { headers: { ...corsHeaders, "Content-Type": "application/json", "X-Conversation-Id": convId } });
     }
 
     if (usage) {
