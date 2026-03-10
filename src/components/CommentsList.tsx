@@ -1,13 +1,25 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Trash2, Send } from 'lucide-react';
+import { Trash2, Send, Smile } from 'lucide-react';
 import { useComments, useCreateComment, useDeleteComment, Comment } from '@/hooks/useComments';
 import { useAuth } from '@/lib/auth';
 import { UserAvatar } from './UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Link } from 'react-router-dom';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+
+const COMMENT_EMOJIS = [
+  '😀','😂','🤣','😍','🥰','😘','🤩','😎','🥳','🤗',
+  '🔥','❤️','💯','👏','🙌','💪','✨','🎉','👍','👎',
+  '💀','😭','😱','🤯','😏','🥺','😡','🤬','🤝','💜',
+  '💙','💚','💛','🧡','⚡','🌟','💎','🏆','🎯','🫶',
+];
 
 interface CommentsListProps {
   postId: string;
