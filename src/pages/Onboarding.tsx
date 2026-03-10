@@ -378,11 +378,12 @@ export default function Onboarding() {
                   Retour
                 </Button>
                 <Button
-                  onClick={handleFinish}
-                  disabled={!aiName.trim() || isSubmitting}
-                  className="pulse-button-gradient px-8"
+                  onClick={handleAiNameDone}
+                  disabled={!aiName.trim()}
+                  className="pulse-button-gradient px-6 gap-2"
                 >
-                  {isSubmitting ? 'Enregistrement…' : 'C\'est parti ! 🚀'}
+                  Suivant <ArrowRight className="w-4 h-4" />
+                </Button>
                 </Button>
               </div>
             </motion.div>
