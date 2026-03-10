@@ -186,10 +186,6 @@ export default function Onboarding() {
   };
 
   const handleInterestsDone = () => {
-    if (selected.length < MIN_INTERESTS) {
-      toast({ title: `Choisis au moins ${MIN_INTERESTS} centres d'intérêt`, variant: 'destructive' });
-      return;
-    }
     setStep('ai-name');
   };
 
