@@ -49,14 +49,8 @@ export default function Landing() {
             <span className="text-gradient-gold">Connectez-vous.</span>
           </h1>
           
-          <p className="text-muted-foreground mb-2 max-w-sm mx-auto">
+          <p className="text-muted-foreground mb-8 max-w-sm mx-auto">
             Le réseau social éthique, sans tracking. Créez vos canaux TV.
-          </p>
-          <p className="text-xs text-muted-foreground/70 mb-8">
-            En vous inscrivant, vous acceptez nos{' '}
-            <Link to="/legal/terms" className="underline hover:text-foreground">CGU</Link>
-            {' '}et notre{' '}
-            <Link to="/legal/privacy" className="underline hover:text-foreground">Politique de confidentialité</Link>.
           </p>
           
           <div className="flex flex-col gap-3 max-w-xs mx-auto">
@@ -72,18 +66,23 @@ export default function Landing() {
               </Button>
             </Link>
           </div>
-
-          <div className="flex items-center justify-center gap-4 mt-8 text-xs text-muted-foreground/70">
-            <Link to="/legal/privacy" className="hover:text-foreground transition-colors">
-              Politique de confidentialité
-            </Link>
-            <span>•</span>
-            <Link to="/legal/terms" className="hover:text-foreground transition-colors">
-              CGU
-            </Link>
-          </div>
         </div>
       </div>
+
+      {/* Footer — visible, crawlable links for Google compliance */}
+      <footer className="relative z-10 w-full border-t border-border/30 bg-background/60 backdrop-blur-sm py-6 px-6">
+        <div className="max-w-3xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-4 text-sm">
+          <a href="https://forsure.fans/legal/privacy" className="text-foreground underline hover:text-primary transition-colors">
+            Politique de confidentialité
+          </a>
+          <span className="hidden sm:inline text-muted-foreground">•</span>
+          <a href="https://forsure.fans/legal/terms" className="text-foreground underline hover:text-primary transition-colors">
+            Conditions Générales d'Utilisation
+          </a>
+          <span className="hidden sm:inline text-muted-foreground">•</span>
+          <span className="text-muted-foreground">© {new Date().getFullYear()} Forsure — Contact : dpo@forsure.fans</span>
+        </div>
+      </footer>
     </div>
   );
 }
