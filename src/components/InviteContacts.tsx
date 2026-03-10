@@ -31,8 +31,9 @@ function normalizePhone(phone: string): string {
 function parseVCardPhones(vcfContent: string): string[] {
   const phones: string[] = [];
   const seen = new Set<string>();
-  // Match TEL lines in vCard format (handles TEL;TYPE=...:number and TEL:number)
-  const telRegex = /^TEL[^:]*:(.+)$/gim;
+  // Match TEL lines: handles TEL, item1.TEL, item2.TEL, etc.
+  // Also handles TEL;TYPE=...:number, TEL;type=CELL;type=VOICE:number
+  const telRegex = /^(?:item\d+\.)?TEL[^:]*:(.+)$/gim;
   let match;
   while ((match = telRegex.exec(vcfContent)) !== null) {
     const raw = match[1].trim().replace(/[\s\-().]/g, '');
@@ -44,6 +45,22 @@ function parseVCardPhones(vcfContent: string): string[] {
       }
     }
   }
+  // Fallback: search for any phone-like patterns if no TEL lines found
+  if (phones.length === 0) {
+    const phonePattern = /(?:\+?\d[\d\s\-().]{7,}\d)/g;
+    let fallbackMatch;
+    while ((fallbackMatch = phonePattern.exec(vcfContent)) !== null) {
+      const raw = fallbackMatch[0].replace(/[\s\-().]/g, '');
+      if (raw.length >= 6 && raw.length <= 15) {
+        const normalized = normalizePhone(raw);
+        if (!seen.has(normalized)) {
+          seen.add(normalized);
+          phones.push(normalized);
+        }
+      }
+    }
+  }
+  console.log('[VCF] Parsed phones:', phones.length, phones.slice(0, 5));
   return phones;
 }
 
