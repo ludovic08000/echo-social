@@ -97,6 +97,25 @@ export default function Signup() {
       }
     }
 
+    // Vérification force du mot de passe
+    const hasUpper = /[A-Z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasSpecial = /[^A-Za-z0-9]/.test(password);
+    let strength = 0;
+    if (password.length >= 6) strength++;
+    if (password.length >= 10) strength++;
+    if (hasUpper) strength++;
+    if (hasNumber) strength++;
+    if (hasSpecial) strength++;
+    if (strength < 3) {
+      toast({
+        title: 'Mot de passe trop faible',
+        description: 'Votre mot de passe doit contenir au moins 6 caractères, avec des majuscules, des chiffres ou des caractères spéciaux.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     if (!acceptedTerms || !acceptedPrivacy) {
       toast({ title: 'Conditions requises', description: 'Veuillez accepter les CGU et la politique de confidentialité pour continuer.', variant: 'destructive' });
       return;
