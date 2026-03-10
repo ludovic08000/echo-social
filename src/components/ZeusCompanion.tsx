@@ -147,29 +147,54 @@ export function ZeusCompanion() {
     setExecutingAction(msgIndex);
 
     try {
-      if (action.type === 'publish_post') {
-        const { error } = await supabase.from('posts').insert({
+      if (action.type === 'publish_post' || action.type === 'schedule_post') {
+        const { data: newPost, error } = await supabase.from('posts').insert({
           user_id: user.id,
           body: action.body || '',
           image_url: null,
-        });
+        }).select().single();
         if (error) throw error;
+
+        // Optimistic update: prepend to feed cache so it shows first immediately
+        queryClient.setQueriesData<any>(
+          { queryKey: ['posts', 'friends-feed'] },
+          (old: any) => {
+            if (!old?.pages) return old;
+            const profile = queryClient.getQueryData<any>(['profile', user.id]);
+            const optimisticPost = {
+              id: newPost.id,
+              user_id: newPost.user_id,
+              body: newPost.body,
+              image_url: newPost.image_url,
+              created_at: newPost.created_at,
+              expires_at: newPost.expires_at || null,
+              profile: {
+                name: profile?.name || user.user_metadata?.name || 'Moi',
+                avatar_url: profile?.avatar_url || null,
+                mood_emoji: profile?.mood_emoji || null,
+              },
+              likes_count: 0,
+              comments_count: 0,
+              is_liked: false,
+              user_reaction: null,
+            };
+            return {
+              ...old,
+              pages: [
+                [optimisticPost, ...old.pages[0]],
+                ...old.pages.slice(1),
+              ],
+            };
+          }
+        );
         queryClient.invalidateQueries({ queryKey: ['posts'] });
-        toast.success('Post publié avec succès ! 🎉');
+        toast.success(action.type === 'schedule_post' 
+          ? 'Post publié ! (la programmation sera bientôt disponible) 📅' 
+          : 'Post publié avec succès ! 🎉');
       } else if (action.type === 'translate') {
-        // Translation is already displayed, just copy to clipboard
         const text = action.translated_text || action.body || '';
         await navigator.clipboard.writeText(text);
         toast.success('Traduction copiée dans le presse-papiers ! 📋');
-      } else if (action.type === 'schedule_post') {
-        // For now publish immediately (scheduling needs cron)
-        const { error } = await supabase.from('posts').insert({
-          user_id: user.id,
-          body: action.body || '',
-          image_url: null,
-        });
-        if (error) throw error;
-        toast.success('Post publié ! (la programmation sera bientôt disponible) 📅');
       } else if (action.type === 'create_story') {
         toast.success('Story créée ! 📸');
       } else {
