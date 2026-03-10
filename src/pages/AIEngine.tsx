@@ -118,6 +118,9 @@ export default function AIEngine() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <div className="overflow-x-auto no-scrollbar">
             <TabsList className="inline-flex h-11 min-w-full">
+              <TabsTrigger value="zeus-console" className="text-xs sm:text-sm">
+                <Zap className="w-3.5 h-3.5 mr-1" />Zeus Console
+              </TabsTrigger>
               <TabsTrigger value="modules" className="text-xs sm:text-sm">
                 <Cpu className="w-3.5 h-3.5 mr-1" />Modules
               </TabsTrigger>
