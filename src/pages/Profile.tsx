@@ -854,8 +854,14 @@ export default function Profile() {
               {!canViewPosts ? (
                 <div className="premium-card p-8 text-center">
                   <Lock className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
-                  <p className="text-muted-foreground text-sm font-medium">Compte privé</p>
-                  <p className="text-muted-foreground/70 text-xs mt-1">Ajoutez cette personne en ami pour voir ses publications.</p>
+                  <p className="text-muted-foreground text-sm font-medium">
+                    {postsVis === 'private' ? 'Publications masquées' : 'Compte privé'}
+                  </p>
+                  <p className="text-muted-foreground/70 text-xs mt-1">
+                    {postsVis === 'private'
+                      ? 'Cet utilisateur a choisi de masquer ses publications.'
+                      : 'Ajoutez cette personne en ami pour voir ses publications.'}
+                  </p>
                 </div>
               ) : (
               <>
