@@ -377,12 +377,13 @@ serve(async (req) => {
         COL_Rel: collectionMode === 'REL' ? cleanRelayId : '',
         LIV_Rel_Pays: ['24R', '24L', 'DRI'].includes(deliveryMode) ? relayCountry : '',
         LIV_Rel: ['24R', '24L', 'DRI'].includes(deliveryMode) ? cleanRelayId : '',
-        TAss_Valeur: '',
-        TAss_Devise: '',
+        TAvisage: '',
+        TReprise: '',
         Montage: '',
         TRDV: '',
         Assurance: '',
         Instructions: '',
+        Texte: '',
       };
 
       // Compute security hash (all values in order + private key)
