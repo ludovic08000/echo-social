@@ -88,36 +88,9 @@ function extractRelayPoints(xml: string): any[] {
   return points;
 }
 
-// ── V2 REST API helper (JSON with Context auth) ──
-
-async function callMondialRelayV2(jsonBody: any): Promise<any> {
-  const url = `${MR_V2_BASE}/shipment`;
-
-  const bodyStr = JSON.stringify(jsonBody);
-  console.log(`MR V2 POST ${url}`, bodyStr.substring(0, 1000));
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Accept": "application/json",
-    },
-    body: bodyStr,
-  });
-
-  const text = await response.text();
-  console.log("MR V2 raw response:", text.substring(0, 2000));
-
-  if (!response.ok) {
-    console.error(`MR V2 error ${response.status}:`, text.substring(0, 1000));
-    throw new Error(`Mondial Relay V2 erreur ${response.status}: ${text.substring(0, 300)}`);
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
+// ── Helper: escape XML special chars ──
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 serve(async (req) => {
