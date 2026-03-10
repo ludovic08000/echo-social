@@ -6,6 +6,61 @@ import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/m
 
 export const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
 
+// Send a message to Zeus via the agent-chat edge function, which handles
+// inserting both the user message and Zeus response into the regular messenger
+async function sendToZeus(userId: string, messengerConvId: string, body: string) {
+  // First insert the user's message into the messenger
+  const { data: userMsg, error: msgErr } = await supabase
+    .from('messages')
+    .insert({
+      conversation_id: messengerConvId,
+      sender_id: userId,
+      body,
+      status: 'delivered',
+    })
+    .select()
+    .single();
+  if (msgErr) throw msgErr;
+
+  // Get Zeus agent ID
+  const { data: agent } = await supabase
+    .from('ai_agents')
+    .select('id')
+    .eq('slug', 'zeus-companion')
+    .eq('is_active', true)
+    .single();
+  if (!agent) return userMsg;
+
+  // Get or create a Zeus AI conversation for context
+  const { data: existingConv } = await supabase
+    .from('ai_agent_conversations')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('agent_id', agent.id)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const zeusConvId = existingConv?.id || null;
+
+  // Call agent-chat (fire and forget - response will be pushed to messenger by the edge function)
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session) {
+    supabase.functions.invoke('agent-chat', {
+      body: { agent_id: agent.id, conversation_id: zeusConvId, message: body },
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    }).catch(err => console.error('Zeus messenger reply failed:', err));
+  }
+
+  // Update conversation timestamp
+  await supabase
+    .from('conversations')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', messengerConvId);
+
+  return userMsg;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -247,6 +302,19 @@ export function useSendMessage() {
   return useMutation({
     mutationFn: async ({ conversationId, body, imageUrl }: { conversationId: string; body: string; imageUrl?: string }) => {
       if (!user) throw new Error('Not authenticated');
+
+      // Check if this is a Zeus conversation
+      const { data: zeusParticipant } = await supabase
+        .from('conversation_participants')
+        .select('user_id')
+        .eq('conversation_id', conversationId)
+        .eq('user_id', ZEUS_BOT_ID)
+        .maybeSingle();
+
+      if (zeusParticipant) {
+        // Route to Zeus agent-chat instead of normal message flow
+        return await sendToZeus(user.id, conversationId, body);
+      }
 
       // Anti-spam validation (skip for voice/image-only messages)
       const isSpecialMessage = body.startsWith('🎙️ voice:') || body === '📷 Image';
