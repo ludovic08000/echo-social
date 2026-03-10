@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Send, Loader2, Pencil, Check, Zap, AlertTriangle, CheckCircle2,
   Plus, History, ArrowLeft, ShoppingBag, Sliders, Brain, Users, Clock,
-  Sparkles, ChevronRight, BarChart3, Radio, Cpu, Shield, Globe, MessageSquare
+  Sparkles, ChevronRight, BarChart3, Radio, Cpu, Shield, Globe, MessageSquare,
+  Search
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,100 +49,63 @@ function parseProductsFromContent(content: string): { text: string; products: Pr
   const patterns = [/```forsure-products\s*\n([\s\S]*?)\n```/, /```forsure-products\s*([\s\S]*?)```/];
   for (const regex of patterns) {
     const match = content.match(regex);
-    if (!match) continue;
-    try {
-      const products = JSON.parse((match[1] || match[0]).trim()) as ProductItem[];
-      if (Array.isArray(products) && products.length > 0) return { text: content.replace(match[0], '').trim(), products };
-    } catch { continue; }
+    if (match) {
+      try {
+        const products = JSON.parse(match[1].trim());
+        return { text: content.replace(match[0], '').trim(), products: Array.isArray(products) ? products : null };
+      } catch { /* ignore */ }
+    }
   }
   return { text: content, products: null };
 }
 
 function parseActionFromContent(content: string): { text: string; action: ActionBlock | null } {
-  const patterns = [
-    /```forsure-action\s*\n([\s\S]*?)\n```/,
-    /```forsure-action\s*([\s\S]*?)```/,
-    /```json\s*\n([\s\S]*?)\n```/,
-    /\{[^{}]*"type"\s*:\s*"(publish_post|schedule_post|create_story|generate_image|translate|update_feed_config)"[^{}]*\}/,
-  ];
+  const patterns = [/```forsure-action\s*\n([\s\S]*?)\n```/, /```forsure-action\s*([\s\S]*?)```/];
   for (const regex of patterns) {
     const match = content.match(regex);
-    if (!match) continue;
-    try {
-      const action = JSON.parse((match[1] || match[0]).trim()) as ActionBlock;
-      if (action.type && ['publish_post', 'schedule_post', 'create_story', 'generate_image', 'translate', 'update_feed_config'].includes(action.type)) {
+    if (match) {
+      try {
+        const action = JSON.parse(match[1].trim());
         return { text: content.replace(match[0], '').trim(), action };
-      }
-    } catch { continue; }
+      } catch { /* ignore */ }
+    }
   }
   return { text: content, action: null };
 }
 
-function stripCodeBlocks(content: string): string {
-  return content
-    .replace(/```[\w-]*\s*\n[\s\S]*?\n```/g, '')
-    .replace(/```[\w-]*[\s\S]*?```/g, '')
-    .replace(/\{[^{}]*"type"\s*:\s*"[^"]*"[^{}]*\}/g, '')
+function stripCodeBlocks(text: string): string {
+  return text
+    .replace(/```json\s*[\s\S]*?```/g, '')
+    .replace(/```[\s\S]*?```/g, '')
     .trim();
 }
 
-// ── Sci-fi scan line overlay ──
-function ScanLines() {
-  return (
-    <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden rounded-3xl">
-      <div className="absolute inset-0 opacity-[0.03]" style={{
-        backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,255,0.1) 2px, rgba(0,255,255,0.1) 4px)',
-      }} />
-      <motion.div
-        animate={{ y: ['-100%', '200%'] }}
-        transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
-        className="absolute left-0 right-0 h-20 opacity-[0.04]"
-        style={{ background: 'linear-gradient(180deg, transparent 0%, rgba(0,255,255,0.3) 50%, transparent 100%)' }}
-      />
-    </div>
-  );
-}
-
-// ── Holographic border glow ──
-function HoloBorder() {
-  return (
-    <motion.div
-      animate={{ opacity: [0.4, 0.8, 0.4] }}
-      transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-      className="absolute inset-0 rounded-3xl pointer-events-none z-0"
-      style={{
-        boxShadow: '0 0 30px rgba(0,255,255,0.15), inset 0 0 30px rgba(0,255,255,0.05), 0 0 60px rgba(0,200,255,0.08)',
-      }}
-    />
-  );
-}
-
-// ── Product cards (sci-fi style) ──
+// ── Product cards ──
 function ProductCards({ products, onNavigate }: { products: ProductItem[]; onNavigate: (id: string) => void }) {
   return (
     <div className="mt-2.5 space-y-1.5">
       <div className="flex items-center gap-1.5 mb-1">
-        <ShoppingBag className="w-3.5 h-3.5 text-cyan-400" />
-        <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-[0.2em]">Marketplace</span>
+        <ShoppingBag className="w-3.5 h-3.5 text-primary" />
+        <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Marketplace</span>
       </div>
       <div className="grid grid-cols-2 gap-1.5">
         {products.slice(0, 6).map((p) => (
           <button key={p.id} onClick={() => onNavigate(p.id)}
-            className="rounded-xl border border-cyan-500/20 bg-black/30 backdrop-blur-sm overflow-hidden hover:border-cyan-400/50 transition-all text-left group hover:shadow-[0_0_15px_rgba(0,255,255,0.1)]">
+            className="rounded-xl border border-border bg-card overflow-hidden hover:border-primary/30 transition-all text-left group hover:shadow-md">
             {p.thumbnail_url ? (
-              <div className="aspect-square w-full overflow-hidden bg-cyan-950/30">
-                <img src={p.thumbnail_url} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90 group-hover:opacity-100" />
+              <div className="aspect-square w-full overflow-hidden bg-muted">
+                <img src={p.thumbnail_url} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
               </div>
             ) : (
-              <div className="aspect-square w-full bg-cyan-950/20 flex items-center justify-center">
-                <ShoppingBag className="w-6 h-6 text-cyan-500/30" />
+              <div className="aspect-square w-full bg-muted flex items-center justify-center">
+                <ShoppingBag className="w-6 h-6 text-muted-foreground/30" />
               </div>
             )}
             <div className="p-1.5">
-              <p className="text-[10px] font-medium text-cyan-100 truncate">{p.title}</p>
+              <p className="text-[10px] font-medium text-card-foreground truncate">{p.title}</p>
               <div className="flex items-center justify-between mt-0.5">
-                <span className="text-xs font-bold text-cyan-400">{p.price}€</span>
-                {p.city && <span className="text-[9px] text-cyan-300/50 truncate ml-1">{p.city}</span>}
+                <span className="text-xs font-bold text-primary">{p.price}€</span>
+                {p.city && <span className="text-[9px] text-muted-foreground truncate ml-1">{p.city}</span>}
               </div>
             </div>
           </button>
@@ -151,50 +115,49 @@ function ProductCards({ products, onNavigate }: { products: ProductItem[]; onNav
   );
 }
 
-// ── Action card (sci-fi style) ──
+// ── Action card ──
 function ActionCard({ action, onExecute, executing, executed }: {
   action: ActionBlock; onExecute: () => void; executing: boolean; executed: boolean;
 }) {
-  const labels: Record<string, { icon: string; label: string }> = {
-    publish_post: { icon: '⟐', label: 'PUBLIER CE POST' },
-    schedule_post: { icon: '◈', label: 'PROGRAMMER CE POST' },
-    create_story: { icon: '◉', label: 'CRÉER CETTE STORY' },
-    generate_image: { icon: '⬡', label: 'GÉNÉRER IMAGE' },
-    translate: { icon: '⟡', label: 'TRADUCTION' },
-    update_feed_config: { icon: '⎔', label: 'AJUSTER ALGORITHME' },
+  const labels: Record<string, { icon: React.ReactNode; label: string }> = {
+    publish_post: { icon: <Send className="w-3.5 h-3.5" />, label: 'Publier ce post' },
+    schedule_post: { icon: <Clock className="w-3.5 h-3.5" />, label: 'Programmer ce post' },
+    create_story: { icon: <Sparkles className="w-3.5 h-3.5" />, label: 'Créer cette story' },
+    generate_image: { icon: <Sparkles className="w-3.5 h-3.5" />, label: 'Générer image' },
+    translate: { icon: <Globe className="w-3.5 h-3.5" />, label: 'Traduction' },
+    update_feed_config: { icon: <Sliders className="w-3.5 h-3.5" />, label: 'Ajuster algorithme' },
   };
-  const info = labels[action.type] || { icon: '⚡', label: 'ACTION' };
+  const info = labels[action.type] || { icon: <Zap className="w-3.5 h-3.5" />, label: 'Action' };
   const preview = action.type === 'update_feed_config' ? '' : (action.body || action.caption || action.translated_text || action.prompt || '');
 
   return (
-    <div className="mt-2.5 p-3 rounded-xl bg-gradient-to-br from-cyan-500/5 to-blue-500/5 border border-cyan-500/20 space-y-2 relative overflow-hidden">
-      <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent" />
+    <div className="mt-2.5 p-3 rounded-xl bg-accent/50 border border-border space-y-2">
       <div className="flex items-center gap-1.5">
-        <span className="text-sm text-cyan-400 font-mono">{info.icon}</span>
-        <span className="text-[10px] font-bold text-cyan-400 tracking-[0.15em]">{info.label}</span>
+        <span className="text-primary">{info.icon}</span>
+        <span className="text-[11px] font-semibold text-primary">{info.label}</span>
         {action.publish_at && (
-          <span className="text-[10px] text-cyan-300/40 ml-auto font-mono">
+          <span className="text-[10px] text-muted-foreground ml-auto">
             {new Date(action.publish_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
           </span>
         )}
       </div>
-      {preview && <p className="text-xs text-cyan-100/80 bg-black/20 rounded-lg p-2.5 whitespace-pre-wrap leading-relaxed border border-cyan-500/10 font-mono text-[11px]">{preview}</p>}
+      {preview && <p className="text-xs text-foreground/80 bg-muted rounded-lg p-2.5 whitespace-pre-wrap leading-relaxed border border-border text-[11px]">{preview}</p>}
       {executed ? (
-        <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium font-mono">
-          <CheckCircle2 className="w-3.5 h-3.5" /><span>EXÉCUTÉ ✓</span>
+        <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+          <CheckCircle2 className="w-3.5 h-3.5" /><span>Exécuté ✓</span>
         </div>
       ) : (
         <Button size="sm" onClick={onExecute} disabled={executing}
-          className="w-full h-8 text-[11px] rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 hover:border-cyan-400/50 shadow-[0_0_15px_rgba(0,255,255,0.1)] hover:shadow-[0_0_20px_rgba(0,255,255,0.2)] transition-all font-mono tracking-wider">
+          className="w-full h-8 text-[11px] rounded-xl">
           {executing ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
-          {executing ? 'TRAITEMENT...' : '▶ CONFIRMER'}
+          {executing ? 'En cours...' : 'Confirmer'}
         </Button>
       )}
     </div>
   );
 }
 
-// ── Feed Preview Simulation (Sci-fi) ──
+// ── Feed Preview ──
 function FeedPreviewBar({ friends, discovery, marketplace, algo, viralReduce, diversityBoost }: {
   friends: number; discovery: number; marketplace: number; algo: FeedAlgorithm; viralReduce: boolean; diversityBoost: number;
 }) {
@@ -213,30 +176,30 @@ function FeedPreviewBar({ friends, discovery, marketplace, algo, viralReduce, di
   });
 
   const colors: Record<string, string> = {
-    friend: 'bg-cyan-400', discovery: 'bg-violet-400', marketplace: 'bg-amber-400', chrono: 'bg-blue-400',
+    friend: 'bg-primary', discovery: 'bg-violet-500', marketplace: 'bg-amber-500', chrono: 'bg-primary/60',
   };
 
   return (
-    <div className="space-y-2 p-3 rounded-xl bg-black/20 border border-cyan-500/10">
+    <div className="space-y-2 p-3 rounded-xl bg-muted/50 border border-border">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-bold text-cyan-400/70 uppercase tracking-[0.2em] font-mono">Analyse du flux</span>
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Aperçu du flux</span>
         <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 2, repeat: Infinity }}
-          className="text-[9px] text-cyan-400 font-mono flex items-center gap-1">
-          <Radio className="w-2.5 h-2.5" /> LIVE
+          className="text-[9px] text-primary flex items-center gap-1">
+          <Radio className="w-2.5 h-2.5" /> En direct
         </motion.span>
       </div>
-      <div className="flex gap-px h-8 rounded-lg overflow-hidden border border-cyan-500/20">
+      <div className="flex gap-px h-8 rounded-lg overflow-hidden border border-border">
         <motion.div animate={{ width: `${fPct}%` }} transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-          className="bg-cyan-500/40 flex items-center justify-center min-w-0" title={`Amis: ${fPct}%`}>
-          {fPct > 15 && <span className="text-[8px] text-cyan-200 font-mono font-bold">{fPct}%</span>}
+          className="bg-primary/30 flex items-center justify-center min-w-0" title={`Amis: ${fPct}%`}>
+          {fPct > 15 && <span className="text-[8px] text-primary-foreground font-bold">{fPct}%</span>}
         </motion.div>
         <motion.div animate={{ width: `${dPct}%` }} transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-          className="bg-violet-500/40 flex items-center justify-center min-w-0" title={`Découverte: ${dPct}%`}>
-          {dPct > 15 && <span className="text-[8px] text-violet-200 font-mono font-bold">{dPct}%</span>}
+          className="bg-violet-500/30 flex items-center justify-center min-w-0" title={`Découverte: ${dPct}%`}>
+          {dPct > 15 && <span className="text-[8px] font-bold text-violet-700 dark:text-violet-200">{dPct}%</span>}
         </motion.div>
         <motion.div animate={{ width: `${mPct}%` }} transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-          className="bg-amber-500/40 flex items-center justify-center min-w-0" title={`Marketplace: ${mPct}%`}>
-          {mPct > 15 && <span className="text-[8px] text-amber-200 font-mono font-bold">{mPct}%</span>}
+          className="bg-amber-500/30 flex items-center justify-center min-w-0" title={`Marketplace: ${mPct}%`}>
+          {mPct > 15 && <span className="text-[8px] font-bold text-amber-700 dark:text-amber-200">{mPct}%</span>}
         </motion.div>
       </div>
       <div className="flex gap-1 justify-center">
@@ -247,15 +210,15 @@ function FeedPreviewBar({ friends, discovery, marketplace, algo, viralReduce, di
         ))}
       </div>
       <div className="flex gap-3 justify-center">
-        <span className="flex items-center gap-1 text-[8px] text-cyan-300/60 font-mono"><span className="w-2 h-2 rounded-sm bg-cyan-400 inline-block" /> AMI</span>
-        <span className="flex items-center gap-1 text-[8px] text-violet-300/60 font-mono"><span className="w-2 h-2 rounded-sm bg-violet-400 inline-block" /> DÉCOUVERTE</span>
-        <span className="flex items-center gap-1 text-[8px] text-amber-300/60 font-mono"><span className="w-2 h-2 rounded-sm bg-amber-400 inline-block" /> MARKET</span>
+        <span className="flex items-center gap-1 text-[8px] text-muted-foreground"><span className="w-2 h-2 rounded-sm bg-primary inline-block" /> Amis</span>
+        <span className="flex items-center gap-1 text-[8px] text-muted-foreground"><span className="w-2 h-2 rounded-sm bg-violet-500 inline-block" /> Découverte</span>
+        <span className="flex items-center gap-1 text-[8px] text-muted-foreground"><span className="w-2 h-2 rounded-sm bg-amber-500 inline-block" /> Market</span>
       </div>
     </div>
   );
 }
 
-// ── Algorithm Control Panel (Sci-fi) ──
+// ── Algorithm Control Panel ──
 function AlgorithmPanel() {
   const queryClient = useQueryClient();
   const [feedAlgo, setFeedAlgo] = useState<FeedAlgorithm>(() => {
@@ -285,9 +248,9 @@ function AlgorithmPanel() {
 
   const updateAlgo = (algo: FeedAlgorithm) => {
     setFeedAlgo(algo); savePrefs({ feedAlgorithm: algo });
-    const names = { smart: 'Mode Neural', chronological: 'Mode Séquentiel', friends_first: 'Mode Réseau' };
+    const names = { smart: 'Intelligent', chronological: 'Chronologique', friends_first: 'Amis d\'abord' };
     showFeedback(names[algo]);
-    toast.success(`${names[algo]} activé`, { duration: 2000 });
+    toast.success(`Mode "${names[algo]}" activé`, { duration: 2000 });
   };
   const updateWeights = (w: FeedWeights, label: string) => {
     setFeedWeights(w); localStorage.setItem('feed-weights', JSON.stringify(w));
@@ -300,9 +263,9 @@ function AlgorithmPanel() {
   };
 
   const algoOptions = [
-    { id: 'smart' as FeedAlgorithm, icon: <Brain className="w-5 h-5" />, label: 'Neural', desc: 'L\'IA sélectionne le contenu optimal', symbol: '◈' },
-    { id: 'chronological' as FeedAlgorithm, icon: <Clock className="w-5 h-5" />, label: 'Séquentiel', desc: 'Flux temporel linéaire', symbol: '◇' },
-    { id: 'friends_first' as FeedAlgorithm, icon: <Users className="w-5 h-5" />, label: 'Réseau', desc: 'Priorité au graphe social', symbol: '◎' },
+    { id: 'smart' as FeedAlgorithm, icon: <Brain className="w-4 h-4" />, label: 'Intelligent', desc: 'L\'IA sélectionne le contenu optimal' },
+    { id: 'chronological' as FeedAlgorithm, icon: <Clock className="w-4 h-4" />, label: 'Chronologique', desc: 'Par ordre de publication' },
+    { id: 'friends_first' as FeedAlgorithm, icon: <Users className="w-4 h-4" />, label: 'Amis d\'abord', desc: 'Priorité à vos amis' },
   ];
 
   return (
@@ -310,9 +273,9 @@ function AlgorithmPanel() {
       <AnimatePresence>
         {lastChanged && (
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-            className="flex items-center gap-2 p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+            className="flex items-center gap-2 p-2 rounded-xl bg-primary/10 border border-primary/20 text-primary">
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span className="text-[11px] font-mono">{lastChanged} — recalibration en cours...</span>
+            <span className="text-[11px]">{lastChanged} — mise à jour en cours...</span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -321,7 +284,7 @@ function AlgorithmPanel() {
         marketplace={feedWeights.marketplace} algo={feedAlgo} viralReduce={viralReduce} diversityBoost={diversityBoost} />
 
       <div className="space-y-2">
-        <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-400/60 flex items-center gap-1.5 font-mono">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
           <Cpu className="w-3 h-3" /> Mode de tri
         </h3>
         <div className="space-y-1.5">
@@ -329,28 +292,21 @@ function AlgorithmPanel() {
             <motion.button key={opt.id} onClick={() => updateAlgo(opt.id)}
               whileTap={{ scale: 0.98 }}
               className={cn(
-                "w-full flex items-center gap-3 p-3 rounded-xl border transition-all duration-200 text-left relative overflow-hidden",
+                "w-full flex items-center gap-3 p-3 rounded-xl border transition-all duration-200 text-left",
                 feedAlgo === opt.id
-                  ? "bg-cyan-500/10 border-cyan-500/30 shadow-[0_0_15px_rgba(0,255,255,0.08)]"
-                  : "border-cyan-500/10 hover:bg-cyan-500/5 hover:border-cyan-500/20"
+                  ? "bg-primary/10 border-primary/30 shadow-sm"
+                  : "border-border hover:bg-accent hover:border-primary/15"
               )}>
-              {feedAlgo === opt.id && (
-                <motion.div layoutId="algo-glow" className="absolute inset-0 bg-gradient-to-r from-cyan-500/5 via-transparent to-cyan-500/5" />
-              )}
-              <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center text-lg transition-all font-mono relative z-10",
-                feedAlgo === opt.id ? "bg-cyan-500/20 text-cyan-400 shadow-[0_0_20px_rgba(0,255,255,0.15)]" : "bg-black/20 text-cyan-500/40"
+              <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all",
+                feedAlgo === opt.id ? "bg-primary text-primary-foreground shadow-md" : "bg-muted text-muted-foreground"
               )}>
-                {opt.symbol}
+                {opt.icon}
               </div>
-              <div className="flex-1 relative z-10">
-                <span className={cn("text-sm font-bold font-mono tracking-wide", feedAlgo === opt.id ? "text-cyan-300" : "text-cyan-100/60")}>{opt.label}</span>
-                <p className="text-[10px] text-cyan-300/40 mt-0.5 font-mono">{opt.desc}</p>
+              <div className="flex-1">
+                <span className={cn("text-sm font-semibold", feedAlgo === opt.id ? "text-foreground" : "text-foreground/60")}>{opt.label}</span>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{opt.desc}</p>
               </div>
-              {feedAlgo === opt.id && (
-                <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="relative z-10">
-                  <CheckCircle2 className="w-5 h-5 text-cyan-400" />
-                </motion.div>
-              )}
+              {feedAlgo === opt.id && <CheckCircle2 className="w-5 h-5 text-primary" />}
             </motion.button>
           ))}
         </div>
@@ -358,25 +314,22 @@ function AlgorithmPanel() {
 
       {feedAlgo === 'smart' && (
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="space-y-3">
-          <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-400/60 flex items-center gap-1.5 font-mono">
-            <Sliders className="w-3 h-3" /> Pondération neurale
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <Sliders className="w-3 h-3" /> Pondération
           </h3>
           {[
-            { key: 'friends' as keyof FeedWeights, label: 'Réseau social', icon: '◈', color: 'bg-cyan-500', hint: 'Poids du graphe de proximité' },
-            { key: 'discovery' as keyof FeedWeights, label: 'Exploration', icon: '◇', color: 'bg-violet-500', hint: 'Couverture de l\'espace de découverte' },
-            { key: 'marketplace' as keyof FeedWeights, label: 'Commerce', icon: '◎', color: 'bg-amber-500', hint: 'Intégration du flux marketplace' },
+            { key: 'friends' as keyof FeedWeights, label: 'Amis', color: 'bg-primary', hint: 'Contenu de vos amis' },
+            { key: 'discovery' as keyof FeedWeights, label: 'Découverte', color: 'bg-violet-500', hint: 'Nouveau contenu à explorer' },
+            { key: 'marketplace' as keyof FeedWeights, label: 'Marketplace', color: 'bg-amber-500', hint: 'Produits et annonces' },
           ].map(item => (
-            <div key={item.key} className="space-y-1.5 p-3 rounded-xl bg-black/20 border border-cyan-500/10">
+            <div key={item.key} className="space-y-1.5 p-3 rounded-xl bg-muted/50 border border-border">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-base text-cyan-400 font-mono">{item.icon}</span>
-                  <div>
-                    <span className="text-xs font-bold font-mono text-cyan-200">{item.label}</span>
-                    <p className="text-[9px] text-cyan-300/30 font-mono">{item.hint}</p>
-                  </div>
+                <div>
+                  <span className="text-xs font-semibold text-foreground">{item.label}</span>
+                  <p className="text-[9px] text-muted-foreground">{item.hint}</p>
                 </div>
                 <motion.span key={feedWeights[item.key]} initial={{ scale: 1.3 }} animate={{ scale: 1 }}
-                  className={cn("text-sm font-bold tabular-nums px-2 py-0.5 rounded-md text-white font-mono", item.color, "bg-opacity-40")}>
+                  className={cn("text-sm font-bold tabular-nums px-2 py-0.5 rounded-md text-white", item.color)}>
                   {feedWeights[item.key]}%
                 </motion.span>
               </div>
@@ -384,52 +337,47 @@ function AlgorithmPanel() {
                 value={[feedWeights[item.key]]}
                 onValueChange={([v]) => updateWeights({ ...feedWeights, [item.key]: v }, item.label)}
                 min={0} max={100} step={5}
-                className="[&_[role=slider]]:h-5 [&_[role=slider]]:w-5 [&_[role=slider]]:shadow-[0_0_10px_rgba(0,255,255,0.3)] [&_[role=slider]]:border-cyan-500/50"
               />
             </div>
           ))}
         </motion.div>
       )}
 
-      <div className="space-y-2 p-3 rounded-xl bg-black/20 border border-cyan-500/10">
+      <div className="space-y-2 p-3 rounded-xl bg-muted/50 border border-border">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-cyan-400/50" />
-            <div>
-              <span className="text-xs font-bold font-mono text-cyan-200">Entropie</span>
-              <p className="text-[9px] text-cyan-300/30 font-mono">Niveau de diversification du contenu</p>
-            </div>
+          <div>
+            <span className="text-xs font-semibold text-foreground">Diversité</span>
+            <p className="text-[9px] text-muted-foreground">Niveau de diversification du contenu</p>
           </div>
           <motion.span key={diversityBoost} initial={{ scale: 1.3 }} animate={{ scale: 1 }}
-            className="text-xs font-bold text-cyan-400 font-mono">{diversityBoost}%</motion.span>
+            className="text-xs font-bold text-primary">{diversityBoost}%</motion.span>
         </div>
-        <Slider value={[diversityBoost]} onValueChange={([v]) => updateDiversity(v)} min={0} max={100} step={10}
-          className="[&_[role=slider]]:h-5 [&_[role=slider]]:w-5 [&_[role=slider]]:shadow-[0_0_10px_rgba(0,255,255,0.3)]" />
-        <div className="flex justify-between text-[9px] text-cyan-300/30 font-mono">
-          <span>▸ Stable</span>
-          <span>Exploratoire ◂</span>
+        <Slider value={[diversityBoost]} onValueChange={([v]) => updateDiversity(v)} min={0} max={100} step={10} />
+        <div className="flex justify-between text-[9px] text-muted-foreground">
+          <span>Stable</span>
+          <span>Exploratoire</span>
         </div>
       </div>
 
       <motion.div whileTap={{ scale: 0.98 }}
         className={cn("flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer",
-          viralReduce ? "bg-cyan-500/10 border-cyan-500/25" : "bg-black/20 border-cyan-500/10"
+          viralReduce ? "bg-primary/10 border-primary/25" : "bg-muted/50 border-border"
         )} onClick={() => updateViral(!viralReduce)}>
         <div className="flex items-center gap-2">
-          <Shield className={cn("w-4 h-4", viralReduce ? "text-cyan-400" : "text-cyan-500/30")} />
+          <Shield className={cn("w-4 h-4", viralReduce ? "text-primary" : "text-muted-foreground")} />
           <div>
-            <p className="text-xs font-bold font-mono text-cyan-200">Filtre anti-viral</p>
-            <p className="text-[9px] text-cyan-300/30 font-mono">
-              {viralReduce ? 'Actif — flux authentifié' : 'Inactif — contenu populaire visible'}
+            <p className="text-xs font-semibold text-foreground">Filtre anti-viral</p>
+            <p className="text-[9px] text-muted-foreground">
+              {viralReduce ? 'Actif — contenu authentique' : 'Inactif — contenu populaire visible'}
             </p>
           </div>
         </div>
         <Switch checked={viralReduce} onCheckedChange={updateViral} />
       </motion.div>
 
-      <div className="p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/10">
-        <p className="text-[10px] text-cyan-300/40 leading-relaxed font-mono">
-          ◈ <strong className="text-cyan-300/60">Tip :</strong> Dis « <em className="text-cyan-400/60">Optimise mon fil</em> » au chat pour une recalibration automatique.
+      <div className="p-3 rounded-xl bg-accent/50 border border-border">
+        <p className="text-[10px] text-muted-foreground leading-relaxed">
+          💡 <strong className="text-foreground/70">Astuce :</strong> Dites « <em className="text-primary">Optimise mon fil</em> » dans le chat pour une optimisation automatique.
         </p>
       </div>
     </div>
@@ -528,18 +476,11 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
           return { ...old, pages: [[optimisticPost, ...old.pages[0]], ...old.pages.slice(1)] };
         });
         queryClient.invalidateQueries({ queryKey: ['posts'] });
-        toast.success(action.type === 'schedule_post' ? 'Post programmé' : 'Post publié');
-      } else if (action.type === 'translate') {
-        await navigator.clipboard.writeText(action.translated_text || action.body || '');
-        toast.success('Traduction copiée');
-      } else if (action.type === 'create_story') {
-        toast.success('Story créée');
-      } else {
-        toast.info('Action exécutée');
+        toast.success('Post publié ! 🎉');
       }
-      setExecutedActions(prev => new Set(prev).add(msgIndex));
-    } catch (e: any) {
-      toast.error(e.message || "Erreur lors de l'action");
+      setExecutedActions(prev => new Set([...prev, msgIndex]));
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur lors de l\'action');
     } finally {
       setExecutingAction(null);
     }
@@ -574,81 +515,90 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
         throw new Error(err.message || err.error || 'Erreur');
       }
 
-      const reader = resp.body!.getReader();
+      const reader = resp.body?.getReader();
       const decoder = new TextDecoder();
       let assistantContent = '';
-      let buffer = '';
+      setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let newlineIndex;
-        while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-          const line = buffer.slice(0, newlineIndex).trim();
-          buffer = buffer.slice(newlineIndex + 1);
-          if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
-          try {
-            const parsed = JSON.parse(line.slice(6));
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              assistantContent += content;
-              setMessages(prev => {
-                const last = prev[prev.length - 1];
-                if (last?.role === 'assistant') return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantContent } : m);
-                return [...prev, { role: 'assistant', content: assistantContent }];
-              });
-            }
-          } catch {}
+      if (reader) {
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let nlIndex;
+          while ((nlIndex = buffer.indexOf('\n')) !== -1) {
+            const line = buffer.slice(0, nlIndex).trim();
+            buffer = buffer.slice(nlIndex + 1);
+            if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+            try {
+              const parsed = JSON.parse(line.slice(6));
+              const content = parsed.choices?.[0]?.delta?.content;
+              if (content) {
+                assistantContent += content;
+                setMessages(prev => {
+                  const copy = [...prev];
+                  copy[copy.length - 1] = { role: 'assistant', content: assistantContent };
+                  return copy;
+                });
+              }
+            } catch {}
+          }
         }
       }
-    } catch (e: any) {
-      toast.error(e.message || 'Erreur de communication');
+
+      if (!assistantContent) {
+        try {
+          const json = await resp.json();
+          assistantContent = json.result || json.error || 'Pas de réponse';
+          setMessages(prev => {
+            const copy = [...prev];
+            copy[copy.length - 1] = { role: 'assistant', content: assistantContent };
+            return copy;
+          });
+        } catch {}
+      }
+    } catch (err: any) {
+      setMessages(prev => [...prev, { role: 'assistant', content: `❌ ${err.message}` }]);
     } finally {
       setLoading(false);
     }
   }, [input, zeusAgentId, conversationId, loading, refetchConversations]);
 
   const handleRename = () => {
-    if (newName.trim() && newName.trim().length <= 20) { updateName.mutate(newName.trim()); setEditingName(false); }
+    if (newName.trim()) { updateName.mutate(newName.trim()); }
+    setEditingName(false);
   };
 
   if (!user) return null;
 
-  const tabs: { id: ActiveTab; icon: React.ReactNode; label: string }[] = [
-    { id: 'chat', icon: <MessageSquare className="w-4 h-4" />, label: 'Terminal' },
-    { id: 'algo', icon: <Cpu className="w-4 h-4" />, label: 'Neural' },
-    { id: 'history', icon: <History className="w-4 h-4" />, label: 'Archives' },
+  const tabs = [
+    { id: 'chat' as ActiveTab, icon: <MessageSquare className="w-3.5 h-3.5" />, label: 'Chat' },
+    { id: 'algo' as ActiveTab, icon: <Sliders className="w-3.5 h-3.5" />, label: 'Algo' },
+    { id: 'history' as ActiveTab, icon: <History className="w-3.5 h-3.5" />, label: 'Historique' },
   ];
 
   return (
     <>
-      {/* FAB Button — Sci-fi orb */}
+      {/* FAB Button (mobile only when not inline) */}
       <AnimatePresence>
-        {!open && (
+        {!open && !inline && (
           <motion.button
-            initial={{ scale: 0, rotate: -180 }}
-            animate={{ scale: 1, rotate: 0 }}
-            exit={{ scale: 0, rotate: 180 }}
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            exit={{ scale: 0 }}
             transition={{ type: 'spring', stiffness: 260, damping: 20 }}
             onClick={() => setOpen(true)}
-            className={cn("fixed bottom-[80px] right-5 z-[55] w-14 h-14 rounded-2xl flex items-center justify-center text-cyan-300 hover:text-cyan-100 active:scale-95 transition-all group md:hidden", inline && "hidden")}
-            style={{
-              background: 'linear-gradient(135deg, rgba(0,30,60,0.95) 0%, rgba(0,50,80,0.95) 50%, rgba(0,40,70,0.95) 100%)',
-              boxShadow: '0 0 25px rgba(0,255,255,0.2), 0 0 50px rgba(0,200,255,0.1), inset 0 1px 0 rgba(0,255,255,0.15)',
-              border: '1px solid rgba(0,255,255,0.25)',
-            }}
+            className={cn(
+              "fixed bottom-[80px] right-5 z-[55] w-14 h-14 rounded-2xl flex items-center justify-center",
+              "bg-primary text-primary-foreground shadow-lg hover:shadow-xl active:scale-95 transition-all group md:hidden",
+              inline && "hidden"
+            )}
           >
-            <Zap className="w-6 h-6 relative z-10" />
-            <motion.div
-              animate={{ opacity: [0.2, 0.5, 0.2], scale: [1, 1.1, 1] }}
-              transition={{ duration: 3, repeat: Infinity }}
-              className="absolute inset-0 rounded-2xl"
-              style={{ boxShadow: '0 0 30px rgba(0,255,255,0.3)' }}
-            />
+            <Zap className="w-6 h-6" />
             {unacknowledged.length > 0 && (
               <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }}
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-[10px] font-bold flex items-center justify-center text-white ring-2 ring-background shadow-[0_0_10px_rgba(255,0,0,0.4)]">
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-[10px] font-bold flex items-center justify-center text-destructive-foreground ring-2 ring-background shadow-md">
                 {unacknowledged.length}
               </motion.span>
             )}
@@ -656,161 +606,115 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
         )}
       </AnimatePresence>
 
-      {/* Main Panel — Sci-fi HUD */}
+      {/* Main Panel */}
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: 40, scale: 0.95 }}
+            initial={{ opacity: 0, y: 20, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 40, scale: 0.95 }}
+            exit={{ opacity: 0, y: 20, scale: 0.97 }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
             className={cn(
-              "flex flex-col overflow-hidden relative rounded-3xl",
+              "flex flex-col overflow-hidden bg-card border border-border shadow-xl",
               inline
                 ? "w-full h-[420px] max-h-[420px] rounded-2xl"
-                : "fixed bottom-[80px] right-5 z-[55] w-[390px] max-w-[calc(100vw-2rem)] h-[560px] max-h-[calc(100vh-120px)] md:right-8"
+                : "fixed bottom-[80px] right-5 z-[55] w-[390px] max-w-[calc(100vw-2rem)] h-[560px] max-h-[calc(100vh-120px)] md:right-8 rounded-2xl"
             )}
-            style={{
-              background: 'linear-gradient(180deg, rgba(0,15,30,0.97) 0%, rgba(0,20,40,0.98) 50%, rgba(0,10,25,0.99) 100%)',
-              border: '1px solid rgba(0,255,255,0.15)',
-              boxShadow: '0 0 40px rgba(0,255,255,0.1), 0 25px 50px -12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(0,255,255,0.1)',
-            }}
           >
-            <ScanLines />
-            <HoloBorder />
-
             {/* Header */}
-            <div className="relative px-4 py-3 border-b border-cyan-500/10 z-20">
-              {/* Holographic accent line */}
-              <motion.div
-                animate={{ opacity: [0.5, 1, 0.5] }}
-                transition={{ duration: 2, repeat: Infinity }}
-                className="absolute top-0 left-4 right-4 h-[1px]"
-                style={{ background: 'linear-gradient(90deg, transparent, rgba(0,255,255,0.6), rgba(100,200,255,0.4), rgba(0,255,255,0.6), transparent)' }}
-              />
-              
+            <div className="px-4 py-3 border-b border-border bg-card">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center text-cyan-300 text-sm relative"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(0,255,255,0.15), rgba(0,100,200,0.15))',
-                      boxShadow: '0 0 20px rgba(0,255,255,0.15), inset 0 0 10px rgba(0,255,255,0.05)',
-                      border: '1px solid rgba(0,255,255,0.25)',
-                    }}>
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-primary text-primary-foreground shadow-sm">
                     <Zap className="w-4 h-4" />
-                    <motion.div
-                      animate={{ opacity: [0.3, 0.8, 0.3] }}
-                      transition={{ duration: 2, repeat: Infinity }}
-                      className="absolute inset-0 rounded-xl"
-                      style={{ boxShadow: '0 0 15px rgba(0,255,255,0.2)' }}
-                    />
                   </div>
                   {editingName ? (
                     <div className="flex items-center gap-1">
-                      <Input value={newName} onChange={e => setNewName(e.target.value)} className="h-7 w-28 text-sm rounded-lg bg-cyan-950/50 border-cyan-500/30 text-cyan-200 font-mono" maxLength={20} autoFocus onKeyDown={e => e.key === 'Enter' && handleRename()} />
-                      <button onClick={handleRename} className="text-cyan-400"><Check className="w-4 h-4" /></button>
-                      <button onClick={() => setEditingName(false)} className="text-cyan-500/40"><X className="w-3.5 h-3.5" /></button>
+                      <Input value={newName} onChange={e => setNewName(e.target.value)} className="h-7 w-28 text-sm rounded-lg" maxLength={20} autoFocus onKeyDown={e => e.key === 'Enter' && handleRename()} />
+                      <button onClick={handleRename} className="text-primary"><Check className="w-4 h-4" /></button>
+                      <button onClick={() => setEditingName(false)} className="text-muted-foreground"><X className="w-3.5 h-3.5" /></button>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-sm text-cyan-300 font-mono tracking-wider">{zeusName}</span>
-                      <motion.span
-                        animate={{ opacity: [0.4, 1, 0.4] }}
-                        transition={{ duration: 1.5, repeat: Infinity }}
-                        className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(0,255,255,0.6)]"
-                      />
-                      <button onClick={() => { setNewName(zeusName); setEditingName(true); }} className="text-cyan-500/30 hover:text-cyan-400 transition-colors">
+                      <span className="font-semibold text-sm text-foreground">{zeusName}</span>
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm" />
+                      <button onClick={() => { setNewName(zeusName); setEditingName(true); }} className="text-muted-foreground/40 hover:text-muted-foreground transition-colors">
                         <Pencil className="w-3 h-3" />
                       </button>
                     </div>
                   )}
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={startNewConversation} className="w-7 h-7 rounded-lg flex items-center justify-center text-cyan-500/40 hover:text-cyan-300 hover:bg-cyan-500/10 transition-all" title="Nouvelle conversation">
+                  <button onClick={startNewConversation} className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-all" title="Nouvelle conversation">
                     <Plus className="w-4 h-4" />
                   </button>
-                  <button onClick={() => setOpen(false)} className="w-7 h-7 rounded-lg flex items-center justify-center text-cyan-500/40 hover:text-cyan-300 hover:bg-cyan-500/10 transition-all">
-                    <X className="w-4 h-4" />
-                  </button>
+                  {!inline && (
+                    <button onClick={() => setOpen(false)} className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-all">
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
 
             {/* Tab Bar */}
-            <div className="flex px-3 pt-2 pb-1 gap-1 relative z-20">
+            <div className="flex px-3 pt-2 pb-1 gap-1 bg-card">
               {tabs.map(tab => (
                 <button key={tab.id} onClick={() => { setActiveTab(tab.id); if (tab.id === 'history') refetchConversations(); }}
                   className={cn(
-                    "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-mono tracking-wider transition-all duration-200 relative",
+                    "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-medium tracking-wide transition-all duration-200",
                     activeTab === tab.id
-                      ? "text-cyan-300 border border-cyan-500/25"
-                      : "text-cyan-500/40 hover:text-cyan-400/60 border border-transparent"
-                  )}
-                  style={activeTab === tab.id ? {
-                    background: 'linear-gradient(135deg, rgba(0,255,255,0.08), rgba(0,100,200,0.05))',
-                    boxShadow: '0 0 10px rgba(0,255,255,0.05)',
-                  } : {}}>
+                      ? "text-primary bg-primary/10 border border-primary/20"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent border border-transparent"
+                  )}>
                   {tab.icon}
-                  <span className="uppercase">{tab.label}</span>
+                  <span>{tab.label}</span>
                 </button>
               ))}
             </div>
 
             {/* Strike warnings */}
             {activeTab === 'chat' && unacknowledged.length > 0 && (
-              <div className="mx-3 mt-1 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 relative z-20">
+              <div className="mx-3 mt-1 px-3 py-2 rounded-xl bg-destructive/10 border border-destructive/20">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0" />
-                  <p className="text-[11px] text-red-300 leading-relaxed font-mono">
+                  <AlertTriangle className="w-3.5 h-3.5 text-destructive mt-0.5 shrink-0" />
+                  <p className="text-[11px] text-destructive leading-relaxed">
                     {(unacknowledged[0] as any).zeus_message || 'Alerte : contenu signalé détecté.'}
                   </p>
                 </div>
               </div>
             )}
 
-            {/* Content Area */}
+            {/* Chat Content */}
             {activeTab === 'chat' && (
               <>
-                <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0 relative z-20">
+                <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
                   {messages.length === 0 && (
                     <div className="text-center py-4">
                       <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', delay: 0.1 }}
-                        className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center relative"
-                        style={{
-                          background: 'linear-gradient(135deg, rgba(0,255,255,0.1), rgba(0,100,200,0.1))',
-                          border: '1px solid rgba(0,255,255,0.2)',
-                          boxShadow: '0 0 30px rgba(0,255,255,0.1), inset 0 0 20px rgba(0,255,255,0.05)',
-                        }}>
-                        <Zap className="w-7 h-7 text-cyan-400" />
-                        <motion.div
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
-                          className="absolute inset-[-4px] rounded-2xl opacity-30"
-                          style={{
-                            border: '1px dashed rgba(0,255,255,0.3)',
-                          }}
-                        />
+                        className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center bg-primary/10 border border-primary/20">
+                        <Zap className="w-7 h-7 text-primary" />
                       </motion.div>
-                      <p className="text-sm font-bold text-cyan-200 font-mono tracking-wide">
-                        <span className="text-cyan-400">{zeusName}</span> <span className="text-cyan-500/50">EN LIGNE</span>
+                      <p className="text-sm font-semibold text-foreground">
+                        {zeusName} <span className="text-muted-foreground font-normal">est en ligne</span>
                       </p>
-                      <p className="text-[11px] text-cyan-400/40 mt-1 mb-4 font-mono">Système d'assistance neurale activé</p>
+                      <p className="text-xs text-muted-foreground mt-1 mb-4">Votre assistant IA personnel</p>
                       
                       {/* Capabilities */}
                       <div className="text-left mx-1 space-y-1 mb-4">
                         {[
                           { icon: <Pencil className="w-3 h-3" />, text: 'Création et publication automatique' },
-                          { icon: <Cpu className="w-3 h-3" />, text: 'Gestion du flux algorithmique' },
-                          { icon: <ShoppingBag className="w-3 h-3" />, text: 'Recherche marketplace avancée' },
-                          { icon: <Globe className="w-3 h-3" />, text: 'Traduction multilingue instantanée' },
-                          { icon: <MessageSquare className="w-3 h-3" />, text: 'Assistance conversationnelle IA' },
-                          { icon: <Shield className="w-3 h-3" />, text: 'Surveillance de sécurité du compte' },
+                          { icon: <Search className="w-3 h-3" />, text: 'Recherche sur internet en temps réel' },
+                          { icon: <ShoppingBag className="w-3 h-3" />, text: 'Recherche marketplace' },
+                          { icon: <Globe className="w-3 h-3" />, text: 'Traduction multilingue' },
+                          { icon: <MessageSquare className="w-3 h-3" />, text: 'Assistance conversationnelle' },
+                          { icon: <Shield className="w-3 h-3" />, text: 'Sécurité de votre compte' },
                         ].map((cap, idx) => (
                           <motion.div key={idx} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: 0.1 + idx * 0.05 }}
-                            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-cyan-500/10 bg-cyan-500/[0.03]">
-                            <span className="text-cyan-500/50">{cap.icon}</span>
-                            <span className="text-[11px] text-cyan-300/50 font-mono">{cap.text}</span>
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-accent/30">
+                            <span className="text-primary/60">{cap.icon}</span>
+                            <span className="text-[11px] text-muted-foreground">{cap.text}</span>
                           </motion.div>
                         ))}
                       </div>
@@ -818,13 +722,13 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
                       {/* Quick actions */}
                       <div className="flex flex-wrap gap-1.5 justify-center">
                         {[
-                          { label: '◈ Post', value: 'Publie un post motivant' },
-                          { label: '◇ Traduis', value: 'Traduis en anglais' },
-                          { label: '◎ Market', value: 'Cherche un produit' },
-                          { label: '⎔ Algo', value: 'Optimise mon fil' },
+                          { label: '✍️ Post', value: 'Publie un post motivant' },
+                          { label: '🌍 Traduis', value: 'Traduis en anglais' },
+                          { label: '🛍️ Market', value: 'Cherche un produit' },
+                          { label: '🔍 Recherche', value: 'Cherche sur internet' },
                         ].map(s => (
                           <button key={s.value} onClick={() => setInput(s.value)}
-                            className="text-[10px] px-3 py-1.5 rounded-full text-cyan-400/60 hover:text-cyan-300 transition-all duration-200 border border-cyan-500/15 hover:border-cyan-500/30 hover:bg-cyan-500/5 font-mono tracking-wide hover:shadow-[0_0_10px_rgba(0,255,255,0.08)]">
+                            className="text-[11px] px-3 py-1.5 rounded-full text-foreground/60 hover:text-foreground transition-all border border-border hover:border-primary/30 hover:bg-accent">
                             {s.label}
                           </button>
                         ))}
@@ -850,27 +754,18 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
                       <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                         className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
                         {msg.role === 'assistant' && (
-                          <div className="w-6 h-6 rounded-lg flex items-center justify-center text-xs shrink-0 mt-1 mr-1.5 border border-cyan-500/20"
-                            style={{ background: 'rgba(0,255,255,0.05)', boxShadow: '0 0 8px rgba(0,255,255,0.1)' }}>
-                            <Zap className="w-3 h-3 text-cyan-400" />
+                          <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-1 mr-1.5 bg-primary/10 border border-primary/20">
+                            <Zap className="w-3 h-3 text-primary" />
                           </div>
                         )}
                         <div className={cn(
                           'max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
                           msg.role === 'user'
-                            ? 'rounded-br-lg text-cyan-100'
-                            : 'rounded-bl-lg text-cyan-200/90'
-                        )}
-                        style={msg.role === 'user' ? {
-                          background: 'linear-gradient(135deg, rgba(0,150,255,0.2), rgba(0,100,200,0.15))',
-                          border: '1px solid rgba(0,150,255,0.25)',
-                          boxShadow: '0 0 15px rgba(0,100,255,0.08)',
-                        } : {
-                          background: 'rgba(0,255,255,0.04)',
-                          border: '1px solid rgba(0,255,255,0.1)',
-                        }}>
+                            ? 'rounded-br-lg bg-primary text-primary-foreground'
+                            : 'rounded-bl-lg bg-muted border border-border text-foreground'
+                        )}>
                           {msg.role === 'assistant' ? (
-                            <div className="prose prose-sm dark:prose-invert max-w-none [&>p]:m-0 [&>ul]:mt-1 [&_*]:text-cyan-200/90 [&_strong]:text-cyan-300 [&_a]:text-cyan-400 [&_code]:text-cyan-400 [&_code]:bg-cyan-500/10">
+                            <div className="prose prose-sm dark:prose-invert max-w-none [&>p]:m-0 [&>ul]:mt-1 [&_a]:text-primary [&_code]:text-primary [&_code]:bg-primary/10 [&_code]:rounded [&_code]:px-1">
                               <ReactMarkdown>{displayText}</ReactMarkdown>
                             </div>
                           ) : (
@@ -887,19 +782,14 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
                   })}
                   {loading && (
                     <div className="flex justify-start">
-                      <div className="w-6 h-6 rounded-lg flex items-center justify-center text-xs shrink-0 mt-1 mr-1.5 border border-cyan-500/20"
-                        style={{ background: 'rgba(0,255,255,0.05)' }}>
-                        <Zap className="w-3 h-3 text-cyan-400" />
+                      <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-1 mr-1.5 bg-primary/10 border border-primary/20">
+                        <Zap className="w-3 h-3 text-primary" />
                       </div>
-                      <div className="rounded-2xl rounded-bl-lg px-4 py-3 border border-cyan-500/10"
-                        style={{ background: 'rgba(0,255,255,0.04)' }}>
+                      <div className="rounded-2xl rounded-bl-lg px-4 py-3 border border-border bg-muted">
                         <div className="flex gap-1.5">
-                          <motion.div animate={{ opacity: [0.2, 1, 0.2], boxShadow: ['0 0 5px rgba(0,255,255,0)', '0 0 5px rgba(0,255,255,0.5)', '0 0 5px rgba(0,255,255,0)'] }}
-                            transition={{ duration: 1.2, repeat: Infinity, delay: 0 }} className="w-2 h-2 rounded-full bg-cyan-400" />
-                          <motion.div animate={{ opacity: [0.2, 1, 0.2], boxShadow: ['0 0 5px rgba(0,255,255,0)', '0 0 5px rgba(0,255,255,0.5)', '0 0 5px rgba(0,255,255,0)'] }}
-                            transition={{ duration: 1.2, repeat: Infinity, delay: 0.2 }} className="w-2 h-2 rounded-full bg-cyan-400" />
-                          <motion.div animate={{ opacity: [0.2, 1, 0.2], boxShadow: ['0 0 5px rgba(0,255,255,0)', '0 0 5px rgba(0,255,255,0.5)', '0 0 5px rgba(0,255,255,0)'] }}
-                            transition={{ duration: 1.2, repeat: Infinity, delay: 0.4 }} className="w-2 h-2 rounded-full bg-cyan-400" />
+                          <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0 }} className="w-2 h-2 rounded-full bg-primary" />
+                          <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.2 }} className="w-2 h-2 rounded-full bg-primary" />
+                          <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.4 }} className="w-2 h-2 rounded-full bg-primary" />
                         </div>
                       </div>
                     </div>
@@ -908,19 +798,14 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
                 </div>
 
                 {/* Input */}
-                <div className="px-3 py-3 border-t border-cyan-500/10 relative z-20">
+                <div className="px-3 py-3 border-t border-border bg-card">
                   <form onSubmit={e => { e.preventDefault(); sendMessage(); }} className="flex gap-2">
                     <Input ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
-                      placeholder={`Commande ${zeusName}...`}
-                      className="flex-1 rounded-xl h-10 text-sm font-mono bg-cyan-950/30 border-cyan-500/15 text-cyan-200 placeholder:text-cyan-500/30 focus:border-cyan-500/40 focus:ring-cyan-500/20 transition-colors"
-                      style={{ boxShadow: 'inset 0 0 20px rgba(0,255,255,0.02)' }}
+                      placeholder={`Message ${zeusName}...`}
+                      className="flex-1 rounded-xl h-10 text-sm"
                       disabled={loading || !zeusAgentId} />
                     <Button type="submit" size="icon" disabled={!input.trim() || loading || !zeusAgentId}
-                      className="h-10 w-10 rounded-xl border border-cyan-500/30 text-cyan-300 hover:text-cyan-100 disabled:opacity-30 transition-all"
-                      style={{
-                        background: 'linear-gradient(135deg, rgba(0,255,255,0.15), rgba(0,100,200,0.15))',
-                        boxShadow: '0 0 15px rgba(0,255,255,0.1)',
-                      }}>
+                      className="h-10 w-10 rounded-xl">
                       <Send className="w-4 h-4" />
                     </Button>
                   </form>
@@ -928,22 +813,21 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
               </>
             )}
 
-            {activeTab === 'algo' && <div className="relative z-20 flex-1 overflow-hidden flex flex-col"><AlgorithmPanel /></div>}
+            {activeTab === 'algo' && <div className="flex-1 overflow-hidden flex flex-col"><AlgorithmPanel /></div>}
 
             {activeTab === 'history' && (
-              <div className="flex-1 overflow-y-auto relative z-20">
+              <div className="flex-1 overflow-y-auto">
                 <div className="px-3 pt-3 pb-1">
                   <button onClick={startNewConversation}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/5 hover:border-cyan-500/30 transition-all text-[11px] font-mono tracking-wider hover:shadow-[0_0_15px_rgba(0,255,255,0.08)]"
-                    style={{ background: 'rgba(0,255,255,0.03)' }}>
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border text-primary hover:bg-accent transition-all text-[11px] font-medium">
                     <Plus className="w-4 h-4" />
-                    NOUVELLE SESSION
+                    Nouvelle conversation
                   </button>
                 </div>
                 {(!conversations || conversations.length === 0) ? (
-                  <div className="text-center py-12 text-cyan-500/30 text-sm font-mono">
-                    <History className="w-8 h-8 mx-auto mb-2 text-cyan-500/15" />
-                    <p className="tracking-wider">ARCHIVES VIDES</p>
+                  <div className="text-center py-12 text-muted-foreground text-sm">
+                    <History className="w-8 h-8 mx-auto mb-2 text-muted-foreground/30" />
+                    <p>Aucune conversation</p>
                   </div>
                 ) : (
                   <div className="p-2 space-y-1">
@@ -952,15 +836,14 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
                         className={cn(
                           "w-full text-left px-3.5 py-3 rounded-xl transition-all duration-200 group border",
                           conversationId === conv.id
-                            ? "border-cyan-500/25 shadow-[0_0_10px_rgba(0,255,255,0.05)]"
-                            : "border-transparent hover:bg-cyan-500/5 hover:border-cyan-500/10"
-                        )}
-                        style={conversationId === conv.id ? { background: 'rgba(0,255,255,0.05)' } : {}}>
+                            ? "border-primary/25 bg-primary/5 shadow-sm"
+                            : "border-transparent hover:bg-accent hover:border-border"
+                        )}>
                         <div className="flex items-center justify-between">
-                          <p className="text-sm font-mono text-cyan-200 truncate flex-1">{conv.title || 'Session'}</p>
-                          <ChevronRight className="w-3.5 h-3.5 text-cyan-500/30 group-hover:text-cyan-400/60 transition-colors" />
+                          <p className="text-sm text-foreground truncate flex-1">{conv.title || 'Conversation'}</p>
+                          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/30 group-hover:text-muted-foreground transition-colors" />
                         </div>
-                        <p className="text-[10px] text-cyan-500/30 mt-0.5 font-mono">
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
                           {new Date(conv.updated_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </p>
                       </button>
