@@ -10,6 +10,8 @@ import { cn } from '@/lib/utils';
 interface AnonymousWallProps {
   targetUserId: string;
   isOwnProfile: boolean;
+  wallVisibility?: 'everyone' | 'friends' | 'nobody';
+  isFriend?: boolean;
 }
 
 export function AnonymousWall({ targetUserId, isOwnProfile }: AnonymousWallProps) {
