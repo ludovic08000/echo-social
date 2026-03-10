@@ -160,8 +160,27 @@ export default function Profile() {
   const profileBgStyle = useCustomBackground('profile');
 
   const isFriend = friendshipData?.status === 'accepted';
-  const isPrivateProfile = profile?.profile_type === 'private';
-  const canViewPosts = isOwnProfile || isFriend || !isPrivateProfile;
+
+  // Fetch target user's privacy settings for post visibility
+  const { data: targetPrivacy } = useQuery({
+    queryKey: ['target-privacy', userId],
+    queryFn: async () => {
+      if (!userId) return null;
+      const { data } = await supabase
+        .from('privacy_settings')
+        .select('posts_visibility, profile_visibility')
+        .eq('user_id', userId)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!userId,
+    staleTime: 5 * 60_000,
+  });
+
+  // posts_visibility: 'public' (tout le monde), 'friends' (amis), 'private' (moi seul)
+  const postsVis = targetPrivacy?.posts_visibility || 'public';
+  const canViewPosts = isOwnProfile || postsVis === 'public' || (postsVis === 'friends' && isFriend);
+  const isPrivateProfile = postsVis !== 'public';
 
   // Check if own profile has pending identity verification
   const { data: pendingVerification } = useQuery({
@@ -767,8 +786,14 @@ export default function Profile() {
                 {!canViewPosts ? (
                   <div className="premium-card p-8 text-center">
                     <Lock className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
-                    <p className="text-muted-foreground text-sm font-medium">Compte privé</p>
-                    <p className="text-muted-foreground/70 text-xs mt-1">Ajoutez cette personne en ami pour voir ses publications.</p>
+                    <p className="text-muted-foreground text-sm font-medium">
+                      {postsVis === 'private' ? 'Publications masquées' : 'Compte privé'}
+                    </p>
+                    <p className="text-muted-foreground/70 text-xs mt-1">
+                      {postsVis === 'private'
+                        ? 'Cet utilisateur a choisi de masquer ses publications.'
+                        : 'Ajoutez cette personne en ami pour voir ses publications.'}
+                    </p>
                   </div>
                 ) : (
                 <>
@@ -829,8 +854,14 @@ export default function Profile() {
               {!canViewPosts ? (
                 <div className="premium-card p-8 text-center">
                   <Lock className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
-                  <p className="text-muted-foreground text-sm font-medium">Compte privé</p>
-                  <p className="text-muted-foreground/70 text-xs mt-1">Ajoutez cette personne en ami pour voir ses publications.</p>
+                  <p className="text-muted-foreground text-sm font-medium">
+                    {postsVis === 'private' ? 'Publications masquées' : 'Compte privé'}
+                  </p>
+                  <p className="text-muted-foreground/70 text-xs mt-1">
+                    {postsVis === 'private'
+                      ? 'Cet utilisateur a choisi de masquer ses publications.'
+                      : 'Ajoutez cette personne en ami pour voir ses publications.'}
+                  </p>
                 </div>
               ) : (
               <>
