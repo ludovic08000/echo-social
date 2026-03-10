@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 
 type Msg = { role: string; content: string };
 
@@ -88,6 +89,7 @@ function ActionCard({ action, onExecute, executing, executed }: {
 
 export function ZeusCompanion() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { zeusName, updateName } = useZeusSettings();
   const { data: zeusAgentId } = useZeusAgentId();
   const { unacknowledged } = useContentStrikes();
@@ -139,6 +141,7 @@ export function ZeusCompanion() {
           image_url: null,
         });
         if (error) throw error;
+        queryClient.invalidateQueries({ queryKey: ['posts'] });
         toast.success('Post publié avec succès ! 🎉');
       } else if (action.type === 'translate') {
         // Translation is already displayed, just copy to clipboard

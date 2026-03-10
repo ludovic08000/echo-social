@@ -4,54 +4,40 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 
 const ACTION_SYSTEM_PROMPT = `
 
-## CAPACITÉS D'ACTION
-Tu peux exécuter des actions concrètes pour l'utilisateur. Quand l'utilisateur demande de publier, traduire, programmer, ou créer du contenu, tu DOIS inclure un bloc d'action JSON dans ta réponse.
+## CAPACITÉS D'ACTION — OBLIGATOIRE
+Tu DOIS inclure un bloc d'action JSON quand l'utilisateur demande de publier, traduire, ou créer du contenu.
+NE DEMANDE JAMAIS de confirmation supplémentaire — l'interface a un bouton "Confirmer" pour ça.
+Si l'utilisateur donne un thème sans texte précis, INVENTE toi-même un texte engageant.
 
-### Format d'action
-Quand tu détectes une intention d'action, inclus un bloc comme ceci dans ta réponse :
+### Format OBLIGATOIRE
 
+Pour PUBLIER (mots-clés: "publie", "poste", "fais un post", "écris", "partage") :
 \`\`\`forsure-action
-{
-  "type": "publish_post",
-  "body": "Le texte du post à publier"
-}
+{"type": "publish_post", "body": "Le texte du post engageant et amélioré"}
 \`\`\`
 
+Pour TRADUIRE (mots-clés: "traduis", "translate", "en anglais", "en espagnol") :
 \`\`\`forsure-action
-{
-  "type": "translate",
-  "translated_text": "The translated text here",
-  "target_language": "en",
-  "body": "Le texte original"
-}
+{"type": "translate", "translated_text": "The translated text", "target_language": "en", "body": "Texte original"}
 \`\`\`
 
+Pour PROGRAMMER :
 \`\`\`forsure-action
-{
-  "type": "schedule_post",
-  "body": "Le texte du post programmé",
-  "publish_at": "2026-03-15T14:00:00Z"
-}
+{"type": "schedule_post", "body": "Le texte", "publish_at": "2026-03-15T14:00:00Z"}
 \`\`\`
 
-\`\`\`forsure-action
-{
-  "type": "create_story",
-  "caption": "Légende de la story",
-  "image_prompt": "Description de l'image pour la story"
-}
-\`\`\`
+### Exemples concrets :
+- User: "publie" → Tu crées un post inspirant/motivant et inclus le bloc action
+- User: "publie un truc sur le sport" → Tu écris un post engageant sur le sport ET inclus le bloc
+- User: "traduis en anglais : bonjour" → Bloc translate avec "Hello"
+- User: "poste que je suis content" → Bloc publish_post avec texte amélioré
 
-### Règles importantes :
-- Pour les PUBLICATIONS : Reformule et améliore le texte de l'utilisateur pour le rendre plus engageant et accrocheur. Propose le texte amélioré dans le body et explique ce que tu as changé.
-- Pour les TRADUCTIONS : Quand l'utilisateur dit "traduis", "translate", "en anglais", "en espagnol" etc, traduis le texte et mets-le dans un bloc translate. Langues supportées: en, fr, es, de, it, pt, ar, zh, ja, ko.
-- Si l'utilisateur dit juste "publie ça" ou "poste ça", crée un bloc publish_post avec le contenu amélioré.
-- Si l'utilisateur dit "traduis en anglais : Bonjour", traduis et mets dans un bloc translate.
-- Propose TOUJOURS un aperçu du contenu avant de l'inclure dans un bloc d'action
-- La date actuelle est : ${new Date().toISOString()}
-- Un seul bloc d'action par message maximum
-- Si l'utilisateur n'a pas donné assez d'informations, pose des questions avant de créer le bloc d'action
-- Tu es intelligent et proactif : comprends ce que l'utilisateur veut même s'il le dit de manière informelle
+### Règles :
+- TOUJOURS générer un bloc forsure-action quand l'intention est claire
+- Si l'utilisateur dit juste "publie" sans sujet → crée un post positif/inspirant
+- Améliore TOUJOURS le texte pour le rendre plus engageant
+- Un seul bloc par message
+- Date actuelle : ${new Date().toISOString()}
 `;
 
 serve(async (req) => {

@@ -395,7 +395,7 @@ async function handlePhotoGuard(apiKey: string, body: any, userId: string, supab
 }
 
 // ── AGENT CHAT: Streaming agent conversation ──
-const ACTION_SYSTEM_PROMPT = `\n\n## CAPACITÉS D'ACTION\nQuand l'utilisateur demande de publier, traduire, ou créer du contenu, inclus un bloc d'action:\n\n\`\`\`forsure-action\n{"type": "publish_post", "body": "texte amélioré"}\n\`\`\`\n\n\`\`\`forsure-action\n{"type": "translate", "translated_text": "translated text", "target_language": "en", "body": "texte original"}\n\`\`\`\n\nTypes: publish_post, translate, schedule_post (avec publish_at), create_story.\nPour les publications: reformule et améliore le texte.\nPour les traductions: traduis fidèlement. Langues: en, fr, es, de, it, pt, ar, zh, ja, ko.\nDate actuelle: ${new Date().toISOString()}\nUn seul bloc par message. L'utilisateur confirmera avant exécution.`;
+const ACTION_SYSTEM_PROMPT = `\n\n## CAPACITÉS D'ACTION — OBLIGATOIRE\nTu DOIS inclure un bloc forsure-action quand l'utilisateur demande de publier ou traduire. NE DEMANDE PAS de confirmation, l'interface a un bouton pour ça. Si pas de texte précis, INVENTE un texte engageant.\n\nPublier:\n\`\`\`forsure-action\n{"type": "publish_post", "body": "texte engageant"}\n\`\`\`\n\nTraduire:\n\`\`\`forsure-action\n{"type": "translate", "translated_text": "translated", "target_language": "en", "body": "original"}\n\`\`\`\n\nExemples: "publie" → crée un post inspirant + bloc. "publie sur le sport" → post sport + bloc. "traduis en anglais: bonjour" → bloc translate.\nDate: ${new Date().toISOString()}\nUn bloc par message.`;
 
 async function handleAgentChat(apiKey: string, body: any, userId: string, supabase: any, cors: Record<string, string>) {
   const { agent_id, conversation_id, message } = body;
