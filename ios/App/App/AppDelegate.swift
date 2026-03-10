@@ -10,9 +10,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-        // Register custom plugins
-        let bridge = (window?.rootViewController as? CAPBridgeViewController)?.bridge
-        bridge?.registerPluginInstance(ContactsPlugin())
         return true
     }
 }
