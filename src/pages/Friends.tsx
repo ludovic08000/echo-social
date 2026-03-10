@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Users, Clock, UserCheck, UserPlus, Search, UserX, MessageCircle, Sparkles, MapPin, Phone, RefreshCw, Mail } from 'lucide-react';
+import { Users, Clock, UserCheck, UserPlus, Search, UserX, MessageCircle, Sparkles, MapPin } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { useFriendships, useRespondToFriendRequest, useRemoveFriend, useSendFriendRequest } from '@/hooks/useFriendships';
@@ -11,11 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/hooks/use-toast';
 import { InviteContacts } from '@/components/InviteContacts';
 import { FriendSuggestions } from '@/components/feed/FriendSuggestions';
-import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { useNewUsers } from '@/hooks/useNewUsers';
-import { useContactSync } from '@/hooks/useContactSync';
-import { useOAuthContactsImport } from '@/hooks/useOAuthContactsImport';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -28,11 +25,6 @@ export default function Friends() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const { data: newUsers, isLoading: loadingNewUsers } = useNewUsers();
-  const contactSync = useContactSync();
-  const oauthImport = useOAuthContactsImport();
-
-  // Google Client ID — will be set via secret
-  const GOOGLE_CLIENT_ID = ''; // TODO: Set via environment
 
   const handleAccept = (friendshipId: string) => {
     respondToRequest.mutate(
@@ -80,14 +72,10 @@ export default function Friends() {
       </header>
 
       <Tabs defaultValue="new" className="w-full">
-        <TabsList className="grid w-full grid-cols-6 rounded-xl h-10">
+        <TabsList className="grid w-full grid-cols-5 rounded-xl h-10">
           <TabsTrigger value="new" className="gap-1.5 text-xs rounded-lg data-[state=active]:shadow-sm">
             <Sparkles className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Nouveaux</span>
-          </TabsTrigger>
-          <TabsTrigger value="sync" className="gap-1.5 text-xs rounded-lg data-[state=active]:shadow-sm">
-            <Phone className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Synchro</span>
           </TabsTrigger>
           <TabsTrigger value="friends" className="gap-1.5 text-xs rounded-lg data-[state=active]:shadow-sm">
             <Users className="w-3.5 h-3.5" />
@@ -160,192 +148,8 @@ export default function Friends() {
           </div>
         </TabsContent>
 
-        {/* Sync Contacts Tab */}
-        <TabsContent value="sync" className="mt-4">
-          <div className="rounded-2xl border border-border/30 bg-card overflow-hidden">
-            {/* Platform badge */}
-            <div className="flex items-center justify-center gap-2 p-3 border-b border-border/20">
-              <Badge variant={contactSync.isNative ? 'default' : 'secondary'} className="text-xs">
-                {contactSync.platform === 'ios' && '🍎 iPhone détecté'}
-                {contactSync.platform === 'android' && '🤖 Android détecté'}
-                {contactSync.platform === 'web' && '🌐 Navigateur web'}
-              </Badge>
-            </div>
-
-            {contactSync.isNative ? (
-              /* Native: direct sync button */
-              <div className="flex flex-col items-center justify-center p-8 gap-4 text-center">
-                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Phone className="w-8 h-8 text-primary" />
-                </div>
-                <h3 className="font-semibold text-lg">Synchroniser mes contacts</h3>
-                <p className="text-sm text-muted-foreground max-w-xs">
-                  {contactSync.platform === 'ios'
-                    ? 'Accédez à votre répertoire iPhone pour retrouver vos amis sur Forsure'
-                    : 'Accédez à votre répertoire Android pour retrouver vos amis sur Forsure'}
-                </p>
-                <Button
-                  onClick={contactSync.syncContacts}
-                  disabled={contactSync.loading}
-                  className="gap-2"
-                  size="lg"
-                >
-                  {contactSync.loading ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Phone className="w-4 h-4" />
-                  )}
-                  {contactSync.loading
-                    ? 'Synchronisation...'
-                    : contactSync.synced
-                    ? 'Resynchroniser'
-                    : `Synchro ${contactSync.platform === 'ios' ? 'iPhone' : 'Android'}`}
-                </Button>
-
-                {contactSync.synced && (
-                  <div className="w-full space-y-3 mt-2">
-                    <div className="flex justify-center gap-4 text-sm">
-                      <span className="text-primary font-medium">{contactSync.matched.length} trouvé(s)</span>
-                      <span className="text-muted-foreground">{contactSync.unmatched.length} à inviter</span>
-                    </div>
-                    {contactSync.matched.length > 0 && (
-                      <div className="divide-y divide-border/20 border-t border-border/20">
-                        {contactSync.matched.map(contact => (
-                          <div key={contact.user_id} className="flex items-center gap-3 p-3 hover:bg-secondary/20 transition-colors">
-                            <Link to={`/profile/${contact.user_id}`} className="flex-shrink-0">
-                              <UserAvatar src={contact.avatar_url} alt={contact.name} size="md" />
-                            </Link>
-                            <Link to={`/profile/${contact.user_id}`} className="flex-1 min-w-0">
-                              <p className="font-medium text-sm truncate">{contact.name}</p>
-                              <p className="text-[11px] text-muted-foreground truncate">{contact.contact_name}</p>
-                            </Link>
-                            {contact.is_friend ? (
-                              <span className="text-xs text-muted-foreground">✓ Ami</span>
-                            ) : (
-                              <Button
-                                size="sm"
-                                className="rounded-xl h-8 text-xs gap-1.5"
-                                onClick={() => sendRequest.mutate(contact.user_id)}
-                                disabled={sendRequest.isPending}
-                              >
-                                <UserPlus className="w-3.5 h-3.5" />
-                                Ajouter
-                              </Button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground/60">
-                  🔒 Vos contacts ne sont pas stockés sur nos serveurs
-                </p>
-              </div>
-            ) : (
-              /* Web: Google / Outlook / manual import */
-              <div className="flex flex-col p-6 gap-5">
-                <h3 className="font-semibold text-lg text-center">Retrouver vos amis</h3>
-                <p className="text-sm text-muted-foreground text-center max-w-sm mx-auto">
-                  Connectez-vous à votre compte Google ou Outlook pour retrouver vos contacts déjà inscrits sur Forsure
-                </p>
-
-                {/* Google import */}
-                <div className="flex flex-col gap-3">
-                  <Button
-                    onClick={() => oauthImport.importGoogleContacts(GOOGLE_CLIENT_ID)}
-                    disabled={oauthImport.loading || !GOOGLE_CLIENT_ID}
-                    className="gap-2 w-full h-12 rounded-xl"
-                    variant="outline"
-                  >
-                    {oauthImport.loading ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <svg className="w-5 h-5" viewBox="0 0 24 24">
-                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
-                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                      </svg>
-                    )}
-                    {oauthImport.loading ? 'Importation...' : 'Importer depuis Google'}
-                  </Button>
-
-                  {/* Microsoft/Outlook import */}
-                  <Button
-                    onClick={() => toast({ title: 'Bientôt disponible', description: 'L\'import Outlook sera disponible prochainement' })}
-                    disabled={oauthImport.loading}
-                    className="gap-2 w-full h-12 rounded-xl"
-                    variant="outline"
-                  >
-                    <svg className="w-5 h-5" viewBox="0 0 24 24">
-                      <path fill="#0078D4" d="M24 7.387v10.478c0 .23-.08.424-.238.58a.788.788 0 0 1-.581.238h-8.97V6.569h8.97c.23 0 .424.079.58.237A.788.788 0 0 1 24 7.387zM13.401 2.773l-8.15 1.46a.72.72 0 0 0-.601.71v14.114c0 .35.22.644.6.71l8.15 1.46a.72.72 0 0 0 .85-.71V3.483a.72.72 0 0 0-.85-.71zM9.6 16.247c-2.485 0-4.5-1.903-4.5-4.247s2.015-4.247 4.5-4.247S14.1 9.656 14.1 12s-2.015 4.247-4.5 4.247zm0-6.694c-1.38 0-2.5 1.097-2.5 2.447s1.12 2.447 2.5 2.447 2.5-1.097 2.5-2.447-1.12-2.447-2.5-2.447z"/>
-                    </svg>
-                    Importer depuis Outlook
-                  </Button>
-                </div>
-
-                {/* Results from OAuth import */}
-                {oauthImport.imported && (
-                  <div className="space-y-3">
-                    <div className="flex justify-center gap-4 text-sm">
-                      <span className="text-primary font-medium">{oauthImport.matches.length} trouvé(s)</span>
-                      {oauthImport.stats && (
-                        <span className="text-muted-foreground">{oauthImport.stats.total} contacts analysés</span>
-                      )}
-                    </div>
-                    {oauthImport.matches.length > 0 && (
-                      <div className="divide-y divide-border/20 rounded-xl border border-border/30 overflow-hidden">
-                        {oauthImport.matches.map(contact => (
-                          <div key={contact.user_id} className="flex items-center gap-3 p-3 hover:bg-secondary/20 transition-colors">
-                            <Link to={`/profile/${contact.user_id}`} className="flex-shrink-0">
-                              <UserAvatar src={contact.avatar_url} alt={contact.name} size="md" />
-                            </Link>
-                            <Link to={`/profile/${contact.user_id}`} className="flex-1 min-w-0">
-                              <p className="font-medium text-sm truncate">{contact.name}</p>
-                              <p className="text-[11px] text-muted-foreground truncate">{contact.contact_name}</p>
-                            </Link>
-                            {contact.is_friend ? (
-                              <span className="text-xs text-muted-foreground">✓ Ami</span>
-                            ) : (
-                              <Button
-                                size="sm"
-                                className="rounded-xl h-8 text-xs gap-1.5"
-                                onClick={() => sendRequest.mutate(contact.user_id)}
-                                disabled={sendRequest.isPending}
-                              >
-                                <UserPlus className="w-3.5 h-3.5" />
-                                Ajouter
-                              </Button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Separator */}
-                <div className="relative flex items-center gap-2">
-                  <div className="flex-1 border-t border-border" />
-                  <span className="text-xs text-muted-foreground">ou recherche manuelle</span>
-                  <div className="flex-1 border-t border-border" />
-                </div>
-
-                {/* Fallback: manual search via InviteContacts */}
-                <InviteContacts />
-
-                <p className="text-xs text-muted-foreground/60 text-center">
-                  🔒 Vos contacts ne sont pas stockés sur nos serveurs
-                </p>
-              </div>
-            )}
-          </div>
-        </TabsContent>
-
-
+        {/* Friends Tab */}
         <TabsContent value="friends" className="mt-4 space-y-4">
-          {/* Search */}
           {(data?.friends.length ?? 0) > 5 && (
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -362,9 +166,9 @@ export default function Friends() {
             {isLoading ? (
               <LoadingSkeleton />
             ) : filteredFriends.length === 0 ? (
-              <EmptyState 
+              <EmptyState
                 icon={<Users className="w-10 h-10 text-muted-foreground/40" />}
-                message={searchQuery ? 'Aucun résultat' : 'Aucun ami pour le moment'} 
+                message={searchQuery ? 'Aucun résultat' : 'Aucun ami pour le moment'}
                 sub={!searchQuery ? 'Découvre des personnes à ajouter !' : undefined}
               />
             ) : (
@@ -399,7 +203,6 @@ export default function Friends() {
             )}
           </div>
 
-          {/* Suggestions */}
           <FriendSuggestions />
         </TabsContent>
 
@@ -409,9 +212,9 @@ export default function Friends() {
             {isLoading ? (
               <LoadingSkeleton />
             ) : data?.requests.length === 0 ? (
-              <EmptyState 
+              <EmptyState
                 icon={<UserCheck className="w-10 h-10 text-muted-foreground/40" />}
-                message="Aucune demande d'ami" 
+                message="Aucune demande d'ami"
               />
             ) : (
               data?.requests.map(friendship => (
@@ -458,9 +261,9 @@ export default function Friends() {
             {isLoading ? (
               <LoadingSkeleton />
             ) : data?.pending.length === 0 ? (
-              <EmptyState 
+              <EmptyState
                 icon={<Clock className="w-10 h-10 text-muted-foreground/40" />}
-                message="Aucune demande envoyée" 
+                message="Aucune demande envoyée"
               />
             ) : (
               data?.pending.map(friendship => (
@@ -486,7 +289,7 @@ export default function Friends() {
           </div>
         </TabsContent>
 
-        {/* Invite Tab */}
+        {/* Invite Tab — unified: share + sync + import */}
         <TabsContent value="invite" className="mt-4">
           <div className="rounded-2xl border border-border/30 bg-card overflow-hidden min-h-[300px]">
             <InviteContacts />

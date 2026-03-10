@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { Share } from '@capacitor/share';
-import { UserPlus, Search, Check, Send, Phone, Users, Upload, FileText, MessageCircle, Copy, Link2 } from 'lucide-react';
+import { UserPlus, Search, Check, Send, Phone, Users, FileText, MessageCircle, Copy, RefreshCw, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -9,10 +9,12 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useContactSync, MatchedContact } from '@/hooks/useContactSync';
+import { useOAuthContactsImport } from '@/hooks/useOAuthContactsImport';
 import { useSendFriendRequest } from '@/hooks/useFriendships';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { Badge } from '@/components/ui/badge';
 
 const INVITE_MESSAGE = `Rejoins-moi sur Forsure, le réseau social de confiance ! 🚀\nTélécharge l'app ici : https://forsure.fans`;
 const INVITE_LINK = 'https://forsure.fans';
@@ -63,7 +65,7 @@ function isIOSDevice(): boolean {
   return /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
-// ─── Quick Share Buttons (always visible) ───────────────────
+// ─── Quick Share Buttons ────────────────────────────────────
 
 function QuickShareBar() {
   const copyLink = async () => {
@@ -103,7 +105,10 @@ function QuickShareBar() {
         <Send className="w-3.5 h-3.5" />
         Partager
       </Button>
-      <Button onClick={copyLink} size="sm" variant="outline" className="gap-1.5 text-xs h-9 px-3">
+      <Button onClick={() => {
+        navigator.clipboard.writeText(INVITE_LINK).catch(() => {});
+        toast({ title: '🔗 Lien copié !' });
+      }} size="sm" variant="outline" className="gap-1.5 text-xs h-9 px-3">
         <Copy className="w-3.5 h-3.5" />
       </Button>
     </div>
@@ -267,13 +272,16 @@ function ResultsView({ matched, unmatched, onBack }: {
 
 export function InviteContacts() {
   const { user } = useAuth();
-  const { isNative, loading, synced, matched, unmatched, syncContacts } = useContactSync();
+  const contactSync = useContactSync();
+  const oauthImport = useOAuthContactsImport();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searching, setSearching] = useState(false);
   const [webMatched, setWebMatched] = useState<MatchedContact[]>([]);
   const [webUnmatched, setWebUnmatched] = useState<VCardContact[]>([]);
   const [hasResults, setHasResults] = useState(false);
   const [phoneInput, setPhoneInput] = useState('');
+
+  const GOOGLE_CLIENT_ID = ''; // TODO: Set via environment
 
   const pickerSupported = hasContactPicker();
   const isIOS = isIOSDevice();
@@ -339,27 +347,33 @@ export function InviteContacts() {
   };
 
   // ── Native: use Capacitor contacts ──
-  if (isNative) {
-    if (!synced) {
+  if (contactSync.isNative) {
+    if (!contactSync.synced) {
       return (
         <div className="flex flex-col items-center justify-center p-8 gap-4 text-center">
           <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
             <Phone className="w-8 h-8 text-primary" />
           </div>
           <h3 className="font-semibold text-lg">Retrouve tes amis</h3>
-          <p className="text-sm text-muted-foreground max-w-xs">Synchronise ton répertoire pour voir qui est déjà sur Forsure</p>
-          <Button onClick={syncContacts} disabled={loading} className="gap-2">
-            {loading ? <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" /> : <Users className="w-4 h-4" />}
-            {loading ? 'Synchronisation...' : 'Synchroniser mes contacts'}
+          <p className="text-sm text-muted-foreground max-w-xs">
+            {contactSync.platform === 'ios'
+              ? 'Synchronise ton répertoire iPhone pour voir qui est déjà sur Forsure'
+              : 'Synchronise ton répertoire Android pour voir qui est déjà sur Forsure'}
+          </p>
+          <Badge variant="secondary" className="text-xs">
+            {contactSync.platform === 'ios' ? '🍎 iPhone' : '🤖 Android'}
+          </Badge>
+          <Button onClick={contactSync.syncContacts} disabled={contactSync.loading} className="gap-2" size="lg">
+            {contactSync.loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Phone className="w-4 h-4" />}
+            {contactSync.loading ? 'Synchronisation...' : 'Synchroniser mes contacts'}
           </Button>
           <p className="text-xs text-muted-foreground/60">🔒 Tes contacts ne sont pas stockés sur nos serveurs</p>
           <div className="w-full pt-2"><QuickShareBar /></div>
         </div>
       );
     }
-    // Convert unmatched to VCardContact format
-    const unmatchedVCard = unmatched.map(c => ({ name: c.name, phone: c.phone }));
-    return <ResultsView matched={matched} unmatched={unmatchedVCard} />;
+    const unmatchedVCard = contactSync.unmatched.map(c => ({ name: c.name, phone: c.phone }));
+    return <ResultsView matched={contactSync.matched} unmatched={unmatchedVCard} />;
   }
 
   // ── Web: show results if we have them ──
@@ -367,27 +381,72 @@ export function InviteContacts() {
     return <ResultsView matched={webMatched} unmatched={webUnmatched} onBack={() => { setHasResults(false); setWebMatched([]); setWebUnmatched([]); }} />;
   }
 
-  // ── Web: import screen ──
+  // ── OAuth results ──
+  if (oauthImport.imported && oauthImport.matches.length > 0) {
+    const oauthMatched: MatchedContact[] = oauthImport.matches;
+    return <ResultsView matched={oauthMatched} unmatched={[]} onBack={() => window.location.reload()} />;
+  }
+
+  // ── Web: unified import screen ──
   return (
     <div className="flex flex-col p-4 gap-5">
       {/* Header */}
       <div className="text-center pb-1">
         <h3 className="font-semibold text-base">Invite tes amis sur Forsure</h3>
-        <p className="text-xs text-muted-foreground mt-1">Partage le lien ou importe tes contacts</p>
+        <p className="text-xs text-muted-foreground mt-1">Partage le lien ou retrouve tes contacts</p>
       </div>
 
-      {/* Quick share - always visible */}
+      {/* Quick share */}
       <QuickShareBar />
 
       {/* Divider */}
       <div className="flex items-center gap-3">
         <div className="flex-1 border-t border-border" />
-        <span className="text-xs text-muted-foreground font-medium">Ou retrouve tes contacts</span>
+        <span className="text-xs text-muted-foreground font-medium">Retrouver tes contacts</span>
         <div className="flex-1 border-t border-border" />
       </div>
 
-      {/* Import options */}
-      <div className="space-y-3">
+      {/* Import methods */}
+      <div className="space-y-2.5">
+        {/* Google import */}
+        <Button
+          onClick={() => oauthImport.importGoogleContacts(GOOGLE_CLIENT_ID)}
+          disabled={oauthImport.loading || !GOOGLE_CLIENT_ID}
+          variant="outline"
+          className="gap-2 w-full h-12 justify-start"
+        >
+          <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+            <svg className="w-4 h-4" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+            </svg>
+          </div>
+          <div className="text-left">
+            <p className="text-sm font-medium">Contacts Google</p>
+            <p className="text-[10px] text-muted-foreground">Gmail, Android...</p>
+          </div>
+        </Button>
+
+        {/* Outlook import */}
+        <Button
+          onClick={() => toast({ title: 'Bientôt disponible', description: 'L\'import Outlook sera disponible prochainement' })}
+          disabled={oauthImport.loading}
+          variant="outline"
+          className="gap-2 w-full h-12 justify-start"
+        >
+          <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+            <svg className="w-4 h-4" viewBox="0 0 24 24">
+              <path fill="#0078D4" d="M24 7.387v10.478c0 .23-.08.424-.238.58a.788.788 0 0 1-.581.238h-8.97V6.569h8.97c.23 0 .424.079.58.237A.788.788 0 0 1 24 7.387zM13.401 2.773l-8.15 1.46a.72.72 0 0 0-.601.71v14.114c0 .35.22.644.6.71l8.15 1.46a.72.72 0 0 0 .85-.71V3.483a.72.72 0 0 0-.85-.71zM9.6 16.247c-2.485 0-4.5-1.903-4.5-4.247s2.015-4.247 4.5-4.247S14.1 9.656 14.1 12s-2.015 4.247-4.5 4.247zm0-6.694c-1.38 0-2.5 1.097-2.5 2.447s1.12 2.447 2.5 2.447 2.5-1.097 2.5-2.447-1.12-2.447-2.5-2.447z"/>
+            </svg>
+          </div>
+          <div className="text-left">
+            <p className="text-sm font-medium">Contacts Outlook</p>
+            <p className="text-[10px] text-muted-foreground">Microsoft, Hotmail...</p>
+          </div>
+        </Button>
+
         {/* Contact Picker (Android Chrome) */}
         {pickerSupported && (
           <Button onClick={handlePickContacts} disabled={searching} variant="outline" className="gap-2 w-full h-12 justify-start">
@@ -424,8 +483,8 @@ export function InviteContacts() {
         </div>
       </div>
 
-      {/* Loading indicator */}
-      {searching && (
+      {/* Loading */}
+      {(searching || oauthImport.loading) && (
         <div className="flex items-center justify-center gap-2 py-4">
           <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           <span className="text-sm text-muted-foreground">Analyse en cours...</span>
@@ -444,6 +503,10 @@ export function InviteContacts() {
           </ol>
         </div>
       )}
+
+      <p className="text-xs text-muted-foreground/60 text-center">
+        🔒 Tes contacts ne sont pas stockés sur nos serveurs
+      </p>
     </div>
   );
 }
