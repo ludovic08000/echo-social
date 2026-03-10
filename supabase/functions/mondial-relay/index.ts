@@ -212,13 +212,18 @@ serve(async (req) => {
       const deliveryMode = (body?.delivery_mode || "24R").trim().toUpperCase();
       const collectionMode = (body?.collection_mode || "CCC").trim().toUpperCase();
 
+      const allowedDeliveryModes = ["24R", "24L", "LCC"];
+      if (!allowedDeliveryModes.includes(deliveryMode)) {
+        throw new Error(`ModeLiv invalide: ${deliveryMode}`);
+      }
+
       // Format phone: digits only, max 10
       const formatPhone = (phone: string): string => {
         return phone.replace(/[^0-9]/g, '').substring(0, 10) || "0600000000";
       };
 
       // Relay location fields
-      const livRelayId = ["24R", "24L", "DRI"].includes(deliveryMode) ? cleanRelayId : "";
+      const livRelayId = ["24R", "24L"].includes(deliveryMode) ? cleanRelayId : "";
       const colRelayId = collectionMode === "REL" ? cleanRelayId : "";
       const insuranceValue = Math.round(order.subtotal * 100);
 
