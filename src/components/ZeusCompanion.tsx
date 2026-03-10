@@ -770,6 +770,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
                       const actionResult = parseActionFromContent(displayText);
                       displayText = actionResult.text;
                       action = actionResult.action;
+                      if (action) console.log('[Zeus] Action parsed:', action);
                       const productResult = parseProductsFromContent(displayText);
                       displayText = productResult.text;
                       products = productResult.products;
