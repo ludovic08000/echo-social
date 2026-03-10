@@ -389,6 +389,17 @@ export default function Profile() {
 
   return (
     <AppLayout fullWidth>
+      {!isPrivateProfile && profile && (
+        <SEOHead
+          title={profile.name}
+          description={profile.bio || `Profil de ${profile.name} sur Forsure`}
+          image={profile.avatar_url || undefined}
+          url={`https://forsure.fans/profile/${profile.user_id}`}
+          type="profile"
+          username={profile.name}
+        />
+      )}
+      {isPrivateProfile && <NoIndexMeta />}
       {profileBgStyle && (
         <div className="fixed inset-0 -z-10 opacity-30" style={profileBgStyle} />
       )}
