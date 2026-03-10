@@ -154,6 +154,7 @@ function ActionCard({ action, onExecute, executing, executed }: {
 
 export function ZeusCompanion() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { zeusName, updateName } = useZeusSettings();
   const { data: zeusAgentId } = useZeusAgentId();
