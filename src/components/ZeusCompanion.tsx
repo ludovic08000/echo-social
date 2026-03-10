@@ -480,7 +480,7 @@ export function ZeusCompanion() {
                         Publie, traduis, discute — je suis là pour toi ! 💬
                       </p>
                       <div className="flex flex-wrap gap-1.5 justify-center mt-3">
-                        {['Publie un post', 'Traduis en anglais', 'Comment ça va ?'].map(s => (
+                        {['Publie un post', 'Traduis en anglais', 'Cherche un produit', 'Comment ça va ?'].map(s => (
                           <button key={s} onClick={() => setInput(s)}
                             className="text-[10px] px-2.5 py-1 rounded-full bg-secondary/60 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                             {s}
