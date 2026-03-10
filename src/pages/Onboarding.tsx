@@ -364,9 +364,13 @@ export default function Onboarding() {
               </div>
 
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  {selected.length}/{MIN_INTERESTS} minimum
-                </span>
+                <Button
+                  variant="ghost"
+                  onClick={() => setStep('ai-name')}
+                  className="text-muted-foreground"
+                >
+                  Passer
+                </Button>
                 <Button
                   onClick={handleInterestsDone}
                   disabled={selected.length < MIN_INTERESTS}
