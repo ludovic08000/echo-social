@@ -186,10 +186,6 @@ export default function Onboarding() {
   };
 
   const handleInterestsDone = () => {
-    if (selected.length < MIN_INTERESTS) {
-      toast({ title: `Choisis au moins ${MIN_INTERESTS} centres d'intérêt`, variant: 'destructive' });
-      return;
-    }
     setStep('ai-name');
   };
 
@@ -329,7 +325,7 @@ export default function Onboarding() {
                 </div>
                 <h1 className="text-2xl font-bold text-foreground">Qu'est-ce qui t'intéresse ?</h1>
                 <p className="text-muted-foreground text-sm mt-1">
-                  Choisis au moins {MIN_INTERESTS} sujets pour personnaliser ton fil
+                  Choisis au moins {MIN_INTERESTS} sujets pour personnaliser ton fil, ou passe cette étape
                 </p>
               </div>
 
@@ -368,9 +364,13 @@ export default function Onboarding() {
               </div>
 
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  {selected.length}/{MIN_INTERESTS} minimum
-                </span>
+                <Button
+                  variant="ghost"
+                  onClick={() => setStep('ai-name')}
+                  className="text-muted-foreground"
+                >
+                  Passer
+                </Button>
                 <Button
                   onClick={handleInterestsDone}
                   disabled={selected.length < MIN_INTERESTS}
@@ -466,13 +466,22 @@ export default function Onboarding() {
                 >
                   Retour
                 </Button>
-                <Button
-                  onClick={handleAiNameDone}
-                  disabled={!aiName.trim()}
-                  className="pulse-button-gradient px-6 gap-2"
-                >
-                  Suivant <ArrowRight className="w-4 h-4" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    onClick={() => { setAiName('Zeus'); handleAiNameDone(); }}
+                    className="text-muted-foreground"
+                  >
+                    Passer
+                  </Button>
+                  <Button
+                    onClick={handleAiNameDone}
+                    disabled={!aiName.trim()}
+                    className="pulse-button-gradient px-6 gap-2"
+                  >
+                    Suivant <ArrowRight className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
             </motion.div>
           )}
