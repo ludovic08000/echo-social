@@ -547,7 +547,7 @@ export function ZeusCompanion() {
       });
 
       const convId = resp.headers.get('X-Conversation-Id');
-      if (convId && convId !== conversationId) { setConversationId(convId); refetchConversations(); }
+      if (convId && convId !== conversationId) { setConversationId(convId); setIsNewConversation(false); refetchConversations(); }
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: 'Erreur' }));
