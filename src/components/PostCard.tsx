@@ -54,7 +54,6 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const postUrl = generatePostUrl(post.id);
   const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
   const isIOSUnsafeVideo = Boolean(isVideoPost && isAppleWebKit && post.image_url && !isVideoUrlSafeForIOS(post.image_url));
-  const shouldDeferVideo = isVideoPost && isAppleWebKit && !isIOSUnsafeVideo;
 
   const [videoEnabled, setVideoEnabled] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
