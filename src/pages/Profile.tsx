@@ -553,6 +553,11 @@ export default function Profile() {
               </Link>
               <span className="text-border">•</span>
               <div className="text-center">
+                <span className="text-base font-bold text-foreground">{stats?.friendsCount || 0}</span>
+                <span className="text-sm text-muted-foreground ml-1">abonnés</span>
+              </div>
+              <span className="text-border">•</span>
+              <div className="text-center">
                 <span className="text-base font-bold text-foreground">{stats?.postsCount || 0}</span>
                 <span className="text-sm text-muted-foreground ml-1">posts</span>
               </div>

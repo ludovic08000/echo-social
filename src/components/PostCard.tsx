@@ -2,9 +2,11 @@ import { useEffect, useRef, useState, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark, ShieldAlert, AlertTriangle, Eye } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Post, useDeletePost } from '@/hooks/usePosts';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { UserAvatar } from './UserAvatar';
 import { TrustBadge } from './TrustBadge';
@@ -46,6 +48,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const [mediaLoaded, setMediaLoaded] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [viewTracked, setViewTracked] = useState(false);
   const { data: isMinorUser } = useCurrentUserIsMinor();
   const reportUser = useReportUser();
   const isMobile = useIsMobile();
@@ -53,9 +56,34 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const postUrl = generatePostUrl(post.id);
   const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
 
+  // Fetch video view count
+  const { data: videoViewCount } = useQuery({
+    queryKey: ['post-views', post.id],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from('post_views')
+        .select('*', { count: 'exact', head: true })
+        .eq('post_id', post.id);
+      return count || 0;
+    },
+    enabled: isVideoPost,
+    staleTime: 60_000,
+  });
+
+  // Track video view on play
+  const trackVideoView = () => {
+    if (viewTracked || !user || !isVideoPost) return;
+    setViewTracked(true);
+    supabase.from('post_views').upsert({
+      post_id: post.id,
+      user_id: user.id,
+    }, { onConflict: 'post_id,user_id' }).then(() => {});
+  };
+
   useEffect(() => {
     setMediaLoaded(false);
     setVideoError(false);
+    setViewTracked(false);
   }, [post.id]);
 
   useEffect(() => {
@@ -229,22 +257,31 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                   </div>
                 </div>
               ) : (
-                <video
-                  src={post.image_url!}
-                  controls
-                  playsInline
-                  // @ts-ignore – legacy iOS attribute
-                  webkit-playsinline=""
-                  x-webkit-airplay="deny"
-                  controlsList="nodownload noremoteplayback"
-                  preload="auto"
-                  className="absolute inset-0 w-full h-full object-contain bg-black"
-                  onLoadedMetadata={() => setMediaLoaded(true)}
-                  onLoadedData={() => setMediaLoaded(true)}
-                  onError={() => { setMediaLoaded(true); setVideoError(true); }}
-                  onClick={(e) => e.stopPropagation()}
-                  onPointerDown={(e) => e.stopPropagation()}
-                />
+                <>
+                  <video
+                    src={post.image_url!}
+                    controls
+                    playsInline
+                    // @ts-ignore – legacy iOS attribute
+                    webkit-playsinline=""
+                    x-webkit-airplay="deny"
+                    controlsList="nodownload noremoteplayback"
+                    preload="auto"
+                    className="absolute inset-0 w-full h-full object-contain bg-black"
+                    onLoadedMetadata={() => setMediaLoaded(true)}
+                    onLoadedData={() => setMediaLoaded(true)}
+                    onPlay={() => trackVideoView()}
+                    onError={() => { setMediaLoaded(true); setVideoError(true); }}
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  />
+                  {typeof videoViewCount === 'number' && videoViewCount > 0 && (
+                    <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1 text-white text-xs bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1">
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>{videoViewCount > 1000 ? `${(videoViewCount / 1000).toFixed(1)}K` : videoViewCount}</span>
+                    </div>
+                  )}
+                </>
               )
             ) : (
               <Link to={`/post/${post.id}`}>
