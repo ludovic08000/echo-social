@@ -88,36 +88,9 @@ function extractRelayPoints(xml: string): any[] {
   return points;
 }
 
-// ── V2 REST API helper (JSON with Context auth) ──
-
-async function callMondialRelayV2(jsonBody: any): Promise<any> {
-  const url = `${MR_V2_BASE}/shipment`;
-
-  const bodyStr = JSON.stringify(jsonBody);
-  console.log(`MR V2 POST ${url}`, bodyStr.substring(0, 1000));
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Accept": "application/json",
-    },
-    body: bodyStr,
-  });
-
-  const text = await response.text();
-  console.log("MR V2 raw response:", text.substring(0, 2000));
-
-  if (!response.ok) {
-    console.error(`MR V2 error ${response.status}:`, text.substring(0, 1000));
-    throw new Error(`Mondial Relay V2 erreur ${response.status}: ${text.substring(0, 300)}`);
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
+// ── Helper: escape XML special chars ──
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 serve(async (req) => {
@@ -178,16 +151,18 @@ serve(async (req) => {
       });
     }
 
-    // ── CREATE SHIPMENT (V2 REST API) ──
+    // ── CREATE SHIPMENT (SOAP v1 - WSI2_CreationEtiquette) ──
     if (action === "create_shipment") {
+      if (!enseigne || !privateKey) {
+        throw new Error("Configuration Mondial Relay manquante");
+      }
+
       const authHeader = req.headers.get("Authorization");
       if (!authHeader?.startsWith("Bearer ")) throw new Error("Non authentifié");
 
       const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
       const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
       const supabase = createClient(supabaseUrl, serviceKey);
-
-      const brandId = (Deno.env.get("MONDIAL_RELAY_V2_BRAND_ID") ?? "").trim();
 
       const { order_id, sender, relay_id } = body;
       const shipment = body?.package ?? {};
@@ -231,144 +206,93 @@ serve(async (req) => {
       const deliveryMode = (body?.delivery_mode || "24R").trim().toUpperCase();
       const collectionMode = (body?.collection_mode || "CCC").trim().toUpperCase();
 
-      // Format phone
+      // Format phone: digits only, max 10
       const formatPhone = (phone: string): string => {
-        return phone.replace(/[^0-9+]/g, '').substring(0, 10) || "0600000000";
+        return phone.replace(/[^0-9]/g, '').substring(0, 10) || "0600000000";
       };
 
-      // Build V2 XML request body
-      const livRelayLocation = ["24R", "24L", "DRI"].includes(deliveryMode) ? cleanRelayId : "";
-      const colRelayLocation = collectionMode === "REL" ? cleanRelayId : "";
+      // Relay location fields
+      const livRelayId = ["24R", "24L", "DRI"].includes(deliveryMode) ? cleanRelayId : "";
+      const colRelayId = collectionMode === "REL" ? cleanRelayId : "";
       const insuranceValue = Math.round(order.subtotal * 100);
-      const bId = brandId || enseigne;
 
-      // Read V2 credentials
-      const login_v2 = (Deno.env.get("MONDIAL_RELAY_V2_LOGIN") ?? "").trim();
-      const password_v2 = (Deno.env.get("MONDIAL_RELAY_V2_PASSWORD") ?? "").trim();
-
-      // Build JSON body with Context auth (WCF format)
-      const shipmentBody = {
-        Context: {
-          Login: login_v2,
-          Password: password_v2,
-          CustomerId: bId,
-          Culture: "fr-FR",
-          VersionAPI: "1.0",
-        },
-        OutputOptions: {
-          OutputFormat: "PdfA4",
-          OutputType: "QRCode",
-        },
-        ShipmentsList: [
-          {
-            OrderNo: orderNo.substring(0, 15),
-            CollectionMode: {
-              Mode: collectionMode,
-              Location: colRelayLocation,
-            },
-            DeliveryMode: {
-              Mode: deliveryMode,
-              Location: livRelayLocation,
-            },
-            Sender: {
-              Address: {
-                Title: "MR",
-                Firstname: senderName.substring(0, 20),
-                Lastname: senderName.substring(0, 20),
-                Streetname: senderAddress.substring(0, 32),
-                CountryCode: senderCountry.substring(0, 2).toUpperCase(),
-                PostCode: senderPostcode,
-                City: senderCity.substring(0, 26),
-                PhoneNo: formatPhone(senderPhone),
-                Email: senderEmail,
-              },
-            },
-            Recipient: {
-              Address: {
-                Title: "MR",
-                Firstname: recipientName.substring(0, 20),
-                Lastname: recipientName.substring(0, 20),
-                Streetname: recipientAddress.substring(0, 32),
-                CountryCode: relayCountry,
-                PostCode: recipientPostcode,
-                City: recipientCity.substring(0, 26),
-                PhoneNo: "",
-                Email: "",
-              },
-            },
-            Parcels: [
-              {
-                Content: "Marketplace ForSure",
-                Weight: {
-                  Value: weight,
-                  Unit: "gr",
-                },
-              },
-            ],
-            Options: {
-              Insurance: {
-                Value: insuranceValue,
-                Currency: "EUR",
-              },
-            },
-          },
-        ],
+      // Build SOAP params for WSI2_CreationEtiquette
+      // All params must be strings, order matters for signature
+      const params: Record<string, string> = {
+        Enseigne: enseigne,
+        ModeCol: collectionMode,
+        ModeLiv: deliveryMode,
+        NDossier: orderNo.substring(0, 15),
+        NClient: orderNo.substring(0, 9),
+        Expe_Langage: 'FR',
+        Expe_Ad1: esc(senderName).substring(0, 32),
+        Expe_Ad2: '',
+        Expe_Ad3: esc(senderAddress).substring(0, 32),
+        Expe_Ad4: '',
+        Expe_Ville: esc(senderCity).substring(0, 26),
+        Expe_CP: senderPostcode,
+        Expe_Pays: senderCountry.substring(0, 2).toUpperCase(),
+        Expe_Tel1: formatPhone(senderPhone),
+        Expe_Tel2: '',
+        Expe_Mail: senderEmail.substring(0, 70),
+        Dest_Langage: 'FR',
+        Dest_Ad1: esc(recipientName).substring(0, 32),
+        Dest_Ad2: '',
+        Dest_Ad3: esc(recipientAddress).substring(0, 32),
+        Dest_Ad4: '',
+        Dest_Ville: esc(recipientCity).substring(0, 26),
+        Dest_CP: recipientPostcode,
+        Dest_Pays: relayCountry,
+        Dest_Tel1: '',
+        Dest_Tel2: '',
+        Dest_Mail: '',
+        Poids: String(weight),
+        Longueur: '',
+        Taille: '',
+        NbColis: '1',
+        CRT_Valeur: String(insuranceValue),
+        CRT_Devise: 'EUR',
+        Exp_Valeur: '',
+        Exp_Devise: '',
+        COL_Rel_Pays: colRelayId ? relayCountry : '',
+        COL_Rel: colRelayId,
+        LIV_Rel_Pays: livRelayId ? relayCountry : '',
+        LIV_Rel: livRelayId,
+        TAvisage: '',
+        TReprise: '',
+        Montage: '',
+        TRDV: '',
+        Assurance: '',
+        Instructions: '',
       };
 
-      console.log("V2 create_shipment request:", JSON.stringify({
+      // Compute MD5 signature over all param values + private key
+      params.Security = buildSignature(params, privateKey);
+
+      console.log("SOAP create_shipment request:", JSON.stringify({
         order_id, deliveryMode, collectionMode,
-        relayId: cleanRelayId, relayCountry, weight, brandId: bId,
+        relayId: cleanRelayId, relayCountry, weight,
       }));
 
-      const result = await callMondialRelayV2(shipmentBody);
+      const xml = await callMondialRelaySoap("WSI2_CreationEtiquette", params);
+      const stat = extractXmlValue(xml, 'STAT');
 
-      // Parse response - WCF uses Field suffix on property names
-      const statusList = result?.statusListField || result?.StatusList || [];
-      const errorStatus = statusList.find((s: any) => 
-        (s.levelField || s.Level) === "Error"
-      );
-      
-      if (errorStatus) {
-        const code = errorStatus.codeField || errorStatus.Code || "";
-        const msg = errorStatus.messageField || errorStatus.Message || "";
-        console.error("V2 shipment error:", { code, msg });
-        throw new Error(`Mondial Relay V2 erreur ${code}: ${msg}`);
+      if (stat !== '0' && stat !== '') {
+        console.error("SOAP create label error:", { stat, xml: xml.substring(0, 1000) });
+        throw new Error(`Mondial Relay erreur création étiquette (code ${stat})`);
       }
 
-      // Extract shipment data from WCF response
-      const shipmentsList = result?.shipmentsListField || result?.ShipmentsList || [];
-      let expeditionNum = "";
-      let labelUrl: string | null = null;
-
-      if (shipmentsList.length > 0) {
-        const s = shipmentsList[0];
-        expeditionNum = s.shipmentNumberField || s.ShipmentNumber || s.sendingNumberField || s.SendingNumber || "";
-        labelUrl = s.labelUrlField || s.LabelUrl || s.labelField || s.Label || null;
-        
-        // Check nested labels
-        if (!labelUrl) {
-          const labels = s.labelsField || s.Labels || [];
-          if (labels.length > 0) {
-            labelUrl = labels[0].outputField || labels[0].Output || labels[0].urlField || labels[0].Url || null;
-          }
-        }
-      }
-
-      // Fallback: search in full response
-      if (!expeditionNum) {
-        const resStr = JSON.stringify(result);
-        const numMatch = resStr.match(/"(?:shipmentNumberField|ShipmentNumber|sendingNumberField|SendingNumber)"\s*:\s*"([^"]+)"/i);
-        if (numMatch) expeditionNum = numMatch[1];
-      }
+      const expeditionNum = extractXmlValue(xml, 'ExpeditionNum');
+      let labelUrl = extractXmlValue(xml, 'URL_Etiquette');
 
       if (!expeditionNum) {
-        console.error("No expedition number in V2 response:", JSON.stringify(result).substring(0, 2000));
-        throw new Error("Numéro d'expédition non trouvé dans la réponse V2");
+        console.error("No expedition number in SOAP response:", xml.substring(0, 2000));
+        throw new Error("Numéro d'expédition non trouvé dans la réponse");
       }
 
-      // Make label URL absolute if needed
+      // Make label URL absolute
       if (labelUrl && !labelUrl.startsWith('http')) {
-        labelUrl = `https://connect-api.mondialrelay.com${labelUrl.startsWith('/') ? '' : '/'}${labelUrl}`;
+        labelUrl = `https://www.mondialrelay.fr${labelUrl}`;
       }
 
       // Update order
