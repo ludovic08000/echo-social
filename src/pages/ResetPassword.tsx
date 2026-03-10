@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Lock, CheckCircle } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { Button } from '@/components/ui/button';
+import PasswordStrength from '@/components/PasswordStrength';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
