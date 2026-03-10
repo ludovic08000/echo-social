@@ -217,20 +217,19 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         
         {post.image_url && (
           <div className="relative w-full overflow-hidden bg-muted/40 aspect-[4/5] sm:aspect-video">
-            {!mediaLoaded && !(isVideoPost && isIOSUnsafeVideo) && (
+            {!mediaLoaded && !videoError && (
               <div className="absolute inset-0 skeleton" />
             )}
             {isVideoPost ? (
-              isIOSUnsafeVideo ? (
+              videoError ? (
                 <div className="absolute inset-0 flex items-center justify-center bg-muted/70">
                   <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-background/80 border border-border/40">
-                    <Play className="w-4 h-4 text-foreground" />
-                    <span className="text-xs font-medium text-foreground">Vidéo non compatible iPhone</span>
+                    <AlertTriangle className="w-4 h-4 text-destructive" />
+                    <span className="text-xs font-medium text-foreground">Format vidéo non supporté</span>
                   </div>
                 </div>
               ) : (
                 <video
-                  ref={videoRef}
                   controls
                   playsInline
                   // @ts-ignore – legacy iOS attribute
@@ -243,7 +242,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                     mediaLoaded ? "opacity-100" : "opacity-0"
                   )}
                   onLoadedData={() => setMediaLoaded(true)}
-                  onError={() => setMediaLoaded(true)}
+                  onError={() => { setMediaLoaded(true); setVideoError(true); }}
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
                 >
