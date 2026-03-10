@@ -332,7 +332,7 @@ serve(async (req) => {
         brandId: brandId || enseigne,
       }));
 
-      const result = await callMondialRelayV2("/shipments", "POST", shipmentBody);
+      const result = await callMondialRelayV2("/shipment", "POST", shipmentBody);
 
       console.log("V2 create_shipment response:", JSON.stringify(result).substring(0, 1000));
 
