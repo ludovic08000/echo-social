@@ -1,8 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Loader2, Pencil, Check, Zap, AlertTriangle, CheckCircle2, Plus, History, ArrowLeft, ExternalLink, ShoppingBag } from 'lucide-react';
+import {
+  X, Send, Loader2, Pencil, Check, Zap, AlertTriangle, CheckCircle2,
+  Plus, History, ArrowLeft, ShoppingBag, Sliders, Brain, Users, Clock,
+  Sparkles, ChevronRight, BarChart3
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useZeusSettings, useZeusAgentId, useContentStrikes } from '@/hooks/useZeusCompanion';
@@ -12,8 +18,11 @@ import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
+import { loadFeedWeights, type FeedWeights } from '@/lib/feedAlgorithm';
 
 type Msg = { role: string; content: string };
+type ActiveTab = 'chat' | 'algo' | 'history';
+type FeedAlgorithm = 'smart' | 'chronological' | 'friends_first';
 
 interface ActionBlock {
   type: 'publish_post' | 'schedule_post' | 'create_story' | 'generate_image' | 'translate';
@@ -36,19 +45,13 @@ interface ProductItem {
 }
 
 function parseProductsFromContent(content: string): { text: string; products: ProductItem[] | null } {
-  const patterns = [
-    /```forsure-products\s*\n([\s\S]*?)\n```/,
-    /```forsure-products\s*([\s\S]*?)```/,
-  ];
+  const patterns = [/```forsure-products\s*\n([\s\S]*?)\n```/, /```forsure-products\s*([\s\S]*?)```/];
   for (const regex of patterns) {
     const match = content.match(regex);
     if (!match) continue;
     try {
-      const jsonStr = match[1] || match[0];
-      const products = JSON.parse(jsonStr.trim()) as ProductItem[];
-      if (Array.isArray(products) && products.length > 0) {
-        return { text: content.replace(match[0], '').trim(), products };
-      }
+      const products = JSON.parse((match[1] || match[0]).trim()) as ProductItem[];
+      if (Array.isArray(products) && products.length > 0) return { text: content.replace(match[0], '').trim(), products };
     } catch { continue; }
   }
   return { text: content, products: null };
@@ -65,8 +68,7 @@ function parseActionFromContent(content: string): { text: string; action: Action
     const match = content.match(regex);
     if (!match) continue;
     try {
-      const jsonStr = match[1] || match[0];
-      const action = JSON.parse(jsonStr.trim()) as ActionBlock;
+      const action = JSON.parse((match[1] || match[0]).trim()) as ActionBlock;
       if (action.type && ['publish_post', 'schedule_post', 'create_story', 'generate_image', 'translate'].includes(action.type)) {
         return { text: content.replace(match[0], '').trim(), action };
       }
@@ -75,27 +77,25 @@ function parseActionFromContent(content: string): { text: string; action: Action
   return { text: content, action: null };
 }
 
+// ── Product cards ──
 function ProductCards({ products, onNavigate }: { products: ProductItem[]; onNavigate: (id: string) => void }) {
   return (
-    <div className="mt-2 space-y-1.5">
+    <div className="mt-2.5 space-y-1.5">
       <div className="flex items-center gap-1.5 mb-1">
         <ShoppingBag className="w-3.5 h-3.5 text-primary" />
-        <span className="text-[10px] font-semibold text-primary uppercase tracking-wide">Marketplace</span>
+        <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Marketplace</span>
       </div>
       <div className="grid grid-cols-2 gap-1.5">
         {products.slice(0, 6).map((p) => (
-          <button
-            key={p.id}
-            onClick={() => onNavigate(p.id)}
-            className="rounded-lg border border-border/30 bg-background/80 overflow-hidden hover:border-primary/40 transition-colors text-left group"
-          >
+          <button key={p.id} onClick={() => onNavigate(p.id)}
+            className="rounded-xl border border-border/20 bg-background/60 backdrop-blur-sm overflow-hidden hover:border-primary/40 transition-all text-left group hover:shadow-md">
             {p.thumbnail_url ? (
-              <div className="aspect-square w-full overflow-hidden bg-muted">
-                <img src={p.thumbnail_url} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+              <div className="aspect-square w-full overflow-hidden bg-muted/50">
+                <img src={p.thumbnail_url} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
               </div>
             ) : (
-              <div className="aspect-square w-full bg-muted flex items-center justify-center">
-                <ShoppingBag className="w-6 h-6 text-muted-foreground/40" />
+              <div className="aspect-square w-full bg-muted/30 flex items-center justify-center">
+                <ShoppingBag className="w-6 h-6 text-muted-foreground/30" />
               </div>
             )}
             <div className="p-1.5">
@@ -112,6 +112,7 @@ function ProductCards({ products, onNavigate }: { products: ProductItem[]; onNav
   );
 }
 
+// ── Action card ──
 function ActionCard({ action, onExecute, executing, executed }: {
   action: ActionBlock; onExecute: () => void; executing: boolean; executed: boolean;
 }) {
@@ -126,32 +127,160 @@ function ActionCard({ action, onExecute, executing, executed }: {
   const preview = action.body || action.caption || action.translated_text || action.prompt || '';
 
   return (
-    <div className="mt-2 p-3 rounded-xl bg-primary/5 border border-primary/20 space-y-2">
+    <div className="mt-2.5 p-3 rounded-xl bg-gradient-to-br from-amber-500/5 to-orange-500/5 border border-amber-500/15 space-y-2">
       <div className="flex items-center gap-1.5">
         <span className="text-sm">{info.icon}</span>
-        <span className="text-xs font-semibold text-primary">{info.label}</span>
+        <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">{info.label}</span>
         {action.publish_at && (
           <span className="text-[10px] text-muted-foreground ml-auto">
             {new Date(action.publish_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
           </span>
         )}
       </div>
-      {preview && <p className="text-xs text-foreground bg-background/50 rounded-lg p-2 whitespace-pre-wrap">{preview}</p>}
+      {preview && <p className="text-xs text-foreground/80 bg-background/60 backdrop-blur-sm rounded-lg p-2.5 whitespace-pre-wrap leading-relaxed">{preview}</p>}
       {executed ? (
-        <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+        <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
           <CheckCircle2 className="w-3.5 h-3.5" /><span>Action effectuée !</span>
         </div>
       ) : (
         <Button size="sm" onClick={onExecute} disabled={executing}
-          className="w-full h-8 text-xs rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white">
+          className="w-full h-8 text-xs rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-sm shadow-amber-500/20">
           {executing ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
-          {executing ? 'En cours...' : 'Confirmer'}
+          {executing ? 'En cours...' : '✨ Confirmer'}
         </Button>
       )}
     </div>
   );
 }
 
+// ── Algorithm Control Panel ──
+function AlgorithmPanel() {
+  const [feedAlgo, setFeedAlgo] = useState<FeedAlgorithm>(() => {
+    try { return JSON.parse(localStorage.getItem('content-prefs') || '{}').feedAlgorithm || 'smart'; } catch { return 'smart'; }
+  });
+  const [feedWeights, setFeedWeights] = useState<FeedWeights>(loadFeedWeights);
+  const [diversityBoost, setDiversityBoost] = useState<number>(() => {
+    try { return JSON.parse(localStorage.getItem('content-prefs') || '{}').diversityBoost ?? 50; } catch { return 50; }
+  });
+  const [viralReduce, setViralReduce] = useState<boolean>(() => {
+    try { return JSON.parse(localStorage.getItem('content-prefs') || '{}').viralContentReduce ?? false; } catch { return false; }
+  });
+
+  const savePrefs = useCallback((patch: Record<string, any>) => {
+    try {
+      const prev = JSON.parse(localStorage.getItem('content-prefs') || '{}');
+      localStorage.setItem('content-prefs', JSON.stringify({ ...prev, ...patch }));
+    } catch {}
+  }, []);
+
+  const updateAlgo = (algo: FeedAlgorithm) => { setFeedAlgo(algo); savePrefs({ feedAlgorithm: algo }); };
+  const updateWeights = (w: FeedWeights) => { setFeedWeights(w); localStorage.setItem('feed-weights', JSON.stringify(w)); };
+  const updateDiversity = (v: number) => { setDiversityBoost(v); savePrefs({ diversityBoost: v }); };
+  const updateViral = (v: boolean) => { setViralReduce(v); savePrefs({ viralContentReduce: v }); };
+
+  const algoOptions = [
+    { id: 'smart' as FeedAlgorithm, icon: <Brain className="w-4 h-4" />, label: 'Smart', desc: 'IA optimise ton fil', gradient: 'from-violet-500/10 to-purple-500/10 border-violet-500/20' },
+    { id: 'chronological' as FeedAlgorithm, icon: <Clock className="w-4 h-4" />, label: 'Chrono', desc: 'Derniers posts en premier', gradient: 'from-blue-500/10 to-cyan-500/10 border-blue-500/20' },
+    { id: 'friends_first' as FeedAlgorithm, icon: <Users className="w-4 h-4" />, label: 'Amis', desc: 'Priorité aux proches', gradient: 'from-emerald-500/10 to-green-500/10 border-emerald-500/20' },
+  ];
+
+  return (
+    <div className="px-4 py-3 space-y-5 overflow-y-auto flex-1">
+      {/* Algorithm Mode */}
+      <div className="space-y-2.5">
+        <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/70 flex items-center gap-1.5">
+          <Sparkles className="w-3 h-3" /> Mode du fil
+        </h3>
+        <div className="grid grid-cols-3 gap-2">
+          {algoOptions.map(opt => (
+            <button key={opt.id} onClick={() => updateAlgo(opt.id)}
+              className={cn(
+                "flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all duration-200",
+                feedAlgo === opt.id
+                  ? `bg-gradient-to-br ${opt.gradient} border-primary/30 shadow-sm`
+                  : "border-border/20 hover:bg-secondary/30"
+              )}>
+              <div className={cn("w-8 h-8 rounded-full flex items-center justify-center transition-colors",
+                feedAlgo === opt.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+              )}>
+                {opt.icon}
+              </div>
+              <span className="text-[10px] font-semibold">{opt.label}</span>
+              <span className="text-[8px] text-muted-foreground text-center leading-tight">{opt.desc}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Feed Weights */}
+      <div className="space-y-3">
+        <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/70 flex items-center gap-1.5">
+          <Sliders className="w-3 h-3" /> Pondération
+        </h3>
+        
+        {[
+          { key: 'friends' as keyof FeedWeights, label: 'Amis proches', icon: '👥', color: 'from-blue-500 to-cyan-500' },
+          { key: 'discovery' as keyof FeedWeights, label: 'Découverte', icon: '🔍', color: 'from-violet-500 to-purple-500' },
+          { key: 'marketplace' as keyof FeedWeights, label: 'Marketplace', icon: '🛍️', color: 'from-amber-500 to-orange-500' },
+        ].map(item => (
+          <div key={item.key} className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm">{item.icon}</span>
+                <span className="text-xs font-medium">{item.label}</span>
+              </div>
+              <span className={cn("text-xs font-bold tabular-nums bg-gradient-to-r bg-clip-text text-transparent", item.color)}>
+                {feedWeights[item.key]}%
+              </span>
+            </div>
+            <div className="relative">
+              <Slider
+                value={[feedWeights[item.key]]}
+                onValueChange={([v]) => updateWeights({ ...feedWeights, [item.key]: v })}
+                min={0} max={100} step={5}
+                className="[&_[role=slider]]:h-4 [&_[role=slider]]:w-4 [&_[role=slider]]:shadow-md"
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Diversity */}
+      <div className="space-y-2">
+        <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/70 flex items-center gap-1.5">
+          <BarChart3 className="w-3 h-3" /> Diversité
+        </h3>
+        <Slider value={[diversityBoost]} onValueChange={([v]) => updateDiversity(v)} min={0} max={100} step={10} />
+        <div className="flex justify-between">
+          <span className="text-[9px] text-muted-foreground">Familier</span>
+          <span className="text-[9px] font-medium text-primary">{diversityBoost}%</span>
+          <span className="text-[9px] text-muted-foreground">Découverte</span>
+        </div>
+      </div>
+
+      {/* Quick toggles */}
+      <div className="space-y-2">
+        <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/70">Options</h3>
+        <div className="flex items-center justify-between p-3 rounded-xl bg-secondary/20 border border-border/10">
+          <div>
+            <p className="text-xs font-medium">Réduire le viral</p>
+            <p className="text-[10px] text-muted-foreground">Moins de contenu viral, plus d'authenticité</p>
+          </div>
+          <Switch checked={viralReduce} onCheckedChange={updateViral} />
+        </div>
+      </div>
+
+      {/* Zeus tip */}
+      <div className="p-3 rounded-xl bg-gradient-to-br from-amber-500/5 to-orange-500/5 border border-amber-500/10">
+        <p className="text-[10px] text-muted-foreground leading-relaxed">
+          💡 <strong>Astuce :</strong> Demande à Zeus dans le chat « Optimise mon fil » et il ajustera ces paramètres intelligemment pour toi !
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Component ──
 export function ZeusCompanion() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -168,36 +297,28 @@ export function ZeusCompanion() {
   const [newName, setNewName] = useState('');
   const [executingAction, setExecutingAction] = useState<number | null>(null);
   const [executedActions, setExecutedActions] = useState<Set<number>>(new Set());
-  const [showHistory, setShowHistory] = useState(false);
+  const [activeTab, setActiveTab] = useState<ActiveTab>('chat');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: conversations, refetch: refetchConversations } = useZeusConversations(zeusAgentId);
   const { data: loadedMessages } = useZeusMessages(conversationId);
 
-  // Load messages when switching conversation
   useEffect(() => {
     if (loadedMessages && loadedMessages.length > 0) {
       setMessages(loadedMessages);
-      setShowHistory(false);
+      setActiveTab('chat');
     }
   }, [loadedMessages]);
 
-  // Auto-load latest conversation on first open
   useEffect(() => {
     if (open && !conversationId && conversations && conversations.length > 0) {
       setConversationId(conversations[0].id);
     }
   }, [open, conversations, conversationId]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  useEffect(() => {
-    if (open && inputRef.current) inputRef.current.focus();
-  }, [open]);
-
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  useEffect(() => { if (open && inputRef.current && activeTab === 'chat') inputRef.current.focus(); }, [open, activeTab]);
   useEffect(() => {
     const handler = () => setOpen(true);
     window.addEventListener('open-zeus', handler);
@@ -218,12 +339,13 @@ export function ZeusCompanion() {
     setConversationId(null);
     setMessages([]);
     setExecutedActions(new Set());
-    setShowHistory(false);
+    setActiveTab('chat');
   }, []);
 
   const selectConversation = useCallback((id: string) => {
     setConversationId(id);
     setExecutedActions(new Set());
+    setActiveTab('chat');
   }, []);
 
   const executeAction = useCallback(async (action: ActionBlock, msgIndex: number) => {
@@ -235,27 +357,19 @@ export function ZeusCompanion() {
           user_id: user.id, body: action.body || '', image_url: null,
         }).select().single();
         if (error) throw error;
-        queryClient.setQueriesData<any>(
-          { queryKey: ['posts', 'friends-feed'] },
-          (old: any) => {
-            if (!old?.pages) return old;
-            const profile = queryClient.getQueryData<any>(['profile', user.id]);
-            const optimisticPost = {
-              id: newPost.id, user_id: newPost.user_id, body: newPost.body,
-              image_url: newPost.image_url, created_at: newPost.created_at,
-              expires_at: newPost.expires_at || null,
-              profile: {
-                name: profile?.name || user.user_metadata?.name || 'Moi',
-                avatar_url: profile?.avatar_url || null,
-                mood_emoji: profile?.mood_emoji || null,
-              },
-              likes_count: 0, comments_count: 0, is_liked: false, user_reaction: null,
-            };
-            return { ...old, pages: [[optimisticPost, ...old.pages[0]], ...old.pages.slice(1)] };
-          }
-        );
+        queryClient.setQueriesData<any>({ queryKey: ['posts', 'friends-feed'] }, (old: any) => {
+          if (!old?.pages) return old;
+          const profile = queryClient.getQueryData<any>(['profile', user.id]);
+          const optimisticPost = {
+            id: newPost.id, user_id: newPost.user_id, body: newPost.body,
+            image_url: newPost.image_url, created_at: newPost.created_at, expires_at: newPost.expires_at || null,
+            profile: { name: profile?.name || user.user_metadata?.name || 'Moi', avatar_url: profile?.avatar_url || null, mood_emoji: profile?.mood_emoji || null },
+            likes_count: 0, comments_count: 0, is_liked: false, user_reaction: null,
+          };
+          return { ...old, pages: [[optimisticPost, ...old.pages[0]], ...old.pages.slice(1)] };
+        });
         queryClient.invalidateQueries({ queryKey: ['posts'] });
-        toast.success(action.type === 'schedule_post' ? 'Post publié ! 📅' : 'Post publié avec succès ! 🎉');
+        toast.success(action.type === 'schedule_post' ? 'Post publié ! 📅' : 'Post publié ! 🎉');
       } else if (action.type === 'translate') {
         await navigator.clipboard.writeText(action.translated_text || action.body || '');
         toast.success('Traduction copiée ! 📋');
@@ -282,30 +396,19 @@ export function ZeusCompanion() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
-
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const resp = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/agent-chat`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          },
-          body: JSON.stringify({
-            agent_id: zeusAgentId,
-            conversation_id: conversationId,
-            message: userMsg.content,
-          }),
-        }
-      );
+      const resp = await fetch(`https://${projectId}.supabase.co/functions/v1/agent-chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({ agent_id: zeusAgentId, conversation_id: conversationId, message: userMsg.content }),
+      });
 
       const convId = resp.headers.get('X-Conversation-Id');
-      if (convId && convId !== conversationId) {
-        setConversationId(convId);
-        refetchConversations();
-      }
+      if (convId && convId !== conversationId) { setConversationId(convId); refetchConversations(); }
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: 'Erreur' }));
@@ -333,9 +436,7 @@ export function ZeusCompanion() {
               assistantContent += content;
               setMessages(prev => {
                 const last = prev[prev.length - 1];
-                if (last?.role === 'assistant') {
-                  return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantContent } : m);
-                }
+                if (last?.role === 'assistant') return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantContent } : m);
                 return [...prev, { role: 'assistant', content: assistantContent }];
               });
             }
@@ -350,140 +451,139 @@ export function ZeusCompanion() {
   }, [input, zeusAgentId, conversationId, loading, refetchConversations]);
 
   const handleRename = () => {
-    if (newName.trim() && newName.trim().length <= 20) {
-      updateName.mutate(newName.trim());
-      setEditingName(false);
-    }
+    if (newName.trim() && newName.trim().length <= 20) { updateName.mutate(newName.trim()); setEditingName(false); }
   };
 
   if (!user) return null;
 
+  const tabs: { id: ActiveTab; icon: React.ReactNode; label: string }[] = [
+    { id: 'chat', icon: <Zap className="w-4 h-4" />, label: 'Chat' },
+    { id: 'algo', icon: <Sliders className="w-4 h-4" />, label: 'Algo' },
+    { id: 'history', icon: <History className="w-4 h-4" />, label: 'Historique' },
+  ];
+
   return (
     <>
+      {/* FAB Button */}
       <AnimatePresence>
         {!open && (
-          <motion.button initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}
+          <motion.button
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
+            exit={{ scale: 0, rotate: 180 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 20 }}
             onClick={() => setOpen(true)}
-            className="fixed bottom-20 right-4 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 shadow-lg flex items-center justify-center text-white hover:shadow-xl transition-shadow">
+            className="fixed bottom-20 right-4 z-50 w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 shadow-lg shadow-orange-500/25 flex items-center justify-center text-white hover:shadow-xl hover:shadow-orange-500/30 transition-shadow active:scale-95"
+          >
             <Zap className="w-6 h-6" />
             {unacknowledged.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-destructive text-[10px] font-bold flex items-center justify-center text-white">
+              <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-[10px] font-bold flex items-center justify-center text-white ring-2 ring-background">
                 {unacknowledged.length}
-              </span>
+              </motion.span>
             )}
           </motion.button>
         )}
       </AnimatePresence>
 
+      {/* Main Panel */}
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: 100, scale: 0.9 }}
+            initial={{ opacity: 0, y: 40, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 100, scale: 0.9 }}
-            className="fixed bottom-4 right-4 z-50 w-[360px] max-w-[calc(100vw-2rem)] h-[500px] max-h-[70vh] rounded-2xl border border-border/30 bg-card shadow-2xl flex flex-col overflow-hidden"
+            exit={{ opacity: 0, y: 40, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className="fixed bottom-4 right-4 z-50 w-[380px] max-w-[calc(100vw-2rem)] h-[540px] max-h-[75vh] rounded-3xl border border-border/20 bg-card/95 backdrop-blur-xl shadow-2xl shadow-black/10 flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border/20 bg-gradient-to-r from-amber-500/10 to-orange-500/10">
-              <div className="flex items-center gap-2">
-                {showHistory ? (
-                  <button onClick={() => setShowHistory(false)} className="text-muted-foreground hover:text-foreground">
-                    <ArrowLeft className="w-5 h-5" />
+            <div className="relative px-4 py-3 border-b border-border/10">
+              {/* Gradient accent line */}
+              <div className="absolute top-0 left-4 right-4 h-[2px] bg-gradient-to-r from-amber-400 via-orange-500 to-red-500 rounded-full" />
+              
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 flex items-center justify-center text-white text-sm shadow-sm shadow-orange-500/20">
+                    ⚡
+                  </div>
+                  {editingName ? (
+                    <div className="flex items-center gap-1">
+                      <Input value={newName} onChange={e => setNewName(e.target.value)} className="h-7 w-28 text-sm rounded-lg" maxLength={20} autoFocus onKeyDown={e => e.key === 'Enter' && handleRename()} />
+                      <button onClick={handleRename} className="text-primary"><Check className="w-4 h-4" /></button>
+                      <button onClick={() => setEditingName(false)} className="text-muted-foreground"><X className="w-3.5 h-3.5" /></button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-sm bg-gradient-to-r from-amber-500 to-orange-600 bg-clip-text text-transparent">{zeusName}</span>
+                      <button onClick={() => { setNewName(zeusName); setEditingName(true); }} className="text-muted-foreground/50 hover:text-muted-foreground transition-colors">
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button onClick={startNewConversation} className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-all" title="Nouvelle conversation">
+                    <Plus className="w-4 h-4" />
                   </button>
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-sm">⚡</div>
-                )}
-                {showHistory ? (
-                  <span className="font-semibold text-sm text-foreground">Historique</span>
-                ) : editingName ? (
-                  <div className="flex items-center gap-1">
-                    <Input value={newName} onChange={e => setNewName(e.target.value)} className="h-7 w-28 text-sm" maxLength={20} autoFocus onKeyDown={e => e.key === 'Enter' && handleRename()} />
-                    <button onClick={handleRename} className="text-primary"><Check className="w-4 h-4" /></button>
-                    <button onClick={() => setEditingName(false)} className="text-muted-foreground"><X className="w-4 h-4" /></button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-semibold text-sm text-foreground">{zeusName}</span>
-                    <button onClick={() => { setNewName(zeusName); setEditingName(true); }} className="text-muted-foreground hover:text-foreground">
-                      <Pencil className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-1">
-                {!showHistory && (
-                  <>
-                    <button onClick={() => { setShowHistory(true); refetchConversations(); }} className="text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-secondary/50" title="Historique">
-                      <History className="w-4 h-4" />
-                    </button>
-                    <button onClick={startNewConversation} className="text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-secondary/50" title="Nouvelle conversation">
-                      <Plus className="w-4 h-4" />
-                    </button>
-                  </>
-                )}
-                <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground p-1">
-                  <X className="w-5 h-5" />
-                </button>
+                  <button onClick={() => setOpen(false)} className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-all">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
 
+            {/* Tab Bar */}
+            <div className="flex px-3 pt-2 pb-1 gap-1">
+              {tabs.map(tab => (
+                <button key={tab.id} onClick={() => { setActiveTab(tab.id); if (tab.id === 'history') refetchConversations(); }}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium transition-all duration-200",
+                    activeTab === tab.id
+                      ? "bg-gradient-to-r from-amber-500/10 to-orange-500/10 text-amber-600 dark:text-amber-400 shadow-sm border border-amber-500/15"
+                      : "text-muted-foreground hover:bg-secondary/30"
+                  )}>
+                  {tab.icon}
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+            </div>
+
             {/* Strike warnings */}
-            {!showHistory && unacknowledged.length > 0 && (
-              <div className="px-3 py-2 bg-amber-500/10 border-b border-amber-500/20">
+            {activeTab === 'chat' && unacknowledged.length > 0 && (
+              <div className="mx-3 mt-1 px-3 py-2 rounded-xl bg-amber-500/8 border border-amber-500/15">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
                     {(unacknowledged[0] as any).zeus_message || 'Un de tes contenus a été signalé. Fais attention ! 🙏'}
                   </p>
                 </div>
               </div>
             )}
 
-            {/* History Panel */}
-            {showHistory ? (
-              <div className="flex-1 overflow-y-auto">
-                {(!conversations || conversations.length === 0) ? (
-                  <div className="text-center py-12 text-muted-foreground text-sm">
-                    Aucune conversation enregistrée
-                  </div>
-                ) : (
-                  <div className="divide-y divide-border/10">
-                    {conversations.map((conv: any) => (
-                      <button
-                        key={conv.id}
-                        onClick={() => selectConversation(conv.id)}
-                        className={cn(
-                          "w-full text-left px-4 py-3 hover:bg-secondary/40 transition-colors",
-                          conversationId === conv.id && "bg-primary/5"
-                        )}
-                      >
-                        <p className="text-sm font-medium text-foreground truncate">{conv.title || 'Conversation'}</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">
-                          {new Date(conv.updated_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                        </p>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
+            {/* Content Area */}
+            {activeTab === 'chat' && (
               <>
-                {/* Messages */}
-                <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+                <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
                   {messages.length === 0 && (
                     <div className="text-center py-8">
-                      <div className="text-4xl mb-3">⚡</div>
-                      <p className="text-sm text-muted-foreground">
-                        Salut ! Je suis <strong>{zeusName}</strong>, ton compagnon IA.
+                      <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', delay: 0.1 }}
+                        className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-amber-400/20 to-orange-500/20 flex items-center justify-center">
+                        <span className="text-3xl">⚡</span>
+                      </motion.div>
+                      <p className="text-sm font-semibold text-foreground">
+                        Salut ! Je suis <span className="bg-gradient-to-r from-amber-500 to-orange-600 bg-clip-text text-transparent">{zeusName}</span>
                       </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Publie, traduis, discute — je suis là pour toi ! 💬
-                      </p>
-                      <div className="flex flex-wrap gap-1.5 justify-center mt-3">
-                        {['Publie un post', 'Traduis en anglais', 'Cherche un produit', 'Comment ça va ?'].map(s => (
-                          <button key={s} onClick={() => setInput(s)}
-                            className="text-[10px] px-2.5 py-1 rounded-full bg-secondary/60 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
-                            {s}
+                      <p className="text-xs text-muted-foreground mt-1">Ton assistant IA personnel</p>
+                      <div className="flex flex-wrap gap-1.5 justify-center mt-4">
+                        {[
+                          { label: '📝 Publie un post', value: 'Publie un post motivant' },
+                          { label: '🌐 Traduis', value: 'Traduis en anglais' },
+                          { label: '🛍️ Marketplace', value: 'Cherche un produit' },
+                          { label: '⚙️ Mon algo', value: 'Optimise mon fil' },
+                        ].map(s => (
+                          <button key={s.value} onClick={() => setInput(s.value)}
+                            className="text-[10px] px-3 py-1.5 rounded-full bg-secondary/40 text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-all duration-200 border border-border/10">
+                            {s.label}
                           </button>
                         ))}
                       </div>
@@ -504,13 +604,23 @@ export function ZeusCompanion() {
                     }
 
                     return (
-                      <div key={i} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+                      <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                        className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+                        {msg.role === 'assistant' && (
+                          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-amber-400/20 to-orange-500/20 flex items-center justify-center text-xs shrink-0 mt-1 mr-1.5">
+                            ⚡
+                          </div>
+                        )}
                         <div className={cn(
-                          'max-w-[90%] rounded-2xl px-3 py-2 text-sm',
-                          msg.role === 'user' ? 'bg-primary text-primary-foreground rounded-br-md' : 'bg-secondary/60 text-foreground rounded-bl-md'
+                          'max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
+                          msg.role === 'user'
+                            ? 'bg-gradient-to-br from-primary to-primary/90 text-primary-foreground rounded-br-lg shadow-sm'
+                            : 'bg-secondary/40 text-foreground rounded-bl-lg border border-border/10'
                         )}>
                           {msg.role === 'assistant' ? (
-                            <div className="prose prose-sm dark:prose-invert max-w-none"><ReactMarkdown>{displayText}</ReactMarkdown></div>
+                            <div className="prose prose-sm dark:prose-invert max-w-none [&>p]:m-0 [&>ul]:mt-1">
+                              <ReactMarkdown>{displayText}</ReactMarkdown>
+                            </div>
                           ) : (
                             <p className="whitespace-pre-wrap">{displayText}</p>
                           )}
@@ -518,17 +628,20 @@ export function ZeusCompanion() {
                             <ActionCard action={action} onExecute={() => executeAction(action!, i)}
                               executing={executingAction === i} executed={executedActions.has(i)} />
                           )}
-                          {products && (
-                            <ProductCards products={products} onNavigate={(id) => navigate(`/marketplace/product/${id}`)} />
-                          )}
+                          {products && <ProductCards products={products} onNavigate={(id) => navigate(`/marketplace/product/${id}`)} />}
                         </div>
-                      </div>
+                      </motion.div>
                     );
                   })}
                   {loading && (
                     <div className="flex justify-start">
-                      <div className="bg-secondary/60 rounded-2xl rounded-bl-md px-3 py-2">
-                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                      <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-amber-400/20 to-orange-500/20 flex items-center justify-center text-xs shrink-0 mt-1 mr-1.5">⚡</div>
+                      <div className="bg-secondary/40 rounded-2xl rounded-bl-lg px-4 py-3 border border-border/10">
+                        <div className="flex gap-1">
+                          <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1, repeat: Infinity, delay: 0 }} className="w-2 h-2 rounded-full bg-amber-500" />
+                          <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1, repeat: Infinity, delay: 0.2 }} className="w-2 h-2 rounded-full bg-orange-500" />
+                          <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1, repeat: Infinity, delay: 0.4 }} className="w-2 h-2 rounded-full bg-red-500" />
+                        </div>
                       </div>
                     </div>
                   )}
@@ -536,18 +649,49 @@ export function ZeusCompanion() {
                 </div>
 
                 {/* Input */}
-                <div className="px-3 py-3 border-t border-border/20">
+                <div className="px-3 py-3 border-t border-border/10">
                   <form onSubmit={e => { e.preventDefault(); sendMessage(); }} className="flex gap-2">
                     <Input ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
                       placeholder={`Parle à ${zeusName}...`}
-                      className="flex-1 rounded-xl h-10 text-sm" disabled={loading || !zeusAgentId} />
+                      className="flex-1 rounded-xl h-10 text-sm bg-secondary/30 border-border/15 focus:border-amber-500/30 transition-colors" disabled={loading || !zeusAgentId} />
                     <Button type="submit" size="icon" disabled={!input.trim() || loading || !zeusAgentId}
-                      className="h-10 w-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600">
+                      className="h-10 w-10 rounded-xl bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 hover:from-amber-500 hover:via-orange-600 hover:to-red-600 shadow-sm shadow-orange-500/20">
                       <Send className="w-4 h-4" />
                     </Button>
                   </form>
                 </div>
               </>
+            )}
+
+            {activeTab === 'algo' && <AlgorithmPanel />}
+
+            {activeTab === 'history' && (
+              <div className="flex-1 overflow-y-auto">
+                {(!conversations || conversations.length === 0) ? (
+                  <div className="text-center py-12 text-muted-foreground text-sm">
+                    <History className="w-8 h-8 mx-auto mb-2 text-muted-foreground/30" />
+                    <p>Aucune conversation</p>
+                  </div>
+                ) : (
+                  <div className="p-2 space-y-1">
+                    {conversations.map((conv: any) => (
+                      <button key={conv.id} onClick={() => selectConversation(conv.id)}
+                        className={cn(
+                          "w-full text-left px-3.5 py-3 rounded-xl transition-all duration-200 group",
+                          conversationId === conv.id ? "bg-gradient-to-r from-amber-500/8 to-orange-500/8 border border-amber-500/15" : "hover:bg-secondary/30"
+                        )}>
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-medium text-foreground truncate flex-1">{conv.title || 'Conversation'}</p>
+                          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          {new Date(conv.updated_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </motion.div>
         )}
