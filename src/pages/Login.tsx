@@ -41,10 +41,7 @@ export default function Login() {
       return;
     }
 
-    toast({
-      title: t('login.welcome'),
-      description: t('login.welcomeDesc'),
-    });
+    // Silent login — no toast
     navigate('/feed');
   };
 
