@@ -672,6 +672,12 @@ export default function Profile() {
                   <Button 
                     variant="secondary" 
                     className="rounded-xl h-10 text-sm whitespace-nowrap shrink-0"
+                    disabled={createConversation.isPending}
+                    onClick={async () => {
+                      if (!userId) return;
+                      const conv = await createConversation.mutateAsync(userId);
+                      navigate(`/messages/${conv.id}`);
+                    }}
                   >
                     <MessageCircle className="w-4 h-4 mr-2" />
                     Envoyer un message
