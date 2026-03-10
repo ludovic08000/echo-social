@@ -6,11 +6,12 @@ import { useConversations } from '@/hooks/useMessages';
 import { useLiveStreams } from '@/hooks/useLiveStreams';
 import { UserAvatar } from '@/components/UserAvatar';
 import { useAuth } from '@/lib/auth';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useScreenSize } from '@/hooks/useScreenSize';
 import { useChatWidget } from '@/components/ChatWidgetContext';
 import { useOnlinePresence } from '@/hooks/useOnlinePresence';
 import { useZeusSettings } from '@/hooks/useZeusCompanion';
+import { ZeusCompanion } from '@/components/ZeusCompanion';
 import { cn } from '@/lib/utils';
 
 export function FeedRightSidebar() {
