@@ -459,27 +459,53 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     if (!user) return;
     setExecutingAction(msgIndex);
     try {
-      if (action.type === 'publish_post' || action.type === 'schedule_post') {
-        const { data: newPost, error } = await supabase.from('posts').insert({
-          user_id: user.id, body: action.body || '', image_url: null,
-        }).select().single();
-        if (error) throw error;
-        queryClient.setQueriesData<any>({ queryKey: ['posts', 'friends-feed'] }, (old: any) => {
-          if (!old?.pages) return old;
-          const profile = queryClient.getQueryData<any>(['profile', user.id]);
-          const optimisticPost = {
-            id: newPost.id, user_id: newPost.user_id, body: newPost.body,
-            image_url: newPost.image_url, created_at: newPost.created_at, expires_at: newPost.expires_at || null,
-            profile: { name: profile?.name || user.user_metadata?.name || 'Moi', avatar_url: profile?.avatar_url || null, mood_emoji: profile?.mood_emoji || null },
-            likes_count: 0, comments_count: 0, is_liked: false, user_reaction: null,
-          };
-          return { ...old, pages: [[optimisticPost, ...old.pages[0]], ...old.pages.slice(1)] };
-        });
-        queryClient.invalidateQueries({ queryKey: ['posts'] });
-        toast.success('Post publié ! 🎉');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Non authentifié');
+
+      if (action.type === 'translate') {
+        // Translate is client-only: copy to clipboard
+        if (action.translated_text) {
+          await navigator.clipboard.writeText(action.translated_text);
+          toast.success('Traduction copiée ! 📋');
+        }
+        setExecutedActions(prev => new Set([...prev, msgIndex]));
+        return;
       }
+
+      if (action.type === 'update_feed_config') {
+        // Feed config update is handled via localStorage
+        setExecutedActions(prev => new Set([...prev, msgIndex]));
+        toast.success('Configuration mise à jour ✓');
+        return;
+      }
+
+      // Use agent-actions edge function for publish_post, schedule_post, create_story, generate_image
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const resp = await fetch(`https://${projectId}.supabase.co/functions/v1/agent-actions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({ action }),
+      });
+
+      const result = await resp.json();
+      if (!resp.ok) throw new Error(result.error || 'Erreur');
+
+      // Refresh feed after post/story
+      if (action.type === 'publish_post' || action.type === 'schedule_post') {
+        queryClient.invalidateQueries({ queryKey: ['posts'] });
+      }
+      if (action.type === 'create_story') {
+        queryClient.invalidateQueries({ queryKey: ['stories'] });
+      }
+
+      toast.success(result.message || 'Action exécutée ! 🎉');
       setExecutedActions(prev => new Set([...prev, msgIndex]));
     } catch (err: any) {
+      console.error('Zeus action error:', err);
       toast.error(err.message || 'Erreur lors de l\'action');
     } finally {
       setExecutingAction(null);
