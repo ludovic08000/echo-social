@@ -136,7 +136,11 @@ serve(async (req) => {
         NombreResultats: '20',
       };
 
-      params.Security = buildSignature(params, privateKey);
+      const searchOrderedValues = [
+        enseigne, country, postcode,
+        '', '', '', '', '', '0', '', '', '', '20',
+      ];
+      params.Security = buildSignatureFromOrderedFields(searchOrderedValues, privateKey);
 
       const xml = await callMondialRelaySoap("WSI4_PointRelais_Recherche", params);
       const stat = extractXmlValue(xml, 'STAT');
