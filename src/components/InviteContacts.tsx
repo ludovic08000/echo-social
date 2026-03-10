@@ -378,10 +378,14 @@ function WebPhoneSearch() {
             </ScrollArea>
 
             {selectedInvites.size > 0 && (
-              <div className="p-3 border-t border-border">
-                <Button onClick={sendInvites} className="w-full gap-2">
+              <div className="p-3 border-t border-border flex gap-2">
+                <Button onClick={sendInvitesSMS} className="flex-1 gap-2">
+                  <Phone className="w-4 h-4" />
+                  SMS ({selectedInvites.size})
+                </Button>
+                <Button onClick={sendInvitesShare} variant="outline" className="flex-1 gap-2">
                   <Send className="w-4 h-4" />
-                  Inviter {selectedInvites.size} personne{selectedInvites.size > 1 ? 's' : ''}
+                  Partager
                 </Button>
               </div>
             )}
