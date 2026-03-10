@@ -632,7 +632,7 @@ export function ZeusCompanion() {
             exit={{ scale: 0, rotate: 180 }}
             transition={{ type: 'spring', stiffness: 260, damping: 20 }}
             onClick={() => setOpen(true)}
-            className="fixed bottom-20 right-4 z-50 w-14 h-14 rounded-2xl flex items-center justify-center text-cyan-300 hover:text-cyan-100 active:scale-95 transition-all group"
+            className="fixed bottom-24 right-4 z-[55] w-14 h-14 rounded-2xl flex items-center justify-center text-cyan-300 hover:text-cyan-100 active:scale-95 transition-all group"
             style={{
               background: 'linear-gradient(135deg, rgba(0,30,60,0.95) 0%, rgba(0,50,80,0.95) 50%, rgba(0,40,70,0.95) 100%)',
               boxShadow: '0 0 25px rgba(0,255,255,0.2), 0 0 50px rgba(0,200,255,0.1), inset 0 1px 0 rgba(0,255,255,0.15)',
@@ -664,7 +664,7 @@ export function ZeusCompanion() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 40, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className="fixed bottom-4 right-4 z-50 w-[390px] max-w-[calc(100vw-2rem)] h-[560px] max-h-[75vh] rounded-3xl flex flex-col overflow-hidden relative"
+            className="fixed bottom-4 right-4 z-[55] w-[390px] max-w-[calc(100vw-2rem)] h-[560px] max-h-[75vh] rounded-3xl flex flex-col overflow-hidden relative"
             style={{
               background: 'linear-gradient(180deg, rgba(0,15,30,0.97) 0%, rgba(0,20,40,0.98) 50%, rgba(0,10,25,0.99) 100%)',
               border: '1px solid rgba(0,255,255,0.15)',
