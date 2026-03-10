@@ -211,8 +211,13 @@ export function AIAgentChat({ agent, onBack }: Props) {
       if (!resp.ok) {
         const err = await resp.json();
         if (err.error === 'limit_reached') {
-          toast({ title: '⚡ Zeus fait une pause', description: 'Tu as atteint ta limite de messages pour aujourd\'hui. Reviens demain pour continuer à discuter ! 😊', variant: 'destructive' });
-          setMessages(prev => prev.slice(0, -1));
+          setMessages(prev => [
+            ...prev.slice(0, -1),
+            {
+              role: 'assistant' as const,
+              content: `⚡ **Tu as atteint ta limite de messages gratuits pour aujourd'hui !**\n\nPasse à l'abonnement **Créateur** (5€/mois) pour discuter avec Zeus sans limite, tous les jours. 🚀\n\n[👑 Devenir Créateur](/creator-upgrade)`,
+            },
+          ]);
           setIsStreaming(false);
           return;
         }

@@ -205,10 +205,21 @@ serve(async (req) => {
       .maybeSingle();
 
     const currentCount = usage?.message_count || 0;
-    if (currentCount >= agent.free_messages_per_day) {
+
+    // Check if user has an active Creator subscription (bypass limit)
+    const { data: subscription } = await supabase
+      .from("creator_subscriptions")
+      .select("status")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .maybeSingle();
+
+    const isSubscribed = !!subscription;
+
+    if (!isSubscribed && currentCount >= agent.free_messages_per_day) {
       return new Response(JSON.stringify({
         error: "limit_reached",
-        message: `Limite de ${agent.free_messages_per_day} messages/jour atteinte pour cet agent.`,
+        message: `Tu as atteint ta limite de ${agent.free_messages_per_day} messages gratuits par jour. Passe à l'abonnement Créateur pour des messages illimités ! 🚀`,
         is_premium: agent.is_premium,
       }), {
         status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
