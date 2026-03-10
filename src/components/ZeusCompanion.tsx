@@ -153,8 +153,74 @@ function ActionCard({ action, onExecute, executing, executed }: {
   );
 }
 
+// ── Feed Preview Simulation ──
+function FeedPreviewBar({ friends, discovery, marketplace, algo, viralReduce, diversityBoost }: {
+  friends: number; discovery: number; marketplace: number; algo: FeedAlgorithm; viralReduce: boolean; diversityBoost: number;
+}) {
+  // Simulate a feed composition based on current weights
+  const total = Math.max(1, friends + discovery + marketplace);
+  const fPct = Math.round((friends / total) * 100);
+  const dPct = Math.round((discovery / total) * 100);
+  const mPct = 100 - fPct - dPct;
+
+  const posts = Array.from({ length: 10 }, (_, i) => {
+    const rand = Math.random() * 100;
+    if (algo === 'chronological') return 'chrono';
+    if (algo === 'friends_first') return i < 7 ? 'friend' : rand < 50 ? 'discovery' : 'marketplace';
+    if (rand < fPct) return 'friend';
+    if (rand < fPct + dPct) return 'discovery';
+    return 'marketplace';
+  });
+
+  const colors: Record<string, string> = {
+    friend: 'bg-blue-400', discovery: 'bg-violet-400', marketplace: 'bg-amber-400', chrono: 'bg-cyan-400',
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Aperçu de ton fil</span>
+        <span className="text-[9px] text-muted-foreground">En direct</span>
+      </div>
+      <div className="flex gap-0.5 h-8 rounded-lg overflow-hidden border border-border/20">
+        <motion.div animate={{ width: `${fPct}%` }} transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+          className="bg-blue-400/80 flex items-center justify-center min-w-0"
+          title={`Amis: ${fPct}%`}>
+          {fPct > 15 && <span className="text-[8px] text-white font-bold">👥 {fPct}%</span>}
+        </motion.div>
+        <motion.div animate={{ width: `${dPct}%` }} transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+          className="bg-violet-400/80 flex items-center justify-center min-w-0"
+          title={`Découverte: ${dPct}%`}>
+          {dPct > 15 && <span className="text-[8px] text-white font-bold">🔍 {dPct}%</span>}
+        </motion.div>
+        <motion.div animate={{ width: `${mPct}%` }} transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+          className="bg-amber-400/80 flex items-center justify-center min-w-0"
+          title={`Marketplace: ${mPct}%`}>
+          {mPct > 15 && <span className="text-[8px] text-white font-bold">🛍️ {mPct}%</span>}
+        </motion.div>
+      </div>
+      {/* Mini feed dots */}
+      <div className="flex gap-1 justify-center">
+        {posts.map((type, i) => (
+          <motion.div key={i} layout
+            initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: i * 0.03 }}
+            className={cn("w-3 h-4 rounded-sm", colors[type])}
+            title={type === 'friend' ? 'Post d\'ami' : type === 'discovery' ? 'Découverte' : type === 'marketplace' ? 'Marketplace' : 'Chronologique'}
+          />
+        ))}
+      </div>
+      <div className="flex gap-3 justify-center">
+        <span className="flex items-center gap-1 text-[8px] text-muted-foreground"><span className="w-2 h-2 rounded-sm bg-blue-400 inline-block" /> Amis</span>
+        <span className="flex items-center gap-1 text-[8px] text-muted-foreground"><span className="w-2 h-2 rounded-sm bg-violet-400 inline-block" /> Découverte</span>
+        <span className="flex items-center gap-1 text-[8px] text-muted-foreground"><span className="w-2 h-2 rounded-sm bg-amber-400 inline-block" /> Marketplace</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Algorithm Control Panel ──
 function AlgorithmPanel() {
+  const queryClient = useQueryClient();
   const [feedAlgo, setFeedAlgo] = useState<FeedAlgorithm>(() => {
     try { return JSON.parse(localStorage.getItem('content-prefs') || '{}').feedAlgorithm || 'smart'; } catch { return 'smart'; }
   });
@@ -165,115 +231,174 @@ function AlgorithmPanel() {
   const [viralReduce, setViralReduce] = useState<boolean>(() => {
     try { return JSON.parse(localStorage.getItem('content-prefs') || '{}').viralContentReduce ?? false; } catch { return false; }
   });
+  const [lastChanged, setLastChanged] = useState<string | null>(null);
 
   const savePrefs = useCallback((patch: Record<string, any>) => {
     try {
       const prev = JSON.parse(localStorage.getItem('content-prefs') || '{}');
       localStorage.setItem('content-prefs', JSON.stringify({ ...prev, ...patch }));
     } catch {}
-  }, []);
+    // Refresh feed in real-time
+    queryClient.invalidateQueries({ queryKey: ['posts'] });
+  }, [queryClient]);
 
-  const updateAlgo = (algo: FeedAlgorithm) => { setFeedAlgo(algo); savePrefs({ feedAlgorithm: algo }); };
-  const updateWeights = (w: FeedWeights) => { setFeedWeights(w); localStorage.setItem('feed-weights', JSON.stringify(w)); };
-  const updateDiversity = (v: number) => { setDiversityBoost(v); savePrefs({ diversityBoost: v }); };
-  const updateViral = (v: boolean) => { setViralReduce(v); savePrefs({ viralContentReduce: v }); };
+  const showFeedback = (label: string) => {
+    setLastChanged(label);
+    setTimeout(() => setLastChanged(null), 2000);
+  };
+
+  const updateAlgo = (algo: FeedAlgorithm) => {
+    setFeedAlgo(algo); savePrefs({ feedAlgorithm: algo });
+    const names = { smart: 'Mode Smart', chronological: 'Mode Chrono', friends_first: 'Mode Amis' };
+    showFeedback(names[algo]);
+    toast.success(`${names[algo]} activé ✨`, { duration: 2000 });
+  };
+  const updateWeights = (w: FeedWeights, label: string) => {
+    setFeedWeights(w); localStorage.setItem('feed-weights', JSON.stringify(w));
+    savePrefs({}); showFeedback(label);
+  };
+  const updateDiversity = (v: number) => { setDiversityBoost(v); savePrefs({ diversityBoost: v }); showFeedback('Diversité'); };
+  const updateViral = (v: boolean) => {
+    setViralReduce(v); savePrefs({ viralContentReduce: v }); showFeedback(v ? 'Viral réduit' : 'Viral normal');
+    toast.success(v ? 'Contenu viral réduit 🛡️' : 'Contenu viral normal 📈', { duration: 2000 });
+  };
 
   const algoOptions = [
-    { id: 'smart' as FeedAlgorithm, icon: <Brain className="w-4 h-4" />, label: 'Smart', desc: 'IA optimise ton fil', gradient: 'from-violet-500/10 to-purple-500/10 border-violet-500/20' },
-    { id: 'chronological' as FeedAlgorithm, icon: <Clock className="w-4 h-4" />, label: 'Chrono', desc: 'Derniers posts en premier', gradient: 'from-blue-500/10 to-cyan-500/10 border-blue-500/20' },
-    { id: 'friends_first' as FeedAlgorithm, icon: <Users className="w-4 h-4" />, label: 'Amis', desc: 'Priorité aux proches', gradient: 'from-emerald-500/10 to-green-500/10 border-emerald-500/20' },
+    { id: 'smart' as FeedAlgorithm, icon: <Brain className="w-5 h-5" />, label: 'Smart', desc: 'L\'IA choisit les meilleurs posts pour toi', emoji: '🧠' },
+    { id: 'chronological' as FeedAlgorithm, icon: <Clock className="w-5 h-5" />, label: 'Chrono', desc: 'Les plus récents apparaissent en premier', emoji: '⏰' },
+    { id: 'friends_first' as FeedAlgorithm, icon: <Users className="w-5 h-5" />, label: 'Amis d\'abord', desc: 'Tes amis sont toujours en haut du fil', emoji: '💙' },
   ];
 
   return (
-    <div className="px-4 py-3 space-y-5 overflow-y-auto flex-1">
-      {/* Algorithm Mode */}
-      <div className="space-y-2.5">
+    <div className="px-4 py-3 space-y-4 overflow-y-auto flex-1">
+      {/* Change feedback toast */}
+      <AnimatePresence>
+        {lastChanged && (
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+            className="flex items-center gap-2 p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span className="text-[11px] font-medium">{lastChanged} — ton fil se met à jour !</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Live Preview */}
+      <FeedPreviewBar friends={feedWeights.friends} discovery={feedWeights.discovery}
+        marketplace={feedWeights.marketplace} algo={feedAlgo} viralReduce={viralReduce} diversityBoost={diversityBoost} />
+
+      {/* Algorithm Mode - bigger touch targets */}
+      <div className="space-y-2">
         <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/70 flex items-center gap-1.5">
-          <Sparkles className="w-3 h-3" /> Mode du fil
+          <Sparkles className="w-3 h-3" /> Comment trier ton fil ?
         </h3>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="space-y-1.5">
           {algoOptions.map(opt => (
-            <button key={opt.id} onClick={() => updateAlgo(opt.id)}
+            <motion.button key={opt.id} onClick={() => updateAlgo(opt.id)}
+              whileTap={{ scale: 0.98 }}
               className={cn(
-                "flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all duration-200",
+                "w-full flex items-center gap-3 p-3 rounded-xl border transition-all duration-200 text-left",
                 feedAlgo === opt.id
-                  ? `bg-gradient-to-br ${opt.gradient} border-primary/30 shadow-sm`
+                  ? "bg-gradient-to-r from-primary/10 to-primary/5 border-primary/30 shadow-sm ring-1 ring-primary/10"
                   : "border-border/20 hover:bg-secondary/30"
               )}>
-              <div className={cn("w-8 h-8 rounded-full flex items-center justify-center transition-colors",
-                feedAlgo === opt.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+              <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center text-lg transition-all",
+                feedAlgo === opt.id ? "bg-primary text-primary-foreground shadow-md" : "bg-muted text-muted-foreground"
               )}>
-                {opt.icon}
+                {opt.emoji}
               </div>
-              <span className="text-[10px] font-semibold">{opt.label}</span>
-              <span className="text-[8px] text-muted-foreground text-center leading-tight">{opt.desc}</span>
-            </button>
+              <div className="flex-1">
+                <span className={cn("text-sm font-semibold", feedAlgo === opt.id && "text-primary")}>{opt.label}</span>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{opt.desc}</p>
+              </div>
+              {feedAlgo === opt.id && (
+                <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}>
+                  <CheckCircle2 className="w-5 h-5 text-primary" />
+                </motion.div>
+              )}
+            </motion.button>
           ))}
         </div>
       </div>
 
-      {/* Feed Weights */}
-      <div className="space-y-3">
-        <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/70 flex items-center gap-1.5">
-          <Sliders className="w-3 h-3" /> Pondération
-        </h3>
-        
-        {[
-          { key: 'friends' as keyof FeedWeights, label: 'Amis proches', icon: '👥', color: 'from-blue-500 to-cyan-500' },
-          { key: 'discovery' as keyof FeedWeights, label: 'Découverte', icon: '🔍', color: 'from-violet-500 to-purple-500' },
-          { key: 'marketplace' as keyof FeedWeights, label: 'Marketplace', icon: '🛍️', color: 'from-amber-500 to-orange-500' },
-        ].map(item => (
-          <div key={item.key} className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm">{item.icon}</span>
-                <span className="text-xs font-medium">{item.label}</span>
+      {/* Feed Weights - with descriptive labels */}
+      {feedAlgo === 'smart' && (
+        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="space-y-3">
+          <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/70 flex items-center gap-1.5">
+            <Sliders className="w-3 h-3" /> Ajuste ton fil en glissant
+          </h3>
+          
+          {[
+            { key: 'friends' as keyof FeedWeights, label: 'Posts de tes amis', icon: '👥', color: 'bg-blue-500', hint: 'Plus c\'est haut, plus tu vois tes proches' },
+            { key: 'discovery' as keyof FeedWeights, label: 'Nouveaux contenus', icon: '🔍', color: 'bg-violet-500', hint: 'Découvre des créateurs que tu ne suis pas encore' },
+            { key: 'marketplace' as keyof FeedWeights, label: 'Produits à vendre', icon: '🛍️', color: 'bg-amber-500', hint: 'Articles de la marketplace dans ton fil' },
+          ].map(item => (
+            <div key={item.key} className="space-y-1.5 p-3 rounded-xl bg-secondary/15 border border-border/10">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">{item.icon}</span>
+                  <div>
+                    <span className="text-xs font-semibold">{item.label}</span>
+                    <p className="text-[9px] text-muted-foreground">{item.hint}</p>
+                  </div>
+                </div>
+                <motion.span key={feedWeights[item.key]} initial={{ scale: 1.3 }} animate={{ scale: 1 }}
+                  className={cn("text-sm font-bold tabular-nums px-2 py-0.5 rounded-md text-white", item.color)}>
+                  {feedWeights[item.key]}%
+                </motion.span>
               </div>
-              <span className={cn("text-xs font-bold tabular-nums bg-gradient-to-r bg-clip-text text-transparent", item.color)}>
-                {feedWeights[item.key]}%
-              </span>
-            </div>
-            <div className="relative">
               <Slider
                 value={[feedWeights[item.key]]}
-                onValueChange={([v]) => updateWeights({ ...feedWeights, [item.key]: v })}
+                onValueChange={([v]) => updateWeights({ ...feedWeights, [item.key]: v }, item.label)}
                 min={0} max={100} step={5}
-                className="[&_[role=slider]]:h-4 [&_[role=slider]]:w-4 [&_[role=slider]]:shadow-md"
+                className="[&_[role=slider]]:h-5 [&_[role=slider]]:w-5 [&_[role=slider]]:shadow-md [&_[role=slider]]:border-2"
               />
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </motion.div>
+      )}
 
-      {/* Diversity */}
-      <div className="space-y-2">
-        <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/70 flex items-center gap-1.5">
-          <BarChart3 className="w-3 h-3" /> Diversité
-        </h3>
-        <Slider value={[diversityBoost]} onValueChange={([v]) => updateDiversity(v)} min={0} max={100} step={10} />
-        <div className="flex justify-between">
-          <span className="text-[9px] text-muted-foreground">Familier</span>
-          <span className="text-[9px] font-medium text-primary">{diversityBoost}%</span>
-          <span className="text-[9px] text-muted-foreground">Découverte</span>
+      {/* Diversity - visual scale */}
+      <div className="space-y-2 p-3 rounded-xl bg-secondary/15 border border-border/10">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-muted-foreground" />
+            <div>
+              <span className="text-xs font-semibold">Variété du contenu</span>
+              <p className="text-[9px] text-muted-foreground">Voir toujours les mêmes ou découvrir plus ?</p>
+            </div>
+          </div>
+          <motion.span key={diversityBoost} initial={{ scale: 1.3 }} animate={{ scale: 1 }}
+            className="text-xs font-bold text-primary">{diversityBoost}%</motion.span>
+        </div>
+        <Slider value={[diversityBoost]} onValueChange={([v]) => updateDiversity(v)} min={0} max={100} step={10}
+          className="[&_[role=slider]]:h-5 [&_[role=slider]]:w-5" />
+        <div className="flex justify-between text-[9px] text-muted-foreground">
+          <span>🏠 Habituel</span>
+          <span>🌍 Varié</span>
         </div>
       </div>
 
-      {/* Quick toggles */}
-      <div className="space-y-2">
-        <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/70">Options</h3>
-        <div className="flex items-center justify-between p-3 rounded-xl bg-secondary/20 border border-border/10">
+      {/* Viral toggle */}
+      <motion.div whileTap={{ scale: 0.98 }}
+        className={cn("flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer",
+          viralReduce ? "bg-primary/5 border-primary/20" : "bg-secondary/15 border-border/10"
+        )} onClick={() => updateViral(!viralReduce)}>
+        <div className="flex items-center gap-2">
+          <span className="text-base">{viralReduce ? '🛡️' : '📈'}</span>
           <div>
-            <p className="text-xs font-medium">Réduire le viral</p>
-            <p className="text-[10px] text-muted-foreground">Moins de contenu viral, plus d'authenticité</p>
+            <p className="text-xs font-semibold">Réduire le contenu viral</p>
+            <p className="text-[9px] text-muted-foreground">
+              {viralReduce ? 'Activé — ton fil est plus authentique' : 'Désactivé — le contenu populaire apparaît normalement'}
+            </p>
           </div>
-          <Switch checked={viralReduce} onCheckedChange={updateViral} />
         </div>
-      </div>
+        <Switch checked={viralReduce} onCheckedChange={updateViral} />
+      </motion.div>
 
-      {/* Zeus tip */}
+      {/* Tip */}
       <div className="p-3 rounded-xl bg-gradient-to-br from-amber-500/5 to-orange-500/5 border border-amber-500/10">
         <p className="text-[10px] text-muted-foreground leading-relaxed">
-          💡 <strong>Astuce :</strong> Demande à Zeus dans le chat « Optimise mon fil » et il ajustera ces paramètres intelligemment pour toi !
+          💡 <strong>Astuce :</strong> Dis « <em>Optimise mon fil</em> » à Zeus dans le chat et il ajustera tout pour toi automatiquement !
         </p>
       </div>
     </div>
