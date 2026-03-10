@@ -48,6 +48,8 @@ import AdsManager from "./pages/AdsManager";
 import AIAgents from "./pages/AIAgents";
 import Admin from "./pages/Admin";
 import CreatorUpgrade from "./pages/CreatorUpgrade";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import Onboarding from "./pages/Onboarding";
 import NotFound from "./pages/NotFound";
 
