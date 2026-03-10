@@ -20,10 +20,14 @@ public class ContactsPlugin: CAPPlugin, CAPBridgedPlugin {
         case .authorized:
             call.resolve(["granted": true])
 
+        // iOS 18+ returns .limited for partial access
+        case .limited:
+            call.resolve(["granted": true])
+
         case .notDetermined:
             store.requestAccess(for: .contacts) { granted, error in
                 if let error = error {
-                    call.reject("Permission error", nil, error)
+                    call.reject("Permission error: \(error.localizedDescription)", nil, error)
                     return
                 }
                 call.resolve(["granted": granted])
@@ -80,7 +84,7 @@ public class ContactsPlugin: CAPPlugin, CAPBridgedPlugin {
 
             call.resolve(["contacts": contactsArray])
         } catch {
-            call.reject("Failed to fetch contacts", nil, error)
+            call.reject("Failed to fetch contacts: \(error.localizedDescription)", nil, error)
         }
     }
 
