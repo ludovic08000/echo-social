@@ -233,14 +233,29 @@ function WebPhoneSearch() {
   const sendInvitesSMS = () => {
     if (selectedInvites.size === 0) return;
     const phones = Array.from(selectedInvites);
-    // iOS uses &body=, Android uses ?body=
     const isApple = /iPhone|iPad|iPod|Mac/i.test(navigator.userAgent);
     const separator = isApple ? '&' : '?';
-    const smsUrl = `sms:${phones.join(',')}${separator}body=${encodeURIComponent(INVITE_MESSAGE)}`;
-    window.open(smsUrl, '_self');
+    const encodedBody = encodeURIComponent(INVITE_MESSAGE);
+
+    if (phones.length === 1) {
+      // Single contact: open SMS directly
+      window.open(`sms:${phones[0]}${separator}body=${encodedBody}`, '_self');
+    } else {
+      // Multiple contacts: open one SMS window per contact with a small delay
+      let opened = 0;
+      phones.forEach((phone, i) => {
+        setTimeout(() => {
+          window.open(`sms:${phone}${separator}body=${encodedBody}`, '_blank');
+          opened++;
+        }, i * 600);
+      });
+    }
+
     toast({
       title: `📱 SMS préparé pour ${phones.length} contact(s)`,
-      description: 'L\'app SMS va s\'ouvrir avec le message',
+      description: phones.length > 1
+        ? 'Une fenêtre SMS va s\'ouvrir pour chaque contact'
+        : 'L\'app SMS va s\'ouvrir avec le message',
     });
   };
 
