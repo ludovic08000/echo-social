@@ -45,7 +45,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Textarea } from '@/components/ui/textarea';
 import { SEOHead } from '@/components/SEOHead';
 
-function ReportFakeAccountButton({ reportedUserId }: { reportedUserId: string }) {
+function NoIndexMeta() {
+  const { useEffect } = require('react');
+  useEffect(() => {
+    let el = document.querySelector('meta[name="robots"]');
+    if (!el) { el = document.createElement('meta'); el.setAttribute('name', 'robots'); document.head.appendChild(el); }
+    el.setAttribute('content', 'noindex, nofollow');
+    return () => { el?.remove(); };
+  }, []);
+  return null;
+}
+
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
