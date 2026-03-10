@@ -476,12 +476,14 @@ export function ZeusCompanion() {
     setConversationId(null);
     setMessages([]);
     setExecutedActions(new Set());
+    setIsNewConversation(true);
     setActiveTab('chat');
   }, []);
 
   const selectConversation = useCallback((id: string) => {
     setConversationId(id);
     setExecutedActions(new Set());
+    setIsNewConversation(false);
     setActiveTab('chat');
   }, []);
 
