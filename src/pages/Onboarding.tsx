@@ -384,7 +384,6 @@ export default function Onboarding() {
                 >
                   Suivant <ArrowRight className="w-4 h-4" />
                 </Button>
-                </Button>
               </div>
             </motion.div>
           )}
