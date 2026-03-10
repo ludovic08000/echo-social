@@ -145,18 +145,26 @@ function buildSignature(params: Record<string, string>, privateKey: string): str
 }
 
 async function callMondialRelay(method: string, params: Record<string, string>): Promise<string> {
-  // Use URL-encoded form POST (simpler and more reliable than SOAP)
-  const urlParams = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
-    urlParams.append(k, v);
-  }
+  const soapParams = Object.entries(params)
+    .map(([k, v]) => `<${k}>${v}</${k}>`)
+    .join('');
 
-  const response = await fetch(`${MR_WSDL}/${method}`, {
+  const soapBody = `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <${method} xmlns="http://www.mondialrelay.fr/webservice/">
+      ${soapParams}
+    </${method}>
+  </soap:Body>
+</soap:Envelope>`;
+
+  const response = await fetch(MR_WSDL, {
     method: "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+      "Content-Type": "text/xml; charset=utf-8",
+      "SOAPAction": `http://www.mondialrelay.fr/webservice/${method}`,
     },
-    body: urlParams.toString(),
+    body: soapBody,
   });
 
   if (!response.ok) {
@@ -369,12 +377,13 @@ serve(async (req) => {
         COL_Rel: collectionMode === 'REL' ? cleanRelayId : '',
         LIV_Rel_Pays: ['24R', '24L', 'DRI'].includes(deliveryMode) ? relayCountry : '',
         LIV_Rel: ['24R', '24L', 'DRI'].includes(deliveryMode) ? cleanRelayId : '',
-        TAss_Valeur: '',
-        TAss_Devise: '',
+        TAvisage: '',
+        TReprise: '',
         Montage: '',
         TRDV: '',
         Assurance: '',
         Instructions: '',
+        Texte: '',
       };
 
       // Compute security hash (all values in order + private key)
