@@ -528,6 +528,35 @@ function WebPhoneSearch() {
         )}
       </div>
 
+      {/* Quick WhatsApp invite */}
+      <div className="relative flex items-center gap-2 py-1">
+        <div className="flex-1 border-t border-border" />
+        <span className="text-xs text-muted-foreground">ou</span>
+        <div className="flex-1 border-t border-border" />
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <div className="w-10 h-10 rounded-full bg-[#25D366]/10 flex items-center justify-center flex-shrink-0">
+            <MessageCircle className="w-5 h-5 text-[#25D366]" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-sm">Inviter via WhatsApp</h3>
+            <p className="text-xs text-muted-foreground">Partagez le lien Forsure directement sur WhatsApp</p>
+          </div>
+        </div>
+        <Button
+          onClick={() => {
+            const encoded = encodeURIComponent(INVITE_MESSAGE);
+            window.open(`https://wa.me/?text=${encoded}`, '_blank');
+          }}
+          className="gap-2 w-full bg-[#25D366] hover:bg-[#1da851] text-white"
+        >
+          <MessageCircle className="w-4 h-4" />
+          Envoyer via WhatsApp
+        </Button>
+      </div>
+
       {/* Separator */}
       <div className="relative flex items-center gap-2 py-1">
         <div className="flex-1 border-t border-border" />
