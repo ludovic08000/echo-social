@@ -232,7 +232,7 @@ export default function Onboarding() {
               <div className="text-center mb-6">
                 <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium mb-3">
                   <Sparkles className="w-4 h-4" />
-                  Étape 1/2
+                  Étape 1/3
                 </div>
                 <h1 className="text-2xl font-bold text-foreground">Qu'est-ce qui t'intéresse ?</h1>
                 <p className="text-muted-foreground text-sm mt-1">
