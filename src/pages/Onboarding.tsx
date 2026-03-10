@@ -388,6 +388,133 @@ export default function Onboarding() {
               </div>
             </motion.div>
           )}
+
+          {step === 'find-friends' && (
+            <motion.div
+              key="find-friends"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="pulse-card p-6 sm:p-8"
+            >
+              <div className="text-center mb-6">
+                <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium mb-3">
+                  <Users className="w-4 h-4" />
+                  Étape 3/3
+                </div>
+                <h1 className="text-2xl font-bold text-foreground">Retrouve tes amis</h1>
+                <p className="text-muted-foreground text-sm mt-1">
+                  {isNative
+                    ? 'Importe tes contacts pour retrouver tes amis déjà sur Forsure'
+                    : isIOS
+                      ? 'Exporte tes contacts en fichier .vcf puis importe-le ici'
+                      : hasPickerAPI
+                        ? 'Sélectionne des contacts pour les retrouver sur Forsure'
+                        : 'Importe un fichier de contacts (.vcf) pour retrouver tes amis'}
+                </p>
+              </div>
+
+              <div className="space-y-3 mb-4">
+                {isNative && (
+                  <Button onClick={handleNativeContacts} disabled={searchingContacts} className="gap-2 w-full">
+                    {searchingContacts ? (
+                      <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Phone className="w-4 h-4" />
+                    )}
+                    {searchingContacts ? 'Recherche...' : 'Importer mes contacts'}
+                  </Button>
+                )}
+
+                {!isNative && hasPickerAPI && (
+                  <Button onClick={handlePickContacts} disabled={searchingContacts} className="gap-2 w-full">
+                    {searchingContacts ? (
+                      <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Phone className="w-4 h-4" />
+                    )}
+                    {searchingContacts ? 'Recherche...' : 'Accéder à mes contacts'}
+                  </Button>
+                )}
+
+                {!isNative && (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".vcf,text/vcard,text/x-vcard"
+                      onChange={handleVCardImport}
+                      className="hidden"
+                    />
+                    <Button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={searchingContacts}
+                      variant={hasPickerAPI ? 'outline' : 'default'}
+                      className="gap-2 w-full"
+                    >
+                      <Upload className="w-4 h-4" />
+                      {isIOS ? 'Importer depuis fichier .vcf' : 'Importer un fichier contacts (.vcf)'}
+                    </Button>
+                  </>
+                )}
+
+                {isIOS && !isNative && (
+                  <div className="bg-muted/50 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
+                    <p className="font-medium text-foreground">Comment faire sur iPhone :</p>
+                    <ol className="list-decimal list-inside space-y-0.5">
+                      <li>Ouvrez l'app <strong>Contacts</strong></li>
+                      <li>Sélectionnez les contacts à partager</li>
+                      <li>Appuyez sur <strong>Partager</strong></li>
+                      <li>Choisissez <strong>Enregistrer dans Fichiers</strong></li>
+                      <li>Revenez ici et importez le fichier .vcf</li>
+                    </ol>
+                  </div>
+                )}
+              </div>
+
+              {contactResults.length > 0 && (
+                <ScrollArea className="max-h-48 mb-4">
+                  <div className="space-y-2">
+                    {contactResults.map(contact => (
+                      <div key={contact.user_id} className="flex items-center justify-between p-2.5 rounded-xl bg-secondary/30">
+                        <div className="flex items-center gap-2.5">
+                          <UserAvatar name={contact.name} avatarUrl={contact.avatar_url} size="sm" />
+                          <span className="text-sm font-medium">{contact.name}</span>
+                        </div>
+                        {contact.is_friend || sentRequests.has(contact.user_id) ? (
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Check className="w-3.5 h-3.5" />
+                            {contact.is_friend ? 'Ami' : 'Envoyé'}
+                          </span>
+                        ) : (
+                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => handleAddFriend(contact.user_id)}>
+                            <Users className="w-3.5 h-3.5" /> Ajouter
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+
+              <div className="flex items-center justify-between">
+                <Button
+                  variant="ghost"
+                  onClick={() => setStep('ai-name')}
+                  className="text-muted-foreground"
+                >
+                  Retour
+                </Button>
+                <Button
+                  onClick={handleFinish}
+                  disabled={isSubmitting}
+                  className="pulse-button-gradient px-8"
+                >
+                  {isSubmitting ? 'Enregistrement…' : 'C\'est parti ! 🚀'}
+                </Button>
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
     </div>
