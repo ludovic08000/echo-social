@@ -66,6 +66,16 @@ export default function Landing() {
               </Button>
             </Link>
           </div>
+
+          <div className="flex items-center justify-center gap-4 mt-8 text-xs text-muted-foreground/70">
+            <Link to="/legal/privacy" className="hover:text-foreground transition-colors">
+              Politique de confidentialité
+            </Link>
+            <span>•</span>
+            <Link to="/legal/terms" className="hover:text-foreground transition-colors">
+              CGU
+            </Link>
+          </div>
         </div>
       </div>
     </div>
