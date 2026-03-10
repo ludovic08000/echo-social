@@ -135,6 +135,7 @@ export function useContactSync() {
   }, [user, isNative]);
 
   return {
+    platform,
     isNative,
     loading,
     synced,
