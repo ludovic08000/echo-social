@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { useNewUsers } from '@/hooks/useNewUsers';
 import { useContactSync } from '@/hooks/useContactSync';
+import { useOAuthContactsImport } from '@/hooks/useOAuthContactsImport';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
