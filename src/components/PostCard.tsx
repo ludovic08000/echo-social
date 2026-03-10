@@ -212,16 +212,18 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
       </div>
 
       {/* Content */}
-      <Link to={`/post/${post.id}`} className="block relative">
+      <div className="block relative">
         {post.body && (
-          <p className="px-4 pb-3 text-sm text-foreground whitespace-pre-wrap break-words leading-relaxed">
-            {post.body}
-          </p>
+          <Link to={`/post/${post.id}`}>
+            <p className="px-4 pb-3 text-sm text-foreground whitespace-pre-wrap break-words leading-relaxed">
+              {post.body}
+            </p>
+          </Link>
         )}
         
         {post.image_url && (
           <div className="relative w-full overflow-hidden bg-muted/40 aspect-[4/5] sm:aspect-video">
-            {!mediaLoaded && !(isVideoPost && (isMobile || isIOSUnsafeVideo || (shouldDeferVideo && !videoEnabled))) && (
+            {!mediaLoaded && !(isVideoPost && (isIOSUnsafeVideo || (shouldDeferVideo && !videoEnabled))) && (
               <div className="absolute inset-0 skeleton" />
             )}
             {isVideoPost ? (
@@ -235,12 +237,8 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
               ) : (shouldDeferVideo && !videoEnabled) ? (
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setVideoEnabled(true);
-                  }}
-                  className="absolute inset-0 flex items-center justify-center bg-muted/70"
+                  onClick={() => setVideoEnabled(true)}
+                  className="absolute inset-0 flex items-center justify-center bg-muted/70 z-10"
                 >
                   <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-background/80 border border-border/40">
                     <Play className="w-4 h-4 text-foreground" />
@@ -270,20 +268,22 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                 </video>
               )
             ) : (
-              <img
-                src={post.image_url}
-                alt="Image du post"
-                className={cn(
-                  "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
-                  mediaLoaded ? "opacity-100" : "opacity-0"
-                )}
-                onLoad={() => setMediaLoaded(true)}
-                loading="lazy"
-              />
+              <Link to={`/post/${post.id}`}>
+                <img
+                  src={post.image_url}
+                  alt="Image du post"
+                  className={cn(
+                    "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
+                    mediaLoaded ? "opacity-100" : "opacity-0"
+                  )}
+                  onLoad={() => setMediaLoaded(true)}
+                  loading="lazy"
+                />
+              </Link>
             )}
           </div>
         )}
-      </Link>
+      </div>
 
       {/* AI Actions */}
       {post.body && (aiSummariesEnabled || autoTranslateEnabled) && (
