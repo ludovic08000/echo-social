@@ -107,6 +107,17 @@ export default function Signup() {
       return;
     }
 
+    // Validate phone format if provided
+    if (phoneNumber.trim()) {
+      let testPhone = phoneNumber.replace(/[\s\-().]/g, '');
+      if (testPhone.startsWith('0') && testPhone.length === 10) testPhone = '+33' + testPhone.slice(1);
+      if (!testPhone.startsWith('+')) testPhone = '+' + testPhone;
+      if (!/^\+[1-9]\d{6,14}$/.test(testPhone)) {
+        toast({ title: 'Numéro invalide', description: 'Entrez un numéro valide (ex: +33 6 12 34 56 78)', variant: 'destructive' });
+        return;
+      }
+    }
+
     setIsLoading(true);
 
     const fullName = `${firstName.trim()} ${lastName.trim()}`;
@@ -119,18 +130,12 @@ export default function Signup() {
       return;
     }
 
-    // Save phone number if provided
+    // Save phone number securely via edge function
     if (phoneNumber.trim()) {
       try {
-        const { data: { user: newUser } } = await supabase.auth.getUser();
-        if (newUser) {
-          let normalizedPhone = phoneNumber.replace(/[\s\-().]/g, '');
-          if (normalizedPhone.startsWith('0') && normalizedPhone.length === 10) {
-            normalizedPhone = '+33' + normalizedPhone.slice(1);
-          }
-          if (!normalizedPhone.startsWith('+')) normalizedPhone = '+' + normalizedPhone;
-          await supabase.from('profiles').update({ phone_number: normalizedPhone }).eq('user_id', newUser.id);
-        }
+        await supabase.functions.invoke('save-phone', {
+          body: { phone_number: phoneNumber.trim() },
+        });
       } catch {}
     }
 
