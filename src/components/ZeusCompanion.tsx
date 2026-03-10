@@ -825,6 +825,14 @@ export function ZeusCompanion() {
 
             {activeTab === 'history' && (
               <div className="flex-1 overflow-y-auto">
+                {/* New conversation button */}
+                <div className="px-3 pt-3 pb-1">
+                  <button onClick={startNewConversation}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 hover:from-amber-500/15 hover:to-orange-500/15 transition-all text-sm font-medium">
+                    <Plus className="w-4 h-4" />
+                    Nouvelle conversation
+                  </button>
+                </div>
                 {(!conversations || conversations.length === 0) ? (
                   <div className="text-center py-12 text-muted-foreground text-sm">
                     <History className="w-8 h-8 mx-auto mb-2 text-muted-foreground/30" />
