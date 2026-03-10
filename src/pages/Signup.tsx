@@ -6,6 +6,7 @@ import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
+import PasswordStrength from '@/components/PasswordStrength';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -223,6 +224,7 @@ export default function Signup() {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              <PasswordStrength password={password} />
             </div>
 
             {/* Legal checkboxes */}
