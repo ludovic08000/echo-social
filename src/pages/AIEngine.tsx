@@ -148,6 +148,10 @@ export default function AIEngine() {
             </TabsList>
           </div>
 
+          <TabsContent value="zeus-console" className="mt-4">
+            <ZeusNeuralConsole />
+          </TabsContent>
+
           <TabsContent value="modules" className="space-y-4 mt-4">
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
               {CATEGORIES.map(cat => (
