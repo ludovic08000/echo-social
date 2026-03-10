@@ -178,11 +178,11 @@ export function usePosts() {
     },
     initialPageParam: 0,
     enabled: !!user,
-    staleTime: 5 * 60_000,       // Keep stable feed cache longer on mobile/iOS
+    staleTime: 60_000,            // 1 min — fresh enough without constant reloads
     gcTime: 10 * 60_000,
-    refetchInterval: false,      // Prevent background reorder while user scrolls
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    refetchInterval: 2 * 60_000, // Auto-refresh every 2 min for new posts
+    refetchOnWindowFocus: true,   // Refresh when user comes back to tab
+    refetchOnReconnect: true,
   });
 }
 
