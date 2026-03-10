@@ -320,8 +320,9 @@ serve(async (req) => {
       const stat = extractXmlValue(xml, 'STAT');
 
       if (stat !== '0' && stat !== '') {
-        console.error("SOAP create label error:", { stat, xml: xml.substring(0, 1000) });
-        throw new Error(`Mondial Relay erreur création étiquette (code ${stat})`);
+        const errorDetail = extractXmlValue(xml, 'Erreur') || extractXmlValue(xml, 'Message') || '';
+        console.error("SOAP create label error:", { stat, errorDetail, xml: xml.substring(0, 1000) });
+        throw new Error(`Mondial Relay erreur création étiquette (code ${stat})${errorDetail ? ` : ${errorDetail}` : ''}`);
       }
 
       const expeditionNum = extractXmlValue(xml, 'ExpeditionNum');
