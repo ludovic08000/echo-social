@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Shield } from 'lucide-react';
+import { Eye, EyeOff, Shield, Phone } from 'lucide-react';
 import { differenceInYears } from 'date-fns';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
