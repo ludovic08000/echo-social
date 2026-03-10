@@ -140,7 +140,8 @@ function md5Hex(str: string): string {
 
 function buildSignature(params: Record<string, string>, privateKey: string): string {
   const concat = Object.values(params).join('') + privateKey;
-  return md5Hex(concat);
+  console.log("Security hash input length:", concat.length, "first 50 chars:", concat.substring(0, 50));
+  return md5Hex(concat).toUpperCase();
 }
 
 async function callMondialRelay(method: string, params: Record<string, string>): Promise<string> {
