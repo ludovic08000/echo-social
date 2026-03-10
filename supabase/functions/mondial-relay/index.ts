@@ -5,7 +5,7 @@ import { crypto } from "https://deno.land/std@0.190.0/crypto/mod.ts";
 import { encode as hexEncode } from "https://deno.land/std@0.190.0/encoding/hex.ts";
 
 const MR_WSDL = "https://api.mondialrelay.com/Web_Services.asmx";
-const MR_V2_BASE = "https://api.mondialrelay.com/api/v2";
+const MR_V2_BASE = "https://connect-api.mondialrelay.com/api";
 
 // ── SOAP helpers (used for search_points & tracking which work fine) ──
 
