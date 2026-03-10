@@ -148,14 +148,14 @@ Deno.serve(async (req) => {
         cleaned.push({ action: "Cache IA expiré supprimé", count: expiredCache.length });
       }
 
-      // Old fingerprints (>90 days)
-      const cutoff90 = new Date(Date.now() - 90 * 86400000).toISOString();
+      // Old fingerprints (>365 days) - LCEN requires 12 months retention
+      const cutoff365 = new Date(Date.now() - 365 * 86400000).toISOString();
       const { data: oldFP } = await svc
         .from("device_fingerprints")
         .select("id")
-        .lt("last_seen_at", cutoff90);
+        .lt("last_seen_at", cutoff365);
       if (oldFP && oldFP.length > 0) {
-        await svc.from("device_fingerprints").delete().lt("last_seen_at", cutoff90);
+        await svc.from("device_fingerprints").delete().lt("last_seen_at", cutoff365);
         cleaned.push({ action: "Empreintes > 90 jours supprimées", count: oldFP.length });
       }
 
