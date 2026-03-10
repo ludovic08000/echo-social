@@ -1,12 +1,18 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
-import { createHash } from "https://deno.land/std@0.190.0/hash/mod.ts";
+import { crypto } from "https://deno.land/std@0.190.0/crypto/mod.ts";
+import { encode as hexEncode } from "https://deno.land/std@0.190.0/encoding/hex.ts";
 
 const MR_WSDL = "https://api.mondialrelay.com/Web_Services.asmx";
 
 function md5Hex(str: string): string {
-  return createHash("md5").update(str).toString().toUpperCase();
+  const encoder = new TextEncoder();
+  const data = encoder.encode(str);
+  const hashBuffer = crypto.subtle.digestSync("MD5", data);
+  const hashArray = new Uint8Array(hashBuffer);
+  const decoder = new TextDecoder();
+  return decoder.decode(hexEncode(hashArray)).toUpperCase();
 }
 
 function buildSignature(params: Record<string, string>, privateKey: string): string {
