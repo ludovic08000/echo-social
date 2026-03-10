@@ -1,15 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X, Eye, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, X, Eye, Trash2, ChevronLeft, ChevronRight, Heart, ChevronUp } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { useStories, useCreateStory, useViewStory, useDeleteStory, GroupedStories } from '@/hooks/useStories';
+import { useStories, useCreateStory, useViewStory, useDeleteStory, useLikeStory, useStoryViewers, GroupedStories } from '@/hooks/useStories';
 import { useAuth } from '@/lib/auth';
 import { UserAvatar } from './UserAvatar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { Link } from 'react-router-dom';
 
 const STORY_DURATION = 5000; // 5 seconds per story
 
@@ -21,6 +22,7 @@ export function StoriesBar() {
   const [isCreating, setIsCreating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [showViewers, setShowViewers] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
@@ -28,6 +30,12 @@ export function StoriesBar() {
   const createStory = useCreateStory();
   const viewStory = useViewStory();
   const deleteStory = useDeleteStory();
+  const likeStory = useLikeStory();
+
+  const currentStory = selectedGroup?.stories[currentStoryIndex];
+  const isOwner = currentStory?.user_id === user?.id;
+
+  const { data: viewers } = useStoryViewers(isOwner && showViewers ? currentStory?.id ?? null : null);
 
   // Auto-advance timer
   const startTimer = useCallback(() => {
@@ -81,6 +89,7 @@ export function StoriesBar() {
     if (selectedGroup) {
       setProgress(0);
       elapsedRef.current = 0;
+      setShowViewers(false);
       startTimer();
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -172,13 +181,23 @@ export function StoriesBar() {
     }
   };
 
+  const handleLike = () => {
+    if (!currentStory) return;
+    likeStory.mutate({ storyId: currentStory.id, isLiked: currentStory.is_liked });
+  };
+
+  const toggleViewers = () => {
+    const next = !showViewers;
+    setShowViewers(next);
+    if (next) pauseTimer();
+    else resumeTimer();
+  };
+
   const closeViewer = () => {
     setSelectedGroup(null);
     setCurrentStoryIndex(0);
+    setShowViewers(false);
   };
-
-  const currentStory = selectedGroup?.stories[currentStoryIndex];
-  const isOwner = currentStory?.user_id === user?.id;
 
   if (isLoading) {
     return (
@@ -261,8 +280,8 @@ export function StoriesBar() {
           >
             <div
               className="relative w-full max-w-md h-full max-h-[100dvh] mx-auto"
-              onPointerDown={() => pauseTimer()}
-              onPointerUp={() => resumeTimer()}
+              onPointerDown={() => { if (!showViewers) pauseTimer(); }}
+              onPointerUp={() => { if (!showViewers) resumeTimer(); }}
             >
               {/* Progress bars */}
               <div className="absolute top-3 left-3 right-3 flex gap-1 z-20">
@@ -300,10 +319,13 @@ export function StoriesBar() {
                 <div className="flex items-center gap-1.5">
                   {isOwner && (
                     <>
-                      <div className="flex items-center gap-1 text-white/70 text-xs backdrop-blur-md bg-black/30 rounded-lg px-2 py-1">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); toggleViewers(); }}
+                        className="flex items-center gap-1 text-white/70 text-xs backdrop-blur-md bg-black/30 rounded-lg px-2 py-1 hover:bg-white/10 transition-colors"
+                      >
                         <Eye className="w-3.5 h-3.5" />
                         {currentStory.views_count}
-                      </div>
+                      </button>
                       <Button 
                         variant="ghost" 
                         size="icon" 
@@ -355,31 +377,134 @@ export function StoriesBar() {
                 )}
               </AnimatePresence>
 
-              {/* Caption */}
-              {currentStory.caption && (
+              {/* Bottom bar: Like button + likes count */}
+              {!isOwner && (
+                <div className="absolute bottom-6 left-3 right-3 z-20 flex items-center justify-between">
+                  {currentStory.caption ? (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex-1 text-white text-center text-sm bg-black/40 backdrop-blur-xl rounded-xl p-3 border border-white/10 mr-3"
+                    >
+                      {currentStory.caption}
+                    </motion.div>
+                  ) : <div className="flex-1" />}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleLike(); }}
+                    className="flex flex-col items-center gap-0.5"
+                  >
+                    <Heart className={cn(
+                      "w-7 h-7 transition-all",
+                      currentStory.is_liked 
+                        ? "text-red-500 fill-red-500 scale-110" 
+                        : "text-white"
+                    )} />
+                    {currentStory.likes_count > 0 && (
+                      <span className="text-white text-[10px] font-medium">{currentStory.likes_count}</span>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* Owner: Caption without like */}
+              {isOwner && currentStory.caption && !showViewers && (
                 <motion.div 
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="absolute bottom-6 left-3 right-3 text-white text-center text-sm bg-black/40 backdrop-blur-xl rounded-xl p-3 border border-white/10 z-20"
+                  className="absolute bottom-6 left-3 right-3 z-20"
                 >
-                  {currentStory.caption}
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 text-white text-center text-sm bg-black/40 backdrop-blur-xl rounded-xl p-3 border border-white/10 mr-3">
+                      {currentStory.caption}
+                    </div>
+                    {currentStory.likes_count > 0 && (
+                      <div className="flex items-center gap-1 text-white/70 text-xs backdrop-blur-md bg-black/30 rounded-lg px-2 py-1">
+                        <Heart className="w-3.5 h-3.5 text-red-400 fill-red-400" />
+                        {currentStory.likes_count}
+                      </div>
+                    )}
+                  </div>
                 </motion.div>
               )}
 
+              {/* Owner: Likes count when no caption */}
+              {isOwner && !currentStory.caption && !showViewers && currentStory.likes_count > 0 && (
+                <div className="absolute bottom-6 right-3 z-20 flex items-center gap-1 text-white/70 text-xs backdrop-blur-md bg-black/30 rounded-lg px-2 py-1">
+                  <Heart className="w-3.5 h-3.5 text-red-400 fill-red-400" />
+                  {currentStory.likes_count}
+                </div>
+              )}
+
+              {/* Viewers panel (owner only) */}
+              <AnimatePresence>
+                {showViewers && isOwner && (
+                  <motion.div
+                    initial={{ y: '100%' }}
+                    animate={{ y: 0 }}
+                    exit={{ y: '100%' }}
+                    transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                    className="absolute bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur-xl rounded-t-2xl border-t border-border/30 max-h-[60%] overflow-y-auto"
+                    onClick={e => e.stopPropagation()}
+                    onPointerDown={e => e.stopPropagation()}
+                  >
+                    <div className="sticky top-0 bg-background/95 backdrop-blur-xl px-4 py-3 border-b border-border/20 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Eye className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-sm font-semibold">{currentStory.views_count} vue{currentStory.views_count > 1 ? 's' : ''}</span>
+                        {currentStory.likes_count > 0 && (
+                          <span className="text-xs text-muted-foreground flex items-center gap-1 ml-2">
+                            <Heart className="w-3 h-3 text-red-400 fill-red-400" /> {currentStory.likes_count}
+                          </span>
+                        )}
+                      </div>
+                      <button onClick={toggleViewers} className="text-muted-foreground hover:text-foreground p-1">
+                        <ChevronUp className="w-4 h-4 rotate-180" />
+                      </button>
+                    </div>
+                    <div className="p-2">
+                      {!viewers || viewers.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-6">Aucune vue pour le moment</p>
+                      ) : (
+                        viewers.map(v => (
+                          <Link
+                            key={v.viewer_id}
+                            to={`/profile/${v.viewer_id}`}
+                            onClick={closeViewer}
+                            className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-secondary/50 transition-colors"
+                          >
+                            <UserAvatar src={v.avatar_url} alt={v.name} size="sm" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{v.name}</p>
+                              <p className="text-[10px] text-muted-foreground">
+                                {formatDistanceToNow(new Date(v.viewed_at), { addSuffix: true, locale: fr })}
+                              </p>
+                            </div>
+                          </Link>
+                        ))
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Navigation touch zones */}
-              <button 
-                onClick={prevStory} 
-                className="absolute left-0 top-16 bottom-16 w-1/3 z-10 focus:outline-none" 
-                aria-label="Story précédente"
-              />
-              <button 
-                onClick={nextStory} 
-                className="absolute right-0 top-16 bottom-16 w-1/3 z-10 focus:outline-none" 
-                aria-label="Story suivante"
-              />
+              {!showViewers && (
+                <>
+                  <button 
+                    onClick={prevStory} 
+                    className="absolute left-0 top-16 bottom-16 w-1/3 z-10 focus:outline-none" 
+                    aria-label="Story précédente"
+                  />
+                  <button 
+                    onClick={nextStory} 
+                    className="absolute right-0 top-16 bottom-16 w-1/3 z-10 focus:outline-none" 
+                    aria-label="Story suivante"
+                  />
+                </>
+              )}
 
               {/* Paused indicator */}
-              {isPaused && (
+              {isPaused && !showViewers && (
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none">
                   <div className="w-12 h-12 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
                     <div className="flex gap-1">
