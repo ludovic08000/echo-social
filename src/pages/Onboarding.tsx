@@ -466,13 +466,22 @@ export default function Onboarding() {
                 >
                   Retour
                 </Button>
-                <Button
-                  onClick={handleAiNameDone}
-                  disabled={!aiName.trim()}
-                  className="pulse-button-gradient px-6 gap-2"
-                >
-                  Suivant <ArrowRight className="w-4 h-4" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    onClick={() => { setAiName('Zeus'); handleAiNameDone(); }}
+                    className="text-muted-foreground"
+                  >
+                    Passer
+                  </Button>
+                  <Button
+                    onClick={handleAiNameDone}
+                    disabled={!aiName.trim()}
+                    className="pulse-button-gradient px-6 gap-2"
+                  >
+                    Suivant <ArrowRight className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
             </motion.div>
           )}
