@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { Camera, Download, Shield, ChevronRight, LogOut, Trash2, Music, Phone } from 'lucide-react';
+import { Camera, Download, Shield, ChevronRight, LogOut, Trash2, Music, Phone, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
@@ -11,6 +11,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 import { toast } from '@/hooks/use-toast';
 
 export function SettingsProfileTab() {
@@ -27,6 +37,9 @@ export function SettingsProfileTab() {
   const [musicUrl, setMusicUrl] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isRequestingDeletion, setIsRequestingDeletion] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -76,6 +89,39 @@ export function SettingsProfileTab() {
   const handleLogout = async () => {
     await signOut();
     navigate('/');
+  };
+
+  const handleDeleteAccountRequest = async () => {
+    if (!user || deleteConfirmText !== 'SUPPRIMER') return;
+
+    setIsRequestingDeletion(true);
+    try {
+      const { error } = await supabase
+        .from('account_deletion_requests')
+        .insert({
+          user_id: user.id,
+          status: 'pending',
+          reason: 'User requested deletion from profile settings',
+        } as any);
+
+      if (error) throw error;
+
+      toast({
+        title: 'Demande de suppression enregistrée',
+        description: 'Votre compte sera supprimé dans 30 jours si vous ne vous reconnectez pas.',
+      });
+
+      setDeleteConfirmText('');
+      setDeleteDialogOpen(false);
+    } catch (error: any) {
+      toast({
+        title: 'Erreur',
+        description: error?.message || 'Impossible de traiter votre demande.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRequestingDeletion(false);
+    }
   };
 
   return (
@@ -186,14 +232,54 @@ export function SettingsProfileTab() {
             <LogOut className="w-3.5 h-3.5 mr-1.5" />
             {t('settings.logout')}
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full h-9 rounded-xl text-xs border-destructive/30 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-          >
-            <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-            {t('settings.deleteAccount')}
-          </Button>
+
+          <AlertDialog open={deleteDialogOpen} onOpenChange={(open) => {
+            setDeleteDialogOpen(open);
+            if (!open) setDeleteConfirmText('');
+          }}>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full h-9 rounded-xl text-xs border-destructive/30 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                {t('settings.deleteAccount')}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Supprimer définitivement votre compte ?</AlertDialogTitle>
+                <AlertDialogDescription asChild>
+                  <div className="space-y-3">
+                    <p>
+                      Vos données seront conservées 30 jours. Si vous ne vous reconnectez pas pendant ce délai,
+                      votre compte et vos données seront supprimés définitivement.
+                    </p>
+                    <p className="font-medium text-foreground flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-destructive" />
+                      Tapez <strong>SUPPRIMER</strong> pour confirmer.
+                    </p>
+                    <Input
+                      value={deleteConfirmText}
+                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+                      placeholder="SUPPRIMER"
+                    />
+                  </div>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isRequestingDeletion}>Annuler</AlertDialogCancel>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteAccountRequest}
+                  disabled={deleteConfirmText !== 'SUPPRIMER' || isRequestingDeletion}
+                >
+                  {isRequestingDeletion ? 'Traitement…' : 'Confirmer la suppression'}
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </section>
     </div>
