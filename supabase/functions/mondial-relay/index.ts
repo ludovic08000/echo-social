@@ -26,7 +26,7 @@ function buildSignatureFromOrderedFields(
 
 async function callMondialRelaySoap(method: string, params: Record<string, string>): Promise<string> {
   const soapParams = Object.entries(params)
-    .map(([k, v]) => `<${k}>${v}</${k}>`)
+    .map(([k, v]) => `<${k}>${esc(String(v ?? ""))}</${k}>`)
     .join('');
 
   const soapBody = `<?xml version="1.0" encoding="utf-8"?>
