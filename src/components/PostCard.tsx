@@ -237,11 +237,9 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                   webkit-playsinline=""
                   x-webkit-airplay="deny"
                   controlsList="nodownload noremoteplayback"
-                  preload="metadata"
-                  className={cn(
-                    "absolute inset-0 w-full h-full object-cover bg-muted transition-opacity duration-300",
-                    mediaLoaded ? "opacity-100" : "opacity-0"
-                  )}
+                  preload="auto"
+                  className="absolute inset-0 w-full h-full object-contain bg-black"
+                  onLoadedMetadata={() => setMediaLoaded(true)}
                   onLoadedData={() => setMediaLoaded(true)}
                   onError={() => { setMediaLoaded(true); setVideoError(true); }}
                   onClick={(e) => e.stopPropagation()}
