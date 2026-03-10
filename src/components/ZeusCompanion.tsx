@@ -632,7 +632,7 @@ export function ZeusCompanion() {
             exit={{ scale: 0, rotate: 180 }}
             transition={{ type: 'spring', stiffness: 260, damping: 20 }}
             onClick={() => setOpen(true)}
-            className="fixed bottom-[80px] right-5 z-[55] w-14 h-14 rounded-2xl flex items-center justify-center text-cyan-300 hover:text-cyan-100 active:scale-95 transition-all group md:bottom-[80px] md:right-8"
+            className="fixed bottom-[80px] right-5 z-[55] w-14 h-14 rounded-2xl flex items-center justify-center text-cyan-300 hover:text-cyan-100 active:scale-95 transition-all group md:hidden"
             style={{
               background: 'linear-gradient(135deg, rgba(0,30,60,0.95) 0%, rgba(0,50,80,0.95) 50%, rgba(0,40,70,0.95) 100%)',
               boxShadow: '0 0 25px rgba(0,255,255,0.2), 0 0 50px rgba(0,200,255,0.1), inset 0 1px 0 rgba(0,255,255,0.15)',
