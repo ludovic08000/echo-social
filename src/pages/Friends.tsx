@@ -27,6 +27,7 @@ export default function Friends() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const { data: newUsers, isLoading: loadingNewUsers } = useNewUsers();
+  const contactSync = useContactSync();
 
   const handleAccept = (friendshipId: string) => {
     respondToRequest.mutate(
