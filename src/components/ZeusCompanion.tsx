@@ -428,6 +428,7 @@ export function ZeusCompanion() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [isNewConversation, setIsNewConversation] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [newName, setNewName] = useState('');
   const [executingAction, setExecutingAction] = useState<number | null>(null);
@@ -447,10 +448,11 @@ export function ZeusCompanion() {
   }, [loadedMessages]);
 
   useEffect(() => {
-    if (open && !conversationId && conversations && conversations.length > 0) {
+    // Only auto-select a conversation when opening for the first time, not after "new conversation"
+    if (open && !conversationId && !isNewConversation && conversations && conversations.length > 0) {
       setConversationId(conversations[0].id);
     }
-  }, [open, conversations, conversationId]);
+  }, [open, conversations, conversationId, isNewConversation]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
   useEffect(() => { if (open && inputRef.current && activeTab === 'chat') inputRef.current.focus(); }, [open, activeTab]);
@@ -474,12 +476,14 @@ export function ZeusCompanion() {
     setConversationId(null);
     setMessages([]);
     setExecutedActions(new Set());
+    setIsNewConversation(true);
     setActiveTab('chat');
   }, []);
 
   const selectConversation = useCallback((id: string) => {
     setConversationId(id);
     setExecutedActions(new Set());
+    setIsNewConversation(false);
     setActiveTab('chat');
   }, []);
 
@@ -543,7 +547,7 @@ export function ZeusCompanion() {
       });
 
       const convId = resp.headers.get('X-Conversation-Id');
-      if (convId && convId !== conversationId) { setConversationId(convId); refetchConversations(); }
+      if (convId && convId !== conversationId) { setConversationId(convId); setIsNewConversation(false); refetchConversations(); }
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: 'Erreur' }));
