@@ -8,6 +8,11 @@ import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Capacitor } from '@capacitor/core';
+import { useSendFriendRequest } from '@/hooks/useFriendships';
+import { UserAvatar } from '@/components/UserAvatar';
+import { MatchedContact } from '@/hooks/useContactSync';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const INTERESTS = [
   { value: 'gaming', label: 'Gaming', emoji: '🎮', color: 'border-purple-500/40 bg-purple-500/10 text-purple-300' },
