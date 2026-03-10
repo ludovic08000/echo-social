@@ -11,6 +11,7 @@ import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
 import { useScreenSize } from '@/hooks/useScreenSize';
 import { useChatWidget } from '@/components/ChatWidgetContext';
+import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
 
 interface AppLayoutProps {
   children: ReactNode;

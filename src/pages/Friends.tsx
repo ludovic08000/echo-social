@@ -72,7 +72,7 @@ export default function Friends() {
         </div>
       </header>
 
-      <Tabs defaultValue={requestCount > 0 ? 'requests' : 'friends'} className="w-full">
+      <Tabs defaultValue="new" className="w-full">
         <TabsList className="grid w-full grid-cols-5 rounded-xl h-10">
           <TabsTrigger value="new" className="gap-1.5 text-xs rounded-lg data-[state=active]:shadow-sm">
             <Sparkles className="w-3.5 h-3.5" />
