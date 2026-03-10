@@ -83,34 +83,38 @@ function detectSearchIntent(message: string): { isSearch: boolean; query: string
 
 const ZEUS_BOT_ID = "00000000-0000-0000-0000-000000000001";
 
-// Push Zeus response to the regular messaging system
+// Push a SHORT summary of Zeus response to the regular messaging system
 async function pushToMessenger(supabase: any, userId: string, zeusMessage: string) {
   try {
-    // Clean the message: remove action blocks and product blocks
+    // Clean the message: remove action blocks, product blocks, markdown
     let cleanMsg = zeusMessage
       .replace(/```forsure-action[\s\S]*?```/g, '')
       .replace(/```forsure-products[\s\S]*?```/g, '')
+      .replace(/[#*_`~>]/g, '')
       .trim();
     if (!cleanMsg || cleanMsg.length < 2) return;
-    // Truncate for messenger
-    if (cleanMsg.length > 1500) cleanMsg = cleanMsg.substring(0, 1500) + '…';
 
-    // Find existing Zeus conversation with this user
-    const { data: existingParts } = await supabase
+    // Keep only the first 2-3 sentences max for messenger (short notification-style)
+    const sentences = cleanMsg.split(/(?<=[.!?…])\s+/).filter(s => s.length > 1);
+    cleanMsg = sentences.slice(0, 3).join(' ');
+    if (cleanMsg.length > 300) cleanMsg = cleanMsg.substring(0, 297) + '…';
+
+    // Find existing Zeus conversation with this user (use a single joined query)
+    const { data: zeusConvs } = await supabase
       .from("conversation_participants")
       .select("conversation_id")
       .eq("user_id", ZEUS_BOT_ID);
 
     let messengerConvId: string | null = null;
 
-    if (existingParts && existingParts.length > 0) {
-      const convIds = existingParts.map((p: any) => p.conversation_id);
-      // Find one that also has the current user
+    if (zeusConvs && zeusConvs.length > 0) {
+      const convIds = zeusConvs.map((p: any) => p.conversation_id);
       const { data: userParts } = await supabase
         .from("conversation_participants")
         .select("conversation_id")
         .eq("user_id", userId)
-        .in("conversation_id", convIds);
+        .in("conversation_id", convIds)
+        .limit(1);
       if (userParts && userParts.length > 0) {
         messengerConvId = userParts[0].conversation_id;
       }
@@ -131,7 +135,6 @@ async function pushToMessenger(supabase: any, userId: string, zeusMessage: strin
       ]);
     }
 
-    // Insert the message (bypass friendship check by setting status directly)
     await supabase.from("messages").insert({
       conversation_id: messengerConvId,
       sender_id: ZEUS_BOT_ID,
@@ -139,7 +142,6 @@ async function pushToMessenger(supabase: any, userId: string, zeusMessage: strin
       status: "delivered",
     });
 
-    // Update conversation timestamp
     await supabase.from("conversations")
       .update({ updated_at: new Date().toISOString() })
       .eq("id", messengerConvId);
@@ -299,8 +301,12 @@ serve(async (req) => {
       }
     }
 
-    // Combine agent's own system prompt with action capabilities and user context
-    const fullSystemPrompt = agent.system_prompt + "\n\n" + ACTION_SYSTEM_PROMPT + userContext;
+    // Add current date/time context
+    const now = new Date();
+    const dateTimeContext = `\n\n## DATE ET HEURE ACTUELLES\nDate : ${now.toLocaleDateString("fr-FR", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}\nHeure : ${now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" })} (heure de Paris)\nSi l'utilisateur demande la date ou l'heure, donne-lui cette information.\n`;
+
+    // Combine agent's own system prompt with action capabilities, date/time and user context
+    const fullSystemPrompt = agent.system_prompt + "\n\n" + ACTION_SYSTEM_PROMPT + dateTimeContext + userContext;
 
     const messages = [
       { role: "system", content: fullSystemPrompt },
