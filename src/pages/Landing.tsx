@@ -49,8 +49,14 @@ export default function Landing() {
             <span className="text-gradient-gold">Connectez-vous.</span>
           </h1>
           
-          <p className="text-muted-foreground mb-10 max-w-sm mx-auto">
+          <p className="text-muted-foreground mb-2 max-w-sm mx-auto">
             Le réseau social éthique, sans tracking. Créez vos canaux TV.
+          </p>
+          <p className="text-xs text-muted-foreground/70 mb-8">
+            En vous inscrivant, vous acceptez nos{' '}
+            <Link to="/legal/terms" className="underline hover:text-foreground">CGU</Link>
+            {' '}et notre{' '}
+            <Link to="/legal/privacy" className="underline hover:text-foreground">Politique de confidentialité</Link>.
           </p>
           
           <div className="flex flex-col gap-3 max-w-xs mx-auto">
