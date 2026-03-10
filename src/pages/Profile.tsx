@@ -168,7 +168,7 @@ export default function Profile() {
       if (!userId) return null;
       const { data } = await supabase
         .from('privacy_settings')
-        .select('posts_visibility, profile_visibility')
+        .select('posts_visibility, profile_visibility, wall_visibility')
         .eq('user_id', userId)
         .maybeSingle();
       return data;
