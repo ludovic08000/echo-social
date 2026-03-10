@@ -221,6 +221,19 @@ export function DesktopSidebar() {
               </button>
             );
           }
+
+          if ((item as any).isZeus) {
+            return (
+              <button
+                key="zeus-nav"
+                onClick={() => window.dispatchEvent(new Event('open-zeus'))}
+                className={cn('premium-nav-item w-full')}
+              >
+                <item.icon className="w-5 h-5" />
+                <span>{item.label}</span>
+              </button>
+            );
+          }
           
           return (
             <Link
