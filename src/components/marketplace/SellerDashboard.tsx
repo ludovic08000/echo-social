@@ -324,7 +324,12 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8 text-destructive hover:text-destructive"
-                      onClick={() => deleteProduct.mutate(product.id)}
+                      disabled={deleteProduct.isPending}
+                      onClick={() => {
+                        if (window.confirm('Supprimer ce produit ? Cette action est irréversible.')) {
+                          deleteProduct.mutate(product.id);
+                        }
+                      }}
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>

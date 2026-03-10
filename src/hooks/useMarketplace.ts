@@ -183,6 +183,7 @@ export function useDeleteProduct() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['seller-products'] });
       queryClient.invalidateQueries({ queryKey: ['products'] });
+      toast.success('Produit supprimé !');
     },
     onError: (e: any) => toast.error(e.message),
   });
