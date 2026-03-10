@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark, ShieldAlert, Play } from 'lucide-react';
+import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark, ShieldAlert, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Post, useDeletePost } from '@/hooks/usePosts';
 import { useAuth } from '@/lib/auth';
@@ -21,8 +21,7 @@ import { useCurrentUserIsMinor } from '@/hooks/useMinorProtection';
 import { useReportUser } from '@/hooks/useTrustAndSafety';
 import { toast } from 'sonner';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { isAppleMobileWebKit } from '@/lib/platform';
-import { isVideoUrlSafeForIOS, guessVideoMime } from '@/lib/videoCompat';
+import { guessVideoMime } from '@/lib/videoCompat';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,22 +44,18 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const [translation, setTranslation] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
   const [mediaLoaded, setMediaLoaded] = useState(false);
+  const [videoError, setVideoError] = useState(false);
   const [saved, setSaved] = useState(false);
   const { data: isMinorUser } = useCurrentUserIsMinor();
   const reportUser = useReportUser();
   const isMobile = useIsMobile();
-  const isAppleWebKit = isAppleMobileWebKit();
 
   const postUrl = generatePostUrl(post.id);
   const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
-  const isIOSUnsafeVideo = Boolean(isVideoPost && isAppleWebKit && post.image_url && !isVideoUrlSafeForIOS(post.image_url));
-
-  const [videoEnabled, setVideoEnabled] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     setMediaLoaded(false);
-    setVideoEnabled(false);
+    setVideoError(false);
   }, [post.id]);
 
   useEffect(() => {
@@ -222,20 +217,19 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         
         {post.image_url && (
           <div className="relative w-full overflow-hidden bg-muted/40 aspect-[4/5] sm:aspect-video">
-            {!mediaLoaded && !(isVideoPost && isIOSUnsafeVideo) && (
+            {!mediaLoaded && !videoError && (
               <div className="absolute inset-0 skeleton" />
             )}
             {isVideoPost ? (
-              isIOSUnsafeVideo ? (
+              videoError ? (
                 <div className="absolute inset-0 flex items-center justify-center bg-muted/70">
                   <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-background/80 border border-border/40">
-                    <Play className="w-4 h-4 text-foreground" />
-                    <span className="text-xs font-medium text-foreground">Vidéo non compatible iPhone</span>
+                    <AlertTriangle className="w-4 h-4 text-destructive" />
+                    <span className="text-xs font-medium text-foreground">Format vidéo non supporté</span>
                   </div>
                 </div>
               ) : (
                 <video
-                  ref={videoRef}
                   controls
                   playsInline
                   // @ts-ignore – legacy iOS attribute
@@ -248,7 +242,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                     mediaLoaded ? "opacity-100" : "opacity-0"
                   )}
                   onLoadedData={() => setMediaLoaded(true)}
-                  onError={() => setMediaLoaded(true)}
+                  onError={() => { setMediaLoaded(true); setVideoError(true); }}
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
                 >
