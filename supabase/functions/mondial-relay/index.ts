@@ -6,9 +6,7 @@ import { createHash } from "https://deno.land/std@0.190.0/hash/mod.ts";
 const MR_WSDL = "https://api.mondialrelay.com/Web_Services.asmx";
 
 function md5Hex(str: string): string {
-  const md5 = new Md5();
-  md5.update(str);
-  return md5.toString().toUpperCase();
+  return createHash("md5").update(str).toString().toUpperCase();
 }
 
 function buildSignature(params: Record<string, string>, privateKey: string): string {
