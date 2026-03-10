@@ -281,7 +281,7 @@ export function InviteContacts() {
   const [hasResults, setHasResults] = useState(false);
   const [phoneInput, setPhoneInput] = useState('');
 
-  const GOOGLE_CLIENT_ID = ''; // TODO: Set via environment
+  const GOOGLE_CLIENT_ID = '124247938147-u2u3jptog9sf2i4ecrkujn4asdnmvsbd.apps.googleusercontent.com';
 
   const pickerSupported = hasContactPicker();
   const isIOS = isIOSDevice();
