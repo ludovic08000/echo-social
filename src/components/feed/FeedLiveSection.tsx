@@ -83,9 +83,7 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
     e.preventDefault();
     e.stopPropagation();
     if (!confirm('Supprimer ce replay ?')) return;
-    deleteLive.mutate(item.id, {
-      onSuccess: () => toast({ title: 'Replay supprimé' }),
-    });
+    deleteLive.mutate(item.id);
   };
 
   // On mobile, NEVER render <video> elements — use thumbnail or placeholder only

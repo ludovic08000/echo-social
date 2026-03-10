@@ -91,7 +91,6 @@ export function useDeleteAlbum() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['albums'] });
-      toast.success('Album supprimé');
     },
     onError: () => {
       toast.error("Erreur lors de la suppression");
@@ -163,7 +162,6 @@ export function useDeleteMedia() {
     onSuccess: (albumId) => {
       queryClient.invalidateQueries({ queryKey: ['album-media', albumId] });
       queryClient.invalidateQueries({ queryKey: ['albums'] });
-      toast.success('Média supprimé');
     },
     onError: () => {
       toast.error('Erreur lors de la suppression');

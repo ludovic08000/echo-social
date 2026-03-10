@@ -68,7 +68,6 @@ export default function Journal() {
     try {
       await deleteEntry.mutateAsync(id);
       setSelectedEntry(null);
-      toast({ title: 'Entrée supprimée' });
     } catch {
       toast({ title: 'Erreur', variant: 'destructive' });
     }

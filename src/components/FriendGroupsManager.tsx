@@ -82,7 +82,6 @@ export function FriendGroupsManager() {
   const handleDeleteGroup = async (group: FriendGroup) => {
     try {
       await deleteGroup.mutateAsync(group.id);
-      toast({ title: 'Groupe supprimé' });
     } catch (error) {
       toast({ title: 'Erreur', description: 'Impossible de supprimer le groupe', variant: 'destructive' });
     }
