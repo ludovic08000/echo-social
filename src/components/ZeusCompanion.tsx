@@ -131,8 +131,9 @@ function ActionCard({ action, onExecute, executing, executed }: {
     create_story: { icon: '📸', label: 'Créer cette story' },
     generate_image: { icon: '🎨', label: 'Générer cette image' },
     translate: { icon: '🌐', label: 'Traduction' },
+    update_feed_config: { icon: '⚙️', label: 'Ajuster ton algorithme' },
   };
-  const info = labels[action.type] || { icon: '⚡', label: action.type };
+  const info = labels[action.type] || { icon: '⚡', label: 'Action' };
   const preview = action.body || action.caption || action.translated_text || action.prompt || '';
 
   return (
