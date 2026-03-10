@@ -14,7 +14,16 @@ export interface Story {
     avatar_url: string | null;
   };
   views_count: number;
+  likes_count: number;
   is_viewed: boolean;
+  is_liked: boolean;
+}
+
+export interface StoryViewer {
+  viewer_id: string;
+  viewed_at: string;
+  name: string;
+  avatar_url: string | null;
 }
 
 export interface GroupedStories {
@@ -52,20 +61,29 @@ export function useStories() {
 
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
 
-      // Get view counts and user views
+      // Get view counts, like counts, and user's own views/likes
       const storyIds = stories.map(s => s.id);
-      const [viewsRes, userViewsRes] = await Promise.all([
+      const [viewsRes, userViewsRes, likesRes, userLikesRes] = await Promise.all([
         supabase.from('story_views').select('story_id').in('story_id', storyIds),
         user
           ? supabase.from('story_views').select('story_id').eq('viewer_id', user.id).in('story_id', storyIds)
           : Promise.resolve({ data: [] }),
+        supabase.from('story_likes').select('story_id').in('story_id', storyIds),
+        user
+          ? supabase.from('story_likes').select('story_id').eq('user_id', user.id).in('story_id', storyIds)
+          : Promise.resolve({ data: [] }),
       ]);
 
       const viewsCount: Record<string, number> = {};
+      const likesCount: Record<string, number> = {};
       const userViews = new Set(userViewsRes.data?.map(v => v.story_id) || []);
+      const userLikes = new Set(userLikesRes.data?.map(v => v.story_id) || []);
 
       viewsRes.data?.forEach(v => {
         viewsCount[v.story_id] = (viewsCount[v.story_id] || 0) + 1;
+      });
+      likesRes.data?.forEach(v => {
+        likesCount[v.story_id] = (likesCount[v.story_id] || 0) + 1;
       });
 
       const enrichedStories: Story[] = stories.map(story => {
@@ -77,7 +95,9 @@ export function useStories() {
             avatar_url: profile?.avatar_url || null,
           },
           views_count: viewsCount[story.id] || 0,
+          likes_count: likesCount[story.id] || 0,
           is_viewed: userViews.has(story.id),
+          is_liked: userLikes.has(story.id),
         };
       });
 
@@ -183,6 +203,62 @@ export function useViewStory() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stories'] });
     },
+  });
+}
+
+export function useLikeStory() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async ({ storyId, isLiked }: { storyId: string; isLiked: boolean }) => {
+      if (!user) return;
+
+      if (isLiked) {
+        await supabase.from('story_likes').delete().eq('story_id', storyId).eq('user_id', user.id);
+      } else {
+        const { error } = await supabase.from('story_likes').upsert({
+          story_id: storyId,
+          user_id: user.id,
+        }, { onConflict: 'story_id,user_id' });
+        if (error && !error.message.includes('duplicate')) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stories'] });
+    },
+  });
+}
+
+export function useStoryViewers(storyId: string | null) {
+  return useQuery({
+    queryKey: ['story-viewers', storyId],
+    queryFn: async () => {
+      if (!storyId) return [];
+      const { data: views } = await supabase
+        .from('story_views')
+        .select('viewer_id, viewed_at')
+        .eq('story_id', storyId)
+        .order('viewed_at', { ascending: false });
+
+      if (!views || views.length === 0) return [];
+
+      const viewerIds = views.map(v => v.viewer_id);
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, name, avatar_url')
+        .in('user_id', viewerIds);
+
+      const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
+
+      return views.map(v => ({
+        viewer_id: v.viewer_id,
+        viewed_at: v.viewed_at,
+        name: profileMap.get(v.viewer_id)?.name || 'Inconnu',
+        avatar_url: profileMap.get(v.viewer_id)?.avatar_url || null,
+      })) as StoryViewer[];
+    },
+    enabled: !!storyId,
   });
 }
 
