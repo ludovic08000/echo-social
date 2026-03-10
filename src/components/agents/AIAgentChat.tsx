@@ -211,7 +211,7 @@ export function AIAgentChat({ agent, onBack }: Props) {
       if (!resp.ok) {
         const err = await resp.json();
         if (err.error === 'limit_reached') {
-          toast({ title: '⚡ Limite atteinte', description: err.message, variant: 'destructive' });
+          toast({ title: '⚡ Zeus fait une pause', description: 'Tu as atteint ta limite de messages pour aujourd\'hui. Reviens demain pour continuer à discuter ! 😊', variant: 'destructive' });
           setMessages(prev => prev.slice(0, -1));
           setIsStreaming(false);
           return;
