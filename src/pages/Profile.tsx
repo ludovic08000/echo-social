@@ -160,8 +160,27 @@ export default function Profile() {
   const profileBgStyle = useCustomBackground('profile');
 
   const isFriend = friendshipData?.status === 'accepted';
-  const isPrivateProfile = profile?.profile_type === 'private';
-  const canViewPosts = isOwnProfile || isFriend || !isPrivateProfile;
+
+  // Fetch target user's privacy settings for post visibility
+  const { data: targetPrivacy } = useQuery({
+    queryKey: ['target-privacy', userId],
+    queryFn: async () => {
+      if (!userId) return null;
+      const { data } = await supabase
+        .from('privacy_settings')
+        .select('posts_visibility, profile_visibility')
+        .eq('user_id', userId)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!userId,
+    staleTime: 5 * 60_000,
+  });
+
+  // posts_visibility: 'public' (tout le monde), 'friends' (amis), 'private' (moi seul)
+  const postsVis = targetPrivacy?.posts_visibility || 'public';
+  const canViewPosts = isOwnProfile || postsVis === 'public' || (postsVis === 'friends' && isFriend);
+  const isPrivateProfile = postsVis !== 'public';
 
   // Check if own profile has pending identity verification
   const { data: pendingVerification } = useQuery({
