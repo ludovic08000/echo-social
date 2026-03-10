@@ -1,9 +1,13 @@
 import { Capacitor } from '@capacitor/core';
 import { ContactsPlugin, type ForgeContact } from '@/plugins/contacts';
 
-export async function importIOSContacts(): Promise<ForgeContact[]> {
-  if (Capacitor.getPlatform() !== 'ios') {
-    throw new Error('Cette fonction est disponible uniquement sur iOS');
+export { type ForgeContact } from '@/plugins/contacts';
+
+export async function importDeviceContacts(): Promise<ForgeContact[]> {
+  const platform = Capacitor.getPlatform();
+
+  if (platform !== 'ios' && platform !== 'android') {
+    throw new Error('Import des contacts disponible uniquement sur mobile natif');
   }
 
   const permission = await ContactsPlugin.requestPermission();
@@ -13,6 +17,8 @@ export async function importIOSContacts(): Promise<ForgeContact[]> {
   }
 
   const { contacts } = await ContactsPlugin.getContacts();
-
   return contacts;
 }
+
+/** @deprecated Use importDeviceContacts instead */
+export const importIOSContacts = importDeviceContacts;
