@@ -63,9 +63,14 @@ export default function ResetPassword() {
     setIsLoading(false);
 
     if (error) {
+      const isSamePassword = error.message?.toLowerCase().includes('same') || 
+                             error.message?.toLowerCase().includes('different') ||
+                             error.message?.toLowerCase().includes('previously used');
       toast({
-        title: 'Erreur',
-        description: 'Impossible de mettre à jour le mot de passe. Le lien a peut-être expiré.',
+        title: isSamePassword ? 'Mot de passe identique' : 'Erreur',
+        description: isSamePassword
+          ? 'Vous ne pouvez pas réutiliser votre ancien mot de passe. Veuillez en choisir un nouveau.'
+          : 'Impossible de mettre à jour le mot de passe. Le lien a peut-être expiré.',
         variant: 'destructive',
       });
       return;
@@ -136,6 +141,11 @@ export default function ResetPassword() {
               <p className="text-sm text-muted-foreground text-center mb-6">
                 Choisissez un nouveau mot de passe sécurisé.
               </p>
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 mb-4">
+                <p className="text-xs text-primary text-center">
+                  ⚠️ Vous devez choisir un mot de passe <strong>différent</strong> de l'ancien.
+                </p>
+              </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
