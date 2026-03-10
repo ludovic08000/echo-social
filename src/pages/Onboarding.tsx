@@ -162,6 +162,14 @@ export default function Onboarding() {
     setStep('ai-name');
   };
 
+  const handleAiNameDone = () => {
+    if (!aiName.trim()) {
+      toast({ title: 'Donne un nom à ton IA !', variant: 'destructive' });
+      return;
+    }
+    setStep('find-friends');
+  };
+
   const handleFinish = async () => {
     if (!user) return;
     if (!aiName.trim()) {
