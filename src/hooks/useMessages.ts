@@ -465,16 +465,23 @@ export function useCreateConversation() {
 
       if (convError) throw convError;
 
-      const { error: partError } = await supabase
+      // Insert self first so RLS allows adding the other user
+      const { error: selfError } = await supabase
         .from('conversation_participants')
-        .insert([
-          { conversation_id: conversationId, user_id: user.id },
-          { conversation_id: conversationId, user_id: otherUserId },
-        ]);
+        .insert({ conversation_id: conversationId, user_id: user.id });
 
-      if (partError) {
+      if (selfError) {
         await supabase.from('conversations').delete().eq('id', conversationId);
-        throw partError;
+        throw selfError;
+      }
+
+      const { error: otherError } = await supabase
+        .from('conversation_participants')
+        .insert({ conversation_id: conversationId, user_id: otherUserId });
+
+      if (otherError) {
+        await supabase.from('conversations').delete().eq('id', conversationId);
+        throw otherError;
       }
 
       return { id: conversationId };
