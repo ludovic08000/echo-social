@@ -37,6 +37,9 @@ export function SettingsProfileTab() {
   const [musicUrl, setMusicUrl] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isRequestingDeletion, setIsRequestingDeletion] = useState(false);
 
   useEffect(() => {
     if (profile) {
