@@ -664,7 +664,7 @@ export function ZeusCompanion() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 40, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className="fixed bottom-4 right-4 z-[55] w-[390px] max-w-[calc(100vw-2rem)] h-[560px] max-h-[75vh] rounded-3xl flex flex-col overflow-hidden relative"
+            className="fixed bottom-[80px] right-5 z-[55] w-[390px] max-w-[calc(100vw-2rem)] h-[560px] max-h-[calc(100vh-120px)] rounded-3xl flex flex-col overflow-hidden relative md:right-8"
             style={{
               background: 'linear-gradient(180deg, rgba(0,15,30,0.97) 0%, rgba(0,20,40,0.98) 50%, rgba(0,10,25,0.99) 100%)',
               border: '1px solid rgba(0,255,255,0.15)',
