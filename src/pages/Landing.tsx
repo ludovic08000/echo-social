@@ -72,11 +72,11 @@ export default function Landing() {
       {/* Footer — visible, crawlable links for Google compliance */}
       <footer className="relative z-10 w-full border-t border-border/30 bg-background/60 backdrop-blur-sm py-6 px-6">
         <div className="max-w-3xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-4 text-sm">
-          <a href="https://forsure.fans/legal/privacy" className="text-foreground underline hover:text-primary transition-colors">
+          <a href="https://forsure.fans/privacy" className="text-foreground underline hover:text-primary transition-colors">
             Politique de confidentialité
           </a>
           <span className="hidden sm:inline text-muted-foreground">•</span>
-          <a href="https://forsure.fans/legal/terms" className="text-foreground underline hover:text-primary transition-colors">
+          <a href="https://forsure.fans/legal" className="text-foreground underline hover:text-primary transition-colors">
             Conditions Générales d'Utilisation
           </a>
           <span className="hidden sm:inline text-muted-foreground">•</span>

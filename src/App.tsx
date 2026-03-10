@@ -136,6 +136,7 @@ function AppContent() {
               <Route path="/legal" element={<LegalTerms />} />
               <Route path="/legal/terms" element={<LegalTerms />} />
               <Route path="/legal/privacy" element={<PrivacyPolicy />} />
+              <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/onboarding" element={<Onboarding />} />
               
               {/* Protected routes */}
