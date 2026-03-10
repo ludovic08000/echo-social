@@ -29,9 +29,13 @@ export default function ForgotPassword() {
     setIsLoading(false);
 
     if (error) {
+      console.error('Password reset error:', error.message, error.status);
+      const isRateLimit = error.message?.toLowerCase().includes('rate') || error.status === 429;
       toast({
-        title: 'Erreur',
-        description: "Impossible d'envoyer l'e-mail de réinitialisation. Vérifiez votre adresse.",
+        title: isRateLimit ? 'Trop de tentatives' : 'Erreur',
+        description: isRateLimit
+          ? 'Veuillez patienter quelques minutes avant de réessayer.'
+          : "Impossible d'envoyer l'e-mail de réinitialisation. Vérifiez votre adresse.",
         variant: 'destructive',
       });
       return;
