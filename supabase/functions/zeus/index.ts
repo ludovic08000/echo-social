@@ -974,6 +974,56 @@ async function executeZeusTool(name: string, args: any, supabase: any): Promise<
 
         return JSON.stringify(results);
       }
+      case "web_search": {
+        const query = args.query || "";
+        const lang = args.language || "fr";
+        try {
+          // Use DuckDuckGo HTML search and parse results
+          const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=${lang === "fr" ? "fr-fr" : "us-en"}`;
+          const searchResp = await fetch(searchUrl, {
+            headers: { "User-Agent": "Mozilla/5.0 (compatible; ZeusBot/1.0)" },
+          });
+          const html = await searchResp.text();
+          
+          // Extract result snippets from DuckDuckGo HTML
+          const results: { title: string; snippet: string; url: string }[] = [];
+          const resultRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+          let match;
+          while ((match = resultRegex.exec(html)) && results.length < 8) {
+            const url = decodeURIComponent(match[1].replace(/.*uddg=/, "").replace(/&.*/, ""));
+            const title = match[2].replace(/<[^>]+>/g, "").trim();
+            const snippet = match[3].replace(/<[^>]+>/g, "").trim();
+            if (title && snippet) results.push({ title, snippet, url });
+          }
+
+          // Fallback: simpler regex for alternative HTML structure
+          if (results.length === 0) {
+            const altRegex = /<a[^>]*class="result__url"[^>]*[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+            while ((match = altRegex.exec(html)) && results.length < 5) {
+              const url = match[1].replace(/<[^>]+>/g, "").trim();
+              const snippet = match[2].replace(/<[^>]+>/g, "").trim();
+              if (snippet) results.push({ title: url, snippet, url });
+            }
+          }
+
+          if (results.length === 0) {
+            // Last resort: use AI with its training knowledge
+            return JSON.stringify({ 
+              note: "Aucun résultat web trouvé. Réponds avec tes connaissances en précisant que tu n'as pas pu vérifier en temps réel.",
+              query,
+            });
+          }
+
+          return JSON.stringify({
+            query,
+            results_count: results.length,
+            results: results.map(r => ({ title: r.title, snippet: r.snippet, source: r.url })),
+            instruction: "Synthétise ces résultats pour répondre à l'utilisateur. Cite les sources pertinentes avec des liens.",
+          });
+        } catch (e) {
+          return JSON.stringify({ error: `Recherche web échouée: ${(e as Error).message}`, query });
+        }
+      }
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
