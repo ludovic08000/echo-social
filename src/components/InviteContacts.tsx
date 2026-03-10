@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { Share } from '@capacitor/share';
-import { UserPlus, Search, Check, Send, Phone, Users, ArrowRight, Upload, FileText } from 'lucide-react';
+import { UserPlus, Search, Check, Send, Phone, Users, ArrowRight, Upload, FileText, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -402,10 +402,26 @@ function WebPhoneSearch() {
             </ScrollArea>
 
             {selectedInvites.size > 0 && (
-              <div className="p-3 border-t border-border flex gap-2">
-                <Button onClick={sendInvitesSMS} className="flex-1 gap-2">
+              <div className="p-3 border-t border-border flex gap-2 flex-wrap">
+                <Button onClick={() => {
+                  const phones = Array.from(selectedInvites);
+                  const encoded = encodeURIComponent(INVITE_MESSAGE);
+                  if (phones.length === 1) {
+                    window.open(`https://wa.me/${phones[0].replace('+', '')}?text=${encoded}`, '_blank');
+                  } else {
+                    window.open(`https://wa.me/?text=${encoded}`, '_blank');
+                  }
+                  toast({
+                    title: `💬 WhatsApp ouvert`,
+                    description: phones.length > 1 ? `Envoyez le message à vos ${phones.length} contacts` : 'Envoyez le message',
+                  });
+                }} className="flex-1 gap-2 bg-[#25D366] hover:bg-[#1da851] text-white">
+                  <MessageCircle className="w-4 h-4" />
+                  WhatsApp ({selectedInvites.size})
+                </Button>
+                <Button onClick={sendInvitesSMS} variant="outline" className="flex-1 gap-2">
                   <Phone className="w-4 h-4" />
-                  SMS ({selectedInvites.size})
+                  SMS
                 </Button>
                 <Button onClick={sendInvitesShare} variant="outline" className="flex-1 gap-2">
                   <Send className="w-4 h-4" />
