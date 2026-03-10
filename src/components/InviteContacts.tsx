@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { Share } from '@capacitor/share';
-import { UserPlus, Search, Check, Send, Phone, Users, ArrowRight, Upload, FileText } from 'lucide-react';
+import { UserPlus, Search, Check, Send, Phone, Users, ArrowRight, Upload, FileText, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
