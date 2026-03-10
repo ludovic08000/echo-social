@@ -3,6 +3,7 @@ import { useCustomBackground } from '@/hooks/useCustomBackground';
 import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake, ShieldAlert, Crown, LogOut, Newspaper } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
+import { useCreateConversation } from '@/hooks/useMessages';
 import { CreatePost } from '@/components/CreatePost';
 import { useAuth } from '@/lib/auth';
 import { AppLayout } from '@/components/AppLayout';
