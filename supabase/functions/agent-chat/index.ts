@@ -559,7 +559,7 @@ serve(async (req) => {
       });
     }
 
-    const reader = response.body!.getReader();
+    const reader = streamResponse.body!.getReader();
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
     let fullResponse = "";
