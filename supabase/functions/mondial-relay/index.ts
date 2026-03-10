@@ -227,6 +227,20 @@ serve(async (req) => {
       const colRelayId = collectionMode === "REL" ? cleanRelayId : "";
       const insuranceValue = Math.round(order.subtotal * 100);
 
+      // Validate required fields before SOAP call
+      if (!recipientName) throw new Error("Nom destinataire manquant");
+      if (!recipientPostcode) throw new Error("Code postal destinataire manquant");
+      if (!recipientCity) throw new Error("Ville destinataire manquante");
+      if (!relayCountry) throw new Error("Pays destinataire manquant");
+      if (["24R", "24L"].includes(deliveryMode) && !cleanRelayId) {
+        throw new Error("Point relais manquant");
+      }
+      if (!senderName) throw new Error("Nom expéditeur manquant");
+      if (!senderAddress) throw new Error("Adresse expéditeur manquante");
+      if (!senderPostcode) throw new Error("Code postal expéditeur manquant");
+      if (!senderCity) throw new Error("Ville expéditeur manquante");
+      if (!weight || weight <= 0) throw new Error("Poids invalide");
+
       // Build SOAP params for WSI2_CreationEtiquette
       // Values must be RAW (no XML escaping) - the SOAP helper handles XML construction
       // Order matters for MD5 signature computation
