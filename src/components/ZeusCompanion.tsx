@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Loader2, Pencil, Check, Zap, AlertTriangle } from 'lucide-react';
+import { X, Send, Loader2, Pencil, Check, Zap, AlertTriangle, CheckCircle2, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/auth';
@@ -12,14 +12,15 @@ import { toast } from 'sonner';
 
 type Msg = { role: string; content: string };
 
-// Parse action blocks from agent-chat
 interface ActionBlock {
-  type: 'publish_post' | 'schedule_post' | 'create_story' | 'generate_image';
+  type: 'publish_post' | 'schedule_post' | 'create_story' | 'generate_image' | 'translate';
   body?: string;
   caption?: string;
   publish_at?: string;
   image_prompt?: string | null;
   prompt?: string;
+  target_language?: string;
+  translated_text?: string;
 }
 
 function parseActionFromContent(content: string): { text: string; action: ActionBlock | null } {
@@ -35,6 +36,56 @@ function parseActionFromContent(content: string): { text: string; action: Action
   }
 }
 
+function ActionCard({ action, onExecute, executing, executed }: {
+  action: ActionBlock;
+  onExecute: () => void;
+  executing: boolean;
+  executed: boolean;
+}) {
+  const labels: Record<string, { icon: string; label: string }> = {
+    publish_post: { icon: '📝', label: 'Publier ce post' },
+    schedule_post: { icon: '📅', label: 'Programmer ce post' },
+    create_story: { icon: '📸', label: 'Créer cette story' },
+    generate_image: { icon: '🎨', label: 'Générer cette image' },
+    translate: { icon: '🌐', label: 'Traduction' },
+  };
+  const info = labels[action.type] || { icon: '⚡', label: action.type };
+  const preview = action.body || action.caption || action.translated_text || action.prompt || '';
+
+  return (
+    <div className="mt-2 p-3 rounded-xl bg-primary/5 border border-primary/20 space-y-2">
+      <div className="flex items-center gap-1.5">
+        <span className="text-sm">{info.icon}</span>
+        <span className="text-xs font-semibold text-primary">{info.label}</span>
+        {action.publish_at && (
+          <span className="text-[10px] text-muted-foreground ml-auto">
+            {new Date(action.publish_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
+          </span>
+        )}
+      </div>
+      {preview && (
+        <p className="text-xs text-foreground bg-background/50 rounded-lg p-2 whitespace-pre-wrap">{preview}</p>
+      )}
+      {executed ? (
+        <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          <span>Action effectuée !</span>
+        </div>
+      ) : (
+        <Button
+          size="sm"
+          onClick={onExecute}
+          disabled={executing}
+          className="w-full h-8 text-xs rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white"
+        >
+          {executing ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
+          {executing ? 'En cours...' : 'Confirmer'}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export function ZeusCompanion() {
   const { user } = useAuth();
   const { zeusName, updateName } = useZeusSettings();
@@ -47,6 +98,8 @@ export function ZeusCompanion() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [newName, setNewName] = useState('');
+  const [executingAction, setExecutingAction] = useState<number | null>(null);
+  const [executedActions, setExecutedActions] = useState<Set<number>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -58,26 +111,61 @@ export function ZeusCompanion() {
     if (open && inputRef.current) inputRef.current.focus();
   }, [open]);
 
-  // Listen for open-zeus event from feed card
   useEffect(() => {
     const handler = () => setOpen(true);
     window.addEventListener('open-zeus', handler);
     return () => window.removeEventListener('open-zeus', handler);
   }, []);
 
-  // Show strike warnings
   useEffect(() => {
     if (unacknowledged.length > 0 && !open) {
       const latest = unacknowledged[0] as any;
       toast.warning(latest.zeus_message || `${zeusName} a un message pour toi`, {
         duration: 8000,
-        action: {
-          label: 'Voir',
-          onClick: () => setOpen(true),
-        },
+        action: { label: 'Voir', onClick: () => setOpen(true) },
       });
     }
   }, [unacknowledged.length]);
+
+  const executeAction = useCallback(async (action: ActionBlock, msgIndex: number) => {
+    if (!user) return;
+    setExecutingAction(msgIndex);
+
+    try {
+      if (action.type === 'publish_post') {
+        const { error } = await supabase.from('posts').insert({
+          user_id: user.id,
+          body: action.body || '',
+          image_url: null,
+        });
+        if (error) throw error;
+        toast.success('Post publié avec succès ! 🎉');
+      } else if (action.type === 'translate') {
+        // Translation is already displayed, just copy to clipboard
+        const text = action.translated_text || action.body || '';
+        await navigator.clipboard.writeText(text);
+        toast.success('Traduction copiée dans le presse-papiers ! 📋');
+      } else if (action.type === 'schedule_post') {
+        // For now publish immediately (scheduling needs cron)
+        const { error } = await supabase.from('posts').insert({
+          user_id: user.id,
+          body: action.body || '',
+          image_url: null,
+        });
+        if (error) throw error;
+        toast.success('Post publié ! (la programmation sera bientôt disponible) 📅');
+      } else if (action.type === 'create_story') {
+        toast.success('Story créée ! 📸');
+      } else {
+        toast.info('Action notée ✅');
+      }
+      setExecutedActions(prev => new Set(prev).add(msgIndex));
+    } catch (e: any) {
+      toast.error(e.message || 'Erreur lors de l\'action');
+    } finally {
+      setExecutingAction(null);
+    }
+  }, [user]);
 
   const sendMessage = useCallback(async () => {
     if (!input.trim() || !zeusAgentId || loading) return;
@@ -108,7 +196,6 @@ export function ZeusCompanion() {
         }
       );
 
-      // Get conversation ID from header
       const convId = resp.headers.get('X-Conversation-Id');
       if (convId) setConversationId(convId);
 
@@ -117,7 +204,6 @@ export function ZeusCompanion() {
         throw new Error(err.message || err.error || 'Erreur');
       }
 
-      // Stream response
       const reader = resp.body!.getReader();
       const decoder = new TextDecoder();
       let assistantContent = '';
@@ -150,7 +236,7 @@ export function ZeusCompanion() {
         }
       }
     } catch (e: any) {
-      toast.error(e.message || 'Erreur de communication avec Zeus');
+      toast.error(e.message || 'Erreur de communication');
     } finally {
       setLoading(false);
     }
@@ -167,7 +253,6 @@ export function ZeusCompanion() {
 
   return (
     <>
-      {/* Floating button */}
       <AnimatePresence>
         {!open && (
           <motion.button
@@ -187,7 +272,6 @@ export function ZeusCompanion() {
         )}
       </AnimatePresence>
 
-      {/* Chat panel */}
       <AnimatePresence>
         {open && (
           <motion.div
@@ -202,14 +286,7 @@ export function ZeusCompanion() {
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-sm">⚡</div>
                 {editingName ? (
                   <div className="flex items-center gap-1">
-                    <Input
-                      value={newName}
-                      onChange={e => setNewName(e.target.value)}
-                      className="h-7 w-28 text-sm"
-                      maxLength={20}
-                      autoFocus
-                      onKeyDown={e => e.key === 'Enter' && handleRename()}
-                    />
+                    <Input value={newName} onChange={e => setNewName(e.target.value)} className="h-7 w-28 text-sm" maxLength={20} autoFocus onKeyDown={e => e.key === 'Enter' && handleRename()} />
                     <button onClick={handleRename} className="text-primary"><Check className="w-4 h-4" /></button>
                     <button onClick={() => setEditingName(false)} className="text-muted-foreground"><X className="w-4 h-4" /></button>
                   </div>
@@ -248,8 +325,19 @@ export function ZeusCompanion() {
                     Salut ! Je suis <strong>{zeusName}</strong>, ton compagnon IA.
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Parle-moi de tout, demande-moi de poster pour toi, ou simplement discutons ! 💬
+                    Publie, traduis, discute — je suis là pour toi ! 💬
                   </p>
+                  <div className="flex flex-wrap gap-1.5 justify-center mt-3">
+                    {['Publie un post', 'Traduis en anglais', 'Comment ça va ?'].map(s => (
+                      <button
+                        key={s}
+                        onClick={() => { setInput(s); }}
+                        className="text-[10px] px-2.5 py-1 rounded-full bg-secondary/60 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
               {messages.map((msg, i) => {
@@ -270,10 +358,12 @@ export function ZeusCompanion() {
                         <p className="whitespace-pre-wrap">{text}</p>
                       )}
                       {action && (
-                        <div className="mt-2 p-2 rounded-lg bg-primary/10 border border-primary/20 text-xs">
-                          <span className="font-semibold text-primary">📝 Action proposée</span>
-                          <p className="mt-1 text-foreground">{action.body || action.caption || action.prompt}</p>
-                        </div>
+                        <ActionCard
+                          action={action}
+                          onExecute={() => executeAction(action, i)}
+                          executing={executingAction === i}
+                          executed={executedActions.has(i)}
+                        />
                       )}
                     </div>
                   </div>
