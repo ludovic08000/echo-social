@@ -34,7 +34,7 @@ export function FeedZeusCard() {
               {zeusName} <span className="text-muted-foreground font-normal">— ton assistant IA</span>
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Parle-moi, demande-moi de poster, ou discutons ! ⚡
+              Publie, gère ton fil, traduis, cherche sur la marketplace ⚡
             </p>
           </div>
           <MessageCircle className="w-5 h-5 text-amber-500/60 group-hover:text-amber-500 transition-colors" />
