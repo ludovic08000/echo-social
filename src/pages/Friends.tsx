@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Users, Clock, UserCheck, UserPlus, Search, UserX, MessageCircle } from 'lucide-react';
+import { Users, Clock, UserCheck, UserPlus, Search, UserX, MessageCircle, Sparkles, MapPin } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
-import { useFriendships, useRespondToFriendRequest, useRemoveFriend } from '@/hooks/useFriendships';
+import { useFriendships, useRespondToFriendRequest, useRemoveFriend, useSendFriendRequest } from '@/hooks/useFriendships';
 import { useCreateConversation } from '@/hooks/useMessages';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,9 @@ import { InviteContacts } from '@/components/InviteContacts';
 import { FriendSuggestions } from '@/components/feed/FriendSuggestions';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { useNewUsers } from '@/hooks/useNewUsers';
+import { formatDistanceToNow } from 'date-fns';
+import { fr } from 'date-fns/locale';
 
 export default function Friends() {
   const { data, isLoading } = useFriendships();
