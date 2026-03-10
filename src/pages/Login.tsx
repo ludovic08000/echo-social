@@ -109,7 +109,13 @@ export default function Login() {
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-muted-foreground">
+          <div className="mt-4 text-center">
+            <Link to="/forgot-password" className="text-sm text-primary hover:underline">
+              Mot de passe oublié ?
+            </Link>
+          </div>
+
+          <p className="mt-4 text-center text-sm text-muted-foreground">
             {t('login.noAccount')}{' '}
             <Link to="/signup" className="text-primary hover:underline font-medium">
               {t('login.signupLink')}
