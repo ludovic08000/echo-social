@@ -265,11 +265,13 @@ serve(async (req) => {
         TRDV: '',
         Assurance: '',
         Instructions: '',
-        Texte: '',
       };
 
       // Compute MD5 signature over all param values + private key
+      // Texte comes AFTER Security in WSDL, so it must NOT be in the hash
       params.Security = buildSignature(params, privateKey);
+      // Add Texte after signature computation
+      params.Texte = '';
 
       console.log("SOAP create_shipment request:", JSON.stringify({
         order_id, deliveryMode, collectionMode,
