@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Shield } from 'lucide-react';
+import { Eye, EyeOff, Shield, Phone } from 'lucide-react';
 import { differenceInYears } from 'date-fns';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
@@ -28,6 +28,7 @@ export default function Signup() {
   const [birthMonth, setBirthMonth] = useState('');
   const [birthYear, setBirthYear] = useState('');
   const [email, setEmail] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -118,6 +119,21 @@ export default function Signup() {
       return;
     }
 
+    // Save phone number if provided
+    if (phoneNumber.trim()) {
+      try {
+        const { data: { user: newUser } } = await supabase.auth.getUser();
+        if (newUser) {
+          let normalizedPhone = phoneNumber.replace(/[\s\-().]/g, '');
+          if (normalizedPhone.startsWith('0') && normalizedPhone.length === 10) {
+            normalizedPhone = '+33' + normalizedPhone.slice(1);
+          }
+          if (!normalizedPhone.startsWith('+')) normalizedPhone = '+' + normalizedPhone;
+          await supabase.from('profiles').update({ phone_number: normalizedPhone }).eq('user_id', newUser.id);
+        }
+      } catch {}
+    }
+
     const userAge = differenceInYears(new Date(), dateOfBirth);
     if (userAge < 16 && parentalPin) {
       try {
@@ -203,6 +219,21 @@ export default function Signup() {
             <div className="space-y-2">
               <Label htmlFor="email">{t('signup.email')} *</Label>
               <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('signup.emailPlaceholder')} className="pulse-input" required />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="phone" className="flex items-center gap-1.5">
+                <Phone className="w-3.5 h-3.5" /> Numéro de téléphone
+              </Label>
+              <Input
+                id="phone"
+                type="tel"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value.replace(/[^0-9+\s\-()]/g, '').slice(0, 20))}
+                placeholder="+33 6 12 34 56 78"
+                className="pulse-input"
+              />
+              <p className="text-[11px] text-muted-foreground">Permet à tes amis de te retrouver via leurs contacts</p>
             </div>
 
             <div className="space-y-2">
