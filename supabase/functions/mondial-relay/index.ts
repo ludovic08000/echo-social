@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
-import { Md5 } from "https://deno.land/std@0.190.0/hash/md5.ts";
+import { createHash } from "https://deno.land/std@0.190.0/hash/mod.ts";
 
 const MR_WSDL = "https://api.mondialrelay.com/Web_Services.asmx";
 
