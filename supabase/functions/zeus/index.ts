@@ -554,6 +554,20 @@ const ZEUS_TOOLS = [
       },
     },
   },
+  {
+    type: "function", function: {
+      name: "web_search", description: "Rechercher des informations sur internet en temps réel. Utilise cette fonction quand l'utilisateur pose une question nécessitant des données actuelles, des actualités, des définitions, des tendances, ou toute information que tu ne possèdes pas dans tes données d'entraînement.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "La requête de recherche en langage naturel" },
+          language: { type: "string", enum: ["fr", "en"], description: "Langue préférée des résultats" },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // Execute Zeus tool calls against the database
@@ -960,6 +974,56 @@ async function executeZeusTool(name: string, args: any, supabase: any): Promise<
 
         return JSON.stringify(results);
       }
+      case "web_search": {
+        const query = args.query || "";
+        const lang = args.language || "fr";
+        try {
+          // Use DuckDuckGo HTML search and parse results
+          const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=${lang === "fr" ? "fr-fr" : "us-en"}`;
+          const searchResp = await fetch(searchUrl, {
+            headers: { "User-Agent": "Mozilla/5.0 (compatible; ZeusBot/1.0)" },
+          });
+          const html = await searchResp.text();
+          
+          // Extract result snippets from DuckDuckGo HTML
+          const results: { title: string; snippet: string; url: string }[] = [];
+          const resultRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+          let match;
+          while ((match = resultRegex.exec(html)) && results.length < 8) {
+            const url = decodeURIComponent(match[1].replace(/.*uddg=/, "").replace(/&.*/, ""));
+            const title = match[2].replace(/<[^>]+>/g, "").trim();
+            const snippet = match[3].replace(/<[^>]+>/g, "").trim();
+            if (title && snippet) results.push({ title, snippet, url });
+          }
+
+          // Fallback: simpler regex for alternative HTML structure
+          if (results.length === 0) {
+            const altRegex = /<a[^>]*class="result__url"[^>]*[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+            while ((match = altRegex.exec(html)) && results.length < 5) {
+              const url = match[1].replace(/<[^>]+>/g, "").trim();
+              const snippet = match[2].replace(/<[^>]+>/g, "").trim();
+              if (snippet) results.push({ title: url, snippet, url });
+            }
+          }
+
+          if (results.length === 0) {
+            // Last resort: use AI with its training knowledge
+            return JSON.stringify({ 
+              note: "Aucun résultat web trouvé. Réponds avec tes connaissances en précisant que tu n'as pas pu vérifier en temps réel.",
+              query,
+            });
+          }
+
+          return JSON.stringify({
+            query,
+            results_count: results.length,
+            results: results.map(r => ({ title: r.title, snippet: r.snippet, source: r.url })),
+            instruction: "Synthétise ces résultats pour répondre à l'utilisateur. Cite les sources pertinentes avec des liens.",
+          });
+        } catch (e) {
+          return JSON.stringify({ error: `Recherche web échouée: ${(e as Error).message}`, query });
+        }
+      }
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
@@ -1106,6 +1170,13 @@ ${(verificationsRes.data || []).slice(0, 5).map((v: any) => `- ${v.reason || "Pa
 
 ## 🧠 PERSONNALITÉ
 Tu es un directeur stratégique virtuel : analytique, **proactif**, pragmatique. Tu anticipes les problèmes avant qu'ils n'arrivent. Tu fournis des analyses dignes d'un board de direction.
+
+## 🌐 RECHERCHE WEB
+Tu disposes d'un outil \`web_search\` qui te permet de chercher des informations en temps réel sur internet. **Utilise-le systématiquement** quand :
+- L'utilisateur pose une question d'actualité, de culture générale, ou nécessitant des données récentes
+- Tu as besoin de vérifier un fait ou une information
+- La question dépasse tes connaissances internes (tendances, actualités, prix, événements, etc.)
+Quand tu utilises des résultats web, **cite toujours les sources** avec des liens.
 
 ## 🔑 COMPORTEMENT PROACTIF (TRÈS IMPORTANT)
 **Tu es un vrai assistant stratégique. Tu ne te contentes PAS de répondre aux questions. Tu DOIS :**
