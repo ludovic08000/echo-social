@@ -667,15 +667,13 @@ export default function Profile() {
                   <div className="shrink-0">
                     <FriendshipButton userId={userId!} />
                   </div>
-                  {friendshipData?.status === 'accepted' && (
-                    <Button 
-                      variant="secondary" 
-                      className="rounded-xl h-10 text-sm whitespace-nowrap shrink-0"
-                    >
-                      <MessageCircle className="w-4 h-4 mr-2" />
-                      Envoyer un message
-                    </Button>
-                  )}
+                  <Button 
+                    variant="secondary" 
+                    className="rounded-xl h-10 text-sm whitespace-nowrap shrink-0"
+                  >
+                    <MessageCircle className="w-4 h-4 mr-2" />
+                    Envoyer un message
+                  </Button>
                    {isCreator && <TipButton creatorId={userId!} creatorName={profile.name} />}
                    <ReportFakeAccountButton reportedUserId={userId!} />
                    {currentUserIsMinor && <MinorReportButton reportedUserId={userId!} />}
