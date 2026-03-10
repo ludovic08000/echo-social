@@ -12,7 +12,7 @@ import { AppLayout } from '@/components/AppLayout';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, useCreateGroupConversation, useDeleteMessageForMe, useDeleteMessageForEveryone, useLeaveGroup, useAddGroupMembers, useRemoveGroupMember, useGroupMembers, type Message } from '@/hooks/useMessages';
+import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, useCreateGroupConversation, useDeleteMessageForMe, useDeleteMessageForEveryone, useDeleteConversation, useLeaveGroup, useAddGroupMembers, useRemoveGroupMember, useGroupMembers, type Message } from '@/hooks/useMessages';
 import { supabase } from '@/integrations/supabase/client';
 import { useFriendships } from '@/hooks/useFriendships';
 import { useAuth } from '@/lib/auth';
@@ -478,12 +478,24 @@ function ConversationList() {
   const { data: conversations, isLoading } = useConversations();
   const [search, setSearch] = useState('');
   const [showNewChat, setShowNewChat] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const deleteConversation = useDeleteConversation();
 
   const filtered = useMemo(() => {
     if (!search.trim() || !conversations) return conversations;
     const q = search.toLowerCase();
     return conversations.filter(c => c.participant.name.toLowerCase().includes(q));
   }, [conversations, search]);
+
+  const handleDelete = async (convId: string) => {
+    try {
+      await deleteConversation.mutateAsync(convId);
+      toast.success('Conversation supprimée');
+    } catch {
+      toast.error('Erreur lors de la suppression');
+    }
+    setDeleteTarget(null);
+  };
 
   return (
     <AppLayout>
@@ -581,72 +593,105 @@ function ConversationList() {
             </div>
           ) : (
             filtered.map(conv => (
-              <Link
-                key={conv.id}
-                to={`/messages/${conv.id}`}
-                className={cn(
-                  "flex items-center gap-3 p-3 rounded-2xl transition-all duration-200 active:scale-[0.98]",
-                  conv.unread_count > 0
-                    ? "bg-primary/5 hover:bg-primary/10 border border-primary/10"
-                    : "hover:bg-secondary/60"
-                )}
-              >
-                <div className="relative flex-shrink-0">
-                  {conv.is_group ? (
-                    <div className="w-[52px] h-[52px] rounded-full bg-gradient-to-br from-primary/20 to-accent/30 flex items-center justify-center text-lg">
-                      👥
-                    </div>
-                  ) : (
-                    <>
-                      <UserAvatar src={conv.participant.avatar_url} alt={conv.participant.name} size="lg" />
-                      <div className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 border-[2.5px] border-background" />
-                    </>
+              <div key={conv.id} className="relative group">
+                <Link
+                  to={`/messages/${conv.id}`}
+                  className={cn(
+                    "flex items-center gap-3 p-3 rounded-2xl transition-all duration-200 active:scale-[0.98]",
+                    conv.unread_count > 0
+                      ? "bg-primary/5 hover:bg-primary/10 border border-primary/10"
+                      : "hover:bg-secondary/60"
                   )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className={cn(
-                      "text-sm truncate",
-                      conv.unread_count > 0 ? "font-bold text-foreground" : "font-medium"
-                    )}>
-                      {conv.is_group ? (conv.name || 'Groupe') : conv.participant.name}
-                    </span>
-                    {conv.last_message && (
+                >
+                  <div className="relative flex-shrink-0">
+                    {conv.is_group ? (
+                      <div className="w-[52px] h-[52px] rounded-full bg-gradient-to-br from-primary/20 to-accent/30 flex items-center justify-center text-lg">
+                        👥
+                      </div>
+                    ) : (
+                      <>
+                        <UserAvatar src={conv.participant.avatar_url} alt={conv.participant.name} size="lg" />
+                        <div className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 border-[2.5px] border-background" />
+                      </>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
                       <span className={cn(
-                        "text-[10px] flex-shrink-0",
-                        conv.unread_count > 0 ? "text-primary font-semibold" : "text-muted-foreground"
+                        "text-sm truncate",
+                        conv.unread_count > 0 ? "font-bold text-foreground" : "font-medium"
                       )}>
-                        {formatMessageTime(conv.last_message.created_at)}
+                        {conv.is_group ? (conv.name || 'Groupe') : conv.participant.name}
                       </span>
-                    )}
+                      {conv.last_message && (
+                        <span className={cn(
+                          "text-[10px] flex-shrink-0",
+                          conv.unread_count > 0 ? "text-primary font-semibold" : "text-muted-foreground"
+                        )}>
+                          {formatMessageTime(conv.last_message.created_at)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <p className={cn(
+                        "text-xs truncate flex-1",
+                        conv.unread_count > 0 ? "text-foreground font-medium" : "text-muted-foreground"
+                      )}>
+                        {conv.last_message?.body
+                          ? conv.last_message.body.startsWith('📞 CALL:missed|')
+                            ? `📞 Appel ${conv.last_message.body.includes('video') ? 'vidéo' : 'audio'} manqué`
+                            : conv.last_message.body.startsWith('📞 CALL:ended|')
+                              ? `📞 Appel ${conv.last_message.body.includes('video') ? 'vidéo' : 'audio'} terminé`
+                              : conv.last_message.body
+                          : 'Démarrez la conversation…'}
+                      </p>
+                      {conv.unread_count > 0 && (
+                        <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center flex-shrink-0 shadow-sm shadow-primary/30">
+                          {conv.unread_count > 9 ? '9+' : conv.unread_count}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <p className={cn(
-                      "text-xs truncate flex-1",
-                      conv.unread_count > 0 ? "text-foreground font-medium" : "text-muted-foreground"
-                    )}>
-                      {conv.last_message?.body
-                        ? conv.last_message.body.startsWith('📞 CALL:missed|')
-                          ? `📞 Appel ${conv.last_message.body.includes('video') ? 'vidéo' : 'audio'} manqué`
-                          : conv.last_message.body.startsWith('📞 CALL:ended|')
-                            ? `📞 Appel ${conv.last_message.body.includes('video') ? 'vidéo' : 'audio'} terminé`
-                            : conv.last_message.body
-                        : 'Démarrez la conversation…'}
-                    </p>
-                    {conv.unread_count > 0 && (
-                      <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center flex-shrink-0 shadow-sm shadow-primary/30">
-                        {conv.unread_count > 9 ? '9+' : conv.unread_count}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </Link>
+                </Link>
+                {/* Delete button on hover/touch */}
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(conv.id); }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 rounded-full bg-destructive/10 hover:bg-destructive/20 flex items-center justify-center"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                </button>
+              </div>
             ))
           )}
         </div>
       </div>
 
       <NewConversationDialog open={showNewChat} onOpenChange={setShowNewChat} />
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-sm rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base">Supprimer cette conversation ?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            La conversation sera supprimée de votre liste. Les messages resteront visibles pour les autres participants.
+          </p>
+          <div className="flex gap-2 mt-2">
+            <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setDeleteTarget(null)}>
+              Annuler
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1 rounded-xl"
+              disabled={deleteConversation.isPending}
+              onClick={() => deleteTarget && handleDelete(deleteTarget)}
+            >
+              {deleteConversation.isPending ? 'Suppression…' : 'Supprimer'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

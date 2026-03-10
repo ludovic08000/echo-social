@@ -615,6 +615,29 @@ export function useRejectMessageRequest() {
   });
 }
 
+export function useDeleteConversation() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async (conversationId: string) => {
+      if (!user) throw new Error('Not authenticated');
+
+      // Remove self from conversation participants (soft delete)
+      const { error } = await supabase
+        .from('conversation_participants')
+        .delete()
+        .eq('conversation_id', conversationId)
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}
+
 export function useLeaveGroup() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
