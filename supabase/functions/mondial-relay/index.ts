@@ -3,8 +3,6 @@ import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 
 const MR_WSDL = "https://api.mondialrelay.com/Web_Services.asmx";
-const MR_API_V2_PROD = "https://connect-api.mondialrelay.com/api/shipment";
-const MR_API_V2_SANDBOX = "https://connect-api-sandbox.mondialrelay.com/api/shipment";
 
 // Compact MD5 implementation (Web Crypto does not support MD5)
 function md5Hex(str: string): string {
@@ -278,22 +276,10 @@ serve(async (req) => {
       });
     }
 
-    // ── CREATE SHIPMENT / LABEL (API v2 REST) ──
+    // ── CREATE SHIPMENT / LABEL (SOAP v1 - WSI2_CreationEtiquette) ──
     if (action === "create_shipment") {
       const authHeader = req.headers.get("Authorization");
       if (!authHeader?.startsWith("Bearer ")) throw new Error("Non authentifié");
-
-      // API v2 credentials
-      const v2Login = Deno.env.get("MONDIAL_RELAY_V2_LOGIN") ?? "";
-      const v2Password = Deno.env.get("MONDIAL_RELAY_V2_PASSWORD") ?? "";
-      const v2BrandId = Deno.env.get("MONDIAL_RELAY_V2_BRAND_ID") ?? "";
-
-      const forceSandbox = (Deno.env.get("MONDIAL_RELAY_SANDBOX") ?? "").trim().toLowerCase() === "true";
-      const mrApiV2Endpoint = forceSandbox ? MR_API_V2_SANDBOX : MR_API_V2_PROD;
-
-      if (!v2Login || !v2Password || !v2BrandId) {
-        throw new Error("Configuration API v2 Mondial Relay manquante (login/password/brand_id)");
-      }
 
       const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
       const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -325,399 +311,204 @@ serve(async (req) => {
       const senderPhone = sender?.phone || "0600000000";
       const senderEmail = sender?.email || "support@forsure.app";
 
-      // Build API v2 XML payload (the dual-carrier API expects XML, not JSON)
+      const recipientName = order.shipping_relay_name || "Client";
+      const recipientAddress = order.shipping_relay_address || "";
+      const recipientCity = order.shipping_relay_city || "";
+      const recipientPostcode = order.shipping_relay_postcode || "";
+      const recipientCountry = order.shipping_relay_country || "FR";
+
       const orderNo = order.order_number || `ORD-${order_id.substring(0, 8)}`;
       const customerNo = order.buyer_id.substring(0, 9);
-      const senderFirstname = senderName.split(" ")[0] || "Vendeur";
-      const senderLastname = senderName.split(" ").slice(1).join(" ") || "ForSure";
-      const recipientName = order.shipping_relay_name || "Client";
-      const recipientFirstname = recipientName.split(" ")[0] || "Client";
-      const recipientLastname = recipientName.split(" ").slice(1).join(" ") || "";
 
-      const escXml = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      // Clean relay ID: keep only digits (6 chars padded)
+      const rawRelayId = order.shipping_relay_id || relay_id || "";
+      const cleanRelayId = String(rawRelayId).replace(/[^0-9]/g, '').padStart(6, '0').substring(0, 6);
+      const relayCountry = String(recipientCountry).trim().toUpperCase() || "FR";
 
-      const normalizeMode = (mode: unknown, fallback: string) => {
-        const cleaned = typeof mode === "string" ? mode.trim().toUpperCase() : "";
-        return cleaned || fallback;
-      };
+      const deliveryMode = (body?.delivery_mode || "24R").trim().toUpperCase();
+      const collectionMode = (body?.collection_mode || "CCC").trim().toUpperCase();
 
-      const formatRelayLocation = (raw: unknown) => {
-        const cleaned = String(raw ?? "")
-          .trim()
-          .toUpperCase()
-          .replace(/\s+/g, "")
-          .replace(/[^A-Z0-9-]/g, "");
-        if (!cleaned) return "";
-        return cleaned;
-      };
-
-      const deliveryMode = normalizeMode(body?.delivery_mode, "24R");
-      const collectionMode = normalizeMode(body?.collection_mode, "CCC");
-      const rawRelayLocation = order.shipping_relay_id || relay_id || "";
-      const relayLocation = formatRelayLocation(rawRelayLocation);
-
-      if (["24R", "24L", "DRI"].includes(deliveryMode) && !relayLocation) {
-        throw new Error("Point relais manquant ou invalide pour le mode de livraison sélectionné");
-      }
-
-      const relayCountry = String(order.shipping_relay_country || "FR").trim().toUpperCase() || "FR";
-      const relayPostcode = String(order.shipping_relay_postcode || "").trim();
-
-      const buildRelayCandidates = (value: string, countryCode: string): string[] => {
-        const result: string[] = [];
-        const pushUnique = (candidate: string) => {
-          if (!candidate) return;
-          if (!result.includes(candidate)) result.push(candidate);
-        };
-
-        const normalized = formatRelayLocation(value);
-        if (!normalized) return result;
-
-        pushUnique(normalized);
-
-        const parts = normalized.split("-");
-        const last = parts[parts.length - 1];
-        if (last && last !== normalized) {
-          pushUnique(last);
-        }
-
-        if (!normalized.startsWith(`${countryCode}-`)) {
-          pushUnique(`${countryCode}-${last || normalized}`);
-        }
-        if (!normalized.startsWith(countryCode)) {
-          pushUnique(`${countryCode}${last || normalized}`);
-        }
-
-        return result;
-      };
-
-      const getSoapRelayCandidates = async (postcode: string, countryCode: string): Promise<string[]> => {
-        if (!postcode) return [];
-        const params: Record<string, string> = {
-          Enseigne: enseigne,
-          Pays: countryCode,
-          CP: postcode,
-          Latitude: '',
-          Longitude: '',
-          Taille: '',
-          Poids: '',
-          Action: '',
-          DelaiEnvoi: '0',
-          RayonRecherche: '',
-          TypeActivite: '',
-          NACE: '',
-          NombreResultats: '10',
-        };
-        params.Security = buildSignature(params, privateKey);
-
-        const xml = await callMondialRelay("WSI4_PointRelais_Recherche", params);
-        const stat = extractXmlValue(xml, 'STAT');
-        if (stat !== '0') return [];
-
-        const points = extractRelayPoints(xml);
-        return points
-          .map((point) => formatRelayLocation(point?.id))
-          .filter(Boolean);
-      };
-
-      // Format phone to international format (+33...)
+      // Format phone: remove spaces and special chars
       const formatPhone = (phone: string): string => {
-        const cleaned = phone.replace(/\s+/g, '').replace(/[^0-9+]/g, '');
-        if (cleaned.startsWith('+')) return cleaned;
-        if (cleaned.startsWith('0')) return '+33' + cleaned.substring(1);
-        return '+33' + cleaned;
+        return phone.replace(/[^0-9+]/g, '').substring(0, 10) || "0600000000";
       };
 
-      const buildXmlPayload = (deliveryLocation: string) => {
-        const deliveryLocationAttr = deliveryLocation ? ` Location="${escXml(deliveryLocation)}"` : "";
-        const collectionLocationAttr = collectionMode === "REL" && deliveryLocation
-          ? ` Location="${escXml(deliveryLocation)}"`
-          : "";
-
-        return `<?xml version="1.0" encoding="utf-8"?>
-<ShipmentCreationRequest xmlns="http://www.example.org/Request">
-  <Context>
-    <Login>${escXml(v2Login.trim())}</Login>
-    <Password>${escXml(v2Password.trim())}</Password>
-    <CustomerId>${escXml(v2BrandId.trim())}</CustomerId>
-    <Culture>fr-FR</Culture>
-    <VersionAPI>1.0</VersionAPI>
-  </Context>
-  <OutputOptions>
-    <OutputFormat>10x15</OutputFormat>
-    <OutputType>PdfUrl</OutputType>
-  </OutputOptions>
-  <ShipmentsList>
-    <Shipment>
-      <OrderNo>${escXml(orderNo)}</OrderNo>
-      <CustomerNo>${escXml(customerNo)}</CustomerNo>
-      <ParcelCount>1</ParcelCount>
-      <ShipmentValue Currency="EUR" Amount="${Math.round(order.subtotal * 100)}"/>
-      <DeliveryMode Mode="${escXml(deliveryMode)}"${deliveryLocationAttr}/>
-      <CollectionMode Mode="${escXml(collectionMode)}"${collectionLocationAttr}/>
-      <Parcels>
-        <Parcel>
-          <Content>Commande marketplace</Content>
-          <Weight Value="${weight}" Unit="gr"/>
-        </Parcel>
-      </Parcels>
-      <Sender>
-        <Address>
-          <Title></Title>
-          <Firstname>${escXml(senderFirstname)}</Firstname>
-          <Lastname>${escXml(senderLastname)}</Lastname>
-          <Streetname>${escXml(senderAddress)}</Streetname>
-          <CountryCode>${escXml(senderCountry)}</CountryCode>
-          <PostCode>${escXml(senderPostcode)}</PostCode>
-          <City>${escXml(senderCity)}</City>
-          <PhoneNo>${escXml(formatPhone(senderPhone))}</PhoneNo>
-          <MobileNo>${escXml(formatPhone(senderPhone))}</MobileNo>
-          <Email>${escXml(senderEmail)}</Email>
-        </Address>
-      </Sender>
-      <Recipient>
-        <Address>
-          <Title></Title>
-          <Firstname>${escXml(recipientFirstname)}</Firstname>
-          <Lastname>${escXml(recipientLastname)}</Lastname>
-          <Streetname>${escXml(order.shipping_relay_address || "")}</Streetname>
-          <CountryCode>${escXml(relayCountry)}</CountryCode>
-          <PostCode>${escXml(relayPostcode)}</PostCode>
-          <City>${escXml(order.shipping_relay_city || "")}</City>
-        </Address>
-      </Recipient>
-    </Shipment>
-  </ShipmentsList>
-</ShipmentCreationRequest>`;
+      // Build the params in the EXACT order expected by WSI2_CreationEtiquette
+      // The security hash is MD5 of all values concatenated in order + private key
+      const params: Record<string, string> = {
+        Enseigne: enseigne,
+        ModeCol: collectionMode,
+        ModeLiv: deliveryMode,
+        NDossier: orderNo.substring(0, 15),
+        NClient: customerNo.substring(0, 9),
+        Expe_Langage: 'FR',
+        Expe_Ad1: senderName.substring(0, 32).toUpperCase(),
+        Expe_Ad2: '',
+        Expe_Ad3: senderAddress.substring(0, 32).toUpperCase(),
+        Expe_Ad4: '',
+        Expe_Ville: senderCity.substring(0, 26).toUpperCase(),
+        Expe_CP: senderPostcode.substring(0, 10),
+        Expe_Pays: senderCountry.substring(0, 2).toUpperCase(),
+        Expe_Tel1: formatPhone(senderPhone),
+        Expe_Tel2: '',
+        Expe_Mail: senderEmail.substring(0, 70),
+        Dest_Langage: 'FR',
+        Dest_Ad1: recipientName.substring(0, 32).toUpperCase(),
+        Dest_Ad2: '',
+        Dest_Ad3: recipientAddress.substring(0, 32).toUpperCase(),
+        Dest_Ad4: '',
+        Dest_Ville: recipientCity.substring(0, 26).toUpperCase(),
+        Dest_CP: recipientPostcode.substring(0, 10),
+        Dest_Pays: relayCountry,
+        Dest_Tel1: '',
+        Dest_Tel2: '',
+        Dest_Mail: '',
+        Poids: String(weight),
+        Longueur: '',
+        Taille: '',
+        NbColis: '1',
+        CRT_Valeur: '0',
+        CRT_Devise: '',
+        Exp_Valeur: String(Math.round(order.subtotal * 100)),
+        Exp_Devise: 'EUR',
+        COL_Rel_Pays: collectionMode === 'REL' ? senderCountry : '',
+        COL_Rel: collectionMode === 'REL' ? cleanRelayId : '',
+        LIV_Rel_Pays: ['24R', '24L', 'DRI'].includes(deliveryMode) ? relayCountry : '',
+        LIV_Rel: ['24R', '24L', 'DRI'].includes(deliveryMode) ? cleanRelayId : '',
+        TAss_Valeur: '',
+        TAss_Devise: '',
+        Montage: '',
+        TRDV: '',
+        Assurance: '',
+        Instructions: '',
       };
 
-      const extractBlockingStatus = (rawResponseText: string) => {
-        try {
-          const parsed = JSON.parse(rawResponseText);
-          const statusList = parsed?.statusListField || parsed?.StatusList || [];
-          return statusList.find((item: any) => {
-            const level = String(item?.levelField || item?.Level || '').toLowerCase();
-            return level.includes('error') || level.includes('critical');
-          }) || null;
-        } catch {
-          return null;
-        }
-      };
+      // Compute security hash (all values in order + private key)
+      params.Security = buildSignature(params, privateKey);
 
-      let responseText = "";
-      let apiResponse: Response | null = null;
-      const attemptedRelayLocations = new Set<string>();
-      let relayCandidates = buildRelayCandidates(relayLocation, relayCountry);
+      console.log("WSI2_CreationEtiquette request:", {
+        order_id,
+        deliveryMode,
+        collectionMode,
+        relayId: cleanRelayId,
+        relayCountry,
+        weight,
+      });
 
-      if (relayCandidates.length === 0 && ["24R", "24L", "DRI"].includes(deliveryMode)) {
-        relayCandidates = [relayLocation];
-      }
+      const xml = await callMondialRelay("WSI2_CreationEtiquette", params);
+      const stat = extractXmlValue(xml, 'STAT');
 
-      for (const candidate of relayCandidates) {
-        if (!candidate || attemptedRelayLocations.has(candidate)) continue;
-        attemptedRelayLocations.add(candidate);
-
-        const xmlPayload = buildXmlPayload(candidate);
-        console.log("API v2 request summary:", {
-          order_id,
-          deliveryMode,
-          collectionMode,
-          relayCandidate: candidate,
-          relayPostcode,
-          relayCountry,
-          endpoint: mrApiV2Endpoint,
-        });
-
-        const currentResponse = await fetch(mrApiV2Endpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/xml; charset=utf-8",
-            "Accept": "application/xml, application/json",
-          },
-          body: xmlPayload,
-        });
-
-        const currentText = await currentResponse.text();
-        const blockingStatus = extractBlockingStatus(currentText);
-
-        apiResponse = currentResponse;
-        responseText = currentText;
-
-        if (!blockingStatus) break;
-
-        const statusCode = String(blockingStatus.codeField || blockingStatus.Code || "");
-        if (statusCode === "10025" || statusCode === "10055") {
-          continue;
-        }
-
-        break;
-      }
-
-      const finalBlockingStatus = extractBlockingStatus(responseText);
-      if (finalBlockingStatus && (String(finalBlockingStatus.codeField || finalBlockingStatus.Code || "") === "10025" || String(finalBlockingStatus.codeField || finalBlockingStatus.Code || "") === "10055") && relayPostcode) {
-        const soapCandidates = await getSoapRelayCandidates(relayPostcode, relayCountry);
-        for (const candidate of soapCandidates) {
-          if (!candidate || attemptedRelayLocations.has(candidate)) continue;
-          attemptedRelayLocations.add(candidate);
-
-          const xmlPayload = buildXmlPayload(candidate);
-          console.log("API v2 retry with SOAP relay candidate:", { order_id, relayCandidate: candidate, endpoint: mrApiV2Endpoint });
-
-          const currentResponse = await fetch(mrApiV2Endpoint, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/xml; charset=utf-8",
-              "Accept": "application/xml, application/json",
-            },
-            body: xmlPayload,
-          });
-
-          const currentText = await currentResponse.text();
-          apiResponse = currentResponse;
-          responseText = currentText;
-
-          const blockingStatus = extractBlockingStatus(currentText);
-          if (!blockingStatus) break;
-        }
-      }
-
-      if (!apiResponse) {
-        throw new Error("Impossible de créer l'expédition: aucune réponse API");
-      }
-
-      console.log("API v2 response status:", apiResponse.status, "body length:", responseText.length);
-      console.log("API v2 response body (full):", responseText);
-
-      // The response can be XML or JSON depending on API version
-      let trackingNumber: string | null = null;
-      let labelUrl: string | null = null;
-
-      if (responseText.trim().startsWith('<') || responseText.trim().startsWith('<?xml')) {
-        // Parse XML response
-        // Check for errors first
-        const statusCode = extractXmlValue(responseText, 'Code') || extractXmlValue(responseText, 'codeField');
-        const statusMessage = extractXmlValue(responseText, 'Message') || extractXmlValue(responseText, 'messageField');
-        const statusLevel = extractXmlValue(responseText, 'Level') || extractXmlValue(responseText, 'levelField');
-
-        if (statusLevel === 'Error' || (statusCode && statusCode !== '0')) {
-          throw new Error(`Erreur API v2 Mondial Relay (${statusCode}): ${statusMessage}`);
-        }
-
-        // Extract shipment number
-        trackingNumber = extractXmlValue(responseText, 'ShipmentNumber') 
-          || extractXmlValue(responseText, 'ExpeditionNum')
-          || extractXmlValue(responseText, 'shipmentNumber');
+      if (stat !== '0') {
+        console.error("WSI2_CreationEtiquette failed:", { stat, xml: xml.substring(0, 1000) });
         
-        // Extract label URL  
-        labelUrl = extractXmlValue(responseText, 'LabelLink')
-          || extractXmlValue(responseText, 'Label')
-          || extractXmlValue(responseText, 'labelLink');
-      } else {
-        // Try JSON parsing
-        let result: any;
-        try {
-          result = JSON.parse(responseText);
-        } catch {
-          throw new Error(`Réponse API v2 invalide (${apiResponse.status}): ${responseText.substring(0, 500)}`);
-        }
-
-        if (!apiResponse.ok) {
-          const errMsg = result?.Message || result?.error || result?.title || responseText.substring(0, 300);
-          throw new Error(`Erreur API v2 Mondial Relay (${apiResponse.status}): ${errMsg}`);
-        }
-
-        // Check for any error in statusListField (JSON envelope)
-        const statusList = result?.statusListField || result?.StatusList || [];
-        const blockingError = statusList.find((item: any) => {
-          const level = String(item?.levelField || item?.Level || '').toLowerCase();
-          return level.includes('error') || level.includes('critical');
-        });
-        if (blockingError) {
-          const code = String(blockingError.codeField || blockingError.Code || '?');
-          const message = blockingError.messageField || blockingError.Message || 'Erreur inconnue';
-          if (code === '10055') {
-            throw new Error("Point relais non accepté par le compte transporteur (code 10055). Choisissez un autre point relais ou vérifiez l'activation du produit 24R.");
-          }
-          if (code === '10025') {
-            throw new Error("Point relais invalide pour ce mode de livraison (code 10025). Sélectionnez un autre point relais.");
-          }
-          throw new Error(`Erreur API v2 (${code}): ${message}`);
-        }
-
-        const shipments = result?.ShipmentsList || result?.shipmentsListField || [];
-        if (shipments.length > 0) {
-          const first = shipments[0];
-
-          const labelValues = first?.labelListField?.labelField?.rawContentField?.["<LabelValues>k__BackingField"] || [];
-          const expeditionValue = labelValues.find((entry: any) =>
-            String(entry?.["<Key>k__BackingField"] || "").toLowerCase().includes("numeroexpedition")
-          );
-
-          const findDeepValue = (node: any, keyMatcher: (key: string) => boolean): string | null => {
-            const seen = new Set<any>();
-            const walk = (value: any): string | null => {
-              if (!value || typeof value !== "object") return null;
-              if (seen.has(value)) return null;
-              seen.add(value);
-
-              if (Array.isArray(value)) {
-                for (const item of value) {
-                  const found = walk(item);
-                  if (found) return found;
-                }
-                return null;
-              }
-
-              for (const [k, v] of Object.entries(value)) {
-                if (keyMatcher(k) && typeof v === "string" && v.trim()) {
-                  return v.trim();
-                }
-                const found = walk(v);
-                if (found) return found;
-              }
-              return null;
-            };
-            return walk(node);
+        // If relay point rejected, try with nearby relay points
+        if ((stat === '82' || stat === '83' || stat === '84') && recipientPostcode) {
+          console.log("Relay point rejected, searching for alternatives...");
+          
+          const searchParams: Record<string, string> = {
+            Enseigne: enseigne,
+            Pays: relayCountry,
+            CP: recipientPostcode,
+            Latitude: '',
+            Longitude: '',
+            Taille: '',
+            Poids: '',
+            Action: '',
+            DelaiEnvoi: '0',
+            RayonRecherche: '',
+            TypeActivite: '',
+            NACE: '',
+            NombreResultats: '10',
           };
+          searchParams.Security = buildSignature(searchParams, privateKey);
 
-          trackingNumber =
-            first.ShipmentNumber ||
-            first.shipmentNumber ||
-            first.ExpeditionNum ||
-            first.shipmentNumberField ||
-            expeditionValue?.["<Value>k__BackingField"] ||
-            findDeepValue(first, (key) => /shipmentnumber|expeditionnum|numeroexpedition/i.test(key)) ||
-            null;
+          const searchXml = await callMondialRelay("WSI4_PointRelais_Recherche", searchParams);
+          const searchStat = extractXmlValue(searchXml, 'STAT');
+          
+          if (searchStat === '0') {
+            const points = extractRelayPoints(searchXml);
+            
+            for (const point of points) {
+              const altRelayId = String(point.id).replace(/[^0-9]/g, '').padStart(6, '0').substring(0, 6);
+              if (altRelayId === cleanRelayId) continue;
 
-          // Extract label URL from labelField.outputField (PdfUrl) or deep search
-          const labelField = first?.labelListField?.labelField;
-          labelUrl =
-            labelField?.outputField ||
-            labelField?.output ||
-            findDeepValue(first, (key) => /^output(field)?$/i.test(key)) ||
-            findDeepValue(first, (key) => /pdfurl|labellink|labelurl/i.test(key)) ||
-            null;
+              const retryParams = { ...params };
+              retryParams.LIV_Rel = altRelayId;
+              if (collectionMode === 'REL') retryParams.COL_Rel = altRelayId;
+              delete (retryParams as any).Security;
+              retryParams.Security = buildSignature(retryParams, privateKey);
 
-          // If still null but we have a shipment number, the sandbox may not generate PDFs
-          if (!labelUrl) {
-            console.log("No label URL found. labelField keys:", labelField ? Object.keys(labelField) : "N/A");
+              console.log("Retrying with alternative relay:", altRelayId);
+              const retryXml = await callMondialRelay("WSI2_CreationEtiquette", retryParams);
+              const retryStat = extractXmlValue(retryXml, 'STAT');
+
+              if (retryStat === '0') {
+                const expeditionNum = extractXmlValue(retryXml, 'ExpeditionNum');
+                if (expeditionNum) {
+                  // Get label PDF
+                  const labelUrl = await getLabel(enseigne, privateKey, expeditionNum);
+
+                  await supabase
+                    .from("orders")
+                    .update({
+                      tracking_number: expeditionNum,
+                      shipping_label_url: labelUrl,
+                      shipping_weight_grams: weight,
+                      shipped_at: new Date().toISOString(),
+                      status: "shipped",
+                    })
+                    .eq("id", order_id);
+
+                  return new Response(JSON.stringify({ tracking_number: expeditionNum, label_url: labelUrl }), {
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                  });
+                }
+              }
+            }
           }
         }
-        if (!labelUrl) {
-          labelUrl = result?.LabelLink || result?.labelLink || null;
-        }
+
+        // Map common SOAP error codes
+        const errorMessages: Record<string, string> = {
+          '1': 'Enseigne invalide',
+          '2': 'Numéro d\'enseigne vide ou incorrect',
+          '3': 'Compte Enseigne non valide ou inactif',
+          '8': 'Clé de sécurité incorrecte',
+          '20': 'Poids du colis incorrect',
+          '24': 'Numéro de Point Relais incorrect',
+          '30': 'Mode de collecte incorrect',
+          '31': 'Mode de livraison incorrect',
+          '60': 'Code postal expéditeur incorrect',
+          '61': 'Ville expéditeur incorrecte',
+          '62': 'Pays expéditeur incorrect',
+          '63': 'Code postal destinataire incorrect',
+          '64': 'Ville destinataire incorrecte',
+          '65': 'Pays destinataire incorrect',
+          '80': 'Code point relais de collecte incorrect',
+          '81': 'Point relais de collecte introuvable',
+          '82': 'Code point relais de livraison incorrect',
+          '83': 'Point relais de livraison introuvable',
+          '84': 'Point relais de livraison fermé ou indisponible',
+        };
+
+        const errorMsg = errorMessages[stat] || `Erreur Mondial Relay (code ${stat})`;
+        throw new Error(errorMsg);
       }
 
-      if (!trackingNumber) {
-        console.error("API v2 full response:", responseText.substring(0, 2000));
-        throw new Error("Numéro d'expédition non trouvé dans la réponse API v2");
+      const expeditionNum = extractXmlValue(xml, 'ExpeditionNum');
+      if (!expeditionNum) {
+        console.error("No ExpeditionNum in response:", xml.substring(0, 1000));
+        throw new Error("Numéro d'expédition non trouvé dans la réponse");
       }
+
+      // Get label PDF using WSI3_GetEtiquettes
+      const labelUrl = await getLabel(enseigne, privateKey, expeditionNum);
 
       // Update order
       await supabase
         .from("orders")
         .update({
-          tracking_number: trackingNumber,
+          tracking_number: expeditionNum,
           shipping_label_url: labelUrl,
           shipping_weight_grams: weight,
           shipped_at: new Date().toISOString(),
@@ -725,7 +516,7 @@ serve(async (req) => {
         })
         .eq("id", order_id);
 
-      return new Response(JSON.stringify({ tracking_number: trackingNumber, label_url: labelUrl }), {
+      return new Response(JSON.stringify({ tracking_number: expeditionNum, label_url: labelUrl }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -734,15 +525,6 @@ serve(async (req) => {
     if (action === "track") {
       const { tracking_number } = body;
       if (!tracking_number) throw new Error("Numéro de suivi requis");
-
-      // Sandbox tracking numbers can't be tracked
-      if (tracking_number === "SANDBOX MODE" || tracking_number.startsWith("0003")) {
-        return new Response(JSON.stringify({
-          events: [{ date: new Date().toISOString().split("T")[0], status: "Expédition enregistrée (mode sandbox)", location: "" }],
-          tracking_number,
-          sandbox: true,
-        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
 
       const params: Record<string, string> = {
         Enseigne: enseigne,
@@ -795,3 +577,36 @@ serve(async (req) => {
     });
   }
 });
+
+// ── Helper: Get label PDF via WSI3_GetEtiquettes ──
+async function getLabel(enseigne: string, privateKey: string, expeditionNum: string): Promise<string | null> {
+  try {
+    const params: Record<string, string> = {
+      Enseigne: enseigne,
+      Expeditions: expeditionNum,
+      Langue: 'FR',
+    };
+    params.Security = buildSignature(params, privateKey);
+
+    const xml = await callMondialRelay("WSI3_GetEtiquettes", params);
+    const stat = extractXmlValue(xml, 'STAT');
+
+    if (stat !== '0') {
+      console.error("WSI3_GetEtiquettes failed:", { stat });
+      return null;
+    }
+
+    // The response contains a URL_Etiquette field with the label PDF URL
+    const labelUrl = extractXmlValue(xml, 'URL_Etiquette');
+    if (labelUrl) {
+      // Mondial Relay returns relative URLs, prepend the base
+      if (labelUrl.startsWith('http')) return labelUrl;
+      return `https://www.mondialrelay.com${labelUrl.startsWith('/') ? '' : '/'}${labelUrl}`;
+    }
+
+    return null;
+  } catch (e) {
+    console.error("getLabel error:", e);
+    return null;
+  }
+}
