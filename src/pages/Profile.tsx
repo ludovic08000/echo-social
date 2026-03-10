@@ -144,6 +144,7 @@ export default function Profile() {
   const { data: targetIsMinor } = useIsMinor(userId);
   const { data: currentUserIsMinor } = useIsMinor(user?.id);
   const updateProfile = useUpdateProfile();
+  const createConversation = useCreateConversation();
   const profileBgStyle = useCustomBackground('profile');
 
   // Check if own profile has pending identity verification
