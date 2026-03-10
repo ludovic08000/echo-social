@@ -27,6 +27,13 @@ export function FeedRightSidebar() {
   const { zeusName } = useZeusSettings();
   const friends = friendships?.friends || [];
   const requests = friendships?.requests || [];
+  const [zeusOpen, setZeusOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = () => setZeusOpen(true);
+    window.addEventListener('open-zeus', handler);
+    return () => window.removeEventListener('open-zeus', handler);
+  }, []);
 
   const sortedFriends = useMemo(() => {
     return [...friends].sort((a, b) => {
