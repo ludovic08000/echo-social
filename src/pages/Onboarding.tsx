@@ -35,10 +35,118 @@ const AI_NAME_SUGGESTIONS = ['Zeus', 'Nova', 'Atlas', 'Luna', 'Aria', 'Echo', 'O
 export default function Onboarding() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [step, setStep] = useState<'interests' | 'ai-name'>('interests');
+  const [step, setStep] = useState<'interests' | 'ai-name' | 'find-friends'>('interests');
   const [selected, setSelected] = useState<string[]>([]);
   const [aiName, setAiName] = useState('Zeus');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Find friends state
+  const sendRequest = useSendFriendRequest();
+  const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
+  const [contactResults, setContactResults] = useState<MatchedContact[]>([]);
+  const [searchingContacts, setSearchingContacts] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isNative = Capacitor.isNativePlatform();
+  const isIOS = typeof navigator !== 'undefined' && (/iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+  const hasPickerAPI = typeof navigator !== 'undefined' && !isIOS && 'contacts' in navigator && 'ContactsManager' in window;
+
+  function normalizePhone(phone: string): string {
+    let clean = phone.replace(/[\s\-().]/g, '');
+    if (clean.startsWith('0') && clean.length === 10) clean = '+33' + clean.slice(1);
+    if (!clean.startsWith('+')) clean = '+' + clean;
+    return clean;
+  }
+
+  const searchPhones = async (phones: string[]) => {
+    if (!user || phones.length === 0) return;
+    setSearchingContacts(true);
+    try {
+      const normalized = phones.map(normalizePhone);
+      const { data, error } = await supabase.rpc('match_contacts_by_phone', {
+        p_user_id: user.id,
+        p_phone_numbers: normalized,
+      });
+      if (error) throw error;
+      const results: MatchedContact[] = (data || []).map((m: any) => ({
+        user_id: m.user_id, name: m.name, avatar_url: m.avatar_url,
+        phone_number: m.phone_number, is_friend: m.is_friend, contact_name: m.name,
+      }));
+      setContactResults(results);
+      if (results.length === 0) toast({ title: 'Aucun contact trouvé sur Forsure' });
+      else toast({ title: `${results.length} contact(s) trouvé(s) !` });
+    } catch {
+      toast({ title: 'Erreur', variant: 'destructive' });
+    } finally {
+      setSearchingContacts(false);
+    }
+  };
+
+  const handlePickContacts = async () => {
+    try {
+      const contacts = await (navigator as any).contacts.select(['tel'], { multiple: true });
+      const phones: string[] = [];
+      for (const c of contacts) {
+        for (const tel of (c.tel || [])) {
+          const clean = tel.replace(/[\s\-().]/g, '');
+          if (clean.length >= 6) phones.push(clean);
+        }
+      }
+      if (phones.length > 0) await searchPhones(phones);
+    } catch {}
+  };
+
+  const handleNativeContacts = async () => {
+    try {
+      const { Contacts } = await import('@capacitor-community/contacts');
+      const perm = await Contacts.requestPermissions();
+      if (perm.contacts !== 'granted') {
+        toast({ title: 'Accès refusé', description: 'Autorisez l\'accès aux contacts dans les réglages', variant: 'destructive' });
+        return;
+      }
+      const result = await Contacts.getContacts({ projection: { phones: true, name: true } });
+      const phones: string[] = [];
+      (result.contacts || []).forEach((c: any) => {
+        (c.phones || []).forEach((p: any) => {
+          if (p.number) phones.push(p.number);
+        });
+      });
+      if (phones.length > 0) await searchPhones(phones);
+      else toast({ title: 'Aucun numéro trouvé dans vos contacts' });
+    } catch {
+      toast({ title: 'Erreur', variant: 'destructive' });
+    }
+  };
+
+  const handleVCardImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const telRegex = /^TEL[^:]*:(.+)$/gim;
+      const phones: string[] = [];
+      let match;
+      while ((match = telRegex.exec(text)) !== null) {
+        const raw = match[1].trim().replace(/[\s\-().]/g, '');
+        if (raw.length >= 6) phones.push(normalizePhone(raw));
+      }
+      if (phones.length > 0) await searchPhones(phones);
+      else toast({ title: 'Aucun numéro trouvé dans le fichier' });
+    } catch {
+      toast({ title: 'Erreur de lecture', variant: 'destructive' });
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleAddFriend = async (userId: string) => {
+    try {
+      await sendRequest.mutateAsync(userId);
+      setSentRequests(prev => new Set(prev).add(userId));
+      toast({ title: '🤝 Demande envoyée !' });
+    } catch {
+      toast({ title: 'Erreur', variant: 'destructive' });
+    }
+  };
 
   const toggle = (value: string) => {
     setSelected(prev =>
