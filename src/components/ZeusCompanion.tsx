@@ -437,7 +437,7 @@ function AlgorithmPanel() {
 }
 
 // ── Main Component ──
-export function ZeusCompanion() {
+export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
