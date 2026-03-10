@@ -322,19 +322,11 @@ export default function Feed() {
                   {posts.map((post, index) => {
                     const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
                     const cellStyle = isVideoPost ? undefined : POST_CELL_STYLE;
-                    const commentsOpen = openCommentsPostId === post.id;
-
-                    const toggleComments = () => {
-                      setOpenCommentsPostId(commentsOpen ? null : post.id);
-                    };
 
                     return (
                       <div key={post.id} style={cellStyle}>
                         {isMobile ? (
-                          <PostCard
-                            post={post}
-                            onCommentClick={toggleComments}
-                          />
+                          <PostCard post={post} />
                         ) : (
                           <motion.div
                             custom={index}
@@ -343,17 +335,12 @@ export default function Feed() {
                             whileInView="visible"
                             viewport={{ once: true, margin: '-30px' }}
                           >
-                            <PostCard
-                              post={post}
-                              onCommentClick={toggleComments}
-                            />
+                            <PostCard post={post} />
                           </motion.div>
                         )}
-                        {commentsOpen && (
-                          <div className="bg-card border border-t-0 border-border/20 rounded-b-2xl -mt-1 overflow-hidden">
-                            <CommentsList postId={post.id} />
-                          </div>
-                        )}
+                        <div className="bg-card border border-t-0 border-border/20 rounded-b-2xl -mt-1 overflow-hidden">
+                          <CommentsList postId={post.id} />
+                        </div>
                         {renderInjection(index)}
                       </div>
                     );
