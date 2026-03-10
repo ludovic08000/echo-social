@@ -246,12 +246,20 @@ serve(async (req) => {
       .order("created_at", { ascending: true })
       .limit(20);
 
-    // ── Fetch user context for Zeus (recent posts, profile) ──
+    // ── Fetch user context for Zeus (recent posts, profile, neural engine) ──
     let userContext = "";
     if (agent.slug === "zeus-companion") {
-      const [postsRes, profileRes] = await Promise.all([
+      const [postsRes, profileRes, metricsRes, feedConfigRes, reportsRes, usageStatsRes] = await Promise.all([
         supabase.from("posts").select("body, image_url, created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(10),
         supabase.from("profiles").select("name, bio, mood_emoji, city").eq("user_id", userId).maybeSingle(),
+        // Neural Engine: recent metrics
+        supabase.from("ai_metrics_log").select("metric_type, value, module_id, created_at").order("created_at", { ascending: false }).limit(50),
+        // Neural Engine: feed algorithm config
+        supabase.from("feed_algorithm_config").select("key, value, description").order("key"),
+        // Neural Engine: recent abuse reports
+        supabase.from("abuse_reports").select("report_type, status, created_at").order("created_at", { ascending: false }).limit(20),
+        // Neural Engine: platform usage stats
+        supabase.from("ai_agent_usage").select("usage_date, message_count").order("usage_date", { ascending: false }).limit(7),
       ]);
 
       const profile = profileRes.data;
@@ -275,10 +283,58 @@ serve(async (req) => {
         userContext += `\nSi tu détectes de la tristesse, de l'isolement, du stress ou un changement de comportement dans ces posts, aborde le sujet avec douceur et empathie.\n`;
       }
 
+      // ── Neural Engine Context ──
+      const metrics = metricsRes.data || [];
+      if (metrics.length > 0) {
+        const totalCalls = metrics.length;
+        const threats = metrics.filter((m: any) => m.metric_type === 'threat').length;
+        const errors = metrics.filter((m: any) => m.metric_type === 'error').length;
+        const avgValue = metrics.reduce((s: number, m: any) => s + (Number(m.value) || 0), 0) / totalCalls;
+        const moduleBreakdown: Record<string, number> = {};
+        metrics.forEach((m: any) => { moduleBreakdown[m.module_id] = (moduleBreakdown[m.module_id] || 0) + 1; });
+
+        userContext += `\n## 🧠 NEURAL ENGINE — MÉTRIQUES TEMPS RÉEL\n`;
+        userContext += `- Requêtes récentes : ${totalCalls}\n`;
+        userContext += `- Menaces détectées : ${threats}\n`;
+        userContext += `- Erreurs : ${errors}\n`;
+        userContext += `- Valeur moyenne : ${Math.round(avgValue)}\n`;
+        userContext += `- Modules actifs : ${Object.entries(moduleBreakdown).map(([k, v]) => `${k}(${v})`).join(', ')}\n`;
+        userContext += `Tu peux citer ces statistiques quand l'utilisateur te pose des questions sur la santé de la plateforme ou le moteur IA.\n`;
+      }
+
+      const feedConfig = feedConfigRes.data || [];
+      if (feedConfig.length > 0) {
+        userContext += `\n## ⚙️ NEURAL ENGINE — CONFIG ALGORITHME FEED\n`;
+        feedConfig.forEach((c: any) => {
+          userContext += `- ${c.key}: ${JSON.stringify(c.value)}${c.description ? ` (${c.description})` : ''}\n`;
+        });
+        userContext += `\nSi l'utilisateur (admin) demande de modifier la config du feed, propose un ajustement via un bloc action :\n`;
+        userContext += '```forsure-action\n{"type": "update_feed_config", "key": "...", "value": ...}\n```\n';
+      }
+
+      const reports = reportsRes.data || [];
+      if (reports.length > 0) {
+        const pending = reports.filter((r: any) => r.status === 'pending').length;
+        const resolved = reports.filter((r: any) => r.status === 'resolved').length;
+        const typeBreakdown: Record<string, number> = {};
+        reports.forEach((r: any) => { typeBreakdown[r.report_type] = (typeBreakdown[r.report_type] || 0) + 1; });
+
+        userContext += `\n## 🛡️ NEURAL ENGINE — SIGNALEMENTS\n`;
+        userContext += `- Total récent : ${reports.length} (${pending} en attente, ${resolved} résolus)\n`;
+        userContext += `- Types : ${Object.entries(typeBreakdown).map(([k, v]) => `${k}(${v})`).join(', ')}\n`;
+      }
+
+      const usageStats = usageStatsRes.data || [];
+      if (usageStats.length > 0) {
+        const totalMessages = usageStats.reduce((s: number, u: any) => s + (u.message_count || 0), 0);
+        userContext += `\n## 📊 NEURAL ENGINE — UTILISATION ZEUS\n`;
+        userContext += `- Messages Zeus (7 derniers jours) : ${totalMessages}\n`;
+        userContext += `- Détail par jour : ${usageStats.map((u: any) => `${u.usage_date}(${u.message_count})`).join(', ')}\n`;
+      }
+
       // ── Marketplace search ──
       const { isSearch, query } = detectSearchIntent(message);
       if (isSearch && query.length > 0) {
-        // Search products by title, description, tags, category using ilike
         const searchTerms = query.split(' ').filter(t => t.length > 2).slice(0, 5);
         let productQuery = supabase
           .from("products")
@@ -287,7 +343,6 @@ serve(async (req) => {
           .order("created_at", { ascending: false })
           .limit(12);
 
-        // Build OR filter for search terms
         if (searchTerms.length > 0) {
           const orFilters = searchTerms.map(term =>
             `title.ilike.%${term}%,description.ilike.%${term}%,category.ilike.%${term}%`
