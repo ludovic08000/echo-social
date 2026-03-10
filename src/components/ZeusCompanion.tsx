@@ -700,16 +700,37 @@ export function ZeusCompanion() {
               <>
                 <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
                   {messages.length === 0 && (
-                    <div className="text-center py-8">
+                    <div className="text-center py-4">
                       <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', delay: 0.1 }}
-                        className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-amber-400/20 to-orange-500/20 flex items-center justify-center">
-                        <span className="text-3xl">⚡</span>
+                        className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-amber-400/20 to-orange-500/20 flex items-center justify-center">
+                        <span className="text-2xl">⚡</span>
                       </motion.div>
                       <p className="text-sm font-semibold text-foreground">
                         Salut ! Je suis <span className="bg-gradient-to-r from-amber-500 to-orange-600 bg-clip-text text-transparent">{zeusName}</span>
                       </p>
-                      <p className="text-xs text-muted-foreground mt-1">Ton assistant IA personnel</p>
-                      <div className="flex flex-wrap gap-1.5 justify-center mt-4">
+                      <p className="text-xs text-muted-foreground mt-1 mb-3">Ton assistant intelligent qui gère tout pour toi</p>
+                      
+                      {/* Capabilities list */}
+                      <div className="text-left mx-2 space-y-1.5 mb-4">
+                        {[
+                          { emoji: '📝', text: 'Publier et créer des posts à ta place' },
+                          { emoji: '⚙️', text: 'Gérer ton fil d\'actu et l\'algorithme' },
+                          { emoji: '🛍️', text: 'Chercher des produits sur la marketplace' },
+                          { emoji: '🌐', text: 'Traduire tes messages dans toutes les langues' },
+                          { emoji: '💬', text: 'Discuter, conseiller, t\'aider au quotidien' },
+                          { emoji: '🛡️', text: 'Veiller à la sécurité de ton compte' },
+                        ].map(cap => (
+                          <motion.div key={cap.text} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.2 }}
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary/20">
+                            <span className="text-sm">{cap.emoji}</span>
+                            <span className="text-[11px] text-muted-foreground">{cap.text}</span>
+                          </motion.div>
+                        ))}
+                      </div>
+
+                      {/* Quick actions */}
+                      <div className="flex flex-wrap gap-1.5 justify-center">
                         {[
                           { label: '📝 Publie un post', value: 'Publie un post motivant' },
                           { label: '🌐 Traduis', value: 'Traduis en anglais' },
