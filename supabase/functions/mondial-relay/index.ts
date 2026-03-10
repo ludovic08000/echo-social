@@ -17,9 +17,11 @@ function md5Hex(str: string): string {
   return new TextDecoder().decode(hexEncode(hashArray)).toUpperCase();
 }
 
-function buildSignature(params: Record<string, string>, privateKey: string): string {
-  const concat = Object.values(params).join('') + privateKey;
-  return md5Hex(concat);
+function buildSignatureFromOrderedFields(
+  orderedValues: string[],
+  privateKey: string,
+): string {
+  return md5Hex(orderedValues.join('') + privateKey);
 }
 
 async function callMondialRelaySoap(method: string, params: Record<string, string>): Promise<string> {
