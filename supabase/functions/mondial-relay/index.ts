@@ -217,30 +217,31 @@ serve(async (req) => {
       const insuranceValue = Math.round(order.subtotal * 100);
 
       // Build SOAP params for WSI2_CreationEtiquette
-      // All params must be strings, order matters for signature
+      // Values must be RAW (no XML escaping) - the SOAP helper handles XML construction
+      // Order matters for MD5 signature computation
       const params: Record<string, string> = {
         Enseigne: enseigne,
         ModeCol: collectionMode,
         ModeLiv: deliveryMode,
-        NDossier: orderNo.substring(0, 15),
-        NClient: orderNo.substring(0, 9),
+        NDossier: orderNo.replace(/[^0-9A-Za-z_ -]/g, '').substring(0, 15),
+        NClient: orderNo.replace(/[^0-9A-Za-z_ -]/g, '').substring(0, 9),
         Expe_Langage: 'FR',
-        Expe_Ad1: esc(senderName).substring(0, 32),
+        Expe_Ad1: senderName.replace(/[^0-9A-Za-zÀ-ÿ .'/-]/g, '').substring(0, 32),
         Expe_Ad2: '',
-        Expe_Ad3: esc(senderAddress).substring(0, 32),
+        Expe_Ad3: senderAddress.replace(/[^0-9A-Za-zÀ-ÿ .'/-]/g, '').substring(0, 32),
         Expe_Ad4: '',
-        Expe_Ville: esc(senderCity).substring(0, 26),
+        Expe_Ville: senderCity.replace(/[^A-Za-zÀ-ÿ -]/g, '').substring(0, 26),
         Expe_CP: senderPostcode,
         Expe_Pays: senderCountry.substring(0, 2).toUpperCase(),
         Expe_Tel1: formatPhone(senderPhone),
         Expe_Tel2: '',
         Expe_Mail: senderEmail.substring(0, 70),
         Dest_Langage: 'FR',
-        Dest_Ad1: esc(recipientName).substring(0, 32),
+        Dest_Ad1: recipientName.replace(/[^0-9A-Za-zÀ-ÿ .'/-]/g, '').substring(0, 32),
         Dest_Ad2: '',
-        Dest_Ad3: esc(recipientAddress).substring(0, 32),
+        Dest_Ad3: recipientAddress.replace(/[^0-9A-Za-zÀ-ÿ .'/-]/g, '').substring(0, 32),
         Dest_Ad4: '',
-        Dest_Ville: esc(recipientCity).substring(0, 26),
+        Dest_Ville: recipientCity.replace(/[^A-Za-zÀ-ÿ -]/g, '').substring(0, 26),
         Dest_CP: recipientPostcode,
         Dest_Pays: relayCountry,
         Dest_Tel1: '',
@@ -264,15 +265,13 @@ serve(async (req) => {
         TRDV: '',
         Assurance: '',
         Instructions: '',
+        Texte: '',
       };
 
-      // Compute MD5 signature over all param values + private key
+      // Compute MD5 signature: hash of ALL param values (in WSDL order) + private key
       params.Security = buildSignature(params, privateKey);
 
-      console.log("SOAP create_shipment request:", JSON.stringify({
-        order_id, deliveryMode, collectionMode,
-        relayId: cleanRelayId, relayCountry, weight,
-      }));
+      console.log("SOAP create_shipment - enseigne:", enseigne, "security:", params.Security);
 
       const xml = await callMondialRelaySoap("WSI2_CreationEtiquette", params);
       const stat = extractXmlValue(xml, 'STAT');
