@@ -38,21 +38,29 @@ async function callMondialRelaySoap(method: string, params: Record<string, strin
   </soap:Body>
 </soap:Envelope>`;
 
-  const response = await fetch(MR_WSDL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "text/xml; charset=utf-8",
-      "SOAPAction": `http://www.mondialrelay.fr/webservice/${method}`,
-    },
-    body: soapBody,
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Mondial Relay SOAP error ${response.status}: ${text.substring(0, 500)}`);
+  try {
+    const response = await fetch(MR_WSDL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/xml; charset=utf-8",
+        "SOAPAction": `http://www.mondialrelay.fr/webservice/${method}`,
+      },
+      body: soapBody,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Mondial Relay SOAP error ${response.status}: ${text.substring(0, 500)}`);
+    }
+
+    return await response.text();
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return await response.text();
 }
 
 function extractXmlValue(xml: string, tag: string): string {
