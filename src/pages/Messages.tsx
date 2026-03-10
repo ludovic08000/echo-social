@@ -490,7 +490,6 @@ function ConversationList() {
   const handleDelete = async (convId: string) => {
     try {
       await deleteConversation.mutateAsync(convId);
-      toast.success('Conversation supprimée');
     } catch {
       toast.error('Erreur lors de la suppression');
     }
