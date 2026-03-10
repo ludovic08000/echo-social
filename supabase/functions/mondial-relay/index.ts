@@ -322,7 +322,7 @@ serve(async (req) => {
       ];
       params.Security = buildSignatureFromOrderedFields(shipmentOrderedValues, privateKey);
 
-      console.log("SOAP create_shipment - enseigne:", enseigne, "security:", params.Security);
+      console.log("SOAP create_shipment - enseigne:", enseigne, "order:", orderNo);
 
       const xml = await callMondialRelaySoap("WSI2_CreationEtiquette", params);
       const stat = extractXmlValue(xml, 'STAT');
