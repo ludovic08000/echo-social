@@ -301,8 +301,12 @@ serve(async (req) => {
       }
     }
 
-    // Combine agent's own system prompt with action capabilities and user context
-    const fullSystemPrompt = agent.system_prompt + "\n\n" + ACTION_SYSTEM_PROMPT + userContext;
+    // Add current date/time context
+    const now = new Date();
+    const dateTimeContext = `\n\n## DATE ET HEURE ACTUELLES\nDate : ${now.toLocaleDateString("fr-FR", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}\nHeure : ${now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" })} (heure de Paris)\nSi l'utilisateur demande la date ou l'heure, donne-lui cette information.\n`;
+
+    // Combine agent's own system prompt with action capabilities, date/time and user context
+    const fullSystemPrompt = agent.system_prompt + "\n\n" + ACTION_SYSTEM_PROMPT + dateTimeContext + userContext;
 
     const messages = [
       { role: "system", content: fullSystemPrompt },
