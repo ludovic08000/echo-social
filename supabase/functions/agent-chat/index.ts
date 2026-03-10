@@ -81,6 +81,73 @@ function detectSearchIntent(message: string): { isSearch: boolean; query: string
   return { isSearch, query };
 }
 
+const ZEUS_BOT_ID = "00000000-0000-0000-0000-000000000001";
+
+// Push Zeus response to the regular messaging system
+async function pushToMessenger(supabase: any, userId: string, zeusMessage: string) {
+  try {
+    // Clean the message: remove action blocks and product blocks
+    let cleanMsg = zeusMessage
+      .replace(/```forsure-action[\s\S]*?```/g, '')
+      .replace(/```forsure-products[\s\S]*?```/g, '')
+      .trim();
+    if (!cleanMsg || cleanMsg.length < 2) return;
+    // Truncate for messenger
+    if (cleanMsg.length > 1500) cleanMsg = cleanMsg.substring(0, 1500) + '…';
+
+    // Find existing Zeus conversation with this user
+    const { data: existingParts } = await supabase
+      .from("conversation_participants")
+      .select("conversation_id")
+      .eq("user_id", ZEUS_BOT_ID);
+
+    let messengerConvId: string | null = null;
+
+    if (existingParts && existingParts.length > 0) {
+      const convIds = existingParts.map((p: any) => p.conversation_id);
+      // Find one that also has the current user
+      const { data: userParts } = await supabase
+        .from("conversation_participants")
+        .select("conversation_id")
+        .eq("user_id", userId)
+        .in("conversation_id", convIds);
+      if (userParts && userParts.length > 0) {
+        messengerConvId = userParts[0].conversation_id;
+      }
+    }
+
+    // Create conversation if not exists
+    if (!messengerConvId) {
+      const { data: newConv } = await supabase
+        .from("conversations")
+        .insert({ is_group: false, name: null, created_by: ZEUS_BOT_ID })
+        .select("id")
+        .single();
+      if (!newConv) return;
+      messengerConvId = newConv.id;
+      await supabase.from("conversation_participants").insert([
+        { conversation_id: messengerConvId, user_id: ZEUS_BOT_ID },
+        { conversation_id: messengerConvId, user_id: userId },
+      ]);
+    }
+
+    // Insert the message (bypass friendship check by setting status directly)
+    await supabase.from("messages").insert({
+      conversation_id: messengerConvId,
+      sender_id: ZEUS_BOT_ID,
+      body: cleanMsg,
+      status: "delivered",
+    });
+
+    // Update conversation timestamp
+    await supabase.from("conversations")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", messengerConvId);
+  } catch (err) {
+    console.error("pushToMessenger error:", err);
+  }
+}
+
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
