@@ -778,7 +778,12 @@ export default function Profile() {
                   <ProfileMusicPlayer musicUrl={profile.profile_music_url} profileName={profile.name} />
                 )}
                 {/* Anonymous Wall */}
-                <AnonymousWall targetUserId={userId!} isOwnProfile={isOwnProfile} />
+                <AnonymousWall
+                  targetUserId={userId!}
+                  isOwnProfile={isOwnProfile}
+                  wallVisibility={(targetPrivacy as any)?.wall_visibility || 'friends'}
+                  isFriend={isFriend}
+                />
               </div>
 
               {/* Main - publications */}

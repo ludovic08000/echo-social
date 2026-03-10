@@ -70,8 +70,10 @@ export function AnonymousWall({ targetUserId, isOwnProfile, wallVisibility = 'fr
         )}
       </div>
 
-      {/* Post form (only for non-own profiles) */}
+      {/* Post form (only if allowed by wall visibility) */}
       {!isOwnProfile && user && user.id !== targetUserId && (
+        wallVisibility === 'everyone' || (wallVisibility === 'friends' && isFriend)
+      ) && (
         <div className="mb-4">
           <Textarea
             value={newMessage}
