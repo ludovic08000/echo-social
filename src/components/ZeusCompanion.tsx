@@ -444,7 +444,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   const { zeusName, updateName } = useZeusSettings();
   const { data: zeusAgentId } = useZeusAgentId();
   const { unacknowledged } = useContentStrikes();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(inline);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
