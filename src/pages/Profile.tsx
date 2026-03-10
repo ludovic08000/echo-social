@@ -1,6 +1,6 @@
 import { useParams, Link } from 'react-router-dom';
 import { useCustomBackground } from '@/hooks/useCustomBackground';
-import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake, ShieldAlert, Crown, LogOut, Newspaper } from 'lucide-react';
+import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake, ShieldAlert, Crown, LogOut, Newspaper, Lock } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
 import { useCreateConversation } from '@/hooks/useMessages';
@@ -146,6 +146,10 @@ export default function Profile() {
   const updateProfile = useUpdateProfile();
   const createConversation = useCreateConversation();
   const profileBgStyle = useCustomBackground('profile');
+
+  const isFriend = friendshipData?.status === 'accepted';
+  const isPrivateProfile = profile?.profile_type === 'private';
+  const canViewPosts = isOwnProfile || isFriend || !isPrivateProfile;
 
   // Check if own profile has pending identity verification
   const { data: pendingVerification } = useQuery({
@@ -737,6 +741,14 @@ export default function Profile() {
 
               {/* Main - publications */}
               <div className="flex-1 min-w-0 space-y-3">
+                {!canViewPosts ? (
+                  <div className="premium-card p-8 text-center">
+                    <Lock className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
+                    <p className="text-muted-foreground text-sm font-medium">Compte privé</p>
+                    <p className="text-muted-foreground/70 text-xs mt-1">Ajoutez cette personne en ami pour voir ses publications.</p>
+                  </div>
+                ) : (
+                <>
                 {isOwnProfile && <CreatePost />}
                 {postsLoading ? (
                   <div className="space-y-2">
@@ -759,6 +771,8 @@ export default function Profile() {
                       <PostCard key={post.id} post={post} onCommentClick={() => navigate(`/post/${post.id}`)} />
                     ))}
                   </div>
+                )}
+                </>
                 )}
               </div>
             </div>
@@ -789,6 +803,14 @@ export default function Profile() {
 
           {activeTab === 'all' && (
             <div className="max-w-lg mx-auto space-y-3">
+              {!canViewPosts ? (
+                <div className="premium-card p-8 text-center">
+                  <Lock className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
+                  <p className="text-muted-foreground text-sm font-medium">Compte privé</p>
+                  <p className="text-muted-foreground/70 text-xs mt-1">Ajoutez cette personne en ami pour voir ses publications.</p>
+                </div>
+              ) : (
+              <>
               {isOwnProfile && <CreatePost />}
               {postsLoading ? (
                 <div className="space-y-2">
@@ -811,6 +833,8 @@ export default function Profile() {
                     <PostCard key={post.id} post={post} onCommentClick={() => navigate(`/post/${post.id}`)} />
                   ))}
                 </div>
+              )}
+              </>
               )}
             </div>
           )}
