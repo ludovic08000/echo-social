@@ -27,41 +27,57 @@ function normalizePhone(phone: string): string {
   return clean;
 }
 
-/** Parse phone numbers from a vCard (.vcf) file content */
-function parseVCardPhones(vcfContent: string): string[] {
-  const phones: string[] = [];
+interface VCardContact {
+  name: string;
+  phone: string;
+}
+
+/** Parse contacts (name + phone) from a vCard (.vcf) file */
+function parseVCardContacts(vcfContent: string): VCardContact[] {
+  const contacts: VCardContact[] = [];
   const seen = new Set<string>();
-  // Match TEL lines: handles TEL, item1.TEL, item2.TEL, etc.
-  // Also handles TEL;TYPE=...:number, TEL;type=CELL;type=VOICE:number
-  const telRegex = /^(?:item\d+\.)?TEL[^:]*:(.+)$/gim;
-  let match;
-  while ((match = telRegex.exec(vcfContent)) !== null) {
-    const raw = match[1].trim().replace(/[\s\-().]/g, '');
-    if (raw.length >= 6) {
-      const normalized = normalizePhone(raw);
-      if (!seen.has(normalized)) {
-        seen.add(normalized);
-        phones.push(normalized);
-      }
+  
+  // Split by vCard entries
+  const entries = vcfContent.split(/(?=BEGIN:VCARD)/i);
+  
+  for (const entry of entries) {
+    if (!entry.trim()) continue;
+    
+    // Extract name (FN preferred, fallback to N)
+    const fnMatch = entry.match(/^FN[^:]*:(.+)$/im);
+    const nMatch = entry.match(/^N[^:]*:([^;]*);([^;]*)/im);
+    let name = '';
+    if (fnMatch) {
+      name = fnMatch[1].trim();
+    } else if (nMatch) {
+      name = `${nMatch[2]?.trim() || ''} ${nMatch[1]?.trim() || ''}`.trim();
     }
-  }
-  // Fallback: search for any phone-like patterns if no TEL lines found
-  if (phones.length === 0) {
-    const phonePattern = /(?:\+?\d[\d\s\-().]{7,}\d)/g;
-    let fallbackMatch;
-    while ((fallbackMatch = phonePattern.exec(vcfContent)) !== null) {
-      const raw = fallbackMatch[0].replace(/[\s\-().]/g, '');
-      if (raw.length >= 6 && raw.length <= 15) {
+    
+    // Extract phone numbers
+    const telRegex = /^(?:item\d+\.)?TEL[^:]*:(.+)$/gim;
+    let telMatch;
+    while ((telMatch = telRegex.exec(entry)) !== null) {
+      const raw = telMatch[1].trim().replace(/[\s\-().]/g, '');
+      if (raw.length >= 6) {
         const normalized = normalizePhone(raw);
         if (!seen.has(normalized)) {
           seen.add(normalized);
-          phones.push(normalized);
+          contacts.push({
+            name: name || normalized,
+            phone: normalized,
+          });
         }
       }
     }
   }
-  console.log('[VCF] Parsed phones:', phones.length, phones.slice(0, 5));
-  return phones;
+  
+  console.log('[VCF] Parsed contacts:', contacts.length, contacts.slice(0, 5));
+  return contacts;
+}
+
+/** Legacy: parse just phone numbers */
+function parseVCardPhones(vcfContent: string): string[] {
+  return parseVCardContacts(vcfContent).map(c => c.phone);
 }
 
 /** Check if Contact Picker API is available (not supported on iOS Safari) */
