@@ -115,9 +115,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   };
 
   const handleDelete = () => {
-    if (confirm('Êtes-vous sûr de vouloir supprimer ce post ?')) {
-      deletePost.mutate(post.id);
-    }
+    deletePost.mutate(post.id);
   };
 
   const isOwner = user?.id === post.user_id;
