@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Eye, Play } from 'lucide-react';
 import { UserAvatar } from './UserAvatar';
 import { ShortVideo } from '@/hooks/useVideoFeed';
+import { guessVideoMime } from '@/lib/videoCompat';
 
 interface VideoThumbnailCardProps {
   video: ShortVideo;

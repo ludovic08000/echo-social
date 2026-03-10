@@ -7,6 +7,7 @@ import { ShareButton } from './ShareButton';
 import { generateVideoUrl } from '@/lib/urlUtils';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
+import { guessVideoMime } from '@/lib/videoCompat';
 
 interface VideoCardProps {
   video: ShortVideo;

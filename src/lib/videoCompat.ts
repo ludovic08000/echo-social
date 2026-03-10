@@ -44,3 +44,21 @@ export function isVideoUrlSafeForIOS(url: string): boolean {
   const path = url.split('?')[0].split('#')[0];
   return IOS_SAFE_EXTENSIONS.test(path);
 }
+
+/**
+ * Map common video extensions → MIME type for the `<source type="">` hint.
+ * Helps iOS / Android pick the correct decoder without downloading the file.
+ */
+const EXT_TO_MIME: Record<string, string> = {
+  mp4: 'video/mp4',
+  mov: 'video/quicktime',
+  m4v: 'video/x-m4v',
+  webm: 'video/webm',
+  ogg: 'video/ogg',
+};
+
+export function guessVideoMime(url: string): string {
+  const path = url.split('?')[0].split('#')[0];
+  const ext = path.split('.').pop()?.toLowerCase() || '';
+  return EXT_TO_MIME[ext] || 'video/mp4';
+}
