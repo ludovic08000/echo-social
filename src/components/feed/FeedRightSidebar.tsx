@@ -382,7 +382,7 @@ export function FeedRightSidebar() {
           </div>
         </motion.div>
 
-        {/* ── Zeus AI Companion Card (Sci-fi) ── */}
+        {/* ── Zeus AI Companion Card ── */}
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -391,58 +391,26 @@ export function FeedRightSidebar() {
           {!zeusOpen ? (
             <button
               onClick={() => setZeusOpen(true)}
-              className="w-full rounded-2xl overflow-hidden transition-all duration-300 group cursor-pointer relative text-left"
-              style={{
-                background: 'linear-gradient(135deg, rgba(0,20,40,0.95) 0%, rgba(0,30,60,0.9) 50%, rgba(0,20,40,0.95) 100%)',
-                border: '1px solid rgba(0,255,255,0.15)',
-                boxShadow: '0 0 20px rgba(0,255,255,0.06)',
-              }}
+              className="w-full relative rounded-2xl border border-border/40 bg-card overflow-hidden transition-all duration-300 group cursor-pointer text-left"
+              style={{ boxShadow: 'var(--shadow-md)' }}
             >
-              {/* Scan line */}
-              <motion.div
-                animate={{ y: ['-100%', '300%'] }}
-                transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
-                className="absolute left-0 right-0 h-6 opacity-[0.06] pointer-events-none"
-                style={{ background: 'linear-gradient(180deg, transparent, rgba(0,255,255,0.4), transparent)' }}
-              />
-              {/* Top glow line */}
-              <motion.div
-                animate={{ opacity: [0.4, 0.8, 0.4] }}
-                transition={{ duration: 2, repeat: Infinity }}
-                className="h-[1px] w-full"
-                style={{ background: 'linear-gradient(90deg, transparent, rgba(0,255,255,0.5), transparent)' }}
-              />
-              <div className="p-4 relative z-10">
+              {/* Gradient accent top bar — same style as other cards */}
+              <div className="h-1 w-full bg-gradient-to-r from-cyan-500 via-primary to-cyan-400" />
+              <div className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-cyan-300 relative flex-shrink-0"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(0,255,255,0.12), rgba(0,100,200,0.12))',
-                      border: '1px solid rgba(0,255,255,0.2)',
-                      boxShadow: '0 0 15px rgba(0,255,255,0.12)',
-                    }}>
-                    <Zap className="w-5 h-5" />
-                    <motion.div
-                      animate={{ opacity: [0.2, 0.6, 0.2] }}
-                      transition={{ duration: 2, repeat: Infinity }}
-                      className="absolute inset-0 rounded-xl"
-                      style={{ boxShadow: '0 0 12px rgba(0,255,255,0.25)' }}
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center relative flex-shrink-0">
+                    <Zap className="w-5 h-5 text-primary" />
+                    <motion.span
+                      animate={{ opacity: [0.3, 1, 0.3] }}
+                      transition={{ duration: 1.5, repeat: Infinity }}
+                      className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-card"
                     />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-bold text-cyan-300" style={{ fontFamily: 'monospace' }}>{zeusName}</span>
-                      <motion.span
-                        animate={{ opacity: [0.3, 1, 0.3] }}
-                        transition={{ duration: 1.5, repeat: Infinity }}
-                        className="w-1.5 h-1.5 rounded-full bg-cyan-400"
-                        style={{ boxShadow: '0 0 6px rgba(0,255,255,0.6)' }}
-                      />
-                    </div>
-                    <p className="text-[10px] text-cyan-400/40 mt-0.5" style={{ fontFamily: 'monospace' }}>
-                      Assistant IA • En ligne
-                    </p>
+                    <h3 className="text-sm font-bold text-foreground leading-tight">{zeusName}</h3>
+                    <span className="text-[10px] text-emerald-500 font-medium">Assistant IA • En ligne</span>
                   </div>
-                  <MessageCircle className="w-4 h-4 text-cyan-500/30 group-hover:text-cyan-400 transition-colors flex-shrink-0" />
+                  <MessageCircle className="w-4 h-4 text-muted-foreground/40 group-hover:text-primary transition-colors flex-shrink-0" />
                 </div>
               </div>
             </button>
