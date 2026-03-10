@@ -133,7 +133,6 @@ export default function Signup() {
         }
       } catch {}
     }
-    }
 
     const userAge = differenceInYears(new Date(), dateOfBirth);
     if (userAge < 16 && parentalPin) {
