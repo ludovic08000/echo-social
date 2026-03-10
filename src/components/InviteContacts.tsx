@@ -27,41 +27,57 @@ function normalizePhone(phone: string): string {
   return clean;
 }
 
-/** Parse phone numbers from a vCard (.vcf) file content */
-function parseVCardPhones(vcfContent: string): string[] {
-  const phones: string[] = [];
+interface VCardContact {
+  name: string;
+  phone: string;
+}
+
+/** Parse contacts (name + phone) from a vCard (.vcf) file */
+function parseVCardContacts(vcfContent: string): VCardContact[] {
+  const contacts: VCardContact[] = [];
   const seen = new Set<string>();
-  // Match TEL lines: handles TEL, item1.TEL, item2.TEL, etc.
-  // Also handles TEL;TYPE=...:number, TEL;type=CELL;type=VOICE:number
-  const telRegex = /^(?:item\d+\.)?TEL[^:]*:(.+)$/gim;
-  let match;
-  while ((match = telRegex.exec(vcfContent)) !== null) {
-    const raw = match[1].trim().replace(/[\s\-().]/g, '');
-    if (raw.length >= 6) {
-      const normalized = normalizePhone(raw);
-      if (!seen.has(normalized)) {
-        seen.add(normalized);
-        phones.push(normalized);
-      }
+  
+  // Split by vCard entries
+  const entries = vcfContent.split(/(?=BEGIN:VCARD)/i);
+  
+  for (const entry of entries) {
+    if (!entry.trim()) continue;
+    
+    // Extract name (FN preferred, fallback to N)
+    const fnMatch = entry.match(/^FN[^:]*:(.+)$/im);
+    const nMatch = entry.match(/^N[^:]*:([^;]*);([^;]*)/im);
+    let name = '';
+    if (fnMatch) {
+      name = fnMatch[1].trim();
+    } else if (nMatch) {
+      name = `${nMatch[2]?.trim() || ''} ${nMatch[1]?.trim() || ''}`.trim();
     }
-  }
-  // Fallback: search for any phone-like patterns if no TEL lines found
-  if (phones.length === 0) {
-    const phonePattern = /(?:\+?\d[\d\s\-().]{7,}\d)/g;
-    let fallbackMatch;
-    while ((fallbackMatch = phonePattern.exec(vcfContent)) !== null) {
-      const raw = fallbackMatch[0].replace(/[\s\-().]/g, '');
-      if (raw.length >= 6 && raw.length <= 15) {
+    
+    // Extract phone numbers
+    const telRegex = /^(?:item\d+\.)?TEL[^:]*:(.+)$/gim;
+    let telMatch;
+    while ((telMatch = telRegex.exec(entry)) !== null) {
+      const raw = telMatch[1].trim().replace(/[\s\-().]/g, '');
+      if (raw.length >= 6) {
         const normalized = normalizePhone(raw);
         if (!seen.has(normalized)) {
           seen.add(normalized);
-          phones.push(normalized);
+          contacts.push({
+            name: name || normalized,
+            phone: normalized,
+          });
         }
       }
     }
   }
-  console.log('[VCF] Parsed phones:', phones.length, phones.slice(0, 5));
-  return phones;
+  
+  console.log('[VCF] Parsed contacts:', contacts.length, contacts.slice(0, 5));
+  return contacts;
+}
+
+/** Legacy: parse just phone numbers */
+function parseVCardPhones(vcfContent: string): string[] {
+  return parseVCardContacts(vcfContent).map(c => c.phone);
 }
 
 /** Check if Contact Picker API is available (not supported on iOS Safari) */
@@ -87,21 +103,25 @@ function WebPhoneSearch() {
   const [phoneInput, setPhoneInput] = useState('');
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<MatchedContact[]>([]);
+  const [unmatchedContacts, setUnmatchedContacts] = useState<VCardContact[]>([]);
   const [searched, setSearched] = useState(false);
   const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
+  const [selectedInvites, setSelectedInvites] = useState<Set<string>>(new Set());
   const [pickerSupported] = useState(hasContactPicker);
   const [isIOS] = useState(isIOSDevice);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const searchPhones = async (phones: string[]) => {
-    if (!user || phones.length === 0) return;
+  const searchPhonesWithContacts = async (vcContacts: VCardContact[]) => {
+    if (!user || vcContacts.length === 0) return;
     setSearching(true);
     setSearched(false);
     try {
-      const normalized = phones.map(normalizePhone);
+      const phones = vcContacts.map(c => c.phone);
+      // Limit to 500 per batch
+      const batch = phones.slice(0, 500);
       const { data: matches, error } = await supabase.rpc('match_contacts_by_phone', {
         p_user_id: user.id,
-        p_phone_numbers: normalized,
+        p_phone_numbers: batch,
       });
       if (error) throw error;
       const matchedResults: MatchedContact[] = (matches || []).map((m: any) => ({
@@ -113,11 +133,20 @@ function WebPhoneSearch() {
         contact_name: m.name,
       }));
       setResults(matchedResults);
+
+      // Build unmatched list
+      const matchedPhones = new Set((matches || []).map((m: any) => m.phone_number));
+      const unmatched = vcContacts.filter(c => !matchedPhones.has(c.phone));
+      setUnmatchedContacts(unmatched);
       setSearched(true);
-      if (matchedResults.length === 0) {
-        toast({ title: 'Aucun résultat', description: 'Aucun numéro trouvé sur Forsure' });
-      } else {
+
+      if (matchedResults.length > 0) {
         toast({ title: `${matchedResults.length} contact(s) trouvé(s) sur Forsure !` });
+      } else {
+        toast({
+          title: `${unmatched.length} contact(s) à inviter`,
+          description: 'Aucun de vos contacts n\'est encore sur Forsure',
+        });
       }
     } catch {
       toast({ title: 'Erreur', variant: 'destructive' });
@@ -129,21 +158,26 @@ function WebPhoneSearch() {
   const handlePickContacts = async () => {
     try {
       const contacts = await (navigator as any).contacts.select(
-        ['tel'],
+        ['tel', 'name'],
         { multiple: true }
       );
-      const phones: string[] = [];
+      const vcContacts: VCardContact[] = [];
       for (const c of contacts) {
         for (const tel of (c.tel || [])) {
           const clean = tel.replace(/[\s\-().]/g, '');
-          if (clean.length >= 6) phones.push(clean);
+          if (clean.length >= 6) {
+            vcContacts.push({
+              name: c.name?.[0] || clean,
+              phone: normalizePhone(clean),
+            });
+          }
         }
       }
-      if (phones.length === 0) {
+      if (vcContacts.length === 0) {
         toast({ title: 'Aucun numéro', description: 'Les contacts sélectionnés n\'ont pas de numéro' });
         return;
       }
-      await searchPhones(phones);
+      await searchPhonesWithContacts(vcContacts);
     } catch {
       // User cancelled picker
     }
@@ -154,17 +188,16 @@ function WebPhoneSearch() {
     if (!file) return;
     try {
       const text = await file.text();
-      const phones = parseVCardPhones(text);
-      if (phones.length === 0) {
+      const vcContacts = parseVCardContacts(text);
+      if (vcContacts.length === 0) {
         toast({ title: 'Aucun numéro trouvé', description: 'Le fichier ne contient pas de numéros valides' });
         return;
       }
-      toast({ title: `${phones.length} numéro(s) détecté(s)`, description: 'Recherche en cours...' });
-      await searchPhones(phones);
+      toast({ title: `${vcContacts.length} contact(s) détecté(s)`, description: 'Analyse en cours...' });
+      await searchPhonesWithContacts(vcContacts);
     } catch {
       toast({ title: 'Erreur de lecture', description: 'Impossible de lire le fichier', variant: 'destructive' });
     }
-    // Reset input
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -174,7 +207,8 @@ function WebPhoneSearch() {
       .split(/[,\n;]+/)
       .map(n => n.trim())
       .filter(n => n.length >= 6);
-    await searchPhones(rawNumbers);
+    const vcContacts = rawNumbers.map(p => ({ name: p, phone: normalizePhone(p) }));
+    await searchPhonesWithContacts(vcContacts);
   };
 
   const handleAddFriend = async (userId: string) => {
@@ -186,6 +220,175 @@ function WebPhoneSearch() {
       toast({ title: 'Erreur', variant: 'destructive' });
     }
   };
+
+  const toggleInvite = (phone: string) => {
+    setSelectedInvites(prev => {
+      const next = new Set(prev);
+      if (next.has(phone)) next.delete(phone);
+      else next.add(phone);
+      return next;
+    });
+  };
+
+  const sendInvites = async () => {
+    if (selectedInvites.size === 0) return;
+    try {
+      await Share.share({
+        title: 'Rejoins Forsure !',
+        text: INVITE_MESSAGE,
+        dialogTitle: 'Inviter des amis',
+      });
+      toast({
+        title: `Invitation partagée !`,
+        description: 'Vos amis recevront le lien',
+      });
+    } catch {
+      // Fallback: copy to clipboard
+      try {
+        await navigator.clipboard.writeText(INVITE_MESSAGE);
+        toast({ title: 'Lien copié !', description: 'Envoyez-le à vos amis par SMS ou messagerie' });
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  const inviteAll = () => {
+    setSelectedInvites(new Set(unmatchedContacts.map(c => c.phone)));
+  };
+
+  // After search: show results in tabs
+  if (searched) {
+    return (
+      <div className="flex flex-col h-full">
+        <Tabs defaultValue={results.length > 0 ? 'found' : 'invite'} className="flex-1 flex flex-col">
+          <TabsList className="grid grid-cols-2 mx-3 mt-2">
+            <TabsTrigger value="found" className="text-xs">
+              Sur Forsure ({results.length})
+            </TabsTrigger>
+            <TabsTrigger value="invite" className="text-xs">
+              À inviter ({unmatchedContacts.length})
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Matched contacts */}
+          <TabsContent value="found" className="flex-1 mt-0">
+            <ScrollArea className="h-[400px]">
+              <div className="divide-y divide-border">
+                {results.length === 0 ? (
+                  <p className="p-6 text-center text-sm text-muted-foreground">
+                    Aucun contact trouvé sur Forsure
+                  </p>
+                ) : (
+                  results.map(contact => (
+                    <div key={contact.user_id} className="flex items-center gap-3 p-3">
+                      <button onClick={() => navigate(`/profile/${contact.user_id}`)} className="shrink-0">
+                        <UserAvatar src={contact.avatar_url} alt={contact.name} size="md" />
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{contact.name}</p>
+                        <p className="text-xs text-muted-foreground">Sur Forsure</p>
+                      </div>
+                      {contact.is_friend ? (
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5 text-primary" /> Ami
+                        </span>
+                      ) : sentRequests.has(contact.user_id) ? (
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" /> Envoyé
+                        </span>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleAddFriend(contact.user_id)}
+                          disabled={sendRequest.isPending}
+                          className="gap-1 text-xs"
+                        >
+                          <UserPlus className="w-3.5 h-3.5" />
+                          Ajouter
+                        </Button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          </TabsContent>
+
+          {/* Unmatched contacts to invite */}
+          <TabsContent value="invite" className="flex-1 mt-0">
+            <ScrollArea className="h-[350px]">
+              <div className="px-3 py-2 flex justify-between items-center">
+                <button
+                  onClick={() => {
+                    if (selectedInvites.size === unmatchedContacts.length) {
+                      setSelectedInvites(new Set());
+                    } else {
+                      inviteAll();
+                    }
+                  }}
+                  className="text-xs text-primary font-medium"
+                >
+                  {selectedInvites.size === unmatchedContacts.length && unmatchedContacts.length > 0
+                    ? 'Tout désélectionner'
+                    : 'Tout sélectionner'}
+                </button>
+                <span className="text-xs text-muted-foreground">
+                  {selectedInvites.size} sélectionné{selectedInvites.size > 1 ? 's' : ''}
+                </span>
+              </div>
+              <div className="divide-y divide-border">
+                {unmatchedContacts.length === 0 ? (
+                  <p className="p-6 text-center text-sm text-muted-foreground">
+                    Tous vos contacts sont sur Forsure ! 🎉
+                  </p>
+                ) : (
+                  unmatchedContacts.map(contact => (
+                    <button
+                      key={contact.phone}
+                      onClick={() => toggleInvite(contact.phone)}
+                      className="w-full flex items-center gap-3 p-3 hover:bg-muted/50 transition-colors"
+                    >
+                      <Checkbox checked={selectedInvites.has(contact.phone)} />
+                      <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-semibold text-muted-foreground">
+                        {contact.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="text-left flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{contact.name}</p>
+                        <p className="text-xs text-muted-foreground">{contact.phone}</p>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+
+            {selectedInvites.size > 0 && (
+              <div className="p-3 border-t border-border">
+                <Button onClick={sendInvites} className="w-full gap-2">
+                  <Send className="w-4 h-4" />
+                  Inviter {selectedInvites.size} personne{selectedInvites.size > 1 ? 's' : ''}
+                </Button>
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+
+        {/* Back button */}
+        <div className="p-3 border-t border-border">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setSearched(false); setResults([]); setUnmatchedContacts([]); setSelectedInvites(new Set()); }}
+            className="w-full text-xs text-muted-foreground"
+          >
+            ← Importer d'autres contacts
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col p-4 gap-4">
@@ -212,7 +415,7 @@ function WebPhoneSearch() {
         </div>
       )}
 
-      {/* vCard import (especially useful on iOS) */}
+      {/* vCard import */}
       <div className="flex flex-col gap-3">
         {pickerSupported && (
           <div className="relative flex items-center gap-2 py-1">
@@ -307,43 +510,6 @@ function WebPhoneSearch() {
           Séparez plusieurs numéros par des virgules
         </p>
       </div>
-
-      {/* Results */}
-      {searched && results.length > 0 && (
-        <div className="border border-border rounded-xl overflow-hidden divide-y divide-border">
-          {results.map(contact => (
-            <div key={contact.user_id} className="flex items-center gap-3 p-3">
-              <button onClick={() => navigate(`/profile/${contact.user_id}`)} className="shrink-0">
-                <UserAvatar src={contact.avatar_url} alt={contact.name} size="md" />
-              </button>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{contact.name}</p>
-                <p className="text-xs text-muted-foreground">Sur Forsure</p>
-              </div>
-              {contact.is_friend ? (
-                <span className="text-xs text-muted-foreground flex items-center gap-1">
-                  <Check className="w-3.5 h-3.5 text-primary" /> Ami
-                </span>
-              ) : sentRequests.has(contact.user_id) ? (
-                <span className="text-xs text-muted-foreground flex items-center gap-1">
-                  <Check className="w-3.5 h-3.5" /> Envoyé
-                </span>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleAddFriend(contact.user_id)}
-                  disabled={sendRequest.isPending}
-                  className="gap-1 text-xs"
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  Ajouter
-                </Button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
