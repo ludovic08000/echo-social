@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useZeusSettings } from '@/hooks/useZeusCompanion';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { SEOHead } from '@/components/SEOHead';
@@ -41,6 +42,7 @@ export default function AIEngine() {
   const [selectedCategory, setSelectedCategory] = useState<AICategory | 'all'>('all');
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('modules');
+  const { zeusName } = useZeusSettings();
 
   const modules = useMemo(() => getAIModules(), []);
   const stats = useMemo(() => getAIEngineStats(), []);
@@ -79,6 +81,38 @@ export default function AIEngine() {
             <StatCard icon={Activity} label="Santé" value={`${stats.healthScore}%`} />
           </div>
         </header>
+
+        {/* Zeus Companion Card */}
+        <div className="relative overflow-hidden rounded-2xl p-5 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent border border-amber-500/20">
+          <div className="absolute top-3 right-3 opacity-10">
+            <Zap className="w-20 h-20" />
+          </div>
+          <div className="relative z-10 flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white shadow-lg shadow-amber-500/30 shrink-0">
+              <Zap className="w-7 h-7" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-lg font-bold text-foreground">{zeusName}</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Ton compagnon IA personnel • Modérateur • Assistant bien-être • Créateur de contenu
+              </p>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 text-[10px] font-medium">
+                  <Shield className="w-2.5 h-2.5" /> Modération
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 text-[10px] font-medium">
+                  <HeartPulse className="w-2.5 h-2.5" /> Bien-être
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 text-[10px] font-medium">
+                  <MessageSquareText className="w-2.5 h-2.5" /> Assistant
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 text-[10px] font-medium">
+                  <Sparkles className="w-2.5 h-2.5" /> Créateur
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>

@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, Check } from 'lucide-react';
+import { Sparkles, Check, Zap, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const INTERESTS = [
   { value: 'gaming', label: 'Gaming', emoji: '🎮', color: 'border-purple-500/40 bg-purple-500/10 text-purple-300' },
@@ -24,10 +25,14 @@ const INTERESTS = [
 
 const MIN_INTERESTS = 3;
 
+const AI_NAME_SUGGESTIONS = ['Zeus', 'Nova', 'Atlas', 'Luna', 'Aria', 'Echo', 'Orion', 'Pixel'];
+
 export default function Onboarding() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [step, setStep] = useState<'interests' | 'ai-name'>('interests');
   const [selected, setSelected] = useState<string[]>([]);
+  const [aiName, setAiName] = useState('Zeus');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const toggle = (value: string) => {
@@ -36,15 +41,24 @@ export default function Onboarding() {
     );
   };
 
-  const handleContinue = async () => {
+  const handleInterestsDone = () => {
     if (selected.length < MIN_INTERESTS) {
       toast({ title: `Choisis au moins ${MIN_INTERESTS} centres d'intérêt`, variant: 'destructive' });
       return;
     }
+    setStep('ai-name');
+  };
+
+  const handleFinish = async () => {
     if (!user) return;
+    if (!aiName.trim()) {
+      toast({ title: 'Donne un nom à ton IA !', variant: 'destructive' });
+      return;
+    }
 
     setIsSubmitting(true);
     try {
+      // Save interests
       const rows = selected.map(interest => ({
         user_id: user.id,
         interest_type: 'category',
@@ -52,11 +66,17 @@ export default function Onboarding() {
         explicit: true,
         weight: 1,
       }));
+      const { error: interestsErr } = await supabase.from('user_interests').upsert(rows, { onConflict: 'user_id,interest_type,interest_value' } as any);
+      if (interestsErr) throw interestsErr;
 
-      const { error } = await supabase.from('user_interests').upsert(rows, { onConflict: 'user_id,interest_type,interest_value' } as any);
-      if (error) throw error;
+      // Save AI companion name
+      const { error: zeusErr } = await supabase.from('zeus_user_settings').upsert(
+        { user_id: user.id, custom_name: aiName.trim() },
+        { onConflict: 'user_id' }
+      );
+      if (zeusErr) throw zeusErr;
 
-      toast({ title: 'Bienvenue sur ForSure ! 🎉' });
+      toast({ title: `Bienvenue sur ForSure ! 🎉`, description: `${aiName.trim()} est prêt à t'accompagner !` });
       navigate('/feed', { replace: true });
     } catch (err: any) {
       toast({ title: 'Erreur', description: err.message, variant: 'destructive' });
@@ -72,69 +92,180 @@ export default function Onboarding() {
           <BrandLogo className="h-10 w-auto" />
         </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="pulse-card p-6 sm:p-8"
-        >
-          <div className="text-center mb-6">
-            <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium mb-3">
-              <Sparkles className="w-4 h-4" />
-              Personnalise ton expérience
-            </div>
-            <h1 className="text-2xl font-bold text-foreground">Qu'est-ce qui t'intéresse ?</h1>
-            <p className="text-muted-foreground text-sm mt-1">
-              Choisis au moins {MIN_INTERESTS} sujets pour personnaliser ton fil d'actualité
-            </p>
-          </div>
+        {/* Step indicator */}
+        <div className="flex items-center justify-center gap-2 mb-6">
+          <div className={`w-2.5 h-2.5 rounded-full transition-colors ${step === 'interests' ? 'bg-primary' : 'bg-primary/30'}`} />
+          <div className={`w-2.5 h-2.5 rounded-full transition-colors ${step === 'ai-name' ? 'bg-primary' : 'bg-primary/30'}`} />
+        </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
-            {INTERESTS.map((item) => {
-              const isSelected = selected.includes(item.value);
-              return (
-                <motion.button
-                  key={item.value}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => toggle(item.value)}
-                  className={`
-                    relative flex flex-col items-center gap-1.5 p-4 rounded-xl border-2 transition-all duration-200
-                    ${isSelected
-                      ? 'border-primary bg-primary/10 shadow-lg shadow-primary/10'
-                      : `${item.color} hover:border-primary/30`
-                    }
-                  `}
-                >
-                  {isSelected && (
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      className="absolute top-1.5 right-1.5 bg-primary rounded-full p-0.5"
-                    >
-                      <Check className="w-3 h-3 text-primary-foreground" />
-                    </motion.div>
-                  )}
-                  <span className="text-2xl">{item.emoji}</span>
-                  <span className={`text-sm font-medium ${isSelected ? 'text-primary' : ''}`}>
-                    {item.label}
-                  </span>
-                </motion.button>
-              );
-            })}
-          </div>
-
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              {selected.length}/{MIN_INTERESTS} minimum
-            </span>
-            <Button
-              onClick={handleContinue}
-              disabled={selected.length < MIN_INTERESTS || isSubmitting}
-              className="pulse-button-gradient px-8"
+        <AnimatePresence mode="wait">
+          {step === 'interests' && (
+            <motion.div
+              key="interests"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="pulse-card p-6 sm:p-8"
             >
-              {isSubmitting ? 'Enregistrement…' : 'Continuer'}
-            </Button>
-          </div>
-        </motion.div>
+              <div className="text-center mb-6">
+                <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium mb-3">
+                  <Sparkles className="w-4 h-4" />
+                  Étape 1/2
+                </div>
+                <h1 className="text-2xl font-bold text-foreground">Qu'est-ce qui t'intéresse ?</h1>
+                <p className="text-muted-foreground text-sm mt-1">
+                  Choisis au moins {MIN_INTERESTS} sujets pour personnaliser ton fil
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+                {INTERESTS.map((item) => {
+                  const isSelected = selected.includes(item.value);
+                  return (
+                    <motion.button
+                      key={item.value}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => toggle(item.value)}
+                      className={`
+                        relative flex flex-col items-center gap-1.5 p-4 rounded-xl border-2 transition-all duration-200
+                        ${isSelected
+                          ? 'border-primary bg-primary/10 shadow-lg shadow-primary/10'
+                          : `${item.color} hover:border-primary/30`
+                        }
+                      `}
+                    >
+                      {isSelected && (
+                        <motion.div
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          className="absolute top-1.5 right-1.5 bg-primary rounded-full p-0.5"
+                        >
+                          <Check className="w-3 h-3 text-primary-foreground" />
+                        </motion.div>
+                      )}
+                      <span className="text-2xl">{item.emoji}</span>
+                      <span className={`text-sm font-medium ${isSelected ? 'text-primary' : ''}`}>
+                        {item.label}
+                      </span>
+                    </motion.button>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  {selected.length}/{MIN_INTERESTS} minimum
+                </span>
+                <Button
+                  onClick={handleInterestsDone}
+                  disabled={selected.length < MIN_INTERESTS}
+                  className="pulse-button-gradient px-6 gap-2"
+                >
+                  Suivant <ArrowRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </motion.div>
+          )}
+
+          {step === 'ai-name' && (
+            <motion.div
+              key="ai-name"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="pulse-card p-6 sm:p-8"
+            >
+              <div className="text-center mb-6">
+                <div className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-500 px-3 py-1 rounded-full text-sm font-medium mb-3">
+                  <Zap className="w-4 h-4" />
+                  Étape 2/2
+                </div>
+                <h1 className="text-2xl font-bold text-foreground">Nomme ton IA personnelle</h1>
+                <p className="text-muted-foreground text-sm mt-1">
+                  Ton compagnon IA t'accompagnera partout sur ForSure. Il veille sur toi, t'écoute et peut poster pour toi.
+                </p>
+              </div>
+
+              {/* AI Avatar */}
+              <div className="flex justify-center mb-6">
+                <motion.div
+                  animate={{ rotate: [0, 5, -5, 0] }}
+                  transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                  className="w-24 h-24 rounded-3xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white shadow-xl shadow-amber-500/30"
+                >
+                  <Zap className="w-12 h-12" />
+                </motion.div>
+              </div>
+
+              {/* Name input */}
+              <div className="mb-4">
+                <Input
+                  value={aiName}
+                  onChange={e => setAiName(e.target.value)}
+                  placeholder="Donne un nom à ton IA..."
+                  maxLength={20}
+                  className="text-center text-lg font-semibold h-12 rounded-xl"
+                  autoFocus
+                />
+              </div>
+
+              {/* Suggestions */}
+              <div className="flex flex-wrap gap-2 justify-center mb-6">
+                {AI_NAME_SUGGESTIONS.map(name => (
+                  <button
+                    key={name}
+                    onClick={() => setAiName(name)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                      aiName === name
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border/40 bg-secondary/40 text-muted-foreground hover:border-primary/30'
+                    }`}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+
+              {/* Preview */}
+              {aiName.trim() && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 rounded-xl bg-gradient-to-r from-amber-500/5 to-orange-500/5 border border-amber-500/20 mb-6"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-sm shrink-0">
+                      ⚡
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{aiName.trim()}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Salut ! Je suis <strong>{aiName.trim()}</strong>, ton compagnon IA. Je suis là pour toi ! 💬
+                      </p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              <div className="flex items-center justify-between">
+                <Button
+                  variant="ghost"
+                  onClick={() => setStep('interests')}
+                  className="text-muted-foreground"
+                >
+                  Retour
+                </Button>
+                <Button
+                  onClick={handleFinish}
+                  disabled={!aiName.trim() || isSubmitting}
+                  className="pulse-button-gradient px-8"
+                >
+                  {isSubmitting ? 'Enregistrement…' : 'C\'est parti ! 🚀'}
+                </Button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
