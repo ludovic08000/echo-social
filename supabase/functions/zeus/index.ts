@@ -1432,7 +1432,7 @@ async function handlePostModeration(apiKey: string, body: any, userId: string, s
   // AI moderation for nuanced content
   if (text && text.length > 10) {
     const resp = await callAI(apiKey, {
-      model: "google/gemini-2.5-flash-lite",
+      model: "google/gemini-2.5-flash",
       messages: [
         { role: "system", content: `Tu es un modérateur bienveillant. Analyse ce contenu et détermine s'il contient du discours haineux, du harcèlement, des menaces, de la discrimination ou du contenu inapproprié. Réponds UNIQUEMENT via l'outil moderate_post.` },
         { role: "user", content: text },
