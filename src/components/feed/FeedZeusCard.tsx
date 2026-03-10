@@ -1,4 +1,4 @@
-import { Zap, MessageCircle } from 'lucide-react';
+import { Zap, MessageSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useZeusSettings } from '@/hooks/useZeusCompanion';
 import { useChatWidget } from '@/components/ChatWidgetContext';
@@ -20,24 +20,46 @@ export function FeedZeusCard() {
     >
       <button
         onClick={() => {
-          // Open Zeus companion by dispatching a custom event
           window.dispatchEvent(new CustomEvent('open-zeus'));
         }}
-        className="w-full p-4 rounded-2xl border border-amber-500/20 bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-amber-500/10 hover:from-amber-500/15 hover:to-amber-500/15 transition-all duration-300 group cursor-pointer"
+        className="w-full p-4 rounded-2xl transition-all duration-300 group cursor-pointer relative overflow-hidden"
+        style={{
+          background: 'linear-gradient(135deg, rgba(0,20,40,0.9) 0%, rgba(0,30,60,0.85) 50%, rgba(0,20,40,0.9) 100%)',
+          border: '1px solid rgba(0,255,255,0.15)',
+          boxShadow: '0 0 20px rgba(0,255,255,0.05)',
+        }}
       >
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white shadow-lg shadow-amber-500/20 group-hover:shadow-amber-500/30 transition-shadow">
+        {/* Scan line */}
+        <motion.div
+          animate={{ y: ['-100%', '200%'] }}
+          transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+          className="absolute left-0 right-0 h-8 opacity-[0.06] pointer-events-none"
+          style={{ background: 'linear-gradient(180deg, transparent, rgba(0,255,255,0.4), transparent)' }}
+        />
+        <div className="flex items-center gap-3 relative z-10">
+          <div className="w-11 h-11 rounded-full flex items-center justify-center text-cyan-300 relative"
+            style={{
+              background: 'linear-gradient(135deg, rgba(0,255,255,0.15), rgba(0,100,200,0.15))',
+              border: '1px solid rgba(0,255,255,0.25)',
+              boxShadow: '0 0 20px rgba(0,255,255,0.15)',
+            }}>
             <Zap className="w-5 h-5" />
+            <motion.div
+              animate={{ opacity: [0.3, 0.7, 0.3] }}
+              transition={{ duration: 2, repeat: Infinity }}
+              className="absolute inset-0 rounded-full"
+              style={{ boxShadow: '0 0 15px rgba(0,255,255,0.3)' }}
+            />
           </div>
           <div className="flex-1 text-left">
-            <p className="text-sm font-semibold text-foreground">
-              {zeusName} <span className="text-muted-foreground font-normal">— ton assistant IA</span>
+            <p className="text-sm font-bold font-mono text-cyan-300 tracking-wide">
+              {zeusName} <span className="text-cyan-500/40 font-normal text-xs">— IA ASSISTANT</span>
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Publie, gère ton fil, traduis, cherche sur la marketplace ⚡
+            <p className="text-[11px] text-cyan-400/40 mt-0.5 font-mono">
+              Publie, gère ton flux, traduis, explore le market ⚡
             </p>
           </div>
-          <MessageCircle className="w-5 h-5 text-amber-500/60 group-hover:text-amber-500 transition-colors" />
+          <MessageSquare className="w-5 h-5 text-cyan-500/30 group-hover:text-cyan-400 transition-colors" />
         </div>
       </button>
     </motion.div>
