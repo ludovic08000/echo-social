@@ -90,20 +90,6 @@ function extractRelayPoints(xml: string): any[] {
 
 // ── V2 REST API helper (XML format) ──
 
-function buildXmlElement(tag: string, value: any, indent = ""): string {
-  if (value === null || value === undefined) return `${indent}<${tag}/>`;
-  if (typeof value === "object" && !Array.isArray(value)) {
-    const inner = Object.entries(value)
-      .map(([k, v]) => buildXmlElement(k, v, indent + "  "))
-      .join("\n");
-    return `${indent}<${tag}>\n${inner}\n${indent}</${tag}>`;
-  }
-  if (Array.isArray(value)) {
-    return value.map(item => buildXmlElement(tag.replace(/s$/, ''), item, indent)).join("\n");
-  }
-  return `${indent}<${tag}>${String(value)}</${tag}>`;
-}
-
 async function callMondialRelayV2(xmlBody: string): Promise<string> {
   const login = (Deno.env.get("MONDIAL_RELAY_V2_LOGIN") ?? "").trim();
   const password = (Deno.env.get("MONDIAL_RELAY_V2_PASSWORD") ?? "").trim();
