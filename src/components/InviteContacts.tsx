@@ -429,23 +429,6 @@ export function InviteContacts() {
           </div>
         </Button>
 
-        {/* Outlook import */}
-        <Button
-          onClick={() => toast({ title: 'Bientôt disponible', description: 'L\'import Outlook sera disponible prochainement' })}
-          disabled={oauthImport.loading}
-          variant="outline"
-          className="gap-2 w-full h-12 justify-start"
-        >
-          <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
-            <svg className="w-4 h-4" viewBox="0 0 24 24">
-              <path fill="#0078D4" d="M24 7.387v10.478c0 .23-.08.424-.238.58a.788.788 0 0 1-.581.238h-8.97V6.569h8.97c.23 0 .424.079.58.237A.788.788 0 0 1 24 7.387zM13.401 2.773l-8.15 1.46a.72.72 0 0 0-.601.71v14.114c0 .35.22.644.6.71l8.15 1.46a.72.72 0 0 0 .85-.71V3.483a.72.72 0 0 0-.85-.71zM9.6 16.247c-2.485 0-4.5-1.903-4.5-4.247s2.015-4.247 4.5-4.247S14.1 9.656 14.1 12s-2.015 4.247-4.5 4.247zm0-6.694c-1.38 0-2.5 1.097-2.5 2.447s1.12 2.447 2.5 2.447 2.5-1.097 2.5-2.447-1.12-2.447-2.5-2.447z"/>
-            </svg>
-          </div>
-          <div className="text-left">
-            <p className="text-sm font-medium">Contacts Outlook</p>
-            <p className="text-[10px] text-muted-foreground">Microsoft, Hotmail...</p>
-          </div>
-        </Button>
 
         {/* Contact Picker (Android Chrome) */}
         {pickerSupported && (
