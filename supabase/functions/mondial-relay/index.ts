@@ -282,7 +282,6 @@ serve(async (req) => {
         enseigne, NbColis: params.NbColis,
         Expe_Ad1: params.Expe_Ad1, Dest_Ad1: params.Dest_Ad1,
       }));
-      }));
 
       const xml = await callMondialRelaySoap("WSI2_CreationEtiquette", params);
       const stat = extractXmlValue(xml, 'STAT');
