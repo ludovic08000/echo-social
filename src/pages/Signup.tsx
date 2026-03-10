@@ -207,6 +207,21 @@ export default function Signup() {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="phone" className="flex items-center gap-1.5">
+                <Phone className="w-3.5 h-3.5" /> Numéro de téléphone
+              </Label>
+              <Input
+                id="phone"
+                type="tel"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value.replace(/[^0-9+\s\-()]/g, '').slice(0, 20))}
+                placeholder="+33 6 12 34 56 78"
+                className="pulse-input"
+              />
+              <p className="text-[11px] text-muted-foreground">Permet à tes amis de te retrouver via leurs contacts</p>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="password">{t('signup.password')} *</Label>
               <div className="relative">
                 <Input id="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('signup.passwordPlaceholder')} className="pulse-input pr-10" required minLength={6} />
