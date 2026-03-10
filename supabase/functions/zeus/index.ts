@@ -554,6 +554,20 @@ const ZEUS_TOOLS = [
       },
     },
   },
+  {
+    type: "function", function: {
+      name: "web_search", description: "Rechercher des informations sur internet en temps réel. Utilise cette fonction quand l'utilisateur pose une question nécessitant des données actuelles, des actualités, des définitions, des tendances, ou toute information que tu ne possèdes pas dans tes données d'entraînement.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "La requête de recherche en langage naturel" },
+          language: { type: "string", enum: ["fr", "en"], description: "Langue préférée des résultats" },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // Execute Zeus tool calls against the database
