@@ -141,6 +141,7 @@ export function ZeusCompanion() {
           image_url: null,
         });
         if (error) throw error;
+        queryClient.invalidateQueries({ queryKey: ['posts'] });
         toast.success('Post publié avec succès ! 🎉');
       } else if (action.type === 'translate') {
         // Translation is already displayed, just copy to clipboard
