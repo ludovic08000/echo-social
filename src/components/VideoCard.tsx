@@ -109,15 +109,24 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
       {/* Video */}
       <video
         ref={videoRef}
-        src={video.video_url}
         poster={video.thumbnail_url || undefined}
         className="w-full h-full object-cover"
         loop
         muted={isMuted}
         playsInline
+        // @ts-ignore – legacy iOS attribute
+        webkit-playsinline=""
+        x-webkit-airplay="deny"
+        controlsList="nodownload noremoteplayback"
+        preload="auto"
         onTimeUpdate={handleTimeUpdate}
         onClick={togglePlay}
-      />
+        onError={() => {
+          toast({ title: 'Erreur de lecture', description: 'Cette vidéo ne peut pas être lue sur votre appareil.', variant: 'destructive' });
+        }}
+      >
+        <source src={video.video_url} type={guessVideoMime(video.video_url)} />
+      </video>
 
       {/* Play/Pause overlay */}
       {!isPlaying && (
