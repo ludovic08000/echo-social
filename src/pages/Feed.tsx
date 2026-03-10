@@ -70,6 +70,7 @@ export default function Feed() {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [showPauseReminder, setShowPauseReminder] = useState(false);
   const [pauseDismissed, setPauseDismissed] = useState(false);
+  const [openCommentsPostId, setOpenCommentsPostId] = useState<string | null>(null);
   const { data: activeAds } = useActiveAds();
   const feedBgStyle = useCustomBackground('feed');
   const { isMinor, isUnlocked, requestUnlock } = useParentalGate();
