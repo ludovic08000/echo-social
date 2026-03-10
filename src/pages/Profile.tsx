@@ -667,13 +667,10 @@ export default function Profile() {
                   <div className="shrink-0">
                     <FriendshipButton userId={userId!} />
                   </div>
-                  {friendship?.status === 'accepted' && (
+                  {friendshipData?.status === 'accepted' && (
                     <Button 
                       variant="secondary" 
                       className="rounded-xl h-10 text-sm whitespace-nowrap shrink-0"
-                      onClick={async () => {
-                        const { useCreateConversation } = await import('@/hooks/useMessages');
-                      }}
                     >
                       <MessageCircle className="w-4 h-4 mr-2" />
                       Envoyer un message
