@@ -142,6 +142,9 @@ function UsersSection() {
     },
   });
 
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState('');
+
   const banUser = useMutation({
     mutationFn: async (userId: string) => {
       if (!user) throw new Error('Non authentifié');
@@ -149,6 +152,24 @@ function UsersSection() {
       if (error) throw error;
     },
     onSuccess: () => { toast({ title: '🚫 Utilisateur banni' }); queryClient.invalidateQueries({ queryKey: ['admin-users'] }); },
+    onError: (e: any) => toast({ title: 'Erreur', description: e.message, variant: 'destructive' }),
+  });
+
+  const deleteUser = useMutation({
+    mutationFn: async (userId: string) => {
+      const { data, error } = await supabase.functions.invoke('admin-delete-user', {
+        body: { target_user_id: userId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (data) => {
+      toast({ title: '🗑️ Utilisateur supprimé', description: data?.warning || 'Compte et données supprimés définitivement.' });
+      setDeleteTarget(null);
+      setDeleteConfirm('');
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+    },
     onError: (e: any) => toast({ title: 'Erreur', description: e.message, variant: 'destructive' }),
   });
 
@@ -185,15 +206,50 @@ function UsersSection() {
                 <TableCell><Badge variant="secondary" className="text-[10px]">{u.profile_type || 'user'}</Badge></TableCell>
                 <TableCell className="text-xs text-muted-foreground">{format(new Date(u.created_at), 'dd/MM/yyyy', { locale: fr })}</TableCell>
                 <TableCell>
-                  <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => banUser.mutate(u.user_id)}>
-                    <Ban className="w-3 h-3 mr-1" /> Bannir
-                  </Button>
+                  <div className="flex gap-1.5">
+                    <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => banUser.mutate(u.user_id)}>
+                      <Ban className="w-3 h-3 mr-1" /> Bannir
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs border-destructive/30 text-destructive hover:bg-destructive hover:text-destructive-foreground" onClick={() => setDeleteTarget({ id: u.user_id, name: u.name || 'Inconnu' })}>
+                      <UserX className="w-3 h-3 mr-1" /> Supprimer
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
+
+      {/* Delete confirmation dialog */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => { setDeleteTarget(null); setDeleteConfirm(''); }}>
+          <div className="bg-background border border-border rounded-xl p-6 w-full max-w-md mx-4 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              <h3 className="font-bold text-lg">Supprimer définitivement</h3>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Vous êtes sur le point de supprimer <strong className="text-foreground">{deleteTarget.name}</strong> et toutes ses données (profil, publications, messages, etc.). Cette action est <strong>irréversible</strong>.
+            </p>
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Tapez <strong>SUPPRIMER</strong> pour confirmer :</p>
+              <Input value={deleteConfirm} onChange={e => setDeleteConfirm(e.target.value)} placeholder="SUPPRIMER" />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" size="sm" onClick={() => { setDeleteTarget(null); setDeleteConfirm(''); }}>Annuler</Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={deleteConfirm !== 'SUPPRIMER' || deleteUser.isPending}
+                onClick={() => deleteUser.mutate(deleteTarget.id)}
+              >
+                {deleteUser.isPending ? 'Suppression…' : 'Supprimer définitivement'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
