@@ -134,7 +134,7 @@ function ActionCard({ action, onExecute, executing, executed }: {
     update_feed_config: { icon: '⚙️', label: 'Ajuster ton algorithme' },
   };
   const info = labels[action.type] || { icon: '⚡', label: 'Action' };
-  const preview = action.body || action.caption || action.translated_text || action.prompt || '';
+  const preview = action.type === 'update_feed_config' ? '' : (action.body || action.caption || action.translated_text || action.prompt || '');
 
   return (
     <div className="mt-2.5 p-3 rounded-xl bg-gradient-to-br from-amber-500/5 to-orange-500/5 border border-amber-500/15 space-y-2">
