@@ -140,29 +140,23 @@ function md5Hex(str: string): string {
 
 function buildSignature(params: Record<string, string>, privateKey: string): string {
   const concat = Object.values(params).join('') + privateKey;
-  return md5Hex(concat);
+  console.log("Security hash input length:", concat.length, "first 50 chars:", concat.substring(0, 50));
+  return md5Hex(concat).toUpperCase();
 }
 
 async function callMondialRelay(method: string, params: Record<string, string>): Promise<string> {
-  const soapParams = Object.entries(params)
-    .map(([k, v]) => `<${k}>${v}</${k}>`)
-    .join('');
+  // Use URL-encoded form POST (simpler and more reliable than SOAP)
+  const urlParams = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    urlParams.append(k, v);
+  }
 
-  const soapBody = `<?xml version="1.0" encoding="utf-8"?>
-<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
-  <soap12:Body>
-    <${method} xmlns="http://www.mondialrelay.fr/webservice/">
-      ${soapParams}
-    </${method}>
-  </soap12:Body>
-</soap12:Envelope>`;
-
-  const response = await fetch(MR_WSDL, {
+  const response = await fetch(`${MR_WSDL}/${method}`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/soap+xml; charset=utf-8",
+      "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: soapBody,
+    body: urlParams.toString(),
   });
 
   if (!response.ok) {
