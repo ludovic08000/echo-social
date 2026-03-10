@@ -1,4 +1,5 @@
-import { registerPlugin } from '@capacitor/core';
+// This file is no longer needed — using @capacitor-community/contacts instead.
+// Kept as a re-export for backwards compatibility if anything imports from here.
 
 export type ForgeContact = {
   givenName: string;
@@ -8,9 +9,5 @@ export type ForgeContact = {
   emails: string[];
 };
 
-type ContactsPluginType = {
-  requestPermission(): Promise<{ granted: boolean }>;
-  getContacts(): Promise<{ contacts: ForgeContact[] }>;
-};
-
-export const ContactsPlugin = registerPlugin<ContactsPluginType>('ContactsPlugin');
+// Re-export from the community plugin wrapper
+export { Contacts as ContactsPlugin } from '@capacitor-community/contacts';
