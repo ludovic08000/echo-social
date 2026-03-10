@@ -274,8 +274,25 @@ serve(async (req) => {
         Texte: '',
       };
 
-      // Compute MD5 signature: hash of ALL param values (in WSDL order) + private key
-      params.Security = buildSignature(params, privateKey);
+      // Compute MD5 signature: explicit WSDL-ordered values + private key
+      const shipmentOrderedValues = [
+        params.Enseigne, params.ModeCol, params.ModeLiv,
+        params.NDossier, params.NClient,
+        params.Expe_Langage, params.Expe_Ad1, params.Expe_Ad2, params.Expe_Ad3, params.Expe_Ad4,
+        params.Expe_Ville, params.Expe_CP, params.Expe_Pays,
+        params.Expe_Tel1, params.Expe_Tel2, params.Expe_Mail,
+        params.Dest_Langage, params.Dest_Ad1, params.Dest_Ad2, params.Dest_Ad3, params.Dest_Ad4,
+        params.Dest_Ville, params.Dest_CP, params.Dest_Pays,
+        params.Dest_Tel1, params.Dest_Tel2, params.Dest_Mail,
+        params.Poids, params.Longueur, params.Taille, params.NbColis,
+        params.CRT_Valeur, params.CRT_Devise,
+        params.Exp_Valeur, params.Exp_Devise,
+        params.COL_Rel_Pays, params.COL_Rel,
+        params.LIV_Rel_Pays, params.LIV_Rel,
+        params.TAvisage, params.TReprise, params.Montage, params.TRDV,
+        params.Assurance, params.Instructions, params.Texte,
+      ];
+      params.Security = buildSignatureFromOrderedFields(shipmentOrderedValues, privateKey);
 
       console.log("SOAP create_shipment - enseigne:", enseigne, "security:", params.Security);
 
