@@ -25,16 +25,29 @@ interface ActionBlock {
 }
 
 function parseActionFromContent(content: string): { text: string; action: ActionBlock | null } {
-  const regex = /```forsure-action\s*\n([\s\S]*?)\n```/;
-  const match = content.match(regex);
-  if (!match) return { text: content, action: null };
-  try {
-    const action = JSON.parse(match[1]) as ActionBlock;
-    const text = content.replace(regex, '').trim();
-    return { text, action };
-  } catch {
-    return { text: content, action: null };
+  // Try multiple patterns the AI might use
+  const patterns = [
+    /```forsure-action\s*\n([\s\S]*?)\n```/,
+    /```forsure-action\s*([\s\S]*?)```/,
+    /```json\s*\n([\s\S]*?)\n```/,
+    /\{[^{}]*"type"\s*:\s*"(publish_post|schedule_post|create_story|generate_image|translate)"[^{}]*\}/,
+  ];
+  
+  for (const regex of patterns) {
+    const match = content.match(regex);
+    if (!match) continue;
+    try {
+      const jsonStr = match[1] || match[0];
+      const action = JSON.parse(jsonStr.trim()) as ActionBlock;
+      if (action.type && ['publish_post', 'schedule_post', 'create_story', 'generate_image', 'translate'].includes(action.type)) {
+        const text = content.replace(match[0], '').trim();
+        return { text, action };
+      }
+    } catch {
+      continue;
+    }
   }
+  return { text: content, action: null };
 }
 
 function ActionCard({ action, onExecute, executing, executed }: {

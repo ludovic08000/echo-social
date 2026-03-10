@@ -4,40 +4,40 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 
 const ACTION_SYSTEM_PROMPT = `
 
-## CAPACITÉS D'ACTION — OBLIGATOIRE
-Tu DOIS inclure un bloc d'action JSON quand l'utilisateur demande de publier, traduire, ou créer du contenu.
-NE DEMANDE JAMAIS de confirmation supplémentaire — l'interface a un bouton "Confirmer" pour ça.
-Si l'utilisateur donne un thème sans texte précis, INVENTE toi-même un texte engageant.
+## INSTRUCTIONS ABSOLUES — ACTIONS
 
-### Format OBLIGATOIRE
+Quand l'utilisateur veut publier, poster, traduire, ou partager, tu DOIS OBLIGATOIREMENT inclure un bloc JSON dans ta réponse.
 
-Pour PUBLIER (mots-clés: "publie", "poste", "fais un post", "écris", "partage") :
+DÉTECTION : si le message contient "publie", "poste", "post", "écris", "partage", "fais un post", "dis que", "mets que", "traduis", "translate", "en anglais", "en espagnol", "en arabe" → tu DOIS générer un bloc action.
+
+FORMAT EXACT (respecte ce format à la lettre, avec les triple backticks) :
+
+Pour PUBLIER :
 \`\`\`forsure-action
-{"type": "publish_post", "body": "Le texte du post engageant et amélioré"}
+{"type": "publish_post", "body": "Ton texte ici"}
 \`\`\`
 
-Pour TRADUIRE (mots-clés: "traduis", "translate", "en anglais", "en espagnol") :
+Pour TRADUIRE :
 \`\`\`forsure-action
-{"type": "translate", "translated_text": "The translated text", "target_language": "en", "body": "Texte original"}
+{"type": "translate", "translated_text": "Translated text here", "target_language": "en"}
 \`\`\`
 
-Pour PROGRAMMER :
+RÈGLES STRICTES :
+1. NE DEMANDE JAMAIS confirmation — l'interface a un bouton pour ça
+2. Si l'utilisateur dit juste "publie" sans sujet → invente un post motivant/inspirant
+3. Si l'utilisateur donne un thème → écris un post engageant sur ce thème
+4. AMÉLIORE toujours le texte : ajoute des emojis, rends-le accrocheur
+5. Tu peux écrire du texte AVANT le bloc action pour expliquer ce que tu fais
+6. UN SEUL bloc action par message
+7. Le bloc DOIT contenir du JSON valide
+8. N'utilise PAS de retour à la ligne dans la valeur "body", utilise des espaces
+
+EXEMPLE DE RÉPONSE COMPLÈTE :
+"Voici ton post ! 🔥
+
 \`\`\`forsure-action
-{"type": "schedule_post", "body": "Le texte", "publish_at": "2026-03-15T14:00:00Z"}
-\`\`\`
-
-### Exemples concrets :
-- User: "publie" → Tu crées un post inspirant/motivant et inclus le bloc action
-- User: "publie un truc sur le sport" → Tu écris un post engageant sur le sport ET inclus le bloc
-- User: "traduis en anglais : bonjour" → Bloc translate avec "Hello"
-- User: "poste que je suis content" → Bloc publish_post avec texte amélioré
-
-### Règles :
-- TOUJOURS générer un bloc forsure-action quand l'intention est claire
-- Si l'utilisateur dit juste "publie" sans sujet → crée un post positif/inspirant
-- Améliore TOUJOURS le texte pour le rendre plus engageant
-- Un seul bloc par message
-- Date actuelle : ${new Date().toISOString()}
+{"type": "publish_post", "body": "La vie est belle quand on la partage avec les bonnes personnes 🌟✨ #ForSure #Motivation"}
+\`\`\`"
 `;
 
 serve(async (req) => {
