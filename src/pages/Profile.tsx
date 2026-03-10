@@ -1,6 +1,6 @@
 import { useParams, Link } from 'react-router-dom';
 import { useCustomBackground } from '@/hooks/useCustomBackground';
-import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake, ShieldAlert, Crown, LogOut, Newspaper, Lock } from 'lucide-react';
+import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake, ShieldAlert, Crown, LogOut, Newspaper, Lock, Globe, Eye } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
 import { useCreateConversation } from '@/hooks/useMessages';
@@ -783,6 +783,42 @@ export default function Profile() {
 
               {/* Main - publications */}
               <div className="flex-1 min-w-0 space-y-3">
+                {isOwnProfile && (
+                  <div className="bg-card border border-border/20 rounded-xl p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Eye className="w-4 h-4" />
+                      <span>Qui voit mes publications ?</span>
+                    </div>
+                    <div className="flex gap-1">
+                      {([
+                        { value: 'public', label: 'Tous', icon: Globe },
+                        { value: 'friends', label: 'Amis', icon: Users },
+                        { value: 'private', label: 'Moi', icon: Lock },
+                      ] as const).map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={async () => {
+                            await supabase
+                              .from('privacy_settings')
+                              .update({ posts_visibility: opt.value })
+                              .eq('user_id', user!.id);
+                            queryClient.invalidateQueries({ queryKey: ['target-privacy', userId] });
+                            toast({ title: `Publications : ${opt.label}` });
+                          }}
+                          className={cn(
+                            'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+                            postsVis === opt.value
+                              ? 'bg-primary text-primary-foreground shadow-sm'
+                              : 'bg-secondary/50 text-muted-foreground hover:bg-secondary'
+                          )}
+                        >
+                          <opt.icon className="w-3.5 h-3.5" />
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {!canViewPosts ? (
                   <div className="premium-card p-8 text-center">
                     <Lock className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
