@@ -88,9 +88,23 @@ function extractRelayPoints(xml: string): any[] {
   return points;
 }
 
-// ── V2 REST API helper ──
+// ── V2 REST API helper (XML format) ──
 
-async function callMondialRelayV2(endpoint: string, method: string, body?: any): Promise<any> {
+function buildXmlElement(tag: string, value: any, indent = ""): string {
+  if (value === null || value === undefined) return `${indent}<${tag}/>`;
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const inner = Object.entries(value)
+      .map(([k, v]) => buildXmlElement(k, v, indent + "  "))
+      .join("\n");
+    return `${indent}<${tag}>\n${inner}\n${indent}</${tag}>`;
+  }
+  if (Array.isArray(value)) {
+    return value.map(item => buildXmlElement(tag.replace(/s$/, ''), item, indent)).join("\n");
+  }
+  return `${indent}<${tag}>${String(value)}</${tag}>`;
+}
+
+async function callMondialRelayV2(xmlBody: string): Promise<string> {
   const login = (Deno.env.get("MONDIAL_RELAY_V2_LOGIN") ?? "").trim();
   const password = (Deno.env.get("MONDIAL_RELAY_V2_PASSWORD") ?? "").trim();
 
@@ -99,41 +113,29 @@ async function callMondialRelayV2(endpoint: string, method: string, body?: any):
   }
 
   const auth = btoa(`${login}:${password}`);
-  const url = `${MR_V2_BASE}${endpoint}`;
+  const url = `${MR_V2_BASE}/shipment`;
 
-  console.log(`MR V2 ${method} ${url}`, body ? JSON.stringify(body).substring(0, 500) : '');
+  console.log(`MR V2 POST ${url}`, xmlBody.substring(0, 800));
 
   const response = await fetch(url, {
-    method,
+    method: "POST",
     headers: {
       "Authorization": `Basic ${auth}`,
-      "Content-Type": "application/json",
-      "Accept": "application/json",
+      "Content-Type": "application/xml; charset=utf-8",
+      "Accept": "application/xml",
     },
-    ...(body ? { body: JSON.stringify(body) } : {}),
+    body: xmlBody,
   });
 
   const text = await response.text();
 
   if (!response.ok) {
     console.error(`MR V2 error ${response.status}:`, text.substring(0, 1000));
-    
-    // Try to parse error details
-    try {
-      const err = JSON.parse(text);
-      const msg = err.message || err.Message || err.error || err.Error || text.substring(0, 200);
-      throw new Error(`Mondial Relay V2 erreur: ${msg}`);
-    } catch (e) {
-      if (e instanceof Error && e.message.startsWith('Mondial Relay')) throw e;
-      throw new Error(`Mondial Relay V2 erreur ${response.status}: ${text.substring(0, 200)}`);
-    }
+    throw new Error(`Mondial Relay V2 erreur ${response.status}: ${text.substring(0, 300)}`);
   }
 
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
+  console.log("MR V2 response:", text.substring(0, 1500));
+  return text;
 }
 
 serve(async (req) => {
