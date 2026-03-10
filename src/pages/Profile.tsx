@@ -3,6 +3,7 @@ import { useCustomBackground } from '@/hooks/useCustomBackground';
 import { ArrowLeft, Edit2, Camera, MapPin, Briefcase, Link2, Calendar, ChevronDown, Grid3X3, Move, Check, X, Users, FolderOpen, MessageCircle, GraduationCap, Cake, ShieldAlert, Crown, LogOut, Newspaper } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUserPosts } from '@/hooks/usePosts';
+import { useCreateConversation } from '@/hooks/useMessages';
 import { CreatePost } from '@/components/CreatePost';
 import { useAuth } from '@/lib/auth';
 import { AppLayout } from '@/components/AppLayout';
@@ -143,6 +144,7 @@ export default function Profile() {
   const { data: targetIsMinor } = useIsMinor(userId);
   const { data: currentUserIsMinor } = useIsMinor(user?.id);
   const updateProfile = useUpdateProfile();
+  const createConversation = useCreateConversation();
   const profileBgStyle = useCustomBackground('profile');
 
   // Check if own profile has pending identity verification
@@ -670,6 +672,12 @@ export default function Profile() {
                   <Button 
                     variant="secondary" 
                     className="rounded-xl h-10 text-sm whitespace-nowrap shrink-0"
+                    disabled={createConversation.isPending}
+                    onClick={async () => {
+                      if (!userId) return;
+                      const conv = await createConversation.mutateAsync(userId);
+                      navigate(`/messages/${conv.id}`);
+                    }}
                   >
                     <MessageCircle className="w-4 h-4 mr-2" />
                     Envoyer un message
