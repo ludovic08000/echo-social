@@ -23,7 +23,7 @@ export function FeedRightSidebar() {
   const { openConversation } = useChatWidget();
   const { isOnline } = useOnlinePresence();
   const respondToRequest = useRespondToFriendRequest();
-
+  const { zeusName } = useZeusSettings();
   const friends = friendships?.friends || [];
   const requests = friendships?.requests || [];
 
