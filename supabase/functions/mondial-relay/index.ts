@@ -265,19 +265,13 @@ serve(async (req) => {
         TRDV: '',
         Assurance: '',
         Instructions: '',
+        Texte: '',
       };
 
-      // Compute MD5 signature over all param values + private key
-      // Texte comes AFTER Security in WSDL, so it must NOT be in the hash
-      const signConcat = Object.values(params).join('') + privateKey;
-      console.log("SOAP signature debug - enseigne:", JSON.stringify(enseigne), "len:", enseigne.length, "concat length:", signConcat.length);
-      console.log("SOAP full params keys:", Object.keys(params).join(','));
+      // Compute MD5 signature: hash of ALL param values (in WSDL order) + private key
       params.Security = buildSignature(params, privateKey);
-      console.log("SOAP signature:", params.Security);
-      // Add Texte after signature computation
-      params.Texte = '';
 
-      console.log("SOAP create_shipment params:", JSON.stringify(params));
+      console.log("SOAP create_shipment - enseigne:", enseigne, "security:", params.Security);
 
       const xml = await callMondialRelaySoap("WSI2_CreationEtiquette", params);
       const stat = extractXmlValue(xml, 'STAT');
