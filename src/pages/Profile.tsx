@@ -741,6 +741,14 @@ export default function Profile() {
 
               {/* Main - publications */}
               <div className="flex-1 min-w-0 space-y-3">
+                {!canViewPosts ? (
+                  <div className="premium-card p-8 text-center">
+                    <Lock className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
+                    <p className="text-muted-foreground text-sm font-medium">Compte privé</p>
+                    <p className="text-muted-foreground/70 text-xs mt-1">Ajoutez cette personne en ami pour voir ses publications.</p>
+                  </div>
+                ) : (
+                <>
                 {isOwnProfile && <CreatePost />}
                 {postsLoading ? (
                   <div className="space-y-2">
@@ -764,7 +772,8 @@ export default function Profile() {
                     ))}
                   </div>
                 )}
-              </div>
+                </>
+                )}
             </div>
           )}
 
