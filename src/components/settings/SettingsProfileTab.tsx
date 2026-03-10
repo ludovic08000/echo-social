@@ -91,6 +91,39 @@ export function SettingsProfileTab() {
     navigate('/');
   };
 
+  const handleDeleteAccountRequest = async () => {
+    if (!user || deleteConfirmText !== 'SUPPRIMER') return;
+
+    setIsRequestingDeletion(true);
+    try {
+      const { error } = await supabase
+        .from('account_deletion_requests')
+        .insert({
+          user_id: user.id,
+          status: 'pending',
+          reason: 'User requested deletion from profile settings',
+        } as any);
+
+      if (error) throw error;
+
+      toast({
+        title: 'Demande de suppression enregistrée',
+        description: 'Votre compte sera supprimé dans 30 jours si vous ne vous reconnectez pas.',
+      });
+
+      setDeleteConfirmText('');
+      setDeleteDialogOpen(false);
+    } catch (error: any) {
+      toast({
+        title: 'Erreur',
+        description: error?.message || 'Impossible de traiter votre demande.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRequestingDeletion(false);
+    }
+  };
+
   return (
     <div className="space-y-4 animate-fade-in">
       <section className="premium-card p-5">
