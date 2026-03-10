@@ -141,6 +141,11 @@ export default function ResetPassword() {
               <p className="text-sm text-muted-foreground text-center mb-6">
                 Choisissez un nouveau mot de passe sécurisé.
               </p>
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 mb-4">
+                <p className="text-xs text-primary text-center">
+                  ⚠️ Vous devez choisir un mot de passe <strong>différent</strong> de l'ancien.
+                </p>
+              </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
