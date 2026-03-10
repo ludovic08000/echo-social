@@ -220,7 +220,7 @@ function PostsSection() {
       const { error } = await supabase.from('posts').delete().eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => toast({ title: 'Publication supprimée' }),
+    onSuccess: () => {},
   });
 
   return (

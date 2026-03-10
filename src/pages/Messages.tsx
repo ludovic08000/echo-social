@@ -1247,11 +1247,9 @@ function ChatView({ conversationId }: { conversationId: string }) {
                           isPinned={pinnedMessages.has(msg.id)}
                           onDeleteForMe={() => {
                             deleteForMe.mutate({ messageId: msg.id, conversationId });
-                            toast.success('Message supprimé pour vous');
                           }}
                           onDeleteForEveryone={isMe ? () => {
                             deleteForEveryone.mutate({ messageId: msg.id, conversationId });
-                            toast.success('Message supprimé pour tous');
                           } : undefined}
                           onReport={async () => {
                             await supabase.from('abuse_reports').insert({

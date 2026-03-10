@@ -51,7 +51,6 @@ export function AnonymousWall({ targetUserId, isOwnProfile }: AnonymousWallProps
   const handleDelete = async (id: string) => {
     try {
       await deleteMessage.mutateAsync(id);
-      toast({ title: 'Message supprimé' });
     } catch {
       toast({ title: 'Erreur', variant: 'destructive' });
     }
