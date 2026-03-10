@@ -364,6 +364,10 @@ serve(async (req) => {
                 await supabase.from("ai_agent_messages").insert({
                   conversation_id: convId, role: "assistant", content: fullResponse,
                 });
+                // Also push to regular messenger
+                if (agent.slug === "zeus-companion" && fullResponse) {
+                  pushToMessenger(supabase, userId!, fullResponse);
+                }
                 controller.enqueue(encoder.encode(line + "\n\n"));
               }
               continue;
