@@ -280,13 +280,17 @@ export default function Onboarding() {
       explicit: true,
       weight: 1,
     }));
-    await supabase.from('user_interests').upsert(rows, { onConflict: 'user_id,interest_type,interest_value' } as any).catch(() => {});
+    try {
+      await supabase.from('user_interests').upsert(rows, { onConflict: 'user_id,interest_type,interest_value' } as any);
+    } catch {}
 
     // Save AI companion name
-    await supabase.from('zeus_user_settings').upsert(
-      { user_id: userId, custom_name: aiName.trim() },
-      { onConflict: 'user_id' }
-    ).catch(() => {});
+    try {
+      await supabase.from('zeus_user_settings').upsert(
+        { user_id: userId, custom_name: aiName.trim() },
+        { onConflict: 'user_id' }
+      );
+    } catch {}
   };
 
   const handleFinish = async () => {
