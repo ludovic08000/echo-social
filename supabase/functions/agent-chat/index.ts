@@ -54,6 +54,7 @@ Quand tu détectes une intention d'action, inclus un bloc comme ceci dans ta ré
 `;
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
