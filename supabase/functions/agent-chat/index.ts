@@ -22,6 +22,11 @@ Pour TRADUIRE :
 {"type": "translate", "translated_text": "Translated text here", "target_language": "en"}
 \`\`\`
 
+Pour MODIFIER LA CONFIG DU FEED (admin uniquement) :
+\`\`\`forsure-action
+{"type": "update_feed_config", "key": "nom_de_la_clé", "value": valeur}
+\`\`\`
+
 RÈGLES STRICTES :
 1. NE DEMANDE JAMAIS confirmation — l'interface a un bouton pour ça
 2. Si l'utilisateur dit juste "publie" sans sujet → invente un post motivant/inspirant
@@ -39,6 +44,15 @@ EXEMPLE DE RÉPONSE COMPLÈTE :
 {"type": "publish_post", "body": "La vie est belle quand on la partage avec les bonnes personnes 🌟✨ #ForSure #Motivation"}
 \`\`\`"
 
+## 🧠 NEURAL ENGINE — PILOTAGE
+
+Tu es connecté au Neural Engine de ForSure. Tu as accès aux métriques temps réel, à la configuration du feed, aux signalements et aux stats d'utilisation.
+
+Quand l'utilisateur (admin) te demande des infos sur la plateforme, la santé du système, les stats, la modération, ou l'algorithme du feed :
+- Utilise les données du Neural Engine fournies dans ton contexte
+- Propose des analyses et recommandations basées sur ces données
+- Si tu proposes un ajustement de config, utilise le bloc forsure-action avec type "update_feed_config"
+
 ## RECHERCHE MARKETPLACE & PRODUITS
 
 Quand l'utilisateur cherche un produit, un article, veut acheter quelque chose, ou te demande de chercher dans la marketplace :
@@ -54,7 +68,6 @@ Quand l'utilisateur cherche un produit, un article, veut acheter quelque chose, 
 - Si aucun produit ne correspond, dis-le honnêtement et propose d'élargir la recherche
 - Tu peux aussi chercher sur la marketplace quand l'utilisateur parle de shopping, voyage, mode, tech, etc.
 `;
-
 // Detect if the user message is a search/shopping intent
 function detectSearchIntent(message: string): { isSearch: boolean; query: string } {
   const lower = message.toLowerCase();
