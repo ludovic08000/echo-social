@@ -48,6 +48,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const [mediaLoaded, setMediaLoaded] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [viewTracked, setViewTracked] = useState(false);
   const { data: isMinorUser } = useCurrentUserIsMinor();
   const reportUser = useReportUser();
   const isMobile = useIsMobile();
@@ -55,9 +56,34 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const postUrl = generatePostUrl(post.id);
   const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
 
+  // Fetch video view count
+  const { data: videoViewCount } = useQuery({
+    queryKey: ['post-views', post.id],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from('post_views')
+        .select('*', { count: 'exact', head: true })
+        .eq('post_id', post.id);
+      return count || 0;
+    },
+    enabled: isVideoPost,
+    staleTime: 60_000,
+  });
+
+  // Track video view on play
+  const trackVideoView = () => {
+    if (viewTracked || !user || !isVideoPost) return;
+    setViewTracked(true);
+    supabase.from('post_views').upsert({
+      post_id: post.id,
+      user_id: user.id,
+    }, { onConflict: 'post_id,user_id' }).then(() => {});
+  };
+
   useEffect(() => {
     setMediaLoaded(false);
     setVideoError(false);
+    setViewTracked(false);
   }, [post.id]);
 
   useEffect(() => {
