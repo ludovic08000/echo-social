@@ -3725,6 +3725,60 @@ export type Database = {
         }
         Relationships: []
       }
+      public_profiles: {
+        Row: {
+          age_verified: boolean | null
+          avatar_url: string | null
+          bio: string | null
+          city: string | null
+          cover_url: string | null
+          created_at: string | null
+          date_of_birth: string | null
+          mood_emoji: string | null
+          mood_text: string | null
+          mood_updated_at: string | null
+          name: string | null
+          profile_bg_url: string | null
+          profile_music_url: string | null
+          profile_type: string | null
+          user_id: string | null
+        }
+        Insert: {
+          age_verified?: boolean | null
+          avatar_url?: string | null
+          bio?: string | null
+          city?: string | null
+          cover_url?: string | null
+          created_at?: string | null
+          date_of_birth?: string | null
+          mood_emoji?: string | null
+          mood_text?: string | null
+          mood_updated_at?: string | null
+          name?: string | null
+          profile_bg_url?: string | null
+          profile_music_url?: string | null
+          profile_type?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          age_verified?: boolean | null
+          avatar_url?: string | null
+          bio?: string | null
+          city?: string | null
+          cover_url?: string | null
+          created_at?: string | null
+          date_of_birth?: string | null
+          mood_emoji?: string | null
+          mood_text?: string | null
+          mood_updated_at?: string | null
+          name?: string | null
+          profile_bg_url?: string | null
+          profile_music_url?: string | null
+          profile_type?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       can_view_order: {
