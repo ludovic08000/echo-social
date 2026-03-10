@@ -125,8 +125,38 @@ serve(async (req) => {
       .order("created_at", { ascending: true })
       .limit(20);
 
-    // Combine agent's own system prompt with action capabilities
-    const fullSystemPrompt = agent.system_prompt + "\n\n" + ACTION_SYSTEM_PROMPT;
+    // ── Fetch user context for Zeus (recent posts, profile) ──
+    let userContext = "";
+    if (agent.slug === "zeus-companion") {
+      const [postsRes, profileRes] = await Promise.all([
+        supabase.from("posts").select("body, image_url, created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(10),
+        supabase.from("profiles").select("name, bio, mood_emoji, city").eq("user_id", userId).maybeSingle(),
+      ]);
+
+      const profile = profileRes.data;
+      const posts = postsRes.data || [];
+
+      if (profile) {
+        userContext += `\n## CONTEXTE UTILISATEUR\n`;
+        userContext += `Nom: ${profile.name || "inconnu"}\n`;
+        if (profile.bio) userContext += `Bio: ${profile.bio}\n`;
+        if (profile.mood_emoji) userContext += `Humeur actuelle: ${profile.mood_emoji}\n`;
+        if (profile.city) userContext += `Ville: ${profile.city}\n`;
+      }
+
+      if (posts.length > 0) {
+        userContext += `\n## PUBLICATIONS RÉCENTES DE L'UTILISATEUR (analyse-les pour comprendre son état émotionnel)\n`;
+        posts.forEach((p: any, i: number) => {
+          const date = new Date(p.created_at).toLocaleDateString("fr-FR");
+          const hasMedia = p.image_url ? " [+ média]" : "";
+          userContext += `${i + 1}. (${date}) ${p.body || "(média uniquement)"}${hasMedia}\n`;
+        });
+        userContext += `\nSi tu détectes de la tristesse, de l'isolement, du stress ou un changement de comportement dans ces posts, aborde le sujet avec douceur et empathie.\n`;
+      }
+    }
+
+    // Combine agent's own system prompt with action capabilities and user context
+    const fullSystemPrompt = agent.system_prompt + "\n\n" + ACTION_SYSTEM_PROMPT + userContext;
 
     const messages = [
       { role: "system", content: fullSystemPrompt },
