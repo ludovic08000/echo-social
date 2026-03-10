@@ -142,6 +142,9 @@ function UsersSection() {
     },
   });
 
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState('');
+
   const banUser = useMutation({
     mutationFn: async (userId: string) => {
       if (!user) throw new Error('Non authentifié');
@@ -149,6 +152,24 @@ function UsersSection() {
       if (error) throw error;
     },
     onSuccess: () => { toast({ title: '🚫 Utilisateur banni' }); queryClient.invalidateQueries({ queryKey: ['admin-users'] }); },
+    onError: (e: any) => toast({ title: 'Erreur', description: e.message, variant: 'destructive' }),
+  });
+
+  const deleteUser = useMutation({
+    mutationFn: async (userId: string) => {
+      const { data, error } = await supabase.functions.invoke('admin-delete-user', {
+        body: { target_user_id: userId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (data) => {
+      toast({ title: '🗑️ Utilisateur supprimé', description: data?.warning || 'Compte et données supprimés définitivement.' });
+      setDeleteTarget(null);
+      setDeleteConfirm('');
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+    },
     onError: (e: any) => toast({ title: 'Erreur', description: e.message, variant: 'destructive' }),
   });
 
