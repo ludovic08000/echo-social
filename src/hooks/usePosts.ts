@@ -43,28 +43,15 @@ export function usePosts() {
       const from = pageParam * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
 
-      // Get friends
-      const { data: friendships } = await supabase
-        .from('friendships')
-        .select('requester_id, addressee_id')
-        .eq('status', 'accepted')
-        .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`);
-
-      const friendIds = friendships?.map(f => 
-        f.requester_id === user.id ? f.addressee_id : f.requester_id
-      ) || [];
-
-      const allowedUserIds = [user.id, ...friendIds];
       const now = new Date().toISOString();
 
-      // Fetch page-local pool for scoring (stable pagination)
+      // Fetch page-local pool for scoring (stable pagination) — global feed (all users)
       const poolSize = PAGE_SIZE * 3;
       const fetchFrom = from;
       const fetchTo = from + poolSize - 1;
       const { data: posts, error } = await supabase
         .from('posts')
         .select('id, user_id, body, image_url, created_at, expires_at')
-        .in('user_id', allowedUserIds)
         .or(`expires_at.is.null,expires_at.gt.${now}`)
         .order('created_at', { ascending: false })
         .range(fetchFrom, fetchTo);
