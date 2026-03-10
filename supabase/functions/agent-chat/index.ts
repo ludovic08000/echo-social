@@ -38,7 +38,48 @@ EXEMPLE DE RÉPONSE COMPLÈTE :
 \`\`\`forsure-action
 {"type": "publish_post", "body": "La vie est belle quand on la partage avec les bonnes personnes 🌟✨ #ForSure #Motivation"}
 \`\`\`"
+
+## RECHERCHE MARKETPLACE & PRODUITS
+
+Quand l'utilisateur cherche un produit, un article, veut acheter quelque chose, ou te demande de chercher dans la marketplace :
+- Les produits disponibles te sont fournis dans le contexte sous "## RÉSULTATS MARKETPLACE"
+- Tu DOIS présenter les produits trouvés de manière claire et attrayante
+- Pour chaque produit, utilise ce format de bloc :
+
+\`\`\`forsure-products
+[{"id": "uuid", "title": "Nom", "price": 29.99, "thumbnail_url": "url", "city": "Paris", "condition": "new"}]
+\`\`\`
+
+- Ajoute un commentaire personnel sur les produits (conseils, comparaisons)
+- Si aucun produit ne correspond, dis-le honnêtement et propose d'élargir la recherche
+- Tu peux aussi chercher sur la marketplace quand l'utilisateur parle de shopping, voyage, mode, tech, etc.
 `;
+
+// Detect if the user message is a search/shopping intent
+function detectSearchIntent(message: string): { isSearch: boolean; query: string } {
+  const lower = message.toLowerCase();
+  const searchKeywords = [
+    'cherche', 'trouve', 'acheter', 'achète', 'shopping', 'produit', 'article',
+    'marketplace', 'boutique', 'magasin', 'vente', 'offre', 'promo',
+    'voyage', 'billet', 'réservation', 'hôtel', 'vol',
+    'vêtement', 'chaussure', 'sac', 'montre', 'bijou', 'accessoire',
+    'téléphone', 'ordinateur', 'console', 'jeu vidéo', 'tech',
+    'meuble', 'déco', 'maison', 'jardin',
+    'voiture', 'moto', 'vélo', 'scooter',
+    'livre', 'manga', 'bd',
+    'search', 'find', 'buy', 'look for',
+    'combien coûte', 'prix de', 'où trouver',
+    'annonce', 'occasion', 'neuf',
+    'e-commerce', 'ecommerce', 'site',
+  ];
+
+  const isSearch = searchKeywords.some(kw => lower.includes(kw));
+  // Extract search terms by removing common filler words
+  const fillerWords = ['je', 'tu', 'il', 'elle', 'on', 'nous', 'vous', 'ils', 'elles', 'un', 'une', 'des', 'le', 'la', 'les', 'de', 'du', 'au', 'aux', 'pour', 'dans', 'sur', 'avec', 'est', 'sont', 'a', 'ai', 'as', 'me', 'te', 'se', 'veux', 'voudrais', 'peux', 'peut', 'cherche', 'trouve', 'acheter', 'achète', 'moi', 'toi', 'en', 'et', 'ou', 'qui', 'que', 'quoi', 'quel', 'quelle'];
+  const query = lower.split(/\s+/).filter(w => !fillerWords.includes(w) && w.length > 2).join(' ');
+
+  return { isSearch, query };
+}
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -152,6 +193,42 @@ serve(async (req) => {
           userContext += `${i + 1}. (${date}) ${p.body || "(média uniquement)"}${hasMedia}\n`;
         });
         userContext += `\nSi tu détectes de la tristesse, de l'isolement, du stress ou un changement de comportement dans ces posts, aborde le sujet avec douceur et empathie.\n`;
+      }
+
+      // ── Marketplace search ──
+      const { isSearch, query } = detectSearchIntent(message);
+      if (isSearch && query.length > 0) {
+        // Search products by title, description, tags, category using ilike
+        const searchTerms = query.split(' ').filter(t => t.length > 2).slice(0, 5);
+        let productQuery = supabase
+          .from("products")
+          .select("id, title, price, thumbnail_url, city, condition, category, description, rating_average, images")
+          .eq("is_active", true)
+          .order("created_at", { ascending: false })
+          .limit(12);
+
+        // Build OR filter for search terms
+        if (searchTerms.length > 0) {
+          const orFilters = searchTerms.map(term =>
+            `title.ilike.%${term}%,description.ilike.%${term}%,category.ilike.%${term}%`
+          ).join(',');
+          productQuery = productQuery.or(orFilters);
+        }
+
+        const { data: products } = await productQuery;
+        if (products && products.length > 0) {
+          userContext += `\n## RÉSULTATS MARKETPLACE (${products.length} produits trouvés pour "${query}")\n`;
+          userContext += `Présente ces produits de manière attrayante et utilise le bloc forsure-products pour les afficher.\n`;
+          userContext += `Produits :\n`;
+          products.forEach((p: any, i: number) => {
+            userContext += `${i + 1}. "${p.title}" - ${p.price}€ | ${p.condition || 'N/A'} | ${p.city || 'France'} | ⭐${p.rating_average || 'N/A'} | ID: ${p.id}\n`;
+            if (p.description) userContext += `   Description: ${p.description.substring(0, 100)}\n`;
+          });
+          userContext += `\nINCLUS OBLIGATOIREMENT un bloc forsure-products avec les produits pertinents (max 6). Format :\n`;
+          userContext += '```forsure-products\n[{"id":"...","title":"...","price":...,"thumbnail_url":"...","city":"...","condition":"..."}]\n```\n';
+        } else {
+          userContext += `\n## RÉSULTATS MARKETPLACE\nAucun produit trouvé pour "${query}". Informe l'utilisateur et propose d'élargir la recherche.\n`;
+        }
       }
     }
 

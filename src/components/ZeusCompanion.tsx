@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Loader2, Pencil, Check, Zap, AlertTriangle, CheckCircle2, Plus, History, ArrowLeft } from 'lucide-react';
+import { X, Send, Loader2, Pencil, Check, Zap, AlertTriangle, CheckCircle2, Plus, History, ArrowLeft, ExternalLink, ShoppingBag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useZeusSettings, useZeusAgentId, useContentStrikes } from '@/hooks/useZeusCompanion';
 import { useZeusConversations, useZeusMessages } from '@/hooks/useZeusConversations';
@@ -25,6 +26,34 @@ interface ActionBlock {
   translated_text?: string;
 }
 
+interface ProductItem {
+  id: string;
+  title: string;
+  price: number;
+  thumbnail_url?: string;
+  city?: string;
+  condition?: string;
+}
+
+function parseProductsFromContent(content: string): { text: string; products: ProductItem[] | null } {
+  const patterns = [
+    /```forsure-products\s*\n([\s\S]*?)\n```/,
+    /```forsure-products\s*([\s\S]*?)```/,
+  ];
+  for (const regex of patterns) {
+    const match = content.match(regex);
+    if (!match) continue;
+    try {
+      const jsonStr = match[1] || match[0];
+      const products = JSON.parse(jsonStr.trim()) as ProductItem[];
+      if (Array.isArray(products) && products.length > 0) {
+        return { text: content.replace(match[0], '').trim(), products };
+      }
+    } catch { continue; }
+  }
+  return { text: content, products: null };
+}
+
 function parseActionFromContent(content: string): { text: string; action: ActionBlock | null } {
   const patterns = [
     /```forsure-action\s*\n([\s\S]*?)\n```/,
@@ -44,6 +73,43 @@ function parseActionFromContent(content: string): { text: string; action: Action
     } catch { continue; }
   }
   return { text: content, action: null };
+}
+
+function ProductCards({ products, onNavigate }: { products: ProductItem[]; onNavigate: (id: string) => void }) {
+  return (
+    <div className="mt-2 space-y-1.5">
+      <div className="flex items-center gap-1.5 mb-1">
+        <ShoppingBag className="w-3.5 h-3.5 text-primary" />
+        <span className="text-[10px] font-semibold text-primary uppercase tracking-wide">Marketplace</span>
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        {products.slice(0, 6).map((p) => (
+          <button
+            key={p.id}
+            onClick={() => onNavigate(p.id)}
+            className="rounded-lg border border-border/30 bg-background/80 overflow-hidden hover:border-primary/40 transition-colors text-left group"
+          >
+            {p.thumbnail_url ? (
+              <div className="aspect-square w-full overflow-hidden bg-muted">
+                <img src={p.thumbnail_url} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+              </div>
+            ) : (
+              <div className="aspect-square w-full bg-muted flex items-center justify-center">
+                <ShoppingBag className="w-6 h-6 text-muted-foreground/40" />
+              </div>
+            )}
+            <div className="p-1.5">
+              <p className="text-[10px] font-medium text-foreground truncate">{p.title}</p>
+              <div className="flex items-center justify-between mt-0.5">
+                <span className="text-xs font-bold text-primary">{p.price}€</span>
+                {p.city && <span className="text-[9px] text-muted-foreground truncate ml-1">{p.city}</span>}
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function ActionCard({ action, onExecute, executing, executed }: {
@@ -88,6 +154,7 @@ function ActionCard({ action, onExecute, executing, executed }: {
 
 export function ZeusCompanion() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { zeusName, updateName } = useZeusSettings();
   const { data: zeusAgentId } = useZeusAgentId();
@@ -413,7 +480,7 @@ export function ZeusCompanion() {
                         Publie, traduis, discute — je suis là pour toi ! 💬
                       </p>
                       <div className="flex flex-wrap gap-1.5 justify-center mt-3">
-                        {['Publie un post', 'Traduis en anglais', 'Comment ça va ?'].map(s => (
+                        {['Publie un post', 'Traduis en anglais', 'Cherche un produit', 'Comment ça va ?'].map(s => (
                           <button key={s} onClick={() => setInput(s)}
                             className="text-[10px] px-2.5 py-1 rounded-full bg-secondary/60 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                             {s}
@@ -423,21 +490,36 @@ export function ZeusCompanion() {
                     </div>
                   )}
                   {messages.map((msg, i) => {
-                    const { text, action } = msg.role === 'assistant' ? parseActionFromContent(msg.content) : { text: msg.content, action: null };
+                    let displayText = msg.content;
+                    let action: ActionBlock | null = null;
+                    let products: ProductItem[] | null = null;
+
+                    if (msg.role === 'assistant') {
+                      const actionResult = parseActionFromContent(displayText);
+                      displayText = actionResult.text;
+                      action = actionResult.action;
+                      const productResult = parseProductsFromContent(displayText);
+                      displayText = productResult.text;
+                      products = productResult.products;
+                    }
+
                     return (
                       <div key={i} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
                         <div className={cn(
-                          'max-w-[85%] rounded-2xl px-3 py-2 text-sm',
+                          'max-w-[90%] rounded-2xl px-3 py-2 text-sm',
                           msg.role === 'user' ? 'bg-primary text-primary-foreground rounded-br-md' : 'bg-secondary/60 text-foreground rounded-bl-md'
                         )}>
                           {msg.role === 'assistant' ? (
-                            <div className="prose prose-sm dark:prose-invert max-w-none"><ReactMarkdown>{text}</ReactMarkdown></div>
+                            <div className="prose prose-sm dark:prose-invert max-w-none"><ReactMarkdown>{displayText}</ReactMarkdown></div>
                           ) : (
-                            <p className="whitespace-pre-wrap">{text}</p>
+                            <p className="whitespace-pre-wrap">{displayText}</p>
                           )}
                           {action && (
-                            <ActionCard action={action} onExecute={() => executeAction(action, i)}
+                            <ActionCard action={action} onExecute={() => executeAction(action!, i)}
                               executing={executingAction === i} executed={executedActions.has(i)} />
+                          )}
+                          {products && (
+                            <ProductCards products={products} onNavigate={(id) => navigate(`/marketplace/product/${id}`)} />
                           )}
                         </div>
                       </div>
