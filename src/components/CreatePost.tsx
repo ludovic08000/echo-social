@@ -249,18 +249,7 @@ export function CreatePost() {
       setPublishAsReplay(false);
       setReplayTitle('');
       
-      toast({
-        title: capsuleDays 
-          ? `🚀 Capsule temporelle programmée !`
-          : expiryHours 
-            ? `⏳ Post éphémère publié (${expiryHours}h)` 
-            : 'Post publié !',
-        description: capsuleDays
-          ? `Ce post apparaîtra dans ${capsuleDays} jours`
-          : expiryHours 
-            ? `Ce post disparaîtra dans ${expiryHours} heure${expiryHours > 1 ? 's' : ''}`
-            : 'Votre post a été partagé avec succès',
-      });
+      // Silent post — no toast
     } catch (error) {
       toast({
         title: 'Erreur',
