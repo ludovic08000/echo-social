@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Eye, Play } from 'lucide-react';
 import { UserAvatar } from './UserAvatar';
 import { ShortVideo } from '@/hooks/useVideoFeed';
+import { guessVideoMime } from '@/lib/videoCompat';
 
 interface VideoThumbnailCardProps {
   video: ShortVideo;
@@ -44,14 +45,18 @@ export function VideoThumbnailCard({ video, onClick }: VideoThumbnailCardProps) 
       {/* Video preview — plays on hover, muted */}
       <video
         ref={videoRef}
-        src={video.video_url}
         poster={video.thumbnail_url || undefined}
         muted
         loop
         playsInline
+        // @ts-ignore – legacy iOS attribute
+        webkit-playsinline=""
+        x-webkit-airplay="deny"
         preload="metadata"
         className="w-full h-full object-cover"
-      />
+      >
+        <source src={video.video_url} type={guessVideoMime(video.video_url)} />
+      </video>
 
       {/* Subtle play icon when not hovering */}
       {!isHovering && (

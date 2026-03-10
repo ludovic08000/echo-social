@@ -22,7 +22,7 @@ import { useReportUser } from '@/hooks/useTrustAndSafety';
 import { toast } from 'sonner';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { isAppleMobileWebKit } from '@/lib/platform';
-import { isVideoUrlSafeForIOS } from '@/lib/videoCompat';
+import { isVideoUrlSafeForIOS, guessVideoMime } from '@/lib/videoCompat';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -250,9 +250,12 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
               ) : (
                 <video
                   ref={videoRef}
-                  src={post.image_url}
                   controls
                   playsInline
+                  // @ts-ignore – legacy iOS attribute
+                  webkit-playsinline=""
+                  x-webkit-airplay="deny"
+                  controlsList="nodownload noremoteplayback"
                   preload={shouldDeferVideo ? 'none' : 'metadata'}
                   className={cn(
                     "absolute inset-0 w-full h-full object-cover bg-muted transition-opacity duration-300",
@@ -261,7 +264,9 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                   onLoadedData={() => setMediaLoaded(true)}
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
-                />
+                >
+                  <source src={post.image_url!} type={guessVideoMime(post.image_url!)} />
+                </video>
               )
             ) : (
               <img
