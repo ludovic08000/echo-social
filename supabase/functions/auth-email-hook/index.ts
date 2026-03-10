@@ -35,7 +35,7 @@ const EMAIL_TEMPLATES: Record<string, React.ComponentType<any>> = {
 }
 
 // Configuration
-const SITE_NAME = "calm-connect-05"
+const SITE_NAME = "Forsure"
 const SENDER_DOMAIN = "notify.forsure.fans"
 const ROOT_DOMAIN = "forsure.fans"
 const FROM_DOMAIN = "notify.forsure.fans" // Domain shown in From address (may be root or sender subdomain)
