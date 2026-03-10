@@ -4,6 +4,8 @@ import { useAuth } from '@/lib/auth';
 import { useEffect } from 'react';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 
+export const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
+
 export interface Message {
   id: string;
   conversation_id: string;
