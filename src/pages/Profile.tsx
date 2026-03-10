@@ -17,7 +17,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { generateProfileUrl } from '@/lib/urlUtils';
 import { useImageUpload } from '@/hooks/useImageUpload';
@@ -43,8 +43,20 @@ import { MinorProtectedBadge } from '@/components/MinorProtectedBadge';
 import { MinorReportButton } from '@/components/MinorReportButton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { SEOHead } from '@/components/SEOHead';
+
+function NoIndexMeta() {
+  useEffect(() => {
+    let el = document.querySelector('meta[name="robots"]');
+    if (!el) { el = document.createElement('meta'); el.setAttribute('name', 'robots'); document.head.appendChild(el); }
+    el.setAttribute('content', 'noindex, nofollow');
+    return () => { el?.remove(); };
+  }, []);
+  return null;
+}
 
 function ReportFakeAccountButton({ reportedUserId }: { reportedUserId: string }) {
+
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
@@ -388,6 +400,17 @@ export default function Profile() {
 
   return (
     <AppLayout fullWidth>
+      {!isPrivateProfile && profile && (
+        <SEOHead
+          title={profile.name}
+          description={profile.bio || `Profil de ${profile.name} sur Forsure`}
+          image={profile.avatar_url || undefined}
+          url={`https://forsure.fans/profile/${profile.user_id}`}
+          type="profile"
+          username={profile.name}
+        />
+      )}
+      {isPrivateProfile && <NoIndexMeta />}
       {profileBgStyle && (
         <div className="fixed inset-0 -z-10 opacity-30" style={profileBgStyle} />
       )}
