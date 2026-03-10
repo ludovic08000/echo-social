@@ -45,7 +45,8 @@ export function useContactSync() {
   const [loading, setLoading] = useState(false);
   const [synced, setSynced] = useState(false);
 
-  const isNative = Capacitor.isNativePlatform();
+  const platform = Capacitor.getPlatform() as 'ios' | 'android' | 'web';
+  const isNative = platform === 'ios' || platform === 'android';
 
   const syncContacts = useCallback(async () => {
     if (!user) return;
