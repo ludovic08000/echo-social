@@ -25,7 +25,7 @@ type ActiveTab = 'chat' | 'algo' | 'history';
 type FeedAlgorithm = 'smart' | 'chronological' | 'friends_first';
 
 interface ActionBlock {
-  type: 'publish_post' | 'schedule_post' | 'create_story' | 'generate_image' | 'translate';
+  type: 'publish_post' | 'schedule_post' | 'create_story' | 'generate_image' | 'translate' | 'update_feed_config';
   body?: string;
   caption?: string;
   publish_at?: string;
@@ -62,19 +62,28 @@ function parseActionFromContent(content: string): { text: string; action: Action
     /```forsure-action\s*\n([\s\S]*?)\n```/,
     /```forsure-action\s*([\s\S]*?)```/,
     /```json\s*\n([\s\S]*?)\n```/,
-    /\{[^{}]*"type"\s*:\s*"(publish_post|schedule_post|create_story|generate_image|translate)"[^{}]*\}/,
+    /\{[^{}]*"type"\s*:\s*"(publish_post|schedule_post|create_story|generate_image|translate|update_feed_config)"[^{}]*\}/,
   ];
   for (const regex of patterns) {
     const match = content.match(regex);
     if (!match) continue;
     try {
       const action = JSON.parse((match[1] || match[0]).trim()) as ActionBlock;
-      if (action.type && ['publish_post', 'schedule_post', 'create_story', 'generate_image', 'translate'].includes(action.type)) {
+      if (action.type && ['publish_post', 'schedule_post', 'create_story', 'generate_image', 'translate', 'update_feed_config'].includes(action.type)) {
         return { text: content.replace(match[0], '').trim(), action };
       }
     } catch { continue; }
   }
   return { text: content, action: null };
+}
+
+// Strip any remaining code blocks or raw JSON that Zeus might accidentally show
+function stripCodeBlocks(content: string): string {
+  return content
+    .replace(/```[\w-]*\s*\n[\s\S]*?\n```/g, '')
+    .replace(/```[\w-]*[\s\S]*?```/g, '')
+    .replace(/\{[^{}]*"type"\s*:\s*"[^"]*"[^{}]*\}/g, '')
+    .trim();
 }
 
 // ── Product cards ──
@@ -122,9 +131,10 @@ function ActionCard({ action, onExecute, executing, executed }: {
     create_story: { icon: '📸', label: 'Créer cette story' },
     generate_image: { icon: '🎨', label: 'Générer cette image' },
     translate: { icon: '🌐', label: 'Traduction' },
+    update_feed_config: { icon: '⚙️', label: 'Ajuster ton algorithme' },
   };
-  const info = labels[action.type] || { icon: '⚡', label: action.type };
-  const preview = action.body || action.caption || action.translated_text || action.prompt || '';
+  const info = labels[action.type] || { icon: '⚡', label: 'Action' };
+  const preview = action.type === 'update_feed_config' ? '' : (action.body || action.caption || action.translated_text || action.prompt || '');
 
   return (
     <div className="mt-2.5 p-3 rounded-xl bg-gradient-to-br from-amber-500/5 to-orange-500/5 border border-amber-500/15 space-y-2">
@@ -726,6 +736,8 @@ export function ZeusCompanion() {
                       const productResult = parseProductsFromContent(displayText);
                       displayText = productResult.text;
                       products = productResult.products;
+                      // Strip any remaining code blocks Zeus might have leaked
+                      displayText = stripCodeBlocks(displayText);
                     }
 
                     return (
