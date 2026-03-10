@@ -300,7 +300,7 @@ export default function Onboarding() {
               <div className="text-center mb-6">
                 <div className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-500 px-3 py-1 rounded-full text-sm font-medium mb-3">
                   <Zap className="w-4 h-4" />
-                  Étape 2/2
+                  Étape 2/3
                 </div>
                 <h1 className="text-2xl font-bold text-foreground">Nomme ton IA personnelle</h1>
                 <p className="text-muted-foreground text-sm mt-1">
