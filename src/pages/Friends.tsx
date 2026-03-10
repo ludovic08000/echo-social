@@ -29,6 +29,10 @@ export default function Friends() {
   const [searchQuery, setSearchQuery] = useState('');
   const { data: newUsers, isLoading: loadingNewUsers } = useNewUsers();
   const contactSync = useContactSync();
+  const oauthImport = useOAuthContactsImport();
+
+  // Google Client ID — will be set via secret
+  const GOOGLE_CLIENT_ID = ''; // TODO: Set via environment
 
   const handleAccept = (friendshipId: string) => {
     respondToRequest.mutate(
