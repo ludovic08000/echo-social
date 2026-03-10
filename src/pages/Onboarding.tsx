@@ -49,6 +49,7 @@ export default function Onboarding() {
 
   const isNative = Capacitor.isNativePlatform();
   const isIOS = typeof navigator !== 'undefined' && (/iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+  const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
   const hasPickerAPI = typeof navigator !== 'undefined' && !isIOS && 'contacts' in navigator && 'ContactsManager' in window;
 
   function normalizePhone(phone: string): string {
@@ -406,14 +407,17 @@ export default function Onboarding() {
                   {isNative
                     ? 'Importe tes contacts pour retrouver tes amis déjà sur Forsure'
                     : isIOS
-                      ? 'Exporte tes contacts en fichier .vcf puis importe-le ici'
-                      : hasPickerAPI
-                        ? 'Sélectionne des contacts pour les retrouver sur Forsure'
-                        : 'Importe un fichier de contacts (.vcf) pour retrouver tes amis'}
+                      ? 'Exporte tes contacts depuis ton iPhone puis importe le fichier ici'
+                      : isAndroid && hasPickerAPI
+                        ? 'Sélectionne des contacts depuis ton Android pour les retrouver'
+                        : isAndroid
+                          ? 'Exporte tes contacts depuis ton Android puis importe le fichier ici'
+                          : 'Importe un fichier de contacts (.vcf) pour retrouver tes amis'}
                 </p>
               </div>
 
               <div className="space-y-3 mb-4">
+                {/* Native Capacitor — accès direct CNContactStore / Android Contacts */}
                 {isNative && (
                   <Button onClick={handleNativeContacts} disabled={searchingContacts} className="gap-2 w-full">
                     {searchingContacts ? (
@@ -425,6 +429,7 @@ export default function Onboarding() {
                   </Button>
                 )}
 
+                {/* Web Android avec Contact Picker API */}
                 {!isNative && hasPickerAPI && (
                   <Button onClick={handlePickContacts} disabled={searchingContacts} className="gap-2 w-full">
                     {searchingContacts ? (
@@ -432,11 +437,12 @@ export default function Onboarding() {
                     ) : (
                       <Phone className="w-4 h-4" />
                     )}
-                    {searchingContacts ? 'Recherche...' : 'Accéder à mes contacts'}
+                    {searchingContacts ? 'Recherche...' : 'Sélectionner mes contacts'}
                   </Button>
                 )}
 
-                {!isNative && (
+                {/* Web iOS — guide spécifique iPhone */}
+                {!isNative && isIOS && (
                   <>
                     <input
                       ref={fileInputRef}
@@ -448,26 +454,77 @@ export default function Onboarding() {
                     <Button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={searchingContacts}
-                      variant={hasPickerAPI ? 'outline' : 'default'}
                       className="gap-2 w-full"
                     >
                       <Upload className="w-4 h-4" />
-                      {isIOS ? 'Importer depuis fichier .vcf' : 'Importer un fichier contacts (.vcf)'}
+                      Importer mes contacts (.vcf)
                     </Button>
+                    <div className="bg-muted/50 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
+                      <p className="font-medium text-foreground flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5" /> Comment faire sur iPhone :
+                      </p>
+                      <ol className="list-decimal list-inside space-y-0.5">
+                        <li>Ouvrez l'app <strong>Contacts</strong></li>
+                        <li>Sélectionnez les contacts à partager</li>
+                        <li>Appuyez sur <strong>Partager</strong></li>
+                        <li>Choisissez <strong>Enregistrer dans Fichiers</strong></li>
+                        <li>Revenez ici et importez le fichier .vcf</li>
+                      </ol>
+                    </div>
                   </>
                 )}
 
-                {isIOS && !isNative && (
-                  <div className="bg-muted/50 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
-                    <p className="font-medium text-foreground">Comment faire sur iPhone :</p>
-                    <ol className="list-decimal list-inside space-y-0.5">
-                      <li>Ouvrez l'app <strong>Contacts</strong></li>
-                      <li>Sélectionnez les contacts à partager</li>
-                      <li>Appuyez sur <strong>Partager</strong></li>
-                      <li>Choisissez <strong>Enregistrer dans Fichiers</strong></li>
-                      <li>Revenez ici et importez le fichier .vcf</li>
-                    </ol>
-                  </div>
+                {/* Web Android sans Contact Picker API — fallback VCF */}
+                {!isNative && !isIOS && !hasPickerAPI && isAndroid && (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".vcf,text/vcard,text/x-vcard"
+                      onChange={handleVCardImport}
+                      className="hidden"
+                    />
+                    <Button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={searchingContacts}
+                      className="gap-2 w-full"
+                    >
+                      <Upload className="w-4 h-4" />
+                      Importer mes contacts (.vcf)
+                    </Button>
+                    <div className="bg-muted/50 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
+                      <p className="font-medium text-foreground flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5" /> Comment faire sur Android :
+                      </p>
+                      <ol className="list-decimal list-inside space-y-0.5">
+                        <li>Ouvrez l'app <strong>Contacts</strong></li>
+                        <li>Menu → <strong>Exporter</strong></li>
+                        <li>Enregistrez le fichier .vcf</li>
+                        <li>Revenez ici et importez-le</li>
+                      </ol>
+                    </div>
+                  </>
+                )}
+
+                {/* Desktop — fallback VCF simple */}
+                {!isNative && !isIOS && !isAndroid && !hasPickerAPI && (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".vcf,text/vcard,text/x-vcard"
+                      onChange={handleVCardImport}
+                      className="hidden"
+                    />
+                    <Button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={searchingContacts}
+                      className="gap-2 w-full"
+                    >
+                      <Upload className="w-4 h-4" />
+                      Importer un fichier contacts (.vcf)
+                    </Button>
+                  </>
                 )}
               </div>
 
