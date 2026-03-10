@@ -1,97 +1,69 @@
 project_id = "vkpmoqfzrihcijjochks"
 
-[functions.ai-content]
-verify_jwt = false
-
-[functions.ai-engine]
-verify_jwt = false
-
-[functions.livekit-token]
-verify_jwt = false
-
-[functions.feed-scoring]
-verify_jwt = false
-
-[functions.trust-score]
-verify_jwt = false
-
-[functions.anti-abuse]
-verify_jwt = false
-
-[functions.ad-assistant]
-verify_jwt = false
-
-[functions.post-assistant]
-verify_jwt = false
-
-[functions.agent-chat]
-verify_jwt = false
-
-[functions.agent-actions]
-verify_jwt = false
-
-[functions.photo-guard]
-verify_jwt = false
-
-[functions.r2-upload]
-verify_jwt = false
-
-[functions.marketplace-checkout]
-verify_jwt = false
-
-[functions.message-moderation]
-verify_jwt = false
-
-[functions.create-checkout]
-verify_jwt = false
-
-[functions.check-subscription]
-verify_jwt = false
-
-[functions.create-tip]
-verify_jwt = false
-
-[functions.customer-portal]
-verify_jwt = false
-
-[functions.cleanup-lives]
-verify_jwt = false
-
-[functions.ad-checkout]
-verify_jwt = false
-
-[functions.verify-parental-pin]
-verify_jwt = false
-
-[functions.verify-packing-video]
-verify_jwt = false
-
-[functions.zeus]
-verify_jwt = false
-
-[functions.stripe-webhook]
-verify_jwt = false
-
-[functions.platform-health]
-verify_jwt = false
-
-[functions.data-export]
-verify_jwt = false
-
-[functions.mondial-relay]
-verify_jwt = false
-
-[functions.r2-cleanup]
-verify_jwt = false
-
-[functions.seller-ai-coach]
-verify_jwt = false
-
-[functions.r2-presign]
-verify_jwt = false
-
-[functions.admin-delete-user]
-verify_jwt = false
-
-[functions.contact-match]
-verify_jwt = false
+[functions]
+  [functions.ad-assistant]
+    verify_jwt = false
+  [functions.ad-checkout]
+    verify_jwt = false
+  [functions.admin-delete-user]
+    verify_jwt = false
+  [functions.agent-actions]
+    verify_jwt = false
+  [functions.agent-chat]
+    verify_jwt = false
+  [functions.ai-content]
+    verify_jwt = false
+  [functions.ai-engine]
+    verify_jwt = false
+  [functions.anti-abuse]
+    verify_jwt = false
+  [functions.auth-email-hook]
+    verify_jwt = false
+  [functions.check-subscription]
+    verify_jwt = false
+  [functions.cleanup-lives]
+    verify_jwt = false
+  [functions.contact-match]
+    verify_jwt = false
+  [functions.create-checkout]
+    verify_jwt = false
+  [functions.create-tip]
+    verify_jwt = false
+  [functions.customer-portal]
+    verify_jwt = false
+  [functions.data-export]
+    verify_jwt = false
+  [functions.feed-scoring]
+    verify_jwt = false
+  [functions.livekit-token]
+    verify_jwt = false
+  [functions.marketplace-checkout]
+    verify_jwt = false
+  [functions.message-moderation]
+    verify_jwt = false
+  [functions.mondial-relay]
+    verify_jwt = false
+  [functions.photo-guard]
+    verify_jwt = false
+  [functions.platform-health]
+    verify_jwt = false
+  [functions.post-assistant]
+    verify_jwt = false
+  [functions.r2-cleanup]
+    verify_jwt = false
+  [functions.r2-presign]
+    verify_jwt = false
+  [functions.r2-upload]
+    verify_jwt = false
+  [functions.seller-ai-coach]
+    verify_jwt = false
+  [functions.stripe-webhook]
+    verify_jwt = false
+  [functions.trust-score]
+    verify_jwt = false
+  [functions.verify-packing-video]
+    verify_jwt = false
+  [functions.verify-parental-pin]
+    verify_jwt = false
+  [functions.zeus]
+    verify_jwt = false
