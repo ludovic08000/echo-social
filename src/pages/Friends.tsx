@@ -21,9 +21,11 @@ export default function Friends() {
   const { data, isLoading } = useFriendships();
   const respondToRequest = useRespondToFriendRequest();
   const removeFriend = useRemoveFriend();
+  const sendRequest = useSendFriendRequest();
   const createConversation = useCreateConversation();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
+  const { data: newUsers, isLoading: loadingNewUsers } = useNewUsers();
 
   const handleAccept = (friendshipId: string) => {
     respondToRequest.mutate(
