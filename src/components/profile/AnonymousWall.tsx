@@ -10,9 +10,11 @@ import { cn } from '@/lib/utils';
 interface AnonymousWallProps {
   targetUserId: string;
   isOwnProfile: boolean;
+  wallVisibility?: 'everyone' | 'friends' | 'nobody';
+  isFriend?: boolean;
 }
 
-export function AnonymousWall({ targetUserId, isOwnProfile }: AnonymousWallProps) {
+export function AnonymousWall({ targetUserId, isOwnProfile, wallVisibility = 'friends', isFriend = false }: AnonymousWallProps) {
   const { user } = useAuth();
   const { data: messages, isLoading } = useAnonymousWall(targetUserId);
   const postMessage = usePostWallMessage();
@@ -68,8 +70,10 @@ export function AnonymousWall({ targetUserId, isOwnProfile }: AnonymousWallProps
         )}
       </div>
 
-      {/* Post form (only for non-own profiles) */}
+      {/* Post form (only if allowed by wall visibility) */}
       {!isOwnProfile && user && user.id !== targetUserId && (
+        wallVisibility === 'everyone' || (wallVisibility === 'friends' && isFriend)
+      ) && (
         <div className="mb-4">
           <Textarea
             value={newMessage}

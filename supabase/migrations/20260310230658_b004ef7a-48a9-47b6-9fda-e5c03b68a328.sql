@@ -1,0 +1,1 @@
+ALTER TABLE public.privacy_settings ADD COLUMN IF NOT EXISTS wall_visibility text NOT NULL DEFAULT 'friends';

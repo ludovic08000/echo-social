@@ -168,7 +168,7 @@ export default function Profile() {
       if (!userId) return null;
       const { data } = await supabase
         .from('privacy_settings')
-        .select('posts_visibility, profile_visibility')
+        .select('posts_visibility, profile_visibility, wall_visibility')
         .eq('user_id', userId)
         .maybeSingle();
       return data;
@@ -778,7 +778,12 @@ export default function Profile() {
                   <ProfileMusicPlayer musicUrl={profile.profile_music_url} profileName={profile.name} />
                 )}
                 {/* Anonymous Wall */}
-                <AnonymousWall targetUserId={userId!} isOwnProfile={isOwnProfile} />
+                <AnonymousWall
+                  targetUserId={userId!}
+                  isOwnProfile={isOwnProfile}
+                  wallVisibility={(targetPrivacy as any)?.wall_visibility || 'friends'}
+                  isFriend={isFriend}
+                />
               </div>
 
               {/* Main - publications */}

@@ -12,6 +12,7 @@ export interface PrivacySettings {
   messages_allowed: 'everyone' | 'friends' | 'nobody';
   comments_allowed: 'everyone' | 'friends' | 'nobody';
   likes_visibility: 'public' | 'friends' | 'private';
+  wall_visibility: 'everyone' | 'friends' | 'nobody';
   search_engine_indexing: boolean;
   analytics_enabled: boolean;
   ghost_mode: boolean;
