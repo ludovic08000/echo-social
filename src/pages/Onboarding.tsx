@@ -325,7 +325,7 @@ export default function Onboarding() {
                 </div>
                 <h1 className="text-2xl font-bold text-foreground">Qu'est-ce qui t'intéresse ?</h1>
                 <p className="text-muted-foreground text-sm mt-1">
-                  Choisis au moins {MIN_INTERESTS} sujets pour personnaliser ton fil
+                  Choisis au moins {MIN_INTERESTS} sujets pour personnaliser ton fil, ou passe cette étape
                 </p>
               </div>
 
