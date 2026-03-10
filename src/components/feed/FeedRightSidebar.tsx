@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { MessageCircle, Search, Users, UserPlus, Check, X, Sparkles, Zap, Radio, Eye, Play } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useFriendships, useRespondToFriendRequest } from '@/hooks/useFriendships';
 import { useConversations } from '@/hooks/useMessages';
 import { useLiveStreams } from '@/hooks/useLiveStreams';
