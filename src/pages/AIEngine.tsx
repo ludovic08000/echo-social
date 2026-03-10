@@ -42,6 +42,7 @@ export default function AIEngine() {
   const [selectedCategory, setSelectedCategory] = useState<AICategory | 'all'>('all');
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('modules');
+  const { zeusName } = useZeusSettings();
 
   const modules = useMemo(() => getAIModules(), []);
   const stats = useMemo(() => getAIEngineStats(), []);
