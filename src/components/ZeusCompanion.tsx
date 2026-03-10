@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Loader2, Pencil, Check, Zap, AlertTriangle, CheckCircle2, Plus, History, ArrowLeft } from 'lucide-react';
+import { X, Send, Loader2, Pencil, Check, Zap, AlertTriangle, CheckCircle2, Plus, History, ArrowLeft, ExternalLink, ShoppingBag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useZeusSettings, useZeusAgentId, useContentStrikes } from '@/hooks/useZeusCompanion';
 import { useZeusConversations, useZeusMessages } from '@/hooks/useZeusConversations';
