@@ -14,7 +14,7 @@ interface AnonymousWallProps {
   isFriend?: boolean;
 }
 
-export function AnonymousWall({ targetUserId, isOwnProfile }: AnonymousWallProps) {
+export function AnonymousWall({ targetUserId, isOwnProfile, wallVisibility = 'friends', isFriend = false }: AnonymousWallProps) {
   const { user } = useAuth();
   const { data: messages, isLoading } = useAnonymousWall(targetUserId);
   const postMessage = usePostWallMessage();
