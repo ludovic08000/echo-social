@@ -70,18 +70,18 @@ export default function Landing() {
       </div>
 
       {/* Footer — visible, crawlable links for Google compliance */}
-      <footer className="relative z-10 w-full border-t border-border/30 bg-background/60 backdrop-blur-sm py-6 px-6">
-        <div className="max-w-3xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-4 text-sm">
-          <a href="https://forsure.fans/privacy" className="text-foreground underline hover:text-primary transition-colors">
-            Politique de confidentialité
-          </a>
-          <span className="hidden sm:inline text-muted-foreground">•</span>
-          <a href="https://forsure.fans/legal" className="text-foreground underline hover:text-primary transition-colors">
-            Conditions Générales d'Utilisation
-          </a>
-          <span className="hidden sm:inline text-muted-foreground">•</span>
-          <span className="text-muted-foreground">© {new Date().getFullYear()} Forsure — Contact : dpo@forsure.fans</span>
-        </div>
+      <footer className="relative z-10 w-full border-t border-border bg-background/80 backdrop-blur-md py-8 px-6">
+        <nav className="max-w-3xl mx-auto flex flex-col items-center gap-4">
+          <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-6">
+            <a href="https://forsure.fans/privacy" className="text-base font-semibold text-primary underline underline-offset-4 hover:text-primary/80 transition-colors">
+              🔒 Politique de confidentialité
+            </a>
+            <a href="https://forsure.fans/legal" className="text-base font-semibold text-primary underline underline-offset-4 hover:text-primary/80 transition-colors">
+              📜 Conditions Générales d'Utilisation
+            </a>
+          </div>
+          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} Forsure — Contact : <a href="mailto:dpo@forsure.fans" className="underline">dpo@forsure.fans</a></p>
+        </nav>
       </footer>
     </div>
   );
