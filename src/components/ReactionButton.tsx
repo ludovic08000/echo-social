@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThumbsUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,7 @@ import {
 import { useAddReaction, useRemoveReaction, REACTION_EMOJIS, REACTION_LABELS, ReactionType } from '@/hooks/useReactions';
 import { useAuth } from '@/lib/auth';
 import { toast } from '@/hooks/use-toast';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface ReactionButtonProps {
   postId: string;
@@ -24,6 +25,9 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   const { user } = useAuth();
   const addReaction = useAddReaction();
   const removeReaction = useRemoveReaction();
+  const isMobile = useIsMobile();
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didLongPress = useRef(false);
 
   const handleReaction = (reactionType: ReactionType) => {
     if (!user) {
@@ -50,6 +54,41 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     }
   };
 
+  // Mobile: long press to open emoji picker, tap to quick like
+  const handlePointerDown = useCallback(() => {
+    if (!isMobile) return;
+    didLongPress.current = false;
+    longPressTimer.current = setTimeout(() => {
+      didLongPress.current = true;
+      setIsOpen(true);
+    }, 500);
+  }, [isMobile]);
+
+  const handlePointerUp = useCallback(() => {
+    if (!isMobile) return;
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    if (!didLongPress.current) {
+      handleQuickLike();
+    }
+  }, [isMobile, currentReaction, user, postId]);
+
+  const handlePointerCancel = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    };
+  }, []);
+
   const emojiVariants = {
     hidden: { scale: 0, y: 10 },
     visible: (i: number) => ({
@@ -63,41 +102,85 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   if (variant === 'facebook') {
     return (
       <Popover open={isOpen} onOpenChange={setIsOpen}>
-        <PopoverTrigger asChild>
-          <motion.div className="flex-1" whileTap={{ scale: 0.95 }}>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn(
-                'w-full h-11 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs transition-all',
-                currentReaction && 'text-primary'
-              )}
-              onDoubleClick={handleQuickLike}
-            >
-              <AnimatePresence mode="wait">
-                {currentReaction ? (
-                  <motion.span
-                    key={currentReaction}
-                    initial={{ scale: 0, rotate: -180 }}
-                    animate={{ scale: 1, rotate: 0 }}
-                    exit={{ scale: 0, rotate: 180 }}
-                    transition={{ type: 'spring', stiffness: 400 }}
-                    className="text-lg"
-                  >
-                    {REACTION_EMOJIS[currentReaction]}
-                  </motion.span>
-                ) : (
-                  <motion.div key="default" initial={{ scale: 0 }} animate={{ scale: 1 }}>
-                    <ThumbsUp className="w-[18px] h-[18px]" />
-                  </motion.div>
+        {isMobile ? (
+          /* Mobile: tap = like, long press = emoji picker */
+          <div className="flex-1">
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  'w-full h-11 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs transition-all select-none touch-none',
+                  currentReaction && 'text-primary'
                 )}
-              </AnimatePresence>
-              <span className="font-medium">
-                {currentReaction ? REACTION_LABELS[currentReaction] : "J'aime"}
-              </span>
-            </Button>
-          </motion.div>
-        </PopoverTrigger>
+                onPointerDown={handlePointerDown}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerCancel}
+                onContextMenu={(e) => e.preventDefault()}
+                onClick={(e) => e.preventDefault()}
+              >
+                <AnimatePresence mode="wait">
+                  {currentReaction ? (
+                    <motion.span
+                      key={currentReaction}
+                      initial={{ scale: 0, rotate: -180 }}
+                      animate={{ scale: 1, rotate: 0 }}
+                      exit={{ scale: 0, rotate: 180 }}
+                      transition={{ type: 'spring', stiffness: 400 }}
+                      className="text-lg"
+                    >
+                      {REACTION_EMOJIS[currentReaction]}
+                    </motion.span>
+                  ) : (
+                    <motion.div key="default" initial={{ scale: 0 }} animate={{ scale: 1 }}>
+                      <ThumbsUp className="w-[18px] h-[18px]" />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                <span className="font-medium">
+                  {currentReaction ? REACTION_LABELS[currentReaction] : "J'aime"}
+                </span>
+              </Button>
+            </PopoverTrigger>
+          </div>
+        ) : (
+          /* Desktop: click opens popover, double-click = quick like */
+          <PopoverTrigger asChild>
+            <motion.div className="flex-1" whileTap={{ scale: 0.95 }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  'w-full h-11 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs transition-all',
+                  currentReaction && 'text-primary'
+                )}
+                onDoubleClick={handleQuickLike}
+              >
+                <AnimatePresence mode="wait">
+                  {currentReaction ? (
+                    <motion.span
+                      key={currentReaction}
+                      initial={{ scale: 0, rotate: -180 }}
+                      animate={{ scale: 1, rotate: 0 }}
+                      exit={{ scale: 0, rotate: 180 }}
+                      transition={{ type: 'spring', stiffness: 400 }}
+                      className="text-lg"
+                    >
+                      {REACTION_EMOJIS[currentReaction]}
+                    </motion.span>
+                  ) : (
+                    <motion.div key="default" initial={{ scale: 0 }} animate={{ scale: 1 }}>
+                      <ThumbsUp className="w-[18px] h-[18px]" />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                <span className="font-medium">
+                  {currentReaction ? REACTION_LABELS[currentReaction] : "J'aime"}
+                </span>
+              </Button>
+            </motion.div>
+          </PopoverTrigger>
+        )}
         
         <PopoverContent 
           side="top" 
