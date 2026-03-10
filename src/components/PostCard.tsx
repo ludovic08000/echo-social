@@ -5,6 +5,8 @@ import { fr } from 'date-fns/locale';
 import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark, ShieldAlert, AlertTriangle, Eye } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Post, useDeletePost } from '@/hooks/usePosts';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { UserAvatar } from './UserAvatar';
 import { TrustBadge } from './TrustBadge';
