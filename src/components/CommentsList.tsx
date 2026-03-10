@@ -65,9 +65,28 @@ export function CommentsList({ postId }: CommentsListProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col">
+      {/* Comments list */}
+      <div className="px-4 pb-4 space-y-4 max-h-[400px] overflow-y-auto">
+        {comments?.length === 0 ? (
+          <p className="text-muted-foreground text-center py-6">
+            Aucun commentaire pour le moment
+          </p>
+        ) : (
+          comments?.map((comment) => (
+            <CommentItem
+              key={comment.id}
+              comment={comment}
+              isOwner={user?.id === comment.user_id}
+              onDelete={() => handleDelete(comment.id)}
+            />
+          ))
+        )}
+      </div>
+
+      {/* Sticky comment input at the bottom */}
       {user && (
-        <form onSubmit={handleSubmit} className="flex gap-3 p-4 border-b border-border/50">
+        <form onSubmit={handleSubmit} className="flex gap-3 p-4 border-t border-border/50 sticky bottom-0 bg-card z-10">
           <UserAvatar size="sm" />
           <div className="flex-1 flex gap-2 items-center">
             <div className="relative flex-1 flex items-center">
@@ -113,23 +132,6 @@ export function CommentsList({ postId }: CommentsListProps) {
           </div>
         </form>
       )}
-
-      <div className="px-4 pb-4 space-y-4">
-        {comments?.length === 0 ? (
-          <p className="text-muted-foreground text-center py-6">
-            Aucun commentaire pour le moment
-          </p>
-        ) : (
-          comments?.map((comment) => (
-            <CommentItem
-              key={comment.id}
-              comment={comment}
-              isOwner={user?.id === comment.user_id}
-              onDelete={() => handleDelete(comment.id)}
-            />
-          ))
-        )}
-      </div>
     </div>
   );
 }
