@@ -48,6 +48,24 @@ export default function ResetPassword() {
       return;
     }
 
+    const hasUpper = /[A-Z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasSpecial = /[^A-Za-z0-9]/.test(password);
+    let strength = 0;
+    if (password.length >= 6) strength++;
+    if (password.length >= 10) strength++;
+    if (hasUpper) strength++;
+    if (hasNumber) strength++;
+    if (hasSpecial) strength++;
+    if (strength < 3) {
+      toast({
+        title: 'Mot de passe trop faible',
+        description: 'Ajoutez des majuscules, des chiffres ou des caractères spéciaux.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     if (password !== confirmPassword) {
       toast({
         title: 'Erreur',
