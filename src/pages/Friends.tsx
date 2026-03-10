@@ -73,7 +73,11 @@ export default function Friends() {
       </header>
 
       <Tabs defaultValue={requestCount > 0 ? 'requests' : 'friends'} className="w-full">
-        <TabsList className="grid w-full grid-cols-4 rounded-xl h-10">
+        <TabsList className="grid w-full grid-cols-5 rounded-xl h-10">
+          <TabsTrigger value="new" className="gap-1.5 text-xs rounded-lg data-[state=active]:shadow-sm">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Nouveaux</span>
+          </TabsTrigger>
           <TabsTrigger value="friends" className="gap-1.5 text-xs rounded-lg data-[state=active]:shadow-sm">
             <Users className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Amis</span>
@@ -93,15 +97,57 @@ export default function Friends() {
           <TabsTrigger value="pending" className="gap-1.5 text-xs rounded-lg data-[state=active]:shadow-sm">
             <Clock className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Envoyées</span>
-            {data?.pending.length ? (
-              <span className="text-[10px] font-medium text-muted-foreground">{data.pending.length}</span>
-            ) : null}
           </TabsTrigger>
           <TabsTrigger value="invite" className="gap-1.5 text-xs rounded-lg data-[state=active]:shadow-sm">
             <UserPlus className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Inviter</span>
           </TabsTrigger>
         </TabsList>
+
+        {/* New Users Tab */}
+        <TabsContent value="new" className="mt-4">
+          <div className="rounded-2xl border border-border/30 bg-card overflow-hidden divide-y divide-border/20">
+            {loadingNewUsers ? (
+              <LoadingSkeleton />
+            ) : !newUsers?.length ? (
+              <EmptyState
+                icon={<Sparkles className="w-10 h-10 text-muted-foreground/40" />}
+                message="Aucun nouveau membre"
+              />
+            ) : (
+              newUsers.map(u => (
+                <div key={u.user_id} className="flex items-center gap-3 p-3 hover:bg-secondary/20 transition-colors">
+                  <Link to={`/profile/${u.user_id}`} className="flex-shrink-0">
+                    <UserAvatar src={u.avatar_url} alt={u.name} size="md" />
+                  </Link>
+                  <Link to={`/profile/${u.user_id}`} className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{u.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-[11px] text-muted-foreground">
+                        Inscrit {formatDistanceToNow(new Date(u.created_at), { addSuffix: true, locale: fr })}
+                      </p>
+                      {u.city && (
+                        <span className="text-[10px] text-primary flex items-center gap-0.5">
+                          <MapPin className="w-3 h-3" />
+                          {u.city}
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                  <Button
+                    size="sm"
+                    className="rounded-xl h-8 text-xs gap-1.5"
+                    onClick={() => sendRequest.mutate(u.user_id)}
+                    disabled={sendRequest.isPending}
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    Ajouter
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </TabsContent>
 
         {/* Friends Tab */}
         <TabsContent value="friends" className="mt-4 space-y-4">
