@@ -665,8 +665,10 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
             exit={{ opacity: 0, y: 40, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
             className={cn(
-              "fixed bottom-[80px] right-5 z-[55] w-[390px] max-w-[calc(100vw-2rem)] h-[560px] max-h-[calc(100vh-120px)] rounded-3xl flex flex-col overflow-hidden relative md:right-8",
-              inline && "relative bottom-auto right-auto w-full max-w-full h-[420px] max-h-[420px] rounded-2xl z-auto"
+              "flex flex-col overflow-hidden relative rounded-3xl",
+              inline
+                ? "w-full h-[420px] max-h-[420px] rounded-2xl"
+                : "fixed bottom-[80px] right-5 z-[55] w-[390px] max-w-[calc(100vw-2rem)] h-[560px] max-h-[calc(100vh-120px)] md:right-8"
             )}
             style={{
               background: 'linear-gradient(180deg, rgba(0,15,30,0.97) 0%, rgba(0,20,40,0.98) 50%, rgba(0,10,25,0.99) 100%)',
