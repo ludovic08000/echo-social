@@ -58,6 +58,13 @@ export function ZeusCompanion() {
     if (open && inputRef.current) inputRef.current.focus();
   }, [open]);
 
+  // Listen for open-zeus event from feed card
+  useEffect(() => {
+    const handler = () => setOpen(true);
+    window.addEventListener('open-zeus', handler);
+    return () => window.removeEventListener('open-zeus', handler);
+  }, []);
+
   // Show strike warnings
   useEffect(() => {
     if (unacknowledged.length > 0 && !open) {
