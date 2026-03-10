@@ -119,6 +119,22 @@ export default function Signup() {
       return;
     }
 
+    // Save phone number if provided
+    if (phoneNumber.trim()) {
+      try {
+        const { data: { user: newUser } } = await supabase.auth.getUser();
+        if (newUser) {
+          let normalizedPhone = phoneNumber.replace(/[\s\-().]/g, '');
+          if (normalizedPhone.startsWith('0') && normalizedPhone.length === 10) {
+            normalizedPhone = '+33' + normalizedPhone.slice(1);
+          }
+          if (!normalizedPhone.startsWith('+')) normalizedPhone = '+' + normalizedPhone;
+          await supabase.from('profiles').update({ phone_number: normalizedPhone }).eq('user_id', newUser.id);
+        }
+      } catch {}
+    }
+    }
+
     const userAge = differenceInYears(new Date(), dateOfBirth);
     if (userAge < 16 && parentalPin) {
       try {
