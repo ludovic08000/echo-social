@@ -10,6 +10,7 @@ import { useState, useMemo } from 'react';
 import { useScreenSize } from '@/hooks/useScreenSize';
 import { useChatWidget } from '@/components/ChatWidgetContext';
 import { useOnlinePresence } from '@/hooks/useOnlinePresence';
+import { useZeusSettings } from '@/hooks/useZeusCompanion';
 import { cn } from '@/lib/utils';
 
 export function FeedRightSidebar() {
