@@ -257,22 +257,31 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                   </div>
                 </div>
               ) : (
-                <video
-                  src={post.image_url!}
-                  controls
-                  playsInline
-                  // @ts-ignore – legacy iOS attribute
-                  webkit-playsinline=""
-                  x-webkit-airplay="deny"
-                  controlsList="nodownload noremoteplayback"
-                  preload="auto"
-                  className="absolute inset-0 w-full h-full object-contain bg-black"
-                  onLoadedMetadata={() => setMediaLoaded(true)}
-                  onLoadedData={() => setMediaLoaded(true)}
-                  onError={() => { setMediaLoaded(true); setVideoError(true); }}
-                  onClick={(e) => e.stopPropagation()}
-                  onPointerDown={(e) => e.stopPropagation()}
-                />
+                <>
+                  <video
+                    src={post.image_url!}
+                    controls
+                    playsInline
+                    // @ts-ignore – legacy iOS attribute
+                    webkit-playsinline=""
+                    x-webkit-airplay="deny"
+                    controlsList="nodownload noremoteplayback"
+                    preload="auto"
+                    className="absolute inset-0 w-full h-full object-contain bg-black"
+                    onLoadedMetadata={() => setMediaLoaded(true)}
+                    onLoadedData={() => setMediaLoaded(true)}
+                    onPlay={() => trackVideoView()}
+                    onError={() => { setMediaLoaded(true); setVideoError(true); }}
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  />
+                  {typeof videoViewCount === 'number' && videoViewCount > 0 && (
+                    <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1 text-white text-xs bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1">
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>{videoViewCount > 1000 ? `${(videoViewCount / 1000).toFixed(1)}K` : videoViewCount}</span>
+                    </div>
+                  )}
+                </>
               )
             ) : (
               <Link to={`/post/${post.id}`}>
