@@ -318,6 +318,25 @@ export function PrivacySettingsPanel() {
               </SelectContent>
             </Select>
           </div>
+
+          <div className="flex items-center justify-between">
+            <Label>Qui peut écrire sur mon mur anonyme ?</Label>
+            <Select
+              value={(settings as any).wall_visibility || 'friends'}
+              onValueChange={(v) => handleUpdate('wall_visibility', v)}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ACCESS_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </section>
 
