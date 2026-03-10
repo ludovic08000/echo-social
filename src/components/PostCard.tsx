@@ -44,15 +44,14 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const [translation, setTranslation] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
   const [mediaLoaded, setMediaLoaded] = useState(false);
+  const [videoError, setVideoError] = useState(false);
   const [saved, setSaved] = useState(false);
   const { data: isMinorUser } = useCurrentUserIsMinor();
   const reportUser = useReportUser();
   const isMobile = useIsMobile();
-  const isAppleWebKit = isAppleMobileWebKit();
 
   const postUrl = generatePostUrl(post.id);
   const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
-  const isIOSUnsafeVideo = Boolean(isVideoPost && isAppleWebKit && post.image_url && !isVideoUrlSafeForIOS(post.image_url));
 
   const [videoEnabled, setVideoEnabled] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
