@@ -5,7 +5,7 @@ import { crypto } from "https://deno.land/std@0.190.0/crypto/mod.ts";
 import { encode as hexEncode } from "https://deno.land/std@0.190.0/encoding/hex.ts";
 
 const MR_WSDL = "https://api.mondialrelay.com/Web_Services.asmx";
-const MR_V2_BASE = "https://api.mondialrelay.com/api/v2";
+const MR_V2_BASE = "https://connect-api.mondialrelay.com/api";
 
 // ── SOAP helpers (used for search_points & tracking which work fine) ──
 
@@ -332,7 +332,7 @@ serve(async (req) => {
         brandId: brandId || enseigne,
       }));
 
-      const result = await callMondialRelayV2("/shipments", "POST", shipmentBody);
+      const result = await callMondialRelayV2("/shipment", "POST", shipmentBody);
 
       console.log("V2 create_shipment response:", JSON.stringify(result).substring(0, 1000));
 
