@@ -736,6 +736,8 @@ export function ZeusCompanion() {
                       const productResult = parseProductsFromContent(displayText);
                       displayText = productResult.text;
                       products = productResult.products;
+                      // Strip any remaining code blocks Zeus might have leaked
+                      displayText = stripCodeBlocks(displayText);
                     }
 
                     return (
