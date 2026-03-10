@@ -63,9 +63,14 @@ export default function ResetPassword() {
     setIsLoading(false);
 
     if (error) {
+      const isSamePassword = error.message?.toLowerCase().includes('same') || 
+                             error.message?.toLowerCase().includes('different') ||
+                             error.message?.toLowerCase().includes('previously used');
       toast({
-        title: 'Erreur',
-        description: 'Impossible de mettre à jour le mot de passe. Le lien a peut-être expiré.',
+        title: isSamePassword ? 'Mot de passe identique' : 'Erreur',
+        description: isSamePassword
+          ? 'Vous ne pouvez pas réutiliser votre ancien mot de passe. Veuillez en choisir un nouveau.'
+          : 'Impossible de mettre à jour le mot de passe. Le lien a peut-être expiré.',
         variant: 'destructive',
       });
       return;
