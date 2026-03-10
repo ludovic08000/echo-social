@@ -155,7 +155,76 @@ export default function Friends() {
           </div>
         </TabsContent>
 
-        {/* Friends Tab */}
+        {/* Sync Contacts Tab */}
+        <TabsContent value="sync" className="mt-4">
+          <div className="rounded-2xl border border-border/30 bg-card overflow-hidden">
+            <div className="flex flex-col items-center justify-center p-8 gap-4 text-center">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                <Phone className="w-8 h-8 text-primary" />
+              </div>
+              <h3 className="font-semibold text-lg">Synchroniser mes contacts</h3>
+              <p className="text-sm text-muted-foreground max-w-xs">
+                {contactSync.isNative
+                  ? 'Accédez à votre répertoire pour retrouver vos amis déjà sur Forsure'
+                  : 'Cette fonctionnalité est optimisée pour l\'app native iOS/Android. Utilisez l\'onglet Inviter pour la version web.'}
+              </p>
+              <Button
+                onClick={contactSync.syncContacts}
+                disabled={contactSync.loading}
+                className="gap-2"
+                size="lg"
+              >
+                {contactSync.loading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Phone className="w-4 h-4" />
+                )}
+                {contactSync.loading ? 'Synchronisation...' : contactSync.synced ? 'Resynchroniser' : 'Lancer la synchro'}
+              </Button>
+              {contactSync.synced && (
+                <div className="w-full space-y-3 mt-2">
+                  <div className="flex justify-center gap-4 text-sm">
+                    <span className="text-primary font-medium">{contactSync.matched.length} trouvé(s)</span>
+                    <span className="text-muted-foreground">{contactSync.unmatched.length} à inviter</span>
+                  </div>
+                  {contactSync.matched.length > 0 && (
+                    <div className="divide-y divide-border/20 border-t border-border/20">
+                      {contactSync.matched.map(contact => (
+                        <div key={contact.user_id} className="flex items-center gap-3 p-3 hover:bg-secondary/20 transition-colors">
+                          <Link to={`/profile/${contact.user_id}`} className="flex-shrink-0">
+                            <UserAvatar src={contact.avatar_url} alt={contact.name} size="md" />
+                          </Link>
+                          <Link to={`/profile/${contact.user_id}`} className="flex-1 min-w-0">
+                            <p className="font-medium text-sm truncate">{contact.name}</p>
+                            <p className="text-[11px] text-muted-foreground truncate">{contact.contact_name}</p>
+                          </Link>
+                          {contact.is_friend ? (
+                            <span className="text-xs text-muted-foreground">✓ Ami</span>
+                          ) : (
+                            <Button
+                              size="sm"
+                              className="rounded-xl h-8 text-xs gap-1.5"
+                              onClick={() => sendRequest.mutate(contact.user_id)}
+                              disabled={sendRequest.isPending}
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                              Ajouter
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground/60">
+                🔒 Vos contacts ne sont pas stockés sur nos serveurs
+              </p>
+            </div>
+          </div>
+        </TabsContent>
+
+
         <TabsContent value="friends" className="mt-4 space-y-4">
           {/* Search */}
           {(data?.friends.length ?? 0) > 5 && (
