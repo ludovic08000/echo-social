@@ -43,6 +43,7 @@ import { MinorProtectedBadge } from '@/components/MinorProtectedBadge';
 import { MinorReportButton } from '@/components/MinorReportButton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { SEOHead } from '@/components/SEOHead';
 
 function ReportFakeAccountButton({ reportedUserId }: { reportedUserId: string }) {
   const { user } = useAuth();
