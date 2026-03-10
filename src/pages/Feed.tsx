@@ -6,6 +6,7 @@ import { CreatePost } from '@/components/CreatePost';
 import { PostCard } from '@/components/PostCard';
 import { StoriesBar } from '@/components/StoriesBar';
 import { useNavigate } from 'react-router-dom';
+import { CommentsList } from '@/components/CommentsList';
 import { FeedRightSidebar } from '@/components/feed/FeedRightSidebar';
 import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
 import { SponsoredPostCard } from '@/components/feed/SponsoredPostCard';
@@ -69,6 +70,7 @@ export default function Feed() {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [showPauseReminder, setShowPauseReminder] = useState(false);
   const [pauseDismissed, setPauseDismissed] = useState(false);
+  const [openCommentsPostId, setOpenCommentsPostId] = useState<string | null>(null);
   const { data: activeAds } = useActiveAds();
   const feedBgStyle = useCustomBackground('feed');
   const { isMinor, isUnlocked, requestUnlock } = useParentalGate();
@@ -320,13 +322,18 @@ export default function Feed() {
                   {posts.map((post, index) => {
                     const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
                     const cellStyle = isVideoPost ? undefined : POST_CELL_STYLE;
+                    const commentsOpen = openCommentsPostId === post.id;
+
+                    const toggleComments = () => {
+                      setOpenCommentsPostId(commentsOpen ? null : post.id);
+                    };
 
                     return (
                       <div key={post.id} style={cellStyle}>
                         {isMobile ? (
                           <PostCard
                             post={post}
-                            onCommentClick={() => navigate(`/post/${post.id}`)}
+                            onCommentClick={toggleComments}
                           />
                         ) : (
                           <motion.div
@@ -338,9 +345,14 @@ export default function Feed() {
                           >
                             <PostCard
                               post={post}
-                              onCommentClick={() => navigate(`/post/${post.id}`)}
+                              onCommentClick={toggleComments}
                             />
                           </motion.div>
+                        )}
+                        {commentsOpen && (
+                          <div className="bg-card border border-t-0 border-border/20 rounded-b-2xl -mt-1 overflow-hidden">
+                            <CommentsList postId={post.id} />
+                          </div>
                         )}
                         {renderInjection(index)}
                       </div>
