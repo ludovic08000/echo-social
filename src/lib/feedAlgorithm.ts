@@ -210,8 +210,13 @@ export function scorePost(
   // ── 7. TIME-OF-DAY BOOST ──
   score += (getTimeOfDayMultiplier(postDate) - 1) * 15;
 
-  // ── 8. OWN POSTS ──
-  if (post.user_id === ctx.userId) score += 5;
+  // ── 8. OWN POSTS (always on top when fresh) ──
+  if (post.user_id === ctx.userId) {
+    if (ageHours < 0.5) score += 500;       // < 30 min: always first
+    else if (ageHours < 2) score += 100;     // < 2h: strong boost
+    else if (ageHours < 6) score += 30;      // < 6h: moderate boost
+    else score += 5;
+  }
 
   // ── 9. ANTI-SPAM ──
   score -= getSpamScore(post.body) * 0.6;
