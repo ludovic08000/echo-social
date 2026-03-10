@@ -11,7 +11,6 @@ import { useScreenSize } from '@/hooks/useScreenSize';
 import { useChatWidget } from '@/components/ChatWidgetContext';
 import { useOnlinePresence } from '@/hooks/useOnlinePresence';
 import { cn } from '@/lib/utils';
-import { motion, AnimatePresence } from 'framer-motion';
 
 export function FeedRightSidebar() {
   const { user } = useAuth();
