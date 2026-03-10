@@ -231,6 +231,7 @@ export default function Feed() {
                 <div className="px-4"><StoriesBar /></div>
                 <div className="px-4"><FeedLiveSection /></div>
                 <div className="px-4"><CreatePost /></div>
+                <FeedZeusCard />
               </>
             ) : (
               <>
