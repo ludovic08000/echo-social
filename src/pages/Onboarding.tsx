@@ -217,6 +217,7 @@ export default function Onboarding() {
         <div className="flex items-center justify-center gap-2 mb-6">
           <div className={`w-2.5 h-2.5 rounded-full transition-colors ${step === 'interests' ? 'bg-primary' : 'bg-primary/30'}`} />
           <div className={`w-2.5 h-2.5 rounded-full transition-colors ${step === 'ai-name' ? 'bg-primary' : 'bg-primary/30'}`} />
+          <div className={`w-2.5 h-2.5 rounded-full transition-colors ${step === 'find-friends' ? 'bg-primary' : 'bg-primary/30'}`} />
         </div>
 
         <AnimatePresence mode="wait">
