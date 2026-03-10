@@ -384,6 +384,10 @@ serve(async (req) => {
           await supabase.from("ai_agent_messages").insert({
             conversation_id: convId, role: "assistant", content: fullResponse,
           });
+          // Also push to regular messenger (fallback path)
+          if (agent.slug === "zeus-companion") {
+            pushToMessenger(supabase, userId!, fullResponse);
+          }
         }
         controller.close();
       },
