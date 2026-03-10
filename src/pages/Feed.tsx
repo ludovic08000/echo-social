@@ -10,6 +10,7 @@ import { FeedRightSidebar } from '@/components/feed/FeedRightSidebar';
 import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
 import { SponsoredPostCard } from '@/components/feed/SponsoredPostCard';
 import { Coffee, X, Sparkles, Lock, Shield } from 'lucide-react';
+import { FeedZeusCard } from '@/components/feed/FeedZeusCard';
 import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgorithm';
 import { Button } from '@/components/ui/button';
 import { useActiveAds } from '@/hooks/useAdCampaigns';
@@ -230,6 +231,7 @@ export default function Feed() {
                 <div className="px-4"><StoriesBar /></div>
                 <div className="px-4"><FeedLiveSection /></div>
                 <div className="px-4"><CreatePost /></div>
+                <FeedZeusCard />
               </>
             ) : (
               <>
@@ -242,6 +244,7 @@ export default function Feed() {
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }} className="px-4">
                   <CreatePost />
                 </motion.div>
+                <FeedZeusCard />
               </>
             )}
 
