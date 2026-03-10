@@ -490,21 +490,36 @@ export function ZeusCompanion() {
                     </div>
                   )}
                   {messages.map((msg, i) => {
-                    const { text, action } = msg.role === 'assistant' ? parseActionFromContent(msg.content) : { text: msg.content, action: null };
+                    let displayText = msg.content;
+                    let action: ActionBlock | null = null;
+                    let products: ProductItem[] | null = null;
+
+                    if (msg.role === 'assistant') {
+                      const actionResult = parseActionFromContent(displayText);
+                      displayText = actionResult.text;
+                      action = actionResult.action;
+                      const productResult = parseProductsFromContent(displayText);
+                      displayText = productResult.text;
+                      products = productResult.products;
+                    }
+
                     return (
                       <div key={i} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
                         <div className={cn(
-                          'max-w-[85%] rounded-2xl px-3 py-2 text-sm',
+                          'max-w-[90%] rounded-2xl px-3 py-2 text-sm',
                           msg.role === 'user' ? 'bg-primary text-primary-foreground rounded-br-md' : 'bg-secondary/60 text-foreground rounded-bl-md'
                         )}>
                           {msg.role === 'assistant' ? (
-                            <div className="prose prose-sm dark:prose-invert max-w-none"><ReactMarkdown>{text}</ReactMarkdown></div>
+                            <div className="prose prose-sm dark:prose-invert max-w-none"><ReactMarkdown>{displayText}</ReactMarkdown></div>
                           ) : (
-                            <p className="whitespace-pre-wrap">{text}</p>
+                            <p className="whitespace-pre-wrap">{displayText}</p>
                           )}
                           {action && (
-                            <ActionCard action={action} onExecute={() => executeAction(action, i)}
+                            <ActionCard action={action} onExecute={() => executeAction(action!, i)}
                               executing={executingAction === i} executed={executedActions.has(i)} />
+                          )}
+                          {products && (
+                            <ProductCards products={products} onNavigate={(id) => navigate(`/marketplace/product/${id}`)} />
                           )}
                         </div>
                       </div>
