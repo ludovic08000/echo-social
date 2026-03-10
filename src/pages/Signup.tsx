@@ -107,6 +107,17 @@ export default function Signup() {
       return;
     }
 
+    // Validate phone format if provided
+    if (phoneNumber.trim()) {
+      let testPhone = phoneNumber.replace(/[\s\-().]/g, '');
+      if (testPhone.startsWith('0') && testPhone.length === 10) testPhone = '+33' + testPhone.slice(1);
+      if (!testPhone.startsWith('+')) testPhone = '+' + testPhone;
+      if (!/^\+[1-9]\d{6,14}$/.test(testPhone)) {
+        toast({ title: 'Numéro invalide', description: 'Entrez un numéro valide (ex: +33 6 12 34 56 78)', variant: 'destructive' });
+        return;
+      }
+    }
+
     setIsLoading(true);
 
     const fullName = `${firstName.trim()} ${lastName.trim()}`;
