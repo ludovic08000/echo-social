@@ -232,7 +232,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                     <span className="text-xs font-medium text-foreground">Vidéo non compatible iPhone</span>
                   </div>
                 </div>
-              ) : (isMobile || (shouldDeferVideo && !videoEnabled)) && !videoEnabled ? (
+              ) : (shouldDeferVideo && !videoEnabled) ? (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -256,12 +256,13 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                   webkit-playsinline=""
                   x-webkit-airplay="deny"
                   controlsList="nodownload noremoteplayback"
-                  preload={shouldDeferVideo ? 'none' : 'metadata'}
+                  preload="metadata"
                   className={cn(
                     "absolute inset-0 w-full h-full object-cover bg-muted transition-opacity duration-300",
                     mediaLoaded ? "opacity-100" : "opacity-0"
                   )}
                   onLoadedData={() => setMediaLoaded(true)}
+                  onError={() => setMediaLoaded(true)}
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
                 >
