@@ -395,7 +395,7 @@ async function handlePhotoGuard(apiKey: string, body: any, userId: string, supab
 }
 
 // ── AGENT CHAT: Streaming agent conversation ──
-const ACTION_SYSTEM_PROMPT = `\n\n## CAPACITÉS D'ACTION\nQuand l'utilisateur demande de publier ou créer du contenu, inclus un bloc d'action:\n\n\`\`\`forsure-action\n{"type": "publish_post", "body": "texte", "image_prompt": "description ou null"}\n\`\`\`\n\nTypes: publish_post, schedule_post (avec publish_at), create_story, generate_image.\nDate actuelle: ${new Date().toISOString()}\nUn seul bloc par message. Demande confirmation avant.`;
+const ACTION_SYSTEM_PROMPT = `\n\n## CAPACITÉS D'ACTION\nQuand l'utilisateur demande de publier, traduire, ou créer du contenu, inclus un bloc d'action:\n\n\`\`\`forsure-action\n{"type": "publish_post", "body": "texte amélioré"}\n\`\`\`\n\n\`\`\`forsure-action\n{"type": "translate", "translated_text": "translated text", "target_language": "en", "body": "texte original"}\n\`\`\`\n\nTypes: publish_post, translate, schedule_post (avec publish_at), create_story.\nPour les publications: reformule et améliore le texte.\nPour les traductions: traduis fidèlement. Langues: en, fr, es, de, it, pt, ar, zh, ja, ko.\nDate actuelle: ${new Date().toISOString()}\nUn seul bloc par message. L'utilisateur confirmera avant exécution.`;
 
 async function handleAgentChat(apiKey: string, body: any, userId: string, supabase: any, cors: Record<string, string>) {
   const { agent_id, conversation_id, message } = body;
