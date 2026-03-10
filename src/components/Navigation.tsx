@@ -71,10 +71,22 @@ export function MobileNav() {
                   { path: '/ads', icon: Megaphone, label: 'Pub Ads' },
                   { path: '/friends', icon: Heart, label: 'Amis' },
                   { path: '/games', icon: Gamepad2, label: 'Jeux' },
-                   { path: '/ai-agents', icon: Bot, label: 'Agents IA' },
+                   { path: '#zeus', icon: Bot, label: 'Assistant IA' },
                    { path: '/notifications', icon: Bell, label: 'Notifs', badge: unreadCount },
                    { path: '/settings', icon: Settings, label: 'Réglages' },
                  ].map((item) => (
+                  item.path === '#zeus' ? (
+                    <button
+                      key="zeus"
+                      onClick={() => { setShowMore(false); window.dispatchEvent(new Event('open-zeus')); }}
+                      className="flex flex-col items-center gap-1.5 py-3 rounded-2xl text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all duration-200"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-secondary/80 flex items-center justify-center">
+                        <item.icon className="w-5 h-5" />
+                      </div>
+                      <span className="text-[10px] font-medium">{item.label}</span>
+                    </button>
+                  ) : (
                   <Link
                     key={item.path}
                     to={item.path}
@@ -91,6 +103,7 @@ export function MobileNav() {
                     </div>
                     <span className="text-[10px] font-medium">{item.label}</span>
                   </Link>
+                  )
                 ))}
               </div>
             </div>
@@ -170,7 +183,7 @@ export function DesktopSidebar() {
     { path: '/channels', icon: Tv, label: 'Canaux TV' },
     { path: '/marketplace', icon: ShoppingBag, label: 'Marketplace' },
     { path: '/ai-engine', icon: Brain, label: 'Moteur IA' },
-    { path: '/ai-agents', icon: Bot, label: 'Agents IA' },
+    { path: '#zeus', icon: Bot, label: 'Assistant IA', isZeus: true },
     { path: '/admin', icon: Shield, label: 'Administration' },
     { path: `/profile/${user.id}`, icon: User, label: t('nav.profile') },
     { path: '/settings', icon: Settings, label: t('nav.settings') },
@@ -204,6 +217,19 @@ export function DesktopSidebar() {
                     </span>
                   )}
                 </div>
+                <span>{item.label}</span>
+              </button>
+            );
+          }
+
+          if ((item as any).isZeus) {
+            return (
+              <button
+                key="zeus-nav"
+                onClick={() => window.dispatchEvent(new Event('open-zeus'))}
+                className={cn('premium-nav-item w-full')}
+              >
+                <item.icon className="w-5 h-5" />
                 <span>{item.label}</span>
               </button>
             );
