@@ -230,7 +230,21 @@ function WebPhoneSearch() {
     });
   };
 
-  const sendInvites = async () => {
+  const sendInvitesSMS = () => {
+    if (selectedInvites.size === 0) return;
+    const phones = Array.from(selectedInvites);
+    // iOS uses &body=, Android uses ?body=
+    const isApple = /iPhone|iPad|iPod|Mac/i.test(navigator.userAgent);
+    const separator = isApple ? '&' : '?';
+    const smsUrl = `sms:${phones.join(',')}${separator}body=${encodeURIComponent(INVITE_MESSAGE)}`;
+    window.open(smsUrl, '_self');
+    toast({
+      title: `📱 SMS préparé pour ${phones.length} contact(s)`,
+      description: 'L\'app SMS va s\'ouvrir avec le message',
+    });
+  };
+
+  const sendInvitesShare = async () => {
     if (selectedInvites.size === 0) return;
     try {
       await Share.share({
@@ -243,10 +257,9 @@ function WebPhoneSearch() {
         description: 'Vos amis recevront le lien',
       });
     } catch {
-      // Fallback: copy to clipboard
       try {
         await navigator.clipboard.writeText(INVITE_MESSAGE);
-        toast({ title: 'Lien copié !', description: 'Envoyez-le à vos amis par SMS ou messagerie' });
+        toast({ title: 'Lien copié !', description: 'Collez-le dans un SMS ou une messagerie' });
       } catch {
         // ignore
       }
