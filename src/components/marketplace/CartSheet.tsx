@@ -260,6 +260,43 @@ export function CartSheet() {
                 )}
                 {(hasPhysical && !selectedRelay) ? 'Choisir un point relais pour continuer' : isCheckingOut ? 'Redirection...' : `Payer ${total.toFixed(2)}€`}
               </Button>
+              <Button
+                variant="outline"
+                className="w-full text-xs border-dashed border-amber-500 text-amber-600 hover:bg-amber-50"
+                onClick={async () => {
+                  setIsCheckingOut(true);
+                  try {
+                    const items = cart.map((item) => ({
+                      product_id: item.product_id,
+                      title: item.products?.title || 'Produit',
+                      price: item.products?.price || 0,
+                      quantity: item.quantity,
+                      seller_id: item.products?.seller_id || '',
+                    }));
+                    const relayData = selectedRelay ? {
+                      id: selectedRelay.id, name: selectedRelay.name,
+                      address: selectedRelay.address, postcode: selectedRelay.postcode,
+                      city: selectedRelay.city, country: selectedRelay.country,
+                    } : null;
+                    const { data, error } = await supabase.functions.invoke('marketplace-checkout', {
+                      body: { action: 'skip_payment', items, relay: relayData },
+                    });
+                    if (error) throw error;
+                    if (data?.error) throw new Error(data.error);
+                    if (data?.orderId) {
+                      toast.success('✅ Commande test créée avec succès !');
+                      window.location.href = `/marketplace?order_success=${data.orderId}`;
+                    }
+                  } catch (e: any) {
+                    toast.error(e.message || 'Erreur mode test');
+                  } finally {
+                    setIsCheckingOut(false);
+                  }
+                }}
+                disabled={isCheckingOut || cart.length === 0 || (hasPhysical && !selectedRelay)}
+              >
+                🧪 Mode test — Sans paiement
+              </Button>
               <p className="text-[10px] text-muted-foreground text-center flex items-center justify-center gap-1">
                 <ShieldCheck className="w-3 h-3" />
                 Paiement sécurisé par Stripe · Livraison Mondial Relay
