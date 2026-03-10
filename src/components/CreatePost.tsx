@@ -207,7 +207,26 @@ export function CreatePost() {
       }
 
       setUploadStep('Publication…');
-      await createPost.mutateAsync({ body: body.trim(), imageUrl, expiresAt, publishAt });
+      const newPost = await createPost.mutateAsync({ body: body.trim(), imageUrl, expiresAt, publishAt });
+
+      // Zeus moderation check (async, non-blocking)
+      if (body.trim()) {
+        postModeration.mutate(
+          { postId: (newPost as any)?.id || '', body: body.trim(), imageUrl },
+          {
+            onSuccess: (result) => {
+              if (result && !result.safe) {
+                toast({
+                  title: '⚡ Message de Zeus',
+                  description: result.zeus_message || 'Attention, ton contenu a été signalé.',
+                  variant: 'destructive',
+                  duration: 10000,
+                });
+              }
+            },
+          }
+        );
+      }
 
       // Reuse the same thumbnail for replay (no duplicate generation!)
       if (publishAsReplay && mediaType === 'video' && imageUrl) {
