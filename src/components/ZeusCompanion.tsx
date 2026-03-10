@@ -62,19 +62,28 @@ function parseActionFromContent(content: string): { text: string; action: Action
     /```forsure-action\s*\n([\s\S]*?)\n```/,
     /```forsure-action\s*([\s\S]*?)```/,
     /```json\s*\n([\s\S]*?)\n```/,
-    /\{[^{}]*"type"\s*:\s*"(publish_post|schedule_post|create_story|generate_image|translate)"[^{}]*\}/,
+    /\{[^{}]*"type"\s*:\s*"(publish_post|schedule_post|create_story|generate_image|translate|update_feed_config)"[^{}]*\}/,
   ];
   for (const regex of patterns) {
     const match = content.match(regex);
     if (!match) continue;
     try {
       const action = JSON.parse((match[1] || match[0]).trim()) as ActionBlock;
-      if (action.type && ['publish_post', 'schedule_post', 'create_story', 'generate_image', 'translate'].includes(action.type)) {
+      if (action.type && ['publish_post', 'schedule_post', 'create_story', 'generate_image', 'translate', 'update_feed_config'].includes(action.type)) {
         return { text: content.replace(match[0], '').trim(), action };
       }
     } catch { continue; }
   }
   return { text: content, action: null };
+}
+
+// Strip any remaining code blocks or raw JSON that Zeus might accidentally show
+function stripCodeBlocks(content: string): string {
+  return content
+    .replace(/```[\w-]*\s*\n[\s\S]*?\n```/g, '')
+    .replace(/```[\w-]*[\s\S]*?```/g, '')
+    .replace(/\{[^{}]*"type"\s*:\s*"[^"]*"[^{}]*\}/g, '')
+    .trim();
 }
 
 // ── Product cards ──
