@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, Check, Zap, ArrowRight } from 'lucide-react';
+import { Sparkles, Check, Zap, ArrowRight, Users, Phone, Upload, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import BrandLogo from '@/components/BrandLogo';
@@ -8,6 +8,11 @@ import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Capacitor } from '@capacitor/core';
+import { useSendFriendRequest } from '@/hooks/useFriendships';
+import { UserAvatar } from '@/components/UserAvatar';
+import { MatchedContact } from '@/hooks/useContactSync';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const INTERESTS = [
   { value: 'gaming', label: 'Gaming', emoji: '🎮', color: 'border-purple-500/40 bg-purple-500/10 text-purple-300' },
@@ -30,10 +35,118 @@ const AI_NAME_SUGGESTIONS = ['Zeus', 'Nova', 'Atlas', 'Luna', 'Aria', 'Echo', 'O
 export default function Onboarding() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [step, setStep] = useState<'interests' | 'ai-name'>('interests');
+  const [step, setStep] = useState<'interests' | 'ai-name' | 'find-friends'>('interests');
   const [selected, setSelected] = useState<string[]>([]);
   const [aiName, setAiName] = useState('Zeus');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Find friends state
+  const sendRequest = useSendFriendRequest();
+  const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
+  const [contactResults, setContactResults] = useState<MatchedContact[]>([]);
+  const [searchingContacts, setSearchingContacts] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isNative = Capacitor.isNativePlatform();
+  const isIOS = typeof navigator !== 'undefined' && (/iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+  const hasPickerAPI = typeof navigator !== 'undefined' && !isIOS && 'contacts' in navigator && 'ContactsManager' in window;
+
+  function normalizePhone(phone: string): string {
+    let clean = phone.replace(/[\s\-().]/g, '');
+    if (clean.startsWith('0') && clean.length === 10) clean = '+33' + clean.slice(1);
+    if (!clean.startsWith('+')) clean = '+' + clean;
+    return clean;
+  }
+
+  const searchPhones = async (phones: string[]) => {
+    if (!user || phones.length === 0) return;
+    setSearchingContacts(true);
+    try {
+      const normalized = phones.map(normalizePhone);
+      const { data, error } = await supabase.rpc('match_contacts_by_phone', {
+        p_user_id: user.id,
+        p_phone_numbers: normalized,
+      });
+      if (error) throw error;
+      const results: MatchedContact[] = (data || []).map((m: any) => ({
+        user_id: m.user_id, name: m.name, avatar_url: m.avatar_url,
+        phone_number: m.phone_number, is_friend: m.is_friend, contact_name: m.name,
+      }));
+      setContactResults(results);
+      if (results.length === 0) toast({ title: 'Aucun contact trouvé sur Forsure' });
+      else toast({ title: `${results.length} contact(s) trouvé(s) !` });
+    } catch {
+      toast({ title: 'Erreur', variant: 'destructive' });
+    } finally {
+      setSearchingContacts(false);
+    }
+  };
+
+  const handlePickContacts = async () => {
+    try {
+      const contacts = await (navigator as any).contacts.select(['tel'], { multiple: true });
+      const phones: string[] = [];
+      for (const c of contacts) {
+        for (const tel of (c.tel || [])) {
+          const clean = tel.replace(/[\s\-().]/g, '');
+          if (clean.length >= 6) phones.push(clean);
+        }
+      }
+      if (phones.length > 0) await searchPhones(phones);
+    } catch {}
+  };
+
+  const handleNativeContacts = async () => {
+    try {
+      const { Contacts } = await import('@capacitor-community/contacts');
+      const perm = await Contacts.requestPermissions();
+      if (perm.contacts !== 'granted') {
+        toast({ title: 'Accès refusé', description: 'Autorisez l\'accès aux contacts dans les réglages', variant: 'destructive' });
+        return;
+      }
+      const result = await Contacts.getContacts({ projection: { phones: true, name: true } });
+      const phones: string[] = [];
+      (result.contacts || []).forEach((c: any) => {
+        (c.phones || []).forEach((p: any) => {
+          if (p.number) phones.push(p.number);
+        });
+      });
+      if (phones.length > 0) await searchPhones(phones);
+      else toast({ title: 'Aucun numéro trouvé dans vos contacts' });
+    } catch {
+      toast({ title: 'Erreur', variant: 'destructive' });
+    }
+  };
+
+  const handleVCardImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const telRegex = /^TEL[^:]*:(.+)$/gim;
+      const phones: string[] = [];
+      let match;
+      while ((match = telRegex.exec(text)) !== null) {
+        const raw = match[1].trim().replace(/[\s\-().]/g, '');
+        if (raw.length >= 6) phones.push(normalizePhone(raw));
+      }
+      if (phones.length > 0) await searchPhones(phones);
+      else toast({ title: 'Aucun numéro trouvé dans le fichier' });
+    } catch {
+      toast({ title: 'Erreur de lecture', variant: 'destructive' });
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleAddFriend = async (userId: string) => {
+    try {
+      await sendRequest.mutateAsync(userId);
+      setSentRequests(prev => new Set(prev).add(userId));
+      toast({ title: '🤝 Demande envoyée !' });
+    } catch {
+      toast({ title: 'Erreur', variant: 'destructive' });
+    }
+  };
 
   const toggle = (value: string) => {
     setSelected(prev =>
@@ -47,6 +160,14 @@ export default function Onboarding() {
       return;
     }
     setStep('ai-name');
+  };
+
+  const handleAiNameDone = () => {
+    if (!aiName.trim()) {
+      toast({ title: 'Donne un nom à ton IA !', variant: 'destructive' });
+      return;
+    }
+    setStep('find-friends');
   };
 
   const handleFinish = async () => {
@@ -96,6 +217,7 @@ export default function Onboarding() {
         <div className="flex items-center justify-center gap-2 mb-6">
           <div className={`w-2.5 h-2.5 rounded-full transition-colors ${step === 'interests' ? 'bg-primary' : 'bg-primary/30'}`} />
           <div className={`w-2.5 h-2.5 rounded-full transition-colors ${step === 'ai-name' ? 'bg-primary' : 'bg-primary/30'}`} />
+          <div className={`w-2.5 h-2.5 rounded-full transition-colors ${step === 'find-friends' ? 'bg-primary' : 'bg-primary/30'}`} />
         </div>
 
         <AnimatePresence mode="wait">
@@ -110,7 +232,7 @@ export default function Onboarding() {
               <div className="text-center mb-6">
                 <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium mb-3">
                   <Sparkles className="w-4 h-4" />
-                  Étape 1/2
+                  Étape 1/3
                 </div>
                 <h1 className="text-2xl font-bold text-foreground">Qu'est-ce qui t'intéresse ?</h1>
                 <p className="text-muted-foreground text-sm mt-1">
@@ -178,7 +300,7 @@ export default function Onboarding() {
               <div className="text-center mb-6">
                 <div className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-500 px-3 py-1 rounded-full text-sm font-medium mb-3">
                   <Zap className="w-4 h-4" />
-                  Étape 2/2
+                  Étape 2/3
                 </div>
                 <h1 className="text-2xl font-bold text-foreground">Nomme ton IA personnelle</h1>
                 <p className="text-muted-foreground text-sm mt-1">
@@ -256,8 +378,135 @@ export default function Onboarding() {
                   Retour
                 </Button>
                 <Button
+                  onClick={handleAiNameDone}
+                  disabled={!aiName.trim()}
+                  className="pulse-button-gradient px-6 gap-2"
+                >
+                  Suivant <ArrowRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </motion.div>
+          )}
+
+          {step === 'find-friends' && (
+            <motion.div
+              key="find-friends"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="pulse-card p-6 sm:p-8"
+            >
+              <div className="text-center mb-6">
+                <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium mb-3">
+                  <Users className="w-4 h-4" />
+                  Étape 3/3
+                </div>
+                <h1 className="text-2xl font-bold text-foreground">Retrouve tes amis</h1>
+                <p className="text-muted-foreground text-sm mt-1">
+                  {isNative
+                    ? 'Importe tes contacts pour retrouver tes amis déjà sur Forsure'
+                    : isIOS
+                      ? 'Exporte tes contacts en fichier .vcf puis importe-le ici'
+                      : hasPickerAPI
+                        ? 'Sélectionne des contacts pour les retrouver sur Forsure'
+                        : 'Importe un fichier de contacts (.vcf) pour retrouver tes amis'}
+                </p>
+              </div>
+
+              <div className="space-y-3 mb-4">
+                {isNative && (
+                  <Button onClick={handleNativeContacts} disabled={searchingContacts} className="gap-2 w-full">
+                    {searchingContacts ? (
+                      <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Phone className="w-4 h-4" />
+                    )}
+                    {searchingContacts ? 'Recherche...' : 'Importer mes contacts'}
+                  </Button>
+                )}
+
+                {!isNative && hasPickerAPI && (
+                  <Button onClick={handlePickContacts} disabled={searchingContacts} className="gap-2 w-full">
+                    {searchingContacts ? (
+                      <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Phone className="w-4 h-4" />
+                    )}
+                    {searchingContacts ? 'Recherche...' : 'Accéder à mes contacts'}
+                  </Button>
+                )}
+
+                {!isNative && (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".vcf,text/vcard,text/x-vcard"
+                      onChange={handleVCardImport}
+                      className="hidden"
+                    />
+                    <Button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={searchingContacts}
+                      variant={hasPickerAPI ? 'outline' : 'default'}
+                      className="gap-2 w-full"
+                    >
+                      <Upload className="w-4 h-4" />
+                      {isIOS ? 'Importer depuis fichier .vcf' : 'Importer un fichier contacts (.vcf)'}
+                    </Button>
+                  </>
+                )}
+
+                {isIOS && !isNative && (
+                  <div className="bg-muted/50 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
+                    <p className="font-medium text-foreground">Comment faire sur iPhone :</p>
+                    <ol className="list-decimal list-inside space-y-0.5">
+                      <li>Ouvrez l'app <strong>Contacts</strong></li>
+                      <li>Sélectionnez les contacts à partager</li>
+                      <li>Appuyez sur <strong>Partager</strong></li>
+                      <li>Choisissez <strong>Enregistrer dans Fichiers</strong></li>
+                      <li>Revenez ici et importez le fichier .vcf</li>
+                    </ol>
+                  </div>
+                )}
+              </div>
+
+              {contactResults.length > 0 && (
+                <ScrollArea className="max-h-48 mb-4">
+                  <div className="space-y-2">
+                    {contactResults.map(contact => (
+                      <div key={contact.user_id} className="flex items-center justify-between p-2.5 rounded-xl bg-secondary/30">
+                        <div className="flex items-center gap-2.5">
+                          <UserAvatar src={contact.avatar_url} alt={contact.name} size="sm" />
+                          <span className="text-sm font-medium">{contact.name}</span>
+                        </div>
+                        {contact.is_friend || sentRequests.has(contact.user_id) ? (
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Check className="w-3.5 h-3.5" />
+                            {contact.is_friend ? 'Ami' : 'Envoyé'}
+                          </span>
+                        ) : (
+                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => handleAddFriend(contact.user_id)}>
+                            <Users className="w-3.5 h-3.5" /> Ajouter
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+
+              <div className="flex items-center justify-between">
+                <Button
+                  variant="ghost"
+                  onClick={() => setStep('ai-name')}
+                  className="text-muted-foreground"
+                >
+                  Retour
+                </Button>
+                <Button
                   onClick={handleFinish}
-                  disabled={!aiName.trim() || isSubmitting}
+                  disabled={isSubmitting}
                   className="pulse-button-gradient px-8"
                 >
                   {isSubmitting ? 'Enregistrement…' : 'C\'est parti ! 🚀'}
