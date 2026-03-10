@@ -2432,6 +2432,7 @@ export type Database = {
           search_engine_indexing: boolean
           updated_at: string
           user_id: string
+          wall_visibility: string
         }
         Insert: {
           analytics_enabled?: boolean
@@ -2450,6 +2451,7 @@ export type Database = {
           search_engine_indexing?: boolean
           updated_at?: string
           user_id: string
+          wall_visibility?: string
         }
         Update: {
           analytics_enabled?: boolean
@@ -2468,6 +2470,7 @@ export type Database = {
           search_engine_indexing?: boolean
           updated_at?: string
           user_id?: string
+          wall_visibility?: string
         }
         Relationships: []
       }
