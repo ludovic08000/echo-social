@@ -46,6 +46,7 @@ export function CreatePost() {
   const { data: profile } = useProfile();
   const { verifyAge } = useAgeVerification();
   const createPost = useCreatePost();
+  const postModeration = usePostModeration();
   const [body, setBody] = useState('');
   const [expanded, setExpanded] = useState(false);
   const [media, setMedia] = useState<File | null>(null);
