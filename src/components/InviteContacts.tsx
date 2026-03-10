@@ -401,34 +401,37 @@ function WebPhoneSearch() {
               </div>
             </ScrollArea>
 
-            {selectedInvites.size > 0 && (
-              <div className="p-3 border-t border-border flex gap-2 flex-wrap">
-                <Button onClick={() => {
-                  const phones = Array.from(selectedInvites);
-                  const encoded = encodeURIComponent(INVITE_MESSAGE);
-                  if (phones.length === 1) {
-                    window.open(`https://wa.me/${phones[0].replace('+', '')}?text=${encoded}`, '_blank');
-                  } else {
-                    window.open(`https://wa.me/?text=${encoded}`, '_blank');
-                  }
-                  toast({
-                    title: `💬 WhatsApp ouvert`,
-                    description: phones.length > 1 ? `Envoyez le message à vos ${phones.length} contacts` : 'Envoyez le message',
-                  });
-                }} className="flex-1 gap-2 bg-[#25D366] hover:bg-[#1da851] text-white">
-                  <MessageCircle className="w-4 h-4" />
-                  WhatsApp ({selectedInvites.size})
-                </Button>
-                <Button onClick={sendInvitesSMS} variant="outline" className="flex-1 gap-2">
-                  <Phone className="w-4 h-4" />
-                  SMS
-                </Button>
-                <Button onClick={sendInvitesShare} variant="outline" className="flex-1 gap-2">
-                  <Send className="w-4 h-4" />
-                  Partager
-                </Button>
-              </div>
-            )}
+            {/* Always visible WhatsApp button */}
+            <div className="p-3 border-t border-border flex gap-2 flex-wrap">
+              <Button onClick={() => {
+                const phones = Array.from(selectedInvites);
+                const encoded = encodeURIComponent(INVITE_MESSAGE);
+                if (phones.length === 1) {
+                  window.open(`https://wa.me/${phones[0].replace('+', '')}?text=${encoded}`, '_blank');
+                } else {
+                  window.open(`https://wa.me/?text=${encoded}`, '_blank');
+                }
+                toast({
+                  title: `💬 WhatsApp ouvert`,
+                  description: selectedInvites.size > 0 ? `Envoyez le message à vos ${selectedInvites.size} contacts` : 'Choisissez un contact WhatsApp',
+                });
+              }} className="flex-1 gap-2 bg-[#25D366] hover:bg-[#1da851] text-white">
+                <MessageCircle className="w-4 h-4" />
+                WhatsApp{selectedInvites.size > 0 ? ` (${selectedInvites.size})` : ''}
+              </Button>
+              {selectedInvites.size > 0 && (
+                <>
+                  <Button onClick={sendInvitesSMS} variant="outline" className="flex-1 gap-2">
+                    <Phone className="w-4 h-4" />
+                    SMS
+                  </Button>
+                  <Button onClick={sendInvitesShare} variant="outline" className="flex-1 gap-2">
+                    <Send className="w-4 h-4" />
+                    Partager
+                  </Button>
+                </>
+              )}
+            </div>
           </TabsContent>
         </Tabs>
 
