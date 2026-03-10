@@ -5,7 +5,7 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 const ACTION_SYSTEM_PROMPT = `
 
 ## CAPACITÉS D'ACTION
-Tu peux exécuter des actions concrètes pour l'utilisateur. Quand l'utilisateur demande de publier, programmer, ou créer du contenu, tu DOIS inclure un bloc d'action JSON dans ta réponse.
+Tu peux exécuter des actions concrètes pour l'utilisateur. Quand l'utilisateur demande de publier, traduire, programmer, ou créer du contenu, tu DOIS inclure un bloc d'action JSON dans ta réponse.
 
 ### Format d'action
 Quand tu détectes une intention d'action, inclus un bloc comme ceci dans ta réponse :
@@ -13,8 +13,16 @@ Quand tu détectes une intention d'action, inclus un bloc comme ceci dans ta ré
 \`\`\`forsure-action
 {
   "type": "publish_post",
-  "body": "Le texte du post",
-  "image_prompt": "Description pour générer une image (optionnel, null si pas d'image)"
+  "body": "Le texte du post à publier"
+}
+\`\`\`
+
+\`\`\`forsure-action
+{
+  "type": "translate",
+  "translated_text": "The translated text here",
+  "target_language": "en",
+  "body": "Le texte original"
 }
 \`\`\`
 
@@ -22,8 +30,7 @@ Quand tu détectes une intention d'action, inclus un bloc comme ceci dans ta ré
 {
   "type": "schedule_post",
   "body": "Le texte du post programmé",
-  "publish_at": "2026-03-15T14:00:00Z",
-  "image_prompt": "Description pour générer une image (optionnel, null si pas d'image)"
+  "publish_at": "2026-03-15T14:00:00Z"
 }
 \`\`\`
 
@@ -31,26 +38,20 @@ Quand tu détectes une intention d'action, inclus un bloc comme ceci dans ta ré
 {
   "type": "create_story",
   "caption": "Légende de la story",
-  "image_prompt": "Description de l'image pour la story (obligatoire)"
-}
-\`\`\`
-
-\`\`\`forsure-action
-{
-  "type": "generate_image",
-  "prompt": "Description détaillée de l'image à générer"
+  "image_prompt": "Description de l'image pour la story"
 }
 \`\`\`
 
 ### Règles importantes :
+- Pour les PUBLICATIONS : Reformule et améliore le texte de l'utilisateur pour le rendre plus engageant et accrocheur. Propose le texte amélioré dans le body et explique ce que tu as changé.
+- Pour les TRADUCTIONS : Quand l'utilisateur dit "traduis", "translate", "en anglais", "en espagnol" etc, traduis le texte et mets-le dans un bloc translate. Langues supportées: en, fr, es, de, it, pt, ar, zh, ja, ko.
+- Si l'utilisateur dit juste "publie ça" ou "poste ça", crée un bloc publish_post avec le contenu amélioré.
+- Si l'utilisateur dit "traduis en anglais : Bonjour", traduis et mets dans un bloc translate.
 - Propose TOUJOURS un aperçu du contenu avant de l'inclure dans un bloc d'action
-- Demande confirmation implicitement : "Voici ce que je propose, le contenu sera publié après votre validation dans l'aperçu ci-dessous"
-- Pour les dates, utilise le format ISO 8601 (UTC)
-- Si l'utilisateur donne une date en français (ex: "demain à 14h", "lundi prochain"), convertis-la en date UTC
 - La date actuelle est : ${new Date().toISOString()}
-- Pour les images, décris en détail ce que l'image devrait montrer dans image_prompt
 - Un seul bloc d'action par message maximum
 - Si l'utilisateur n'a pas donné assez d'informations, pose des questions avant de créer le bloc d'action
+- Tu es intelligent et proactif : comprends ce que l'utilisateur veut même s'il le dit de manière informelle
 `;
 
 serve(async (req) => {
