@@ -260,12 +260,19 @@ serve(async (req) => {
       const insuranceValue = Math.round(order.subtotal * 100);
       const bId = brandId || enseigne;
 
+      // Read V2 credentials for XML context block
+      const login_v2 = (Deno.env.get("MONDIAL_RELAY_V2_LOGIN") ?? "").trim();
+      const password_v2 = (Deno.env.get("MONDIAL_RELAY_V2_PASSWORD") ?? "").trim();
+
+      // Simple XML escape
+      const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
       const xmlBody = `<?xml version="1.0" encoding="utf-8"?>
 <ShipmentCreationRequest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <Context>
-    <Login>${login_v2}</Login>
-    <Password>${password_v2}</Password>
-    <CustomerId>${bId}</CustomerId>
+    <Login>${esc(login_v2)}</Login>
+    <Password>${esc(password_v2)}</Password>
+    <CustomerId>${esc(bId)}</CustomerId>
     <Culture>fr-FR</Culture>
     <VersionAPI>1.0</VersionAPI>
   </Context>
@@ -275,7 +282,7 @@ serve(async (req) => {
   </OutputOptions>
   <ShipmentsList>
     <Shipment>
-      <OrderNo>${orderNo.substring(0, 15)}</OrderNo>
+      <OrderNo>${esc(orderNo.substring(0, 15))}</OrderNo>
       <CollectionMode>
         <Mode>${collectionMode}</Mode>
         <Location>${colRelayLocation}</Location>
@@ -287,12 +294,12 @@ serve(async (req) => {
       <Sender>
         <Address>
           <Title>MR</Title>
-          <Firstname>${escapeXml(senderName.substring(0, 20))}</Firstname>
-          <Lastname>${escapeXml(senderName.substring(0, 20))}</Lastname>
-          <Streetname>${escapeXml(senderAddress.substring(0, 32))}</Streetname>
+          <Firstname>${esc(senderName.substring(0, 20))}</Firstname>
+          <Lastname>${esc(senderName.substring(0, 20))}</Lastname>
+          <Streetname>${esc(senderAddress.substring(0, 32))}</Streetname>
           <CountryCode>${senderCountry.substring(0, 2).toUpperCase()}</CountryCode>
           <PostCode>${senderPostcode}</PostCode>
-          <City>${escapeXml(senderCity.substring(0, 26))}</City>
+          <City>${esc(senderCity.substring(0, 26))}</City>
           <PhoneNo>${formatPhone(senderPhone)}</PhoneNo>
           <Email>${senderEmail}</Email>
         </Address>
@@ -300,12 +307,12 @@ serve(async (req) => {
       <Recipient>
         <Address>
           <Title>MR</Title>
-          <Firstname>${escapeXml(recipientName.substring(0, 20))}</Firstname>
-          <Lastname>${escapeXml(recipientName.substring(0, 20))}</Lastname>
-          <Streetname>${escapeXml(recipientAddress.substring(0, 32))}</Streetname>
+          <Firstname>${esc(recipientName.substring(0, 20))}</Firstname>
+          <Lastname>${esc(recipientName.substring(0, 20))}</Lastname>
+          <Streetname>${esc(recipientAddress.substring(0, 32))}</Streetname>
           <CountryCode>${relayCountry}</CountryCode>
           <PostCode>${recipientPostcode}</PostCode>
-          <City>${escapeXml(recipientCity.substring(0, 26))}</City>
+          <City>${esc(recipientCity.substring(0, 26))}</City>
           <PhoneNo></PhoneNo>
           <Email></Email>
         </Address>
@@ -329,21 +336,12 @@ serve(async (req) => {
   </ShipmentsList>
 </ShipmentCreationRequest>`;
 
-      // Read V2 credentials for XML context block
-      const login_v2_val = (Deno.env.get("MONDIAL_RELAY_V2_LOGIN") ?? "").trim();
-      const password_v2_val = (Deno.env.get("MONDIAL_RELAY_V2_PASSWORD") ?? "").trim();
-
-      // Replace placeholders with actual credentials
-      const finalXml = xmlBody
-        .replace('${login_v2}', login_v2_val)
-        .replace('${password_v2}', password_v2_val);
-
       console.log("V2 create_shipment request:", JSON.stringify({
         order_id, deliveryMode, collectionMode,
         relayId: cleanRelayId, relayCountry, weight, brandId: bId,
       }));
 
-      const responseXml = await callMondialRelayV2(finalXml);
+      const responseXml = await callMondialRelayV2(xmlBody);
 
       // Parse XML response
       const statusCode = extractXmlValue(responseXml, 'Code') || extractXmlValue(responseXml, 'codeField');
