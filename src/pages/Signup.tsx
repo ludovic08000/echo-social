@@ -11,7 +11,6 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
 
 const MONTHS = [
   'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
@@ -20,7 +19,7 @@ const MONTHS = [
 
 export default function Signup() {
   const navigate = useNavigate();
-  const { signUp, user } = useAuth();
+  const { user } = useAuth();
   const { t } = useTranslation();
   const [lastName, setLastName] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -118,46 +117,21 @@ export default function Signup() {
       }
     }
 
-    setIsLoading(true);
-
+    // Store signup data in sessionStorage — account will be created after onboarding
     const fullName = `${firstName.trim()} ${lastName.trim()}`;
     const dobString = `${birthYear}-${birthMonth.padStart(2, '0')}-${birthDay.padStart(2, '0')}`;
-    const { error } = await signUp(email, password, fullName, dobString);
 
-    if (error) {
-      toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
-      setIsLoading(false);
-      return;
-    }
+    const signupData = {
+      email,
+      password,
+      name: fullName,
+      dateOfBirth: dobString,
+      phoneNumber: phoneNumber.trim(),
+      parentalPin: isMinor ? parentalPin : null,
+      age,
+    };
 
-    // Save phone number securely via edge function
-    if (phoneNumber.trim()) {
-      try {
-        await supabase.functions.invoke('save-phone', {
-          body: { phone_number: phoneNumber.trim() },
-        });
-      } catch {}
-    }
-
-    const userAge = differenceInYears(new Date(), dateOfBirth);
-    if (userAge < 16 && parentalPin) {
-      try {
-        const { data: { user: newUser } } = await supabase.auth.getUser();
-        if (newUser) {
-          await supabase.functions.invoke('verify-parental-pin', {
-            body: {
-              action: 'set',
-              pin: parentalPin,
-              allowed_categories: ['education', 'sport', 'gaming', 'musique', 'art', 'humour'],
-            },
-          });
-        }
-      } catch (e) {
-        console.warn('Failed to save parental control', e);
-      }
-    }
-
-    toast({ title: t('signup.welcome'), description: t('signup.welcomeDesc') });
+    sessionStorage.setItem('forsure_signup_pending', JSON.stringify(signupData));
     navigate('/onboarding');
   };
 
@@ -296,7 +270,7 @@ export default function Signup() {
             )}
 
             <Button type="submit" disabled={isLoading || !acceptedTerms || !acceptedPrivacy} className="pulse-button-gradient w-full">
-              {isLoading ? t('signup.submitting') : showParentalStep ? 'Créer le compte avec protection' : t('signup.submit')}
+              {isLoading ? t('signup.submitting') : showParentalStep ? 'Continuer avec protection' : 'Continuer'}
             </Button>
           </form>
 

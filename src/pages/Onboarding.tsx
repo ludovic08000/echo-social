@@ -1,6 +1,6 @@
-import { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Sparkles, Check, Zap, ArrowRight, Users, Phone, Upload, FileText } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { useNavigate, Navigate } from 'react-router-dom';
+import { Sparkles, Check, Zap, ArrowRight, Users, Phone, Upload, FileText, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import BrandLogo from '@/components/BrandLogo';
@@ -13,6 +13,16 @@ import { useSendFriendRequest } from '@/hooks/useFriendships';
 import { UserAvatar } from '@/components/UserAvatar';
 import { MatchedContact } from '@/hooks/useContactSync';
 import { ScrollArea } from '@/components/ui/scroll-area';
+
+interface SignupData {
+  email: string;
+  password: string;
+  name: string;
+  dateOfBirth: string;
+  phoneNumber: string;
+  parentalPin: string | null;
+  age: number;
+}
 
 const INTERESTS = [
   { value: 'gaming', label: 'Gaming', emoji: '🎮', color: 'border-purple-500/40 bg-purple-500/10 text-purple-300' },
@@ -29,16 +39,17 @@ const INTERESTS = [
 ];
 
 const MIN_INTERESTS = 3;
-
 const AI_NAME_SUGGESTIONS = ['Zeus', 'Nova', 'Atlas', 'Luna', 'Aria', 'Echo', 'Orion', 'Pixel'];
 
 export default function Onboarding() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const [step, setStep] = useState<'interests' | 'ai-name' | 'find-friends'>('interests');
+  const { user, signUp } = useAuth();
+  const [step, setStep] = useState<'interests' | 'ai-name' | 'creating' | 'find-friends'>('interests');
   const [selected, setSelected] = useState<string[]>([]);
   const [aiName, setAiName] = useState('Zeus');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [signupData, setSignupData] = useState<SignupData | null>(null);
+  const [accountCreated, setAccountCreated] = useState(false);
 
   // Find friends state
   const sendRequest = useSendFriendRequest();
@@ -51,6 +62,25 @@ export default function Onboarding() {
   const isIOS = typeof navigator !== 'undefined' && (/iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
   const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
   const hasPickerAPI = typeof navigator !== 'undefined' && !isIOS && 'contacts' in navigator && 'ContactsManager' in window;
+
+  // Load pending signup data
+  useEffect(() => {
+    const raw = sessionStorage.getItem('forsure_signup_pending');
+    if (raw) {
+      try {
+        setSignupData(JSON.parse(raw));
+      } catch {
+        navigate('/signup', { replace: true });
+      }
+    }
+  }, [navigate]);
+
+  // If user is already logged in and no pending signup, redirect (already onboarded user)
+  // If no signup data and no user, redirect to signup
+  if (!signupData && !user) {
+    const raw = sessionStorage.getItem('forsure_signup_pending');
+    if (!raw) return <Navigate to="/signup" replace />;
+  }
 
   function normalizePhone(phone: string): string {
     let clean = phone.replace(/[\s\-().]/g, '');
@@ -163,48 +193,110 @@ export default function Onboarding() {
     setStep('ai-name');
   };
 
-  const handleAiNameDone = () => {
+  // After AI name → create account, then go to find-friends
+  const handleAiNameDone = async () => {
     if (!aiName.trim()) {
       toast({ title: 'Donne un nom à ton IA !', variant: 'destructive' });
       return;
     }
-    setStep('find-friends');
+
+    if (!signupData) {
+      // Already logged in user going through onboarding again
+      if (user) {
+        await savePreferences(user.id);
+        setStep('find-friends');
+      }
+      return;
+    }
+
+    // Show creating step
+    setStep('creating');
+
+    try {
+      // 1. Create account
+      const { error } = await signUp(signupData.email, signupData.password, signupData.name, signupData.dateOfBirth);
+      if (error) {
+        toast({ title: 'Erreur d\'inscription', description: error.message, variant: 'destructive' });
+        setStep('ai-name');
+        return;
+      }
+
+      // 2. Wait for user to be available
+      let attempts = 0;
+      let newUser = null;
+      while (attempts < 15 && !newUser) {
+        await new Promise(r => setTimeout(r, 500));
+        const { data } = await supabase.auth.getUser();
+        newUser = data?.user;
+        attempts++;
+      }
+
+      if (!newUser) {
+        toast({ title: 'Vérifiez votre email', description: 'Un lien de confirmation vous a été envoyé.' });
+        sessionStorage.removeItem('forsure_signup_pending');
+        navigate('/login', { replace: true });
+        return;
+      }
+
+      // 3. Save phone number
+      if (signupData.phoneNumber) {
+        await supabase.functions.invoke('save-phone', {
+          body: { phone_number: signupData.phoneNumber },
+        }).catch(() => {});
+      }
+
+      // 4. Save parental controls if minor
+      if (signupData.parentalPin && signupData.age < 16) {
+        await supabase.functions.invoke('verify-parental-pin', {
+          body: {
+            action: 'set',
+            pin: signupData.parentalPin,
+            allowed_categories: ['education', 'sport', 'gaming', 'musique', 'art', 'humour'],
+          },
+        }).catch(() => {});
+      }
+
+      // 5. Save interests & AI name
+      await savePreferences(newUser.id);
+
+      // Clear pending data
+      sessionStorage.removeItem('forsure_signup_pending');
+      setAccountCreated(true);
+
+      toast({ title: 'Compte créé ! 🎉' });
+      setStep('find-friends');
+    } catch (err: any) {
+      toast({ title: 'Erreur', description: err.message, variant: 'destructive' });
+      setStep('ai-name');
+    }
+  };
+
+  const savePreferences = async (userId: string) => {
+    // Save interests
+    const rows = selected.map(interest => ({
+      user_id: userId,
+      interest_type: 'category',
+      interest_value: interest,
+      explicit: true,
+      weight: 1,
+    }));
+    try {
+      await supabase.from('user_interests').upsert(rows, { onConflict: 'user_id,interest_type,interest_value' } as any);
+    } catch {}
+
+    // Save AI companion name
+    try {
+      await supabase.from('zeus_user_settings').upsert(
+        { user_id: userId, custom_name: aiName.trim() },
+        { onConflict: 'user_id' }
+      );
+    } catch {}
   };
 
   const handleFinish = async () => {
-    if (!user) return;
-    if (!aiName.trim()) {
-      toast({ title: 'Donne un nom à ton IA !', variant: 'destructive' });
-      return;
-    }
-
     setIsSubmitting(true);
-    try {
-      // Save interests
-      const rows = selected.map(interest => ({
-        user_id: user.id,
-        interest_type: 'category',
-        interest_value: interest,
-        explicit: true,
-        weight: 1,
-      }));
-      const { error: interestsErr } = await supabase.from('user_interests').upsert(rows, { onConflict: 'user_id,interest_type,interest_value' } as any);
-      if (interestsErr) throw interestsErr;
-
-      // Save AI companion name
-      const { error: zeusErr } = await supabase.from('zeus_user_settings').upsert(
-        { user_id: user.id, custom_name: aiName.trim() },
-        { onConflict: 'user_id' }
-      );
-      if (zeusErr) throw zeusErr;
-
-      toast({ title: `Bienvenue sur ForSure ! 🎉`, description: `${aiName.trim()} est prêt à t'accompagner !` });
-      navigate('/feed', { replace: true });
-    } catch (err: any) {
-      toast({ title: 'Erreur', description: err.message, variant: 'destructive' });
-    } finally {
-      setIsSubmitting(false);
-    }
+    toast({ title: `Bienvenue sur ForSure ! 🎉`, description: `${aiName.trim()} est prêt à t'accompagner !` });
+    navigate('/feed', { replace: true });
   };
 
   return (
@@ -217,7 +309,7 @@ export default function Onboarding() {
         {/* Step indicator */}
         <div className="flex items-center justify-center gap-2 mb-6">
           <div className={`w-2.5 h-2.5 rounded-full transition-colors ${step === 'interests' ? 'bg-primary' : 'bg-primary/30'}`} />
-          <div className={`w-2.5 h-2.5 rounded-full transition-colors ${step === 'ai-name' ? 'bg-primary' : 'bg-primary/30'}`} />
+          <div className={`w-2.5 h-2.5 rounded-full transition-colors ${step === 'ai-name' || step === 'creating' ? 'bg-primary' : 'bg-primary/30'}`} />
           <div className={`w-2.5 h-2.5 rounded-full transition-colors ${step === 'find-friends' ? 'bg-primary' : 'bg-primary/30'}`} />
         </div>
 
@@ -309,7 +401,6 @@ export default function Onboarding() {
                 </p>
               </div>
 
-              {/* AI Avatar */}
               <div className="flex justify-center mb-6">
                 <motion.div
                   animate={{ rotate: [0, 5, -5, 0] }}
@@ -320,7 +411,6 @@ export default function Onboarding() {
                 </motion.div>
               </div>
 
-              {/* Name input */}
               <div className="mb-4">
                 <Input
                   value={aiName}
@@ -332,7 +422,6 @@ export default function Onboarding() {
                 />
               </div>
 
-              {/* Suggestions */}
               <div className="flex flex-wrap gap-2 justify-center mb-6">
                 {AI_NAME_SUGGESTIONS.map(name => (
                   <button
@@ -349,7 +438,6 @@ export default function Onboarding() {
                 ))}
               </div>
 
-              {/* Preview */}
               {aiName.trim() && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
@@ -389,6 +477,21 @@ export default function Onboarding() {
             </motion.div>
           )}
 
+          {step === 'creating' && (
+            <motion.div
+              key="creating"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="pulse-card p-8 sm:p-12 text-center"
+            >
+              <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto mb-4" />
+              <h2 className="text-xl font-bold text-foreground mb-2">Création de ton compte...</h2>
+              <p className="text-sm text-muted-foreground">
+                Configuration de ton profil et de {aiName.trim()} ⚡
+              </p>
+            </motion.div>
+          )}
+
           {step === 'find-friends' && (
             <motion.div
               key="find-friends"
@@ -417,7 +520,7 @@ export default function Onboarding() {
               </div>
 
               <div className="space-y-3 mb-4">
-                {/* Native Capacitor — accès direct CNContactStore / Android Contacts */}
+                {/* Native Capacitor */}
                 {isNative && (
                   <Button onClick={handleNativeContacts} disabled={searchingContacts} className="gap-2 w-full">
                     {searchingContacts ? (
@@ -429,7 +532,7 @@ export default function Onboarding() {
                   </Button>
                 )}
 
-                {/* Web Android avec Contact Picker API */}
+                {/* Web Android with Contact Picker API */}
                 {!isNative && hasPickerAPI && (
                   <Button onClick={handlePickContacts} disabled={searchingContacts} className="gap-2 w-full">
                     {searchingContacts ? (
@@ -441,7 +544,7 @@ export default function Onboarding() {
                   </Button>
                 )}
 
-                {/* Web iOS — guide spécifique iPhone */}
+                {/* Web iOS */}
                 {!isNative && isIOS && (
                   <>
                     <input
@@ -474,7 +577,7 @@ export default function Onboarding() {
                   </>
                 )}
 
-                {/* Web Android sans Contact Picker API — fallback VCF */}
+                {/* Web Android fallback */}
                 {!isNative && !isIOS && !hasPickerAPI && isAndroid && (
                   <>
                     <input
@@ -506,7 +609,7 @@ export default function Onboarding() {
                   </>
                 )}
 
-                {/* Desktop — fallback VCF simple */}
+                {/* Desktop fallback */}
                 {!isNative && !isIOS && !isAndroid && !hasPickerAPI && (
                   <>
                     <input
@@ -558,6 +661,7 @@ export default function Onboarding() {
                   variant="ghost"
                   onClick={() => setStep('ai-name')}
                   className="text-muted-foreground"
+                  disabled={accountCreated}
                 >
                   Retour
                 </Button>
@@ -566,7 +670,7 @@ export default function Onboarding() {
                   disabled={isSubmitting}
                   className="pulse-button-gradient px-8"
                 >
-                  {isSubmitting ? 'Enregistrement…' : 'C\'est parti ! 🚀'}
+                  {isSubmitting ? 'Chargement…' : 'C\'est parti ! 🚀'}
                 </Button>
               </div>
             </motion.div>
