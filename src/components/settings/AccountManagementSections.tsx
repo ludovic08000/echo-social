@@ -22,9 +22,10 @@ export function AccountDeletionSection() {
   const { user } = useAuth();
   const [confirmText, setConfirmText] = useState('');
   const [requesting, setRequesting] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const handleRequestDeletion = async () => {
-    if (!user) return;
+    if (!user || confirmText !== 'SUPPRIMER') return;
     setRequesting(true);
     try {
       const { error } = await supabase
@@ -40,8 +41,10 @@ export function AccountDeletionSection() {
         description: 'Votre compte sera supprimé dans 30 jours. Vous pouvez annuler à tout moment en vous reconnectant.',
       });
       setConfirmText('');
-    } catch {
-      toast({ title: 'Erreur', description: 'Impossible de traiter votre demande.', variant: 'destructive' });
+      setDialogOpen(false);
+    } catch (err: any) {
+      console.error('Deletion request error:', err);
+      toast({ title: 'Erreur', description: err?.message || 'Impossible de traiter votre demande.', variant: 'destructive' });
     } finally {
       setRequesting(false);
     }
@@ -65,7 +68,7 @@ export function AccountDeletionSection() {
             </ul>
           </div>
 
-          <AlertDialog>
+          <AlertDialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setConfirmText(''); }}>
             <AlertDialogTrigger asChild>
               <Button variant="destructive" size="sm" className="gap-2">
                 <AlertTriangle className="w-4 h-4" />
@@ -75,31 +78,33 @@ export function AccountDeletionSection() {
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Supprimer définitivement votre compte ?</AlertDialogTitle>
-                <AlertDialogDescription className="space-y-3">
-                  <p>
-                    Vos données seront conservées 30 jours. Si vous ne vous reconnectez pas durant cette période, 
-                    tout sera supprimé de façon irréversible.
-                  </p>
-                  <p className="font-medium text-foreground">
-                    Tapez <strong>SUPPRIMER</strong> pour confirmer :
-                  </p>
-                  <Input
-                    value={confirmText}
-                    onChange={(e) => setConfirmText(e.target.value)}
-                    placeholder="SUPPRIMER"
-                    className="mt-2"
-                  />
+                <AlertDialogDescription asChild>
+                  <div className="space-y-3">
+                    <p>
+                      Vos données seront conservées 30 jours. Si vous ne vous reconnectez pas durant cette période, 
+                      tout sera supprimé de façon irréversible.
+                    </p>
+                    <p className="font-medium text-foreground">
+                      Tapez <strong>SUPPRIMER</strong> pour confirmer :
+                    </p>
+                    <Input
+                      value={confirmText}
+                      onChange={(e) => setConfirmText(e.target.value)}
+                      placeholder="SUPPRIMER"
+                      className="mt-2"
+                    />
+                  </div>
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel onClick={() => setConfirmText('')}>Annuler</AlertDialogCancel>
-                <AlertDialogAction
+                <AlertDialogCancel disabled={requesting}>Annuler</AlertDialogCancel>
+                <Button
+                  variant="destructive"
                   onClick={handleRequestDeletion}
                   disabled={confirmText !== 'SUPPRIMER' || requesting}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 >
                   {requesting ? 'Traitement…' : 'Confirmer la suppression'}
-                </AlertDialogAction>
+                </Button>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
