@@ -975,6 +975,47 @@ export type Database = {
           },
         ]
       }
+      content_strikes: {
+        Row: {
+          acknowledged: boolean | null
+          created_at: string | null
+          id: string
+          post_id: string | null
+          reason: string
+          severity: string | null
+          user_id: string
+          zeus_message: string | null
+        }
+        Insert: {
+          acknowledged?: boolean | null
+          created_at?: string | null
+          id?: string
+          post_id?: string | null
+          reason: string
+          severity?: string | null
+          user_id: string
+          zeus_message?: string | null
+        }
+        Update: {
+          acknowledged?: boolean | null
+          created_at?: string | null
+          id?: string
+          post_id?: string | null
+          reason?: string
+          severity?: string | null
+          user_id?: string
+          zeus_message?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_strikes_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversation_participants: {
         Row: {
           conversation_id: string
@@ -3446,6 +3487,30 @@ export type Database = {
           messages?: Json
           title?: string | null
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      zeus_user_settings: {
+        Row: {
+          created_at: string | null
+          custom_name: string | null
+          id: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          custom_name?: string | null
+          id?: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          custom_name?: string | null
+          id?: string
+          updated_at?: string | null
           user_id?: string
         }
         Relationships: []

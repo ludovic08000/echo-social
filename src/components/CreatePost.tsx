@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Image, Video, X, Send, Timer, Rocket, ShoppingBag, Sparkles, Loader2, Check, Globe, Type, ArrowDownRight, ArrowUpRight, Briefcase, SmilePlus, Radio } from 'lucide-react';
 import { useCreatePost } from '@/hooks/usePosts';
+import { usePostModeration } from '@/hooks/useZeusCompanion';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
 import { uploadToR2 } from '@/lib/r2';
@@ -45,6 +46,7 @@ export function CreatePost() {
   const { data: profile } = useProfile();
   const { verifyAge } = useAgeVerification();
   const createPost = useCreatePost();
+  const postModeration = usePostModeration();
   const [body, setBody] = useState('');
   const [expanded, setExpanded] = useState(false);
   const [media, setMedia] = useState<File | null>(null);
@@ -205,7 +207,26 @@ export function CreatePost() {
       }
 
       setUploadStep('Publication…');
-      await createPost.mutateAsync({ body: body.trim(), imageUrl, expiresAt, publishAt });
+      const newPost = await createPost.mutateAsync({ body: body.trim(), imageUrl, expiresAt, publishAt });
+
+      // Zeus moderation check (async, non-blocking)
+      if (body.trim()) {
+        postModeration.mutate(
+          { postId: (newPost as any)?.id || '', body: body.trim(), imageUrl },
+          {
+            onSuccess: (result) => {
+              if (result && !result.safe) {
+                toast({
+                  title: '⚡ Message de Zeus',
+                  description: result.zeus_message || 'Attention, ton contenu a été signalé.',
+                  variant: 'destructive',
+                  duration: 10000,
+                });
+              }
+            },
+          }
+        );
+      }
 
       // Reuse the same thumbnail for replay (no duplicate generation!)
       if (publishAsReplay && mediaType === 'video' && imageUrl) {

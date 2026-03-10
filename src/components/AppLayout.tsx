@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { ZeusCompanion } from './ZeusCompanion';
 import { useAuth } from '@/lib/auth';
 import { MobileNav, DesktopSidebar } from './Navigation';
 import { UserAvatar } from './UserAvatar';
@@ -96,6 +97,7 @@ export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
         )}
       </main>
       
+      {user && <ZeusCompanion />}
       <MobileNav />
     </div>
   );
