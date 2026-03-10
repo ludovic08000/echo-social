@@ -290,7 +290,8 @@ serve(async (req) => {
         params.COL_Rel_Pays, params.COL_Rel,
         params.LIV_Rel_Pays, params.LIV_Rel,
         params.TAvisage, params.TReprise, params.Montage, params.TRDV,
-        params.Assurance, params.Instructions, params.Texte,
+        params.Assurance, params.Instructions,
+        // Texte est exclu du calcul de signature
       ];
       params.Security = buildSignatureFromOrderedFields(shipmentOrderedValues, privateKey);
 
