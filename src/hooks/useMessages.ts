@@ -4,6 +4,8 @@ import { useAuth } from '@/lib/auth';
 import { useEffect } from 'react';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 
+export const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -84,6 +86,10 @@ export function useConversations() {
         .in('user_id', otherUserIds);
 
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
+      // Add Zeus bot profile fallback
+      if (!profileMap.has(ZEUS_BOT_ID) && otherUserIds.includes(ZEUS_BOT_ID)) {
+        profileMap.set(ZEUS_BOT_ID, { user_id: ZEUS_BOT_ID, name: 'Zeus ⚡', avatar_url: null });
+      }
       const participantMap = new Map(allParticipants?.map(p => [p.conversation_id, p.user_id]) || []);
 
       // Only fetch the LAST message per conversation + recent unread count
@@ -225,7 +231,7 @@ export function useMessages(conversationId: string) {
       return visibleMessages.map(msg => ({
         ...msg,
         profile: {
-          name: profileMap.get(msg.sender_id)?.name || 'Unknown',
+          name: msg.sender_id === ZEUS_BOT_ID ? 'Zeus ⚡' : (profileMap.get(msg.sender_id)?.name || 'Unknown'),
           avatar_url: profileMap.get(msg.sender_id)?.avatar_url || null,
         },
       })) as Message[];
