@@ -147,6 +147,10 @@ export default function Profile() {
   const createConversation = useCreateConversation();
   const profileBgStyle = useCustomBackground('profile');
 
+  const isFriend = friendshipData?.status === 'accepted';
+  const isPrivateProfile = profile?.profile_type === 'private';
+  const canViewPosts = isOwnProfile || isFriend || !isPrivateProfile;
+
   // Check if own profile has pending identity verification
   const { data: pendingVerification } = useQuery({
     queryKey: ['my-verification', user?.id],
