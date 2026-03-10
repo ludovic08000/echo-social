@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Loader2, Pencil, Check, Zap, AlertTriangle, CheckCircle2, Globe } from 'lucide-react';
+import { X, Send, Loader2, Pencil, Check, Zap, AlertTriangle, CheckCircle2, Plus, History, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/auth';
 import { useZeusSettings, useZeusAgentId, useContentStrikes } from '@/hooks/useZeusCompanion';
+import { useZeusConversations, useZeusMessages } from '@/hooks/useZeusConversations';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
@@ -25,14 +26,12 @@ interface ActionBlock {
 }
 
 function parseActionFromContent(content: string): { text: string; action: ActionBlock | null } {
-  // Try multiple patterns the AI might use
   const patterns = [
     /```forsure-action\s*\n([\s\S]*?)\n```/,
     /```forsure-action\s*([\s\S]*?)```/,
     /```json\s*\n([\s\S]*?)\n```/,
     /\{[^{}]*"type"\s*:\s*"(publish_post|schedule_post|create_story|generate_image|translate)"[^{}]*\}/,
   ];
-  
   for (const regex of patterns) {
     const match = content.match(regex);
     if (!match) continue;
@@ -40,21 +39,15 @@ function parseActionFromContent(content: string): { text: string; action: Action
       const jsonStr = match[1] || match[0];
       const action = JSON.parse(jsonStr.trim()) as ActionBlock;
       if (action.type && ['publish_post', 'schedule_post', 'create_story', 'generate_image', 'translate'].includes(action.type)) {
-        const text = content.replace(match[0], '').trim();
-        return { text, action };
+        return { text: content.replace(match[0], '').trim(), action };
       }
-    } catch {
-      continue;
-    }
+    } catch { continue; }
   }
   return { text: content, action: null };
 }
 
 function ActionCard({ action, onExecute, executing, executed }: {
-  action: ActionBlock;
-  onExecute: () => void;
-  executing: boolean;
-  executed: boolean;
+  action: ActionBlock; onExecute: () => void; executing: boolean; executed: boolean;
 }) {
   const labels: Record<string, { icon: string; label: string }> = {
     publish_post: { icon: '📝', label: 'Publier ce post' },
@@ -77,21 +70,14 @@ function ActionCard({ action, onExecute, executing, executed }: {
           </span>
         )}
       </div>
-      {preview && (
-        <p className="text-xs text-foreground bg-background/50 rounded-lg p-2 whitespace-pre-wrap">{preview}</p>
-      )}
+      {preview && <p className="text-xs text-foreground bg-background/50 rounded-lg p-2 whitespace-pre-wrap">{preview}</p>}
       {executed ? (
         <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
-          <CheckCircle2 className="w-3.5 h-3.5" />
-          <span>Action effectuée !</span>
+          <CheckCircle2 className="w-3.5 h-3.5" /><span>Action effectuée !</span>
         </div>
       ) : (
-        <Button
-          size="sm"
-          onClick={onExecute}
-          disabled={executing}
-          className="w-full h-8 text-xs rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white"
-        >
+        <Button size="sm" onClick={onExecute} disabled={executing}
+          className="w-full h-8 text-xs rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white">
           {executing ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
           {executing ? 'En cours...' : 'Confirmer'}
         </Button>
@@ -115,8 +101,27 @@ export function ZeusCompanion() {
   const [newName, setNewName] = useState('');
   const [executingAction, setExecutingAction] = useState<number | null>(null);
   const [executedActions, setExecutedActions] = useState<Set<number>>(new Set());
+  const [showHistory, setShowHistory] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const { data: conversations, refetch: refetchConversations } = useZeusConversations(zeusAgentId);
+  const { data: loadedMessages } = useZeusMessages(conversationId);
+
+  // Load messages when switching conversation
+  useEffect(() => {
+    if (loadedMessages && loadedMessages.length > 0) {
+      setMessages(loadedMessages);
+      setShowHistory(false);
+    }
+  }, [loadedMessages]);
+
+  // Auto-load latest conversation on first open
+  useEffect(() => {
+    if (open && !conversationId && conversations && conversations.length > 0) {
+      setConversationId(conversations[0].id);
+    }
+  }, [open, conversations, conversationId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -142,59 +147,51 @@ export function ZeusCompanion() {
     }
   }, [unacknowledged.length]);
 
+  const startNewConversation = useCallback(() => {
+    setConversationId(null);
+    setMessages([]);
+    setExecutedActions(new Set());
+    setShowHistory(false);
+  }, []);
+
+  const selectConversation = useCallback((id: string) => {
+    setConversationId(id);
+    setExecutedActions(new Set());
+  }, []);
+
   const executeAction = useCallback(async (action: ActionBlock, msgIndex: number) => {
     if (!user) return;
     setExecutingAction(msgIndex);
-
     try {
       if (action.type === 'publish_post' || action.type === 'schedule_post') {
         const { data: newPost, error } = await supabase.from('posts').insert({
-          user_id: user.id,
-          body: action.body || '',
-          image_url: null,
+          user_id: user.id, body: action.body || '', image_url: null,
         }).select().single();
         if (error) throw error;
-
-        // Optimistic update: prepend to feed cache so it shows first immediately
         queryClient.setQueriesData<any>(
           { queryKey: ['posts', 'friends-feed'] },
           (old: any) => {
             if (!old?.pages) return old;
             const profile = queryClient.getQueryData<any>(['profile', user.id]);
             const optimisticPost = {
-              id: newPost.id,
-              user_id: newPost.user_id,
-              body: newPost.body,
-              image_url: newPost.image_url,
-              created_at: newPost.created_at,
+              id: newPost.id, user_id: newPost.user_id, body: newPost.body,
+              image_url: newPost.image_url, created_at: newPost.created_at,
               expires_at: newPost.expires_at || null,
               profile: {
                 name: profile?.name || user.user_metadata?.name || 'Moi',
                 avatar_url: profile?.avatar_url || null,
                 mood_emoji: profile?.mood_emoji || null,
               },
-              likes_count: 0,
-              comments_count: 0,
-              is_liked: false,
-              user_reaction: null,
+              likes_count: 0, comments_count: 0, is_liked: false, user_reaction: null,
             };
-            return {
-              ...old,
-              pages: [
-                [optimisticPost, ...old.pages[0]],
-                ...old.pages.slice(1),
-              ],
-            };
+            return { ...old, pages: [[optimisticPost, ...old.pages[0]], ...old.pages.slice(1)] };
           }
         );
         queryClient.invalidateQueries({ queryKey: ['posts'] });
-        toast.success(action.type === 'schedule_post' 
-          ? 'Post publié ! (la programmation sera bientôt disponible) 📅' 
-          : 'Post publié avec succès ! 🎉');
+        toast.success(action.type === 'schedule_post' ? 'Post publié ! 📅' : 'Post publié avec succès ! 🎉');
       } else if (action.type === 'translate') {
-        const text = action.translated_text || action.body || '';
-        await navigator.clipboard.writeText(text);
-        toast.success('Traduction copiée dans le presse-papiers ! 📋');
+        await navigator.clipboard.writeText(action.translated_text || action.body || '');
+        toast.success('Traduction copiée ! 📋');
       } else if (action.type === 'create_story') {
         toast.success('Story créée ! 📸');
       } else {
@@ -202,11 +199,11 @@ export function ZeusCompanion() {
       }
       setExecutedActions(prev => new Set(prev).add(msgIndex));
     } catch (e: any) {
-      toast.error(e.message || 'Erreur lors de l\'action');
+      toast.error(e.message || "Erreur lors de l'action");
     } finally {
       setExecutingAction(null);
     }
-  }, [user]);
+  }, [user, queryClient]);
 
   const sendMessage = useCallback(async () => {
     if (!input.trim() || !zeusAgentId || loading) return;
@@ -238,7 +235,10 @@ export function ZeusCompanion() {
       );
 
       const convId = resp.headers.get('X-Conversation-Id');
-      if (convId) setConversationId(convId);
+      if (convId && convId !== conversationId) {
+        setConversationId(convId);
+        refetchConversations();
+      }
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: 'Erreur' }));
@@ -254,7 +254,6 @@ export function ZeusCompanion() {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-
         let newlineIndex;
         while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
           const line = buffer.slice(0, newlineIndex).trim();
@@ -281,7 +280,7 @@ export function ZeusCompanion() {
     } finally {
       setLoading(false);
     }
-  }, [input, zeusAgentId, conversationId, loading]);
+  }, [input, zeusAgentId, conversationId, loading, refetchConversations]);
 
   const handleRename = () => {
     if (newName.trim() && newName.trim().length <= 20) {
@@ -296,13 +295,9 @@ export function ZeusCompanion() {
     <>
       <AnimatePresence>
         {!open && (
-          <motion.button
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            exit={{ scale: 0 }}
+          <motion.button initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}
             onClick={() => setOpen(true)}
-            className="fixed bottom-20 right-4 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 shadow-lg flex items-center justify-center text-white hover:shadow-xl transition-shadow"
-          >
+            className="fixed bottom-20 right-4 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 shadow-lg flex items-center justify-center text-white hover:shadow-xl transition-shadow">
             <Zap className="w-6 h-6" />
             {unacknowledged.length > 0 && (
               <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-destructive text-[10px] font-bold flex items-center justify-center text-white">
@@ -324,8 +319,16 @@ export function ZeusCompanion() {
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border/20 bg-gradient-to-r from-amber-500/10 to-orange-500/10">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-sm">⚡</div>
-                {editingName ? (
+                {showHistory ? (
+                  <button onClick={() => setShowHistory(false)} className="text-muted-foreground hover:text-foreground">
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-sm">⚡</div>
+                )}
+                {showHistory ? (
+                  <span className="font-semibold text-sm text-foreground">Historique</span>
+                ) : editingName ? (
                   <div className="flex items-center gap-1">
                     <Input value={newName} onChange={e => setNewName(e.target.value)} className="h-7 w-28 text-sm" maxLength={20} autoFocus onKeyDown={e => e.key === 'Enter' && handleRename()} />
                     <button onClick={handleRename} className="text-primary"><Check className="w-4 h-4" /></button>
@@ -340,13 +343,25 @@ export function ZeusCompanion() {
                   </div>
                 )}
               </div>
-              <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                {!showHistory && (
+                  <>
+                    <button onClick={() => { setShowHistory(true); refetchConversations(); }} className="text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-secondary/50" title="Historique">
+                      <History className="w-4 h-4" />
+                    </button>
+                    <button onClick={startNewConversation} className="text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-secondary/50" title="Nouvelle conversation">
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </>
+                )}
+                <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground p-1">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Strike warnings */}
-            {unacknowledged.length > 0 && (
+            {!showHistory && unacknowledged.length > 0 && (
               <div className="px-3 py-2 bg-amber-500/10 border-b border-amber-500/20">
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
@@ -357,90 +372,101 @@ export function ZeusCompanion() {
               </div>
             )}
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-              {messages.length === 0 && (
-                <div className="text-center py-8">
-                  <div className="text-4xl mb-3">⚡</div>
-                  <p className="text-sm text-muted-foreground">
-                    Salut ! Je suis <strong>{zeusName}</strong>, ton compagnon IA.
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Publie, traduis, discute — je suis là pour toi ! 💬
-                  </p>
-                  <div className="flex flex-wrap gap-1.5 justify-center mt-3">
-                    {['Publie un post', 'Traduis en anglais', 'Comment ça va ?'].map(s => (
+            {/* History Panel */}
+            {showHistory ? (
+              <div className="flex-1 overflow-y-auto">
+                {(!conversations || conversations.length === 0) ? (
+                  <div className="text-center py-12 text-muted-foreground text-sm">
+                    Aucune conversation enregistrée
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border/10">
+                    {conversations.map((conv: any) => (
                       <button
-                        key={s}
-                        onClick={() => { setInput(s); }}
-                        className="text-[10px] px-2.5 py-1 rounded-full bg-secondary/60 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                        key={conv.id}
+                        onClick={() => selectConversation(conv.id)}
+                        className={cn(
+                          "w-full text-left px-4 py-3 hover:bg-secondary/40 transition-colors",
+                          conversationId === conv.id && "bg-primary/5"
+                        )}
                       >
-                        {s}
+                        <p className="text-sm font-medium text-foreground truncate">{conv.title || 'Conversation'}</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          {new Date(conv.updated_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </p>
                       </button>
                     ))}
                   </div>
-                </div>
-              )}
-              {messages.map((msg, i) => {
-                const { text, action } = msg.role === 'assistant' ? parseActionFromContent(msg.content) : { text: msg.content, action: null };
-                return (
-                  <div key={i} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
-                    <div className={cn(
-                      'max-w-[85%] rounded-2xl px-3 py-2 text-sm',
-                      msg.role === 'user'
-                        ? 'bg-primary text-primary-foreground rounded-br-md'
-                        : 'bg-secondary/60 text-foreground rounded-bl-md'
-                    )}>
-                      {msg.role === 'assistant' ? (
-                        <div className="prose prose-sm dark:prose-invert max-w-none">
-                          <ReactMarkdown>{text}</ReactMarkdown>
-                        </div>
-                      ) : (
-                        <p className="whitespace-pre-wrap">{text}</p>
-                      )}
-                      {action && (
-                        <ActionCard
-                          action={action}
-                          onExecute={() => executeAction(action, i)}
-                          executing={executingAction === i}
-                          executed={executedActions.has(i)}
-                        />
-                      )}
+                )}
+              </div>
+            ) : (
+              <>
+                {/* Messages */}
+                <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+                  {messages.length === 0 && (
+                    <div className="text-center py-8">
+                      <div className="text-4xl mb-3">⚡</div>
+                      <p className="text-sm text-muted-foreground">
+                        Salut ! Je suis <strong>{zeusName}</strong>, ton compagnon IA.
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Publie, traduis, discute — je suis là pour toi ! 💬
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 justify-center mt-3">
+                        {['Publie un post', 'Traduis en anglais', 'Comment ça va ?'].map(s => (
+                          <button key={s} onClick={() => setInput(s)}
+                            className="text-[10px] px-2.5 py-1 rounded-full bg-secondary/60 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                            {s}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-              {loading && (
-                <div className="flex justify-start">
-                  <div className="bg-secondary/60 rounded-2xl rounded-bl-md px-3 py-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                  </div>
+                  )}
+                  {messages.map((msg, i) => {
+                    const { text, action } = msg.role === 'assistant' ? parseActionFromContent(msg.content) : { text: msg.content, action: null };
+                    return (
+                      <div key={i} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+                        <div className={cn(
+                          'max-w-[85%] rounded-2xl px-3 py-2 text-sm',
+                          msg.role === 'user' ? 'bg-primary text-primary-foreground rounded-br-md' : 'bg-secondary/60 text-foreground rounded-bl-md'
+                        )}>
+                          {msg.role === 'assistant' ? (
+                            <div className="prose prose-sm dark:prose-invert max-w-none"><ReactMarkdown>{text}</ReactMarkdown></div>
+                          ) : (
+                            <p className="whitespace-pre-wrap">{text}</p>
+                          )}
+                          {action && (
+                            <ActionCard action={action} onExecute={() => executeAction(action, i)}
+                              executing={executingAction === i} executed={executedActions.has(i)} />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {loading && (
+                    <div className="flex justify-start">
+                      <div className="bg-secondary/60 rounded-2xl rounded-bl-md px-3 py-2">
+                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                      </div>
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} />
                 </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
 
-            {/* Input */}
-            <div className="px-3 py-3 border-t border-border/20">
-              <form onSubmit={e => { e.preventDefault(); sendMessage(); }} className="flex gap-2">
-                <Input
-                  ref={inputRef}
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  placeholder={`Parle à ${zeusName}...`}
-                  className="flex-1 rounded-xl h-10 text-sm"
-                  disabled={loading || !zeusAgentId}
-                />
-                <Button
-                  type="submit"
-                  size="icon"
-                  disabled={!input.trim() || loading || !zeusAgentId}
-                  className="h-10 w-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600"
-                >
-                  <Send className="w-4 h-4" />
-                </Button>
-              </form>
-            </div>
+                {/* Input */}
+                <div className="px-3 py-3 border-t border-border/20">
+                  <form onSubmit={e => { e.preventDefault(); sendMessage(); }} className="flex gap-2">
+                    <Input ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
+                      placeholder={`Parle à ${zeusName}...`}
+                      className="flex-1 rounded-xl h-10 text-sm" disabled={loading || !zeusAgentId} />
+                    <Button type="submit" size="icon" disabled={!input.trim() || loading || !zeusAgentId}
+                      className="h-10 w-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600">
+                      <Send className="w-4 h-4" />
+                    </Button>
+                  </form>
+                </div>
+              </>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
