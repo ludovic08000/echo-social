@@ -69,13 +69,39 @@ export function CommentsList({ postId }: CommentsListProps) {
       {user && (
         <form onSubmit={handleSubmit} className="flex gap-3 p-4 border-b border-border/50">
           <UserAvatar size="sm" />
-          <div className="flex-1 flex gap-2">
-            <Input
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Ajouter un commentaire..."
-              className="pulse-input flex-1"
-            />
+          <div className="flex-1 flex gap-2 items-center">
+            <div className="relative flex-1 flex items-center">
+              <Input
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                placeholder="Ajouter un commentaire..."
+                className="pulse-input flex-1 pr-10"
+              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+                  >
+                    <Smile className="w-4 h-4" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="top" align="end" className="w-64 p-2 rounded-xl" sideOffset={8}>
+                  <div className="grid grid-cols-8 gap-1">
+                    {COMMENT_EMOJIS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => setNewComment(prev => prev + emoji)}
+                        className="w-7 h-7 flex items-center justify-center text-lg hover:bg-secondary rounded transition-colors"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
             <Button
               type="submit"
               size="icon"
