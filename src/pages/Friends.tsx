@@ -163,14 +163,27 @@ export default function Friends() {
                 <Phone className="w-8 h-8 text-primary" />
               </div>
               <h3 className="font-semibold text-lg">Synchroniser mes contacts</h3>
+
+              {/* Platform badge */}
+              <div className="flex items-center gap-2">
+                <Badge variant={contactSync.isNative ? 'default' : 'secondary'} className="text-xs">
+                  {contactSync.platform === 'ios' && '🍎 iPhone détecté'}
+                  {contactSync.platform === 'android' && '🤖 Android détecté'}
+                  {contactSync.platform === 'web' && '🌐 Navigateur web'}
+                </Badge>
+              </div>
+
               <p className="text-sm text-muted-foreground max-w-xs">
-                {contactSync.isNative
-                  ? 'Accédez à votre répertoire pour retrouver vos amis déjà sur Forsure'
-                  : 'Cette fonctionnalité est optimisée pour l\'app native iOS/Android. Utilisez l\'onglet Inviter pour la version web.'}
+                {contactSync.platform === 'ios'
+                  ? 'Accédez à votre répertoire iPhone pour retrouver vos amis sur Forsure'
+                  : contactSync.platform === 'android'
+                  ? 'Accédez à votre répertoire Android pour retrouver vos amis sur Forsure'
+                  : 'La synchro native nécessite l\'app iOS ou Android. Utilisez l\'onglet Inviter pour importer un fichier .vcf.'}
               </p>
+
               <Button
                 onClick={contactSync.syncContacts}
-                disabled={contactSync.loading}
+                disabled={contactSync.loading || (!contactSync.isNative)}
                 className="gap-2"
                 size="lg"
               >
@@ -179,8 +192,15 @@ export default function Friends() {
                 ) : (
                   <Phone className="w-4 h-4" />
                 )}
-                {contactSync.loading ? 'Synchronisation...' : contactSync.synced ? 'Resynchroniser' : 'Lancer la synchro'}
+                {contactSync.loading
+                  ? 'Synchronisation...'
+                  : contactSync.synced
+                  ? 'Resynchroniser'
+                  : contactSync.isNative
+                  ? `Synchro ${contactSync.platform === 'ios' ? 'iPhone' : 'Android'}`
+                  : 'Non disponible en web'}
               </Button>
+
               {contactSync.synced && (
                 <div className="w-full space-y-3 mt-2">
                   <div className="flex justify-center gap-4 text-sm">
