@@ -16,12 +16,12 @@ const corsHeaders = {
 }
 
 const EMAIL_SUBJECTS: Record<string, string> = {
-  signup: 'Confirm your email',
-  invite: "You've been invited",
-  magiclink: 'Your login link',
-  recovery: 'Reset your password',
-  email_change: 'Confirm your new email',
-  reauthentication: 'Your verification code',
+  signup: 'Confirmez votre adresse e-mail — Forsure',
+  invite: 'Vous avez été invité(e) sur Forsure',
+  magiclink: 'Votre lien de connexion Forsure',
+  recovery: 'Réinitialisez votre mot de passe — Forsure',
+  email_change: 'Confirmez votre nouvelle adresse e-mail',
+  reauthentication: 'Votre code de vérification Forsure',
 }
 
 // Template mapping
@@ -35,7 +35,7 @@ const EMAIL_TEMPLATES: Record<string, React.ComponentType<any>> = {
 }
 
 // Configuration
-const SITE_NAME = "calm-connect-05"
+const SITE_NAME = "Forsure"
 const SENDER_DOMAIN = "notify.forsure.fans"
 const ROOT_DOMAIN = "forsure.fans"
 const FROM_DOMAIN = "notify.forsure.fans" // Domain shown in From address (may be root or sender subdomain)
