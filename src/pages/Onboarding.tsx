@@ -477,7 +477,7 @@ export default function Onboarding() {
                     {contactResults.map(contact => (
                       <div key={contact.user_id} className="flex items-center justify-between p-2.5 rounded-xl bg-secondary/30">
                         <div className="flex items-center gap-2.5">
-                          <UserAvatar name={contact.name} avatarUrl={contact.avatar_url} size="sm" />
+                          <UserAvatar src={contact.avatar_url} alt={contact.name} size="sm" />
                           <span className="text-sm font-medium">{contact.name}</span>
                         </div>
                         {contact.is_friend || sentRequests.has(contact.user_id) ? (
