@@ -135,7 +135,7 @@ function AppContent() {
               <Route path="/signup" element={<PublicOnlyRoute><Signup /></PublicOnlyRoute>} />
               <Route path="/legal/terms" element={<LegalTerms />} />
               <Route path="/legal/privacy" element={<PrivacyPolicy />} />
-              <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+              <Route path="/onboarding" element={<Onboarding />} />
               
               {/* Protected routes */}
               <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
