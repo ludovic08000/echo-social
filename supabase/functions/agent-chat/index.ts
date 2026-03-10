@@ -532,33 +532,20 @@ serve(async (req) => {
       toolCalls = choice?.message?.tool_calls;
     }
 
-    // Now stream the final response for better UX
+    // Stream the final content directly as SSE (no second AI call that could alter action blocks)
     const finalContent = choice?.message?.content || "Je n'ai pas pu générer de réponse.";
-    const streamResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: fullSystemPrompt },
-          ...(history || []).map((m: any) => ({ role: m.role, content: m.content })),
-          { role: "assistant", content: finalContent },
-          { role: "user", content: "Reproduis exactement ta dernière réponse, sans rien modifier." },
-        ],
-        stream: true,
-      }),
+
+    // Save to DB
+    await supabase.from("ai_agent_messages").insert({
+      conversation_id: convId, role: "assistant", content: finalContent,
     });
 
-    if (!streamResponse.ok) {
-      // Fallback: return non-streamed
-      await supabase.from("ai_agent_messages").insert({ conversation_id: convId, role: "assistant", content: finalContent });
-      if (agent.slug === "zeus-companion") pushToMessenger(supabase, userId!, finalContent);
-      return new Response(JSON.stringify({ result: finalContent }), { headers: { ...corsHeaders, "Content-Type": "application/json", "X-Conversation-Id": convId } });
+    // Push to messenger
+    if (agent.slug === "zeus-companion" && finalContent) {
+      pushToMessenger(supabase, userId!, finalContent);
     }
 
+    // Update usage
     if (usage) {
       await supabase.from("ai_agent_usage").update({ message_count: currentCount + 1 }).eq("id", usage.id);
     } else {
@@ -567,53 +554,19 @@ serve(async (req) => {
       });
     }
 
-    const reader = streamResponse.body!.getReader();
+    // Simulate SSE streaming by chunking the final content
     const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
-    let fullResponse = "";
-
+    const chunkSize = 12; // characters per chunk for smooth typing effect
     const stream = new ReadableStream({
       async start(controller) {
-        let buffer = "";
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-
-          let newlineIndex;
-          while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-            const line = buffer.slice(0, newlineIndex).trim();
-            buffer = buffer.slice(newlineIndex + 1);
-            if (!line.startsWith("data: ") || line === "data: [DONE]") {
-              if (line === "data: [DONE]") {
-                await supabase.from("ai_agent_messages").insert({
-                  conversation_id: convId, role: "assistant", content: fullResponse,
-                });
-                // Also push to regular messenger
-                if (agent.slug === "zeus-companion" && fullResponse) {
-                  pushToMessenger(supabase, userId!, fullResponse);
-                }
-                controller.enqueue(encoder.encode(line + "\n\n"));
-              }
-              continue;
-            }
-            try {
-              const parsed = JSON.parse(line.slice(6));
-              const content = parsed.choices?.[0]?.delta?.content;
-              if (content) fullResponse += content;
-            } catch {}
-            controller.enqueue(encoder.encode(line + "\n\n"));
-          }
+        for (let i = 0; i < finalContent.length; i += chunkSize) {
+          const chunk = finalContent.slice(i, i + chunkSize);
+          const sseData = JSON.stringify({ choices: [{ delta: { content: chunk } }] });
+          controller.enqueue(encoder.encode(`data: ${sseData}\n\n`));
+          // Small delay for typing effect (non-blocking)
+          await new Promise(r => setTimeout(r, 15));
         }
-        if (fullResponse && !buffer.includes("[DONE]")) {
-          await supabase.from("ai_agent_messages").insert({
-            conversation_id: convId, role: "assistant", content: fullResponse,
-          });
-          // Also push to regular messenger (fallback path)
-          if (agent.slug === "zeus-companion") {
-            pushToMessenger(supabase, userId!, fullResponse);
-          }
-        }
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
       },
     });
