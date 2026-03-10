@@ -21,7 +21,7 @@ import { useCurrentUserIsMinor } from '@/hooks/useMinorProtection';
 import { useReportUser } from '@/hooks/useTrustAndSafety';
 import { toast } from 'sonner';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { guessVideoMime } from '@/lib/videoCompat';
+// guessVideoMime removed — using src directly for universal codec support
 import {
   DropdownMenu,
   DropdownMenuContent,
