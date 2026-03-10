@@ -120,7 +120,7 @@ export function MobileNav() {
       )}>
         <div className="flex items-end justify-evenly h-[60px] pb-1">
           <NavItem path="/feed" icon={Home} label="Accueil" />
-          <NavItem path="/search" icon={Compass} label="Explorer" />
+          <NavItem path="/friends" icon={Users} label="Amis" />
 
           {/* Bouton Créer — premium central */}
           <Link to="/create" className="flex flex-col items-center -mt-4 w-[56px]">
