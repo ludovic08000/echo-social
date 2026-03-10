@@ -407,10 +407,12 @@ export default function Onboarding() {
                   {isNative
                     ? 'Importe tes contacts pour retrouver tes amis déjà sur Forsure'
                     : isIOS
-                      ? 'Exporte tes contacts en fichier .vcf puis importe-le ici'
-                      : hasPickerAPI
-                        ? 'Sélectionne des contacts pour les retrouver sur Forsure'
-                        : 'Importe un fichier de contacts (.vcf) pour retrouver tes amis'}
+                      ? 'Exporte tes contacts depuis ton iPhone puis importe le fichier ici'
+                      : isAndroid && hasPickerAPI
+                        ? 'Sélectionne des contacts depuis ton Android pour les retrouver'
+                        : isAndroid
+                          ? 'Exporte tes contacts depuis ton Android puis importe le fichier ici'
+                          : 'Importe un fichier de contacts (.vcf) pour retrouver tes amis'}
                 </p>
               </div>
 
