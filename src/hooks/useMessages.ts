@@ -248,6 +248,19 @@ export function useSendMessage() {
     mutationFn: async ({ conversationId, body, imageUrl }: { conversationId: string; body: string; imageUrl?: string }) => {
       if (!user) throw new Error('Not authenticated');
 
+      // Check if this is a Zeus conversation
+      const { data: zeusParticipant } = await supabase
+        .from('conversation_participants')
+        .select('user_id')
+        .eq('conversation_id', conversationId)
+        .eq('user_id', ZEUS_BOT_ID)
+        .maybeSingle();
+
+      if (zeusParticipant) {
+        // Route to Zeus agent-chat instead of normal message flow
+        return await sendToZeus(user.id, conversationId, body);
+      }
+
       // Anti-spam validation (skip for voice/image-only messages)
       const isSpecialMessage = body.startsWith('🎙️ voice:') || body === '📷 Image';
       if (!isSpecialMessage) {
