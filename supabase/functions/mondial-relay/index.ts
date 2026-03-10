@@ -348,7 +348,8 @@ serve(async (req) => {
         Expedition: tracking_number,
         Langue: 'FR',
       };
-      params.Security = buildSignature(params, privateKey);
+      const trackOrderedValues = [enseigne, tracking_number, 'FR'];
+      params.Security = buildSignatureFromOrderedFields(trackOrderedValues, privateKey);
 
       const xml = await callMondialRelaySoap("WSI2_TracingColisDetaille", params);
       const stat = extractXmlValue(xml, 'STAT');
