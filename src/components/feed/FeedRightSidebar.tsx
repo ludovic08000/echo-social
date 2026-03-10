@@ -382,7 +382,7 @@ export function FeedRightSidebar() {
           </div>
         </motion.div>
 
-        {/* ── Zeus AI Companion Card ── */}
+        {/* ── Zeus AI Companion ── */}
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -391,11 +391,10 @@ export function FeedRightSidebar() {
           {!zeusOpen ? (
             <button
               onClick={() => setZeusOpen(true)}
-              className="w-full relative rounded-2xl border border-border/40 bg-card overflow-hidden transition-all duration-300 group cursor-pointer text-left"
+              className="w-full relative rounded-2xl border border-border/40 bg-card overflow-hidden transition-all duration-300 group cursor-pointer text-left hover:border-primary/30"
               style={{ boxShadow: 'var(--shadow-md)' }}
             >
-              {/* Gradient accent top bar — same style as other cards */}
-              <div className="h-1 w-full bg-gradient-to-r from-cyan-500 via-primary to-cyan-400" />
+              <div className="h-1 w-full" style={{ background: 'var(--premium-gradient)' }} />
               <div className="p-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center relative flex-shrink-0">
