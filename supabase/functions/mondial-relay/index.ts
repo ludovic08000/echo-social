@@ -88,40 +88,36 @@ function extractRelayPoints(xml: string): any[] {
   return points;
 }
 
-// ── V2 REST API helper (XML format) ──
+// ── V2 REST API helper (JSON with Context auth) ──
 
-async function callMondialRelayV2(xmlBody: string): Promise<string> {
-  const login = (Deno.env.get("MONDIAL_RELAY_V2_LOGIN") ?? "").trim();
-  const password = (Deno.env.get("MONDIAL_RELAY_V2_PASSWORD") ?? "").trim();
-
-  if (!login || !password) {
-    throw new Error("Configuration Mondial Relay V2 manquante (login/password)");
-  }
-
-  const auth = btoa(`${login}:${password}`);
+async function callMondialRelayV2(jsonBody: any): Promise<any> {
   const url = `${MR_V2_BASE}/shipment`;
 
-  console.log(`MR V2 POST ${url}`, xmlBody.substring(0, 800));
+  const bodyStr = JSON.stringify(jsonBody);
+  console.log(`MR V2 POST ${url}`, bodyStr.substring(0, 1000));
 
   const response = await fetch(url, {
     method: "POST",
     headers: {
-      "Authorization": `Basic ${auth}`,
-      "Content-Type": "application/xml; charset=utf-8",
-      "Accept": "application/xml",
+      "Content-Type": "application/json; charset=utf-8",
+      "Accept": "application/json",
     },
-    body: xmlBody,
+    body: bodyStr,
   });
 
   const text = await response.text();
+  console.log("MR V2 raw response:", text.substring(0, 2000));
 
   if (!response.ok) {
     console.error(`MR V2 error ${response.status}:`, text.substring(0, 1000));
     throw new Error(`Mondial Relay V2 erreur ${response.status}: ${text.substring(0, 300)}`);
   }
 
-  console.log("MR V2 response:", text.substring(0, 1500));
-  return text;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
 }
 
 serve(async (req) => {
@@ -246,115 +242,127 @@ serve(async (req) => {
       const insuranceValue = Math.round(order.subtotal * 100);
       const bId = brandId || enseigne;
 
-      // Read V2 credentials for XML context block
+      // Read V2 credentials
       const login_v2 = (Deno.env.get("MONDIAL_RELAY_V2_LOGIN") ?? "").trim();
       const password_v2 = (Deno.env.get("MONDIAL_RELAY_V2_PASSWORD") ?? "").trim();
 
-      // Simple XML escape
-      const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-      const xmlBody = `<?xml version="1.0" encoding="utf-8"?>
-<ShipmentCreationRequest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-  <Context>
-    <Login>${esc(login_v2)}</Login>
-    <Password>${esc(password_v2)}</Password>
-    <CustomerId>${esc(bId)}</CustomerId>
-    <Culture>fr-FR</Culture>
-    <VersionAPI>1.0</VersionAPI>
-  </Context>
-  <OutputOptions>
-    <OutputFormat>PdfA4</OutputFormat>
-    <OutputType>QRCode</OutputType>
-  </OutputOptions>
-  <ShipmentsList>
-    <Shipment>
-      <OrderNo>${esc(orderNo.substring(0, 15))}</OrderNo>
-      <CollectionMode>
-        <Mode>${collectionMode}</Mode>
-        <Location>${colRelayLocation}</Location>
-      </CollectionMode>
-      <DeliveryMode>
-        <Mode>${deliveryMode}</Mode>
-        <Location>${livRelayLocation}</Location>
-      </DeliveryMode>
-      <Sender>
-        <Address>
-          <Title>MR</Title>
-          <Firstname>${esc(senderName.substring(0, 20))}</Firstname>
-          <Lastname>${esc(senderName.substring(0, 20))}</Lastname>
-          <Streetname>${esc(senderAddress.substring(0, 32))}</Streetname>
-          <CountryCode>${senderCountry.substring(0, 2).toUpperCase()}</CountryCode>
-          <PostCode>${senderPostcode}</PostCode>
-          <City>${esc(senderCity.substring(0, 26))}</City>
-          <PhoneNo>${formatPhone(senderPhone)}</PhoneNo>
-          <Email>${senderEmail}</Email>
-        </Address>
-      </Sender>
-      <Recipient>
-        <Address>
-          <Title>MR</Title>
-          <Firstname>${esc(recipientName.substring(0, 20))}</Firstname>
-          <Lastname>${esc(recipientName.substring(0, 20))}</Lastname>
-          <Streetname>${esc(recipientAddress.substring(0, 32))}</Streetname>
-          <CountryCode>${relayCountry}</CountryCode>
-          <PostCode>${recipientPostcode}</PostCode>
-          <City>${esc(recipientCity.substring(0, 26))}</City>
-          <PhoneNo></PhoneNo>
-          <Email></Email>
-        </Address>
-      </Recipient>
-      <Parcels>
-        <Parcel>
-          <Content>Marketplace ForSure</Content>
-          <Weight>
-            <Value>${weight}</Value>
-            <Unit>gr</Unit>
-          </Weight>
-        </Parcel>
-      </Parcels>
-      <Options>
-        <Insurance>
-          <Value>${insuranceValue}</Value>
-          <Currency>EUR</Currency>
-        </Insurance>
-      </Options>
-    </Shipment>
-  </ShipmentsList>
-</ShipmentCreationRequest>`;
+      // Build JSON body with Context auth (WCF format)
+      const shipmentBody = {
+        Context: {
+          Login: login_v2,
+          Password: password_v2,
+          CustomerId: bId,
+          Culture: "fr-FR",
+          VersionAPI: "1.0",
+        },
+        OutputOptions: {
+          OutputFormat: "PdfA4",
+          OutputType: "QRCode",
+        },
+        ShipmentsList: [
+          {
+            OrderNo: orderNo.substring(0, 15),
+            CollectionMode: {
+              Mode: collectionMode,
+              Location: colRelayLocation,
+            },
+            DeliveryMode: {
+              Mode: deliveryMode,
+              Location: livRelayLocation,
+            },
+            Sender: {
+              Address: {
+                Title: "MR",
+                Firstname: senderName.substring(0, 20),
+                Lastname: senderName.substring(0, 20),
+                Streetname: senderAddress.substring(0, 32),
+                CountryCode: senderCountry.substring(0, 2).toUpperCase(),
+                PostCode: senderPostcode,
+                City: senderCity.substring(0, 26),
+                PhoneNo: formatPhone(senderPhone),
+                Email: senderEmail,
+              },
+            },
+            Recipient: {
+              Address: {
+                Title: "MR",
+                Firstname: recipientName.substring(0, 20),
+                Lastname: recipientName.substring(0, 20),
+                Streetname: recipientAddress.substring(0, 32),
+                CountryCode: relayCountry,
+                PostCode: recipientPostcode,
+                City: recipientCity.substring(0, 26),
+                PhoneNo: "",
+                Email: "",
+              },
+            },
+            Parcels: [
+              {
+                Content: "Marketplace ForSure",
+                Weight: {
+                  Value: weight,
+                  Unit: "gr",
+                },
+              },
+            ],
+            Options: {
+              Insurance: {
+                Value: insuranceValue,
+                Currency: "EUR",
+              },
+            },
+          },
+        ],
+      };
 
       console.log("V2 create_shipment request:", JSON.stringify({
         order_id, deliveryMode, collectionMode,
         relayId: cleanRelayId, relayCountry, weight, brandId: bId,
       }));
 
-      const responseXml = await callMondialRelayV2(xmlBody);
+      const result = await callMondialRelayV2(shipmentBody);
 
-      // Parse XML response
-      const statusCode = extractXmlValue(responseXml, 'Code') || extractXmlValue(responseXml, 'codeField');
-      const statusMsg = extractXmlValue(responseXml, 'Message') || extractXmlValue(responseXml, 'messageField');
-
-      if (statusCode && statusCode !== '0' && statusCode.toLowerCase() !== 'success') {
-        console.error("V2 shipment error:", { statusCode, statusMsg });
-        throw new Error(`Mondial Relay V2 erreur ${statusCode}: ${statusMsg || 'Erreur inconnue'}`);
+      // Parse response - WCF uses Field suffix on property names
+      const statusList = result?.statusListField || result?.StatusList || [];
+      const errorStatus = statusList.find((s: any) => 
+        (s.levelField || s.Level) === "Error"
+      );
+      
+      if (errorStatus) {
+        const code = errorStatus.codeField || errorStatus.Code || "";
+        const msg = errorStatus.messageField || errorStatus.Message || "";
+        console.error("V2 shipment error:", { code, msg });
+        throw new Error(`Mondial Relay V2 erreur ${code}: ${msg}`);
       }
 
-      // Extract shipment number and label URL from XML response
-      let expeditionNum = extractXmlValue(responseXml, 'ShipmentNumber')
-        || extractXmlValue(responseXml, 'ExpeditionNum')
-        || extractXmlValue(responseXml, 'Number');
-      let labelUrl: string | null = extractXmlValue(responseXml, 'LabelUrl')
-        || extractXmlValue(responseXml, 'PdfUrl')
-        || extractXmlValue(responseXml, 'UrlEtiquette')
-        || null;
+      // Extract shipment data from WCF response
+      const shipmentsList = result?.shipmentsListField || result?.ShipmentsList || [];
+      let expeditionNum = "";
+      let labelUrl: string | null = null;
 
-      // Try broader regex for shipment number
+      if (shipmentsList.length > 0) {
+        const s = shipmentsList[0];
+        expeditionNum = s.shipmentNumberField || s.ShipmentNumber || s.sendingNumberField || s.SendingNumber || "";
+        labelUrl = s.labelUrlField || s.LabelUrl || s.labelField || s.Label || null;
+        
+        // Check nested labels
+        if (!labelUrl) {
+          const labels = s.labelsField || s.Labels || [];
+          if (labels.length > 0) {
+            labelUrl = labels[0].outputField || labels[0].Output || labels[0].urlField || labels[0].Url || null;
+          }
+        }
+      }
+
+      // Fallback: search in full response
       if (!expeditionNum) {
-        const numMatch = responseXml.match(/<(?:ShipmentNumber|ExpeditionNum|Number|SendingNumber)>(\d+)<\//i);
+        const resStr = JSON.stringify(result);
+        const numMatch = resStr.match(/"(?:shipmentNumberField|ShipmentNumber|sendingNumberField|SendingNumber)"\s*:\s*"([^"]+)"/i);
         if (numMatch) expeditionNum = numMatch[1];
       }
 
       if (!expeditionNum) {
-        console.error("No expedition number in V2 XML response:", responseXml.substring(0, 2000));
+        console.error("No expedition number in V2 response:", JSON.stringify(result).substring(0, 2000));
         throw new Error("Numéro d'expédition non trouvé dans la réponse V2");
       }
 
