@@ -75,10 +75,14 @@ export default function Friends() {
       </header>
 
       <Tabs defaultValue="new" className="w-full">
-        <TabsList className="grid w-full grid-cols-5 rounded-xl h-10">
+        <TabsList className="grid w-full grid-cols-6 rounded-xl h-10">
           <TabsTrigger value="new" className="gap-1.5 text-xs rounded-lg data-[state=active]:shadow-sm">
             <Sparkles className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Nouveaux</span>
+          </TabsTrigger>
+          <TabsTrigger value="sync" className="gap-1.5 text-xs rounded-lg data-[state=active]:shadow-sm">
+            <Phone className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Synchro</span>
           </TabsTrigger>
           <TabsTrigger value="friends" className="gap-1.5 text-xs rounded-lg data-[state=active]:shadow-sm">
             <Users className="w-3.5 h-3.5" />
