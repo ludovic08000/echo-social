@@ -7,11 +7,19 @@ import { ArrowUp, ArrowDown, Loader2, Video, X } from 'lucide-react';
 
 export default function Videos() {
   const { data: videos, isLoading } = useVideoFeed(20);
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  // TikTok-style: start in fullscreen auto-play mode by default (index 0)
+  const [activeIndex, setActiveIndex] = useState<number | null>(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef(0);
 
   const isFullscreen = activeIndex !== null;
+
+  // Once videos load, ensure we start at index 0
+  useEffect(() => {
+    if (videos && videos.length > 0 && activeIndex === null) {
+      setActiveIndex(0);
+    }
+  }, [videos]);
 
   // Keyboard navigation in fullscreen
   useEffect(() => {
@@ -19,7 +27,7 @@ export default function Videos() {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setActiveIndex(null);
+        window.history.back();
       } else if (e.key === 'ArrowDown' || e.key === 'j') {
         e.preventDefault();
         goToNext();
@@ -110,9 +118,9 @@ export default function Videos() {
           ))}
         </div>
 
-        {/* Close button */}
+        {/* Close button → go back */}
         <button
-          onClick={() => setActiveIndex(null)}
+          onClick={() => window.history.back()}
           className="absolute top-4 left-4 z-50 w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white"
         >
           <X className="w-5 h-5" />
