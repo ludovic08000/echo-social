@@ -118,9 +118,9 @@ export default function Videos() {
           ))}
         </div>
 
-        {/* Close button */}
+        {/* Close button → go back */}
         <button
-          onClick={() => setActiveIndex(null)}
+          onClick={() => window.history.back()}
           className="absolute top-4 left-4 z-50 w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white"
         >
           <X className="w-5 h-5" />
