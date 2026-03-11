@@ -7,11 +7,19 @@ import { ArrowUp, ArrowDown, Loader2, Video, X } from 'lucide-react';
 
 export default function Videos() {
   const { data: videos, isLoading } = useVideoFeed(20);
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  // TikTok-style: start in fullscreen auto-play mode by default (index 0)
+  const [activeIndex, setActiveIndex] = useState<number | null>(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef(0);
 
   const isFullscreen = activeIndex !== null;
+
+  // Once videos load, ensure we start at index 0
+  useEffect(() => {
+    if (videos && videos.length > 0 && activeIndex === null) {
+      setActiveIndex(0);
+    }
+  }, [videos]);
 
   // Keyboard navigation in fullscreen
   useEffect(() => {
