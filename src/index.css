@@ -502,6 +502,15 @@
     to { box-shadow: 0 0 40px hsl(var(--bleu) / 0.4); }
   }
 
+  @keyframes fadeOut {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(1.2); }
+  }
+
+  .animate-fade-out {
+    animation: fadeOut 0.6s ease-out forwards;
+  }
+
   .bg-premium-gradient {
     background: var(--premium-gradient);
   }
