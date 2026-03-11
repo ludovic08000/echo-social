@@ -153,7 +153,7 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
         poster={video.thumbnail_url || undefined}
         className="w-full h-full object-cover"
         loop
-        muted={isMuted}
+        muted
         autoPlay
         playsInline
         // @ts-ignore – legacy iOS attribute
@@ -165,6 +165,12 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
         onClick={togglePlay}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
+        onLoadedData={() => {
+          // Ensure autoplay fires once data is available
+          if (isActive && videoRef.current?.paused) {
+            videoRef.current.play().catch(() => {});
+          }
+        }}
         onError={() => {
           toast({ title: 'Erreur de lecture', description: 'Cette vidéo ne peut pas être lue sur votre appareil.', variant: 'destructive' });
         }}
