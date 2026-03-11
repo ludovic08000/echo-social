@@ -27,7 +27,7 @@ export default function Videos() {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setActiveIndex(null);
+        window.history.back();
       } else if (e.key === 'ArrowDown' || e.key === 'j') {
         e.preventDefault();
         goToNext();
