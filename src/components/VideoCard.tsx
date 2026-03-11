@@ -16,17 +16,42 @@ interface VideoCardProps {
 
 export function VideoCard({ video, isActive }: VideoCardProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [progress, setProgress] = useState(0);
   const [watchTime, setWatchTime] = useState(0);
+  const [showPauseIcon, setShowPauseIcon] = useState(false);
   
   const toggleLike = useToggleVideoLike();
   const toggleSave = useToggleVideoSave();
   const shareVideo = useShareVideo();
   const recordView = useRecordVideoView();
 
-  // Auto-play quand la vidéo devient active
+  // ── IntersectionObserver: auto-play/pause based on visibility ──
+  useEffect(() => {
+    const el = containerRef.current;
+    const vid = videoRef.current;
+    if (!el || !vid) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          vid.play().catch(() => {});
+          setIsPlaying(true);
+        } else {
+          vid.pause();
+          setIsPlaying(false);
+        }
+      },
+      { threshold: 0.6 } // 60% visible to trigger
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Also react to isActive prop (for fullscreen scroll mode)
   useEffect(() => {
     if (!videoRef.current) return;
 
@@ -38,6 +63,18 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
       setIsPlaying(false);
     }
   }, [isActive]);
+
+  // Auto-start on mount if active (ensures first video plays immediately)
+  useEffect(() => {
+    if (isActive && videoRef.current) {
+      // Small delay to let the DOM settle
+      const timer = setTimeout(() => {
+        videoRef.current?.play().catch(() => {});
+        setIsPlaying(true);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   // Track watch time
   useEffect(() => {
@@ -75,10 +112,14 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
     
     if (isPlaying) {
       videoRef.current.pause();
+      setIsPlaying(false);
     } else {
-      videoRef.current.play();
+      videoRef.current.play().catch(() => {});
+      setIsPlaying(true);
     }
-    setIsPlaying(!isPlaying);
+    // Show brief pause/play feedback icon
+    setShowPauseIcon(true);
+    setTimeout(() => setShowPauseIcon(false), 600);
   };
 
   const toggleMute = () => {
@@ -106,14 +147,15 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
   const videoUrl = generateVideoUrl(video.id);
 
   return (
-    <div className="relative w-full h-full bg-black flex items-center justify-center">
-      {/* Video */}
+    <div ref={containerRef} className="relative w-full h-full bg-black flex items-center justify-center">
+      {/* Video – autoPlay + muted for browser autoplay policy */}
       <video
         ref={videoRef}
         poster={video.thumbnail_url || undefined}
         className="w-full h-full object-cover"
         loop
         muted={isMuted}
+        autoPlay
         playsInline
         // @ts-ignore – legacy iOS attribute
         webkit-playsinline=""
@@ -122,6 +164,8 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
         preload="auto"
         onTimeUpdate={handleTimeUpdate}
         onClick={togglePlay}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
         onError={() => {
           toast({ title: 'Erreur de lecture', description: 'Cette vidéo ne peut pas être lue sur votre appareil.', variant: 'destructive' });
         }}
@@ -129,11 +173,15 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
         <source src={video.video_url} type={guessVideoMime(video.video_url)} />
       </video>
 
-      {/* Play/Pause overlay */}
-      {!isPlaying && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/30" onClick={togglePlay}>
-          <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-            <Play className="w-10 h-10 text-white fill-white" />
+      {/* Brief tap feedback icon (not a blocking overlay) */}
+      {showPauseIcon && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none animate-fade-out">
+          <div className="w-20 h-20 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
+            {isPlaying ? (
+              <Play className="w-10 h-10 text-white fill-white" />
+            ) : (
+              <Pause className="w-10 h-10 text-white fill-white" />
+            )}
           </div>
         </div>
       )}
