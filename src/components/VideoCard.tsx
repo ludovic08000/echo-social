@@ -28,53 +28,52 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
   const shareVideo = useShareVideo();
   const recordView = useRecordVideoView();
 
-  // ── IntersectionObserver: auto-play/pause based on visibility ──
+  // ── Core autoplay logic: react to isActive prop ──
   useEffect(() => {
-    const el = containerRef.current;
     const vid = videoRef.current;
-    if (!el || !vid) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          vid.play().catch(() => {});
-          setIsPlaying(true);
-        } else {
-          vid.pause();
-          setIsPlaying(false);
-        }
-      },
-      { threshold: 0.6 } // 60% visible to trigger
-    );
-
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  // Also react to isActive prop (for fullscreen scroll mode)
-  useEffect(() => {
-    if (!videoRef.current) return;
+    if (!vid) return;
 
     if (isActive) {
-      videoRef.current.play().catch(() => {});
+      // Force muted for autoplay policy compliance
+      vid.muted = true;
+      // Reset to start if needed
+      if (vid.paused) {
+        const playPromise = vid.play();
+        if (playPromise) {
+          playPromise.catch(() => {
+            // Autoplay blocked — retry after user interaction
+            const retry = () => {
+              vid.play().catch(() => {});
+              document.removeEventListener('touchstart', retry);
+              document.removeEventListener('click', retry);
+            };
+            document.addEventListener('touchstart', retry, { once: true });
+            document.addEventListener('click', retry, { once: true });
+          });
+        }
+      }
       setIsPlaying(true);
     } else {
-      videoRef.current.pause();
+      vid.pause();
+      vid.currentTime = 0;
       setIsPlaying(false);
     }
   }, [isActive]);
 
   // Auto-start on mount if active (ensures first video plays immediately)
   useEffect(() => {
-    if (isActive && videoRef.current) {
-      // Small delay to let the DOM settle
-      const timer = setTimeout(() => {
-        videoRef.current?.play().catch(() => {});
-        setIsPlaying(true);
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, []);
+    const vid = videoRef.current;
+    if (!isActive || !vid) return;
+
+    // Small delay to let the DOM settle after mount
+    const timer = setTimeout(() => {
+      vid.muted = true;
+      vid.play().catch(() => {});
+      setIsPlaying(true);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   // Track watch time
   useEffect(() => {
