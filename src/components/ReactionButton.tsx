@@ -103,7 +103,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     return (
       <Popover open={isOpen} onOpenChange={setIsOpen}>
         {isMobile ? (
-          /* Mobile: tap = like, long press = emoji picker */
+          /* Mobile: tap = like, long press = emoji picker — no animations */
           <div className="flex-1">
             <PopoverTrigger asChild>
               <Button
@@ -119,24 +119,11 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
                 onContextMenu={(e) => e.preventDefault()}
                 onClick={(e) => e.preventDefault()}
               >
-                <AnimatePresence mode="wait">
-                  {currentReaction ? (
-                    <motion.span
-                      key={currentReaction}
-                      initial={{ scale: 0, rotate: -180 }}
-                      animate={{ scale: 1, rotate: 0 }}
-                      exit={{ scale: 0, rotate: 180 }}
-                      transition={{ type: 'spring', stiffness: 400 }}
-                      className="text-lg"
-                    >
-                      {REACTION_EMOJIS[currentReaction]}
-                    </motion.span>
-                  ) : (
-                    <motion.div key="default" initial={{ scale: 0 }} animate={{ scale: 1 }}>
-                      <ThumbsUp className="w-[18px] h-[18px]" />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                {currentReaction ? (
+                  <span className="text-lg">{REACTION_EMOJIS[currentReaction]}</span>
+                ) : (
+                  <ThumbsUp className="w-[18px] h-[18px]" />
+                )}
                 <span className="font-medium">
                   {currentReaction ? REACTION_LABELS[currentReaction] : "J'aime"}
                 </span>
