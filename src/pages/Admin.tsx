@@ -21,6 +21,7 @@ import { ZeusSection } from '@/components/admin/ZeusSection';
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'health', label: 'Santé Plateforme', icon: Activity },
+  { key: 'feed_intelligence', label: 'Feed Intelligence', icon: Gauge },
   { key: 'users', label: 'Utilisateurs', icon: Users },
   { key: 'posts', label: 'Publications', icon: FileText },
   { key: 'reports', label: 'Signalements', icon: Flag },
