@@ -8,3 +8,4 @@ export { SecuritySection } from './SecuritySection';
 export { SettingsSection } from './SettingsSection';
 export { AISection } from './AISection';
 export { PlatformHealthDashboard } from './PlatformHealthDashboard';
+export { FeedIntelligenceSection } from './FeedIntelligenceSection';
