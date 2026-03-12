@@ -82,13 +82,12 @@ export default function ResetPassword() {
     setIsLoading(false);
 
     if (error) {
-      const isSamePassword = error.message?.toLowerCase().includes('same') || 
-                             error.message?.toLowerCase().includes('different') ||
-                             error.message?.toLowerCase().includes('previously used');
+      const msg = (error.message || '').toLowerCase();
+      const isSamePassword = msg.includes('same') || msg.includes('different') || msg.includes('previously used') || msg.includes('cannot be updated') || msg.includes('identity');
       toast({
-        title: isSamePassword ? 'Mot de passe identique' : 'Erreur',
+        title: isSamePassword ? '⚠️ Ancien mot de passe détecté' : 'Erreur',
         description: isSamePassword
-          ? 'Vous ne pouvez pas réutiliser votre ancien mot de passe. Veuillez en choisir un nouveau.'
+          ? 'Vous avez utilisé un ancien mot de passe. Pour votre sécurité, veuillez en créer un tout nouveau, différent des précédents.'
           : 'Impossible de mettre à jour le mot de passe. Le lien a peut-être expiré.',
         variant: 'destructive',
       });
