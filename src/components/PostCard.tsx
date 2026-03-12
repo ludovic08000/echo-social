@@ -22,6 +22,7 @@ import { useAIContent } from '@/hooks/useAIContent';
 import { useCurrentUserIsMinor } from '@/hooks/useMinorProtection';
 import { useReportUser } from '@/hooks/useTrustAndSafety';
 import { toast } from 'sonner';
+import { FeedAutoplayVideo } from './FeedAutoplayVideo';
 import { useIsMobile } from '@/hooks/use-mobile';
 // guessVideoMime removed — using src directly for universal codec support
 import {
@@ -255,23 +256,12 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                   </div>
                 </div>
               ) : (
-                <>
-                  <video
+              <>
+                  <FeedAutoplayVideo
                     src={post.image_url!}
-                    controls
-                    playsInline
-                    // @ts-ignore – legacy iOS attribute
-                    webkit-playsinline=""
-                    x-webkit-airplay="deny"
-                    controlsList="nodownload noremoteplayback"
-                    preload="auto"
-                    className="absolute inset-0 w-full h-full object-contain bg-black"
-                    onLoadedMetadata={() => setMediaLoaded(true)}
-                    onLoadedData={() => setMediaLoaded(true)}
+                    onMediaLoaded={() => setMediaLoaded(true)}
+                    onVideoError={() => { setMediaLoaded(true); setVideoError(true); }}
                     onPlay={() => trackVideoView()}
-                    onError={() => { setMediaLoaded(true); setVideoError(true); }}
-                    onClick={(e) => e.stopPropagation()}
-                    onPointerDown={(e) => e.stopPropagation()}
                   />
                   {typeof videoViewCount === 'number' && videoViewCount > 0 && (
                     <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1 text-white text-xs bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1">
