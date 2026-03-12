@@ -6,13 +6,13 @@ import { toast } from '@/hooks/use-toast';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import {
   Shield, Users, Activity, LayoutDashboard, FileText, Flag, BarChart3, CreditCard, Lock, Settings,
-  ChevronRight, Brain, Zap, Archive
+  ChevronRight, Brain, Zap, Archive, Gauge
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   DashboardSection, UsersSection, PostsSection, ReportsSection,
   StatsSection, SubscriptionsSection, SecuritySection, SettingsSection,
-  AISection, PlatformHealthDashboard,
+  AISection, PlatformHealthDashboard, FeedIntelligenceSection,
 } from '@/components/admin';
 import { VerificationsSection } from '@/components/admin/VerificationsSection';
 import { ArchivesSection } from '@/components/admin/ArchivesSection';
@@ -21,6 +21,7 @@ import { ZeusSection } from '@/components/admin/ZeusSection';
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'health', label: 'Santé Plateforme', icon: Activity },
+  { key: 'feed_intelligence', label: 'Feed Intelligence', icon: Gauge },
   { key: 'users', label: 'Utilisateurs', icon: Users },
   { key: 'posts', label: 'Publications', icon: FileText },
   { key: 'reports', label: 'Signalements', icon: Flag },
@@ -55,6 +56,7 @@ export default function Admin() {
     switch (section) {
       case 'dashboard': return <DashboardSection />;
       case 'health': return <PlatformHealthDashboard />;
+      case 'feed_intelligence': return <FeedIntelligenceSection />;
       case 'users': return <UsersSection />;
       case 'posts': return <PostsSection />;
       case 'reports': return <ReportsSection />;

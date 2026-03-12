@@ -1192,6 +1192,51 @@ export type Database = {
         }
         Relationships: []
       }
+      feed_ai_recommendations: {
+        Row: {
+          applied_at: string | null
+          auto_applicable: boolean
+          created_at: string
+          description: string
+          dismissed_at: string | null
+          id: string
+          recommendation_type: string
+          safe_bounds: Json | null
+          severity: string
+          status: string
+          suggested_action: Json | null
+          title: string
+        }
+        Insert: {
+          applied_at?: string | null
+          auto_applicable?: boolean
+          created_at?: string
+          description: string
+          dismissed_at?: string | null
+          id?: string
+          recommendation_type: string
+          safe_bounds?: Json | null
+          severity?: string
+          status?: string
+          suggested_action?: Json | null
+          title: string
+        }
+        Update: {
+          applied_at?: string | null
+          auto_applicable?: boolean
+          created_at?: string
+          description?: string
+          dismissed_at?: string | null
+          id?: string
+          recommendation_type?: string
+          safe_bounds?: Json | null
+          severity?: string
+          status?: string
+          suggested_action?: Json | null
+          title?: string
+        }
+        Relationships: []
+      }
       feed_algorithm_config: {
         Row: {
           description: string | null
@@ -1216,6 +1261,78 @@ export type Database = {
           updated_at?: string
           updated_by?: string | null
           value?: Json
+        }
+        Relationships: []
+      }
+      feed_config_change_log: {
+        Row: {
+          ai_level: string | null
+          applied_by: string | null
+          change_source: string
+          config_key: string
+          created_at: string
+          id: string
+          new_value: Json
+          old_value: Json | null
+          reason: string | null
+          rolled_back: boolean
+          rolled_back_at: string | null
+        }
+        Insert: {
+          ai_level?: string | null
+          applied_by?: string | null
+          change_source?: string
+          config_key: string
+          created_at?: string
+          id?: string
+          new_value: Json
+          old_value?: Json | null
+          reason?: string | null
+          rolled_back?: boolean
+          rolled_back_at?: string | null
+        }
+        Update: {
+          ai_level?: string | null
+          applied_by?: string | null
+          change_source?: string
+          config_key?: string
+          created_at?: string
+          id?: string
+          new_value?: Json
+          old_value?: Json | null
+          reason?: string | null
+          rolled_back?: boolean
+          rolled_back_at?: string | null
+        }
+        Relationships: []
+      }
+      feed_performance_metrics: {
+        Row: {
+          created_at: string
+          id: string
+          metadata: Json | null
+          metric_type: string
+          session_id: string
+          user_id: string
+          value: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          metric_type: string
+          session_id: string
+          user_id: string
+          value: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          metric_type?: string
+          session_id?: string
+          user_id?: string
+          value?: number
         }
         Relationships: []
       }

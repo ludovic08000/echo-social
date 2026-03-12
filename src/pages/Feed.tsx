@@ -19,6 +19,7 @@ import { useCustomBackground } from '@/hooks/useCustomBackground';
 import { useParentalGate } from '@/components/ParentalGate';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useFeedScrollMemory } from '@/hooks/useFeedScrollMemory';
+import { useFeedPerformance } from '@/hooks/useFeedPerformance';
 
 // Lazy-load heavy injection components — only loaded when scrolled into view
 const FriendSuggestions = lazy(() => import('@/components/feed/FriendSuggestions').then(m => ({ default: m.FriendSuggestions })));
@@ -77,6 +78,7 @@ export default function Feed() {
   const isMobile = useIsMobile();
 
   useFeedScrollMemory('feed-main-scroll');
+  const feedPerf = useFeedPerformance();
 
   // Deduplicate posts across pages to prevent React key warnings
   const posts = useMemo(() => {
@@ -88,6 +90,25 @@ export default function Feed() {
       return true;
     });
   }, [data?.pages]);
+
+  // Track feed load performance
+  useEffect(() => {
+    feedPerf.markFeedStart();
+  }, []);
+
+  useEffect(() => {
+    if (!isLoading && posts.length > 0) {
+      feedPerf.markFeedReady();
+      feedPerf.trackPostsRendered(posts.length);
+    }
+  }, [isLoading, posts.length]);
+
+  // Sample FPS every 2 minutes
+  useEffect(() => {
+    const iv = setInterval(() => feedPerf.measureFPS(), 120_000);
+    const t = setTimeout(() => feedPerf.measureFPS(), 5000);
+    return () => { clearInterval(iv); clearTimeout(t); };
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
