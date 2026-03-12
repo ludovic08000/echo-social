@@ -78,6 +78,27 @@ export default function Feed() {
   const isMobile = useIsMobile();
 
   useFeedScrollMemory('feed-main-scroll');
+  const feedPerf = useFeedPerformance();
+
+  // Track feed load performance
+  useEffect(() => {
+    feedPerf.markFeedStart();
+  }, []);
+
+  useEffect(() => {
+    if (!isLoading && posts.length > 0) {
+      feedPerf.markFeedReady();
+      feedPerf.trackPostsRendered(posts.length);
+    }
+  }, [isLoading, posts.length]);
+
+  // Sample FPS every 2 minutes
+  useEffect(() => {
+    const iv = setInterval(() => feedPerf.measureFPS(), 120_000);
+    // Initial measurement after 5s
+    const t = setTimeout(() => feedPerf.measureFPS(), 5000);
+    return () => { clearInterval(iv); clearTimeout(t); };
+  }, []);
 
   // Deduplicate posts across pages to prevent React key warnings
   const posts = useMemo(() => {
