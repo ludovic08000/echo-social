@@ -56,6 +56,7 @@ export default function Admin() {
     switch (section) {
       case 'dashboard': return <DashboardSection />;
       case 'health': return <PlatformHealthDashboard />;
+      case 'feed_intelligence': return <FeedIntelligenceSection />;
       case 'users': return <UsersSection />;
       case 'posts': return <PostsSection />;
       case 'reports': return <ReportsSection />;
