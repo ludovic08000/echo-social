@@ -80,6 +80,17 @@ export default function Feed() {
   useFeedScrollMemory('feed-main-scroll');
   const feedPerf = useFeedPerformance();
 
+  // Deduplicate posts across pages to prevent React key warnings
+  const posts = useMemo(() => {
+    const all = data?.pages.flat() || [];
+    const seen = new Set<string>();
+    return all.filter((p) => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+  }, [data?.pages]);
+
   // Track feed load performance
   useEffect(() => {
     feedPerf.markFeedStart();
@@ -95,21 +106,9 @@ export default function Feed() {
   // Sample FPS every 2 minutes
   useEffect(() => {
     const iv = setInterval(() => feedPerf.measureFPS(), 120_000);
-    // Initial measurement after 5s
     const t = setTimeout(() => feedPerf.measureFPS(), 5000);
     return () => { clearInterval(iv); clearTimeout(t); };
   }, []);
-
-  // Deduplicate posts across pages to prevent React key warnings
-  const posts = useMemo(() => {
-    const all = data?.pages.flat() || [];
-    const seen = new Set<string>();
-    return all.filter((p) => {
-      if (seen.has(p.id)) return false;
-      seen.add(p.id);
-      return true;
-    });
-  }, [data?.pages]);
 
   useEffect(() => {
     const interval = setInterval(() => {
