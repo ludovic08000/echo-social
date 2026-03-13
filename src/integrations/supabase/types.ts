@@ -2504,28 +2504,34 @@ export type Database = {
       posts: {
         Row: {
           body: string
+          comments_count: number
           created_at: string
           expires_at: string | null
           id: string
           image_url: string | null
+          likes_count: number
           publish_at: string | null
           user_id: string
         }
         Insert: {
           body: string
+          comments_count?: number
           created_at?: string
           expires_at?: string | null
           id?: string
           image_url?: string | null
+          likes_count?: number
           publish_at?: string | null
           user_id: string
         }
         Update: {
           body?: string
+          comments_count?: number
           created_at?: string
           expires_at?: string | null
           id?: string
           image_url?: string | null
+          likes_count?: number
           publish_at?: string | null
           user_id?: string
         }
