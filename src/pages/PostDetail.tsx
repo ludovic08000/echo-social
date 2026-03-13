@@ -112,7 +112,7 @@ export default function PostDetail() {
           <PostCard post={post} showActions={true} />
         </div>
         
-        <div className="border-t border-border/50">
+        <div ref={commentsRef} className="border-t border-border/50">
           <h2 className="px-4 py-3 font-semibold text-sm text-muted-foreground">
             Commentaires
           </h2>
