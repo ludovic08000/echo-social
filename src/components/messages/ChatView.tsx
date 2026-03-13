@@ -516,23 +516,24 @@ export function ChatView({ conversationId }: ChatViewProps) {
                         {/* Message bubble */}
                         <div
                           onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
+                          onContextMenu={(e) => { e.preventDefault(); setActiveMessageId(msg.id); }}
                           className={cn(
-                            'cursor-pointer select-none transition-all duration-150',
+                            'cursor-pointer select-none transition-all duration-150 group/bubble',
                             activeMessageId === msg.id && 'scale-[0.97]',
                             isBigEmoji
                               ? 'text-4xl leading-none py-1'
                               : cn(
-                                  'px-3.5 py-2 text-sm break-words leading-relaxed',
+                                  'px-3.5 py-2 text-sm break-words leading-relaxed relative',
                                   isMe
                                     ? cn(
-                                        'bg-primary text-primary-foreground',
+                                        'bg-primary text-primary-foreground hover:brightness-95',
                                         isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-br-md',
                                         isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-br-sm',
                                         !isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-tr-sm rounded-br-md',
                                         !isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-tr-sm rounded-br-sm'
                                       )
                                     : cn(
-                                        'bg-secondary',
+                                        'bg-secondary hover:bg-secondary/80',
                                         isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-bl-md',
                                         isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-bl-sm',
                                         !isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-tl-sm rounded-bl-md',
@@ -540,6 +541,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                                       )
                                 )
                           )}
+                          title="Cliquez ou maintenez pour les options"
                         >
                           {msg.body}
                         </div>
