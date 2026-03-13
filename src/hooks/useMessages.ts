@@ -233,14 +233,66 @@ export function useMessages(conversationId: string) {
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
           schema: 'public',
           table: 'messages',
           filter: `conversation_id=eq.${conversationId}`,
         },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+        async (payload) => {
+          const newMsg = payload.new as any;
+          // Skip if this is the current user's message (already handled optimistically)
+          if (newMsg.sender_id === user.id) return;
+
+          // Fetch profile for sender (use cache first)
+          let profile = queryClient.getQueryData<any>(['profile', newMsg.sender_id]);
+          if (!profile) {
+            const { data: p } = await supabase
+              .from('profiles')
+              .select('user_id, name, avatar_url')
+              .eq('user_id', newMsg.sender_id)
+              .single();
+            profile = p;
+          }
+
+          const enriched = {
+            ...newMsg,
+            profile: {
+              name: newMsg.sender_id === ZEUS_BOT_ID ? 'Zeus ⚡' : (profile?.name || 'Unknown'),
+              avatar_url: profile?.avatar_url || null,
+            },
+          };
+
+          // Inject directly into cache — no refetch
+          queryClient.setQueryData<Message[]>(
+            ['messages', conversationId],
+            (old) => {
+              if (!old) return [enriched];
+              // Prevent duplicates
+              if (old.some(m => m.id === enriched.id)) return old;
+              return [...old, enriched];
+            }
+          );
+
+          // Update conversation last_updated (lightweight)
           queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const deletedId = (payload.old as any)?.id;
+          if (deletedId) {
+            queryClient.setQueryData<Message[]>(
+              ['messages', conversationId],
+              (old) => old?.filter(m => m.id !== deletedId) || []
+            );
+          }
         }
       )
       .subscribe();

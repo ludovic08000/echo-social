@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useCallback, useState, useMemo, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { usePosts } from '@/hooks/usePosts';
 import { AppLayout } from '@/components/AppLayout';
 import { CreatePost } from '@/components/CreatePost';
@@ -39,42 +40,17 @@ const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels'
   27: 'suggestions',
 };
 
-const postVariants = {
-  hidden: { opacity: 0, y: 30, scale: 0.97 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: {
-      delay: Math.min(i * 0.06, 0.3),
-      duration: 0.5,
-      ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number],
-    },
-  }),
-};
-
-/**
- * CSS containment style for each post cell.
- * `content-visibility: auto` lets the browser skip layout/paint for offscreen posts.
- */
-const POST_CELL_STYLE: React.CSSProperties = {
-  contentVisibility: 'auto' as any,
-  containIntrinsicSize: 'auto 420px' as any,
-  contain: 'layout style paint',
-};
-
 export default function Feed() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = usePosts();
   const navigate = useNavigate();
   
   const [showPauseReminder, setShowPauseReminder] = useState(false);
   const [pauseDismissed, setPauseDismissed] = useState(false);
-  const [openCommentsPostId, setOpenCommentsPostId] = useState<string | null>(null);
   const { data: activeAds } = useActiveAds();
   const feedBgStyle = useCustomBackground('feed');
   const { isMinor, isUnlocked, requestUnlock } = useParentalGate();
   const isMobile = useIsMobile();
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useFeedScrollMemory('feed-main-scroll');
   const feedPerf = useFeedPerformance();
@@ -89,6 +65,14 @@ export default function Feed() {
       return true;
     });
   }, [data?.pages]);
+
+  // ── Virtualizer ──
+  const virtualizer = useVirtualizer({
+    count: posts.length,
+    getScrollElement: () => document.documentElement,
+    estimateSize: () => 480, // avg post height
+    overscan: 5,
+  });
 
   // Track feed load performance
   useEffect(() => {
@@ -135,20 +119,15 @@ export default function Feed() {
     };
   }, [pauseDismissed]);
 
-  // Infinite scroll via IntersectionObserver on sentinel div (like Facebook)
+  // Infinite scroll: trigger fetch when last virtual items are near
   useEffect(() => {
-    if (!sentinelRef.current) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage();
-        }
-      },
-      { rootMargin: '600px' }
-    );
-    observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+    const items = virtualizer.getVirtualItems();
+    const lastItem = items[items.length - 1];
+    if (!lastItem) return;
+    if (lastItem.index >= posts.length - 3 && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [virtualizer.getVirtualItems(), hasNextPage, isFetchingNextPage, fetchNextPage, posts.length]);
 
   const renderInjection = useCallback((index: number) => {
     const type = INJECTION_MAP[index];
@@ -157,22 +136,13 @@ export default function Feed() {
       const adIndex = Math.floor(index / 6) % activeAds.length;
       const ad = activeAds[adIndex];
       if (ad) {
-        return (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-50px' }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-          >
-            <SponsoredPostCard ad={ad} />
-          </motion.div>
-        );
+        return <SponsoredPostCard ad={ad} />;
       }
     }
     
     if (!type) return null;
 
-    const content = (
+    return (
       <Suspense fallback={<div className="h-32 skeleton rounded-2xl" />}>
         {type === 'reels' && <FeedReelsSection />}
         {type === 'suggestions' && <FriendSuggestions />}
@@ -180,17 +150,6 @@ export default function Feed() {
         {type === 'media' && <FeedMediaSection />}
         {type === 'marketplace' && <FeedMarketplaceSection />}
       </Suspense>
-    );
-
-    return isMobile ? content : (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: '-50px' }}
-        transition={{ duration: 0.5, ease: 'easeOut' }}
-      >
-        {content}
-      </motion.div>
     );
   }, [isMobile, activeAds]);
 
@@ -307,9 +266,11 @@ export default function Feed() {
                 </div>
                 <div className="mt-4 space-y-3">
                   <FeedLiveSection />
-                  <FeedReelsSection />
-                  <FriendSuggestions />
-                  <FeedMarketplaceSection />
+                  <Suspense fallback={null}>
+                    <FeedReelsSection />
+                    <FriendSuggestions />
+                    <FeedMarketplaceSection />
+                  </Suspense>
                 </div>
               </motion.div>
             ) : (
@@ -333,33 +294,40 @@ export default function Feed() {
                   </div>
                 )}
 
-                {/* Posts list — natural page scroll like Facebook */}
-                <div className="px-4 space-y-3">
-                  {posts.map((post, index) => (
-                    <div key={post.id} style={POST_CELL_STYLE}>
-                      {isMobile ? (
-                        <PostCard post={post} />
-                      ) : (
-                        <motion.div
-                          custom={index}
-                          variants={postVariants}
-                          initial="hidden"
-                          whileInView="visible"
-                          viewport={{ once: true, margin: '-30px' }}
-                        >
+                {/* Virtualized posts list */}
+                <div
+                  className="px-4"
+                  style={{
+                    height: `${virtualizer.getTotalSize()}px`,
+                    width: '100%',
+                    position: 'relative',
+                  }}
+                >
+                  {virtualizer.getVirtualItems().map((virtualRow) => {
+                    const post = posts[virtualRow.index];
+                    if (!post) return null;
+                    return (
+                      <div
+                        key={post.id}
+                        data-index={virtualRow.index}
+                        ref={virtualizer.measureElement}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          transform: `translateY(${virtualRow.start}px)`,
+                        }}
+                      >
+                        <div className="pb-3">
                           <PostCard post={post} />
-                        </motion.div>
-                      )}
-                      <div className="bg-card border border-t-0 border-border/20 rounded-b-2xl -mt-1 overflow-hidden">
-                        <CommentsList postId={post.id} />
+                          <LazyComments postId={post.id} />
+                          {renderInjection(virtualRow.index)}
+                        </div>
                       </div>
-                      {renderInjection(index)}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
-
-                {/* Infinite scroll sentinel */}
-                <div ref={sentinelRef} className="h-4" />
 
                 {isFetchingNextPage && (
                   <div className="flex justify-center py-8">
@@ -373,5 +341,28 @@ export default function Feed() {
         </div>
       </div>
     </AppLayout>
+  );
+}
+
+/**
+ * Lazy-loaded comments: only fetches data when the user clicks to expand.
+ * Prevents N+1 comment queries on feed load.
+ */
+function LazyComments({ postId }: { postId: string }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="bg-card border border-t-0 border-border/20 rounded-b-2xl -mt-1 overflow-hidden">
+      {!open ? (
+        <button
+          onClick={() => setOpen(true)}
+          className="w-full px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/30 transition-colors text-left"
+        >
+          Voir les commentaires…
+        </button>
+      ) : (
+        <CommentsList postId={postId} />
+      )}
+    </div>
   );
 }
