@@ -65,6 +65,102 @@ const POST_CELL_STYLE: React.CSSProperties = {
   contain: 'layout style paint',
 };
 
+/** Virtualized feed list — only renders visible posts + small overscan */
+function VirtualFeedList({
+  posts,
+  isMobile,
+  renderInjection,
+  hasNextPage,
+  isFetchingNextPage,
+  fetchNextPage,
+}: {
+  posts: import('@/hooks/usePosts').Post[];
+  isMobile: boolean;
+  renderInjection: (index: number) => React.ReactNode;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  fetchNextPage: () => void;
+}) {
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  const virtualizer = useVirtualizer({
+    count: posts.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 420,
+    overscan: 5,
+  });
+
+  // Infinite scroll: load more when near end
+  const items = virtualizer.getVirtualItems();
+  const lastItem = items[items.length - 1];
+  useEffect(() => {
+    if (lastItem && lastItem.index >= posts.length - 3 && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [lastItem?.index, hasNextPage, isFetchingNextPage, fetchNextPage, posts.length]);
+
+  return (
+    <div
+      ref={parentRef}
+      className="px-4"
+      style={{ height: 'calc(100vh - 200px)', overflow: 'auto' }}
+    >
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        {items.map((virtualRow) => {
+          const post = posts[virtualRow.index];
+          const index = virtualRow.index;
+
+          return (
+            <div
+              key={post.id}
+              data-index={virtualRow.index}
+              ref={virtualizer.measureElement}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
+            >
+              <div className="pb-3">
+                {isMobile ? (
+                  <PostCard post={post} />
+                ) : (
+                  <motion.div
+                    custom={index}
+                    variants={postVariants}
+                    initial="hidden"
+                    whileInView="visible"
+                    viewport={{ once: true, margin: '-30px' }}
+                  >
+                    <PostCard post={post} />
+                  </motion.div>
+                )}
+                <div className="bg-card border border-t-0 border-border/20 rounded-b-2xl -mt-1 overflow-hidden">
+                  <CommentsList postId={post.id} />
+                </div>
+                {renderInjection(index)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {isFetchingNextPage && (
+        <div className="flex justify-center py-8">
+          <div className="w-10 h-10 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Feed() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = usePosts();
   const navigate = useNavigate();
