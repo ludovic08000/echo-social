@@ -15,6 +15,7 @@ import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { useCall } from "@/hooks/useCall";
 import { CallOverlay } from "@/components/CallOverlay";
 import { Suspense, lazy, useCallback, useRef } from "react";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // Eager-load critical routes
 import Landing from "./pages/Landing";
