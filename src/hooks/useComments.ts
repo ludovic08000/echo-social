@@ -18,21 +18,20 @@ export function useComments(postId: string) {
   return useQuery({
     queryKey: ['comments', postId],
     queryFn: async () => {
+      // Load only the most recent 30 comments (paginated)
       const { data, error } = await supabase
         .from('comments')
-        .select(`
-          id,
-          user_id,
-          post_id,
-          body,
-          created_at
-        `)
+        .select('id, user_id, post_id, body, created_at')
         .eq('post_id', postId)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: false })
+        .limit(30);
 
       if (error) throw error;
 
-      // Get profile info for each comment
+      // Reverse to show chronologically
+      data.reverse();
+
+      // Get profile info for each comment (batched, not N+1)
       const userIds = [...new Set(data.map(c => c.user_id))];
       const { data: profiles } = await supabase
         .from('profiles')
@@ -57,6 +56,7 @@ export function useComments(postId: string) {
       });
     },
     enabled: !!postId,
+    staleTime: 30_000, // Cache 30s to avoid re-fetching on toggle
   });
 }
 
