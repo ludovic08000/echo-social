@@ -36,9 +36,8 @@ export function usePushNotifications() {
       await supabase.from('push_subscriptions').upsert({
         user_id: user.id,
         endpoint: subData.endpoint || 'browser-notification',
-        p256dh_key: subData.keys?.p256dh || null,
-        auth_key: subData.keys?.auth || null,
-        user_agent: navigator.userAgent,
+        p256dh: subData.keys?.p256dh || 'pending',
+        auth: subData.keys?.auth || 'pending',
       }, { onConflict: 'user_id,endpoint' });
 
       return true;
