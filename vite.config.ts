@@ -24,11 +24,36 @@ export default defineConfig(({ mode }) => ({
         globPatterns: ["**/*.{js,css,html,ico,svg,woff2}"],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/vkpmoqfzrihcijjochks\.supabase\.co\/.*/i,
+            urlPattern: /^https:\/\/vkpmoqfzrihcijjochks\.supabase\.co\/rest\/.*/i,
             handler: "NetworkFirst",
             options: {
               cacheName: "supabase-api",
-              expiration: { maxEntries: 50, maxAgeSeconds: 300 },
+              expiration: { maxEntries: 100, maxAgeSeconds: 300 },
+              networkTimeoutSeconds: 5,
+            },
+          },
+          {
+            urlPattern: /^https:\/\/vkpmoqfzrihcijjochks\.supabase\.co\/storage\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "supabase-storage",
+              expiration: { maxEntries: 200, maxAgeSeconds: 7 * 24 * 3600 },
+            },
+          },
+          {
+            urlPattern: /\.(png|jpg|jpeg|gif|webp|avif|svg)$/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "images",
+              expiration: { maxEntries: 150, maxAgeSeconds: 30 * 24 * 3600 },
+            },
+          },
+          {
+            urlPattern: /\.(woff2?|ttf|otf|eot)$/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "fonts",
+              expiration: { maxEntries: 20, maxAgeSeconds: 365 * 24 * 3600 },
             },
           },
         ],
