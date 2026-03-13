@@ -746,19 +746,17 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                   return (
                     <div
                       key={msg.id}
-                      className={cn('flex gap-1.5 relative group', isMe ? 'flex-row-reverse' : '', isFirstInGroup ? 'mt-2' : 'mt-0.5')}
+                      className={cn('flex gap-1.5 relative group', isFirstInGroup ? 'mt-2' : 'mt-0.5')}
                     >
-                      {!isMe && (
-                        <div className="w-6 flex-shrink-0">
-                          {isLastInGroup && <UserAvatar src={msg.profile.avatar_url} alt={msg.profile.name} size="xs" />}
-                        </div>
-                      )}
-                      <div className={cn('max-w-[80%] flex flex-col', isMe ? 'items-end' : 'items-start')}>
+                      <div className="w-6 flex-shrink-0">
+                        {isLastInGroup && <UserAvatar src={msg.profile.avatar_url} alt={msg.profile.name} size="xs" />}
+                      </div>
+                      <div className="max-w-[80%] flex flex-col items-start">
                         {/* Reactions on hover */}
                         {activeMessageId === msg.id && !deleteMenuMsgId && (
                           <>
                             <div className="fixed inset-0 z-50" onClick={() => setActiveMessageId(null)} />
-                            <div className={cn("absolute z-50 flex items-center gap-0 px-1 py-0.5 rounded-full bg-background shadow-lg border border-border/40", isMe ? "right-0 -top-8" : "left-6 -top-8")}>
+                            <div className="absolute z-50 left-6 -top-8 flex items-center gap-0 px-1 py-0.5 rounded-full bg-background shadow-lg border border-border/40">
                               {MESSAGE_REACTIONS.map(r => (
                                 <button key={r.label} onClick={() => handleReact(msg.id, r.emoji)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-secondary hover:scale-125 transition-all text-sm">
                                   {r.emoji}
@@ -934,10 +932,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                                     'px-3 py-1.5 text-xs break-words leading-relaxed',
                                     isMe
                                       ? cn('bg-primary text-primary-foreground',
-                                          isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-br-md',
-                                          isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-br-sm',
-                                          !isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-tr-sm rounded-br-md',
-                                          !isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-tr-sm rounded-br-sm')
+                                          isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-bl-md',
+                                          isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-bl-sm',
+                                          !isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-tl-sm rounded-bl-md',
+                                          !isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-tl-sm rounded-bl-sm')
                                       : cn('bg-secondary',
                                           isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-bl-md',
                                           isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-bl-sm',
@@ -951,7 +949,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         )}
 
                         {reactions.length > 0 && (
-                          <div className={cn("flex items-center -mt-1 px-0.5", isMe ? "flex-row-reverse" : "")}>
+                          <div className="flex items-center -mt-1 px-0.5">
                             <div className="flex items-center bg-background border border-border/40 rounded-full px-1 py-0 shadow-sm">
                               {reactions.map((r, i) => <span key={i} className="text-[10px]">{r}</span>)}
                             </div>
@@ -959,7 +957,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         )}
 
                         {isLastInGroup && (
-                          <div className={cn('flex items-center gap-0.5 mt-0.5 px-0.5', isMe ? 'flex-row-reverse' : '')}>
+                          <div className="flex items-center gap-0.5 mt-0.5 px-0.5">
                             <span className="text-[8px] text-muted-foreground">{format(new Date(msg.created_at), 'HH:mm')}</span>
                             {isMe && <CheckCheck className="w-2.5 h-2.5 text-primary/60" />}
                           </div>
