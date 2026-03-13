@@ -970,6 +970,13 @@ export type Database = {
             foreignKeyName: "comments_post_id_fkey"
             columns: ["post_id"]
             isOneToOne: false
+            referencedRelation: "feed_posts_enriched"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comments_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
             referencedRelation: "posts"
             referencedColumns: ["id"]
           },
@@ -1007,6 +1014,13 @@ export type Database = {
           zeus_message?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "content_strikes_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "feed_posts_enriched"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "content_strikes_post_id_fkey"
             columns: ["post_id"]
@@ -1362,6 +1376,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "feed_score_cache_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "feed_posts_enriched"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "feed_score_cache_post_id_fkey"
             columns: ["post_id"]
@@ -1742,6 +1763,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "likes_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "feed_posts_enriched"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "likes_post_id_fkey"
             columns: ["post_id"]
@@ -2127,6 +2155,13 @@ export type Database = {
             foreignKeyName: "notifications_post_id_fkey"
             columns: ["post_id"]
             isOneToOne: false
+            referencedRelation: "feed_posts_enriched"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
             referencedRelation: "posts"
             referencedColumns: ["id"]
           },
@@ -2492,6 +2527,13 @@ export type Database = {
           viewed_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "post_views_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "feed_posts_enriched"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "post_views_post_id_fkey"
             columns: ["post_id"]
@@ -3445,6 +3487,13 @@ export type Database = {
             foreignKeyName: "user_feed_post_id_fkey"
             columns: ["post_id"]
             isOneToOne: false
+            referencedRelation: "feed_posts_enriched"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_feed_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
             referencedRelation: "posts"
             referencedColumns: ["id"]
           },
@@ -3781,6 +3830,23 @@ export type Database = {
           is_approved?: boolean | null
           message?: string | null
           target_user_id?: string | null
+        }
+        Relationships: []
+      }
+      feed_posts_enriched: {
+        Row: {
+          author_avatar_url: string | null
+          author_mood_emoji: string | null
+          author_name: string | null
+          author_profile_type: string | null
+          body: string | null
+          comments_count: number | null
+          created_at: string | null
+          expires_at: string | null
+          id: string | null
+          image_url: string | null
+          likes_count: number | null
+          user_id: string | null
         }
         Relationships: []
       }
