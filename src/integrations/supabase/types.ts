@@ -3855,146 +3855,68 @@ export type Database = {
           avatar_url: string | null
           bio: string | null
           city: string | null
-          cover_position_y: number | null
-          cover_url: string | null
           created_at: string | null
-          creator_since: string | null
-          creator_tier: string | null
-          date_of_birth: string | null
-          education_city: string | null
-          education_level: string | null
-          feed_bg_url: string | null
-          field_visibility: Json | null
-          id: string | null
-          interests: string[] | null
           is_creator: boolean | null
           mood_emoji: string | null
-          mood_text: string | null
-          mood_updated_at: string | null
           name: string | null
-          phone_number: string | null
-          profile_bg_url: string | null
-          profile_music_url: string | null
           profile_type: string | null
-          relationship_status: string | null
-          updated_at: string | null
           user_id: string | null
-          website_url: string | null
-          work: string | null
         }
         Insert: {
           avatar_url?: string | null
           bio?: string | null
           city?: string | null
-          cover_position_y?: number | null
-          cover_url?: string | null
           created_at?: string | null
-          creator_since?: string | null
-          creator_tier?: string | null
-          date_of_birth?: string | null
-          education_city?: string | null
-          education_level?: string | null
-          feed_bg_url?: string | null
-          field_visibility?: Json | null
-          id?: string | null
-          interests?: string[] | null
           is_creator?: boolean | null
           mood_emoji?: string | null
-          mood_text?: string | null
-          mood_updated_at?: string | null
           name?: string | null
-          phone_number?: never
-          profile_bg_url?: string | null
-          profile_music_url?: string | null
           profile_type?: string | null
-          relationship_status?: string | null
-          updated_at?: string | null
           user_id?: string | null
-          website_url?: string | null
-          work?: string | null
         }
         Update: {
           avatar_url?: string | null
           bio?: string | null
           city?: string | null
-          cover_position_y?: number | null
-          cover_url?: string | null
           created_at?: string | null
-          creator_since?: string | null
-          creator_tier?: string | null
-          date_of_birth?: string | null
-          education_city?: string | null
-          education_level?: string | null
-          feed_bg_url?: string | null
-          field_visibility?: Json | null
-          id?: string | null
-          interests?: string[] | null
           is_creator?: boolean | null
           mood_emoji?: string | null
-          mood_text?: string | null
-          mood_updated_at?: string | null
           name?: string | null
-          phone_number?: never
-          profile_bg_url?: string | null
-          profile_music_url?: string | null
           profile_type?: string | null
-          relationship_status?: string | null
-          updated_at?: string | null
           user_id?: string | null
-          website_url?: string | null
-          work?: string | null
         }
         Relationships: []
       }
       public_profiles: {
         Row: {
-          age_verified: boolean | null
           avatar_url: string | null
           bio: string | null
           city: string | null
-          cover_url: string | null
           created_at: string | null
-          date_of_birth: string | null
+          is_creator: boolean | null
           mood_emoji: string | null
-          mood_text: string | null
-          mood_updated_at: string | null
           name: string | null
-          profile_bg_url: string | null
-          profile_music_url: string | null
           profile_type: string | null
           user_id: string | null
         }
         Insert: {
-          age_verified?: boolean | null
           avatar_url?: string | null
           bio?: string | null
           city?: string | null
-          cover_url?: string | null
           created_at?: string | null
-          date_of_birth?: string | null
+          is_creator?: boolean | null
           mood_emoji?: string | null
-          mood_text?: string | null
-          mood_updated_at?: string | null
           name?: string | null
-          profile_bg_url?: string | null
-          profile_music_url?: string | null
           profile_type?: string | null
           user_id?: string | null
         }
         Update: {
-          age_verified?: boolean | null
           avatar_url?: string | null
           bio?: string | null
           city?: string | null
-          cover_url?: string | null
           created_at?: string | null
-          date_of_birth?: string | null
+          is_creator?: boolean | null
           mood_emoji?: string | null
-          mood_text?: string | null
-          mood_updated_at?: string | null
           name?: string | null
-          profile_bg_url?: string | null
-          profile_music_url?: string | null
           profile_type?: string | null
           user_id?: string | null
         }
