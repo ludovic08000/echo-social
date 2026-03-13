@@ -204,6 +204,11 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // Rate limit: 30 req/min per IP
+    const ip = getClientIP(req);
+    const rateLimited = checkRateLimit(`feed-scoring:${ip}`, 30, 60_000, corsHeaders);
+    if (rateLimited) return rateLimited;
+
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
