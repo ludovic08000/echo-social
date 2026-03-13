@@ -24,6 +24,7 @@ import { useReportUser } from '@/hooks/useTrustAndSafety';
 import { toast } from 'sonner';
 import { FeedAutoplayVideo } from './FeedAutoplayVideo';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { imagePresets } from '@/lib/imageOptimize';
 // guessVideoMime removed — using src directly for universal codec support
 import {
   DropdownMenu,
