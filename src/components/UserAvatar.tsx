@@ -1,6 +1,7 @@
-import { forwardRef } from 'react';
+import { forwardRef, useMemo } from 'react';
 import { User } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { imagePresets, optimizedImageUrl } from '@/lib/imageOptimize';
 
 interface AvatarProps {
   src?: string | null;
