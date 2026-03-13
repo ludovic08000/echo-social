@@ -1,4 +1,5 @@
-import { useParams, Link } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -11,6 +12,15 @@ import { Button } from '@/components/ui/button';
 export default function PostDetail() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const location = useLocation();
+  const commentsRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to comments when #comments hash is present
+  useEffect(() => {
+    if (location.hash === '#comments' && commentsRef.current) {
+      setTimeout(() => commentsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+    }
+  }, [location.hash, commentsRef.current]);
 
   const { data: post, isLoading } = useQuery({
     queryKey: ['post', id],
@@ -102,7 +112,7 @@ export default function PostDetail() {
           <PostCard post={post} showActions={true} />
         </div>
         
-        <div className="border-t border-border/50">
+        <div ref={commentsRef} className="border-t border-border/50">
           <h2 className="px-4 py-3 font-semibold text-sm text-muted-foreground">
             Commentaires
           </h2>

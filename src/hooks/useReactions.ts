@@ -64,7 +64,43 @@ export function useAddReaction() {
         });
       }
     },
-    onSuccess: () => {
+    onMutate: async ({ postId, reactionType }) => {
+      // Cancel outgoing queries
+      await queryClient.cancelQueries({ queryKey: ['posts'] });
+
+      // Snapshot previous data
+      const previousPosts = queryClient.getQueriesData({ queryKey: ['posts'] });
+
+      // Optimistically update the cache
+      queryClient.setQueriesData({ queryKey: ['posts'] }, (old: any) => {
+        if (!old?.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any[]) =>
+            page.map((post: any) => {
+              if (post.id !== postId) return post;
+              const hadReaction = !!post.user_reaction;
+              return {
+                ...post,
+                user_reaction: reactionType,
+                likes_count: hadReaction ? post.likes_count : post.likes_count + 1,
+              };
+            })
+          ),
+        };
+      });
+
+      return { previousPosts };
+    },
+    onError: (_err, _vars, context) => {
+      // Rollback on error
+      if (context?.previousPosts) {
+        context.previousPosts.forEach(([key, data]) => {
+          queryClient.setQueryData(key, data);
+        });
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['posts'] });
     },
   });
@@ -86,8 +122,39 @@ export function useRemoveReaction() {
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onMutate: async (postId) => {
+      await queryClient.cancelQueries({ queryKey: ['posts'] });
+      const previousPosts = queryClient.getQueriesData({ queryKey: ['posts'] });
+
+      queryClient.setQueriesData({ queryKey: ['posts'] }, (old: any) => {
+        if (!old?.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any[]) =>
+            page.map((post: any) => {
+              if (post.id !== postId) return post;
+              return {
+                ...post,
+                user_reaction: null,
+                likes_count: Math.max(0, post.likes_count - 1),
+              };
+            })
+          ),
+        };
+      });
+
+      return { previousPosts };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousPosts) {
+        context.previousPosts.forEach(([key, data]) => {
+          queryClient.setQueryData(key, data);
+        });
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['posts'] });
     },
   });
 }
+

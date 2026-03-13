@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ZeusCompanion } from './ZeusCompanion';
 import { useAuth } from '@/lib/auth';
 import { MobileNav, DesktopSidebar } from './Navigation';
@@ -12,6 +12,7 @@ import { useConversations } from '@/hooks/useMessages';
 import { useScreenSize } from '@/hooks/useScreenSize';
 import { useChatWidget } from '@/components/ChatWidgetContext';
 import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -26,6 +27,8 @@ function MobileHeader() {
   const { data: conversations } = useConversations();
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
   const { openChat } = useChatWidget();
+  const isMobile = useIsMobile();
+  const navigate = useNavigate();
 
   if (!user) return null;
 
@@ -49,7 +52,7 @@ function MobileHeader() {
             )}
           </Link>
           <button 
-            onClick={() => openChat()}
+            onClick={() => isMobile ? navigate('/messages') : openChat()}
             className="relative w-10 h-10 rounded-full bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200"
           >
             <MessageCircle className="w-5 h-5" />
