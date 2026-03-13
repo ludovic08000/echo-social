@@ -27,6 +27,8 @@ function MobileHeader() {
   const { data: conversations } = useConversations();
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
   const { openChat } = useChatWidget();
+  const isMobile = useIsMobile();
+  const navigate = useNavigate();
 
   if (!user) return null;
 
