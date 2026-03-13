@@ -12,6 +12,15 @@ import { Button } from '@/components/ui/button';
 export default function PostDetail() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const location = useLocation();
+  const commentsRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to comments when #comments hash is present
+  useEffect(() => {
+    if (location.hash === '#comments' && commentsRef.current) {
+      setTimeout(() => commentsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+    }
+  }, [location.hash, commentsRef.current]);
 
   const { data: post, isLoading } = useQuery({
     queryKey: ['post', id],
