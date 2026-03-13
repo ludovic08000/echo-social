@@ -949,7 +949,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         )}
 
                         {reactions.length > 0 && (
-                          <div className={cn("flex items-center -mt-1 px-0.5", isMe ? "flex-row-reverse" : "")}>
+                          <div className="flex items-center -mt-1 px-0.5">
                             <div className="flex items-center bg-background border border-border/40 rounded-full px-1 py-0 shadow-sm">
                               {reactions.map((r, i) => <span key={i} className="text-[10px]">{r}</span>)}
                             </div>
