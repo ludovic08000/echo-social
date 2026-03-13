@@ -81,3 +81,7 @@ project_id = "vkpmoqfzrihcijjochks"
     verify_jwt = false
   [functions.verify-id-document]
     verify_jwt = false
+  [functions.image-optimize]
+    verify_jwt = false
+  [functions.push-notify]
+    verify_jwt = false
