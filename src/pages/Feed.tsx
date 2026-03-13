@@ -66,7 +66,7 @@ const POST_CELL_STYLE: React.CSSProperties = {
 };
 
 /** Virtualized feed list — only renders visible posts + small overscan */
-function VirtualFeedList({
+const VirtualFeedList = React.memo(function VirtualFeedList({
   posts,
   isMobile,
   renderInjection,
