@@ -451,6 +451,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                             {isMe ? 'Vous' : msg.profile.name}
                           </span>
                         )}
+                        <MessageActions
                           isMe={isMe}
                           visible={activeMessageId === msg.id}
                           onClose={() => setActiveMessageId(null)}
