@@ -432,19 +432,25 @@ export function ChatView({ conversationId }: ChatViewProps) {
                         isFirstInGroup ? 'mt-2' : 'mt-px'
                       )}
                     >
-                      {/* Avatar - only for others, on last message of group */}
-                      {!isMe && (
-                        <div className="w-7 flex-shrink-0 mb-0.5">
-                          {isLastInGroup && (
-                            <Link to={`/profile/${msg.sender_id}`}>
-                              <UserAvatar src={msg.profile.avatar_url} alt={msg.profile.name} size="xs" />
-                            </Link>
-                          )}
-                        </div>
-                      )}
+                      {/* Avatar for all senders */}
+                      <div className="w-7 flex-shrink-0 mb-0.5">
+                        {isLastInGroup && (
+                          <Link to={`/profile/${msg.sender_id}`}>
+                            <UserAvatar src={msg.profile.avatar_url} alt={msg.profile.name} size="xs" />
+                          </Link>
+                        )}
+                      </div>
 
-                      <div className={cn('max-w-[70%] flex flex-col relative', isMe ? 'items-end' : 'items-start')}>
-                        <MessageActions
+                      <div className="max-w-[70%] flex flex-col relative items-start">
+                        {/* Sender name */}
+                        {isFirstInGroup && (
+                          <span className={cn(
+                            "text-[11px] font-semibold mb-0.5 px-1",
+                            isMe ? "text-primary" : "text-muted-foreground"
+                          )}>
+                            {isMe ? 'Vous' : msg.profile.name}
+                          </span>
+                        )}
                           isMe={isMe}
                           visible={activeMessageId === msg.id}
                           onClose={() => setActiveMessageId(null)}
