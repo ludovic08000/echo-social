@@ -276,13 +276,14 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                 <img
                   src={post.image_url}
                   alt="Image du post"
+                  loading="lazy"
+                  decoding="async"
                   className={cn(
                     "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
                     mediaLoaded ? "opacity-100" : "opacity-0"
                   )}
-                  onLoad={() => setMediaLoaded(true)}
-                  loading="lazy"
-                />
+                   onLoad={() => setMediaLoaded(true)}
+                 />
               </Link>
             )}
           </div>

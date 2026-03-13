@@ -69,15 +69,23 @@ export function SEOHead({ title, description, image, url, type = 'website', user
       document.head.appendChild(jsonLd);
     }
 
+    const schemaType = type === 'profile' ? 'Person' : type === 'video' ? 'VideoObject' : 'SocialMediaPosting';
     const structuredData: Record<string, unknown> = {
       '@context': 'https://schema.org',
-      '@type': type === 'profile' ? 'Person' : 'WebPage',
+      '@type': schemaType,
       name: title || siteName,
       description: desc,
       url: pageUrl,
     };
     if (username) structuredData.alternateName = `@${username}`;
     if (image) structuredData.image = image;
+    if (schemaType === 'SocialMediaPosting') {
+      structuredData.author = { '@type': 'Person', name: title?.split(' —')[0] || siteName };
+      structuredData.datePublished = new Date().toISOString();
+    }
+    if (schemaType === 'Person') {
+      structuredData.sameAs = pageUrl;
+    }
 
     jsonLd.textContent = JSON.stringify(structuredData);
 
