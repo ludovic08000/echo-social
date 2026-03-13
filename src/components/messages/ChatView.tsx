@@ -424,27 +424,34 @@ export function ChatView({ conversationId }: ChatViewProps) {
                   const isBigEmoji = isSingleEmoji(msg.body);
                   const isImage = msg.image_url;
 
-                  return (
+                    return (
                     <div
                       key={msg.id}
                       className={cn(
                         'flex items-end gap-1.5 relative group',
-                        isMe ? 'flex-row-reverse' : '',
                         isFirstInGroup ? 'mt-2' : 'mt-px'
                       )}
                     >
-                      {/* Avatar - only show on last message of group, Facebook style */}
-                      {!isMe && (
-                        <div className="w-7 flex-shrink-0 mb-0.5">
-                          {isLastInGroup && (
-                            <Link to={`/profile/${msg.sender_id}`}>
-                              <UserAvatar src={msg.profile.avatar_url} alt={msg.profile.name} size="xs" />
-                            </Link>
-                          )}
-                        </div>
-                      )}
+                      {/* Avatar - show for all senders on last message of group */}
+                      <div className="w-7 flex-shrink-0 mb-0.5">
+                        {isLastInGroup && (
+                          <Link to={`/profile/${msg.sender_id}`}>
+                            <UserAvatar src={msg.profile.avatar_url} alt={msg.profile.name} size="xs" />
+                          </Link>
+                        )}
+                      </div>
 
-                      <div className={cn('max-w-[70%] flex flex-col relative', isMe ? 'items-end' : 'items-start')}>
+                      <div className="max-w-[70%] flex flex-col relative items-start">
+                        {/* Sender name for group or when it's me */}
+                        {isFirstInGroup && (
+                          <span className={cn(
+                            "text-[11px] font-semibold mb-0.5 px-1",
+                            isMe ? "text-primary" : "text-muted-foreground"
+                          )}>
+                            {isMe ? 'Vous' : msg.profile.name}
+                          </span>
+                        )}
+
                         <MessageActions
                           isMe={isMe}
                           visible={activeMessageId === msg.id}
@@ -486,7 +493,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
                         {/* Pin indicator */}
                         {pinnedMessages.has(msg.id) && (
-                          <div className={cn("flex items-center gap-1 mb-0.5", isMe ? "flex-row-reverse" : "")}>
+                          <div className="flex items-center gap-1 mb-0.5">
                             <Pin className="w-3 h-3 text-primary" />
                             <span className="text-[10px] text-primary font-medium">Épinglé</span>
                           </div>
@@ -494,15 +501,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
                         {/* Image message */}
                         {isImage && (
-                          <div className={cn(
-                            "overflow-hidden mb-0.5",
-                            isMe ? "rounded-[18px] rounded-br-sm" : "rounded-[18px] rounded-bl-sm"
-                          )}>
+                          <div className="overflow-hidden mb-0.5 rounded-[18px] rounded-bl-sm">
                             <img src={msg.image_url!} alt="Photo" className="max-w-full max-h-[300px] object-cover" />
                           </div>
                         )}
 
-                        {/* Message bubble - Facebook Messenger style */}
+                        {/* Message bubble */}
                         <div
                           onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
                           onContextMenu={(e) => { e.preventDefault(); setActiveMessageId(msg.id); }}
@@ -516,11 +520,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
                                   isMe
                                     ? cn(
                                         'bg-primary text-primary-foreground',
-                                        // Facebook-style: rounded bubbles with tight corners for consecutive messages
                                         isFirstInGroup && isLastInGroup && 'rounded-[18px]',
-                                        isFirstInGroup && !isLastInGroup && 'rounded-[18px] rounded-br-[4px]',
-                                        !isFirstInGroup && isLastInGroup && 'rounded-[18px] rounded-tr-[4px]',
-                                        !isFirstInGroup && !isLastInGroup && 'rounded-[18px] rounded-tr-[4px] rounded-br-[4px]'
+                                        isFirstInGroup && !isLastInGroup && 'rounded-[18px] rounded-bl-[4px]',
+                                        !isFirstInGroup && isLastInGroup && 'rounded-[18px] rounded-tl-[4px]',
+                                        !isFirstInGroup && !isLastInGroup && 'rounded-[18px] rounded-tl-[4px] rounded-bl-[4px]'
                                       )
                                     : cn(
                                         'bg-secondary text-foreground',
@@ -537,10 +540,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
                         {/* Reactions */}
                         {reactions.length > 0 && (
-                          <div className={cn(
-                            "flex items-center gap-0.5 -mt-1 px-1 relative z-10",
-                            isMe ? "flex-row-reverse" : ""
-                          )}>
+                          <div className="flex items-center gap-0.5 -mt-1 px-1 relative z-10">
                             <div className="flex items-center gap-0 bg-background border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm">
                               {reactions.map((r, i) => (
                                 <span key={i} className="text-xs">{r}</span>
@@ -549,12 +549,9 @@ export function ChatView({ conversationId }: ChatViewProps) {
                           </div>
                         )}
 
-                        {/* Timestamp + read receipt - only on last in group, compact like Facebook */}
+                        {/* Timestamp + read receipt */}
                         {isLastInGroup && (
-                          <div className={cn(
-                            'flex items-center gap-1 mt-0.5 px-1',
-                            isMe ? 'flex-row-reverse' : ''
-                          )}>
+                          <div className="flex items-center gap-1 mt-0.5 px-1">
                             <span className="text-[11px] text-muted-foreground">
                               {format(new Date(msg.created_at), 'HH:mm')}
                             </span>
@@ -564,9 +561,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
                           </div>
                         )}
                       </div>
-
-                      {/* Spacer for my messages to align right */}
-                      {isMe && <div className="w-7 flex-shrink-0" />}
                     </div>
                   );
                 })}
