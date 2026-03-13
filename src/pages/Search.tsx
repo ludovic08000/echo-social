@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Search as SearchIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -11,75 +11,75 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/lib/auth';
 import { useNavigate } from 'react-router-dom';
 
+/** Debounce hook to avoid firing a query on every keystroke */
+function useDebouncedValue(value: string, delay = 350) {
+  const [debounced, setDebounced] = useState(value);
+  useMemo(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
+
 export default function Search() {
   const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query);
   const [tab, setTab] = useState('users');
   const { user } = useAuth();
   const navigate = useNavigate();
 
   const { data: users, isLoading: usersLoading } = useQuery({
-    queryKey: ['search-users', query],
+    queryKey: ['search-users', debouncedQuery],
     queryFn: async () => {
-      if (!query.trim()) return [];
+      if (!debouncedQuery.trim()) return [];
 
       const { data, error } = await supabase
         .from('profiles')
         .select('user_id, name, avatar_url, bio')
-        .ilike('name', `%${query}%`)
+        .ilike('name', `%${debouncedQuery}%`)
         .limit(20);
 
       if (error) throw error;
       return data;
     },
-    enabled: query.length >= 2,
+    enabled: debouncedQuery.length >= 2,
+    staleTime: 60_000,
   });
 
   const { data: posts, isLoading: postsLoading } = useQuery({
-    queryKey: ['search-posts', query],
+    queryKey: ['search-posts', debouncedQuery],
     queryFn: async () => {
-      if (!query.trim()) return [];
+      if (!debouncedQuery.trim()) return [];
 
+      // Use denormalized counters — no N+1 for likes/comments
       const { data: postsData, error } = await supabase
         .from('posts')
-        .select('id, user_id, body, image_url, created_at')
-        .ilike('body', `%${query}%`)
+        .select('id, user_id, body, image_url, created_at, likes_count, comments_count')
+        .ilike('body', `%${debouncedQuery}%`)
         .order('created_at', { ascending: false })
         .limit(20);
 
       if (error) throw error;
 
-      // Get profiles
+      // Get profiles in batch
       const userIds = [...new Set(postsData.map(p => p.user_id))];
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, name, avatar_url')
-        .in('user_id', userIds);
-
-      const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
-
-      // Get likes counts
       const postIds = postsData.map(p => p.id);
-      const [likesRes, commentsRes, userLikesRes] = await Promise.all([
-        supabase.from('likes').select('post_id').in('post_id', postIds),
-        supabase.from('comments').select('post_id').in('post_id', postIds),
-        user 
-          ? supabase.from('likes').select('post_id').eq('user_id', user.id).in('post_id', postIds)
+
+      const [profilesRes, userLikesRes] = await Promise.all([
+        supabase.from('profiles').select('user_id, name, avatar_url').in('user_id', userIds),
+        user
+          ? supabase.from('likes').select('post_id, reaction_type').eq('user_id', user.id).in('post_id', postIds)
           : Promise.resolve({ data: [] }),
       ]);
 
-      const likesCount: Record<string, number> = {};
-      const commentsCount: Record<string, number> = {};
-      const userLikes = new Set(userLikesRes.data?.map(l => l.post_id) || []);
-
-      likesRes.data?.forEach(l => {
-        likesCount[l.post_id] = (likesCount[l.post_id] || 0) + 1;
-      });
-      commentsRes.data?.forEach(c => {
-        commentsCount[c.post_id] = (commentsCount[c.post_id] || 0) + 1;
-      });
+      const profileMap = new Map(profilesRes.data?.map(p => [p.user_id, p]) || []);
+      const userReactions = new Map(
+        (userLikesRes.data || []).map((l: any) => [l.post_id, l.reaction_type])
+      );
 
       return postsData.map(post => {
         const profile = profileMap.get(post.user_id);
+        const reaction = userReactions.get(post.id);
         return {
           id: post.id,
           user_id: post.user_id,
@@ -90,13 +90,15 @@ export default function Search() {
             name: profile?.name || 'Unknown',
             avatar_url: profile?.avatar_url || null,
           },
-          likes_count: likesCount[post.id] || 0,
-          comments_count: commentsCount[post.id] || 0,
-          is_liked: userLikes.has(post.id),
+          likes_count: (post as any).likes_count || 0,
+          comments_count: (post as any).comments_count || 0,
+          is_liked: !!reaction,
+          user_reaction: reaction || null,
         };
       });
     },
-    enabled: query.length >= 2,
+    enabled: debouncedQuery.length >= 2,
+    staleTime: 60_000,
   });
 
   return (
@@ -115,7 +117,7 @@ export default function Search() {
         </div>
       </header>
 
-      {query.length >= 2 ? (
+      {debouncedQuery.length >= 2 ? (
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="w-full mb-4">
             <TabsTrigger value="users" className="flex-1">
