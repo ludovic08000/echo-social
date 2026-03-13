@@ -55,7 +55,7 @@ export function usePosts() {
         query = query.lt('created_at', pageParam);
       }
 
-      const { data: posts, error } = await query;
+      const { data: posts, error } = await query as { data: any[] | null; error: any };
 
       if (error) throw error;
       if (!posts || posts.length === 0) return [];
