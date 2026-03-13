@@ -957,7 +957,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         )}
 
                         {isLastInGroup && (
-                          <div className={cn('flex items-center gap-0.5 mt-0.5 px-0.5', isMe ? 'flex-row-reverse' : '')}>
+                          <div className="flex items-center gap-0.5 mt-0.5 px-0.5">
                             <span className="text-[8px] text-muted-foreground">{format(new Date(msg.created_at), 'HH:mm')}</span>
                             {isMe && <CheckCheck className="w-2.5 h-2.5 text-primary/60" />}
                           </div>
