@@ -340,34 +340,14 @@ export default function Feed() {
                     </div>
                   </div>
                 )}
-                <div className="space-y-3 px-4">
-                  {posts.map((post, index) => {
-                    const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
-                    const cellStyle = isVideoPost ? undefined : POST_CELL_STYLE;
-
-                    return (
-                      <div key={post.id} style={cellStyle}>
-                        {isMobile ? (
-                          <PostCard post={post} />
-                        ) : (
-                          <motion.div
-                            custom={index}
-                            variants={postVariants}
-                            initial="hidden"
-                            whileInView="visible"
-                            viewport={{ once: true, margin: '-30px' }}
-                          >
-                            <PostCard post={post} />
-                          </motion.div>
-                        )}
-                        <div className="bg-card border border-t-0 border-border/20 rounded-b-2xl -mt-1 overflow-hidden">
-                          <CommentsList postId={post.id} />
-                        </div>
-                        {renderInjection(index)}
-                      </div>
-                    );
-                  })}
-                </div>
+                <VirtualFeedList
+                  posts={posts}
+                  isMobile={isMobile}
+                  renderInjection={renderInjection}
+                  hasNextPage={!!hasNextPage}
+                  isFetchingNextPage={isFetchingNextPage}
+                  fetchNextPage={fetchNextPage}
+                />
 
                 <div ref={loadMoreRef} className="h-1" />
                 
