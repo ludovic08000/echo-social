@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Send, Plus, Smile, Phone, Video,
   Camera, X, CheckCheck, Pin, PinOff, ChevronDown,
-  Forward, Users, UserPlus, LogOut, Crown, UserMinus, Sparkles
+  Forward, Users, UserPlus, LogOut, Crown, UserMinus, Sparkles, Info
 } from 'lucide-react';
 import { format, isSameDay } from 'date-fns';
 import { UserAvatar } from '@/components/UserAvatar';
@@ -80,7 +80,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
     startCall, endCall, toggleMute, toggleCamera, switchToVideo, switchCamera,
   } = useCall();
 
-  // Simulate typing indicator
   useEffect(() => {
     if (newMessage.length > 0) {
       const t = setTimeout(() => setIsTyping(true), 500);
@@ -153,7 +152,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
     toast.success('Message copié');
   };
 
-  // Group messages by date
   const groupedMessages = useMemo(() => {
     if (!messages) return [];
     const groups: { date: string; messages: Message[] }[] = [];
@@ -172,74 +170,71 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Hidden file input */}
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
 
-      {/* Premium Chat Header */}
-      <header className="sticky top-0 z-40 glass border-b border-border/30 safe-area-pt">
-        <div className="flex items-center gap-3 px-4 h-14">
+      {/* Facebook Messenger-style header */}
+      <header className="sticky top-0 z-40 bg-background border-b border-border/40 safe-area-pt">
+        <div className="flex items-center gap-2 px-3 h-[60px]">
           <Link to="/messages">
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
-              <ArrowLeft className="w-4 h-4" />
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full">
+              <ArrowLeft className="w-5 h-5" />
             </Button>
           </Link>
+
           {conversation && (
             conversation.is_group ? (
-              <button onClick={() => setShowGroupPanel(!showGroupPanel)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/30 flex items-center justify-center text-lg flex-shrink-0">
+              <button onClick={() => setShowGroupPanel(!showGroupPanel)} className="flex items-center gap-2.5 flex-1 min-w-0">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-lg flex-shrink-0">
                   👥
                 </div>
-                <div className="min-w-0">
-                  <span className="text-sm font-semibold block truncate">{conversation.name || 'Groupe'}</span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {groupMembers.length} membres · Appuyez pour gérer
+                <div className="min-w-0 text-left">
+                  <span className="text-[15px] font-semibold block truncate leading-tight">{conversation.name || 'Groupe'}</span>
+                  <span className="text-[11px] text-muted-foreground leading-tight">
+                    {groupMembers.length} membres
                   </span>
                 </div>
               </button>
             ) : (
-              <Link to={`/profile/${conversation.participant.user_id}`} className="flex items-center gap-3 flex-1 min-w-0">
+              <Link to={`/profile/${conversation.participant.user_id}`} className="flex items-center gap-2.5 flex-1 min-w-0">
                 <div className="relative">
-                  <UserAvatar src={conversation.participant.avatar_url} alt={conversation.participant.name} size="md" />
-                  <div className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-background ring-2 ring-emerald-500/20" />
+                  <UserAvatar src={conversation.participant.avatar_url} alt={conversation.participant.name} size="sm" />
+                  <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-background" />
                 </div>
                 <div className="min-w-0">
-                  <span className="text-sm font-semibold block truncate">{conversation.participant.name}</span>
-                  <span className="text-[10px] text-emerald-500 font-medium flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    En ligne
-                  </span>
+                  <span className="text-[15px] font-semibold block truncate leading-tight">{conversation.participant.name}</span>
+                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 leading-tight">Actif(ve) maintenant</span>
                 </div>
               </Link>
             )
           )}
-          {/* Call buttons */}
-          <div className="flex items-center gap-0.5">
+
+          {/* Action buttons - Facebook Messenger style */}
+          <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 rounded-full text-primary hover:bg-primary/10"
+              className="h-9 w-9 rounded-full text-primary"
               onClick={() => startCall(conversationId, 'audio')}
               disabled={callState !== 'idle'}
             >
-              <Phone className="w-4 h-4" />
+              <Phone className="w-5 h-5" />
             </Button>
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 rounded-full text-primary hover:bg-primary/10"
+              className="h-9 w-9 rounded-full text-primary"
               onClick={() => startCall(conversationId, 'video')}
               disabled={callState !== 'idle'}
             >
-              <Video className="w-4 h-4" />
+              <Video className="w-5 h-5" />
             </Button>
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 rounded-full text-primary hover:bg-primary/10"
-              onClick={() => setShowNewChat(true)}
-              title="Nouveau message / groupe"
+              className="h-9 w-9 rounded-full text-primary"
+              onClick={() => setShowGroupPanel(!showGroupPanel)}
             >
-              <Plus className="w-4 h-4" />
+              <Info className="w-5 h-5" />
             </Button>
           </div>
         </div>
@@ -280,7 +275,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
               </div>
             </div>
 
-            {/* Members list */}
             <div className="space-y-1 max-h-48 overflow-y-auto">
               {groupMembers.map(member => (
                 <div key={member.user_id} className="flex items-center gap-2.5 py-1.5 px-2 rounded-xl hover:bg-secondary/40 transition-colors">
@@ -312,7 +306,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
               ))}
             </div>
 
-            {/* Invite friends panel */}
             {showInvitePanel && (
               <div className="border-t border-border/20 pt-3 space-y-2">
                 <input
@@ -355,11 +348,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
         </div>
       )}
 
+      {/* Pinned messages */}
       {(() => {
         const pinned = messages?.filter(m => pinnedMessages.has(m.id)) || [];
         if (pinned.length === 0) return null;
         return (
-          <div className="sticky top-14 z-30 glass border-b border-border/20 px-4 py-2 animate-in slide-in-from-top-2">
+          <div className="sticky top-[60px] z-30 bg-background/95 backdrop-blur-sm border-b border-border/20 px-4 py-2">
             <div className="flex items-center gap-2">
               <Pin className="w-3.5 h-3.5 text-primary flex-shrink-0" />
               <p className="text-xs text-foreground font-medium truncate flex-1">
@@ -375,41 +369,33 @@ export function ChatView({ conversationId }: ChatViewProps) {
         );
       })()}
 
-      {/* Messages area */}
+      {/* Messages area - Facebook Messenger style */}
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-3 relative"
+        className="flex-1 overflow-y-auto px-3 py-4 relative"
       >
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
-            <div className="flex flex-col items-center gap-3">
-              <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-              <span className="text-xs text-muted-foreground">Chargement des messages…</span>
-            </div>
+            <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
           </div>
         ) : messages?.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-4">
-            <div className="relative">
-              <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-primary/20 to-accent/30 flex items-center justify-center">
-                <Send className="w-8 h-8 text-primary" />
-              </div>
-              <Sparkles className="w-5 h-5 text-primary absolute -top-1 -right-1 animate-pulse" />
-            </div>
-            <div className="text-center">
-              <p className="text-base font-semibold">Dites bonjour ! 👋</p>
-              <p className="text-xs text-muted-foreground mt-1 max-w-[220px]">
-                Envoyez votre premier message pour démarrer la conversation
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2 justify-center max-w-[300px]">
-              {['Salut ! 👋', 'Comment ça va ? 😊', 'Quoi de neuf ? 🤔', 'Hey ! ✨'].map(suggestion => (
+          <div className="flex flex-col items-center justify-center py-16 gap-3">
+            {conversation && !conversation.is_group && (
+              <>
+                <UserAvatar src={conversation.participant.avatar_url} alt={conversation.participant.name} size="xl" />
+                <p className="text-lg font-bold">{conversation.participant.name}</p>
+                <p className="text-sm text-muted-foreground text-center max-w-[260px]">
+                  Vous êtes amis sur Forsure. Dites bonjour ! 👋
+                </p>
+              </>
+            )}
+            <div className="flex flex-wrap gap-2 justify-center max-w-[300px] mt-2">
+              {['Salut ! 👋', 'Comment ça va ? 😊', 'Quoi de neuf ? 🤔'].map(suggestion => (
                 <button
                   key={suggestion}
-                  onClick={() => {
-                    sendMessage.mutate({ conversationId, body: suggestion });
-                  }}
-                  className="px-4 py-2 rounded-full bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 active:scale-95 transition-all"
+                  onClick={() => sendMessage.mutate({ conversationId, body: suggestion })}
+                  className="px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 active:scale-95 transition-all"
                 >
                   {suggestion}
                 </button>
@@ -419,17 +405,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
         ) : (
           groupedMessages.map((group, gi) => (
             <div key={gi}>
-              {/* Date separator */}
-              <div className="flex items-center justify-center my-5">
-                <div className="h-px flex-1 bg-border/30" />
-                <span className="text-[10px] font-medium text-muted-foreground bg-background px-4 py-1 capitalize">
+              {/* Date separator - clean Facebook style */}
+              <div className="flex items-center justify-center my-4">
+                <span className="text-[11px] font-medium text-muted-foreground px-3 py-1 rounded-full bg-secondary/60 capitalize">
                   {formatDateSeparator(group.date)}
                 </span>
-                <div className="h-px flex-1 bg-border/30" />
               </div>
 
               {/* Messages */}
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {group.messages.map((msg, mi) => {
                   const isMe = msg.sender_id === user?.id;
                   const prevMsg = mi > 0 ? group.messages[mi - 1] : null;
@@ -444,21 +428,23 @@ export function ChatView({ conversationId }: ChatViewProps) {
                     <div
                       key={msg.id}
                       className={cn(
-                        'flex gap-2 relative group',
+                        'flex items-end gap-1.5 relative group',
                         isMe ? 'flex-row-reverse' : '',
-                        isFirstInGroup ? 'mt-3' : 'mt-0.5'
+                        isFirstInGroup ? 'mt-2' : 'mt-px'
                       )}
                     >
-                      {/* Avatar */}
+                      {/* Avatar - only show on last message of group, Facebook style */}
                       {!isMe && (
-                        <Link to={`/profile/${msg.sender_id}`} className="w-7 flex-shrink-0">
+                        <div className="w-7 flex-shrink-0 mb-0.5">
                           {isLastInGroup && (
-                            <UserAvatar src={msg.profile.avatar_url} alt={msg.profile.name} size="xs" />
+                            <Link to={`/profile/${msg.sender_id}`}>
+                              <UserAvatar src={msg.profile.avatar_url} alt={msg.profile.name} size="xs" />
+                            </Link>
                           )}
-                        </Link>
+                        </div>
                       )}
 
-                      <div className={cn('max-w-[75%] flex flex-col relative', isMe ? 'items-end' : 'items-start')}>
+                      <div className={cn('max-w-[70%] flex flex-col relative', isMe ? 'items-end' : 'items-start')}>
                         <MessageActions
                           isMe={isMe}
                           visible={activeMessageId === msg.id}
@@ -508,48 +494,51 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
                         {/* Image message */}
                         {isImage && (
-                          <div className="rounded-2xl overflow-hidden mb-1 shadow-sm">
+                          <div className={cn(
+                            "overflow-hidden mb-0.5",
+                            isMe ? "rounded-[18px] rounded-br-sm" : "rounded-[18px] rounded-bl-sm"
+                          )}>
                             <img src={msg.image_url!} alt="Photo" className="max-w-full max-h-[300px] object-cover" />
                           </div>
                         )}
 
-                        {/* Message bubble */}
+                        {/* Message bubble - Facebook Messenger style */}
                         <div
                           onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
                           onContextMenu={(e) => { e.preventDefault(); setActiveMessageId(msg.id); }}
                           className={cn(
-                            'cursor-pointer select-none transition-all duration-150 group/bubble',
-                            activeMessageId === msg.id && 'scale-[0.97]',
+                            'cursor-pointer select-none transition-all duration-100',
+                            activeMessageId === msg.id && 'scale-[0.98] opacity-80',
                             isBigEmoji
                               ? 'text-4xl leading-none py-1'
                               : cn(
-                                  'px-3.5 py-2 text-sm break-words leading-relaxed relative',
+                                  'px-3 py-1.5 text-[15px] break-words leading-relaxed',
                                   isMe
                                     ? cn(
-                                        'bg-primary text-primary-foreground hover:brightness-95',
-                                        isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-br-md',
-                                        isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-br-sm',
-                                        !isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-tr-sm rounded-br-md',
-                                        !isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-tr-sm rounded-br-sm'
+                                        'bg-primary text-primary-foreground',
+                                        // Facebook-style: rounded bubbles with tight corners for consecutive messages
+                                        isFirstInGroup && isLastInGroup && 'rounded-[18px]',
+                                        isFirstInGroup && !isLastInGroup && 'rounded-[18px] rounded-br-[4px]',
+                                        !isFirstInGroup && isLastInGroup && 'rounded-[18px] rounded-tr-[4px]',
+                                        !isFirstInGroup && !isLastInGroup && 'rounded-[18px] rounded-tr-[4px] rounded-br-[4px]'
                                       )
                                     : cn(
-                                        'bg-secondary hover:bg-secondary/80',
-                                        isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-bl-md',
-                                        isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-bl-sm',
-                                        !isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-tl-sm rounded-bl-md',
-                                        !isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-tl-sm rounded-bl-sm'
+                                        'bg-secondary text-foreground',
+                                        isFirstInGroup && isLastInGroup && 'rounded-[18px]',
+                                        isFirstInGroup && !isLastInGroup && 'rounded-[18px] rounded-bl-[4px]',
+                                        !isFirstInGroup && isLastInGroup && 'rounded-[18px] rounded-tl-[4px]',
+                                        !isFirstInGroup && !isLastInGroup && 'rounded-[18px] rounded-tl-[4px] rounded-bl-[4px]'
                                       )
                                 )
                           )}
-                          title="Cliquez ou maintenez pour les options"
                         >
                           {msg.body}
                         </div>
 
-                        {/* Reactions display */}
+                        {/* Reactions */}
                         {reactions.length > 0 && (
                           <div className={cn(
-                            "flex items-center gap-0.5 -mt-1.5 px-1",
+                            "flex items-center gap-0.5 -mt-1 px-1 relative z-10",
                             isMe ? "flex-row-reverse" : ""
                           )}>
                             <div className="flex items-center gap-0 bg-background border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm">
@@ -560,21 +549,24 @@ export function ChatView({ conversationId }: ChatViewProps) {
                           </div>
                         )}
 
-                        {/* Timestamp + read receipt */}
+                        {/* Timestamp + read receipt - only on last in group, compact like Facebook */}
                         {isLastInGroup && (
                           <div className={cn(
-                            'flex items-center gap-1 mt-1 px-1',
+                            'flex items-center gap-1 mt-0.5 px-1',
                             isMe ? 'flex-row-reverse' : ''
                           )}>
-                            <span className="text-[10px] text-muted-foreground">
+                            <span className="text-[11px] text-muted-foreground">
                               {format(new Date(msg.created_at), 'HH:mm')}
                             </span>
                             {isMe && (
-                              <CheckCheck className="w-3 h-3 text-primary/60" />
+                              <CheckCheck className="w-3.5 h-3.5 text-primary/70" />
                             )}
                           </div>
                         )}
                       </div>
+
+                      {/* Spacer for my messages to align right */}
+                      {isMe && <div className="w-7 flex-shrink-0" />}
                     </div>
                   );
                 })}
@@ -583,7 +575,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
           ))
         )}
 
-        {/* Typing indicator */}
         {isTyping && conversation && (
           <TypingIndicator name={conversation.participant.name} />
         )}
@@ -591,11 +582,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Scroll to bottom FAB */}
+      {/* Scroll to bottom */}
       {showScrollDown && (
         <button
           onClick={scrollToBottom}
-          className="absolute bottom-32 right-4 z-30 w-10 h-10 rounded-full glass shadow-xl border border-border/30 flex items-center justify-center hover:bg-secondary transition-colors animate-in zoom-in-75"
+          className="absolute bottom-28 right-4 z-30 w-9 h-9 rounded-full bg-background shadow-lg border border-border/40 flex items-center justify-center hover:bg-secondary transition-colors"
         >
           <ChevronDown className="w-5 h-5 text-muted-foreground" />
         </button>
@@ -603,15 +594,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
       {/* Reply preview */}
       {replyTo && (
-        <div className="sticky bottom-[108px] z-20 mx-4 glass border border-border/30 rounded-xl px-4 py-2.5 flex items-center gap-3 animate-in slide-in-from-bottom-2 duration-200">
+        <div className="border-t border-border/30 bg-secondary/30 px-4 py-2 flex items-center gap-3">
           <div className="w-1 h-8 rounded-full bg-primary flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-semibold text-primary">
+            <p className="text-[11px] font-semibold text-primary">
               Réponse à {replyTo.sender_id === user?.id ? 'vous-même' : replyTo.profile.name}
             </p>
             <p className="text-xs text-muted-foreground truncate">{replyTo.body}</p>
           </div>
-          <button onClick={() => setReplyTo(null)} className="text-muted-foreground hover:text-foreground transition-colors">
+          <button onClick={() => setReplyTo(null)} className="text-muted-foreground hover:text-foreground">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -619,7 +610,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
       {/* Emoji Picker */}
       {showEmojis && (
-        <div className="sticky bottom-14 z-30 glass border-t border-border/20 animate-in slide-in-from-bottom-4 duration-200">
+        <div className="border-t border-border/30 bg-background">
           <div className="px-2 py-3 max-h-[220px] overflow-y-auto scrollbar-thin">
             {EMOJI_CATEGORIES.map((cat) => (
               <div key={cat.label} className="mb-2">
@@ -633,7 +624,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                         setNewMessage(prev => prev + emoji);
                         inputRef.current?.focus();
                       }}
-                      className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/80 active:scale-90 transition-all text-lg"
+                      className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary active:scale-90 transition-all text-lg"
                     >
                       {emoji}
                     </button>
@@ -656,45 +647,31 @@ export function ChatView({ conversationId }: ChatViewProps) {
         />
       )}
 
-      {/* Premium Input Bar */}
-      <div className="sticky bottom-0 glass border-t border-border/30 safe-area-pb">
-        <form onSubmit={handleSend} className="flex items-center gap-2 px-3 py-2.5">
-          {/* Attachments */}
-          <div className="flex items-center gap-0.5">
-            <button
-              type="button"
-              onClick={handleImageUpload}
-              disabled={isUploading}
-              className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
-            >
-              {isUploading ? (
-                <div className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-              ) : (
-                <Camera className="w-5 h-5" />
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowSharePicker(v => !v)}
-              className={cn(
-                "w-9 h-9 rounded-full flex items-center justify-center transition-all",
-                showSharePicker ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary hover:bg-primary/10"
-              )}
-            >
-              <Forward className="w-5 h-5" />
-            </button>
-          </div>
+      {/* Input Bar - Facebook Messenger style */}
+      <div className="border-t border-border/40 bg-background safe-area-pb">
+        <form onSubmit={handleSend} className="flex items-center gap-1.5 px-2 py-2">
+          {/* Quick actions */}
+          <button
+            type="button"
+            onClick={handleImageUpload}
+            disabled={isUploading}
+            className="w-10 h-10 rounded-full flex items-center justify-center text-primary hover:bg-primary/10 transition-colors flex-shrink-0"
+          >
+            {isUploading ? (
+              <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+            ) : (
+              <Camera className="w-6 h-6" />
+            )}
+          </button>
 
-          {/* Input */}
-          <div className="flex-1 flex items-center gap-2 bg-secondary/60 rounded-full px-4 py-2 focus-within:bg-secondary focus-within:ring-2 focus-within:ring-primary/20 transition-all">
+          {/* Input field */}
+          <div className="flex-1 flex items-center bg-secondary rounded-full px-1 min-h-[40px]">
             <button
               type="button"
               onClick={() => setShowEmojis(v => !v)}
               className={cn(
-                "w-7 h-7 rounded-full flex items-center justify-center transition-all flex-shrink-0",
-                showEmojis
-                  ? "bg-primary/15 text-primary"
-                  : "text-muted-foreground hover:text-foreground"
+                "w-8 h-8 rounded-full flex items-center justify-center transition-colors flex-shrink-0",
+                showEmojis ? "text-primary" : "text-muted-foreground hover:text-foreground"
               )}
             >
               <Smile className="w-5 h-5" />
@@ -704,21 +681,20 @@ export function ChatView({ conversationId }: ChatViewProps) {
               value={newMessage}
               onChange={e => setNewMessage(e.target.value)}
               onFocus={() => setShowEmojis(false)}
-              placeholder="Votre message…"
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground min-w-0"
+              placeholder="Aa"
+              className="flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground min-w-0 py-2"
             />
           </div>
 
           {/* Send or Voice */}
           {newMessage.trim() ? (
-            <Button
+            <button
               type="submit"
-              size="icon"
               disabled={sendMessage.isPending}
-              className="h-10 w-10 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all duration-200 animate-in zoom-in-75"
+              className="w-10 h-10 rounded-full flex items-center justify-center text-primary hover:bg-primary/10 transition-colors flex-shrink-0"
             >
-              <Send className="w-4 h-4" />
-            </Button>
+              <Send className="w-6 h-6" />
+            </button>
           ) : (
             <VoiceRecordButton onSend={(text) => sendMessage.mutate({ conversationId, body: text })} />
           )}
