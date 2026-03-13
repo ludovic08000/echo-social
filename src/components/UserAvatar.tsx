@@ -29,6 +29,11 @@ const moodSizeClasses = {
 
 export const UserAvatar = forwardRef<HTMLDivElement, AvatarProps>(
   ({ src, alt, size = 'md', className, moodEmoji }, ref) => {
+    const optimizedSrc = useMemo(() => {
+      if (!src) return null;
+      if (size === 'xl') return imagePresets.avatarLarge(src);
+      return imagePresets.avatar(src);
+    }, [src, size]);
     const moodBadge = moodEmoji ? (
       <span className={cn(
         'absolute rounded-full bg-card border border-border/50 flex items-center justify-center shadow-sm',
