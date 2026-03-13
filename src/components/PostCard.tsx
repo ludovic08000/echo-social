@@ -24,6 +24,7 @@ import { useReportUser } from '@/hooks/useTrustAndSafety';
 import { toast } from 'sonner';
 import { FeedAutoplayVideo } from './FeedAutoplayVideo';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { imagePresets } from '@/lib/imageOptimize';
 // guessVideoMime removed — using src directly for universal codec support
 import {
   DropdownMenu,
@@ -274,7 +275,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
             ) : (
               <Link to={`/post/${post.id}`}>
                 <img
-                  src={post.image_url}
+                  src={imagePresets.postThumbnail(post.image_url) || post.image_url}
                   alt="Image du post"
                   loading="lazy"
                   decoding="async"

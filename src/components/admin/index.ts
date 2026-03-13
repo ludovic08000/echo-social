@@ -9,3 +9,4 @@ export { SettingsSection } from './SettingsSection';
 export { AISection } from './AISection';
 export { PlatformHealthDashboard } from './PlatformHealthDashboard';
 export { FeedIntelligenceSection } from './FeedIntelligenceSection';
+export { MonitoringSection } from './MonitoringSection';
