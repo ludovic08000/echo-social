@@ -539,10 +539,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
                         {/* Reactions */}
                         {reactions.length > 0 && (
-                          <div className={cn(
-                            "flex items-center gap-0.5 -mt-1 px-1 relative z-10",
-                            isMe ? "flex-row-reverse" : ""
-                          )}>
+                          <div className="flex items-center gap-0.5 -mt-1 px-1 relative z-10">
                             <div className="flex items-center gap-0 bg-background border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm">
                               {reactions.map((r, i) => (
                                 <span key={i} className="text-xs">{r}</span>
