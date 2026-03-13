@@ -1381,8 +1381,15 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 export function ChatWidget() {
   const { user } = useAuth();
   const { state, restoreChat, closeChat } = useChatWidget();
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
 
-  if (!user || !state.isOpen) return null;
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', check, { passive: true });
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  if (!user || !state.isOpen || isMobile) return null;
 
   // Minimized state - show a small bubble
   if (state.isMinimized) {
