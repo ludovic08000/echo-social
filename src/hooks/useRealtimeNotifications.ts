@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { useRealtimeNotificationSound } from '@/hooks/useNotificationSounds';
@@ -6,12 +6,46 @@ import { useQueryClient } from '@tanstack/react-query';
 
 /**
  * Global hook: listens for new notifications in realtime and plays a sound.
- * Covers messages, friend requests, comments (post replies), likes, etc.
+ * Also plays a sound on initial login if there are unread notifications/messages.
  */
 export function useRealtimeNotifications() {
   const { user } = useAuth();
   const playSound = useRealtimeNotificationSound();
   const queryClient = useQueryClient();
+  const loginSoundPlayed = useRef(false);
+
+  // Play sound on login if unread notifications or messages exist
+  useEffect(() => {
+    if (!user || loginSoundPlayed.current) return;
+    loginSoundPlayed.current = true;
+
+    const checkUnread = async () => {
+      try {
+        const [{ count: unreadNotifs }, { data: convos }] = await Promise.all([
+          supabase
+            .from('notifications')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', user.id)
+            .is('read_at', null),
+          supabase
+            .from('conversation_participants')
+            .select('conversation_id, last_read_at')
+            .eq('user_id', user.id),
+        ]);
+
+        if ((unreadNotifs || 0) > 0) {
+          // Small delay so audio context is unlocked by user interaction
+          setTimeout(() => playSound('message'), 500);
+        }
+      } catch {}
+    };
+    checkUnread();
+  }, [user]);
+
+  // Reset on logout
+  useEffect(() => {
+    if (!user) loginSoundPlayed.current = false;
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -28,7 +62,6 @@ export function useRealtimeNotifications() {
         },
         (payload) => {
           const type = (payload.new as any)?.type;
-          // Map notification type to sound category
           if (type === 'message') {
             playSound('message');
           } else if (type === 'friend_request' || type === 'friend_accepted') {
@@ -40,7 +73,6 @@ export function useRealtimeNotifications() {
           } else {
             playSound();
           }
-          // Refresh notification counts
           queryClient.invalidateQueries({ queryKey: ['notifications'] });
         }
       )

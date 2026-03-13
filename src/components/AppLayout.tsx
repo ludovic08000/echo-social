@@ -52,7 +52,7 @@ function MobileHeader() {
             )}
           </Link>
           <button 
-            onClick={() => openChat()}
+            onClick={() => isMobile ? navigate('/messages') : openChat()}
             className="relative w-10 h-10 rounded-full bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200"
           >
             <MessageCircle className="w-5 h-5" />

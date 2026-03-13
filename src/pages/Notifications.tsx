@@ -123,7 +123,7 @@ export default function Notifications() {
           {grouped.map((group) => (
             <Link
               key={group.key}
-              to={group.type === 'sale' ? '/marketplace?sellerTab=orders' : group.post_id ? `/post/${group.post_id}` : '#'}
+              to={group.type === 'sale' ? '/marketplace?sellerTab=orders' : group.post_id ? `/post/${group.post_id}#comments` : '#'}
               onClick={() => {
                 if (!group.read_at) {
                   group.ids.forEach(id => markAsRead.mutate(id));
