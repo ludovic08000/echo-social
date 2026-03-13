@@ -429,7 +429,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
                       key={msg.id}
                       className={cn(
                         'flex items-end gap-1.5 relative group',
-                        isMe ? 'flex-row-reverse' : '',
                         isFirstInGroup ? 'mt-2' : 'mt-px'
                       )}
                     >
