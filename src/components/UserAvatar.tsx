@@ -62,7 +62,7 @@ export const UserAvatar = forwardRef<HTMLDivElement, AvatarProps>(
     return (
       <div ref={ref} className={cn(sizeClasses[size], 'relative', className)}>
         <img
-          src={src}
+          src={optimizedSrc || src}
           alt={alt || 'Avatar'}
           className={cn('pulse-avatar object-cover w-full h-full')}
         />
