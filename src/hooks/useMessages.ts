@@ -319,7 +319,6 @@ export function useSendMessage() {
         .maybeSingle();
 
       if (zeusParticipant) {
-        // Route to Zeus agent-chat instead of normal message flow
         return await sendToZeus(user.id, conversationId, body);
       }
 
@@ -384,7 +383,42 @@ export function useSendMessage() {
 
       return data;
     },
-    onSuccess: (_, variables) => {
+    // Optimistic update: immediately show sent message in UI
+    onMutate: async (variables) => {
+      if (!user) return;
+
+      await queryClient.cancelQueries({ queryKey: ['messages', variables.conversationId] });
+
+      const previousMessages = queryClient.getQueryData<Message[]>(['messages', variables.conversationId]);
+
+      const profile = queryClient.getQueryData<any>(['profile', user.id]);
+      const optimisticMessage: Message = {
+        id: `optimistic-${Date.now()}`,
+        conversation_id: variables.conversationId,
+        sender_id: user.id,
+        body: variables.body,
+        image_url: variables.imageUrl || null,
+        created_at: new Date().toISOString(),
+        status: 'delivered',
+        profile: {
+          name: profile?.name || user.user_metadata?.name || 'Moi',
+          avatar_url: profile?.avatar_url || null,
+        },
+      };
+
+      queryClient.setQueryData<Message[]>(
+        ['messages', variables.conversationId],
+        (old) => [...(old || []), optimisticMessage]
+      );
+
+      return { previousMessages };
+    },
+    onError: (_err, variables, context) => {
+      if (context?.previousMessages) {
+        queryClient.setQueryData(['messages', variables.conversationId], context.previousMessages);
+      }
+    },
+    onSettled: (_, __, variables) => {
       queryClient.invalidateQueries({ queryKey: ['messages', variables.conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
     },
