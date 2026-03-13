@@ -40,24 +40,51 @@ export function usePosts() {
       
       const prefs = loadContentPrefs();
       const weights = loadFeedWeights();
-
       const now = new Date().toISOString();
 
-      // Cursor-based pagination: fetch posts older than cursor
-      let query = supabase
-        .from('posts')
-        .select('id, user_id, body, image_url, created_at, expires_at, likes_count, comments_count')
-        .or(`expires_at.is.null,expires_at.gt.${now}`)
-        .order('created_at', { ascending: false })
-        .limit(PAGE_SIZE * 3); // Over-fetch for scoring
+      // ── Strategy 1: Try user_feed (fan-out pre-computed) ──
+      let posts: any[] | null = null;
+      let usedFanOut = false;
 
-      if (pageParam) {
-        query = query.lt('created_at', pageParam);
+      const { data: feedEntries } = await supabase
+        .from('user_feed')
+        .select('post_id, score')
+        .eq('user_id', user.id)
+        .order('score', { ascending: false })
+        .limit(PAGE_SIZE * 3) as { data: any[] | null };
+
+      if (feedEntries && feedEntries.length >= PAGE_SIZE) {
+        const feedPostIds = feedEntries.map((e: any) => e.post_id);
+        const { data: feedPosts } = await supabase
+          .from('posts')
+          .select('id, user_id, body, image_url, created_at, expires_at, likes_count, comments_count')
+          .in('id', feedPostIds)
+          .or(`expires_at.is.null,expires_at.gt.${now}`) as { data: any[] | null };
+        
+        if (feedPosts && feedPosts.length > 0) {
+          posts = feedPosts;
+          usedFanOut = true;
+        }
       }
 
-      const { data: posts, error } = await query as { data: any[] | null; error: any };
+      // ── Strategy 2: Fallback to global query with cursor ──
+      if (!posts || posts.length === 0) {
+        let query = supabase
+          .from('posts')
+          .select('id, user_id, body, image_url, created_at, expires_at, likes_count, comments_count')
+          .or(`expires_at.is.null,expires_at.gt.${now}`)
+          .order('created_at', { ascending: false })
+          .limit(PAGE_SIZE * 3);
 
-      if (error) throw error;
+        if (pageParam) {
+          query = query.lt('created_at', pageParam);
+        }
+
+        const { data, error } = await query as { data: any[] | null; error: any };
+        if (error) throw error;
+        posts = data;
+      }
+
       if (!posts || posts.length === 0) return [];
 
       // ── ANTI-SPAM: Filter muted keywords ──
