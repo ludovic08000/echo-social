@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState, useMemo, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { usePosts } from '@/hooks/usePosts';
 import { AppLayout } from '@/components/AppLayout';
 import { CreatePost } from '@/components/CreatePost';
@@ -64,11 +65,106 @@ const POST_CELL_STYLE: React.CSSProperties = {
   contain: 'layout style paint',
 };
 
+/** Virtualized feed list — only renders visible posts + small overscan */
+function VirtualFeedList({
+  posts,
+  isMobile,
+  renderInjection,
+  hasNextPage,
+  isFetchingNextPage,
+  fetchNextPage,
+}: {
+  posts: import('@/hooks/usePosts').Post[];
+  isMobile: boolean;
+  renderInjection: (index: number) => React.ReactNode;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  fetchNextPage: () => void;
+}) {
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  const virtualizer = useVirtualizer({
+    count: posts.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 420,
+    overscan: 5,
+  });
+
+  // Infinite scroll: load more when near end
+  const items = virtualizer.getVirtualItems();
+  const lastItem = items[items.length - 1];
+  useEffect(() => {
+    if (lastItem && lastItem.index >= posts.length - 3 && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [lastItem?.index, hasNextPage, isFetchingNextPage, fetchNextPage, posts.length]);
+
+  return (
+    <div
+      ref={parentRef}
+      className="px-4"
+      style={{ height: 'calc(100vh - 200px)', overflow: 'auto' }}
+    >
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        {items.map((virtualRow) => {
+          const post = posts[virtualRow.index];
+          const index = virtualRow.index;
+
+          return (
+            <div
+              key={post.id}
+              data-index={virtualRow.index}
+              ref={virtualizer.measureElement}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
+            >
+              <div className="pb-3">
+                {isMobile ? (
+                  <PostCard post={post} />
+                ) : (
+                  <motion.div
+                    custom={index}
+                    variants={postVariants}
+                    initial="hidden"
+                    whileInView="visible"
+                    viewport={{ once: true, margin: '-30px' }}
+                  >
+                    <PostCard post={post} />
+                  </motion.div>
+                )}
+                <div className="bg-card border border-t-0 border-border/20 rounded-b-2xl -mt-1 overflow-hidden">
+                  <CommentsList postId={post.id} />
+                </div>
+                {renderInjection(index)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {isFetchingNextPage && (
+        <div className="flex justify-center py-8">
+          <div className="w-10 h-10 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Feed() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = usePosts();
   const navigate = useNavigate();
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const loadMoreRef = useRef<HTMLDivElement>(null);
+  
   const [showPauseReminder, setShowPauseReminder] = useState(false);
   const [pauseDismissed, setPauseDismissed] = useState(false);
   const [openCommentsPostId, setOpenCommentsPostId] = useState<string | null>(null);
@@ -136,26 +232,7 @@ export default function Feed() {
     };
   }, [pauseDismissed]);
 
-  const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
-    const target = entries[0];
-    if (target.isIntersecting && hasNextPage && !isFetchingNextPage) {
-      fetchNextPage();
-    }
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
-
-  useEffect(() => {
-    observerRef.current = new IntersectionObserver(handleObserver, {
-      root: null, rootMargin: '400px', threshold: 0,
-    });
-    if (loadMoreRef.current) observerRef.current.observe(loadMoreRef.current);
-    return () => observerRef.current?.disconnect();
-  }, [handleObserver]);
-
-  useEffect(() => {
-    if (loadMoreRef.current && observerRef.current) {
-      observerRef.current.observe(loadMoreRef.current);
-    }
-  }, [posts.length]);
+  // Virtualizer handles infinite scroll now — old observer removed
 
   const renderInjection = useCallback((index: number) => {
     const type = INJECTION_MAP[index];
@@ -339,54 +416,15 @@ export default function Feed() {
                     </div>
                   </div>
                 )}
-                <div className="space-y-3 px-4">
-                  {posts.map((post, index) => {
-                    const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
-                    const cellStyle = isVideoPost ? undefined : POST_CELL_STYLE;
+                <VirtualFeedList
+                  posts={posts}
+                  isMobile={isMobile}
+                  renderInjection={renderInjection}
+                  hasNextPage={!!hasNextPage}
+                  isFetchingNextPage={isFetchingNextPage}
+                  fetchNextPage={fetchNextPage}
+                />
 
-                    return (
-                      <div key={post.id} style={cellStyle}>
-                        {isMobile ? (
-                          <PostCard post={post} />
-                        ) : (
-                          <motion.div
-                            custom={index}
-                            variants={postVariants}
-                            initial="hidden"
-                            whileInView="visible"
-                            viewport={{ once: true, margin: '-30px' }}
-                          >
-                            <PostCard post={post} />
-                          </motion.div>
-                        )}
-                        <div className="bg-card border border-t-0 border-border/20 rounded-b-2xl -mt-1 overflow-hidden">
-                          <CommentsList postId={post.id} />
-                        </div>
-                        {renderInjection(index)}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div ref={loadMoreRef} className="h-1" />
-                
-                <AnimatePresence>
-                  {isFetchingNextPage && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="flex justify-center py-8"
-                    >
-                      <div className="relative">
-                        <div className="w-10 h-10 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="w-4 h-4 rounded-full bg-primary/20 animate-pulse" />
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
               </>
             )}
           </div>
