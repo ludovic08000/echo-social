@@ -3415,6 +3415,35 @@ export type Database = {
         }
         Relationships: []
       }
+      user_feed: {
+        Row: {
+          inserted_at: string
+          post_id: string
+          score: number
+          user_id: string
+        }
+        Insert: {
+          inserted_at?: string
+          post_id: string
+          score?: number
+          user_id: string
+        }
+        Update: {
+          inserted_at?: string
+          post_id?: string
+          score?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_feed_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_interests: {
         Row: {
           created_at: string

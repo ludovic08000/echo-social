@@ -47,8 +47,8 @@ export default function PostDetail() {
           name: profile?.name || 'Unknown',
           avatar_url: profile?.avatar_url || null,
         },
-        likes_count: likesCount || 0,
-        comments_count: commentsCount || 0,
+        likes_count: postData.likes_count || 0,
+        comments_count: postData.comments_count || 0,
         is_liked: !!userLikeRes.data,
       };
     },
