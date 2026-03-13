@@ -746,14 +746,12 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                   return (
                     <div
                       key={msg.id}
-                      className={cn('flex gap-1.5 relative group', isMe ? 'flex-row-reverse' : '', isFirstInGroup ? 'mt-2' : 'mt-0.5')}
+                      className={cn('flex gap-1.5 relative group', isFirstInGroup ? 'mt-2' : 'mt-0.5')}
                     >
-                      {!isMe && (
-                        <div className="w-6 flex-shrink-0">
-                          {isLastInGroup && <UserAvatar src={msg.profile.avatar_url} alt={msg.profile.name} size="xs" />}
-                        </div>
-                      )}
-                      <div className={cn('max-w-[80%] flex flex-col', isMe ? 'items-end' : 'items-start')}>
+                      <div className="w-6 flex-shrink-0">
+                        {isLastInGroup && <UserAvatar src={msg.profile.avatar_url} alt={msg.profile.name} size="xs" />}
+                      </div>
+                      <div className="max-w-[80%] flex flex-col items-start">
                         {/* Reactions on hover */}
                         {activeMessageId === msg.id && !deleteMenuMsgId && (
                           <>
