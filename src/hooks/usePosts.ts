@@ -35,26 +35,27 @@ export function usePosts() {
 
   return useInfiniteQuery({
     queryKey: ['posts', 'friends-feed', user?.id],
-    queryFn: async ({ pageParam = 0 }) => {
+    queryFn: async ({ pageParam }: { pageParam: string | null }) => {
       if (!user) return [];
       
       const prefs = loadContentPrefs();
       const weights = loadFeedWeights();
-      const from = pageParam * PAGE_SIZE;
-      const to = from + PAGE_SIZE - 1;
 
       const now = new Date().toISOString();
 
-      // Fetch page-local pool for scoring (stable pagination) — global feed (all users)
-      const poolSize = PAGE_SIZE * 3;
-      const fetchFrom = from;
-      const fetchTo = from + poolSize - 1;
-      const { data: posts, error } = await supabase
+      // Cursor-based pagination: fetch posts older than cursor
+      let query = supabase
         .from('posts')
-        .select('id, user_id, body, image_url, created_at, expires_at')
+        .select('id, user_id, body, image_url, created_at, expires_at, likes_count, comments_count')
         .or(`expires_at.is.null,expires_at.gt.${now}`)
         .order('created_at', { ascending: false })
-        .range(fetchFrom, fetchTo);
+        .limit(PAGE_SIZE * 3); // Over-fetch for scoring
+
+      if (pageParam) {
+        query = query.lt('created_at', pageParam);
+      }
+
+      const { data: posts, error } = await query;
 
       if (error) throw error;
       if (!posts || posts.length === 0) return [];
@@ -65,22 +66,16 @@ export function usePosts() {
       const userIds = [...new Set(filteredPosts.map(p => p.user_id))];
       const postIds = filteredPosts.map(p => p.id);
       
-      const [profilesRes, likesRes, commentsRes, userLikesRes, interactionsRes] = await Promise.all([
+      // Use denormalized counters — only need profiles + user likes now (eliminated N+1)
+      const [profilesRes, userLikesRes, interactionsRes] = await Promise.all([
         supabase.from('profiles').select('user_id, name, avatar_url, mood_emoji').in('user_id', userIds),
-        supabase.from('likes').select('post_id').in('post_id', postIds),
-        supabase.from('comments').select('post_id').in('post_id', postIds),
         supabase.from('likes').select('post_id, reaction_type').eq('user_id', user.id).in('post_id', postIds),
         supabase.from('likes').select('post_id').eq('user_id', user.id).limit(200),
       ]);
 
       const profileMap = new Map(profilesRes.data?.map(p => [p.user_id, p]) || []);
 
-      const likesCount: Record<string, number> = {};
-      const commentsCount: Record<string, number> = {};
       const userReactions = new Map<string, ReactionType>();
-
-      likesRes.data?.forEach(l => { likesCount[l.post_id] = (likesCount[l.post_id] || 0) + 1; });
-      commentsRes.data?.forEach(c => { commentsCount[c.post_id] = (commentsCount[c.post_id] || 0) + 1; });
       userLikesRes.data?.forEach((l: { post_id: string; reaction_type: ReactionType }) => {
         userReactions.set(l.post_id, l.reaction_type);
       });
@@ -114,8 +109,8 @@ export function usePosts() {
       const enrichedPosts = filteredPosts.map((post, index) => {
         const profile = profileMap.get(post.user_id);
         const userReaction = userReactions.get(post.id);
-        const lc = likesCount[post.id] || 0;
-        const cc = commentsCount[post.id] || 0;
+        const lc = (post as any).likes_count || 0;
+        const cc = (post as any).comments_count || 0;
 
         ctx.postIndex = index;
         const _score = scorePost(
@@ -161,27 +156,26 @@ export function usePosts() {
           deferred.push(post);
         } else {
           diversified.push(post);
-          // Reset other authors, increment this one
           authorConsecutive.clear();
           authorConsecutive.set(post.user_id, consecutive + 1);
         }
       }
-      // Append deferred at end
       diversified.push(...deferred);
 
       const paged = diversified.slice(0, PAGE_SIZE);
       return paged.map(({ _score, ...post }) => post);
     },
-    getNextPageParam: (lastPage, pages) => {
+    getNextPageParam: (lastPage) => {
       if (lastPage.length < PAGE_SIZE) return undefined;
-      return pages.length;
+      // Cursor = created_at of last post
+      return lastPage[lastPage.length - 1]?.created_at ?? undefined;
     },
-    initialPageParam: 0,
+    initialPageParam: null as string | null,
     enabled: !!user,
-    staleTime: 60_000,            // 1 min — fresh enough without constant reloads
+    staleTime: 60_000,
     gcTime: 10 * 60_000,
-    refetchInterval: 2 * 60_000, // Auto-refresh every 2 min for new posts
-    refetchOnWindowFocus: true,   // Refresh when user comes back to tab
+    refetchInterval: 2 * 60_000,
+    refetchOnWindowFocus: true,
     refetchOnReconnect: true,
   });
 }

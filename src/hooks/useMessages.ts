@@ -263,12 +263,19 @@ export function useMessages(conversationId: string) {
 
       const hiddenIds = new Set((deletions || []).map(d => d.message_id));
 
+      // Load only last 50 messages (cursor-based, most recent first then reversed)
       const { data: messages, error } = await supabase
         .from('messages')
         .select('*')
         .eq('conversation_id', conversationId)
         .in('status', ['delivered', 'pending'])
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+
+      // Reverse to chronological order for display
+      messages.reverse();
 
       if (error) throw error;
 
