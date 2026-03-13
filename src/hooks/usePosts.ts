@@ -2,13 +2,7 @@ import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tansta
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { ReactionType } from '@/hooks/useReactions';
-import {
-  scorePost,
-  loadContentPrefs,
-  loadFeedWeights,
-  containsMutedKeyword,
-  type ScoringContext,
-} from '@/lib/feedAlgorithm';
+import { loadContentPrefs, loadFeedWeights, containsMutedKeyword } from '@/lib/feedAlgorithm';
 
 export interface Post {
   id: string;
@@ -40,11 +34,48 @@ export function usePosts() {
       
       const prefs = loadContentPrefs();
       const weights = loadFeedWeights();
-      const now = new Date().toISOString();
 
-      // ── Strategy 1: Try user_feed (fan-out pre-computed) ──
+      // ── Backend-driven scoring via edge function ──
+      try {
+        const { data: scoringResult, error: fnError } = await supabase.functions.invoke('feed-scoring', {
+          body: {
+            feedAlgorithm: prefs.feedAlgorithm,
+            diversityBoost: prefs.diversityBoost,
+            mutedKeywords: prefs.mutedKeywords,
+            viralContentReduce: prefs.viralContentReduce,
+            friendsWeight: weights.friends,
+            discoveryWeight: weights.discovery,
+            limit: PAGE_SIZE,
+            offset: pageParam ? undefined : 0,
+          },
+        });
+
+        if (!fnError && scoringResult?.postIds?.length > 0) {
+          const scoredPostIds: string[] = scoringResult.postIds;
+
+          // Fetch full post data for scored IDs
+          const { data: scoredPosts } = await supabase
+            .from('posts')
+            .select('id, user_id, body, image_url, created_at, expires_at, likes_count, comments_count')
+            .in('id', scoredPostIds) as { data: any[] | null };
+
+          if (scoredPosts && scoredPosts.length > 0) {
+            // Maintain backend ordering
+            const postMap = new Map(scoredPosts.map(p => [p.id, p]));
+            const orderedPosts = scoredPostIds
+              .map(id => postMap.get(id))
+              .filter(Boolean) as any[];
+
+            return await enrichPosts(orderedPosts, user.id);
+          }
+        }
+      } catch {
+        // Fall through to client-side fallback
+      }
+
+      // ── Fallback: user_feed (fan-out) or global query ──
+      const now = new Date().toISOString();
       let posts: any[] | null = null;
-      let usedFanOut = false;
 
       const { data: feedEntries } = await supabase
         .from('user_feed')
@@ -63,11 +94,9 @@ export function usePosts() {
         
         if (feedPosts && feedPosts.length > 0) {
           posts = feedPosts;
-          usedFanOut = true;
         }
       }
 
-      // ── Strategy 2: Fallback to global query with cursor ──
       if (!posts || posts.length === 0) {
         let query = supabase
           .from('posts')
@@ -87,114 +116,14 @@ export function usePosts() {
 
       if (!posts || posts.length === 0) return [];
 
-      // ── ANTI-SPAM: Filter muted keywords ──
+      // Filter muted keywords client-side (lightweight)
       const filteredPosts = posts.filter(p => !containsMutedKeyword(p.body, prefs.mutedKeywords));
+      const paged = filteredPosts.slice(0, PAGE_SIZE);
 
-      const userIds = [...new Set(filteredPosts.map(p => p.user_id))];
-      const postIds = filteredPosts.map(p => p.id);
-      
-      // Use denormalized counters — only need profiles + user likes now (eliminated N+1)
-      const [profilesRes, userLikesRes, interactionsRes] = await Promise.all([
-        supabase.from('profiles').select('user_id, name, avatar_url, mood_emoji').in('user_id', userIds),
-        supabase.from('likes').select('post_id, reaction_type').eq('user_id', user.id).in('post_id', postIds),
-        supabase.from('likes').select('post_id').eq('user_id', user.id).limit(200),
-      ]);
-
-      const profileMap = new Map(profilesRes.data?.map(p => [p.user_id, p]) || []);
-
-      const userReactions = new Map<string, ReactionType>();
-      userLikesRes.data?.forEach((l: { post_id: string; reaction_type: ReactionType }) => {
-        userReactions.set(l.post_id, l.reaction_type);
-      });
-
-      // Build friend interaction map
-      const friendInteractionCounts = new Map<string, number>();
-      if (interactionsRes.data) {
-        const likedPostIds = interactionsRes.data.map(l => l.post_id);
-        if (likedPostIds.length > 0) {
-          const { data: likedPosts } = await supabase
-            .from('posts')
-            .select('user_id')
-            .in('id', likedPostIds.slice(0, 200));
-          likedPosts?.forEach(p => {
-            friendInteractionCounts.set(p.user_id, (friendInteractionCounts.get(p.user_id) || 0) + 1);
-          });
-        }
-      }
-
-      // ── SCORING with anti-bias diversity tracking ──
-      const seenAuthors = new Set<string>();
-      const ctx: ScoringContext = {
-        friendInteractionCounts,
-        userId: user.id,
-        prefs,
-        weights,
-        seenAuthors,
-        postIndex: 0,
-      };
-
-      const enrichedPosts = filteredPosts.map((post, index) => {
-        const profile = profileMap.get(post.user_id);
-        const userReaction = userReactions.get(post.id);
-        const lc = (post as any).likes_count || 0;
-        const cc = (post as any).comments_count || 0;
-
-        ctx.postIndex = index;
-        const _score = scorePost(
-          { ...post, likes_count: lc, comments_count: cc },
-          ctx
-        );
-        
-        // Track author for diversity
-        seenAuthors.add(post.user_id);
-
-        return {
-          id: post.id,
-          user_id: post.user_id,
-          body: post.body,
-          image_url: post.image_url,
-          created_at: post.created_at,
-          expires_at: (post as any).expires_at || null,
-          profile: {
-            name: profile?.name || 'Unknown',
-            avatar_url: profile?.avatar_url || null,
-            mood_emoji: (profile as any)?.mood_emoji || null,
-          },
-          likes_count: lc,
-          comments_count: cc,
-          is_liked: !!userReaction,
-          user_reaction: userReaction || null,
-          _score,
-        };
-      });
-
-      // Sort by score
-      enrichedPosts.sort((a, b) => b._score - a._score);
-
-      // ── ANTI-BIAS: Enforce max consecutive posts from same author ──
-      const diversified: typeof enrichedPosts = [];
-      const authorConsecutive = new Map<string, number>();
-      const maxConsecutive = 2;
-      const deferred: typeof enrichedPosts = [];
-
-      for (const post of enrichedPosts) {
-        const consecutive = authorConsecutive.get(post.user_id) || 0;
-        if (consecutive >= maxConsecutive) {
-          deferred.push(post);
-        } else {
-          diversified.push(post);
-          authorConsecutive.clear();
-          authorConsecutive.set(post.user_id, consecutive + 1);
-        }
-      }
-      diversified.push(...deferred);
-
-      const paged = diversified.slice(0, PAGE_SIZE);
-      return paged.map(({ _score, ...post }) => post);
+      return await enrichPosts(paged, user.id);
     },
     getNextPageParam: (lastPage) => {
       if (lastPage.length < PAGE_SIZE) return undefined;
-      // Cursor = created_at of last post
       return lastPage[lastPage.length - 1]?.created_at ?? undefined;
     },
     initialPageParam: null as string | null,
@@ -204,6 +133,45 @@ export function usePosts() {
     refetchInterval: 2 * 60_000,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
+  });
+}
+
+/** Enrich posts with profiles and user reactions — shared between strategies */
+async function enrichPosts(posts: any[], userId: string): Promise<Post[]> {
+  const userIds = [...new Set(posts.map(p => p.user_id))];
+  const postIds = posts.map(p => p.id);
+
+  const [profilesRes, userLikesRes] = await Promise.all([
+    supabase.from('profiles').select('user_id, name, avatar_url, mood_emoji').in('user_id', userIds),
+    supabase.from('likes').select('post_id, reaction_type').eq('user_id', userId).in('post_id', postIds),
+  ]);
+
+  const profileMap = new Map(profilesRes.data?.map(p => [p.user_id, p]) || []);
+  const userReactions = new Map<string, ReactionType>();
+  userLikesRes.data?.forEach((l: { post_id: string; reaction_type: ReactionType }) => {
+    userReactions.set(l.post_id, l.reaction_type);
+  });
+
+  return posts.map(post => {
+    const profile = profileMap.get(post.user_id);
+    const userReaction = userReactions.get(post.id);
+    return {
+      id: post.id,
+      user_id: post.user_id,
+      body: post.body,
+      image_url: post.image_url,
+      created_at: post.created_at,
+      expires_at: post.expires_at || null,
+      profile: {
+        name: profile?.name || 'Unknown',
+        avatar_url: profile?.avatar_url || null,
+        mood_emoji: (profile as any)?.mood_emoji || null,
+      },
+      likes_count: post.likes_count || 0,
+      comments_count: post.comments_count || 0,
+      is_liked: !!userReaction,
+      user_reaction: userReaction || null,
+    };
   });
 }
 
