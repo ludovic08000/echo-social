@@ -491,10 +491,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
                         {/* Image message */}
                         {isImage && (
-                          <div className={cn(
-                            "overflow-hidden mb-0.5 rounded-[18px]",
-                            isMe ? "rounded-br-sm" : "rounded-bl-sm"
-                          )}>
+                          <div className="overflow-hidden mb-0.5 rounded-[18px] rounded-bl-sm">
                             <img src={msg.image_url!} alt="Photo" className="max-w-full max-h-[300px] object-cover" />
                           </div>
                         )}
