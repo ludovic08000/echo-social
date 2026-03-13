@@ -1381,7 +1381,13 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 export function ChatWidget() {
   const { user } = useAuth();
   const { state, restoreChat, closeChat } = useChatWidget();
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', check, { passive: true });
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
   if (!user || !state.isOpen || isMobile) return null;
 
