@@ -756,7 +756,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         {activeMessageId === msg.id && !deleteMenuMsgId && (
                           <>
                             <div className="fixed inset-0 z-50" onClick={() => setActiveMessageId(null)} />
-                            <div className={cn("absolute z-50 flex items-center gap-0 px-1 py-0.5 rounded-full bg-background shadow-lg border border-border/40", isMe ? "right-0 -top-8" : "left-6 -top-8")}>
+                            <div className="absolute z-50 left-6 -top-8 flex items-center gap-0 px-1 py-0.5 rounded-full bg-background shadow-lg border border-border/40">
                               {MESSAGE_REACTIONS.map(r => (
                                 <button key={r.label} onClick={() => handleReact(msg.id, r.emoji)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-secondary hover:scale-125 transition-all text-sm">
                                   {r.emoji}
