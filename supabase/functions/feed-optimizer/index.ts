@@ -14,9 +14,15 @@ const SAFE_BOUNDS: Record<string, { min: number; max: number }> = {
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // Rate limit: 10 req/min per IP
+  const ip = getClientIP(req);
+  const rateLimited = checkRateLimit(`feed-opt:${ip}`, 10, 60_000, corsHeaders);
+  if (rateLimited) return rateLimited;
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;

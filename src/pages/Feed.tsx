@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState, useMemo, lazy, Suspense } from 'react';
+import React, { useEffect, useRef, useCallback, useState, useMemo, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { usePosts } from '@/hooks/usePosts';
