@@ -67,3 +67,17 @@ project_id = "vkpmoqfzrihcijjochks"
     verify_jwt = false
   [functions.zeus]
     verify_jwt = false
+  [functions.data-cleanup]
+    verify_jwt = false
+  [functions.dynamic-sitemap]
+    verify_jwt = false
+  [functions.feed-optimizer]
+    verify_jwt = false
+  [functions.age-verify]
+    verify_jwt = false
+  [functions.save-phone]
+    verify_jwt = false
+  [functions.import-google-contacts]
+    verify_jwt = false
+  [functions.verify-id-document]
+    verify_jwt = false

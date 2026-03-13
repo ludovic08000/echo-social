@@ -1,10 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders } from "../_shared/cors.ts";
+import { checkRateLimit, getClientIP } from "../_shared/rate-limit.ts";
 
 // ── Safe bounds for Level 3 (semi-autonomous) ──
 const SAFE_BOUNDS: Record<string, { min: number; max: number }> = {
@@ -18,9 +14,15 @@ const SAFE_BOUNDS: Record<string, { min: number; max: number }> = {
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // Rate limit: 10 req/min per IP
+  const ip = getClientIP(req);
+  const rateLimited = checkRateLimit(`feed-opt:${ip}`, 10, 60_000, corsHeaders);
+  if (rateLimited) return rateLimited;
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;

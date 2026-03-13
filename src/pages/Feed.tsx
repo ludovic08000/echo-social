@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState, useMemo, lazy, Suspense } from 'react';
+import React, { useEffect, useRef, useCallback, useState, useMemo, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { usePosts } from '@/hooks/usePosts';
@@ -66,7 +66,7 @@ const POST_CELL_STYLE: React.CSSProperties = {
 };
 
 /** Virtualized feed list — only renders visible posts + small overscan */
-function VirtualFeedList({
+const VirtualFeedList = React.memo(function VirtualFeedList({
   posts,
   isMobile,
   renderInjection,
@@ -159,7 +159,7 @@ function VirtualFeedList({
       )}
     </div>
   );
-}
+});
 
 export default function Feed() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = usePosts();
