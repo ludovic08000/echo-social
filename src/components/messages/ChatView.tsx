@@ -483,7 +483,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
                         {/* Pin indicator */}
                         {pinnedMessages.has(msg.id) && (
-                          <div className={cn("flex items-center gap-1 mb-0.5", isMe ? "flex-row-reverse" : "")}>
+                          <div className="flex items-center gap-1 mb-0.5">
                             <Pin className="w-3 h-3 text-primary" />
                             <span className="text-[10px] text-primary font-medium">Épinglé</span>
                           </div>
