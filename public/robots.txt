@@ -17,3 +17,4 @@ Disallow: /admin
 Disallow: /messages
 
 Sitemap: https://forsure.fans/sitemap.xml
+Sitemap: https://vkpmoqfzrihcijjochks.supabase.co/functions/v1/dynamic-sitemap
