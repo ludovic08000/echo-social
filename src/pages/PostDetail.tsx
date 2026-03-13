@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
