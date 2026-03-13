@@ -232,26 +232,7 @@ export default function Feed() {
     };
   }, [pauseDismissed]);
 
-  const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
-    const target = entries[0];
-    if (target.isIntersecting && hasNextPage && !isFetchingNextPage) {
-      fetchNextPage();
-    }
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
-
-  useEffect(() => {
-    observerRef.current = new IntersectionObserver(handleObserver, {
-      root: null, rootMargin: '400px', threshold: 0,
-    });
-    if (loadMoreRef.current) observerRef.current.observe(loadMoreRef.current);
-    return () => observerRef.current?.disconnect();
-  }, [handleObserver]);
-
-  useEffect(() => {
-    if (loadMoreRef.current && observerRef.current) {
-      observerRef.current.observe(loadMoreRef.current);
-    }
-  }, [posts.length]);
+  // Virtualizer handles infinite scroll now — old observer removed
 
   const renderInjection = useCallback((index: number) => {
     const type = INJECTION_MAP[index];
