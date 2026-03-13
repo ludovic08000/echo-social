@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Send, Search, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { Send, Search, Plus, Edit, Trash2 } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
@@ -35,50 +35,47 @@ export function ConversationList() {
 
   return (
     <AppLayout>
-      <div className="px-4 py-2">
-        {/* Header */}
-        <header className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Messages</h1>
-            <p className="text-[11px] text-muted-foreground">Chiffré de bout en bout 🔒</p>
-          </div>
-          <div className="flex items-center gap-2">
+      <div className="max-w-2xl mx-auto">
+        {/* Facebook-style header */}
+        <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm px-4 pt-3 pb-2">
+          <div className="flex items-center justify-between mb-3">
+            <h1 className="text-2xl font-extrabold tracking-tight">Discussions</h1>
             <Button
-              variant="ghost"
               size="icon"
-              className="h-9 w-9 rounded-full bg-primary/10 text-primary hover:bg-primary/20"
+              variant="secondary"
+              className="h-9 w-9 rounded-full"
               onClick={() => setShowNewChat(true)}
             >
-              <Plus className="w-5 h-5" />
+              <Edit className="w-4 h-4" />
             </Button>
+          </div>
+
+          {/* Search bar */}
+          <div className="relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Rechercher dans Messenger"
+              className="w-full bg-secondary rounded-full pl-10 pr-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/20 transition-all"
+            />
           </div>
         </header>
 
-        {/* Search */}
-        <div className="relative mb-4">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Rechercher une conversation…"
-            className="w-full bg-secondary/60 rounded-xl pl-9 pr-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors"
-          />
-        </div>
-
-        {/* Online friends strip */}
+        {/* Online friends strip - Facebook style */}
         {!search && conversations && conversations.length > 0 && (
-          <div className="flex gap-3 mb-4 overflow-x-auto scrollbar-none pb-1">
-            {conversations.slice(0, 8).map(conv => (
+          <div className="flex gap-4 px-4 py-3 overflow-x-auto scrollbar-none">
+            {conversations.slice(0, 10).map(conv => (
               <Link
                 key={conv.id}
                 to={`/messages/${conv.id}`}
-                className="flex flex-col items-center gap-1 min-w-[56px] group"
+                className="flex flex-col items-center gap-1.5 min-w-[60px]"
               >
                 <div className="relative">
                   <UserAvatar src={conv.participant.avatar_url} alt={conv.participant.name} size="md" />
                   <div className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-background" />
                 </div>
-                <span className="text-[10px] text-muted-foreground truncate max-w-[56px] group-hover:text-foreground transition-colors">
+                <span className="text-[11px] text-muted-foreground truncate max-w-[60px] leading-tight text-center">
                   {conv.participant.name.split(' ')[0]}
                 </span>
               </Link>
@@ -86,39 +83,36 @@ export function ConversationList() {
           </div>
         )}
 
-        {/* List */}
-        <div className="space-y-0.5">
+        {/* Conversation list */}
+        <div className="px-2">
           {isLoading ? (
-            <div className="space-y-1">
+            <div className="space-y-1 px-2">
               {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="flex gap-3 p-3 animate-pulse rounded-2xl">
-                  <div className="w-13 h-13 rounded-full bg-muted flex-shrink-0" style={{ width: 52, height: 52 }} />
-                  <div className="flex-1 space-y-2 py-1">
-                    <div className="h-3.5 w-28 bg-muted rounded-lg" />
-                    <div className="h-3 w-44 bg-muted rounded-lg" />
+                <div key={i} className="flex gap-3 p-3 animate-pulse rounded-xl">
+                  <div className="w-14 h-14 rounded-full bg-muted flex-shrink-0" />
+                  <div className="flex-1 space-y-2 py-2">
+                    <div className="h-3.5 w-28 bg-muted rounded" />
+                    <div className="h-3 w-44 bg-muted rounded" />
                   </div>
                 </div>
               ))}
             </div>
           ) : !filtered?.length ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-4">
-              <div className="relative">
-                <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-primary/20 to-accent/30 flex items-center justify-center">
-                  <Send className="w-8 h-8 text-primary" />
-                </div>
-                <Sparkles className="w-5 h-5 text-primary absolute -top-1 -right-1 animate-pulse" />
+            <div className="flex flex-col items-center justify-center py-20 gap-4">
+              <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center">
+                <Send className="w-7 h-7 text-muted-foreground" />
               </div>
               <div className="text-center">
-                <p className="text-sm font-semibold text-foreground">
+                <p className="text-sm font-semibold">
                   {search ? 'Aucun résultat' : 'Aucune conversation'}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {search ? 'Essayez un autre terme' : 'Commencez à discuter avec vos amis !'}
+                  {search ? 'Essayez un autre terme' : 'Commencez à discuter avec vos amis'}
                 </p>
               </div>
               {!search && (
                 <Button
-                  className="rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+                  className="rounded-full"
                   size="sm"
                   onClick={() => setShowNewChat(true)}
                 >
@@ -133,15 +127,16 @@ export function ConversationList() {
                 <Link
                   to={`/messages/${conv.id}`}
                   className={cn(
-                    "flex items-center gap-3 p-3 rounded-2xl transition-all duration-200 active:scale-[0.98]",
+                    "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors",
                     conv.unread_count > 0
-                      ? "bg-primary/5 hover:bg-primary/10 border border-primary/10"
+                      ? "bg-primary/5"
                       : "hover:bg-secondary/60"
                   )}
                 >
+                  {/* Avatar */}
                   <div className="relative flex-shrink-0">
                     {conv.is_group ? (
-                      <div className="w-[52px] h-[52px] rounded-full bg-gradient-to-br from-primary/20 to-accent/30 flex items-center justify-center text-lg">
+                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-primary/20 to-accent/30 flex items-center justify-center text-xl">
                         👥
                       </div>
                     ) : (
@@ -151,26 +146,28 @@ export function ConversationList() {
                       </>
                     )}
                   </div>
+
+                  {/* Content */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-baseline justify-between gap-2">
                       <span className={cn(
-                        "text-sm truncate",
-                        conv.unread_count > 0 ? "font-bold text-foreground" : "font-medium"
+                        "text-[15px] truncate",
+                        conv.unread_count > 0 ? "font-bold" : "font-medium"
                       )}>
                         {conv.is_group ? (conv.name || 'Groupe') : conv.participant.name}
                       </span>
                       {conv.last_message && (
                         <span className={cn(
-                          "text-[10px] flex-shrink-0",
-                          conv.unread_count > 0 ? "text-primary font-semibold" : "text-muted-foreground"
+                          "text-xs flex-shrink-0",
+                          conv.unread_count > 0 ? "text-foreground font-semibold" : "text-muted-foreground"
                         )}>
                           {formatMessageTime(conv.last_message.created_at)}
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className="flex items-center gap-2 mt-0.5">
                       <p className={cn(
-                        "text-xs truncate flex-1",
+                        "text-[13px] truncate flex-1",
                         conv.unread_count > 0 ? "text-foreground font-medium" : "text-muted-foreground"
                       )}>
                         {conv.last_message?.body
@@ -182,19 +179,18 @@ export function ConversationList() {
                           : 'Démarrez la conversation…'}
                       </p>
                       {conv.unread_count > 0 && (
-                        <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center flex-shrink-0 shadow-sm shadow-primary/30">
-                          {conv.unread_count > 9 ? '9+' : conv.unread_count}
-                        </span>
+                        <div className="w-3 h-3 rounded-full bg-primary flex-shrink-0" />
                       )}
                     </div>
                   </div>
                 </Link>
-                {/* Delete button on hover/touch */}
+
+                {/* Delete on hover */}
                 <button
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(conv.id); }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 rounded-full bg-destructive/10 hover:bg-destructive/20 flex items-center justify-center"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 rounded-full bg-secondary hover:bg-destructive/10 flex items-center justify-center"
                 >
-                  <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                  <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
                 </button>
               </div>
             ))
@@ -204,7 +200,7 @@ export function ConversationList() {
 
       <NewConversationDialog open={showNewChat} onOpenChange={setShowNewChat} />
 
-      {/* Delete confirmation dialog */}
+      {/* Delete confirmation */}
       <Dialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
         <DialogContent className="sm:max-w-sm rounded-2xl">
           <DialogHeader>
