@@ -932,10 +932,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                                     'px-3 py-1.5 text-xs break-words leading-relaxed',
                                     isMe
                                       ? cn('bg-primary text-primary-foreground',
-                                          isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-br-md',
-                                          isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-br-sm',
-                                          !isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-tr-sm rounded-br-md',
-                                          !isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-tr-sm rounded-br-sm')
+                                          isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-bl-md',
+                                          isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-bl-sm',
+                                          !isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-tl-sm rounded-bl-md',
+                                          !isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-tl-sm rounded-bl-sm')
                                       : cn('bg-secondary',
                                           isFirstInGroup && isLastInGroup && 'rounded-2xl rounded-bl-md',
                                           isFirstInGroup && !isLastInGroup && 'rounded-2xl rounded-bl-sm',
