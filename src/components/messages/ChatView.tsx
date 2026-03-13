@@ -544,10 +544,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
                         {/* Timestamp + read receipt */}
                         {isLastInGroup && (
-                          <div className={cn(
-                            'flex items-center gap-1 mt-0.5 px-1',
-                            isMe ? 'flex-row-reverse' : ''
-                          )}>
+                          <div className="flex items-center gap-1 mt-0.5 px-1">
                             <span className="text-[11px] text-muted-foreground">
                               {format(new Date(msg.created_at), 'HH:mm')}
                             </span>
