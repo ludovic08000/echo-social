@@ -158,24 +158,3 @@ export function useRemoveReaction() {
   });
 }
 
-export function useRemoveReaction() {
-  const queryClient = useQueryClient();
-  const { user } = useAuth();
-
-  return useMutation({
-    mutationFn: async (postId: string) => {
-      if (!user) throw new Error('Not authenticated');
-
-      const { error } = await supabase
-        .from('likes')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('post_id', postId);
-
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['posts'] });
-    },
-  });
-}
