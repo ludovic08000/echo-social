@@ -1,10 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders } from "../_shared/cors.ts";
+import { checkRateLimit, getClientIP } from "../_shared/rate-limit.ts";
 
 // ── Safe bounds for Level 3 (semi-autonomous) ──
 const SAFE_BOUNDS: Record<string, { min: number; max: number }> = {
