@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { checkRateLimit, getClientIP } from "../_shared/rate-limit.ts";
 
 interface ScoringConfig {
   feedAlgorithm: "smart" | "chronological" | "friends_first";
