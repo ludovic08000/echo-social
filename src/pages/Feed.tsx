@@ -445,25 +445,6 @@ export default function Feed() {
                   fetchNextPage={fetchNextPage}
                 />
 
-                <div ref={loadMoreRef} className="h-1" />
-                
-                <AnimatePresence>
-                  {isFetchingNextPage && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="flex justify-center py-8"
-                    >
-                      <div className="relative">
-                        <div className="w-10 h-10 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="w-4 h-4 rounded-full bg-primary/20 animate-pulse" />
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
               </>
             )}
           </div>
