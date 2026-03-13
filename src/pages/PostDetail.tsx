@@ -19,9 +19,9 @@ export default function PostDetail() {
 
       const { data: postData, error } = await supabase
         .from('posts')
-        .select('id, user_id, body, image_url, created_at')
+        .select('id, user_id, body, image_url, created_at, likes_count, comments_count')
         .eq('id', id)
-        .single();
+        .single() as { data: any; error: any };
 
       if (error) throw error;
 
@@ -32,14 +32,10 @@ export default function PostDetail() {
         .eq('user_id', postData.user_id)
         .single();
 
-      // Get counts
-      const [{ count: likesCount }, { count: commentsCount }, userLikeRes] = await Promise.all([
-        supabase.from('likes').select('*', { count: 'exact', head: true }).eq('post_id', id),
-        supabase.from('comments').select('*', { count: 'exact', head: true }).eq('post_id', id),
-        user
-          ? supabase.from('likes').select('id').eq('user_id', user.id).eq('post_id', id).maybeSingle()
-          : Promise.resolve({ data: null }),
-      ]);
+      // Only need user's own like status now (counts are denormalized)
+      const userLikeRes = user
+        ? await supabase.from('likes').select('id, reaction_type').eq('user_id', user.id).eq('post_id', id).maybeSingle()
+        : { data: null };
 
       return {
         id: postData.id,
