@@ -159,7 +159,7 @@ const VirtualFeedList = React.memo(function VirtualFeedList({
       )}
     </div>
   );
-}
+});
 
 export default function Feed() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = usePosts();
