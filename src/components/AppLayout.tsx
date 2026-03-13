@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ZeusCompanion } from './ZeusCompanion';
 import { useAuth } from '@/lib/auth';
 import { MobileNav, DesktopSidebar } from './Navigation';
@@ -12,6 +12,7 @@ import { useConversations } from '@/hooks/useMessages';
 import { useScreenSize } from '@/hooks/useScreenSize';
 import { useChatWidget } from '@/components/ChatWidgetContext';
 import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface AppLayoutProps {
   children: ReactNode;
