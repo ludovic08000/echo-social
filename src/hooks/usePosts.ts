@@ -22,7 +22,7 @@ export interface Post {
   user_reaction?: ReactionType | null;
 }
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 15;
 
 export function usePosts() {
   const { user } = useAuth();
