@@ -36,21 +36,21 @@ export function MobileNav() {
 
   const NavItem = ({ path, icon: Icon, label, badge }: { path: string; icon: any; label: string; badge?: number }) => (
     <Link to={path} className={cn(
-      'flex flex-col items-center gap-[3px] pt-2 w-[52px] transition-all duration-300',
+      'flex flex-col items-center justify-center gap-1 flex-1 min-w-0 py-2 transition-all duration-200',
       active(path) ? 'text-primary' : 'text-muted-foreground'
     )}>
       <div className={cn(
-        'relative p-1.5 rounded-2xl transition-all duration-300',
-        active(path) && 'bg-primary/12 shadow-[0_0_12px_hsl(var(--primary)/0.15)]'
+        'relative p-1.5 rounded-xl transition-all duration-200',
+        active(path) && 'bg-primary/10'
       )}>
-        <Icon className={cn('w-[21px] h-[21px] transition-all', active(path) && 'stroke-[2.5]')} />
+        <Icon className={cn('w-5 h-5', active(path) && 'stroke-[2.5]')} />
         {(badge ?? 0) > 0 && (
-          <span className="absolute -top-0.5 -right-1 min-w-[15px] h-[15px] rounded-full bg-destructive text-destructive-foreground text-[8px] font-bold flex items-center justify-center px-[3px] shadow-[0_2px_6px_hsl(var(--destructive)/0.4)]">
+          <span className="absolute -top-1 -right-1.5 min-w-[16px] h-4 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center px-1">
             {(badge ?? 0) > 9 ? '9+' : badge}
           </span>
         )}
       </div>
-      <span className={cn('text-[9px] leading-none tracking-wide', active(path) ? 'font-bold' : 'font-medium opacity-80')}>{label}</span>
+      <span className={cn('text-[10px] leading-none', active(path) ? 'font-bold' : 'font-medium opacity-70')}>{label}</span>
     </Link>
   );
 
