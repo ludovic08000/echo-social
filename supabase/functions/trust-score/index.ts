@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { cached, invalidateCache } from "../_shared/edge-cache.ts";
 
 function computeTrustScore(data: {
   accountAgeDays: number;
@@ -33,8 +34,19 @@ function computeTrustScore(data: {
   if (data.isVerifiedIdentity) verificationScore += 20;
 
   const trustScore = Math.max(0, Math.min(100, accountAgeScore + transactionScore + socialScore + verificationScore));
-
   return { trustScore, transactionScore, socialScore, accountAgeScore, verificationScore };
+}
+
+// ─── Reusable service-role client ───
+let _supabase: ReturnType<typeof createClient> | null = null;
+function getServiceClient() {
+  if (!_supabase) {
+    _supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+  }
+  return _supabase;
 }
 
 Deno.serve(async (req) => {
@@ -44,7 +56,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // ─── Auth check (CRITICAL FIX) ───
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Non authentifié" }), {
@@ -52,11 +63,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = getServiceClient();
 
-    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+    const userClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
     });
     const token = authHeader.replace("Bearer ", "");
@@ -66,52 +75,49 @@ Deno.serve(async (req) => {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const user = { id: claimsData.claims.sub as string };
+    const userId = claimsData.claims.sub as string;
 
     const body = await req.json();
     const { action } = body;
-    // SECURITY: always use authenticated user's ID, never trust client
-    const userId = user.id;
+
+    if (action === "get") {
+      // Cache trust score 3 minutes per user
+      const data = await cached(`trust:${userId}`, 180_000, async () => {
+        const { data, error } = await supabase
+          .from("trust_scores")
+          .select("*")
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (error) throw error;
+        return data;
+      });
+
+      return new Response(JSON.stringify({ trustScore: data }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (action === "compute") {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("created_at")
-        .eq("user_id", userId)
-        .single();
+      // ── PARALLEL: fetch all data in one shot instead of sequential queries ──
+      const [profileRes, existingRes, sellerRes, friendCountRes, reportsReceivedRes, reportsConfirmedRes] =
+        await Promise.all([
+          supabase.from("profiles").select("created_at").eq("user_id", userId).single(),
+          supabase.from("trust_scores").select("*").eq("user_id", userId).maybeSingle(),
+          supabase.from("seller_profiles").select("rating_average, rating_count, total_sales").eq("user_id", userId).maybeSingle(),
+          supabase.from("friendships").select("id", { count: "exact", head: true })
+            .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`).eq("status", "accepted"),
+          supabase.from("abuse_reports").select("id", { count: "exact", head: true }).eq("reported_user_id", userId),
+          supabase.from("abuse_reports").select("id", { count: "exact", head: true })
+            .eq("reported_user_id", userId).eq("status", "confirmed"),
+        ]);
+
+      const profile = profileRes.data;
+      const existing = existingRes.data;
+      const seller = sellerRes.data;
 
       const accountAgeDays = profile
         ? Math.floor((Date.now() - new Date(profile.created_at).getTime()) / (1000 * 60 * 60 * 24))
         : 0;
-
-      const { data: existing } = await supabase
-        .from("trust_scores")
-        .select("*")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      const { data: seller } = await supabase
-        .from("seller_profiles")
-        .select("rating_average, rating_count, total_sales")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      const { count: friendCount } = await supabase
-        .from("friendships")
-        .select("id", { count: "exact", head: true })
-        .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
-        .eq("status", "accepted");
-
-      const { count: reportsReceived } = await supabase
-        .from("abuse_reports")
-        .select("id", { count: "exact", head: true })
-        .eq("reported_user_id", userId);
-
-      const { count: reportsConfirmed } = await supabase
-        .from("abuse_reports")
-        .select("id", { count: "exact", head: true })
-        .eq("reported_user_id", userId)
-        .eq("status", "confirmed");
 
       const scores = computeTrustScore({
         accountAgeDays,
@@ -119,12 +125,12 @@ Deno.serve(async (req) => {
         successfulPurchases: existing?.successful_purchases || 0,
         disputesOpened: existing?.disputes_opened || 0,
         disputesLost: existing?.disputes_lost || 0,
-        reportsReceived: reportsReceived || 0,
-        reportsConfirmed: reportsConfirmed || 0,
+        reportsReceived: reportsReceivedRes.count || 0,
+        reportsConfirmed: reportsConfirmedRes.count || 0,
         isVerifiedIdentity: existing?.is_verified_identity || false,
         sellerRating: seller?.rating_average,
         sellerRatingCount: seller?.rating_count || 0,
-        friendCount: friendCount || 0,
+        friendCount: friendCountRes.count || 0,
       });
 
       const { data: result, error } = await supabase
@@ -137,8 +143,8 @@ Deno.serve(async (req) => {
           account_age_score: scores.accountAgeScore,
           verification_score: scores.verificationScore,
           successful_sales: seller?.total_sales || 0,
-          reports_received: reportsReceived || 0,
-          reports_confirmed: reportsConfirmed || 0,
+          reports_received: reportsReceivedRes.count || 0,
+          reports_confirmed: reportsConfirmedRes.count || 0,
           updated_at: new Date().toISOString(),
         }, { onConflict: "user_id" })
         .select()
@@ -146,21 +152,11 @@ Deno.serve(async (req) => {
 
       if (error) throw error;
 
+      // Invalidate cached trust score & global trust scores cache
+      invalidateCache(`trust:${userId}`);
+      invalidateCache("trust_scores:all");
+
       return new Response(JSON.stringify({ trustScore: result }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (action === "get") {
-      // Users can only get their own trust score
-      const { data, error } = await supabase
-        .from("trust_scores")
-        .select("*")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (error) throw error;
-      return new Response(JSON.stringify({ trustScore: data }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
