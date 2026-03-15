@@ -348,7 +348,7 @@ export default function Feed() {
  * Lazy-loaded comments: only fetches data when the user clicks to expand.
  * Prevents N+1 comment queries on feed load.
  */
-function LazyComments({ postId }: { postId: string }) {
+const LazyComments = React.memo(function LazyComments({ postId }: { postId: string }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -365,4 +365,4 @@ function LazyComments({ postId }: { postId: string }) {
       )}
     </div>
   );
-}
+});

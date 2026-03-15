@@ -36,21 +36,21 @@ export function MobileNav() {
 
   const NavItem = ({ path, icon: Icon, label, badge }: { path: string; icon: any; label: string; badge?: number }) => (
     <Link to={path} className={cn(
-      'flex flex-col items-center gap-[3px] pt-2 w-[52px] transition-all duration-300',
+      'flex flex-col items-center justify-center gap-1 flex-1 min-w-0 py-2 transition-all duration-200',
       active(path) ? 'text-primary' : 'text-muted-foreground'
     )}>
       <div className={cn(
-        'relative p-1.5 rounded-2xl transition-all duration-300',
-        active(path) && 'bg-primary/12 shadow-[0_0_12px_hsl(var(--primary)/0.15)]'
+        'relative p-1.5 rounded-xl transition-all duration-200',
+        active(path) && 'bg-primary/10'
       )}>
-        <Icon className={cn('w-[21px] h-[21px] transition-all', active(path) && 'stroke-[2.5]')} />
+        <Icon className={cn('w-5 h-5', active(path) && 'stroke-[2.5]')} />
         {(badge ?? 0) > 0 && (
-          <span className="absolute -top-0.5 -right-1 min-w-[15px] h-[15px] rounded-full bg-destructive text-destructive-foreground text-[8px] font-bold flex items-center justify-center px-[3px] shadow-[0_2px_6px_hsl(var(--destructive)/0.4)]">
+          <span className="absolute -top-1 -right-1.5 min-w-[16px] h-4 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center px-1">
             {(badge ?? 0) > 9 ? '9+' : badge}
           </span>
         )}
       </div>
-      <span className={cn('text-[9px] leading-none tracking-wide', active(path) ? 'font-bold' : 'font-medium opacity-80')}>{label}</span>
+      <span className={cn('text-[10px] leading-none', active(path) ? 'font-bold' : 'font-medium opacity-70')}>{label}</span>
     </Link>
   );
 
@@ -113,21 +113,18 @@ export function MobileNav() {
 
       <nav className={cn(
         "fixed bottom-0 left-0 right-0 z-50 safe-area-pb transition-transform duration-300",
-        "bg-card/95 border-t border-border/15",
-        "md:bg-card/85 md:backdrop-blur-2xl",
-        "shadow-[0_-4px_20px_hsl(var(--background)/0.5)]",
+        "bg-card/95 backdrop-blur-xl border-t border-border/20",
+        "shadow-[0_-2px_16px_hsl(var(--background)/0.6)]",
         navHidden && "translate-y-full"
       )}>
-        <div className="flex items-end justify-evenly h-[60px] pb-1">
+        <div className="flex items-stretch h-[56px]">
           <NavItem path="/feed" icon={Home} label="Accueil" />
           <NavItem path="/friends" icon={Users} label="Amis" />
 
-          {/* Bouton Créer — premium central */}
-          <Link to="/create" className="flex flex-col items-center -mt-4 w-[56px]">
-            <div className="relative">
-              <div className="relative w-[46px] h-[46px] rounded-2xl bg-[image:var(--premium-gradient)] text-primary-foreground flex items-center justify-center shadow-[var(--shadow-gold)] active:scale-90 transition-all duration-200 border border-primary-foreground/10">
-                <Plus className="w-6 h-6 stroke-[3]" />
-              </div>
+          {/* Bouton Créer — centré */}
+          <Link to="/create" className="flex flex-col items-center justify-center flex-1 min-w-0">
+            <div className="w-11 h-11 rounded-2xl bg-[image:var(--premium-gradient)] text-primary-foreground flex items-center justify-center shadow-[var(--shadow-gold)] active:scale-90 transition-transform duration-150">
+              <Plus className="w-5 h-5 stroke-[2.5]" />
             </div>
           </Link>
 
@@ -137,14 +134,14 @@ export function MobileNav() {
           <button
             onClick={() => setShowMore(!showMore)}
             className={cn(
-              'flex flex-col items-center gap-[3px] pt-2 w-[52px] transition-all duration-300',
+              'flex flex-col items-center justify-center gap-1 flex-1 min-w-0 py-2 transition-all duration-200',
               showMore ? 'text-primary' : 'text-muted-foreground'
             )}
           >
-            <div className={cn('relative p-1.5 rounded-2xl transition-all duration-300', showMore && 'bg-primary/12')}>
-              <Sparkles className={cn('w-[21px] h-[21px]', showMore && 'stroke-[2.5]')} />
+            <div className={cn('relative p-1.5 rounded-xl transition-all duration-200', showMore && 'bg-primary/10')}>
+              <Sparkles className={cn('w-5 h-5', showMore && 'stroke-[2.5]')} />
             </div>
-            <span className={cn('text-[9px] leading-none tracking-wide', showMore ? 'font-bold' : 'font-medium opacity-80')}>Plus</span>
+            <span className={cn('text-[10px] leading-none', showMore ? 'font-bold' : 'font-medium opacity-70')}>Plus</span>
           </button>
         </div>
       </nav>
