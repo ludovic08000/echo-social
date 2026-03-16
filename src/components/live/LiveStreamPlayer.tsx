@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, forwardRef, useImperativeHandle, useCallback } from 'react';
 import { Radio, Camera, CameraOff, Mic, MicOff, RotateCcw, Zap } from 'lucide-react';
-import { Room, RoomEvent, Track, VideoPresets, ConnectionQuality } from 'livekit-client';
+import { Room, RoomEvent, Track, VideoPresets, VideoPreset, ConnectionQuality } from 'livekit-client';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { getLiveKitToken } from '@/lib/livekit';
