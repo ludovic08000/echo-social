@@ -1,6 +1,6 @@
-import { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
-import { Radio, Camera, CameraOff, Mic, MicOff, RotateCcw } from 'lucide-react';
-import { Room, RoomEvent, Track, VideoPresets, LocalTrack, createLocalTracks } from 'livekit-client';
+import { useRef, useEffect, useState, forwardRef, useImperativeHandle, useCallback } from 'react';
+import { Radio, Camera, CameraOff, Mic, MicOff, RotateCcw, Zap } from 'lucide-react';
+import { Room, RoomEvent, Track, VideoPresets, VideoPreset, ConnectionQuality } from 'livekit-client';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { getLiveKitToken } from '@/lib/livekit';
@@ -22,16 +22,46 @@ export interface LiveStreamPlayerRef {
   switchCamera: () => Promise<void>;
 }
 
+/** Quality indicator dot color */
+const QUALITY_COLORS: Record<string, string> = {
+  excellent: 'bg-emerald-400',
+  good: 'bg-yellow-400',
+  poor: 'bg-red-400',
+  lost: 'bg-red-600 animate-pulse',
+  unknown: 'bg-muted-foreground',
+};
+
 export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayerProps>(
   ({ isHost = false, roomName, onStreamReady, onStreamEnd, className }, ref) => {
     const videoRef = useRef<HTMLDivElement>(null);
     const roomRef = useRef<Room | null>(null);
+    const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>();
     const [isStreaming, setIsStreaming] = useState(false);
     const [isCameraOn, setIsCameraOn] = useState(true);
     const [isMicOn, setIsMicOn] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isFrontCamera, setIsFrontCamera] = useState(true);
+    const [connectionQuality, setConnectionQuality] = useState<string>('unknown');
+    const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
+
+    // Attach video element with TikTok-style optimizations
+    const attachVideo = useCallback((track: any, mirror: boolean) => {
+      if (!videoRef.current || !track) return;
+      const el = track.attach() as HTMLVideoElement;
+      el.style.width = '100%';
+      el.style.height = '100%';
+      el.style.objectFit = 'cover';
+      el.style.transform = mirror ? 'scaleX(-1)' : '';
+      // Smooth rendering — prevent flicker on iOS
+      el.style.willChange = 'transform';
+      el.style.backfaceVisibility = 'hidden';
+      el.setAttribute('playsinline', 'true');
+      el.setAttribute('autoplay', 'true');
+      el.muted = true; // local preview is always muted
+      videoRef.current.innerHTML = '';
+      videoRef.current.appendChild(el);
+    }, []);
 
     const startStream = async () => {
       if (!roomName) {
@@ -43,7 +73,6 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
       setError(null);
 
       try {
-        // Request permissions first (handles native + web)
         const perms = await requestMediaPermissions({ audio: true, video: true });
         if (!perms.granted) {
           setError(perms.error || "Autorisez l'accès à la caméra et au micro");
@@ -51,7 +80,6 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
           return;
         }
 
-        // Keep screen awake during live
         await acquireWakeLock();
 
         const { token, url } = await getLiveKitToken(roomName, true);
@@ -59,12 +87,58 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
         const room = new Room({
           adaptiveStream: true,
           dynacast: true,
+          // High-quality vertical video like TikTok
           videoCaptureDefaults: {
-            resolution: VideoPresets.h720.resolution,
+            resolution: { width: 1080, height: 1920, frameRate: 30 },
+            facingMode: 'user',
+          },
+          publishDefaults: {
+            // Simulcast for adaptive quality on viewer side
+            simulcast: true,
+            videoSimulcastLayers: [
+              VideoPresets.h360,
+              VideoPresets.h720,
+            ],
+            videoCodec: 'h264', // Best compatibility iOS/Android
+            videoEncoding: {
+              maxBitrate: 3_000_000, // 3 Mbps for crisp 1080p
+              maxFramerate: 30,
+            },
+          },
+          // Auto-reconnect on network issues
+          reconnectPolicy: {
+            nextRetryDelayInMs: (context) => {
+              // Exponential backoff: 500ms, 1s, 2s, 4s, max 8s
+              const delay = Math.min(500 * Math.pow(2, context.retryCount), 8000);
+              return context.retryCount < 10 ? delay : null;
+            },
           },
         });
 
         roomRef.current = room;
+
+        // Monitor connection quality
+        room.on(RoomEvent.ConnectionQualityChanged, (quality) => {
+          const qualityStr = quality === ConnectionQuality.Excellent ? 'excellent'
+            : quality === ConnectionQuality.Good ? 'good'
+            : quality === ConnectionQuality.Poor ? 'poor'
+            : quality === ConnectionQuality.Lost ? 'lost'
+            : 'unknown';
+          setConnectionQuality(qualityStr);
+        });
+
+        room.on(RoomEvent.Reconnecting, () => {
+          setConnectionQuality('poor');
+        });
+
+        room.on(RoomEvent.Reconnected, () => {
+          setConnectionQuality('good');
+          // Re-attach video after reconnect
+          const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+          if (camPub?.track) {
+            attachVideo(camPub.track, isFrontCamera);
+          }
+        });
 
         room.on(RoomEvent.Disconnected, () => {
           setIsStreaming(false);
@@ -73,25 +147,17 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
         });
 
         await room.connect(url, token);
-
-        // Publish camera + mic
         await room.localParticipant.enableCameraAndMicrophone();
 
-        // Attach local video to DOM
+        // Attach local video
         const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-        if (camPub?.track && videoRef.current) {
-          const el = camPub.track.attach();
-          el.style.width = '100%';
-          el.style.height = '100%';
-          el.style.objectFit = 'cover';
-          el.style.transform = 'scaleX(-1)'; // mirror
-          videoRef.current.innerHTML = '';
-          videoRef.current.appendChild(el);
+        if (camPub?.track) {
+          attachVideo(camPub.track, true);
         }
 
         setIsStreaming(true);
 
-        // Build a MediaStream from LiveKit local tracks for recording
+        // Build MediaStream for recording
         const mediaStream = new MediaStream();
         const camTrack = room.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
         const micTrack = room.localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
@@ -117,6 +183,7 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
     };
 
     const stopStream = () => {
+      clearTimeout(reconnectTimerRef.current);
       if (roomRef.current) {
         roomRef.current.disconnect();
         roomRef.current = null;
@@ -159,35 +226,28 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
 
     const switchCamera = async () => {
       const room = roomRef.current;
-      if (!room) return;
+      if (!room || isSwitchingCamera) return;
 
+      setIsSwitchingCamera(true);
       try {
         const wantFront = !isFrontCamera;
         const newFacingMode = wantFront ? 'user' : 'environment';
 
-        // Try to find a specific deviceId for better compatibility (especially iOS)
         let targetDeviceId: string | undefined;
         try {
           const devices = await navigator.mediaDevices.enumerateDevices();
           const videoDevices = devices.filter(d => d.kind === 'videoinput');
           if (videoDevices.length >= 2) {
-            // Get current track's deviceId
             const currentCamPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
             const currentDeviceId = (currentCamPub?.track as any)?.mediaStreamTrack?.getSettings?.()?.deviceId;
-            // Pick a different device
             const otherDevice = videoDevices.find(d => d.deviceId !== currentDeviceId);
             if (otherDevice) {
               targetDeviceId = otherDevice.deviceId;
             }
           }
-        } catch {
-          // Fall through to facingMode approach
-        }
+        } catch {}
 
-        // Disable then re-enable with new constraints
         await room.localParticipant.setCameraEnabled(false);
-
-        // Small delay for iOS WebKit to release the camera
         await new Promise(r => setTimeout(r, 300));
 
         const captureOptions: any = targetDeviceId
@@ -196,38 +256,26 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
 
         await room.localParticipant.setCameraEnabled(true, captureOptions);
 
-        // Re-attach video element
         const newCamPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-        if (newCamPub?.track && videoRef.current) {
-          const el = newCamPub.track.attach();
-          el.style.width = '100%';
-          el.style.height = '100%';
-          el.style.objectFit = 'cover';
-          el.style.transform = wantFront ? 'scaleX(-1)' : '';
-          videoRef.current.innerHTML = '';
-          videoRef.current.appendChild(el);
+        if (newCamPub?.track) {
+          attachVideo(newCamPub.track, wantFront);
         }
 
         setIsFrontCamera(wantFront);
       } catch (err) {
         console.error('Switch camera error:', err);
-        // If it failed, try to re-enable the previous camera
         try {
           const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
           if (!camPub?.track) {
             await room.localParticipant.setCameraEnabled(true);
             const reattach = room.localParticipant.getTrackPublication(Track.Source.Camera);
-            if (reattach?.track && videoRef.current) {
-              const el = reattach.track.attach();
-              el.style.width = '100%';
-              el.style.height = '100%';
-              el.style.objectFit = 'cover';
-              el.style.transform = isFrontCamera ? 'scaleX(-1)' : '';
-              videoRef.current.innerHTML = '';
-              videoRef.current.appendChild(el);
+            if (reattach?.track) {
+              attachVideo(reattach.track, isFrontCamera);
             }
           }
         } catch {}
+      } finally {
+        setIsSwitchingCamera(false);
       }
     };
 
@@ -253,7 +301,8 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
 
     return (
       <div className={cn('relative w-full h-full bg-black overflow-hidden', className)}>
-        <div ref={videoRef} className="w-full h-full" />
+        {/* Video container — GPU-accelerated for smooth rendering */}
+        <div ref={videoRef} className="w-full h-full [&_video]:will-change-transform" />
 
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/80">
@@ -286,15 +335,31 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
           </div>
         )}
 
+        {/* Connection quality indicator */}
+        {isHost && isStreaming && (
+          <div className="absolute top-4 left-4 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/50 backdrop-blur-sm">
+            <div className={cn('w-2 h-2 rounded-full', QUALITY_COLORS[connectionQuality] || QUALITY_COLORS.unknown)} />
+            <Zap className="w-3 h-3 text-white/70" />
+          </div>
+        )}
+
+        {/* Camera switching overlay */}
+        {isSwitchingCamera && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-30 pointer-events-none">
+            <RotateCcw className="w-10 h-10 text-white animate-spin" />
+          </div>
+        )}
+
         {isHost && isStreaming && (
           <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 z-20" style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 280px)' }}>
             <Button
               size="icon"
               variant="secondary"
               onClick={switchCamera}
+              disabled={isSwitchingCamera}
               className="rounded-full w-12 h-12"
             >
-              <RotateCcw className="w-5 h-5" />
+              <RotateCcw className={cn('w-5 h-5', isSwitchingCamera && 'animate-spin')} />
             </Button>
             <Button
               size="icon"
