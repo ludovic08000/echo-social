@@ -31,6 +31,7 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
     const [isMicOn, setIsMicOn] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [isFrontCamera, setIsFrontCamera] = useState(true);
 
     const startStream = async () => {
       if (!roomName) {
@@ -159,28 +160,74 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
     const switchCamera = async () => {
       const room = roomRef.current;
       if (!room) return;
-      // Toggle between front and back camera by creating a new track
-      const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-      if (camPub?.track) {
-        const currentSettings = (camPub.track as any).mediaStreamTrack?.getSettings?.();
-        const newFacingMode = currentSettings?.facingMode === 'user' ? 'environment' : 'user';
-        
-        await room.localParticipant.setCameraEnabled(false);
-        await room.localParticipant.setCameraEnabled(true, {
-          facingMode: newFacingMode,
-        });
 
-        // Re-attach
+      try {
+        const wantFront = !isFrontCamera;
+        const newFacingMode = wantFront ? 'user' : 'environment';
+
+        // Try to find a specific deviceId for better compatibility (especially iOS)
+        let targetDeviceId: string | undefined;
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevices = devices.filter(d => d.kind === 'videoinput');
+          if (videoDevices.length >= 2) {
+            // Get current track's deviceId
+            const currentCamPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+            const currentDeviceId = (currentCamPub?.track as any)?.mediaStreamTrack?.getSettings?.()?.deviceId;
+            // Pick a different device
+            const otherDevice = videoDevices.find(d => d.deviceId !== currentDeviceId);
+            if (otherDevice) {
+              targetDeviceId = otherDevice.deviceId;
+            }
+          }
+        } catch {
+          // Fall through to facingMode approach
+        }
+
+        // Disable then re-enable with new constraints
+        await room.localParticipant.setCameraEnabled(false);
+
+        // Small delay for iOS WebKit to release the camera
+        await new Promise(r => setTimeout(r, 300));
+
+        const captureOptions: any = targetDeviceId
+          ? { deviceId: { exact: targetDeviceId } }
+          : { facingMode: newFacingMode };
+
+        await room.localParticipant.setCameraEnabled(true, captureOptions);
+
+        // Re-attach video element
         const newCamPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
         if (newCamPub?.track && videoRef.current) {
           const el = newCamPub.track.attach();
           el.style.width = '100%';
           el.style.height = '100%';
           el.style.objectFit = 'cover';
-          el.style.transform = newFacingMode === 'user' ? 'scaleX(-1)' : '';
+          el.style.transform = wantFront ? 'scaleX(-1)' : '';
           videoRef.current.innerHTML = '';
           videoRef.current.appendChild(el);
         }
+
+        setIsFrontCamera(wantFront);
+      } catch (err) {
+        console.error('Switch camera error:', err);
+        // If it failed, try to re-enable the previous camera
+        try {
+          const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+          if (!camPub?.track) {
+            await room.localParticipant.setCameraEnabled(true);
+            const reattach = room.localParticipant.getTrackPublication(Track.Source.Camera);
+            if (reattach?.track && videoRef.current) {
+              const el = reattach.track.attach();
+              el.style.width = '100%';
+              el.style.height = '100%';
+              el.style.objectFit = 'cover';
+              el.style.transform = isFrontCamera ? 'scaleX(-1)' : '';
+              videoRef.current.innerHTML = '';
+              videoRef.current.appendChild(el);
+            }
+          }
+        } catch {}
       }
     };
 
