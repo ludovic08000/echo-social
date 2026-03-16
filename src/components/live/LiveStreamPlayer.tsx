@@ -31,6 +31,7 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
     const [isMicOn, setIsMicOn] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [isFrontCamera, setIsFrontCamera] = useState(true);
 
     const startStream = async () => {
       if (!roomName) {
