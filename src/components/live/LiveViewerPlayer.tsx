@@ -1,9 +1,17 @@
-import { useRef, useEffect, useState } from 'react';
-import { Radio, Volume2, VolumeX } from 'lucide-react';
-import { Room, RoomEvent, Track, RemoteTrackPublication } from 'livekit-client';
+import { useRef, useEffect, useState, useCallback } from 'react';
+import { Radio, Volume2, VolumeX, Zap } from 'lucide-react';
+import { Room, RoomEvent, Track, RemoteTrackPublication, ConnectionQuality } from 'livekit-client';
 import { cn } from '@/lib/utils';
 import { getLiveKitToken } from '@/lib/livekit';
 import { acquireWakeLock, releaseWakeLock } from '@/lib/platformPermissions';
+
+const QUALITY_COLORS: Record<string, string> = {
+  excellent: 'bg-emerald-400',
+  good: 'bg-yellow-400',
+  poor: 'bg-red-400',
+  lost: 'bg-red-600 animate-pulse',
+  unknown: 'bg-muted-foreground',
+};
 
 interface LiveViewerPlayerProps {
   roomName?: string;
@@ -26,9 +34,9 @@ export function LiveViewerPlayer({
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showMuteIcon, setShowMuteIcon] = useState(false);
+  const [connectionQuality, setConnectionQuality] = useState<string>('unknown');
   const muteTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Tap to toggle mute — show icon briefly
   const handleTap = () => {
     if (!isConnected) return;
     const newMuted = !isMuted;
@@ -42,22 +50,25 @@ export function LiveViewerPlayer({
     muteTimeoutRef.current = setTimeout(() => setShowMuteIcon(false), 1200);
   };
 
-  const attachRemoteTrack = (publication: RemoteTrackPublication) => {
-    if (!publication.track || !videoRef.current) return;
-    const el = publication.track.attach();
-    if (publication.kind === 'video') {
+  // Attach with GPU-accelerated styles for smooth playback
+  const attachTrack = useCallback((track: Track) => {
+    if (!videoRef.current) return;
+    const el = track.attach() as HTMLVideoElement;
+    if (track.kind === Track.Kind.Video) {
       el.style.width = '100%';
       el.style.height = '100%';
       el.style.objectFit = 'cover';
-      (el as HTMLVideoElement).autoplay = true;
-      (el as HTMLVideoElement).playsInline = true;
-      (el as HTMLVideoElement).controls = false;
+      el.style.willChange = 'transform';
+      el.style.backfaceVisibility = 'hidden';
+      el.setAttribute('playsinline', 'true');
+      el.setAttribute('autoplay', 'true');
+      el.controls = false;
     }
-    if (publication.kind === 'audio') {
+    if (track.kind === Track.Kind.Audio) {
       (el as HTMLAudioElement).autoplay = true;
     }
     videoRef.current.appendChild(el);
-  };
+  }, []);
 
   useEffect(() => {
     if (!roomName) return;
@@ -71,21 +82,34 @@ export function LiveViewerPlayer({
         const { token, url } = await getLiveKitToken(roomName, false);
         if (cancelled) return;
 
-        const room = new Room({ adaptiveStream: true, dynacast: true });
+        const room = new Room({
+          adaptiveStream: true,
+          dynacast: true,
+          // Auto-reconnect for viewers too
+          reconnectPolicy: {
+            nextRetryDelayInMs: (context) => {
+              const delay = Math.min(500 * Math.pow(2, context.retryCount), 8000);
+              return context.retryCount < 15 ? delay : null;
+            },
+          },
+        });
         roomRef.current = room;
 
+        // Connection quality monitoring
+        room.on(RoomEvent.ConnectionQualityChanged, (quality) => {
+          const q = quality === ConnectionQuality.Excellent ? 'excellent'
+            : quality === ConnectionQuality.Good ? 'good'
+            : quality === ConnectionQuality.Poor ? 'poor'
+            : quality === ConnectionQuality.Lost ? 'lost'
+            : 'unknown';
+          setConnectionQuality(q);
+        });
+
+        room.on(RoomEvent.Reconnecting, () => setConnectionQuality('poor'));
+        room.on(RoomEvent.Reconnected, () => setConnectionQuality('good'));
+
         room.on(RoomEvent.TrackSubscribed, (track) => {
-          if (!videoRef.current) return;
-          const el = track.attach();
-          if (track.kind === Track.Kind.Video) {
-            el.style.width = '100%';
-            el.style.height = '100%';
-            el.style.objectFit = 'cover';
-            (el as HTMLVideoElement).autoplay = true;
-            (el as HTMLVideoElement).playsInline = true;
-            (el as HTMLVideoElement).controls = false;
-          }
-          videoRef.current.appendChild(el);
+          attachTrack(track);
           setIsLoading(false);
           setIsConnected(true);
         });
@@ -104,10 +128,11 @@ export function LiveViewerPlayer({
         setIsLoading(false);
         setIsConnected(true);
 
+        // Attach already-published tracks
         room.remoteParticipants.forEach((participant) => {
           participant.trackPublications.forEach((pub) => {
             if (pub.isSubscribed && pub.track) {
-              attachRemoteTrack(pub as RemoteTrackPublication);
+              attachTrack(pub.track);
             }
           });
         });
@@ -134,7 +159,7 @@ export function LiveViewerPlayer({
       }
       releaseWakeLock();
     };
-  }, [roomName]);
+  }, [roomName, attachTrack]);
 
   if (!roomName) {
     return (
@@ -161,8 +186,16 @@ export function LiveViewerPlayer({
       onClick={handleTap}
       className={cn('relative w-full h-full bg-black overflow-hidden cursor-pointer select-none', className)}
     >
-      {/* Video container — no controls */}
-      <div ref={videoRef} className="w-full h-full [&_video]:pointer-events-none [&_video::-webkit-media-controls]:hidden" />
+      {/* Video container — GPU-accelerated */}
+      <div ref={videoRef} className="w-full h-full [&_video]:pointer-events-none [&_video::-webkit-media-controls]:hidden [&_video]:will-change-transform" />
+
+      {/* Connection quality dot */}
+      {isConnected && (
+        <div className="absolute top-3 left-3 z-20 flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/40 backdrop-blur-sm">
+          <div className={cn('w-1.5 h-1.5 rounded-full', QUALITY_COLORS[connectionQuality] || QUALITY_COLORS.unknown)} />
+          <Zap className="w-2.5 h-2.5 text-white/60" />
+        </div>
+      )}
 
       {/* Loading */}
       {isLoading && (
@@ -184,7 +217,7 @@ export function LiveViewerPlayer({
         </div>
       )}
 
-      {/* Mute/unmute indicator — appears briefly on tap */}
+      {/* Mute/unmute indicator */}
       {showMuteIcon && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
           <div className="w-16 h-16 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center animate-in fade-in zoom-in duration-200">
