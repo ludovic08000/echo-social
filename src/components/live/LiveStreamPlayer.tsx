@@ -96,8 +96,8 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
             // Simulcast for adaptive quality on viewer side
             simulcast: true,
             videoSimulcastLayers: [
-              { width: 360, height: 640, encoding: { maxBitrate: 400_000, maxFramerate: 24 } },
-              { width: 720, height: 1280, encoding: { maxBitrate: 1_500_000, maxFramerate: 30 } },
+              VideoPresets.h360,
+              VideoPresets.h720,
             ],
             videoCodec: 'h264', // Best compatibility iOS/Android
             videoEncoding: {
