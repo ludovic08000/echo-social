@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
+import { useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import loginBg from '@/assets/login-bg.png';
 
 export default function Login() {
@@ -25,6 +27,8 @@ export default function Login() {
     return <Navigate to={from} replace />;
   }
 
+  const queryClient = useQueryClient();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -41,7 +45,35 @@ export default function Login() {
       return;
     }
 
-    // Silent login — no toast
+    // Prefetch feed data in parallel with navigation for instant feel
+    const { data: { user: loggedUser } } = await supabase.auth.getUser();
+    if (loggedUser) {
+      // Fire-and-forget prefetch — don't block navigation
+      queryClient.prefetchInfiniteQuery({
+        queryKey: ['posts', 'friends-feed', loggedUser.id],
+        queryFn: async () => {
+          const { data } = await supabase
+            .from('posts')
+            .select('*, profile:profiles!posts_user_id_fkey(name, avatar_url, mood_emoji)')
+            .order('created_at', { ascending: false })
+            .limit(15);
+          return data || [];
+        },
+        initialPageParam: null,
+      });
+      queryClient.prefetchQuery({
+        queryKey: ['profile', loggedUser.id],
+        queryFn: async () => {
+          const { data } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('user_id', loggedUser.id)
+            .maybeSingle();
+          return data;
+        },
+      });
+    }
+
     navigate('/feed');
   };
 

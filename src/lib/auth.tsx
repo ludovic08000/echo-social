@@ -20,6 +20,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Get session first for fastest possible auth resolution
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         setSession(session);
@@ -40,7 +47,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               },
             }).catch(() => {});
 
-            // Compute trust score (userId derived from JWT server-side)
             supabase.functions.invoke('trust-score', {
               body: { action: 'compute' },
             }).catch(() => {});
@@ -48,12 +54,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     );
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
 
     return () => subscription.unsubscribe();
   }, []);
