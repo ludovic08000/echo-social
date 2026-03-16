@@ -119,13 +119,12 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
 
         // Monitor connection quality
         room.on(RoomEvent.ConnectionQualityChanged, (quality) => {
-          const map: Record<number, string> = {
-            [ConnectionQuality.Excellent]: 'excellent',
-            [ConnectionQuality.Good]: 'good',
-            [ConnectionQuality.Poor]: 'poor',
-            [ConnectionQuality.Lost]: 'lost',
-          };
-          setConnectionQuality(map[quality] || 'unknown');
+          const qualityStr = quality === ConnectionQuality.Excellent ? 'excellent'
+            : quality === ConnectionQuality.Good ? 'good'
+            : quality === ConnectionQuality.Poor ? 'poor'
+            : quality === ConnectionQuality.Lost ? 'lost'
+            : 'unknown';
+          setConnectionQuality(qualityStr);
         });
 
         room.on(RoomEvent.Reconnecting, () => {
