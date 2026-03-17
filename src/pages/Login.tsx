@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
@@ -13,7 +13,6 @@ import { supabase } from '@/integrations/supabase/client';
 import loginBg from '@/assets/login-bg.png';
 
 export default function Login() {
-  const navigate = useNavigate();
   const location = useLocation();
   const { signIn, user } = useAuth();
   const { t } = useTranslation();
@@ -45,10 +44,9 @@ export default function Login() {
       return;
     }
 
-    // Prefetch feed data in parallel with navigation for instant feel
+    // Prefetch feed data — navigation happens automatically via auth state change
     const { data: { user: loggedUser } } = await supabase.auth.getUser();
     if (loggedUser) {
-      // Fire-and-forget prefetch — don't block navigation
       queryClient.prefetchInfiniteQuery({
         queryKey: ['posts', 'friends-feed', loggedUser.id],
         queryFn: async () => {
@@ -73,8 +71,9 @@ export default function Login() {
         },
       });
     }
-
-    navigate('/feed');
+    // Don't navigate manually — the auth state change will set `user`,
+    // causing PublicOnlyRoute to redirect to /feed automatically.
+    setIsLoading(false);
   };
 
   return (
