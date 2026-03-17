@@ -606,16 +606,16 @@ export function CreatePost() {
                         onClick={handleSubmit}
                         disabled={(!body.trim() && !media) || isUploading}
                         size="sm"
-                        className="h-9 px-5 text-xs rounded-xl bg-primary text-primary-foreground shadow-[0_2px_12px_hsl(220_70%_50%/0.3)] hover:shadow-[0_4px_20px_hsl(220_70%_50%/0.4)] hover:-translate-y-0.5 transition-all duration-300 btn-shine"
+                        className="h-9 px-5 text-xs rounded-xl bg-primary text-primary-foreground shadow-[0_2px_12px_hsl(220_70%_50%/0.3)] hover:shadow-[0_4px_20px_hsl(220_70%_50%/0.4)] hover:-translate-y-0.5 transition-all duration-300 btn-shine min-w-0 max-w-[160px] shrink-0"
                       >
                         {isUploading ? (
-                          <span className="flex items-center gap-1.5 animate-pulse">
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            {uploadStep || 'Publication…'}
+                          <span className="flex items-center gap-1.5 animate-pulse truncate">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                            <span className="truncate">{uploadStep || 'Publication…'}</span>
                           </span>
                         ) : (
                           <>
-                            <Send className="w-3.5 h-3.5 mr-1.5" />
+                            <Send className="w-3.5 h-3.5 mr-1.5 shrink-0" />
                             Publier
                           </>
                         )}
