@@ -13,7 +13,6 @@ import { supabase } from '@/integrations/supabase/client';
 import loginBg from '@/assets/login-bg.png';
 
 export default function Login() {
-  const navigate = useNavigate();
   const location = useLocation();
   const { signIn, user } = useAuth();
   const { t } = useTranslation();
