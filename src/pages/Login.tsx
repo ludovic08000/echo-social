@@ -45,10 +45,9 @@ export default function Login() {
       return;
     }
 
-    // Prefetch feed data in parallel with navigation for instant feel
+    // Prefetch feed data — navigation happens automatically via auth state change
     const { data: { user: loggedUser } } = await supabase.auth.getUser();
     if (loggedUser) {
-      // Fire-and-forget prefetch — don't block navigation
       queryClient.prefetchInfiniteQuery({
         queryKey: ['posts', 'friends-feed', loggedUser.id],
         queryFn: async () => {
@@ -73,8 +72,9 @@ export default function Login() {
         },
       });
     }
-
-    navigate('/feed');
+    // Don't navigate manually — the auth state change will set `user`,
+    // causing PublicOnlyRoute to redirect to /feed automatically.
+    setIsLoading(false);
   };
 
   return (
