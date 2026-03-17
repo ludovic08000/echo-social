@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
