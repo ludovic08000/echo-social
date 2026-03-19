@@ -23,9 +23,6 @@ export const ProductCard = forwardRef<HTMLDivElement, ProductCardProps>(function
   const addToCart = useAddToCart();
   const { data: favorites = [] } = useProductFavorites();
   const toggleFav = useToggleFavorite();
-  const addToCart = useAddToCart();
-  const { data: favorites = [] } = useProductFavorites();
-  const toggleFav = useToggleFavorite();
   const seller = product.seller_profiles;
   const thumbnail = product.thumbnail_url || product.images?.[0] || '/placeholder.svg';
   const hasDiscount = product.compare_at_price && product.compare_at_price > product.price;
