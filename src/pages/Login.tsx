@@ -9,7 +9,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
 import loginBg from '@/assets/login-bg.png';
 
 export default function Login() {
@@ -44,35 +43,10 @@ export default function Login() {
       return;
     }
 
-    // Prefetch feed data — navigation happens automatically via auth state change
-    const { data: { user: loggedUser } } = await supabase.auth.getUser();
-    if (loggedUser) {
-      queryClient.prefetchInfiniteQuery({
-        queryKey: ['posts', 'friends-feed', loggedUser.id],
-        queryFn: async () => {
-          const { data } = await supabase
-            .from('posts')
-            .select('*, profile:profiles!posts_user_id_fkey(name, avatar_url, mood_emoji)')
-            .order('created_at', { ascending: false })
-            .limit(15);
-          return data || [];
-        },
-        initialPageParam: null,
-      });
-      queryClient.prefetchQuery({
-        queryKey: ['profile', loggedUser.id],
-        queryFn: async () => {
-          const { data } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('user_id', loggedUser.id)
-            .maybeSingle();
-          return data;
-        },
-      });
-    }
-    // Don't navigate manually — the auth state change will set `user`,
-    // causing PublicOnlyRoute to redirect to /feed automatically.
+    // Clear any stale/errored feed cache so /feed always fetches fresh data after login
+    queryClient.removeQueries({ queryKey: ['posts', 'friends-feed'] });
+
+    // Don't navigate manually — auth state change will redirect to /feed
     setIsLoading(false);
   };
 
