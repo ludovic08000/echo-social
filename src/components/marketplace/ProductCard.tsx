@@ -35,7 +35,7 @@ export const ProductCard = forwardRef<HTMLDivElement, ProductCardProps>(function
   const isFav = favorites.includes(product.id);
 
   return (
-    <div className="group relative">
+    <div ref={ref} className="group relative">
       {/* Image */}
       <Link to={`/marketplace/product/${product.id}`} className={cn(
         "block relative overflow-hidden bg-muted",
