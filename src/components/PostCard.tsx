@@ -244,7 +244,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         )}
         
         {post.image_url && (
-          <div className="relative w-full overflow-hidden bg-muted/40 aspect-[4/5] sm:aspect-video">
+          <div className="relative w-full overflow-hidden bg-muted/40 aspect-[4/5]">
             {!mediaLoaded && !videoError && (
               <div className="absolute inset-0 skeleton" />
             )}
