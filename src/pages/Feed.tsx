@@ -296,7 +296,7 @@ export default function Feed() {
 
                 {/* Virtualized posts list */}
                 <div
-                  className="px-4"
+                  className="px-0 sm:px-4"
                   style={{
                     height: `${virtualizer.getTotalSize()}px`,
                     width: '100%',

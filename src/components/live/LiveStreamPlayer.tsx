@@ -233,28 +233,28 @@ export const LiveStreamPlayer = forwardRef<LiveStreamPlayerRef, LiveStreamPlayer
         const wantFront = !isFrontCamera;
         const newFacingMode = wantFront ? 'user' : 'environment';
 
-        let targetDeviceId: string | undefined;
-        try {
-          const devices = await navigator.mediaDevices.enumerateDevices();
-          const videoDevices = devices.filter(d => d.kind === 'videoinput');
-          if (videoDevices.length >= 2) {
-            const currentCamPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-            const currentDeviceId = (currentCamPub?.track as any)?.mediaStreamTrack?.getSettings?.()?.deviceId;
-            const otherDevice = videoDevices.find(d => d.deviceId !== currentDeviceId);
-            if (otherDevice) {
-              targetDeviceId = otherDevice.deviceId;
-            }
+        // Method 1: Use restartTrack on existing camera track (most reliable on mobile)
+        const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+        if (camPub?.track) {
+          try {
+            await (camPub.track as any).restartTrack({
+              facingMode: newFacingMode,
+            });
+            attachVideo(camPub.track, wantFront);
+            setIsFrontCamera(wantFront);
+            return;
+          } catch (e) {
+            console.warn('restartTrack failed, falling back:', e);
           }
-        } catch {}
+        }
 
+        // Method 2: Fallback — disable then re-enable with new facing mode
         await room.localParticipant.setCameraEnabled(false);
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise(r => setTimeout(r, 400));
 
-        const captureOptions: any = targetDeviceId
-          ? { deviceId: { exact: targetDeviceId } }
-          : { facingMode: newFacingMode };
-
-        await room.localParticipant.setCameraEnabled(true, captureOptions);
+        await room.localParticipant.setCameraEnabled(true, {
+          facingMode: newFacingMode,
+        });
 
         const newCamPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
         if (newCamPub?.track) {
