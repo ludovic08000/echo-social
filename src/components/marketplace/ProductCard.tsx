@@ -154,4 +154,4 @@ export const ProductCard = forwardRef<HTMLDivElement, ProductCardProps>(function
       </div>
     </div>
   );
-}
+});
