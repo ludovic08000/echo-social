@@ -203,9 +203,9 @@ export default function Feed() {
 
             {isMobile ? (
               <>
-                <div className="px-4"><StoriesBar /></div>
-                <div className="px-4"><FeedLiveSection /></div>
-                <div className="px-4"><CreatePost /></div>
+                <div className="px-3"><StoriesBar /></div>
+                <div className="px-3"><FeedLiveSection /></div>
+                <div className="px-3"><CreatePost /></div>
                 <FeedZeusCard />
               </>
             ) : (
@@ -296,7 +296,7 @@ export default function Feed() {
 
                 {/* Virtualized posts list */}
                 <div
-                  className="px-4"
+                  className="px-0 sm:px-4"
                   style={{
                     height: `${virtualizer.getTotalSize()}px`,
                     width: '100%',
