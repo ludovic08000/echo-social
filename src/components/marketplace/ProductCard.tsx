@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Heart, BadgeCheck, Star, Eye, Package } from 'lucide-react';
 import { useAddToCart } from '@/hooks/useMarketplace';
@@ -18,7 +19,7 @@ interface ProductCardProps {
   compact?: boolean;
 }
 
-export function ProductCard({ product, compact }: ProductCardProps) {
+export const ProductCard = forwardRef<HTMLDivElement, ProductCardProps>(function ProductCard({ product, compact }, ref) {
   const addToCart = useAddToCart();
   const { data: favorites = [] } = useProductFavorites();
   const toggleFav = useToggleFavorite();
@@ -31,7 +32,7 @@ export function ProductCard({ product, compact }: ProductCardProps) {
   const isFav = favorites.includes(product.id);
 
   return (
-    <div className="group relative">
+    <div ref={ref} className="group relative">
       {/* Image */}
       <Link to={`/marketplace/product/${product.id}`} className={cn(
         "block relative overflow-hidden bg-muted",
@@ -150,4 +151,4 @@ export function ProductCard({ product, compact }: ProductCardProps) {
       </div>
     </div>
   );
-}
+});
