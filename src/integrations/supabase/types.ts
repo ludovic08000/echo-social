@@ -3965,6 +3965,42 @@ export type Database = {
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_old_fingerprints: { Args: never; Returns: undefined }
       generate_order_number: { Args: never; Returns: string }
+      get_conversations_with_details: {
+        Args: { p_user_id: string }
+        Returns: {
+          conv_created_at: string
+          conv_id: string
+          conv_name: string
+          conv_updated_at: string
+          created_by: string
+          is_group: boolean
+          last_message_at: string
+          last_message_body: string
+          last_message_sender: string
+          other_avatar: string
+          other_name: string
+          other_user_id: string
+          unread_count: number
+        }[]
+      }
+      get_feed_posts: {
+        Args: { p_limit?: number; p_offset?: number; p_user_id: string }
+        Returns: {
+          author_avatar: string
+          author_mood: string
+          author_name: string
+          body: string
+          comments_count: number
+          created_at: string
+          expires_at: string
+          id: string
+          image_url: string
+          is_friend: boolean
+          likes_count: number
+          user_id: string
+          user_reaction: string
+        }[]
+      }
       get_friend_suggestions: {
         Args: { limit_count?: number; target_user_id: string }
         Returns: {
