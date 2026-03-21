@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
-    <title>Forsure — Réseau social nouvelle génération</title>
-    <meta name="description" content="Forsure — Le réseau social éthique, sans tracking publicitaire. Partagez, connectez-vous et créez vos canaux TV sur forsure.fans." />
+    <title>Forsure — Réseau social éthique sans pub | Alternative Facebook & Instagram</title>
+    <meta name="description" content="Forsure est le réseau social éthique français sans publicité ni tracking. Messagerie privée, live streaming, marketplace et canaux TV. L'alternative à Facebook, Instagram et TikTok. Rejoignez la communauté sur forsure.fans." />
     <meta name="author" content="Forsure" />
     <meta name="keywords" content="réseau social, forsure, réseau social français, réseau social éthique, réseau social sans pub, réseau social sans tracking, alternative facebook, alternative instagram, alternative tiktok, streaming live, canaux TV, créateur de contenu, partage vidéo, messagerie privée, réseau social gratuit, social network france, forsure.fans, réseau social nouvelle génération, application sociale, communauté en ligne, partage de photos, live streaming gratuit, réseau social sécurisé, réseau social sans publicité, plateforme sociale éthique, réseau social jeunes, tchat en ligne, appels vidéo, marketplace social" />
     <link rel="canonical" href="https://forsure.fans/" />
@@ -17,13 +17,16 @@
     <meta name="theme-color" content="#0a0a0a" />
     <meta name="format-detection" content="telephone=no" />
 
-    <!-- OG tags -->
-    <meta property="og:title" content="Forsure — Réseau social nouvelle génération" />
-    <meta property="og:description" content="Le réseau social éthique, sans tracking. Créez vos canaux TV, partagez vos moments sur forsure.fans." />
+    <!-- Open Graph -->
+    <meta property="og:title" content="Forsure — Réseau social éthique sans pub | Alternative Facebook & Instagram" />
+    <meta property="og:description" content="Le réseau social éthique français sans publicité ni tracking. Messagerie privée, live streaming, marketplace et canaux TV. Rejoignez forsure.fans." />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Forsure" />
     <meta property="og:url" content="https://forsure.fans/" />
     <meta property="og:image" content="https://forsure.fans/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Forsure — Le réseau social éthique sans publicité" />
     <meta property="og:locale" content="fr_FR" />
     <link rel="icon" href="/favicon.png" type="image/png" />
     <link rel="apple-touch-icon" href="/pwa-192x192.png" />
@@ -32,24 +35,115 @@
     <link rel="preconnect" href="https://vkpmoqfzrihcijjochks.supabase.co" crossorigin />
     <link rel="dns-prefetch" href="https://vkpmoqfzrihcijjochks.supabase.co" />
 
+    <!-- Twitter Card (use name, not property) -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@forsure" />
+    <meta name="twitter:title" content="Forsure — Réseau social éthique sans pub" />
+    <meta name="twitter:description" content="Le réseau social français sans publicité ni tracking. Messagerie, live streaming, marketplace." />
     <meta name="twitter:image" content="https://forsure.fans/og-image.png" />
+    <meta name="twitter:image:alt" content="Forsure — Le réseau social éthique" />
 
-    <!-- JSON-LD Structured Data -->
+    <!-- JSON-LD Structured Data: Organization -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Forsure",
+      "url": "https://forsure.fans",
+      "logo": "https://forsure.fans/favicon.png",
+      "description": "Forsure est le réseau social éthique français sans publicité ni tracking.",
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "email": "dpo@forsure.fans",
+        "contactType": "customer support"
+      },
+      "sameAs": []
+    }
+    </script>
+
+    <!-- JSON-LD Structured Data: WebSite + SearchAction -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "WebSite",
       "name": "Forsure",
       "url": "https://forsure.fans",
-      "description": "Le réseau social éthique, sans tracking publicitaire. Partagez vos moments et créez vos canaux TV.",
+      "description": "Le réseau social éthique français sans publicité ni tracking publicitaire.",
+      "inLanguage": "fr",
       "potentialAction": {
         "@type": "SearchAction",
         "target": "https://forsure.fans/search?q={search_term_string}",
         "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
+
+    <!-- JSON-LD Structured Data: WebApplication -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Forsure",
+      "url": "https://forsure.fans",
+      "applicationCategory": "SocialNetworkingApplication",
+      "operatingSystem": "Web, iOS, Android",
+      "description": "Réseau social éthique sans publicité. Messagerie privée, live streaming, marketplace et canaux TV.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "EUR"
       },
-      "sameAs": []
+      "featureList": [
+        "Messagerie privée chiffrée",
+        "Live streaming gratuit",
+        "Marketplace intégré",
+        "Canaux TV personnalisés",
+        "Appels vidéo",
+        "Zéro publicité",
+        "Zéro tracking"
+      ]
+    }
+    </script>
+
+    <!-- JSON-LD: FAQPage (boost rich snippets) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Forsure est-il gratuit ?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Oui, Forsure est entièrement gratuit. L'inscription, la messagerie, le live streaming et toutes les fonctionnalités de base sont accessibles sans frais."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "En quoi Forsure est différent de Facebook ou Instagram ?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Forsure est un réseau social éthique sans publicité ni tracking. Contrairement à Facebook et Instagram, vos données ne sont pas vendues à des annonceurs. Votre vie privée est respectée par design."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Forsure est-il disponible sur mobile ?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Oui, Forsure est accessible sur tous les navigateurs mobiles et est optimisé comme une application web progressive (PWA). Des applications iOS et Android sont également disponibles."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Comment Forsure protège ma vie privée ?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Forsure n'utilise aucun cookie de tracking, ne vend aucune donnée personnelle et ne diffuse aucune publicité ciblée. Les messages sont privés et les données restent sous votre contrôle."
+          }
+        }
+      ]
     }
     </script>
   </head>
