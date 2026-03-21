@@ -1,8 +1,21 @@
 User-agent: Googlebot
 Allow: /
+Disallow: /settings
+Disallow: /admin
+Disallow: /messages
+Disallow: /notifications
+Disallow: /journal
+Disallow: /ai-agents
+Disallow: /ai-engine
+Disallow: /ads-manager
+Disallow: /creator-upgrade
 
 User-agent: Bingbot
 Allow: /
+Disallow: /settings
+Disallow: /admin
+Disallow: /messages
+Disallow: /notifications
 
 User-agent: Twitterbot
 Allow: /
@@ -15,6 +28,11 @@ Allow: /
 Disallow: /settings
 Disallow: /admin
 Disallow: /messages
+Disallow: /notifications
+Disallow: /journal
+Disallow: /ai-agents
+Disallow: /ai-engine
+Disallow: /ads-manager
+Disallow: /creator-upgrade
 
 Sitemap: https://forsure.fans/sitemap.xml
-Sitemap: https://vkpmoqfzrihcijjochks.supabase.co/functions/v1/dynamic-sitemap
