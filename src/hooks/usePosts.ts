@@ -29,104 +29,68 @@ export function usePosts() {
 
   return useInfiniteQuery({
     queryKey: ['posts', 'friends-feed', user?.id],
-    queryFn: async ({ pageParam }: { pageParam: string | null }) => {
+    queryFn: async ({ pageParam }: { pageParam: number | null }) => {
       if (!user) return [];
       
       const prefs = loadContentPrefs();
-      const weights = loadFeedWeights();
+      const offset = pageParam || 0;
 
-      // ── Backend-driven scoring via edge function ──
+      // ── Strategy 1: Single RPC call (posts + profiles + reactions in 1 query) ──
       try {
-        const { data: scoringResult, error: fnError } = await supabase.functions.invoke('feed-scoring', {
-          body: {
-            feedAlgorithm: prefs.feedAlgorithm,
-            diversityBoost: prefs.diversityBoost,
-            mutedKeywords: prefs.mutedKeywords,
-            viralContentReduce: prefs.viralContentReduce,
-            friendsWeight: weights.friends,
-            discoveryWeight: weights.discovery,
-            limit: PAGE_SIZE,
-            offset: pageParam ? undefined : 0,
-          },
+        const { data: rpcPosts, error: rpcError } = await supabase.rpc('get_feed_posts', {
+          p_user_id: user.id,
+          p_limit: PAGE_SIZE,
+          p_offset: offset,
         });
 
-        if (!fnError && scoringResult?.postIds?.length > 0) {
-          const scoredPostIds: string[] = scoringResult.postIds;
+        if (!rpcError && rpcPosts && rpcPosts.length > 0) {
+          // Filter muted keywords client-side
+          const filtered = rpcPosts.filter((p: any) => !containsMutedKeyword(p.body, prefs.mutedKeywords));
 
-          // Fetch full post data for scored IDs
-          const { data: scoredPosts } = await supabase
-            .from('posts')
-            .select('id, user_id, body, image_url, created_at, expires_at, likes_count, comments_count')
-            .in('id', scoredPostIds) as { data: any[] | null };
-
-          if (scoredPosts && scoredPosts.length > 0) {
-            // Maintain backend ordering
-            const postMap = new Map(scoredPosts.map(p => [p.id, p]));
-            const orderedPosts = scoredPostIds
-              .map(id => postMap.get(id))
-              .filter(Boolean) as any[];
-
-            return await enrichPosts(orderedPosts, user.id);
-          }
+          return filtered.map((post: any) => ({
+            id: post.id,
+            user_id: post.user_id,
+            body: post.body,
+            image_url: post.image_url,
+            created_at: post.created_at,
+            expires_at: post.expires_at || null,
+            profile: {
+              name: post.author_name || 'Unknown',
+              avatar_url: post.author_avatar || null,
+              mood_emoji: post.author_mood || null,
+            },
+            likes_count: post.likes_count || 0,
+            comments_count: post.comments_count || 0,
+            is_liked: !!post.user_reaction,
+            user_reaction: post.user_reaction || null,
+          })) as Post[];
         }
       } catch {
-        // Fall through to client-side fallback
+        // Fall through to legacy fallback
       }
 
-      // ── Fallback: user_feed (fan-out) or global query ──
+      // ── Fallback: direct query + enrichment ──
       const now = new Date().toISOString();
-      let posts: any[] | null = null;
+      let query = supabase
+        .from('posts')
+        .select('id, user_id, body, image_url, created_at, expires_at, likes_count, comments_count')
+        .or(`expires_at.is.null,expires_at.gt.${now}`)
+        .order('created_at', { ascending: false })
+        .limit(PAGE_SIZE * 2);
 
-      const { data: feedEntries } = await supabase
-        .from('user_feed')
-        .select('post_id, score')
-        .eq('user_id', user.id)
-        .order('score', { ascending: false })
-        .limit(PAGE_SIZE * 3) as { data: any[] | null };
-
-      if (feedEntries && feedEntries.length >= PAGE_SIZE) {
-        const feedPostIds = feedEntries.map((e: any) => e.post_id);
-        const { data: feedPosts } = await supabase
-          .from('posts')
-          .select('id, user_id, body, image_url, created_at, expires_at, likes_count, comments_count')
-          .in('id', feedPostIds)
-          .or(`expires_at.is.null,expires_at.gt.${now}`) as { data: any[] | null };
-        
-        if (feedPosts && feedPosts.length > 0) {
-          posts = feedPosts;
-        }
-      }
-
-      if (!posts || posts.length === 0) {
-        let query = supabase
-          .from('posts')
-          .select('id, user_id, body, image_url, created_at, expires_at, likes_count, comments_count')
-          .or(`expires_at.is.null,expires_at.gt.${now}`)
-          .order('created_at', { ascending: false })
-          .limit(PAGE_SIZE * 3);
-
-        if (pageParam) {
-          query = query.lt('created_at', pageParam);
-        }
-
-        const { data, error } = await query as { data: any[] | null; error: any };
-        if (error) throw error;
-        posts = data;
-      }
-
+      const { data: posts, error } = await query as { data: any[] | null; error: any };
+      if (error) throw error;
       if (!posts || posts.length === 0) return [];
 
-      // Filter muted keywords client-side (lightweight)
       const filteredPosts = posts.filter(p => !containsMutedKeyword(p.body, prefs.mutedKeywords));
-      const paged = filteredPosts.slice(0, PAGE_SIZE);
-
-      return await enrichPosts(paged, user.id);
+      return await enrichPosts(filteredPosts.slice(0, PAGE_SIZE), user.id);
     },
-    getNextPageParam: (lastPage) => {
+    getNextPageParam: (lastPage, allPages) => {
       if (lastPage.length < PAGE_SIZE) return undefined;
-      return lastPage[lastPage.length - 1]?.created_at ?? undefined;
+      // Use offset-based pagination
+      return allPages.reduce((total, page) => total + page.length, 0);
     },
-    initialPageParam: null as string | null,
+    initialPageParam: null as number | null,
     enabled: !!user,
     staleTime: 60_000,
     gcTime: 10 * 60_000,

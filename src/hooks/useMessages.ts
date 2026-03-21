@@ -108,6 +108,39 @@ export function useConversations() {
     queryFn: async () => {
       if (!user) return [];
 
+      // ── Single RPC: conversations + participants + last message + unread ──
+      try {
+        const { data: rpcData, error: rpcError } = await supabase.rpc('get_conversations_with_details', {
+          p_user_id: user.id,
+        });
+
+        if (!rpcError && rpcData && rpcData.length > 0) {
+          return rpcData.map((row: any) => ({
+            id: row.conv_id,
+            created_at: row.conv_created_at,
+            updated_at: row.conv_updated_at,
+            is_group: row.is_group || false,
+            name: row.conv_name || null,
+            created_by: row.created_by || null,
+            participant: {
+              user_id: row.other_user_id || '',
+              name: row.other_name || 'Unknown',
+              avatar_url: row.other_avatar || null,
+            },
+            participants: undefined,
+            last_message: row.last_message_body ? {
+              body: row.last_message_body,
+              created_at: row.last_message_at,
+              sender_id: row.last_message_sender,
+            } : undefined,
+            unread_count: Number(row.unread_count) || 0,
+          })) as Conversation[];
+        }
+      } catch {
+        // Fall through to legacy queries
+      }
+
+      // ── Fallback: original multi-query approach ──
       const { data: participations, error: partError } = await supabase
         .from('conversation_participants')
         .select('conversation_id, last_read_at')
@@ -119,96 +152,53 @@ export function useConversations() {
       const conversationIds = participations.map(p => p.conversation_id);
       const lastReadMap = new Map(participations.map(p => [p.conversation_id, p.last_read_at]));
 
-      const { data: conversations, error: convError } = await supabase
-        .from('conversations')
-        .select('*')
-        .in('id', conversationIds)
-        .order('updated_at', { ascending: false });
+      const [convRes, partRes] = await Promise.all([
+        supabase.from('conversations').select('*').in('id', conversationIds).order('updated_at', { ascending: false }),
+        supabase.from('conversation_participants').select('conversation_id, user_id').in('conversation_id', conversationIds).neq('user_id', user.id),
+      ]);
 
-      if (convError) throw convError;
-
-      const { data: allParticipants } = await supabase
-        .from('conversation_participants')
-        .select('conversation_id, user_id')
-        .in('conversation_id', conversationIds)
-        .neq('user_id', user.id);
+      const conversations = convRes.data;
+      const allParticipants = partRes.data;
+      if (!conversations) return [];
 
       const otherUserIds = [...new Set(allParticipants?.map(p => p.user_id) || [])];
-      
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, name, avatar_url')
-        .in('user_id', otherUserIds);
-
+      const { data: profiles } = await supabase.from('profiles').select('user_id, name, avatar_url').in('user_id', otherUserIds);
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
-      // Add Zeus bot profile fallback
       if (!profileMap.has(ZEUS_BOT_ID) && otherUserIds.includes(ZEUS_BOT_ID)) {
         profileMap.set(ZEUS_BOT_ID, { user_id: ZEUS_BOT_ID, name: 'Zeus ⚡', avatar_url: null });
       }
-      const participantMap = new Map(allParticipants?.map(p => [p.conversation_id, p.user_id]) || []);
 
-      // Only fetch the LAST message per conversation + recent unread count
-      // Instead of loading ALL messages, use a limited query per conversation
-      const lastMessageMap = new Map<string, { body: string; created_at: string; sender_id: string }>();
-      const unreadCounts: Record<string, number> = {};
-
-      // Batch: get last message per conversation (limit to 1 per conv)
-      // Use a single query with ordering - only fetch recent messages
       const { data: recentMessages } = await supabase
         .from('messages')
         .select('conversation_id, body, created_at, sender_id')
         .in('conversation_id', conversationIds)
         .order('created_at', { ascending: false })
-        .limit(conversationIds.length * 3); // ~3 per conv is enough for last msg + unread
+        .limit(conversationIds.length * 3);
 
+      const lastMessageMap = new Map<string, { body: string; created_at: string; sender_id: string }>();
+      const unreadCounts: Record<string, number> = {};
       recentMessages?.forEach(m => {
-        if (!lastMessageMap.has(m.conversation_id)) {
-          lastMessageMap.set(m.conversation_id, m);
-        }
-      });
-
-      // Count unread from the limited set (approximation, good enough for badge)
-      recentMessages?.forEach(m => {
+        if (!lastMessageMap.has(m.conversation_id)) lastMessageMap.set(m.conversation_id, m);
         const lastRead = lastReadMap.get(m.conversation_id);
-        if (!lastRead || new Date(m.created_at) > new Date(lastRead)) {
-          if (m.sender_id !== user.id) {
-            unreadCounts[m.conversation_id] = (unreadCounts[m.conversation_id] || 0) + 1;
-          }
+        if (m.sender_id !== user.id && (!lastRead || new Date(m.created_at) > new Date(lastRead))) {
+          unreadCounts[m.conversation_id] = (unreadCounts[m.conversation_id] || 0) + 1;
         }
       });
 
       return conversations.map(conv => {
-        const isGroup = (conv as any).is_group || false;
-        const groupName = (conv as any).name || null;
-
-        // Get all other participants for this conversation
-        const convParticipants = (allParticipants || [])
+        const convParts = (allParticipants || [])
           .filter(p => p.conversation_id === conv.id)
-          .map(p => {
-            const profile = profileMap.get(p.user_id);
-            return {
-              user_id: p.user_id,
-              name: profile?.name || 'Unknown',
-              avatar_url: profile?.avatar_url || null,
-            };
-          });
-
-        // For 1:1 conversations, use the first (only) other participant
-        const firstParticipant = convParticipants[0];
+          .map(p => ({ user_id: p.user_id, name: profileMap.get(p.user_id)?.name || 'Unknown', avatar_url: profileMap.get(p.user_id)?.avatar_url || null }));
 
         return {
           id: conv.id,
           created_at: conv.created_at,
           updated_at: conv.updated_at,
-          is_group: isGroup,
-          name: groupName,
+          is_group: (conv as any).is_group || false,
+          name: (conv as any).name || null,
           created_by: (conv as any).created_by || null,
-          participant: firstParticipant || {
-            user_id: '',
-            name: 'Unknown',
-            avatar_url: null,
-          },
-          participants: isGroup ? convParticipants : undefined,
+          participant: convParts[0] || { user_id: '', name: 'Unknown', avatar_url: null },
+          participants: (conv as any).is_group ? convParts : undefined,
           last_message: lastMessageMap.get(conv.id),
           unread_count: unreadCounts[conv.id] || 0,
         } as Conversation;
