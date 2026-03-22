@@ -254,6 +254,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         encrypted={e2ee.encrypted}
         fingerprint={e2ee.fingerprint}
         peerFingerprint={e2ee.peerFingerprint}
+        ratchetActive={e2ee.ratchetActive}
       />
 
       {/* Group Management Panel */}
@@ -410,7 +411,13 @@ export function ChatView({ conversationId }: ChatViewProps) {
               {['Salut ! 👋', 'Comment ça va ? 😊', 'Quoi de neuf ? 🤔'].map(suggestion => (
                 <button
                   key={suggestion}
-                  onClick={() => sendMessage.mutate({ conversationId, body: suggestion })}
+                  onClick={async () => {
+                    let body = suggestion;
+                    if (e2ee.encrypted) {
+                      body = await e2ee.encrypt(body);
+                    }
+                    sendMessage.mutate({ conversationId, body });
+                  }}
                   className="px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 active:scale-95 transition-all"
                 >
                   {suggestion}

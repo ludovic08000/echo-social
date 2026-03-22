@@ -1,0 +1,416 @@
+/**
+ * ForSure Double Ratchet
+ * 
+ * Signal-style Double Ratchet combining:
+ *   1. DH Ratchet (X25519) — new ephemeral keys per turn
+ *   2. Symmetric Ratchet (HMAC-SHA-256 KDF chain) — new key per message
+ * 
+ * Provides:
+ *   - Forward secrecy per message
+ *   - Break-in recovery (future secrecy)
+ *   - Out-of-order message decryption (skipped message keys cache)
+ * 
+ * State stored locally in IndexedDB, never on server.
+ */
+
+import { kdfChainStep, kdfRootStep } from './kdfChain';
+import { bufferToBase64, base64ToBuffer, encodeString, randomBytes, decodeString } from './utils';
+import { exportKeyToJWK, importKeyFromJWK } from './utils';
+import { AES_ALGO, IV_LENGTH, PROTOCOL_VERSION, CLASSICAL_KEM_ID, KX_KEY_PARAMS } from './constants';
+
+// ─── Types ───
+
+export interface RatchetState {
+  conversationId: string;
+  /** Our current DH ratchet key pair */
+  dhSendingPair: CryptoKeyPair;
+  /** Peer's current DH ratchet public key */
+  dhReceivingKey: CryptoKey | null;
+  /** Root key for DH ratchet steps */
+  rootKey: CryptoKey;
+  /** Sending chain key */
+  sendingChainKey: CryptoKey | null;
+  /** Receiving chain key */
+  receivingChainKey: CryptoKey | null;
+  /** Message counters */
+  sendCount: number;
+  recvCount: number;
+  /** Previous sending chain length (for header) */
+  prevSendCount: number;
+  /** Skipped message keys: Map<"dhPub:msgNum", AES key> */
+  skippedKeys: Map<string, CryptoKey>;
+}
+
+export interface RatchetHeader {
+  /** Sender's current DH ratchet public key (base64) */
+  dh: string;
+  /** Previous chain message count */
+  pn: number;
+  /** Message number in current chain */
+  n: number;
+}
+
+export interface RatchetEnvelope {
+  v: number;
+  kem: string;
+  hdr: RatchetHeader;
+  iv: string;
+  ct: string;
+  sig: string;
+  fp: string;
+  ts: number;
+}
+
+const MAX_SKIP = 100; // Max messages to skip (DoS protection)
+
+// ─── Initialize ───
+
+/** Initialize ratchet as the initiator (Alice) */
+export async function initRatchetAsInitiator(
+  conversationId: string,
+  sharedSecret: ArrayBuffer,
+  peerDhPublicKey: CryptoKey,
+): Promise<RatchetState> {
+  // Generate our first ratchet key pair
+  const dhPair = await crypto.subtle.generateKey(
+    KX_KEY_PARAMS as any, true, ['deriveBits']
+  ) as CryptoKeyPair;
+
+  // Initial root key from shared secret
+  const rootKey = await crypto.subtle.importKey(
+    'raw', sharedSecret.slice(0, 32),
+    { name: 'HMAC', hash: 'SHA-256', length: 256 } as any,
+    true, ['sign']
+  );
+
+  // Perform first DH ratchet step
+  const dhOutput = await crypto.subtle.deriveBits(
+    { name: 'X25519', public: peerDhPublicKey } as any,
+    dhPair.privateKey,
+    256,
+  );
+
+  const { newRootKey, newChainKey } = await kdfRootStep(rootKey, dhOutput);
+
+  return {
+    conversationId,
+    dhSendingPair: dhPair,
+    dhReceivingKey: peerDhPublicKey,
+    rootKey: newRootKey,
+    sendingChainKey: newChainKey,
+    receivingChainKey: null,
+    sendCount: 0,
+    recvCount: 0,
+    prevSendCount: 0,
+    skippedKeys: new Map(),
+  };
+}
+
+/** Initialize ratchet as the responder (Bob) */
+export async function initRatchetAsResponder(
+  conversationId: string,
+  sharedSecret: ArrayBuffer,
+  ourDhPair: CryptoKeyPair,
+): Promise<RatchetState> {
+  const rootKey = await crypto.subtle.importKey(
+    'raw', sharedSecret.slice(0, 32),
+    { name: 'HMAC', hash: 'SHA-256', length: 256 } as any,
+    true, ['sign']
+  );
+
+  return {
+    conversationId,
+    dhSendingPair: ourDhPair,
+    dhReceivingKey: null,
+    rootKey,
+    sendingChainKey: null,
+    receivingChainKey: null,
+    sendCount: 0,
+    recvCount: 0,
+    prevSendCount: 0,
+    skippedKeys: new Map(),
+  };
+}
+
+// ─── Encrypt ───
+
+export async function ratchetEncrypt(
+  state: RatchetState,
+  plaintext: string,
+  signingKey: CryptoKey,
+  fingerprint: string,
+): Promise<{ envelope: RatchetEnvelope; newState: RatchetState }> {
+  if (!state.sendingChainKey) {
+    throw new Error('Sending chain not initialized — wait for first incoming message');
+  }
+
+  // Symmetric ratchet step
+  const { nextChainKey, messageKey } = await kdfChainStep(state.sendingChainKey);
+
+  // Build header
+  const dhPubRaw = await crypto.subtle.exportKey('raw', state.dhSendingPair.publicKey);
+  const header: RatchetHeader = {
+    dh: bufferToBase64(dhPubRaw),
+    pn: state.prevSendCount,
+    n: state.sendCount,
+  };
+
+  // Encrypt
+  const iv = randomBytes(IV_LENGTH);
+  const ct = await crypto.subtle.encrypt(
+    { name: AES_ALGO, iv: new Uint8Array(iv) as unknown as Uint8Array<ArrayBuffer>, tagLength: 128 },
+    messageKey,
+    encodeString(plaintext),
+  );
+
+  const ts = Date.now();
+
+  // Sign: header || iv || ciphertext
+  const sigData = new Uint8Array([
+    ...new Uint8Array(encodeString(JSON.stringify(header))),
+    ...iv,
+    ...new Uint8Array(ct as ArrayBuffer),
+    ...new Uint8Array(encodeString(`${ts}`)),
+  ]);
+
+  const sig = await crypto.subtle.sign('Ed25519' as any, signingKey, sigData);
+
+  const envelope: RatchetEnvelope = {
+    v: PROTOCOL_VERSION,
+    kem: CLASSICAL_KEM_ID,
+    hdr: header,
+    iv: bufferToBase64(iv.buffer as ArrayBuffer),
+    ct: bufferToBase64(ct as ArrayBuffer),
+    sig: bufferToBase64(sig),
+    fp: fingerprint,
+    ts,
+  };
+
+  return {
+    envelope,
+    newState: {
+      ...state,
+      sendingChainKey: nextChainKey,
+      sendCount: state.sendCount + 1,
+    },
+  };
+}
+
+// ─── Decrypt ───
+
+export async function ratchetDecrypt(
+  state: RatchetState,
+  envelope: RatchetEnvelope,
+  peerSigningKeyBase64?: string,
+): Promise<{ plaintext: string; verified: boolean; newState: RatchetState }> {
+  // Replay protection
+  if (Date.now() - envelope.ts > 7 * 24 * 60 * 60 * 1000) {
+    throw new Error('Message too old');
+  }
+
+  const headerDhRaw = base64ToBuffer(envelope.hdr.dh);
+  const headerDhKey = await crypto.subtle.importKey(
+    'raw', headerDhRaw, KX_KEY_PARAMS as any, true, []
+  );
+
+  let newState = { ...state, skippedKeys: new Map(state.skippedKeys) };
+
+  // Check skipped keys first
+  const skipKey = `${envelope.hdr.dh}:${envelope.hdr.n}`;
+  const cachedMK = newState.skippedKeys.get(skipKey);
+  if (cachedMK) {
+    newState.skippedKeys.delete(skipKey);
+    const result = await decryptWithKey(cachedMK, envelope, peerSigningKeyBase64);
+    return { ...result, newState };
+  }
+
+  // Check if DH ratchet step needed
+  const currentDhPub = newState.dhReceivingKey
+    ? bufferToBase64(await crypto.subtle.exportKey('raw', newState.dhReceivingKey))
+    : null;
+
+  if (currentDhPub !== envelope.hdr.dh) {
+    // Skip any remaining messages in current receiving chain
+    if (newState.receivingChainKey) {
+      newState = await skipMessages(newState, envelope.hdr.pn);
+    }
+
+    // DH ratchet step
+    const dhOutput = await crypto.subtle.deriveBits(
+      { name: 'X25519', public: headerDhKey } as any,
+      newState.dhSendingPair.privateKey,
+      256,
+    );
+
+    const { newRootKey, newChainKey: newRecvChain } = await kdfRootStep(newState.rootKey, dhOutput);
+    newState.dhReceivingKey = headerDhKey;
+    newState.receivingChainKey = newRecvChain;
+    newState.rootKey = newRootKey;
+    newState.prevSendCount = newState.sendCount;
+    newState.sendCount = 0;
+    newState.recvCount = 0;
+
+    // Generate new sending pair
+    const newDhPair = await crypto.subtle.generateKey(
+      KX_KEY_PARAMS as any, true, ['deriveBits']
+    ) as CryptoKeyPair;
+
+    const dhOutput2 = await crypto.subtle.deriveBits(
+      { name: 'X25519', public: headerDhKey } as any,
+      newDhPair.privateKey,
+      256,
+    );
+
+    const { newRootKey: rk2, newChainKey: sendChain } = await kdfRootStep(newState.rootKey, dhOutput2);
+    newState.rootKey = rk2;
+    newState.sendingChainKey = sendChain;
+    newState.dhSendingPair = newDhPair;
+  }
+
+  // Skip messages in current chain if needed
+  newState = await skipMessages(newState, envelope.hdr.n);
+
+  // Symmetric ratchet step
+  if (!newState.receivingChainKey) throw new Error('No receiving chain');
+  const { nextChainKey, messageKey } = await kdfChainStep(newState.receivingChainKey);
+  newState.receivingChainKey = nextChainKey;
+  newState.recvCount = envelope.hdr.n + 1;
+
+  const result = await decryptWithKey(messageKey, envelope, peerSigningKeyBase64);
+  return { ...result, newState };
+}
+
+// ─── Helpers ───
+
+async function skipMessages(state: RatchetState, until: number): Promise<RatchetState> {
+  const newState = { ...state, skippedKeys: new Map(state.skippedKeys) };
+
+  if (!newState.receivingChainKey) return newState;
+
+  const toSkip = until - newState.recvCount;
+  if (toSkip > MAX_SKIP) throw new Error('Too many skipped messages');
+  if (toSkip <= 0) return newState;
+
+  // Get current DH pub for cache key
+  const dhPub = newState.dhReceivingKey
+    ? bufferToBase64(await crypto.subtle.exportKey('raw', newState.dhReceivingKey))
+    : 'init';
+
+  let ck = newState.receivingChainKey;
+  for (let i = newState.recvCount; i < until; i++) {
+    const { nextChainKey, messageKey } = await kdfChainStep(ck);
+    newState.skippedKeys.set(`${dhPub}:${i}`, messageKey);
+    ck = nextChainKey;
+  }
+  newState.receivingChainKey = ck;
+  newState.recvCount = until;
+
+  // Prune old skipped keys (keep max 200)
+  if (newState.skippedKeys.size > 200) {
+    const entries = Array.from(newState.skippedKeys.entries());
+    const toDelete = entries.slice(0, entries.length - 200);
+    for (const [k] of toDelete) newState.skippedKeys.delete(k);
+  }
+
+  return newState;
+}
+
+async function decryptWithKey(
+  messageKey: CryptoKey,
+  envelope: RatchetEnvelope,
+  peerSigningKeyBase64?: string,
+): Promise<{ plaintext: string; verified: boolean }> {
+  const iv = base64ToBuffer(envelope.iv);
+  const ct = base64ToBuffer(envelope.ct);
+
+  const ptBuf = await crypto.subtle.decrypt(
+    { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128 },
+    messageKey,
+    ct,
+  );
+
+  const plaintext = decodeString(ptBuf);
+
+  // Verify Ed25519 signature
+  let verified = false;
+  if (peerSigningKeyBase64) {
+    try {
+      const sigKey = await crypto.subtle.importKey(
+        'raw',
+        base64ToBuffer(peerSigningKeyBase64),
+        { name: 'Ed25519' } as any,
+        true,
+        ['verify'],
+      );
+      const sigData = new Uint8Array([
+        ...new Uint8Array(encodeString(JSON.stringify(envelope.hdr))),
+        ...new Uint8Array(iv),
+        ...new Uint8Array(ct),
+        ...new Uint8Array(encodeString(`${envelope.ts}`)),
+      ]);
+      verified = await crypto.subtle.verify(
+        'Ed25519' as any, sigKey, base64ToBuffer(envelope.sig), sigData,
+      );
+    } catch {
+      verified = false;
+    }
+  }
+
+  return { plaintext, verified };
+}
+
+// ─── Serialization (for IndexedDB) ───
+
+export async function serializeRatchetState(state: RatchetState): Promise<string> {
+  const dhSendPubJWK = await exportKeyToJWK(state.dhSendingPair.publicKey);
+  const dhSendPrivJWK = await exportKeyToJWK(state.dhSendingPair.privateKey);
+  const dhRecvJWK = state.dhReceivingKey ? await exportKeyToJWK(state.dhReceivingKey) : null;
+  const rootJWK = await exportKeyToJWK(state.rootKey);
+  const sendCKJWK = state.sendingChainKey ? await exportKeyToJWK(state.sendingChainKey) : null;
+  const recvCKJWK = state.receivingChainKey ? await exportKeyToJWK(state.receivingChainKey) : null;
+
+  // Serialize skipped keys
+  const skippedEntries: [string, JsonWebKey][] = [];
+  for (const [k, v] of state.skippedKeys) {
+    skippedEntries.push([k, await exportKeyToJWK(v)]);
+  }
+
+  return JSON.stringify({
+    conversationId: state.conversationId,
+    dhSendPubJWK, dhSendPrivJWK, dhRecvJWK,
+    rootJWK, sendCKJWK, recvCKJWK,
+    sendCount: state.sendCount,
+    recvCount: state.recvCount,
+    prevSendCount: state.prevSendCount,
+    skippedEntries,
+  });
+}
+
+export async function deserializeRatchetState(json: string): Promise<RatchetState> {
+  const d = JSON.parse(json);
+
+  const dhSendPub = await importKeyFromJWK(d.dhSendPubJWK, KX_KEY_PARAMS as any, []);
+  const dhSendPriv = await importKeyFromJWK(d.dhSendPrivJWK, KX_KEY_PARAMS as any, ['deriveBits']);
+  const dhRecv = d.dhRecvJWK ? await importKeyFromJWK(d.dhRecvJWK, KX_KEY_PARAMS as any, []) : null;
+  const rootKey = await importKeyFromJWK(d.rootJWK, { name: 'HMAC', hash: 'SHA-256' } as AlgorithmIdentifier, ['sign']);
+  const sendCK = d.sendCKJWK ? await importKeyFromJWK(d.sendCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign']) : null;
+  const recvCK = d.recvCKJWK ? await importKeyFromJWK(d.recvCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign']) : null;
+
+  const skippedKeys = new Map<string, CryptoKey>();
+  for (const [k, jwk] of d.skippedEntries || []) {
+    skippedKeys.set(k, await importKeyFromJWK(jwk as any, { name: AES_ALGO } as any, ['encrypt', 'decrypt']));
+  }
+
+  return {
+    conversationId: d.conversationId,
+    dhSendingPair: { publicKey: dhSendPub, privateKey: dhSendPriv },
+    dhReceivingKey: dhRecv,
+    rootKey,
+    sendingChainKey: sendCK,
+    receivingChainKey: recvCK,
+    sendCount: d.sendCount,
+    recvCount: d.recvCount,
+    prevSendCount: d.prevSendCount,
+    skippedKeys,
+  };
+}
