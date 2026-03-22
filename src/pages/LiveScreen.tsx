@@ -377,7 +377,7 @@ export default function LiveScreen() {
   };
 
   const handleZeusSelect = (id: string) => {
-    navigate(`/live/${id}?from=feed`);
+    navigate(`/live/${id}?from=live`);
   };
 
   const handleStartLive = async () => {
