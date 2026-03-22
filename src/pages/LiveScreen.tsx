@@ -156,16 +156,6 @@ function useAllLivesForScreen() {
 // ─── Mosaic Tile ─────────────────────────────────
 function MosaicTile({ item, isLarge, followingIds }: { item: LiveItem; isLarge?: boolean; followingIds: string[] }) {
   const navigate = useNavigate();
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  const handleMouseEnter = useCallback(() => {
-    videoRef.current?.play().catch(() => {});
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    const v = videoRef.current;
-    if (v) { v.pause(); v.currentTime = 0; }
-  }, []);
 
   const handleClick = () => {
     navigate(`/live/${item.id}?from=live`);
@@ -180,17 +170,14 @@ function MosaicTile({ item, isLarge, followingIds }: { item: LiveItem; isLarge?:
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.3 }}
       onClick={handleClick}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
       className="relative rounded-sm overflow-hidden bg-black group text-left w-full aspect-square"
     >
       {/* Background */}
       {hasVideo ? (
         <video
-          ref={videoRef}
           src={`${item.recording_url!}#t=0.5`}
           className="absolute inset-0 w-full h-full object-cover"
-          muted loop playsInline preload="none"
+          muted loop autoPlay playsInline preload="auto"
           poster={item.thumbnail_url || undefined}
         />
       ) : item.thumbnail_url ? (
@@ -251,14 +238,8 @@ function MosaicTile({ item, isLarge, followingIds }: { item: LiveItem; isLarge?:
         <p className="text-white/70 text-[8px] line-clamp-1 leading-tight">{item.title}</p>
       </div>
 
-      {/* Hover play icon */}
-      {hasVideo && (
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
-          <div className="w-7 h-7 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
-            <Play className="w-3.5 h-3.5 text-white ml-0.5" />
-          </div>
-        </div>
-      )}
+      {/* Hover overlay */}
+      <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 transition-colors" />
     </motion.button>
   );
 }
