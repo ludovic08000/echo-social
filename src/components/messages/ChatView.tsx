@@ -555,12 +555,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
                           </div>
                         )}
 
-                        {/* Timestamp + read receipt */}
+                        {/* Timestamp + read receipt + encryption badge */}
                         {isLastInGroup && (
                           <div className="flex items-center gap-1 mt-0.5 px-1">
                             <span className="text-[11px] text-muted-foreground">
                               {format(new Date(msg.created_at), 'HH:mm')}
                             </span>
+                            {e2ee.encrypted && (
+                              <EncryptionBadge encrypted={true} verified={true} size="xs" />
+                            )}
                             {isMe && (
                               <CheckCheck className="w-3.5 h-3.5 text-primary/70" />
                             )}
