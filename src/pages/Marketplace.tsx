@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { AppLayout } from '@/components/AppLayout';
 import { useProducts, LocationFilter, useMyOrders } from '@/hooks/useMarketplace';
+import { useIsMarketplaceEnabled } from '@/hooks/usePlatformStats';
 import { ProductCard } from '@/components/marketplace/ProductCard';
 import { CartSheet } from '@/components/marketplace/CartSheet';
 import { Input } from '@/components/ui/input';
