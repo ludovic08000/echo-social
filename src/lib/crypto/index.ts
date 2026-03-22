@@ -49,3 +49,11 @@ export {
   CLASSICAL_KEM_ID,
   PQ_KEM_ID,
 } from './constants';
+
+// Anti-exfiltration rate limiter
+export {
+  cryptoRateCheck,
+  isCryptoLocked,
+  onCryptoViolation,
+  resetCryptoRateLimits,
+} from './rateLimiter';
