@@ -8,17 +8,15 @@ import { useIsMarketplaceEnabled } from '@/hooks/usePlatformStats';
 
 export function FeedMarketplaceSection() {
   const { enabled } = useIsMarketplaceEnabled();
-  const { data: products = [] } = useProducts(undefined, undefined, undefined, enabled ? 12 : 0);
-
-  if (!enabled) return null;
   const { data: products = [] } = useProducts(undefined, undefined, undefined, 12);
-  
+
   const featured = useMemo(() => {
+    if (!enabled) return [];
     const rotated = rotateMarketplaceProducts(products as any);
     return rotated.slice(0, 6);
-  }, [products]);
+  }, [products, enabled]);
 
-  if (featured.length === 0) return null;
+  if (!enabled || featured.length === 0) return null;
 
   return (
     <article className="bg-card border border-border/20 rounded-2xl overflow-hidden">
