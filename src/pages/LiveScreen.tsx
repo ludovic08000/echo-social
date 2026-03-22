@@ -460,6 +460,40 @@ export default function LiveScreen() {
         {/* Zeus suggestions */}
         <ZeusCreatorSuggestions lives={allLives} followingIds={followingIds} onSelect={handleZeusSelect} />
 
+        {/* === LIVE EN DIRECT === */}
+        {filteredLives.filter(l => l.is_active).length > 0 && (
+          <div className="mb-3">
+            <div className="flex items-center gap-2 px-3 py-2">
+              <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'hsl(var(--primary))' }} />
+              <span className="text-white text-xs font-bold uppercase tracking-wider">En direct</span>
+              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold text-white"
+                style={{ background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(220 70% 55%))' }}>
+                {filteredLives.filter(l => l.is_active).length}
+              </span>
+            </div>
+            <div className="px-1 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-[2px]">
+              {filteredLives.filter(l => l.is_active).map(item => (
+                <MosaicTile key={item.id} item={item} isLarge={false} followingIds={followingIds} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* === REPLAYS === */}
+        {filteredLives.filter(l => !l.is_active).length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 px-3 py-2">
+              <Clock className="w-3 h-3 text-white/40" />
+              <span className="text-white/50 text-xs font-semibold uppercase tracking-wider">Replays</span>
+            </div>
+            <div className="px-1 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-[2px]">
+              {filteredLives.filter(l => !l.is_active).map(item => (
+                <MosaicTile key={item.id} item={item} isLarge={false} followingIds={followingIds} />
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Empty state */}
         {!filteredLives.length && (
           <div className="flex flex-col items-center justify-center gap-4 px-8 pt-20">
@@ -470,16 +504,6 @@ export default function LiveScreen() {
             <p className="text-white/40 text-sm text-center">Sois le premier à démarrer un live !</p>
           </div>
         )}
-
-        {/* Mosaic grid — 3 columns like TikTok */}
-        {filteredLives.length > 0 && (
-          <div className="px-1 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-[2px] auto-rows-auto">
-            {tileLayout.map(({ item, isLarge }) => (
-              <MosaicTile
-                key={item.id}
-                item={item}
-                isLarge={false}
-                followingIds={followingIds}
               />
             ))}
           </div>
