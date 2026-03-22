@@ -307,10 +307,14 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     }
   }, [state.encrypted, conversationId, ensureRatchet, ensureLegacySession]);
 
-  // Decrypt
+  // Decrypt — with rate-limiting to detect bulk exfiltration
   const decrypt = useCallback(async (body: string): Promise<{ text: string; encrypted: boolean; verified: boolean }> => {
     if (!isEncryptedMessage(body) && !isRatchetEnvelope(body)) {
       return { text: body, encrypted: false, verified: false };
+    }
+
+    if (!cryptoRateCheck('decrypt')) {
+      return { text: '🔒 Opération limitée (sécurité)', encrypted: true, verified: false };
     }
 
     try {
