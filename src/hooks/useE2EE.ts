@@ -216,6 +216,12 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     if (ratchetRef.current) return ratchetRef.current;
 
+    // Rate-limit key derivation (expensive + sensitive)
+    if (!cryptoRateCheck('deriveBits')) {
+      console.warn('[E2EE] Key derivation rate-limited');
+      return null;
+    }
+
     try {
       // X25519 DH to get initial shared secret
       const peerPubRaw = base64ToBuffer(peerKeyRef.current.identityKey);
