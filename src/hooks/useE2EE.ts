@@ -181,9 +181,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
         if (data) {
           peerKeyRef.current = {
-            identityKey: (data as any).identity_key,
-            signingKey: (data as any).signing_key,
-            fingerprint: (data as any).fingerprint,
+            identityKey: data.identity_key,
+            signingKey: data.signing_key,
+            fingerprint: data.fingerprint,
           };
 
           // Try to load existing ratchet state
@@ -196,7 +196,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
           setState(s => ({
             ...s,
-            peerFingerprint: (data as any).fingerprint,
+            peerFingerprint: data.fingerprint,
             encrypted: true,
             ready: !!keysRef.current,
             ratchetActive: !!ratchetRef.current,
