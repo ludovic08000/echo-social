@@ -32,6 +32,7 @@ import {
   type RatchetEnvelope,
 } from '@/lib/crypto';
 import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
+import { cryptoRateCheck, isCryptoLocked, onCryptoViolation } from '@/lib/crypto/rateLimiter';
 import { KX_KEY_PARAMS } from '@/lib/crypto/constants';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
