@@ -33,9 +33,9 @@ interface AllLiveItem {
   host?: { name: string; avatar_url: string | null };
 }
 
-function useAllLives() {
+function useAllLives(targetId?: string) {
   return useQuery({
-    queryKey: ['all-lives-feed'],
+    queryKey: ['all-lives-feed', targetId],
     queryFn: async () => {
       // Fetch active lives
       const { data: activeLives } = await supabase
@@ -57,6 +57,18 @@ function useAllLives() {
         ...(activeLives || []).map(l => ({ ...l, ended_at: null as string | null })),
         ...(replays || []).map(r => ({ ...r, viewer_count: r.viewer_count || 0 })),
       ];
+
+      // If the target replay isn't already in the list, fetch it separately
+      if (targetId && !all.some(l => l.id === targetId)) {
+        const { data: target } = await supabase
+          .from('live_streams')
+          .select('id, title, thumbnail_url, is_active, viewer_count, total_views, category, user_id, recording_url, ended_at, started_at')
+          .eq('id', targetId)
+          .single();
+        if (target) {
+          all.unshift({ ...target, ended_at: target.ended_at || null });
+        }
+      }
 
       if (!all.length) return [];
 
@@ -319,7 +331,7 @@ export default function LiveWatch() {
   const [searchParams] = useSearchParams();
   const fromFeed = searchParams.get('from') === 'feed';
   const navigate = useNavigate();
-  const { data: allLives, isLoading } = useAllLives();
+  const { data: allLives, isLoading } = useAllLives(id);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
