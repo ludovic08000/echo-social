@@ -35,14 +35,36 @@ import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
 import { KX_KEY_PARAMS } from '@/lib/crypto/constants';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
-const RATCHET_STORE = 'forsure-ratchet-states';
+const RATCHET_DB_NAME = 'forsure-ratchet';
+const RATCHET_DB_VERSION = 1;
+const RATCHET_STORE_NAME = 'ratchet-states';
 
-// ─── Local ratchet state persistence ───
+// ─── IndexedDB ratchet persistence (XSS-resistant) ───
+
+function openRatchetDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(RATCHET_DB_NAME, RATCHET_DB_VERSION);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => resolve(req.result);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(RATCHET_STORE_NAME)) {
+        db.createObjectStore(RATCHET_STORE_NAME, { keyPath: 'convId' });
+      }
+    };
+  });
+}
 
 async function saveRatchetLocal(convId: string, state: RatchetState) {
   try {
     const json = await serializeRatchetState(state);
-    localStorage.setItem(`${RATCHET_STORE}:${convId}`, json);
+    const db = await openRatchetDB();
+    const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
+    tx.objectStore(RATCHET_STORE_NAME).put({ convId, data: json });
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
   } catch (e) {
     console.error('[E2EE] Failed to persist ratchet state:', e);
   }
@@ -50,13 +72,34 @@ async function saveRatchetLocal(convId: string, state: RatchetState) {
 
 async function loadRatchetLocal(convId: string): Promise<RatchetState | null> {
   try {
-    const json = localStorage.getItem(`${RATCHET_STORE}:${convId}`);
-    if (!json) return null;
-    return deserializeRatchetState(json);
+    const db = await openRatchetDB();
+    const tx = db.transaction(RATCHET_STORE_NAME, 'readonly');
+    const req = tx.objectStore(RATCHET_STORE_NAME).get(convId);
+    const result = await new Promise<any>((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    if (!result?.data) return null;
+    return deserializeRatchetState(result.data);
   } catch {
     return null;
   }
 }
+
+// Clean up any legacy localStorage ratchet data
+function cleanupLegacyStorage() {
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith('forsure-ratchet-states:')) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+  } catch {}
+}
+
 
 // ─── Hook ───
 
