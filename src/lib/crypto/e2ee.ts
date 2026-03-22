@@ -180,12 +180,12 @@ export async function decryptMessage(
     throw new Error('Message too old (possible replay attack)');
   }
 
-  const iv = new Uint8Array(base64ToBuffer(envelope.iv));
+  const ivBytes = base64ToBuffer(envelope.iv);
   const ciphertext = base64ToBuffer(envelope.ct);
 
   // Decrypt
   const plaintextBuffer = await crypto.subtle.decrypt(
-    { name: AES_ALGO, iv, tagLength: 128 },
+    { name: AES_ALGO, iv: new Uint8Array(ivBytes) as unknown as Uint8Array<ArrayBuffer>, tagLength: 128 },
     sessionKey,
     ciphertext,
   );
