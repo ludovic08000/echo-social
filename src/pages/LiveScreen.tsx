@@ -505,7 +505,6 @@ export default function LiveScreen() {
           </div>
         )}
       </div>
-      </div>
 
       {/* Start live FAB */}
       <motion.button
