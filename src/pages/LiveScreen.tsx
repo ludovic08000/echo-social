@@ -314,12 +314,16 @@ function ZeusCreatorSuggestions({ lives, followingIds, onSelect }: {
             >
               <div className="relative">
                 <UserAvatar src={s.hostAvatar} alt={s.hostName} size="sm" />
-                <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-black"
-                  style={{ background: 'hsl(var(--primary))' }} />
+                {s.isLive && (
+                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-black"
+                    style={{ background: 'hsl(var(--primary))' }} />
+                )}
               </div>
               <div className="text-left">
                 <p className="text-white text-[11px] font-medium truncate max-w-[90px]">{s.hostName}</p>
-                <p className="text-white/40 text-[9px]">{s.viewerCount} viewers</p>
+                <p className="text-white/40 text-[9px]">
+                  {s.isLive ? `🔴 ${s.viewerCount} viewers` : `${s.viewerCount} vues`}
+                </p>
                 {s.isFollowing && (
                   <p className="text-[8px] font-semibold" style={{ color: 'hsl(190 80% 50%)' }}>Ami</p>
                 )}
