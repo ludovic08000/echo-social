@@ -114,7 +114,7 @@ export async function encryptMessage(
 
   // AES-256-GCM
   const ciphertext = await crypto.subtle.encrypt(
-    { name: AES_ALGO, iv: ivArr, tagLength: 128 },
+    { name: AES_ALGO, iv: ivArr as Uint8Array<ArrayBuffer>, tagLength: 128 },
     sessionKey,
     plaintextBuffer,
   );
