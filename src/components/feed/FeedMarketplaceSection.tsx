@@ -4,8 +4,13 @@ import { ShoppingBag } from 'lucide-react';
 import { ProductCard } from '@/components/marketplace/ProductCard';
 import { rotateMarketplaceProducts } from '@/lib/feedAlgorithm';
 import { useMemo } from 'react';
+import { useIsMarketplaceEnabled } from '@/hooks/usePlatformStats';
 
 export function FeedMarketplaceSection() {
+  const { enabled } = useIsMarketplaceEnabled();
+  const { data: products = [] } = useProducts(undefined, undefined, undefined, enabled ? 12 : 0);
+
+  if (!enabled) return null;
   const { data: products = [] } = useProducts(undefined, undefined, undefined, 12);
   
   const featured = useMemo(() => {
