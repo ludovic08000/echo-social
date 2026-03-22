@@ -1,12 +1,12 @@
 /**
  * ForSure Key Manager
- * Manages identity keys, session keys, and pre-keys in IndexedDB
+ * X25519 key exchange + Ed25519 signing
  * Keys NEVER leave the device unencrypted
  */
 
 import {
   DB_NAME, DB_VERSION, STORE_KEYS, STORE_SESSION, STORE_PREKEYS,
-  ECDH_KEY_PARAMS, ECDSA_KEY_PARAMS,
+  KX_KEY_PARAMS, SIG_KEY_PARAMS,
 } from './constants';
 import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, randomBytes } from './utils';
 
@@ -21,7 +21,7 @@ export interface IdentityKeyPair {
 
 export interface SessionKey {
   conversationId: string;
-  sharedSecret: CryptoKey; // AES-GCM key derived from ECDH
+  sharedSecret: CryptoKey; // AES-GCM key derived from X25519
   messageCount: number;
   createdAt: number;
   peerFingerprint: string;
@@ -53,15 +53,15 @@ function openDB(): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_KEYS)) {
-        db.createObjectStore(STORE_KEYS, { keyPath: 'id' });
+      // Wipe old stores on version bump (re-keying)
+      for (const name of [STORE_KEYS, STORE_SESSION, STORE_PREKEYS]) {
+        if (db.objectStoreNames.contains(name)) {
+          db.deleteObjectStore(name);
+        }
       }
-      if (!db.objectStoreNames.contains(STORE_SESSION)) {
-        db.createObjectStore(STORE_SESSION, { keyPath: 'conversationId' });
-      }
-      if (!db.objectStoreNames.contains(STORE_PREKEYS)) {
-        db.createObjectStore(STORE_PREKEYS, { keyPath: 'id' });
-      }
+      db.createObjectStore(STORE_KEYS, { keyPath: 'id' });
+      db.createObjectStore(STORE_SESSION, { keyPath: 'conversationId' });
+      db.createObjectStore(STORE_PREKEYS, { keyPath: 'id' });
     };
   });
 }
@@ -96,13 +96,12 @@ function dbDelete(storeName: string, key: string): Promise<void> {
   }));
 }
 
-// ─── Key fingerprint (like Signal's safety numbers) ───
+// ─── Fingerprint (safety numbers) ───
 
 async function computeFingerprint(publicKey: CryptoKey): Promise<string> {
   const raw = await crypto.subtle.exportKey('raw', publicKey);
   const hash = await crypto.subtle.digest('SHA-256', raw);
   const bytes = new Uint8Array(hash);
-  // Format as groups of 5 hex chars for readability
   let fp = '';
   for (let i = 0; i < 20; i++) {
     if (i > 0 && i % 4 === 0) fp += ' ';
@@ -113,20 +112,20 @@ async function computeFingerprint(publicKey: CryptoKey): Promise<string> {
 
 // ─── Public API ───
 
-/** Generate a new identity key pair (ECDH + ECDSA) */
+/** Generate identity keys: X25519 (exchange) + Ed25519 (signing) */
 export async function generateIdentityKeys(): Promise<IdentityKeyPair> {
-  const [ecdhPair, ecdsaPair] = await Promise.all([
-    crypto.subtle.generateKey(ECDH_KEY_PARAMS, true, ['deriveKey', 'deriveBits']),
-    crypto.subtle.generateKey(ECDSA_KEY_PARAMS, true, ['sign', 'verify']),
+  const [kxPair, sigPair] = await Promise.all([
+    crypto.subtle.generateKey(KX_KEY_PARAMS as any, true, ['deriveBits']),
+    crypto.subtle.generateKey(SIG_KEY_PARAMS as any, true, ['sign', 'verify']),
   ]);
 
-  const fingerprint = await computeFingerprint(ecdhPair.publicKey);
+  const fingerprint = await computeFingerprint((kxPair as CryptoKeyPair).publicKey);
 
   return {
-    publicKey: ecdhPair.publicKey,
-    privateKey: ecdhPair.privateKey,
-    signingPublicKey: ecdsaPair.publicKey,
-    signingPrivateKey: ecdsaPair.privateKey,
+    publicKey: (kxPair as CryptoKeyPair).publicKey,
+    privateKey: (kxPair as CryptoKeyPair).privateKey,
+    signingPublicKey: (sigPair as CryptoKeyPair).publicKey,
+    signingPrivateKey: (sigPair as CryptoKeyPair).privateKey,
     createdAt: Date.now(),
     fingerprint,
   };
@@ -158,10 +157,10 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
   if (!stored) return null;
 
   const [publicKey, privateKey, signingPublicKey, signingPrivateKey] = await Promise.all([
-    importKeyFromJWK(stored.publicKeyJWK, ECDH_KEY_PARAMS, []),
-    importKeyFromJWK(stored.privateKeyJWK, ECDH_KEY_PARAMS, ['deriveKey', 'deriveBits']),
-    importKeyFromJWK(stored.signingPublicKeyJWK, ECDSA_KEY_PARAMS, ['verify']),
-    importKeyFromJWK(stored.signingPrivateKeyJWK, ECDSA_KEY_PARAMS, ['sign']),
+    importKeyFromJWK(stored.publicKeyJWK, KX_KEY_PARAMS as any, []),
+    importKeyFromJWK(stored.privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits']),
+    importKeyFromJWK(stored.signingPublicKeyJWK, SIG_KEY_PARAMS as any, ['verify']),
+    importKeyFromJWK(stored.signingPrivateKeyJWK, SIG_KEY_PARAMS as any, ['sign']),
   ]);
 
   return {
@@ -184,7 +183,7 @@ export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityK
   return newKeys;
 }
 
-/** Export public key for sharing with server */
+/** Export public key bundle for server publication */
 export async function exportPublicKeyBundle(keys: IdentityKeyPair): Promise<{
   identityKey: string;
   signingKey: string;
@@ -202,7 +201,7 @@ export async function exportPublicKeyBundle(keys: IdentityKeyPair): Promise<{
   };
 }
 
-/** Save a session key for a conversation */
+/** Save a session key */
 export async function saveSessionKey(session: SessionKey): Promise<void> {
   const keyJWK = await exportKeyToJWK(session.sharedSecret);
   await dbPut<StoredSessionKey>(STORE_SESSION, {
@@ -214,7 +213,7 @@ export async function saveSessionKey(session: SessionKey): Promise<void> {
   });
 }
 
-/** Load a session key for a conversation */
+/** Load a session key */
 export async function loadSessionKey(conversationId: string): Promise<SessionKey | null> {
   const stored = await dbGet<StoredSessionKey>(STORE_SESSION, conversationId);
   if (!stored) return null;
@@ -240,7 +239,7 @@ export async function deleteSessionKey(conversationId: string): Promise<void> {
   await dbDelete(STORE_SESSION, conversationId);
 }
 
-/** Increment message count for a session */
+/** Increment message count for key rotation tracking */
 export async function incrementSessionMessageCount(conversationId: string): Promise<number> {
   const session = await loadSessionKey(conversationId);
   if (!session) return 0;
@@ -249,7 +248,7 @@ export async function incrementSessionMessageCount(conversationId: string): Prom
   return session.messageCount;
 }
 
-/** Wipe all keys (account deletion / logout) */
+/** Wipe all keys (logout / account deletion) */
 export async function wipeAllKeys(): Promise<void> {
   const db = await openDB();
   const tx = db.transaction([STORE_KEYS, STORE_SESSION, STORE_PREKEYS], 'readwrite');

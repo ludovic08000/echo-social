@@ -1,45 +1,50 @@
 /**
  * ForSure E2EE Constants
  * Hybrid Post-Quantum Ready Encryption System
+ * 
+ * Primitives (Signal-grade):
+ *   Key Exchange: X25519 (Curve25519 ECDH)
+ *   Signatures:   Ed25519
+ *   Encryption:   AES-256-GCM
+ *   Derivation:   HKDF-SHA-256
  */
 
-// ECDH key exchange parameters (classical layer)
-export const ECDH_CURVE = 'P-384'; // NIST P-384 (stronger than Signal's X25519)
-export const ECDH_KEY_PARAMS: EcKeyGenParams = {
-  name: 'ECDH',
-  namedCurve: ECDH_CURVE,
-};
+// X25519 key exchange (same as Signal)
+export const KX_ALGO = 'X25519';
+export const KX_KEY_PARAMS: EcKeyGenParams = {
+  name: 'X25519',
+} as any; // Web Crypto types lag behind spec
 
-// ECDSA signing parameters
-export const ECDSA_KEY_PARAMS: EcKeyGenParams = {
-  name: 'ECDSA',
-  namedCurve: ECDH_CURVE,
-};
+// Ed25519 signing (same as Signal)
+export const SIG_ALGO = 'Ed25519';
+export const SIG_KEY_PARAMS: EcKeyGenParams = {
+  name: 'Ed25519',
+} as any;
 
 // AES-256-GCM for message encryption
 export const AES_ALGO = 'AES-GCM';
 export const AES_KEY_LENGTH = 256;
-export const IV_LENGTH = 12; // 96-bit IV for AES-GCM (NIST recommended)
-export const TAG_LENGTH = 128; // 128-bit authentication tag
+export const IV_LENGTH = 12; // 96-bit IV (NIST recommended)
+export const TAG_LENGTH = 128; // 128-bit auth tag
 
-// HKDF for key derivation
-export const HKDF_HASH = 'SHA-384';
+// HKDF for key derivation (SHA-256 like Signal)
+export const HKDF_HASH = 'SHA-256';
 export const HKDF_SALT_LENGTH = 32;
 
 // Key rotation
-export const KEY_ROTATION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
-export const MAX_MESSAGES_PER_KEY = 500; // Rotate after N messages
+export const KEY_ROTATION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
+export const MAX_MESSAGES_PER_KEY = 500;
 
-// IndexedDB
+// IndexedDB — bump version to force re-keying on upgrade
 export const DB_NAME = 'forsure-e2ee';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 export const STORE_KEYS = 'identity-keys';
 export const STORE_SESSION = 'session-keys';
 export const STORE_PREKEYS = 'pre-keys';
 
-// Protocol version for forward compatibility
-export const PROTOCOL_VERSION = 1;
+// Protocol version (bump = breaking change)
+export const PROTOCOL_VERSION = 2;
 
-// Post-quantum KEM identifier (hybrid envelope marker)
-export const PQ_KEM_ID = 'HYBRID-ECDH-KYBER768';
-export const CLASSICAL_KEM_ID = 'ECDH-P384';
+// KEM identifiers
+export const PQ_KEM_ID = 'HYBRID-X25519-KYBER768';
+export const CLASSICAL_KEM_ID = 'X25519';
