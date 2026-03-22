@@ -17,6 +17,8 @@ import { useCall } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { toast } from 'sonner';
+import { useE2EE } from '@/hooks/useE2EE';
+import { EncryptionBadge, EncryptionStatusBar } from './EncryptionBadge';
 
 import { MessageActions } from './MessageActions';
 import { TypingIndicator } from './TypingIndicator';
@@ -66,6 +68,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const { data: friendsData } = useFriendships();
   const allFriends = friendsData?.friends || [];
   const navigate = useNavigate();
+  const peerUserId = conversation?.participant?.user_id;
+  const e2ee = useE2EE(conversationId, peerUserId);
 
   const { upload, isUploading } = useImageUpload({
     bucket: 'post-images',
@@ -106,13 +110,18 @@ export function ChatView({ conversationId }: ChatViewProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
 
-    const body = replyTo
+    let body = replyTo
       ? `↩️ ${replyTo.profile.name}: "${replyTo.body.slice(0, 50)}${replyTo.body.length > 50 ? '…' : ''}"\n\n${newMessage.trim()}`
       : newMessage.trim();
+
+    // E2EE: encrypt before sending
+    if (e2ee.encrypted) {
+      body = await e2ee.encrypt(body);
+    }
 
     sendMessage.mutate(
       { conversationId, body },
@@ -239,6 +248,13 @@ export function ChatView({ conversationId }: ChatViewProps) {
           </div>
         </div>
       </header>
+
+      {/* E2EE Status Bar */}
+      <EncryptionStatusBar
+        encrypted={e2ee.encrypted}
+        fingerprint={e2ee.fingerprint}
+        peerFingerprint={e2ee.peerFingerprint}
+      />
 
       {/* Group Management Panel */}
       {isGroup && showGroupPanel && (
@@ -539,12 +555,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
                           </div>
                         )}
 
-                        {/* Timestamp + read receipt */}
+                        {/* Timestamp + read receipt + encryption badge */}
                         {isLastInGroup && (
                           <div className="flex items-center gap-1 mt-0.5 px-1">
                             <span className="text-[11px] text-muted-foreground">
                               {format(new Date(msg.created_at), 'HH:mm')}
                             </span>
+                            {e2ee.encrypted && (
+                              <EncryptionBadge encrypted={true} verified={true} size="xs" />
+                            )}
                             {isMe && (
                               <CheckCheck className="w-3.5 h-3.5 text-primary/70" />
                             )}
