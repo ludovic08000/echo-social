@@ -56,7 +56,7 @@ export async function performKeyExchange(
   );
 
   // Step 2: HKDF to derive AES key
-  const salt = randomBytes(HKDF_SALT_LENGTH);
+  const salt = randomBytes(HKDF_SALT_LENGTH) as unknown as Uint8Array<ArrayBuffer>;
   const info = encodeString(`forsure-e2ee-v${PROTOCOL_VERSION}-${conversationId}`);
 
   // Import shared bits as HKDF key material
