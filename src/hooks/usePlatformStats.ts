@@ -2,8 +2,19 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 
-// ── Seuil global plateforme ──
+// ── Seuils globaux plateforme ──
 const CREATOR_REVENUE_THRESHOLD = 100_000;
+const MARKETPLACE_THRESHOLD = 10_000;
+
+export function useIsMarketplaceEnabled() {
+  const { data: count = 0, isLoading } = usePlatformUserCount();
+  return {
+    enabled: count >= MARKETPLACE_THRESHOLD,
+    userCount: count,
+    threshold: MARKETPLACE_THRESHOLD,
+    loading: isLoading,
+  };
+}
 
 export function usePlatformUserCount() {
   return useQuery({
