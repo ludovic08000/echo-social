@@ -1,20 +1,23 @@
 /**
- * ForSure End-to-End Encryption Engine
+ * ForSure End-to-End Encryption Engine v2
  * 
- * Hybrid encryption: ECDH-P384 (classical) + post-quantum KEM layer
- * Message encryption: AES-256-GCM with HKDF-derived keys
- * Authentication: ECDSA-P384 signatures
+ * Signal-grade primitives:
+ *   Key Exchange:  X25519 (Curve25519 ECDH)
+ *   Signing:       Ed25519
+ *   Encryption:    AES-256-GCM
+ *   Derivation:    HKDF-SHA-256
+ *   Future:        Hybrid X25519 + ML-KEM (Kyber768)
  * 
  * Protocol:
- * 1. Key Exchange: ECDH shared secret → HKDF → AES-256 session key
- * 2. Message: IV || ciphertext || auth-tag (AES-256-GCM)
- * 3. Envelope: version || kem_id || encrypted_payload || signature
+ *   1. X25519 → 32-byte shared secret → HKDF → AES-256 session key
+ *   2. Message: IV(12) || AES-GCM(plaintext) || tag(16)
+ *   3. Envelope: { v, kem, iv, ct, sig(Ed25519), fp, ts, seq }
  */
 
 import {
   PROTOCOL_VERSION, AES_ALGO, AES_KEY_LENGTH, IV_LENGTH,
-  HKDF_HASH, HKDF_SALT_LENGTH, CLASSICAL_KEM_ID, PQ_KEM_ID,
-  KEY_ROTATION_INTERVAL_MS, MAX_MESSAGES_PER_KEY,
+  HKDF_HASH, HKDF_SALT_LENGTH, CLASSICAL_KEM_ID,
+  KEY_ROTATION_INTERVAL_MS, MAX_MESSAGES_PER_KEY, KX_KEY_PARAMS,
 } from './constants';
 import {
   randomBytes, bufferToBase64, base64ToBuffer,
@@ -23,80 +26,66 @@ import {
 import {
   type IdentityKeyPair, type SessionKey,
   loadSessionKey, saveSessionKey, deleteSessionKey,
-  incrementSessionMessageCount,
 } from './keyManager';
 
-// ─── Encrypted message envelope ───
+// ─── Envelope ───
 
 export interface EncryptedEnvelope {
-  v: number;         // Protocol version
-  kem: string;       // KEM identifier
-  iv: string;        // Base64 IV
-  ct: string;        // Base64 ciphertext
-  sig: string;       // Base64 ECDSA signature
-  fp: string;        // Sender fingerprint
-  pq?: string;       // Post-quantum encapsulated key (future)
-  ts: number;        // Timestamp (for replay protection)
-  seq: number;       // Sequence number (for ordering)
+  v: number;
+  kem: string;
+  iv: string;     // Base64
+  ct: string;     // Base64
+  sig: string;    // Base64 Ed25519
+  fp: string;     // Sender fingerprint
+  pq?: string;    // Future: Kyber ciphertext
+  ts: number;
+  seq: number;
 }
 
-// ─── ECDH Key Agreement ───
+// ─── X25519 Key Agreement ───
 
-/** Perform ECDH key exchange and derive AES-256 session key */
 export async function performKeyExchange(
   myPrivateKey: CryptoKey,
   peerPublicKey: CryptoKey,
   conversationId: string,
 ): Promise<CryptoKey> {
-  // Step 1: ECDH to get shared bits
+  // X25519 → 32 bytes (256 bits) shared secret
   const sharedBits = await crypto.subtle.deriveBits(
-    { name: 'ECDH', public: peerPublicKey },
+    { name: 'X25519', public: peerPublicKey } as any,
     myPrivateKey,
-    384, // P-384 produces 384 bits
+    256,
   );
 
-  // Step 2: HKDF to derive AES key
-  const salt = randomBytes(HKDF_SALT_LENGTH) as unknown as Uint8Array<ArrayBuffer>;
+  // HKDF-SHA-256 → AES-256 key
+  const salt = randomBytes(HKDF_SALT_LENGTH);
   const info = encodeString(`forsure-e2ee-v${PROTOCOL_VERSION}-${conversationId}`);
 
-  // Import shared bits as HKDF key material
   const hkdfKey = await crypto.subtle.importKey(
     'raw', sharedBits, 'HKDF', false, ['deriveKey']
   );
 
-  // Derive AES-256-GCM key
-  const aesKey = await crypto.subtle.deriveKey(
+  return crypto.subtle.deriveKey(
     { name: 'HKDF', hash: HKDF_HASH, salt, info },
     hkdfKey,
     { name: AES_ALGO, length: AES_KEY_LENGTH },
     true,
     ['encrypt', 'decrypt']
   );
-
-  return aesKey;
 }
 
-/** Perform ECDH and store as session key */
+/** Establish a session with a peer */
 export async function establishSession(
   myKeys: IdentityKeyPair,
   peerPublicKeyBase64: string,
   conversationId: string,
   peerFingerprint: string,
 ): Promise<SessionKey> {
-  // Import peer's public key
   const peerRaw = base64ToBuffer(peerPublicKeyBase64);
   const peerPublicKey = await crypto.subtle.importKey(
-    'raw', peerRaw,
-    { name: 'ECDH', namedCurve: 'P-384' },
-    true,
-    []
+    'raw', peerRaw, KX_KEY_PARAMS as any, true, []
   );
 
-  const aesKey = await performKeyExchange(
-    myKeys.privateKey,
-    peerPublicKey,
-    conversationId,
-  );
+  const aesKey = await performKeyExchange(myKeys.privateKey, peerPublicKey, conversationId);
 
   const session: SessionKey = {
     conversationId,
@@ -110,9 +99,8 @@ export async function establishSession(
   return session;
 }
 
-// ─── Message Encryption ───
+// ─── Encrypt ───
 
-/** Encrypt a plaintext message */
 export async function encryptMessage(
   plaintext: string,
   sessionKey: CryptoKey,
@@ -122,31 +110,28 @@ export async function encryptMessage(
 ): Promise<string> {
   const ivArr = randomBytes(IV_LENGTH);
   const timestamp = Date.now();
-
-  // Encode plaintext
   const plaintextBuffer = encodeString(plaintext);
 
-  // Encrypt with AES-256-GCM
+  // AES-256-GCM
   const ciphertext = await crypto.subtle.encrypt(
-    { name: AES_ALGO, iv: ivArr as unknown as Uint8Array<ArrayBuffer>, tagLength: 128 },
+    { name: AES_ALGO, iv: ivArr, tagLength: 128 },
     sessionKey,
     plaintextBuffer,
   );
 
-  // Create signature over (iv || ciphertext || timestamp || seq)
+  // Ed25519 signature over (iv || ciphertext || metadata)
   const signatureData = concatBuffers(
     ivArr.buffer as ArrayBuffer,
-    ciphertext,
+    ciphertext as ArrayBuffer,
     encodeString(`${timestamp}:${sequenceNumber}`),
   );
 
   const signature = await crypto.subtle.sign(
-    { name: 'ECDSA', hash: 'SHA-384' },
+    'Ed25519' as any,
     signingKey,
     signatureData,
   );
 
-  // Build envelope
   const envelope: EncryptedEnvelope = {
     v: PROTOCOL_VERSION,
     kem: CLASSICAL_KEM_ID,
@@ -161,7 +146,8 @@ export async function encryptMessage(
   return JSON.stringify(envelope);
 }
 
-/** Decrypt an encrypted message envelope */
+// ─── Decrypt ───
+
 export async function decryptMessage(
   envelopeStr: string,
   sessionKey: CryptoKey,
@@ -169,39 +155,41 @@ export async function decryptMessage(
 ): Promise<{ plaintext: string; verified: boolean; fingerprint: string }> {
   const envelope: EncryptedEnvelope = JSON.parse(envelopeStr);
 
-  // Version check
+  // Accept v1 (legacy P-384) and v2 (X25519) envelopes
   if (envelope.v > PROTOCOL_VERSION) {
     throw new Error('Unsupported encryption protocol version');
   }
 
-  // Replay protection: reject messages older than 7 days
-  const age = Date.now() - envelope.ts;
-  if (age > 7 * 24 * 60 * 60 * 1000) {
+  // Replay protection: reject > 7 days
+  if (Date.now() - envelope.ts > 7 * 24 * 60 * 60 * 1000) {
     throw new Error('Message too old (possible replay attack)');
   }
 
   const ivBytes = base64ToBuffer(envelope.iv);
   const ciphertext = base64ToBuffer(envelope.ct);
 
-  // Decrypt
   const plaintextBuffer = await crypto.subtle.decrypt(
-    { name: AES_ALGO, iv: new Uint8Array(ivBytes) as unknown as Uint8Array<ArrayBuffer>, tagLength: 128 },
+    { name: AES_ALGO, iv: new Uint8Array(ivBytes), tagLength: 128 },
     sessionKey,
     ciphertext,
   );
 
   const plaintext = decodeString(plaintextBuffer);
 
-  // Verify signature if peer signing key available
+  // Verify Ed25519 signature
   let verified = false;
   if (peerSigningKeyBase64) {
     try {
       const peerSigningRaw = base64ToBuffer(peerSigningKeyBase64);
+
+      // Determine algo based on envelope version
+      const sigAlgo = envelope.v >= 2 ? 'Ed25519' : { name: 'ECDSA', hash: 'SHA-384' };
+      const importAlgo = envelope.v >= 2
+        ? { name: 'Ed25519' } as any
+        : { name: 'ECDSA', namedCurve: 'P-384' };
+
       const peerSigningKey = await crypto.subtle.importKey(
-        'raw', peerSigningRaw,
-        { name: 'ECDSA', namedCurve: 'P-384' },
-        true,
-        ['verify']
+        'raw', peerSigningRaw, importAlgo, true, ['verify']
       );
 
       const signatureData = concatBuffers(
@@ -211,7 +199,7 @@ export async function decryptMessage(
       );
 
       verified = await crypto.subtle.verify(
-        { name: 'ECDSA', hash: 'SHA-384' },
+        sigAlgo as any,
         peerSigningKey,
         base64ToBuffer(envelope.sig),
         signatureData,
@@ -226,19 +214,14 @@ export async function decryptMessage(
 
 // ─── Key Rotation ───
 
-/** Check if session key needs rotation */
 export async function needsKeyRotation(conversationId: string): Promise<boolean> {
   const session = await loadSessionKey(conversationId);
   if (!session) return true;
-
-  const age = Date.now() - session.createdAt;
-  if (age > KEY_ROTATION_INTERVAL_MS) return true;
+  if (Date.now() - session.createdAt > KEY_ROTATION_INTERVAL_MS) return true;
   if (session.messageCount >= MAX_MESSAGES_PER_KEY) return true;
-
   return false;
 }
 
-/** Rotate session key */
 export async function rotateSessionKey(
   myKeys: IdentityKeyPair,
   peerPublicKeyBase64: string,
@@ -249,22 +232,21 @@ export async function rotateSessionKey(
   return establishSession(myKeys, peerPublicKeyBase64, conversationId, peerFingerprint);
 }
 
-// ─── Helper: Check if a message body is encrypted ───
+// ─── Helpers ───
 
 export function isEncryptedMessage(body: string): boolean {
   if (!body.startsWith('{')) return false;
   try {
-    const parsed = JSON.parse(body);
-    return parsed.v !== undefined && parsed.kem !== undefined && parsed.ct !== undefined;
+    const p = JSON.parse(body);
+    return p.v !== undefined && p.kem !== undefined && p.ct !== undefined;
   } catch {
     return false;
   }
 }
 
-// ─── Post-Quantum readiness note ───
-// When browser-native CRYSTALS-Kyber (ML-KEM) becomes available:
-// 1. Generate a Kyber768 keypair alongside ECDH
-// 2. Encapsulate: kyberCT = Kyber.encapsulate(peerKyberPK) → (ct, ss)
-// 3. Combine: finalSecret = HKDF(ecdhSecret || kyberSecret)
-// 4. Set kem = PQ_KEM_ID, include pq = base64(kyberCT)
-// This provides hybrid security: break BOTH to decrypt
+// Post-Quantum upgrade path:
+// 1. Generate ML-KEM-768 keypair alongside X25519
+// 2. Encapsulate: (kyberCT, kyberSS) = KEM.encap(peerKyberPK)
+// 3. Combine: HKDF(x25519SS || kyberSS) → AES key
+// 4. Set kem = 'HYBRID-X25519-KYBER768', pq = base64(kyberCT)
+// Both must be broken to compromise a message

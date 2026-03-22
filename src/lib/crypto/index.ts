@@ -1,8 +1,8 @@
 /**
- * ForSure E2EE - Public API
+ * ForSure E2EE - Public API v2
  * 
- * Hybrid Post-Quantum Ready Encryption
- * ECDH-P384 + AES-256-GCM + ECDSA-P384 + HKDF-SHA384
+ * X25519 + Ed25519 + AES-256-GCM + HKDF-SHA-256
+ * Hybrid Post-Quantum Ready (Kyber768)
  */
 
 export {
