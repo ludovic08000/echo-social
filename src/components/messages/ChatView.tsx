@@ -244,6 +244,13 @@ export function ChatView({ conversationId }: ChatViewProps) {
         </div>
       </header>
 
+      {/* E2EE Status Bar */}
+      <EncryptionStatusBar
+        encrypted={e2ee.encrypted}
+        fingerprint={e2ee.fingerprint}
+        peerFingerprint={e2ee.peerFingerprint}
+      />
+
       {/* Group Management Panel */}
       {isGroup && showGroupPanel && (
         <div className="border-b border-border/30 bg-card animate-in slide-in-from-top-2">
