@@ -549,7 +549,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
                                 )
                           )}
                         >
-                          {msg.body}
+                          <DecryptedMessageBody
+                            body={msg.body}
+                            decrypt={e2ee.decrypt}
+                            isEncryptionActive={e2ee.encrypted}
+                          />
                         </div>
 
                         {/* Reactions */}
