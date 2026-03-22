@@ -1,24 +1,28 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { LiveViewerPlayer } from '@/components/live/LiveViewerPlayer';
+import { HostLiveView } from '@/components/live/HostLiveView';
 import { LiveRightActions } from '@/components/live/LiveRightActions';
 import { LiveInfoOverlay } from '@/components/live/LiveInfoOverlay';
 import { LiveMessageBar } from '@/components/live/LiveMessageBar';
 import { UserAvatar } from '@/components/UserAvatar';
-import { useLiveChat, useSendLiveChatMessage, useJoinLive, useLeaveLive } from '@/hooks/useLiveStreams';
+import { useLiveChat, useSendLiveChatMessage, useJoinLive, useLeaveLive, LiveStream } from '@/hooks/useLiveStreams';
 import { useAuth } from '@/lib/auth';
-import { cn } from '@/lib/utils';
+import { generateLiveUrl } from '@/lib/urlUtils';
 
 interface LivePlayerCardProps {
   item: {
     id: string;
     title: string;
+    description?: string | null;
     thumbnail_url: string | null;
     is_active: boolean;
     viewer_count: number;
     total_views: number;
     category: string | null;
+    hashtags?: string[];
     user_id: string;
     recording_url: string | null;
+    started_at?: string | null;
     host?: { name: string; avatar_url: string | null };
   };
   isVisible: boolean;
@@ -36,16 +40,18 @@ export function LivePlayerCard({ item, isVisible, zeusReason }: LivePlayerCardPr
   const joinTimeRef = useRef<number>(0);
   const [showChat, setShowChat] = useState(true);
 
-  // Join/leave for active lives
+  const isHost = user?.id === item.user_id;
+
+  // Join/leave for active lives (viewers only)
   useEffect(() => {
-    if (!isVisible || !item.is_active) return;
+    if (!isVisible || !item.is_active || isHost) return;
     joinLive.mutate(item.id);
     joinTimeRef.current = Date.now();
     return () => {
       const watchTime = Math.floor((Date.now() - joinTimeRef.current) / 1000);
       leaveLive.mutate({ liveId: item.id, watchTimeSeconds: watchTime });
     };
-  }, [isVisible, item.id, item.is_active]);
+  }, [isVisible, item.id, item.is_active, isHost]);
 
   // Autoplay/pause replay
   useEffect(() => {
@@ -68,9 +74,14 @@ export function LivePlayerCard({ item, isVisible, zeusReason }: LivePlayerCardPr
     sendMessage.mutate({ liveId: item.id, message: msg });
   }, [item.id, sendMessage]);
 
+  // Host gets the full HostLiveView with camera controls
+  if (isHost && item.is_active) {
+    return <HostLiveView live={item as unknown as LiveStream} />;
+  }
+
   return (
     <div className="relative w-full h-full bg-black overflow-hidden">
-      {/* Video layer */}
+      {/* Video layer — LiveKit for active, recording for replays */}
       {item.is_active ? (
         <LiveViewerPlayer
           roomName={`live-${item.id}`}
@@ -118,16 +129,18 @@ export function LivePlayerCard({ item, isVisible, zeusReason }: LivePlayerCardPr
           hostName={item.host?.name}
           viewerCount={item.is_active ? item.viewer_count : item.total_views}
           onCommentClick={() => setShowChat(!showChat)}
+          shareUrl={generateLiveUrl(item.id)}
+          shareTitle={item.title}
         />
       </div>
 
       {/* Bottom left info + chat */}
       <div className="absolute bottom-0 left-0 right-16 z-20">
-        {/* Chat messages */}
+        {/* Chat messages (realtime via Supabase) */}
         {item.is_active && showChat && chatMessages && chatMessages.length > 0 && (
           <div className="px-4 mb-2">
             <div ref={chatRef} className="max-h-32 overflow-y-auto space-y-1.5 scrollbar-none">
-              {chatMessages.slice(-15).map((msg) => (
+              {chatMessages.slice(-20).map((msg) => (
                 <div key={msg.id} className="flex items-start gap-1.5">
                   <UserAvatar src={msg.sender?.avatar_url} alt={msg.sender?.name} size="xs" />
                   <p className="text-[12px] text-white/90 drop-shadow-lg">
@@ -151,12 +164,13 @@ export function LivePlayerCard({ item, isVisible, zeusReason }: LivePlayerCardPr
             category={item.category}
             viewerCount={item.is_active ? item.viewer_count : item.total_views}
             isActive={item.is_active}
+            hashtags={item.hashtags}
             zeusReason={zeusReason}
           />
         </div>
 
-        {/* Message bar */}
-        {item.is_active && (
+        {/* Message bar with emoji picker */}
+        {item.is_active && !isHost && (
           <div className="px-4 pb-[calc(env(safe-area-inset-bottom,0px)+16px)]">
             <LiveMessageBar onSend={handleSendMessage} />
           </div>
