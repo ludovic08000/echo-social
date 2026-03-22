@@ -169,6 +169,7 @@ function AppContent() {
               <Route path="/videos" element={<ProtectedRoute><Videos /></ProtectedRoute>} />
               <Route path="/lives" element={<ProtectedRoute><Lives /></ProtectedRoute>} />
               <Route path="/live/:id" element={<ProtectedRoute><LiveWatch /></ProtectedRoute>} />
+              <Route path="/live" element={<ProtectedRoute><LiveScreen /></ProtectedRoute>} />
               <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
               <Route path="/challenges" element={<ProtectedRoute><Challenges /></ProtectedRoute>} />
               <Route path="/games" element={<ProtectedRoute><Games /></ProtectedRoute>} />
