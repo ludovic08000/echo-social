@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Send, Smile } from 'lucide-react';
+import { Send } from 'lucide-react';
+import { LiveEmojiPicker } from '@/components/live/LiveEmojiPicker';
 import { motion } from 'framer-motion';
 
 interface LiveMessageBarProps {
@@ -28,10 +29,8 @@ export function LiveMessageBar({ onSend, disabled }: LiveMessageBarProps) {
           disabled={disabled}
           className="flex-1 bg-transparent text-white text-sm placeholder:text-white/30 outline-none"
         />
-        <button type="button" className="text-white/40 hover:text-white/70 transition-colors">
-          <Smile className="w-4.5 h-4.5" />
-        </button>
       </div>
+      <LiveEmojiPicker onSelect={(emoji) => setMessage(prev => prev + emoji)} />
       <motion.button
         whileTap={{ scale: 0.85 }}
         type="submit"

@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import { Heart, MessageCircle, Share2, Bookmark, MoreHorizontal, UserPlus } from 'lucide-react';
 import { UserAvatar } from '@/components/UserAvatar';
+import { ShareButton } from '@/components/ShareButton';
 import { cn } from '@/lib/utils';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 interface LiveRightActionsProps {
   hostAvatar?: string | null;
   hostName?: string;
   viewerCount: number;
   onCommentClick?: () => void;
-  onShareClick?: () => void;
+  shareUrl?: string;
+  shareTitle?: string;
 }
 
 function ActionButton({
@@ -47,7 +49,7 @@ function ActionButton({
   );
 }
 
-export function LiveRightActions({ hostAvatar, hostName, viewerCount, onCommentClick, onShareClick }: LiveRightActionsProps) {
+export function LiveRightActions({ hostAvatar, hostName, viewerCount, onCommentClick, shareUrl, shareTitle }: LiveRightActionsProps) {
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
   const [followed, setFollowed] = useState(false);
@@ -56,12 +58,11 @@ export function LiveRightActions({ hostAvatar, hostName, viewerCount, onCommentC
     <div className="flex flex-col items-center gap-4">
       {/* Host avatar with follow button */}
       <div className="relative mb-1">
-        <div className={cn(
-          'rounded-full p-[2px] transition-all',
-          followed ? '' : ''
-        )} style={!followed ? {
-          background: 'linear-gradient(135deg, hsl(260 70% 55%), hsl(190 80% 50%))',
-        } : undefined}>
+        <div className={cn('rounded-full p-[2px] transition-all')}
+          style={!followed ? {
+            background: 'linear-gradient(135deg, hsl(260 70% 55%), hsl(190 80% 50%))',
+          } : undefined}
+        >
           <UserAvatar src={hostAvatar} alt={hostName} size="md" />
         </div>
         {!followed && (
@@ -93,11 +94,17 @@ export function LiveRightActions({ hostAvatar, hostName, viewerCount, onCommentC
         onClick={onCommentClick}
       />
 
-      <ActionButton
-        icon={Share2}
-        label="Partager"
-        onClick={onShareClick}
-      />
+      {/* Real share button using ShareButton component */}
+      <div className="flex flex-col items-center gap-1">
+        <ShareButton
+          url={shareUrl || ''}
+          title={shareTitle || ''}
+          variant="ghost"
+          size="icon"
+          className="w-11 h-11 rounded-full bg-white/8 backdrop-blur-md text-white/90 hover:bg-white/15"
+        />
+        <span className="text-white/60 text-[9px] font-medium">Partager</span>
+      </div>
 
       <ActionButton
         icon={Bookmark}

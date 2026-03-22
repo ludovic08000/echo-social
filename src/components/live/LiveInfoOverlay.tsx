@@ -9,6 +9,7 @@ interface LiveInfoOverlayProps {
   category?: string | null;
   viewerCount: number;
   isActive: boolean;
+  hashtags?: string[];
   zeusReason?: string;
 }
 
@@ -19,6 +20,7 @@ export function LiveInfoOverlay({
   category,
   viewerCount,
   isActive,
+  hashtags,
   zeusReason,
 }: LiveInfoOverlayProps) {
   return (
@@ -75,6 +77,17 @@ export function LiveInfoOverlay({
           {formatViewerCount(viewerCount)}
         </span>
       </div>
+
+      {/* Hashtags */}
+      {hashtags && hashtags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {hashtags.slice(0, 4).map((tag, i) => (
+            <span key={i} className="text-[10px] font-medium" style={{ color: 'hsl(190 80% 60%)' }}>
+              #{tag}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Zeus recommendation */}
       {zeusReason && (
