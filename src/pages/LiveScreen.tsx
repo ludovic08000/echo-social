@@ -504,10 +504,7 @@ export default function LiveScreen() {
             <p className="text-white/40 text-sm text-center">Sois le premier à démarrer un live !</p>
           </div>
         )}
-              />
-            ))}
-          </div>
-        )}
+      </div>
       </div>
 
       {/* Start live FAB */}
