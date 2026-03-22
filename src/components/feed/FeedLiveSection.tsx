@@ -71,7 +71,7 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
   const handleDelete = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!confirm('Supprimer ce replay ?')) return;
+    deleteLive.mutate(item.id);
     deleteLive.mutate(item.id);
   };
 
