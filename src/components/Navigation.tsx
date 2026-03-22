@@ -30,7 +30,7 @@ export function MobileNav() {
   const active = (path: string) => {
     if (path === '/feed') return location.pathname === '/feed' || location.pathname === '/';
     if (path === '/groups') return location.pathname.startsWith('/group');
-    if (path === '/lives') return location.pathname.startsWith('/live');
+    if (path === '/live') return location.pathname.startsWith('/live');
     return location.pathname === path;
   };
 
@@ -128,7 +128,7 @@ export function MobileNav() {
             </div>
           </Link>
 
-          <NavItem path="/lives" icon={Radio} label="Live" />
+          <NavItem path="/live" icon={Radio} label="Live" />
 
           {/* Bouton Menu */}
           <button
