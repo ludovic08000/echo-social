@@ -68,6 +68,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const { data: friendsData } = useFriendships();
   const allFriends = friendsData?.friends || [];
   const navigate = useNavigate();
+  const peerUserId = conversation?.participant?.user_id;
+  const e2ee = useE2EE(conversationId, peerUserId);
 
   const { upload, isUploading } = useImageUpload({
     bucket: 'post-images',
