@@ -182,7 +182,7 @@ function MosaicTile({ item, isLarge, followingIds }: { item: LiveItem; isLarge?:
       onClick={handleClick}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className="relative rounded-lg overflow-hidden bg-black group text-left w-full aspect-[9/16]"
+      className="relative rounded-sm overflow-hidden bg-black group text-left w-full aspect-square"
     >
       {/* Background */}
       {hasVideo ? (
