@@ -331,7 +331,7 @@ export default function LiveWatch() {
   const [searchParams] = useSearchParams();
   const fromFeed = searchParams.get('from') === 'feed';
   const navigate = useNavigate();
-  const { data: allLives, isLoading } = useAllLives();
+  const { data: allLives, isLoading } = useAllLives(id);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
