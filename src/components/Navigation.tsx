@@ -128,7 +128,7 @@ export function MobileNav() {
             </div>
           </Link>
 
-          <NavItem path="/lives" icon={Radio} label="Live" />
+          <NavItem path="/live" icon={Radio} label="Live" />
 
           {/* Bouton Menu */}
           <button
