@@ -75,7 +75,7 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
         x-webkit-airplay="deny"
         controlsList="nodownload noremoteplayback"
         preload="metadata"
-        className="w-full h-full object-contain"
+        className="w-full h-full object-cover"
         onLoadedMetadata={() => onMediaLoaded?.()}
         onLoadedData={() => onMediaLoaded?.()}
         onPlay={() => setIsPlaying(true)}
