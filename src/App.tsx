@@ -40,6 +40,7 @@ const PageDetail = lazy(() => import("./pages/PageDetail"));
 const Videos = lazy(() => import("./pages/Videos"));
 const Lives = lazy(() => import("./pages/Lives"));
 const LiveWatch = lazy(() => import("./pages/LiveWatch"));
+const LiveScreen = lazy(() => import("./pages/LiveScreen"));
 const Journal = lazy(() => import("./pages/Journal"));
 const Challenges = lazy(() => import("./pages/Challenges"));
 const Games = lazy(() => import("./pages/Games"));
