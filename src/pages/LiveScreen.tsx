@@ -485,14 +485,14 @@ export default function LiveScreen() {
           </div>
         )}
 
-        {/* Mosaic grid */}
+        {/* Mosaic grid — 3 columns like TikTok */}
         {filteredLives.length > 0 && (
-          <div className="px-2 grid grid-cols-2 gap-2 auto-rows-auto">
+          <div className="px-1 grid grid-cols-3 gap-[3px] auto-rows-auto">
             {tileLayout.map(({ item, isLarge }) => (
               <MosaicTile
                 key={item.id}
                 item={item}
-                isLarge={isLarge}
+                isLarge={false}
                 followingIds={followingIds}
               />
             ))}
