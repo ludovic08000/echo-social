@@ -142,7 +142,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         const bundle = await exportPublicKeyBundle(keys);
 
         await supabase
-          .from('user_public_keys' as any)
+          .from('user_public_keys')
           .upsert({
             user_id: user.id,
             identity_key: bundle.identityKey,
