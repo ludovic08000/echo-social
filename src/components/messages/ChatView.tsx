@@ -445,7 +445,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
                   const isFirstInGroup = !prevMsg || prevMsg.sender_id !== msg.sender_id;
                   const isLastInGroup = !nextMsg || nextMsg.sender_id !== msg.sender_id;
                   const reactions = messageReactions[msg.id] || [];
-                  const isBigEmoji = isSingleEmoji(msg.body);
+                  const looksEncrypted = msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"'));
+                  const isBigEmoji = !looksEncrypted && isSingleEmoji(msg.body);
                   const isImage = msg.image_url;
 
                     return (
