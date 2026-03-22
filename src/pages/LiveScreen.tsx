@@ -1,23 +1,25 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, Radio, ChevronUp, Plus } from 'lucide-react';
+import { ArrowLeft, Search, Radio, Plus, Eye, Play, Clock, Sparkles, Video } from 'lucide-react';
 import { FeedLiveSwitch } from '@/components/live/FeedLiveSwitch';
 import { LiveCategoryChips } from '@/components/live/LiveCategoryChips';
-import { LivePlayerCard } from '@/components/live/LivePlayerCard';
-import { ZeusLiveSuggestions } from '@/components/live/ZeusLiveSuggestions';
 import { LiveSearchSheet } from '@/components/live/LiveSearchSheet';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { UserAvatar } from '@/components/UserAvatar';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { useStartLive } from '@/hooks/useLiveStreams';
 import { toast } from '@/hooks/use-toast';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { formatDistanceToNow } from 'date-fns';
+import { fr } from 'date-fns/locale';
+import { cn } from '@/lib/utils';
 
 const CATEGORIES = [
   { value: 'general', label: 'Général' },
@@ -50,39 +52,26 @@ interface LiveItem {
   _score?: number;
 }
 
-// Zeus-powered scoring algorithm for lives
+// Zeus scoring algorithm
 function calculateZeusScore(
   live: any,
   userInterests: string[],
   followingIds: string[]
 ): number {
   let score = 0;
-
-  // 1. Following boost (highest priority)
-  if (followingIds.includes(live.user_id)) {
-    score += 0.40;
-  }
-
-  // 2. Viewer count (popularity signal)
+  if (followingIds.includes(live.user_id)) score += 0.40;
   const viewerScore = Math.min(1, live.viewer_count / 1000);
   score += viewerScore * 0.30;
-
-  // 3. Interest matching via hashtags/category
   const tags = [...(live.hashtags || []), live.category || ''].map((t: string) => t.toLowerCase());
   const matchCount = tags.filter((tag: string) =>
     userInterests.some(i => tag.includes(i.toLowerCase()))
   ).length;
   score += Math.min(1, matchCount / Math.max(1, tags.length)) * 0.20;
-
-  // 4. Freshness boost (started < 10 min ago)
   if (live.started_at) {
     const minutesAgo = (Date.now() - new Date(live.started_at).getTime()) / 60000;
     if (minutesAgo < 10) score += 0.15;
   }
-
-  // 5. Slight randomization
   score += Math.random() * 0.05;
-
   return Math.max(0, Math.min(1, score));
 }
 
@@ -92,21 +81,19 @@ function useAllLivesForScreen() {
   return useQuery({
     queryKey: ['live-screen-all', user?.id],
     queryFn: async () => {
-      // Fetch active lives
       const { data: activeLives } = await supabase
         .from('live_streams')
         .select('id, title, description, thumbnail_url, is_active, viewer_count, total_views, category, hashtags, user_id, recording_url, started_at')
         .eq('is_active', true)
         .order('viewer_count', { ascending: false });
 
-      // Fetch recent replays
       const { data: replays } = await supabase
         .from('live_streams')
         .select('id, title, description, thumbnail_url, is_active, viewer_count, total_views, category, hashtags, user_id, recording_url, ended_at, started_at')
         .eq('is_active', false)
         .not('ended_at', 'is', null)
         .order('ended_at', { ascending: false })
-        .limit(20);
+        .limit(30);
 
       const all = [
         ...(activeLives || []).map(l => ({ ...l, ended_at: null as string | null })),
@@ -115,7 +102,6 @@ function useAllLivesForScreen() {
 
       if (!all.length) return { lives: [] as LiveItem[], followingIds: [] as string[] };
 
-      // Fetch host profiles
       const hostIds = [...new Set(all.map(l => l.user_id))];
       const { data: profiles } = await supabase
         .from('profiles')
@@ -126,7 +112,6 @@ function useAllLivesForScreen() {
         (profiles || []).map(p => [p.user_id, { name: p.name, avatar_url: p.avatar_url }])
       );
 
-      // Fetch user interests & friendships for Zeus scoring
       let userInterests: string[] = [];
       let followingIds: string[] = [];
 
@@ -148,14 +133,12 @@ function useAllLivesForScreen() {
         );
       }
 
-      // Score and sort active lives with Zeus algorithm
       const lives = all.map(l => ({
         ...l,
         host: profileMap.get(l.user_id),
         _score: l.is_active ? calculateZeusScore(l, userInterests, followingIds) : 0,
       })) as LiveItem[];
 
-      // Sort: active first (by score), then replays
       lives.sort((a, b) => {
         if (a.is_active && !b.is_active) return -1;
         if (!a.is_active && b.is_active) return 1;
@@ -170,6 +153,204 @@ function useAllLivesForScreen() {
   });
 }
 
+// ─── Mosaic Tile ─────────────────────────────────
+function MosaicTile({ item, isLarge, followingIds }: { item: LiveItem; isLarge?: boolean; followingIds: string[] }) {
+  const navigate = useNavigate();
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const handleMouseEnter = useCallback(() => {
+    videoRef.current?.play().catch(() => {});
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    const v = videoRef.current;
+    if (v) { v.pause(); v.currentTime = 0; }
+  }, []);
+
+  const handleClick = () => {
+    navigate(`/live/${item.id}?from=feed`);
+  };
+
+  const isFollowing = followingIds.includes(item.user_id);
+  const hasVideo = !!item.recording_url && !item.is_active;
+
+  return (
+    <motion.button
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.3 }}
+      onClick={handleClick}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className={cn(
+        "relative rounded-2xl overflow-hidden bg-black group text-left w-full",
+        isLarge ? "row-span-2 aspect-[3/5]" : "aspect-[3/4]"
+      )}
+    >
+      {/* Background */}
+      {hasVideo ? (
+        <video
+          ref={videoRef}
+          src={`${item.recording_url!}#t=0.5`}
+          className="absolute inset-0 w-full h-full object-cover"
+          muted
+          loop
+          playsInline
+          preload="none"
+          poster={item.thumbnail_url || undefined}
+        />
+      ) : item.thumbnail_url ? (
+        <img
+          src={item.thumbnail_url}
+          alt={item.title}
+          loading="lazy"
+          className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+        />
+      ) : (
+        <div className={cn(
+          "absolute inset-0 flex flex-col items-center justify-center gap-3",
+          item.is_active
+            ? "bg-gradient-to-br from-primary/30 via-accent/10 to-black"
+            : "bg-gradient-to-br from-muted/20 via-background to-black"
+        )}>
+          <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur flex items-center justify-center">
+            {item.is_active ? (
+              <Radio className="w-6 h-6 text-white animate-pulse" />
+            ) : (
+              <Video className="w-6 h-6 text-white/60" />
+            )}
+          </div>
+          <UserAvatar src={item.host?.avatar_url} alt={item.host?.name} size="sm" />
+        </div>
+      )}
+
+      {/* Gradient overlays */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
+
+      {/* Top badges */}
+      <div className="absolute top-2 left-2 right-2 flex items-center justify-between z-10">
+        <div className="flex items-center gap-1.5">
+          {item.is_active ? (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white flex items-center gap-1 shadow-lg"
+              style={{ background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(220 70% 55%))' }}>
+              <Radio className="w-2.5 h-2.5 animate-pulse" />
+              LIVE
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 rounded-full bg-black/50 backdrop-blur-sm text-white/70 text-[10px] font-medium flex items-center gap-1">
+              <Clock className="w-2.5 h-2.5" />
+              Replay
+            </span>
+          )}
+          {isFollowing && (
+            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold text-white"
+              style={{ background: 'linear-gradient(135deg, hsl(190 80% 50%), hsl(220 70% 55%))' }}>
+              Ami
+            </span>
+          )}
+        </div>
+
+        <span className="px-2 py-0.5 rounded-full bg-black/50 backdrop-blur-sm text-white/80 text-[10px] flex items-center gap-1">
+          <Eye className="w-2.5 h-2.5" />
+          {item.is_active ? item.viewer_count : item.total_views}
+        </span>
+      </div>
+
+      {/* Bottom info */}
+      <div className="absolute bottom-0 left-0 right-0 p-2.5 z-10">
+        <div className="flex items-center gap-2 mb-1">
+          <UserAvatar src={item.host?.avatar_url} alt={item.host?.name} size="xs" />
+          <span className="text-white text-[11px] font-semibold truncate">
+            {item.host?.name || 'Utilisateur'}
+          </span>
+        </div>
+        <p className="text-white/80 text-[11px] line-clamp-2 leading-tight">{item.title}</p>
+        {item.category && (
+          <span className="text-white/40 text-[9px] mt-0.5 block">{item.category}</span>
+        )}
+        {!item.is_active && item.ended_at && (
+          <p className="text-white/30 text-[8px] mt-0.5">
+            {formatDistanceToNow(new Date(item.ended_at), { addSuffix: true, locale: fr })}
+          </p>
+        )}
+      </div>
+
+      {/* Hover play icon */}
+      {hasVideo && (
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
+          <div className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
+            <Play className="w-5 h-5 text-white ml-0.5" />
+          </div>
+        </div>
+      )}
+    </motion.button>
+  );
+}
+
+// ─── Zeus Creator Suggestions ────────────────────
+function ZeusCreatorSuggestions({ lives, followingIds, onSelect }: {
+  lives: LiveItem[];
+  followingIds: string[];
+  onSelect: (id: string) => void;
+}) {
+  const suggestions = useMemo(() => {
+    return lives
+      .filter(l => l.is_active)
+      .sort((a, b) => (b._score || 0) - (a._score || 0))
+      .slice(0, 5)
+      .map(l => ({
+        id: l.id,
+        title: l.title,
+        hostName: l.host?.name || 'Utilisateur',
+        hostAvatar: l.host?.avatar_url,
+        viewerCount: l.viewer_count,
+        category: l.category || '',
+        isFollowing: followingIds.includes(l.user_id),
+      }));
+  }, [lives, followingIds]);
+
+  if (!suggestions.length) return null;
+
+  return (
+    <div className="px-4 pb-3">
+      <div className="rounded-2xl overflow-hidden backdrop-blur-xl border border-white/10"
+        style={{
+          background: 'linear-gradient(135deg, hsl(220 30% 15% / 0.9), hsl(260 20% 12% / 0.9))',
+          boxShadow: '0 0 20px hsl(220 70% 55% / 0.08)',
+        }}
+      >
+        <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-1.5">
+          <Sparkles className="w-3.5 h-3.5" style={{ color: 'hsl(190 80% 50%)' }} />
+          <span className="text-[11px] font-semibold text-white/60">Zeus recommande</span>
+        </div>
+        <div className="flex gap-2.5 overflow-x-auto scrollbar-none px-3 pb-2.5">
+          {suggestions.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => onSelect(s.id)}
+              className="flex items-center gap-2.5 shrink-0 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 transition-colors border border-white/5"
+            >
+              <div className="relative">
+                <UserAvatar src={s.hostAvatar} alt={s.hostName} size="sm" />
+                <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-black"
+                  style={{ background: 'hsl(var(--primary))' }} />
+              </div>
+              <div className="text-left">
+                <p className="text-white text-[11px] font-medium truncate max-w-[90px]">{s.hostName}</p>
+                <p className="text-white/40 text-[9px]">{s.viewerCount} viewers</p>
+                {s.isFollowing && (
+                  <p className="text-[8px] font-semibold" style={{ color: 'hsl(190 80% 50%)' }}>Ami</p>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Screen ──────────────────────────────────
 export default function LiveScreen() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -177,7 +358,6 @@ export default function LiveScreen() {
   const allLives = data?.lives || [];
   const followingIds = data?.followingIds || [];
 
-  const [currentIndex, setCurrentIndex] = useState(0);
   const [category, setCategory] = useState('pour-toi');
   const [searchOpen, setSearchOpen] = useState(false);
   const [startDialogOpen, setStartDialogOpen] = useState(false);
@@ -185,17 +365,13 @@ export default function LiveScreen() {
   const [newDesc, setNewDesc] = useState('');
   const [newCategory, setNewCategory] = useState('general');
   const [newHashtags, setNewHashtags] = useState('');
-  const containerRef = useRef<HTMLDivElement>(null);
   const startLive = useStartLive();
 
-  // Filter by category with real "Suivis" filter
+  // Filter by category
   const filteredLives = useMemo(() => {
     if (!allLives.length) return [];
     if (category === 'pour-toi') return allLives;
-    if (category === 'suivis') {
-      return allLives.filter(l => followingIds.includes(l.user_id));
-    }
-    // Map chip IDs to category values
+    if (category === 'suivis') return allLives.filter(l => followingIds.includes(l.user_id));
     const categoryMap: Record<string, string[]> = {
       'gaming': ['gaming'],
       'lifestyle': ['lifestyle'],
@@ -205,30 +381,9 @@ export default function LiveScreen() {
       'auto': ['auto'],
     };
     const matches = categoryMap[category] || [category];
-    return allLives.filter(l =>
-      matches.some(m => l.category?.toLowerCase().includes(m))
-    );
+    return allLives.filter(l => matches.some(m => l.category?.toLowerCase().includes(m)));
   }, [allLives, category, followingIds]);
 
-  // Zeus suggestions: top scored lives the user hasn't seen yet
-  const zeusSuggestions = useMemo(() => {
-    if (!allLives.length) return [];
-    const current = filteredLives[currentIndex];
-    return allLives
-      .filter(l => l.id !== current?.id && l.is_active)
-      .sort((a, b) => (b._score || 0) - (a._score || 0))
-      .slice(0, 3)
-      .map(l => ({
-        id: l.id,
-        title: l.title,
-        hostName: l.host?.name || 'Utilisateur',
-        hostAvatar: l.host?.avatar_url,
-        viewerCount: l.viewer_count,
-        category: l.category || 'general',
-      }));
-  }, [allLives, filteredLives, currentIndex]);
-
-  // Search creators
   const searchCreators = useMemo(() => {
     if (!allLives.length) return [];
     return allLives.map(l => ({
@@ -241,38 +396,12 @@ export default function LiveScreen() {
     }));
   }, [allLives]);
 
-  // Snap scroll handler
-  const handleScroll = useCallback(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const newIndex = Math.round(el.scrollTop / el.clientHeight);
-    if (newIndex !== currentIndex && newIndex >= 0 && newIndex < filteredLives.length) {
-      setCurrentIndex(newIndex);
-    }
-  }, [currentIndex, filteredLives.length]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    el.addEventListener('scroll', handleScroll, { passive: true });
-    return () => el.removeEventListener('scroll', handleScroll);
-  }, [handleScroll]);
-
-  // Reset index when category changes
-  useEffect(() => {
-    setCurrentIndex(0);
-    if (containerRef.current) containerRef.current.scrollTop = 0;
-  }, [category]);
-
   const handleSwitchTab = (tab: 'feed' | 'live') => {
     if (tab === 'feed') navigate('/feed');
   };
 
   const handleZeusSelect = (id: string) => {
-    const idx = filteredLives.findIndex(l => l.id === id);
-    if (idx >= 0 && containerRef.current) {
-      containerRef.current.scrollTo({ top: idx * containerRef.current.clientHeight, behavior: 'smooth' });
-    }
+    navigate(`/live/${id}?from=feed`);
   };
 
   const handleStartLive = async () => {
@@ -299,17 +428,23 @@ export default function LiveScreen() {
     }
   };
 
-  // Loading state
+  // Determine which tiles are "large" (first active live, every 5th item for visual interest)
+  const tileLayout = useMemo(() => {
+    return filteredLives.map((item, i) => ({
+      item,
+      isLarge: i === 0 || (item.is_active && i < 4),
+    }));
+  }, [filteredLives]);
+
+  const darkBg = 'linear-gradient(160deg, hsl(260 30% 12%) 0%, hsl(220 25% 10%) 50%, hsl(190 20% 8%) 100%)';
+
+  // Loading
   if (isLoading) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center" style={{
-        background: 'linear-gradient(160deg, hsl(260 30% 12%) 0%, hsl(220 25% 10%) 50%, hsl(190 20% 8%) 100%)',
-      }}>
+      <div className="fixed inset-0 flex items-center justify-center" style={{ background: darkBg }}>
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{
-            background: 'linear-gradient(135deg, hsl(260 70% 55%), hsl(220 70% 55%), hsl(190 80% 50%))',
-            boxShadow: '0 0 30px hsl(260 70% 55% / 0.4)',
-          }}>
+          <div className="w-12 h-12 rounded-full flex items-center justify-center"
+            style={{ background: 'linear-gradient(135deg, hsl(260 70% 55%), hsl(220 70% 55%), hsl(190 80% 50%))', boxShadow: '0 0 30px hsl(260 70% 55% / 0.4)' }}>
             <Radio className="w-6 h-6 text-white animate-pulse" />
           </div>
           <span className="text-white/50 text-sm">Chargement des lives...</span>
@@ -318,123 +453,65 @@ export default function LiveScreen() {
     );
   }
 
-  // Empty state
-  if (!filteredLives.length) {
-    return (
-      <div className="fixed inset-0 flex flex-col" style={{
-        background: 'linear-gradient(160deg, hsl(260 30% 12%) 0%, hsl(220 25% 10%) 50%, hsl(190 20% 8%) 100%)',
-      }}>
-        <div className="relative z-30 pt-[env(safe-area-inset-top,0px)]">
-          <div className="flex items-center justify-between px-4 py-3">
-            <button onClick={() => navigate(-1)} className="w-9 h-9 rounded-full bg-white/8 backdrop-blur-md flex items-center justify-center text-white/70">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <FeedLiveSwitch active="live" onChange={handleSwitchTab} />
-            <button onClick={() => setSearchOpen(true)} className="w-9 h-9 rounded-full bg-white/8 backdrop-blur-md flex items-center justify-center text-white/70">
-              <Search className="w-5 h-5" />
-            </button>
-          </div>
-          <LiveCategoryChips active={category} onChange={setCategory} />
-        </div>
-
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 px-8">
-          <div className="w-16 h-16 rounded-full flex items-center justify-center bg-white/5 border border-white/10">
-            <Radio className="w-8 h-8 text-white/20" />
-          </div>
-          <h2 className="text-white font-semibold text-lg">Aucun live en cours</h2>
-          <p className="text-white/40 text-sm text-center">Sois le premier à démarrer un live !</p>
-          <StartLiveButton onClick={() => setStartDialogOpen(true)} />
-        </div>
-
-        <LiveSearchSheet open={searchOpen} onClose={() => setSearchOpen(false)} creators={searchCreators} onSelect={handleZeusSelect} />
-        <StartLiveDialog
-          open={startDialogOpen}
-          onOpenChange={setStartDialogOpen}
-          title={newTitle}
-          setTitle={setNewTitle}
-          description={newDesc}
-          setDescription={setNewDesc}
-          category={newCategory}
-          setCategory={setNewCategory}
-          hashtags={newHashtags}
-          setHashtags={setNewHashtags}
-          onStart={handleStartLive}
-          isPending={startLive.isPending}
-        />
-      </div>
-    );
-  }
-
   return (
-    <div className="fixed inset-0 bg-black overflow-hidden">
-      {/* Top bar — fixed overlay */}
-      <div className="absolute top-0 left-0 right-0 z-30 pointer-events-none">
-        <div className="bg-gradient-to-b from-black/70 via-black/30 to-transparent pt-[env(safe-area-inset-top,0px)]">
-          <div className="flex items-center justify-between px-4 py-3 pointer-events-auto">
-            <button onClick={() => navigate(-1)} className="w-9 h-9 rounded-full bg-white/8 backdrop-blur-md flex items-center justify-center text-white/70 hover:bg-white/15 transition-colors">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <FeedLiveSwitch active="live" onChange={handleSwitchTab} />
-            <button onClick={() => setSearchOpen(true)} className="w-9 h-9 rounded-full bg-white/8 backdrop-blur-md flex items-center justify-center text-white/70 hover:bg-white/15 transition-colors">
-              <Search className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="pointer-events-auto">
-            <LiveCategoryChips active={category} onChange={setCategory} />
-          </div>
-          {/* Zeus suggestions */}
-          {zeusSuggestions.length > 0 && currentIndex === 0 && (
-            <div className="pointer-events-auto">
-              <ZeusLiveSuggestions suggestions={zeusSuggestions} onSelect={handleZeusSelect} />
-            </div>
-          )}
+    <div className="fixed inset-0 overflow-hidden flex flex-col" style={{ background: darkBg }}>
+      {/* Top bar */}
+      <div className="relative z-30 pt-[env(safe-area-inset-top,0px)]">
+        <div className="flex items-center justify-between px-4 py-3">
+          <button onClick={() => navigate(-1)} className="w-9 h-9 rounded-full bg-white/8 backdrop-blur-md flex items-center justify-center text-white/70 hover:bg-white/15 transition-colors">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <FeedLiveSwitch active="live" onChange={handleSwitchTab} />
+          <button onClick={() => setSearchOpen(true)} className="w-9 h-9 rounded-full bg-white/8 backdrop-blur-md flex items-center justify-center text-white/70 hover:bg-white/15 transition-colors">
+            <Search className="w-5 h-5" />
+          </button>
         </div>
+        <LiveCategoryChips active={category} onChange={setCategory} />
+      </div>
+
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto scrollbar-none pb-24">
+        {/* Zeus suggestions */}
+        <ZeusCreatorSuggestions lives={allLives} followingIds={followingIds} onSelect={handleZeusSelect} />
+
+        {/* Empty state */}
+        {!filteredLives.length && (
+          <div className="flex flex-col items-center justify-center gap-4 px-8 pt-20">
+            <div className="w-16 h-16 rounded-full flex items-center justify-center bg-white/5 border border-white/10">
+              <Radio className="w-8 h-8 text-white/20" />
+            </div>
+            <h2 className="text-white font-semibold text-lg">Aucun live en cours</h2>
+            <p className="text-white/40 text-sm text-center">Sois le premier à démarrer un live !</p>
+          </div>
+        )}
+
+        {/* Mosaic grid */}
+        {filteredLives.length > 0 && (
+          <div className="px-2 grid grid-cols-2 gap-2 auto-rows-auto">
+            {tileLayout.map(({ item, isLarge }) => (
+              <MosaicTile
+                key={item.id}
+                item={item}
+                isLarge={isLarge}
+                followingIds={followingIds}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Start live FAB */}
       <motion.button
         whileTap={{ scale: 0.9 }}
         onClick={() => setStartDialogOpen(true)}
-        className="absolute bottom-24 right-4 z-30 w-12 h-12 rounded-full flex items-center justify-center text-white shadow-lg"
+        className="absolute bottom-24 right-4 z-30 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-lg"
         style={{
           background: 'linear-gradient(135deg, hsl(260 70% 55%), hsl(220 70% 55%))',
           boxShadow: '0 4px 20px hsl(260 70% 55% / 0.5)',
         }}
       >
-        <Plus className="w-5 h-5" />
+        <Plus className="w-6 h-6" />
       </motion.button>
-
-      {/* Vertical snap scroll container */}
-      <div
-        ref={containerRef}
-        className="h-full overflow-y-auto snap-y snap-mandatory scrollbar-none"
-        style={{ WebkitOverflowScrolling: 'touch' }}
-      >
-        {filteredLives.map((item, index) => (
-          <div key={item.id} className="w-full h-screen snap-start snap-always">
-            <LivePlayerCard
-              item={item}
-              isVisible={index === currentIndex}
-              zeusReason={
-                item.is_active && followingIds.includes(item.user_id)
-                  ? 'Ami en direct'
-                  : item.is_active && (item._score || 0) > 0.6
-                  ? 'Recommandé par Zeus'
-                  : item.is_active && item.viewer_count > 100
-                  ? 'Tendance en ce moment'
-                  : undefined
-              }
-            />
-          </div>
-        ))}
-      </div>
-
-      {/* Scroll hint */}
-      {currentIndex < filteredLives.length - 1 && (
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
-          <ChevronUp className="w-5 h-5 text-white/20 animate-bounce" />
-        </div>
-      )}
 
       {/* Search sheet */}
       <LiveSearchSheet open={searchOpen} onClose={() => setSearchOpen(false)} creators={searchCreators} onSelect={handleZeusSelect} />
@@ -455,24 +532,6 @@ export default function LiveScreen() {
         isPending={startLive.isPending}
       />
     </div>
-  );
-}
-
-// ─── Start Live Button ───────────────────────────
-function StartLiveButton({ onClick }: { onClick: () => void }) {
-  return (
-    <motion.button
-      whileTap={{ scale: 0.95 }}
-      onClick={onClick}
-      className="flex items-center gap-2 px-6 py-3 rounded-xl text-white font-semibold text-sm"
-      style={{
-        background: 'linear-gradient(135deg, hsl(260 70% 55%), hsl(220 70% 55%), hsl(190 80% 50%))',
-        boxShadow: '0 4px 20px hsl(260 70% 55% / 0.4)',
-      }}
-    >
-      <Radio className="w-4 h-4" />
-      Démarrer un live
-    </motion.button>
   );
 }
 
@@ -510,29 +569,16 @@ function StartLiveDialog({
         <div className="space-y-4 py-4">
           <div className="space-y-2">
             <Label htmlFor="live-title">Titre du live</Label>
-            <Input
-              id="live-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="De quoi vas-tu parler ?"
-            />
+            <Input id="live-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="De quoi vas-tu parler ?" />
           </div>
           <div className="space-y-2">
             <Label htmlFor="live-desc">Description (optionnel)</Label>
-            <Textarea
-              id="live-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Décris ton live..."
-              className="min-h-[80px] resize-none"
-            />
+            <Textarea id="live-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Décris ton live..." className="min-h-[80px] resize-none" />
           </div>
           <div className="space-y-2">
             <Label>Catégorie</Label>
             <Select value={category} onValueChange={setCategory}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {CATEGORIES.map(cat => (
                   <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
@@ -542,12 +588,7 @@ function StartLiveDialog({
           </div>
           <div className="space-y-2">
             <Label htmlFor="live-tags">Hashtags (séparés par des virgules)</Label>
-            <Input
-              id="live-tags"
-              value={hashtags}
-              onChange={(e) => setHashtags(e.target.value)}
-              placeholder="gaming, fun, live"
-            />
+            <Input id="live-tags" value={hashtags} onChange={(e) => setHashtags(e.target.value)} placeholder="gaming, fun, live" />
           </div>
           <Button onClick={onStart} disabled={isPending} className="w-full">
             {isPending ? 'Démarrage...' : '🔴 Démarrer le live'}
