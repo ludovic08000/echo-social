@@ -168,7 +168,7 @@ function MosaicTile({ item, isLarge, followingIds }: { item: LiveItem; isLarge?:
   }, []);
 
   const handleClick = () => {
-    navigate(`/live/${item.id}?from=feed`);
+    navigate(`/live/${item.id}?from=live`);
   };
 
   const isFollowing = followingIds.includes(item.user_id);
@@ -182,7 +182,7 @@ function MosaicTile({ item, isLarge, followingIds }: { item: LiveItem; isLarge?:
       onClick={handleClick}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className="relative rounded-lg overflow-hidden bg-black group text-left w-full aspect-[9/16]"
+      className="relative rounded-sm overflow-hidden bg-black group text-left w-full aspect-square"
     >
       {/* Background */}
       {hasVideo ? (
@@ -377,7 +377,7 @@ export default function LiveScreen() {
   };
 
   const handleZeusSelect = (id: string) => {
-    navigate(`/live/${id}?from=feed`);
+    navigate(`/live/${id}?from=live`);
   };
 
   const handleStartLive = async () => {
