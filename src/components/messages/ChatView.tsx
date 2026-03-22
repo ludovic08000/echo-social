@@ -254,6 +254,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         encrypted={e2ee.encrypted}
         fingerprint={e2ee.fingerprint}
         peerFingerprint={e2ee.peerFingerprint}
+        ratchetActive={e2ee.ratchetActive}
       />
 
       {/* Group Management Panel */}
