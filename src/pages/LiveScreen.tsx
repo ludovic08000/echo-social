@@ -270,19 +270,25 @@ function ZeusCreatorSuggestions({ lives, followingIds, onSelect }: {
   onSelect: (id: string) => void;
 }) {
   const suggestions = useMemo(() => {
-    return lives
-      .filter(l => l.is_active)
-      .sort((a, b) => (b._score || 0) - (a._score || 0))
-      .slice(0, 5)
+    // Show active lives first, then top replays — always show something
+    const scored = [...lives]
+      .sort((a, b) => {
+        if (a.is_active && !b.is_active) return -1;
+        if (!a.is_active && b.is_active) return 1;
+        return (b._score || 0) - (a._score || 0);
+      })
+      .slice(0, 6)
       .map(l => ({
         id: l.id,
         title: l.title,
         hostName: l.host?.name || 'Utilisateur',
         hostAvatar: l.host?.avatar_url,
-        viewerCount: l.viewer_count,
+        viewerCount: l.is_active ? l.viewer_count : l.total_views,
         category: l.category || '',
         isFollowing: followingIds.includes(l.user_id),
+        isLive: l.is_active,
       }));
+    return scored;
   }, [lives, followingIds]);
 
   if (!suggestions.length) return null;
@@ -308,12 +314,16 @@ function ZeusCreatorSuggestions({ lives, followingIds, onSelect }: {
             >
               <div className="relative">
                 <UserAvatar src={s.hostAvatar} alt={s.hostName} size="sm" />
-                <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-black"
-                  style={{ background: 'hsl(var(--primary))' }} />
+                {s.isLive && (
+                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-black"
+                    style={{ background: 'hsl(var(--primary))' }} />
+                )}
               </div>
               <div className="text-left">
                 <p className="text-white text-[11px] font-medium truncate max-w-[90px]">{s.hostName}</p>
-                <p className="text-white/40 text-[9px]">{s.viewerCount} viewers</p>
+                <p className="text-white/40 text-[9px]">
+                  {s.isLive ? `🔴 ${s.viewerCount} viewers` : `${s.viewerCount} vues`}
+                </p>
                 {s.isFollowing && (
                   <p className="text-[8px] font-semibold" style={{ color: 'hsl(190 80% 50%)' }}>Ami</p>
                 )}
