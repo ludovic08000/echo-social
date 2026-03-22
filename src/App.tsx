@@ -40,6 +40,7 @@ const PageDetail = lazy(() => import("./pages/PageDetail"));
 const Videos = lazy(() => import("./pages/Videos"));
 const Lives = lazy(() => import("./pages/Lives"));
 const LiveWatch = lazy(() => import("./pages/LiveWatch"));
+const LiveScreen = lazy(() => import("./pages/LiveScreen"));
 const Journal = lazy(() => import("./pages/Journal"));
 const Challenges = lazy(() => import("./pages/Challenges"));
 const Games = lazy(() => import("./pages/Games"));
@@ -168,6 +169,7 @@ function AppContent() {
               <Route path="/videos" element={<ProtectedRoute><Videos /></ProtectedRoute>} />
               <Route path="/lives" element={<ProtectedRoute><Lives /></ProtectedRoute>} />
               <Route path="/live/:id" element={<ProtectedRoute><LiveWatch /></ProtectedRoute>} />
+              <Route path="/live" element={<ProtectedRoute><LiveScreen /></ProtectedRoute>} />
               <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
               <Route path="/challenges" element={<ProtectedRoute><Challenges /></ProtectedRoute>} />
               <Route path="/games" element={<ProtectedRoute><Games /></ProtectedRoute>} />
