@@ -267,14 +267,20 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     return session;
   }, [conversationId]);
 
-  // Encrypt
+  // Encrypt — with rate-limiting to detect bulk exfiltration
   const encrypt = useCallback(async (plaintext: string): Promise<string> => {
     if (!state.encrypted || !keysRef.current) return plaintext;
+
+    if (!cryptoRateCheck('encrypt')) {
+      console.warn('[E2EE] Encrypt rate-limited — possible exfiltration attempt');
+      return plaintext;
+    }
 
     try {
       // Try Double Ratchet first
       const ratchet = await ensureRatchet();
       if (ratchet) {
+        if (!cryptoRateCheck('sign')) return plaintext;
         const { envelope, newState } = await ratchetEncrypt(
           ratchet,
           plaintext,
@@ -289,6 +295,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       // Fallback to legacy
       const session = await ensureLegacySession();
       if (!session) return plaintext;
+      if (!cryptoRateCheck('sign')) return plaintext;
       const seq = await incrementSessionMessageCount(conversationId!);
       return await encryptMessage(
         plaintext, session.sharedSecret,
