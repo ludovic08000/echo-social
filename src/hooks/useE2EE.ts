@@ -131,6 +131,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   useEffect(() => {
     if (!user || initRef.current) return;
     initRef.current = true;
+    cleanupLegacyStorage();
 
     (async () => {
       try {
