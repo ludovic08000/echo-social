@@ -75,41 +75,7 @@ export default function Marketplace() {
 
   const { data: myOrders = [], refetch: refetchOrders } = useMyOrders();
 
-  // Gate: marketplace locked below threshold
-  if (!marketLoading && !marketEnabled) {
-    const progress = Math.min(100, Math.round((userCount / marketThreshold) * 100));
-    return (
-      <AppLayout>
-        <SEOHead title="Marketplace — Forsure" description="La marketplace Forsure" />
-        <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 gap-6">
-          <div className="w-20 h-20 rounded-2xl bg-muted/30 border border-border flex items-center justify-center">
-            <ShoppingBag className="w-10 h-10 text-muted-foreground" />
-          </div>
-          <div className="text-center space-y-2">
-            <h1 className="text-2xl font-bold text-foreground">Marketplace bientôt disponible</h1>
-            <p className="text-muted-foreground text-sm max-w-md">
-              La marketplace s'active automatiquement lorsque la communauté atteint <strong className="text-foreground">{marketThreshold.toLocaleString('fr-FR')}</strong> membres.
-            </p>
-          </div>
-          <div className="w-full max-w-xs space-y-2">
-            <div className="h-3 rounded-full bg-muted/50 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-primary transition-all duration-1000"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{userCount.toLocaleString('fr-FR')} membres</span>
-              <span>{marketThreshold.toLocaleString('fr-FR')}</span>
-            </div>
-          </div>
-          <Button variant="outline" onClick={() => navigate('/feed')} className="rounded-xl">
-            Retour au feed
-          </Button>
-        </div>
-      </AppLayout>
-    );
-  }
+  const marketGated = !marketLoading && !marketEnabled;
 
   // Handle order success - show confirmation dialog
   useEffect(() => {
