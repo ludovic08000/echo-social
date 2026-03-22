@@ -109,7 +109,7 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
           muted
           loop
           playsInline
-          preload="none"
+          preload="metadata"
           poster={item.thumbnail_url || undefined}
         />
       ) : hasThumbnail ? (
