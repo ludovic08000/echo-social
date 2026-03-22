@@ -17,6 +17,8 @@ import { useCall } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { toast } from 'sonner';
+import { useE2EE } from '@/hooks/useE2EE';
+import { EncryptionBadge, EncryptionStatusBar } from './EncryptionBadge';
 
 import { MessageActions } from './MessageActions';
 import { TypingIndicator } from './TypingIndicator';
