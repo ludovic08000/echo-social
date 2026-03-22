@@ -151,8 +151,8 @@ export async function encryptMessage(
   const envelope: EncryptedEnvelope = {
     v: PROTOCOL_VERSION,
     kem: CLASSICAL_KEM_ID,
-    iv: bufferToBase64(iv.buffer),
-    ct: bufferToBase64(ciphertext),
+    iv: bufferToBase64(ivArr.buffer as ArrayBuffer),
+    ct: bufferToBase64(ciphertext as ArrayBuffer),
     sig: bufferToBase64(signature),
     fp: senderFingerprint,
     ts: timestamp,
