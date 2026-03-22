@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Radio, Eye, Play, Clock, Trash2, Video } from 'lucide-react';
+import { Radio, Eye, Clock, Trash2, Video } from 'lucide-react';
 import { useLiveStreams, useDeleteLive } from '@/hooks/useLiveStreams';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -10,7 +10,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { useRef, useCallback } from 'react';
+import { useRef } from 'react';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 interface ReplayStream {
@@ -61,23 +61,12 @@ function useRecentReplays() {
   });
 }
 
-// Mini video card that autoplays on hover
+// Mini video card with autoplay preview
 function LiveCard({ item, allItems }: { item: { id: string; title: string; thumbnail_url: string | null; recording_url?: string | null; isLive: boolean; viewer_count: number; user_id: string; ended_at: string | null; host?: { name: string; avatar_url: string | null } }; allItems?: any[] }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const { user } = useAuth();
   const deleteLive = useDeleteLive();
   const isMobile = useIsMobile();
-
-  const handleMouseEnter = useCallback(() => {
-    if (isMobile) return;
-    videoRef.current?.play().catch(() => {});
-  }, [isMobile]);
-
-  const handleMouseLeave = useCallback(() => {
-    if (isMobile) return;
-    const v = videoRef.current;
-    if (v) { v.pause(); v.currentTime = 0; }
-  }, [isMobile]);
 
   const handleDelete = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -97,8 +86,6 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
     <Link
       to={linkTo}
       className="relative flex-shrink-0 w-[110px] h-[160px] rounded-xl overflow-hidden bg-black group"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
     >
       {/* Background: video preview (desktop only) > thumbnail > gradient placeholder */}
       {hasVideo ? (
@@ -108,8 +95,9 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
           className="absolute inset-0 w-full h-full object-cover"
           muted
           loop
+          autoPlay
           playsInline
-          preload="metadata"
+          preload="auto"
           poster={item.thumbnail_url || undefined}
         />
       ) : hasThumbnail ? (
@@ -185,15 +173,6 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
           </p>
         )}
       </div>
-
-      {/* Play icon overlay for videos */}
-      {hasVideo && (
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
-          <div className="w-8 h-8 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
-            <Play className="w-4 h-4 text-white ml-0.5" />
-          </div>
-        </div>
-      )}
 
       {/* Hover overlay */}
       <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 transition-colors" />
