@@ -168,7 +168,7 @@ function MosaicTile({ item, isLarge, followingIds }: { item: LiveItem; isLarge?:
   }, []);
 
   const handleClick = () => {
-    navigate(`/live/${item.id}?from=feed`);
+    navigate(`/live/${item.id}?from=live`);
   };
 
   const isFollowing = followingIds.includes(item.user_id);
