@@ -205,8 +205,8 @@ export async function decryptMessage(
       );
 
       const signatureData = concatBuffers(
-        iv.buffer,
-        ciphertext,
+        ivBytes,
+        ciphertext as ArrayBuffer,
         encodeString(`${envelope.ts}:${envelope.seq}`),
       );
 
