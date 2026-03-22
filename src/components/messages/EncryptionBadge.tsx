@@ -1,15 +1,16 @@
-import { Shield, ShieldCheck, ShieldAlert, Lock } from 'lucide-react';
+import { Shield, ShieldCheck, Lock, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface EncryptionBadgeProps {
   encrypted: boolean;
   verified?: boolean;
+  ratchetActive?: boolean;
   size?: 'xs' | 'sm' | 'md';
   showLabel?: boolean;
   className?: string;
 }
 
-export function EncryptionBadge({ encrypted, verified, size = 'xs', showLabel = false, className }: EncryptionBadgeProps) {
+export function EncryptionBadge({ encrypted, verified, ratchetActive, size = 'xs', showLabel = false, className }: EncryptionBadgeProps) {
   const iconSize = size === 'xs' ? 'w-3 h-3' : size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4';
 
   if (!encrypted) return null;
@@ -22,12 +23,14 @@ export function EncryptionBadge({ encrypted, verified, size = 'xs', showLabel = 
     )}>
       {verified ? (
         <ShieldCheck className={iconSize} />
+      ) : ratchetActive ? (
+        <Zap className={iconSize} />
       ) : (
         <Lock className={iconSize} />
       )}
       {showLabel && (
         <span className="text-[9px] font-medium">
-          {verified ? 'Vérifié' : 'Chiffré'}
+          {verified ? 'Vérifié' : ratchetActive ? 'Double Ratchet' : 'Chiffré'}
         </span>
       )}
     </span>
@@ -38,16 +41,23 @@ interface EncryptionStatusBarProps {
   encrypted: boolean;
   fingerprint: string | null;
   peerFingerprint: string | null;
+  ratchetActive?: boolean;
 }
 
-export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint }: EncryptionStatusBarProps) {
+export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, ratchetActive }: EncryptionStatusBarProps) {
   if (!encrypted) return null;
 
   return (
     <div className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-500/5 border-b border-emerald-500/10">
-      <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+      {ratchetActive ? (
+        <Zap className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+      ) : (
+        <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+      )}
       <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium">
-        Chiffrement de bout en bout activé
+        {ratchetActive
+          ? 'Double Ratchet actif — forward secrecy par message'
+          : 'Chiffrement de bout en bout activé'}
       </span>
       {fingerprint && peerFingerprint && (
         <button

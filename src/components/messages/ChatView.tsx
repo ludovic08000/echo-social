@@ -410,7 +410,13 @@ export function ChatView({ conversationId }: ChatViewProps) {
               {['Salut ! 👋', 'Comment ça va ? 😊', 'Quoi de neuf ? 🤔'].map(suggestion => (
                 <button
                   key={suggestion}
-                  onClick={() => sendMessage.mutate({ conversationId, body: suggestion })}
+                  onClick={async () => {
+                    let body = suggestion;
+                    if (e2ee.encrypted) {
+                      body = await e2ee.encrypt(body);
+                    }
+                    sendMessage.mutate({ conversationId, body });
+                  }}
                   className="px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 active:scale-95 transition-all"
                 >
                   {suggestion}
