@@ -57,7 +57,7 @@ export async function performKeyExchange(
   );
 
   // HKDF-SHA-256 → AES-256 key
-  const salt = randomBytes(HKDF_SALT_LENGTH);
+  const salt = randomBytes(HKDF_SALT_LENGTH) as Uint8Array<ArrayBuffer>;
   const info = encodeString(`forsure-e2ee-v${PROTOCOL_VERSION}-${conversationId}`);
 
   const hkdfKey = await crypto.subtle.importKey(
