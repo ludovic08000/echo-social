@@ -182,10 +182,7 @@ function MosaicTile({ item, isLarge, followingIds }: { item: LiveItem; isLarge?:
       onClick={handleClick}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className={cn(
-        "relative rounded-2xl overflow-hidden bg-black group text-left w-full",
-        isLarge ? "row-span-2 aspect-[3/5]" : "aspect-[3/4]"
-      )}
+      className="relative rounded-lg overflow-hidden bg-black group text-left w-full aspect-[9/16]"
     >
       {/* Background */}
       {hasVideo ? (
@@ -193,10 +190,7 @@ function MosaicTile({ item, isLarge, followingIds }: { item: LiveItem; isLarge?:
           ref={videoRef}
           src={`${item.recording_url!}#t=0.5`}
           className="absolute inset-0 w-full h-full object-cover"
-          muted
-          loop
-          playsInline
-          preload="none"
+          muted loop playsInline preload="none"
           poster={item.thumbnail_url || undefined}
         />
       ) : item.thumbnail_url ? (
@@ -208,71 +202,53 @@ function MosaicTile({ item, isLarge, followingIds }: { item: LiveItem; isLarge?:
         />
       ) : (
         <div className={cn(
-          "absolute inset-0 flex flex-col items-center justify-center gap-3",
+          "absolute inset-0 flex flex-col items-center justify-center gap-2",
           item.is_active
             ? "bg-gradient-to-br from-primary/30 via-accent/10 to-black"
             : "bg-gradient-to-br from-muted/20 via-background to-black"
         )}>
-          <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full bg-white/10 backdrop-blur flex items-center justify-center">
             {item.is_active ? (
-              <Radio className="w-6 h-6 text-white animate-pulse" />
+              <Radio className="w-4 h-4 text-white animate-pulse" />
             ) : (
-              <Video className="w-6 h-6 text-white/60" />
+              <Video className="w-4 h-4 text-white/60" />
             )}
           </div>
-          <UserAvatar src={item.host?.avatar_url} alt={item.host?.name} size="sm" />
+          <UserAvatar src={item.host?.avatar_url} alt={item.host?.name} size="xs" />
         </div>
       )}
 
-      {/* Gradient overlays */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
+      {/* Gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 pointer-events-none" />
 
-      {/* Top badges */}
-      <div className="absolute top-2 left-2 right-2 flex items-center justify-between z-10">
-        <div className="flex items-center gap-1.5">
-          {item.is_active ? (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white flex items-center gap-1 shadow-lg"
-              style={{ background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(220 70% 55%))' }}>
-              <Radio className="w-2.5 h-2.5 animate-pulse" />
-              LIVE
-            </span>
-          ) : (
-            <span className="px-2 py-0.5 rounded-full bg-black/50 backdrop-blur-sm text-white/70 text-[10px] font-medium flex items-center gap-1">
-              <Clock className="w-2.5 h-2.5" />
-              Replay
-            </span>
-          )}
-          {isFollowing && (
-            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold text-white"
-              style={{ background: 'linear-gradient(135deg, hsl(190 80% 50%), hsl(220 70% 55%))' }}>
-              Ami
-            </span>
-          )}
-        </div>
-
-        <span className="px-2 py-0.5 rounded-full bg-black/50 backdrop-blur-sm text-white/80 text-[10px] flex items-center gap-1">
-          <Eye className="w-2.5 h-2.5" />
+      {/* Top badge */}
+      <div className="absolute top-1 left-1 right-1 flex items-center justify-between z-10">
+        {item.is_active ? (
+          <span className="px-1.5 py-0.5 rounded text-[8px] font-bold text-white flex items-center gap-0.5 shadow-lg"
+            style={{ background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(220 70% 55%))' }}>
+            <Radio className="w-2 h-2 animate-pulse" />
+            LIVE
+          </span>
+        ) : (
+          <span className="px-1 py-0.5 rounded bg-black/50 backdrop-blur-sm text-white/60 text-[7px] font-medium">
+            Replay
+          </span>
+        )}
+        <span className="px-1 py-0.5 rounded bg-black/50 backdrop-blur-sm text-white/70 text-[7px] flex items-center gap-0.5">
+          <Eye className="w-2 h-2" />
           {item.is_active ? item.viewer_count : item.total_views}
         </span>
       </div>
 
-      {/* Bottom info */}
-      <div className="absolute bottom-0 left-0 right-0 p-2.5 z-10">
-        <div className="flex items-center gap-2 mb-1">
+      {/* Bottom info — compact */}
+      <div className="absolute bottom-0 left-0 right-0 p-1.5 z-10">
+        <div className="flex items-center gap-1 mb-0.5">
           <UserAvatar src={item.host?.avatar_url} alt={item.host?.name} size="xs" />
-          <span className="text-white text-[11px] font-semibold truncate">
+          <span className="text-white text-[9px] font-semibold truncate">
             {item.host?.name || 'Utilisateur'}
           </span>
         </div>
-        <p className="text-white/80 text-[11px] line-clamp-2 leading-tight">{item.title}</p>
-        {item.category && (
-          <span className="text-white/40 text-[9px] mt-0.5 block">{item.category}</span>
-        )}
-        {!item.is_active && item.ended_at && (
-          <p className="text-white/30 text-[8px] mt-0.5">
-            {formatDistanceToNow(new Date(item.ended_at), { addSuffix: true, locale: fr })}
-          </p>
-        )}
+        <p className="text-white/70 text-[8px] line-clamp-1 leading-tight">{item.title}</p>
       </div>
 
       {/* Hover play icon */}
