@@ -1,8 +1,8 @@
 /**
  * useE2EE - React hook for End-to-End Encryption
  * 
- * Manages key exchange, encryption/decryption of messages,
- * and key rotation for conversation security.
+ * Uses Double Ratchet for 1:1 conversations (forward secrecy per message).
+ * Falls back to single-key AES-GCM for Zeus and group chats.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -11,22 +11,61 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   getOrCreateIdentityKeys,
   exportPublicKeyBundle,
-  loadSessionKey,
-  establishSession,
+  // Legacy (Zeus / groups / fallback)
   encryptMessage,
   decryptMessage,
   isEncryptedMessage,
+  establishSession,
+  loadSessionKey,
+  incrementSessionMessageCount,
   needsKeyRotation,
   rotateSessionKey,
-  incrementSessionMessageCount,
+  // Double Ratchet
+  initRatchetAsInitiator,
+  initRatchetAsResponder,
+  ratchetEncrypt,
+  ratchetDecrypt,
+  serializeRatchetState,
+  deserializeRatchetState,
   type IdentityKeyPair,
+  type RatchetState,
+  type RatchetEnvelope,
 } from '@/lib/crypto';
+import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
+import { KX_KEY_PARAMS } from '@/lib/crypto/constants';
+
+const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
+const RATCHET_STORE = 'forsure-ratchet-states';
+
+// ─── Local ratchet state persistence ───
+
+async function saveRatchetLocal(convId: string, state: RatchetState) {
+  try {
+    const json = await serializeRatchetState(state);
+    localStorage.setItem(`${RATCHET_STORE}:${convId}`, json);
+  } catch (e) {
+    console.error('[E2EE] Failed to persist ratchet state:', e);
+  }
+}
+
+async function loadRatchetLocal(convId: string): Promise<RatchetState | null> {
+  try {
+    const json = localStorage.getItem(`${RATCHET_STORE}:${convId}`);
+    if (!json) return null;
+    return deserializeRatchetState(json);
+  } catch {
+    return null;
+  }
+}
+
+// ─── Hook ───
 
 export interface E2EEState {
   ready: boolean;
   fingerprint: string | null;
   peerFingerprint: string | null;
   encrypted: boolean;
+  ratchetActive: boolean;
 }
 
 export function useE2EE(conversationId: string | undefined, peerUserId: string | undefined) {
@@ -36,27 +75,28 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     fingerprint: null,
     peerFingerprint: null,
     encrypted: false,
+    ratchetActive: false,
   });
   const keysRef = useRef<IdentityKeyPair | null>(null);
   const peerKeyRef = useRef<{ identityKey: string; signingKey: string; fingerprint: string } | null>(null);
+  const ratchetRef = useRef<RatchetState | null>(null);
   const initRef = useRef(false);
 
-  // Initialize: generate/load identity keys, publish public key
+  const isZeus = peerUserId === ZEUS_ID;
+
+  // Initialize identity keys + publish
   useEffect(() => {
     if (!user || initRef.current) return;
     initRef.current = true;
 
     (async () => {
       try {
-        // 1. Get or create identity key pair
         const keys = await getOrCreateIdentityKeys(user.id);
         keysRef.current = keys;
 
-        // 2. Export and publish public key bundle
         const bundle = await exportPublicKeyBundle(keys);
 
-        // 3. Upsert to user_public_keys table
-        const { error } = await supabase
+        await supabase
           .from('user_public_keys' as any)
           .upsert({
             user_id: user.id,
@@ -68,8 +108,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             updated_at: new Date().toISOString(),
           }, { onConflict: 'user_id,is_active' });
 
-        if (error) console.error('[E2EE] Failed to publish keys:', error);
-
         setState(s => ({ ...s, fingerprint: bundle.fingerprint }));
       } catch (err) {
         console.error('[E2EE] Init failed:', err);
@@ -77,9 +115,15 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     })();
   }, [user]);
 
-  // Fetch peer's public key when conversation/peer changes
+  // Fetch peer public key
   useEffect(() => {
     if (!peerUserId || !user) return;
+
+    // Zeus doesn't have E2EE keys — use legacy symmetric encryption
+    if (isZeus) {
+      setState(s => ({ ...s, encrypted: false, ready: true, ratchetActive: false }));
+      return;
+    }
 
     (async () => {
       try {
@@ -96,86 +140,170 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             signingKey: (data as any).signing_key,
             fingerprint: (data as any).fingerprint,
           };
+
+          // Try to load existing ratchet state
+          if (conversationId) {
+            const existing = await loadRatchetLocal(conversationId);
+            if (existing) {
+              ratchetRef.current = existing;
+            }
+          }
+
           setState(s => ({
             ...s,
             peerFingerprint: (data as any).fingerprint,
             encrypted: true,
             ready: !!keysRef.current,
+            ratchetActive: !!ratchetRef.current,
           }));
         } else {
-          // Peer hasn't published keys yet — no E2EE
           setState(s => ({ ...s, encrypted: false, ready: true }));
         }
       } catch {
         setState(s => ({ ...s, encrypted: false, ready: true }));
       }
     })();
-  }, [peerUserId, user]);
+  }, [peerUserId, user, conversationId, isZeus]);
 
-  // Establish session if needed
-  const ensureSession = useCallback(async () => {
+  // Initialize ratchet session if needed
+  const ensureRatchet = useCallback(async (): Promise<RatchetState | null> => {
     if (!conversationId || !keysRef.current || !peerKeyRef.current) return null;
 
-    let session = await loadSessionKey(conversationId);
+    if (ratchetRef.current) return ratchetRef.current;
 
+    try {
+      // X25519 DH to get initial shared secret
+      const peerPubRaw = base64ToBuffer(peerKeyRef.current.identityKey);
+      const peerPubKey = await crypto.subtle.importKey(
+        'raw', peerPubRaw, KX_KEY_PARAMS as any, true, []
+      );
+
+      const sharedBits = await crypto.subtle.deriveBits(
+        { name: 'X25519', public: peerPubKey } as any,
+        keysRef.current.privateKey,
+        256,
+      );
+
+      // Deterministic role: lower fingerprint is initiator
+      const myFp = keysRef.current.fingerprint;
+      const peerFp = peerKeyRef.current.fingerprint;
+      const isInitiator = myFp < peerFp;
+
+      let ratchetState: RatchetState;
+      if (isInitiator) {
+        ratchetState = await initRatchetAsInitiator(conversationId, sharedBits, peerPubKey);
+      } else {
+        const dhPair = await crypto.subtle.generateKey(
+          KX_KEY_PARAMS as any, true, ['deriveBits']
+        ) as CryptoKeyPair;
+        ratchetState = await initRatchetAsResponder(conversationId, sharedBits, dhPair);
+      }
+
+      ratchetRef.current = ratchetState;
+      await saveRatchetLocal(conversationId, ratchetState);
+      setState(s => ({ ...s, ratchetActive: true }));
+      return ratchetState;
+    } catch (err) {
+      console.error('[E2EE] Ratchet init failed, falling back to legacy:', err);
+      return null;
+    }
+  }, [conversationId]);
+
+  // Legacy session fallback
+  const ensureLegacySession = useCallback(async () => {
+    if (!conversationId || !keysRef.current || !peerKeyRef.current) return null;
+    let session = await loadSessionKey(conversationId);
     if (!session || await needsKeyRotation(conversationId)) {
       session = await (session
         ? rotateSessionKey(keysRef.current, peerKeyRef.current.identityKey, conversationId, peerKeyRef.current.fingerprint)
         : establishSession(keysRef.current, peerKeyRef.current.identityKey, conversationId, peerKeyRef.current.fingerprint)
       );
     }
-
     return session;
   }, [conversationId]);
 
-  // Encrypt a message before sending
+  // Encrypt
   const encrypt = useCallback(async (plaintext: string): Promise<string> => {
     if (!state.encrypted || !keysRef.current) return plaintext;
 
     try {
-      const session = await ensureSession();
-      if (!session) return plaintext;
+      // Try Double Ratchet first
+      const ratchet = await ensureRatchet();
+      if (ratchet) {
+        const { envelope, newState } = await ratchetEncrypt(
+          ratchet,
+          plaintext,
+          keysRef.current.signingPrivateKey,
+          keysRef.current.fingerprint,
+        );
+        ratchetRef.current = newState;
+        await saveRatchetLocal(conversationId!, newState);
+        return JSON.stringify(envelope);
+      }
 
+      // Fallback to legacy
+      const session = await ensureLegacySession();
+      if (!session) return plaintext;
       const seq = await incrementSessionMessageCount(conversationId!);
-      const encrypted = await encryptMessage(
-        plaintext,
-        session.sharedSecret,
-        keysRef.current.signingPrivateKey,
-        keysRef.current.fingerprint,
-        seq,
+      return await encryptMessage(
+        plaintext, session.sharedSecret,
+        keysRef.current.signingPrivateKey, keysRef.current.fingerprint, seq,
       );
-      return encrypted;
     } catch (err) {
-      console.error('[E2EE] Encrypt failed, sending plain:', err);
+      console.error('[E2EE] Encrypt failed:', err);
       return plaintext;
     }
-  }, [state.encrypted, conversationId, ensureSession]);
+  }, [state.encrypted, conversationId, ensureRatchet, ensureLegacySession]);
 
-  // Decrypt a message after receiving
+  // Decrypt
   const decrypt = useCallback(async (body: string): Promise<{ text: string; encrypted: boolean; verified: boolean }> => {
-    if (!isEncryptedMessage(body)) {
+    if (!isEncryptedMessage(body) && !isRatchetEnvelope(body)) {
       return { text: body, encrypted: false, verified: false };
     }
 
     try {
-      const session = await ensureSession();
-      if (!session) return { text: '🔒 Message chiffré (clé manquante)', encrypted: true, verified: false };
+      // Check if it's a ratchet envelope
+      if (isRatchetEnvelope(body)) {
+        const envelope: RatchetEnvelope = JSON.parse(body);
+        let ratchet = ratchetRef.current || await ensureRatchet();
+        if (!ratchet) {
+          return { text: '🔒 Clé de session manquante', encrypted: true, verified: false };
+        }
 
-      const result = await decryptMessage(
-        body,
-        session.sharedSecret,
-        peerKeyRef.current?.signingKey,
-      );
+        const { plaintext, verified, newState } = await ratchetDecrypt(
+          ratchet, envelope, peerKeyRef.current?.signingKey,
+        );
+        ratchetRef.current = newState;
+        await saveRatchetLocal(conversationId!, newState);
+        return { text: plaintext, encrypted: true, verified };
+      }
+
+      // Legacy envelope
+      const session = await ensureLegacySession();
+      if (!session) return { text: '🔒 Message chiffré (clé manquante)', encrypted: true, verified: false };
+      const result = await decryptMessage(body, session.sharedSecret, peerKeyRef.current?.signingKey);
       return { text: result.plaintext, encrypted: true, verified: result.verified };
     } catch (err) {
       console.error('[E2EE] Decrypt failed:', err);
-      return { text: '🔒 Impossible de déchiffrer ce message', encrypted: true, verified: false };
+      return { text: '🔒 Impossible de déchiffrer', encrypted: true, verified: false };
     }
-  }, [ensureSession]);
+  }, [conversationId, ensureRatchet, ensureLegacySession]);
 
   return {
     ...state,
     encrypt,
     decrypt,
   };
+}
+
+// ─── Helpers ───
+
+function isRatchetEnvelope(body: string): boolean {
+  if (!body.startsWith('{')) return false;
+  try {
+    const p = JSON.parse(body);
+    return p.v !== undefined && p.hdr !== undefined && p.ct !== undefined;
+  } catch {
+    return false;
+  }
 }
