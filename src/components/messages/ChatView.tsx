@@ -19,6 +19,7 @@ import { useImageUpload } from '@/hooks/useImageUpload';
 import { toast } from 'sonner';
 import { useE2EE } from '@/hooks/useE2EE';
 import { EncryptionBadge, EncryptionStatusBar } from './EncryptionBadge';
+import { DecryptedMessageBody } from './DecryptedMessageBody';
 
 import { MessageActions } from './MessageActions';
 import { TypingIndicator } from './TypingIndicator';
@@ -444,7 +445,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
                   const isFirstInGroup = !prevMsg || prevMsg.sender_id !== msg.sender_id;
                   const isLastInGroup = !nextMsg || nextMsg.sender_id !== msg.sender_id;
                   const reactions = messageReactions[msg.id] || [];
-                  const isBigEmoji = isSingleEmoji(msg.body);
+                  const looksEncrypted = msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"'));
+                  const isBigEmoji = !looksEncrypted && isSingleEmoji(msg.body);
                   const isImage = msg.image_url;
 
                     return (
@@ -548,7 +550,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
                                 )
                           )}
                         >
-                          {msg.body}
+                          <DecryptedMessageBody
+                            body={msg.body}
+                            decrypt={e2ee.decrypt}
+                            isEncryptionActive={e2ee.encrypted}
+                          />
                         </div>
 
                         {/* Reactions */}

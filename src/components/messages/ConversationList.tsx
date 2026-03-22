@@ -175,7 +175,9 @@ export function ConversationList() {
                             ? `📞 Appel ${conv.last_message.body.includes('video') ? 'vidéo' : 'audio'} manqué`
                             : conv.last_message.body.startsWith('📞 CALL:ended|')
                               ? `📞 Appel ${conv.last_message.body.includes('video') ? 'vidéo' : 'audio'} terminé`
-                              : conv.last_message.body
+                              : (conv.last_message.body.startsWith('{') && (conv.last_message.body.includes('"ct"') || conv.last_message.body.includes('"hdr"')))
+                                ? '🔒 Message chiffré'
+                                : conv.last_message.body
                           : 'Démarrez la conversation…'}
                       </p>
                       {conv.unread_count > 0 && (

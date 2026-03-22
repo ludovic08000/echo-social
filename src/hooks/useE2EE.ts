@@ -142,7 +142,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         const bundle = await exportPublicKeyBundle(keys);
 
         await supabase
-          .from('user_public_keys' as any)
+          .from('user_public_keys')
           .upsert({
             user_id: user.id,
             identity_key: bundle.identityKey,
@@ -173,7 +173,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     (async () => {
       try {
         const { data } = await supabase
-          .from('user_public_keys' as any)
+          .from('user_public_keys')
           .select('identity_key, signing_key, fingerprint')
           .eq('user_id', peerUserId)
           .eq('is_active', true)
@@ -181,9 +181,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
         if (data) {
           peerKeyRef.current = {
-            identityKey: (data as any).identity_key,
-            signingKey: (data as any).signing_key,
-            fingerprint: (data as any).fingerprint,
+            identityKey: data.identity_key,
+            signingKey: data.signing_key,
+            fingerprint: data.fingerprint,
           };
 
           // Try to load existing ratchet state
@@ -196,7 +196,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
           setState(s => ({
             ...s,
-            peerFingerprint: (data as any).fingerprint,
+            peerFingerprint: data.fingerprint,
             encrypted: true,
             ready: !!keysRef.current,
             ratchetActive: !!ratchetRef.current,
