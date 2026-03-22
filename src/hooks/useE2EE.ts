@@ -63,7 +63,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             identity_key: bundle.identityKey,
             signing_key: bundle.signingKey,
             fingerprint: bundle.fingerprint,
-            kem_type: 'ECDH-P384',
+            kem_type: 'X25519',
             is_active: true,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'user_id,is_active' });
