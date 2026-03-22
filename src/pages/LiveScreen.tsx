@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, Radio, Plus, Eye, Play, Clock, Sparkles, Video } from 'lucide-react';
+import { ArrowLeft, Search, Radio, Plus, Eye, Clock, Sparkles, Video } from 'lucide-react';
 import { FeedLiveSwitch } from '@/components/live/FeedLiveSwitch';
 import { LiveCategoryChips } from '@/components/live/LiveCategoryChips';
 import { LiveSearchSheet } from '@/components/live/LiveSearchSheet';
@@ -153,30 +153,29 @@ function useAllLivesForScreen() {
   });
 }
 
-// ─── Mosaic Tile ─────────────────────────────────
-function MosaicTile({ item, isLarge, followingIds }: { item: LiveItem; isLarge?: boolean; followingIds: string[] }) {
+// ─── Premium Mosaic Tile ─────────────────────────────────
+function MosaicTile({ item, followingIds }: { item: LiveItem; isLarge?: boolean; followingIds: string[] }) {
   const navigate = useNavigate();
 
   const handleClick = () => {
     navigate(`/live/${item.id}?from=live`);
   };
 
-  const isFollowing = followingIds.includes(item.user_id);
   const hasVideo = !!item.recording_url && !item.is_active;
 
   return (
     <motion.button
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.3 }}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
       onClick={handleClick}
-      className="relative rounded-sm overflow-hidden bg-black group text-left w-full aspect-square"
+      className="relative rounded-2xl overflow-hidden bg-black/60 group text-left w-full aspect-[3/4]"
     >
       {/* Background */}
       {hasVideo ? (
         <video
           src={`${item.recording_url!}#t=0.5`}
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
           muted loop autoPlay playsInline preload="auto"
           poster={item.thumbnail_url || undefined}
         />
@@ -185,73 +184,81 @@ function MosaicTile({ item, isLarge, followingIds }: { item: LiveItem; isLarge?:
           src={item.thumbnail_url}
           alt={item.title}
           loading="lazy"
-          className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
         />
       ) : (
         <div className={cn(
-          "absolute inset-0 flex flex-col items-center justify-center gap-2",
+          "absolute inset-0 flex flex-col items-center justify-center gap-3",
           item.is_active
-            ? "bg-gradient-to-br from-primary/30 via-accent/10 to-black"
-            : "bg-gradient-to-br from-muted/20 via-background to-black"
+            ? "bg-gradient-to-br from-primary/20 via-black/80 to-accent/10"
+            : "bg-gradient-to-br from-muted/10 via-black/90 to-black"
         )}>
-          <div className="w-8 h-8 rounded-full bg-white/10 backdrop-blur flex items-center justify-center">
+          <div className="w-12 h-12 rounded-2xl bg-white/[0.06] backdrop-blur-sm flex items-center justify-center border border-white/[0.08]">
             {item.is_active ? (
-              <Radio className="w-4 h-4 text-white animate-pulse" />
+              <Radio className="w-5 h-5 text-white/60 animate-pulse" />
             ) : (
-              <Video className="w-4 h-4 text-white/60" />
+              <Video className="w-5 h-5 text-white/30" />
             )}
           </div>
-          <UserAvatar src={item.host?.avatar_url} alt={item.host?.name} size="xs" />
+          <UserAvatar src={item.host?.avatar_url} alt={item.host?.name} size="sm" />
         </div>
       )}
 
-      {/* Gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 pointer-events-none" />
+      {/* Refined gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/30 pointer-events-none" />
 
-      {/* Top badge */}
-      <div className="absolute top-1 left-1 right-1 flex items-center justify-between z-10">
+      {/* Top badges — minimal, refined */}
+      <div className="absolute top-2 left-2 right-2 flex items-center justify-between z-10">
         {item.is_active ? (
-          <span className="px-1.5 py-0.5 rounded text-[8px] font-bold text-white flex items-center gap-0.5 shadow-lg"
-            style={{ background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(220 70% 55%))' }}>
-            <Radio className="w-2 h-2 animate-pulse" />
+          <span className="px-2 py-0.5 rounded-lg text-[9px] font-bold text-white flex items-center gap-1 bg-destructive/90 backdrop-blur-sm shadow-lg">
+            <Radio className="w-2.5 h-2.5 animate-pulse" />
             LIVE
           </span>
         ) : (
-          <span className="px-1 py-0.5 rounded bg-black/50 backdrop-blur-sm text-white/60 text-[7px] font-medium">
+          <span className="px-2 py-0.5 rounded-lg bg-white/[0.08] backdrop-blur-md text-white/50 text-[8px] font-semibold tracking-wide uppercase">
             Replay
           </span>
         )}
-        <span className="px-1 py-0.5 rounded bg-black/50 backdrop-blur-sm text-white/70 text-[7px] flex items-center gap-0.5">
-          <Eye className="w-2 h-2" />
+        <span className="px-2 py-0.5 rounded-lg bg-black/40 backdrop-blur-md text-white/70 text-[9px] flex items-center gap-1 font-medium">
+          <Eye className="w-2.5 h-2.5" />
           {item.is_active ? item.viewer_count : item.total_views}
         </span>
       </div>
 
-      {/* Bottom info — compact */}
-      <div className="absolute bottom-0 left-0 right-0 p-1.5 z-10">
-        <div className="flex items-center gap-1 mb-0.5">
-          <UserAvatar src={item.host?.avatar_url} alt={item.host?.name} size="xs" />
-          <span className="text-white text-[9px] font-semibold truncate">
+      {/* Bottom info — elegant */}
+      <div className="absolute bottom-0 left-0 right-0 p-2.5 z-10">
+        <div className="flex items-center gap-2 mb-1">
+          <div className="relative">
+            <UserAvatar src={item.host?.avatar_url} alt={item.host?.name} size="xs" />
+            {item.is_active && (
+              <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-destructive border border-black" />
+            )}
+          </div>
+          <span className="text-white text-[10px] font-semibold truncate">
             {item.host?.name || 'Utilisateur'}
           </span>
         </div>
-        <p className="text-white/70 text-[8px] line-clamp-1 leading-tight">{item.title}</p>
+        <p className="text-white/60 text-[9px] line-clamp-2 leading-snug font-medium">{item.title}</p>
+        {!item.is_active && item.ended_at && (
+          <p className="text-white/25 text-[8px] mt-0.5 font-medium">
+            {formatDistanceToNow(new Date(item.ended_at), { addSuffix: true, locale: fr })}
+          </p>
+        )}
       </div>
 
-      {/* Hover overlay */}
-      <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 transition-colors" />
+      {/* Hover glow */}
+      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none rounded-2xl ring-1 ring-inset ring-white/[0.08]" />
     </motion.button>
   );
 }
 
-// ─── Zeus Creator Suggestions ────────────────────
+// ─── Zeus Creator Suggestions — Premium ────────────────────
 function ZeusCreatorSuggestions({ lives, followingIds, onSelect }: {
   lives: LiveItem[];
   followingIds: string[];
   onSelect: (id: string) => void;
 }) {
   const suggestions = useMemo(() => {
-    // Show active lives first, then top replays — always show something
     const scored = [...lives]
       .sort((a, b) => {
         if (a.is_active && !b.is_active) return -1;
@@ -275,41 +282,42 @@ function ZeusCreatorSuggestions({ lives, followingIds, onSelect }: {
   if (!suggestions.length) return null;
 
   return (
-    <div className="px-4 pb-3">
-      <div className="rounded-2xl overflow-hidden backdrop-blur-xl border border-white/10"
+    <div className="px-4 pb-4">
+      <div className="rounded-2xl overflow-hidden backdrop-blur-2xl border border-white/[0.06]"
         style={{
-          background: 'linear-gradient(135deg, hsl(220 30% 15% / 0.9), hsl(260 20% 12% / 0.9))',
-          boxShadow: '0 0 20px hsl(220 70% 55% / 0.08)',
+          background: 'linear-gradient(160deg, hsl(220 20% 12% / 0.95), hsl(240 15% 8% / 0.95))',
         }}
       >
-        <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-1.5">
-          <Sparkles className="w-3.5 h-3.5" style={{ color: 'hsl(190 80% 50%)' }} />
-          <span className="text-[11px] font-semibold text-white/60">Zeus recommande</span>
+        <div className="flex items-center gap-2 px-4 pt-3 pb-2">
+          <div className="w-5 h-5 rounded-lg bg-primary/10 flex items-center justify-center">
+            <Sparkles className="w-3 h-3 text-primary" />
+          </div>
+          <span className="text-[10px] font-bold text-white/40 uppercase tracking-[0.1em]">Recommandés par Zeus</span>
         </div>
-        <div className="flex gap-2.5 overflow-x-auto scrollbar-none px-3 pb-2.5">
+        <div className="flex gap-2 overflow-x-auto scrollbar-none px-4 pb-3">
           {suggestions.map((s) => (
-            <button
+            <motion.button
               key={s.id}
               onClick={() => onSelect(s.id)}
-              className="flex items-center gap-2.5 shrink-0 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 transition-colors border border-white/5"
+              whileTap={{ scale: 0.96 }}
+              className="flex items-center gap-3 shrink-0 px-3.5 py-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] transition-all duration-300 border border-white/[0.04] hover:border-white/[0.1]"
             >
               <div className="relative">
                 <UserAvatar src={s.hostAvatar} alt={s.hostName} size="sm" />
                 {s.isLive && (
-                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-black"
-                    style={{ background: 'hsl(var(--primary))' }} />
+                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-destructive border-2 border-black" />
                 )}
               </div>
               <div className="text-left">
-                <p className="text-white text-[11px] font-medium truncate max-w-[90px]">{s.hostName}</p>
-                <p className="text-white/40 text-[9px]">
-                  {s.isLive ? `🔴 ${s.viewerCount} viewers` : `${s.viewerCount} vues`}
+                <p className="text-white/90 text-[11px] font-semibold truncate max-w-[90px]">{s.hostName}</p>
+                <p className="text-white/30 text-[9px] font-medium">
+                  {s.isLive ? `${s.viewerCount} viewers` : `${s.viewerCount} vues`}
                 </p>
                 {s.isFollowing && (
-                  <p className="text-[8px] font-semibold" style={{ color: 'hsl(190 80% 50%)' }}>Ami</p>
+                  <p className="text-[8px] font-bold text-primary/70 uppercase tracking-wider mt-0.5">Ami</p>
                 )}
               </div>
-            </button>
+            </motion.button>
           ))}
         </div>
       </div>
@@ -395,43 +403,54 @@ export default function LiveScreen() {
     }
   };
 
-  // Determine which tiles are "large" (first active live, every 5th item for visual interest)
-  const tileLayout = useMemo(() => {
-    return filteredLives.map((item, i) => ({
-      item,
-      isLarge: i === 0 || (item.is_active && i < 4),
-    }));
-  }, [filteredLives]);
+  const darkBg = 'linear-gradient(170deg, hsl(230 20% 8%) 0%, hsl(220 15% 5%) 50%, hsl(240 12% 4%) 100%)';
 
-  const darkBg = 'linear-gradient(160deg, hsl(260 30% 12%) 0%, hsl(220 25% 10%) 50%, hsl(190 20% 8%) 100%)';
-
-  // Loading
+  // Loading — premium skeleton
   if (isLoading) {
     return (
       <div className="fixed inset-0 flex items-center justify-center" style={{ background: darkBg }}>
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 rounded-full flex items-center justify-center"
-            style={{ background: 'linear-gradient(135deg, hsl(260 70% 55%), hsl(220 70% 55%), hsl(190 80% 50%))', boxShadow: '0 0 30px hsl(260 70% 55% / 0.4)' }}>
-            <Radio className="w-6 h-6 text-white animate-pulse" />
+        <div className="flex flex-col items-center gap-5">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-white/[0.04] border border-white/[0.06]">
+            <Radio className="w-6 h-6 text-white/30 animate-pulse" />
           </div>
-          <span className="text-white/50 text-sm">Chargement des lives...</span>
+          <div className="flex flex-col items-center gap-1.5">
+            <span className="text-white/30 text-xs font-medium tracking-wide">Chargement</span>
+            <div className="w-20 h-0.5 rounded-full bg-white/[0.06] overflow-hidden">
+              <motion.div 
+                className="h-full bg-white/20 rounded-full"
+                animate={{ x: ['-100%', '200%'] }}
+                transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+              />
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
+  const activeLives = filteredLives.filter(l => l.is_active);
+  const replayLives = filteredLives.filter(l => !l.is_active);
+
   return (
     <div className="fixed inset-0 overflow-hidden flex flex-col" style={{ background: darkBg }}>
-      {/* Top bar */}
+      {/* Top bar — clean & minimal */}
       <div className="relative z-30 pt-[env(safe-area-inset-top,0px)]">
         <div className="flex items-center justify-between px-4 py-3">
-          <button onClick={() => navigate(-1)} className="w-9 h-9 rounded-full bg-white/8 backdrop-blur-md flex items-center justify-center text-white/70 hover:bg-white/15 transition-colors">
+          <motion.button 
+            whileTap={{ scale: 0.9 }}
+            onClick={() => navigate(-1)} 
+            className="w-10 h-10 rounded-xl bg-white/[0.04] backdrop-blur-md flex items-center justify-center text-white/50 hover:bg-white/[0.08] hover:text-white/70 transition-all duration-300 border border-white/[0.04]"
+          >
             <ArrowLeft className="w-5 h-5" />
-          </button>
+          </motion.button>
           <FeedLiveSwitch active="live" onChange={handleSwitchTab} />
-          <button onClick={() => setSearchOpen(true)} className="w-9 h-9 rounded-full bg-white/8 backdrop-blur-md flex items-center justify-center text-white/70 hover:bg-white/15 transition-colors">
+          <motion.button 
+            whileTap={{ scale: 0.9 }}
+            onClick={() => setSearchOpen(true)} 
+            className="w-10 h-10 rounded-xl bg-white/[0.04] backdrop-blur-md flex items-center justify-center text-white/50 hover:bg-white/[0.08] hover:text-white/70 transition-all duration-300 border border-white/[0.04]"
+          >
             <Search className="w-5 h-5" />
-          </button>
+          </motion.button>
         </div>
         <LiveCategoryChips active={category} onChange={setCategory} />
       </div>
@@ -442,59 +461,75 @@ export default function LiveScreen() {
         <ZeusCreatorSuggestions lives={allLives} followingIds={followingIds} onSelect={handleZeusSelect} />
 
         {/* === LIVE EN DIRECT === */}
-        {filteredLives.filter(l => l.is_active).length > 0 && (
-          <div className="mb-3">
-            <div className="flex items-center gap-2 px-3 py-2">
-              <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'hsl(var(--primary))' }} />
-              <span className="text-white text-xs font-bold uppercase tracking-wider">En direct</span>
-              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold text-white"
-                style={{ background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(220 70% 55%))' }}>
-                {filteredLives.filter(l => l.is_active).length}
+        {activeLives.length > 0 && (
+          <div className="mb-5">
+            <div className="flex items-center gap-2.5 px-4 py-2.5">
+              <div className="w-1.5 h-1.5 rounded-full animate-pulse bg-destructive" />
+              <span className="text-white/70 text-[10px] font-bold uppercase tracking-[0.12em]">En direct</span>
+              <span className="px-2 py-0.5 rounded-lg text-[9px] font-bold text-white/60 bg-white/[0.06]">
+                {activeLives.length}
               </span>
             </div>
-            <div className="px-1 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-[2px]">
-              {filteredLives.filter(l => l.is_active).map(item => (
-                <MosaicTile key={item.id} item={item} isLarge={false} followingIds={followingIds} />
+            <div className="px-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5">
+              {activeLives.map((item, i) => (
+                <motion.div
+                  key={item.id}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, delay: i * 0.05 }}
+                >
+                  <MosaicTile item={item} isLarge={false} followingIds={followingIds} />
+                </motion.div>
               ))}
             </div>
           </div>
         )}
 
         {/* === REPLAYS === */}
-        {filteredLives.filter(l => !l.is_active).length > 0 && (
+        {replayLives.length > 0 && (
           <div>
-            <div className="flex items-center gap-2 px-3 py-2">
-              <Clock className="w-3 h-3 text-white/40" />
-              <span className="text-white/50 text-xs font-semibold uppercase tracking-wider">Replays</span>
+            <div className="flex items-center gap-2.5 px-4 py-2.5">
+              <Clock className="w-3 h-3 text-white/25" />
+              <span className="text-white/35 text-[10px] font-bold uppercase tracking-[0.12em]">Replays</span>
             </div>
-            <div className="px-1 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-[2px]">
-              {filteredLives.filter(l => !l.is_active).map(item => (
-                <MosaicTile key={item.id} item={item} isLarge={false} followingIds={followingIds} />
+            <div className="px-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5">
+              {replayLives.map((item, i) => (
+                <motion.div
+                  key={item.id}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, delay: i * 0.03 }}
+                >
+                  <MosaicTile item={item} isLarge={false} followingIds={followingIds} />
+                </motion.div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Empty state */}
+        {/* Empty state — premium */}
         {!filteredLives.length && (
-          <div className="flex flex-col items-center justify-center gap-4 px-8 pt-20">
-            <div className="w-16 h-16 rounded-full flex items-center justify-center bg-white/5 border border-white/10">
-              <Radio className="w-8 h-8 text-white/20" />
+          <div className="flex flex-col items-center justify-center gap-5 px-8 pt-24">
+            <div className="w-20 h-20 rounded-3xl flex items-center justify-center bg-white/[0.03] border border-white/[0.06]">
+              <Radio className="w-9 h-9 text-white/15" />
             </div>
-            <h2 className="text-white font-semibold text-lg">Aucun live en cours</h2>
-            <p className="text-white/40 text-sm text-center">Sois le premier à démarrer un live !</p>
+            <div className="text-center space-y-2">
+              <h2 className="text-white/80 font-semibold text-base tracking-tight">Aucun live en cours</h2>
+              <p className="text-white/25 text-sm font-medium">Sois le premier à démarrer un live</p>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Start live FAB */}
+      {/* Start live FAB — premium */}
       <motion.button
         whileTap={{ scale: 0.9 }}
+        whileHover={{ scale: 1.05 }}
         onClick={() => setStartDialogOpen(true)}
-        className="absolute bottom-24 right-4 z-30 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-lg"
+        className="absolute bottom-24 right-5 z-30 w-14 h-14 rounded-2xl flex items-center justify-center text-white border border-white/[0.1]"
         style={{
-          background: 'linear-gradient(135deg, hsl(260 70% 55%), hsl(220 70% 55%))',
-          boxShadow: '0 4px 20px hsl(260 70% 55% / 0.5)',
+          background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.7))',
+          boxShadow: '0 8px 32px hsl(var(--primary) / 0.3), 0 0 0 1px hsl(var(--primary) / 0.1)',
         }}
       >
         <Plus className="w-6 h-6" />
@@ -522,7 +557,7 @@ export default function LiveScreen() {
   );
 }
 
-// ─── Start Live Dialog ───────────────────────────
+// ─── Start Live Dialog — Premium ─────────────────
 function StartLiveDialog({
   open, onOpenChange,
   title, setTitle,
@@ -546,26 +581,28 @@ function StartLiveDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md bg-card border-border">
+      <DialogContent className="sm:max-w-md bg-card border-border/50">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Radio className="w-5 h-5 text-primary" />
+          <DialogTitle className="flex items-center gap-2.5 text-base">
+            <div className="w-8 h-8 rounded-xl bg-destructive/10 flex items-center justify-center">
+              <Radio className="w-4 h-4 text-destructive" />
+            </div>
             Nouveau live
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="live-title">Titre du live</Label>
-            <Input id="live-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="De quoi vas-tu parler ?" />
+            <Label htmlFor="live-title" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Titre du live</Label>
+            <Input id="live-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="De quoi vas-tu parler ?" className="h-11" />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="live-desc">Description (optionnel)</Label>
+            <Label htmlFor="live-desc" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Description (optionnel)</Label>
             <Textarea id="live-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Décris ton live..." className="min-h-[80px] resize-none" />
           </div>
           <div className="space-y-2">
-            <Label>Catégorie</Label>
+            <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Catégorie</Label>
             <Select value={category} onValueChange={setCategory}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {CATEGORIES.map(cat => (
                   <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
@@ -574,10 +611,10 @@ function StartLiveDialog({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="live-tags">Hashtags (séparés par des virgules)</Label>
-            <Input id="live-tags" value={hashtags} onChange={(e) => setHashtags(e.target.value)} placeholder="gaming, fun, live" />
+            <Label htmlFor="live-tags" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Hashtags (séparés par des virgules)</Label>
+            <Input id="live-tags" value={hashtags} onChange={(e) => setHashtags(e.target.value)} placeholder="gaming, fun, live" className="h-11" />
           </div>
-          <Button onClick={onStart} disabled={isPending} className="w-full">
+          <Button onClick={onStart} disabled={isPending} className="w-full h-11 text-sm font-semibold">
             {isPending ? 'Démarrage...' : '🔴 Démarrer le live'}
           </Button>
         </div>

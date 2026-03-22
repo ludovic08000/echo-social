@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { Sparkles, Users, Gamepad2, Music, MonitorSmartphone, Dumbbell, Car, Palette } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 const CATEGORIES = [
   { id: 'pour-toi', label: 'Pour toi', icon: Sparkles },
@@ -24,30 +25,30 @@ export function LiveCategoryChips({ active, onChange }: LiveCategoryChipsProps) 
   return (
     <div
       ref={scrollRef}
-      className="flex gap-2 overflow-x-auto scrollbar-none px-4 py-2"
+      className="flex gap-1.5 overflow-x-auto scrollbar-none px-4 py-2.5"
     >
       {CATEGORIES.map((cat) => {
         const Icon = cat.icon;
         const isActive = active === cat.id;
 
         return (
-          <button
+          <motion.button
             key={cat.id}
             onClick={() => onChange(cat.id)}
+            whileTap={{ scale: 0.95 }}
             className={cn(
-              'flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200 shrink-0',
+              'flex items-center gap-1.5 px-4 py-2 rounded-xl text-[11px] font-semibold whitespace-nowrap transition-all duration-300 shrink-0 tracking-wide uppercase',
               isActive
-                ? 'text-white shadow-lg'
-                : 'bg-white/8 text-white/50 hover:bg-white/12 hover:text-white/70 border border-white/5'
+                ? 'text-white bg-white/15 border border-white/20 shadow-lg backdrop-blur-md'
+                : 'bg-white/[0.04] text-white/40 hover:bg-white/[0.08] hover:text-white/60 border border-transparent'
             )}
             style={isActive ? {
-              background: 'linear-gradient(135deg, hsl(260 70% 50%), hsl(220 70% 55%), hsl(190 80% 50%))',
-              boxShadow: '0 0 20px hsl(220 70% 55% / 0.3)',
+              boxShadow: '0 2px 16px hsl(var(--primary) / 0.15)',
             } : undefined}
           >
-            <Icon className="w-3 h-3" />
+            <Icon className={cn("w-3.5 h-3.5", isActive && "text-primary")} />
             {cat.label}
-          </button>
+          </motion.button>
         );
       })}
     </div>

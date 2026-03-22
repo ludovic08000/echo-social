@@ -8,7 +8,6 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useRef } from 'react';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -61,8 +60,8 @@ function useRecentReplays() {
   });
 }
 
-// Mini video card with autoplay preview
-function LiveCard({ item, allItems }: { item: { id: string; title: string; thumbnail_url: string | null; recording_url?: string | null; isLive: boolean; viewer_count: number; user_id: string; ended_at: string | null; host?: { name: string; avatar_url: string | null } }; allItems?: any[] }) {
+// Premium mini live card
+function LiveCard({ item }: { item: { id: string; title: string; thumbnail_url: string | null; recording_url?: string | null; isLive: boolean; viewer_count: number; user_id: string; ended_at: string | null; host?: { name: string; avatar_url: string | null } } }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const { user } = useAuth();
   const deleteLive = useDeleteLive();
@@ -72,32 +71,24 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
     e.preventDefault();
     e.stopPropagation();
     deleteLive.mutate(item.id);
-    deleteLive.mutate(item.id);
   };
 
-  // On mobile, NEVER render <video> elements — use thumbnail or placeholder only
   const hasVideo = !isMobile && !!item.recording_url;
   const hasThumbnail = !!item.thumbnail_url;
-
-  // Build link: for replays with video, go to TikTok-style player with ?from=feed
   const linkTo = item.isLive ? `/live/${item.id}` : `/live/${item.id}?from=feed`;
 
   return (
     <Link
       to={linkTo}
-      className="relative flex-shrink-0 w-[110px] h-[160px] rounded-xl overflow-hidden bg-black group"
+      className="relative flex-shrink-0 w-[120px] h-[170px] rounded-2xl overflow-hidden bg-black/60 group"
     >
-      {/* Background: video preview (desktop only) > thumbnail > gradient placeholder */}
+      {/* Background */}
       {hasVideo ? (
         <video
           ref={videoRef}
           src={`${item.recording_url!}#t=0.5`}
-          className="absolute inset-0 w-full h-full object-cover"
-          muted
-          loop
-          autoPlay
-          playsInline
-          preload="auto"
+          className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
+          muted loop autoPlay playsInline preload="auto"
           poster={item.thumbnail_url || undefined}
         />
       ) : hasThumbnail ? (
@@ -105,33 +96,33 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
           src={item.thumbnail_url!}
           alt={item.title}
           loading="lazy"
-          className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
         />
       ) : (
         <div className={cn(
-          "absolute inset-0 flex flex-col items-center justify-center gap-2",
+          "absolute inset-0 flex flex-col items-center justify-center gap-2.5",
           item.isLive
-            ? "bg-gradient-to-br from-destructive/30 via-destructive/10 to-black"
-            : "bg-gradient-to-br from-primary/20 via-accent/10 to-black"
+            ? "bg-gradient-to-br from-destructive/20 via-black/80 to-accent/10"
+            : "bg-gradient-to-br from-primary/10 via-black/90 to-black"
         )}>
-          <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-white/[0.06] backdrop-blur flex items-center justify-center border border-white/[0.08]">
             {item.isLive ? (
-              <Radio className="w-5 h-5 text-white animate-pulse" />
+              <Radio className="w-4 h-4 text-white/60 animate-pulse" />
             ) : (
-              <Video className="w-5 h-5 text-white/70" />
+              <Video className="w-4 h-4 text-white/30" />
             )}
           </div>
           <UserAvatar src={item.host?.avatar_url} alt={item.host?.name} size="xs" />
         </div>
       )}
 
-      {/* Darkened bottom gradient for text readability */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+      {/* Gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/20" />
 
-      {/* Top badge */}
-      <div className="absolute top-1.5 left-1.5 right-1.5 flex items-center justify-between z-10">
+      {/* Top badges */}
+      <div className="absolute top-2 left-2 right-2 flex items-center justify-between z-10">
         {item.isLive ? (
-          <span className="px-1.5 py-0.5 rounded bg-destructive text-white text-[8px] font-bold flex items-center gap-0.5 shadow-lg">
+          <span className="px-1.5 py-0.5 rounded-lg bg-destructive/90 text-white text-[8px] font-bold flex items-center gap-0.5 shadow-lg backdrop-blur-sm">
             <Radio className="w-2 h-2 animate-pulse" />
             LIVE
           </span>
@@ -139,7 +130,7 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
         {!item.isLive && user?.id === item.user_id && (
           <button
             onClick={handleDelete}
-            className="p-1 rounded bg-black/50 backdrop-blur-sm text-white/80 hover:bg-destructive transition-colors"
+            className="p-1.5 rounded-lg bg-black/40 backdrop-blur-sm text-white/60 hover:bg-destructive/80 hover:text-white transition-all duration-300"
           >
             <Trash2 className="w-2.5 h-2.5" />
           </button>
@@ -148,8 +139,8 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
 
       {/* Viewers */}
       {item.viewer_count > 0 && (
-        <div className="absolute top-1.5 right-1.5 z-10">
-          <span className="px-1.5 py-0.5 rounded bg-black/50 backdrop-blur-sm text-white/80 text-[8px] flex items-center gap-0.5">
+        <div className="absolute top-2 right-2 z-10">
+          <span className="px-1.5 py-0.5 rounded-lg bg-black/40 backdrop-blur-md text-white/60 text-[8px] flex items-center gap-0.5 font-medium">
             <Eye className="w-2 h-2" />
             {item.viewer_count}
           </span>
@@ -157,8 +148,8 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
       )}
 
       {/* Bottom info */}
-      <div className="absolute bottom-0 left-0 right-0 p-2 z-10">
-        <div className="flex items-center gap-1.5 mb-0.5">
+      <div className="absolute bottom-0 left-0 right-0 p-2.5 z-10">
+        <div className="flex items-center gap-1.5 mb-1">
           {(hasVideo || hasThumbnail) && (
             <UserAvatar src={item.host?.avatar_url} alt={item.host?.name} size="xs" />
           )}
@@ -166,16 +157,16 @@ function LiveCard({ item, allItems }: { item: { id: string; title: string; thumb
             {item.host?.name || 'Utilisateur'}
           </span>
         </div>
-        <p className="text-white/70 text-[9px] line-clamp-2 leading-tight">{item.title}</p>
+        <p className="text-white/50 text-[9px] line-clamp-2 leading-snug font-medium">{item.title}</p>
         {!item.isLive && item.ended_at && (
-          <p className="text-white/40 text-[7px] mt-0.5">
+          <p className="text-white/20 text-[7px] mt-0.5 font-medium">
             {formatDistanceToNow(new Date(item.ended_at), { addSuffix: true, locale: fr })}
           </p>
         )}
       </div>
 
-      {/* Hover overlay */}
-      <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 transition-colors" />
+      {/* Hover ring */}
+      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none rounded-2xl ring-1 ring-inset ring-white/[0.08]" />
     </Link>
   );
 }
@@ -195,22 +186,22 @@ export function FeedLiveSection() {
   ];
 
   return (
-    <article className="bg-card border border-border/20 rounded-2xl overflow-hidden">
-      <div className="flex items-center justify-between px-4 pt-3 pb-2">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-destructive/10 flex items-center justify-center">
-            <Radio className={cn("w-3.5 h-3.5", hasLives ? "text-destructive animate-pulse" : "text-muted-foreground")} />
+    <article className="bg-card/80 border border-border/10 rounded-2xl overflow-hidden backdrop-blur-sm">
+      <div className="flex items-center justify-between px-4 pt-3.5 pb-2">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-xl bg-destructive/10 flex items-center justify-center">
+            <Radio className={cn("w-3.5 h-3.5", hasLives ? "text-destructive animate-pulse" : "text-muted-foreground/50")} />
           </div>
-          <h3 className="text-sm font-semibold text-foreground">
+          <h3 className="text-sm font-semibold text-foreground/90 tracking-tight">
             {hasLives ? 'En direct' : 'Replays'}
           </h3>
           {hasLives && (
-            <span className="px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive text-[10px] font-bold">
+            <span className="px-2 py-0.5 rounded-lg bg-destructive/10 text-destructive text-[10px] font-bold">
               {lives!.length}
             </span>
           )}
         </div>
-        <Link to="/lives" className="text-xs text-primary font-medium hover:text-primary/80 transition-colors">
+        <Link to="/lives" className="text-[11px] text-primary/70 font-semibold hover:text-primary transition-colors uppercase tracking-wider">
           Voir tout
         </Link>
       </div>
