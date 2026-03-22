@@ -19,6 +19,7 @@ import { useImageUpload } from '@/hooks/useImageUpload';
 import { toast } from 'sonner';
 import { useE2EE } from '@/hooks/useE2EE';
 import { EncryptionBadge, EncryptionStatusBar } from './EncryptionBadge';
+import { DecryptedMessageBody } from './DecryptedMessageBody';
 
 import { MessageActions } from './MessageActions';
 import { TypingIndicator } from './TypingIndicator';
