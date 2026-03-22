@@ -121,7 +121,6 @@ export async function encryptMessage(
   sequenceNumber: number,
 ): Promise<string> {
   const ivArr = randomBytes(IV_LENGTH);
-  const iv = new Uint8Array(ivArr) as unknown as BufferSource;
   const timestamp = Date.now();
 
   // Encode plaintext
@@ -129,7 +128,7 @@ export async function encryptMessage(
 
   // Encrypt with AES-256-GCM
   const ciphertext = await crypto.subtle.encrypt(
-    { name: AES_ALGO, iv: iv as ArrayBuffer, tagLength: 128 },
+    { name: AES_ALGO, iv: ivArr as unknown as Uint8Array<ArrayBuffer>, tagLength: 128 },
     sessionKey,
     plaintextBuffer,
   );
