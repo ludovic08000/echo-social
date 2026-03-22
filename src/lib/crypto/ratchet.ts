@@ -398,7 +398,7 @@ export async function deserializeRatchetState(json: string): Promise<RatchetStat
 
   const skippedKeys = new Map<string, CryptoKey>();
   for (const [k, jwk] of d.skippedEntries || []) {
-    skippedKeys.set(k, await importKeyFromJWK(jwk, { name: AES_ALGO, length: 256 }, ['encrypt', 'decrypt']));
+    skippedKeys.set(k, await importKeyFromJWK(jwk as any, { name: AES_ALGO } as any, ['encrypt', 'decrypt']));
   }
 
   return {
