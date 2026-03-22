@@ -254,8 +254,8 @@ function MosaicTile({ item, isLarge, followingIds }: { item: LiveItem; isLarge?:
       {/* Hover play icon */}
       {hasVideo && (
         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
-          <div className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
-            <Play className="w-5 h-5 text-white ml-0.5" />
+          <div className="w-7 h-7 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
+            <Play className="w-3.5 h-3.5 text-white ml-0.5" />
           </div>
         </div>
       )}
