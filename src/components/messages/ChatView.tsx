@@ -110,13 +110,18 @@ export function ChatView({ conversationId }: ChatViewProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
 
-    const body = replyTo
+    let body = replyTo
       ? `↩️ ${replyTo.profile.name}: "${replyTo.body.slice(0, 50)}${replyTo.body.length > 50 ? '…' : ''}"\n\n${newMessage.trim()}`
       : newMessage.trim();
+
+    // E2EE: encrypt before sending
+    if (e2ee.encrypted) {
+      body = await e2ee.encrypt(body);
+    }
 
     sendMessage.mutate(
       { conversationId, body },
