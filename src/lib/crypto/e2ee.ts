@@ -120,7 +120,8 @@ export async function encryptMessage(
   senderFingerprint: string,
   sequenceNumber: number,
 ): Promise<string> {
-  const iv = randomBytes(IV_LENGTH);
+  const ivArr = randomBytes(IV_LENGTH);
+  const iv = new Uint8Array(ivArr) as unknown as BufferSource;
   const timestamp = Date.now();
 
   // Encode plaintext
@@ -128,7 +129,7 @@ export async function encryptMessage(
 
   // Encrypt with AES-256-GCM
   const ciphertext = await crypto.subtle.encrypt(
-    { name: AES_ALGO, iv, tagLength: 128 },
+    { name: AES_ALGO, iv: iv as ArrayBuffer, tagLength: 128 },
     sessionKey,
     plaintextBuffer,
   );
