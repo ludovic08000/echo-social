@@ -136,7 +136,7 @@ export async function encryptMessage(
 
   // Create signature over (iv || ciphertext || timestamp || seq)
   const signatureData = concatBuffers(
-    iv.buffer,
+    ivArr.buffer as ArrayBuffer,
     ciphertext,
     encodeString(`${timestamp}:${sequenceNumber}`),
   );
