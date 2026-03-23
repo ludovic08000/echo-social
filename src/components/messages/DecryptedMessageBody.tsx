@@ -43,6 +43,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       if (!cancelled) {
         setDisplayText(result.text);
         setIsDecrypting(false);
+        onDecrypted?.(result.text);
       }
     }).catch(() => {
       if (!cancelled) {
