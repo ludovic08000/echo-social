@@ -18,6 +18,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   body,
   decrypt,
   isEncryptionActive,
+  onDecrypted,
 }: DecryptedMessageBodyProps) {
   const [displayText, setDisplayText] = useState<string | null>(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
