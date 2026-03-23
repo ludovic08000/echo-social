@@ -1,8 +1,13 @@
 /**
- * useE2EE - React hook for End-to-End Encryption
+ * useE2EE - React hook for End-to-End Encryption (HARDENED)
+ * 
+ * SECURITY GUARANTEES:
+ * - encrypt() NEVER returns plaintext — throws on failure
+ * - decrypt() NEVER shows raw ciphertext — shows explicit error states
+ * - Fingerprint changes are detected and flagged
+ * - verified=true ONLY when signature is cryptographically verified
  * 
  * Uses Double Ratchet for 1:1 conversations (forward secrecy per message).
- * Falls back to single-key AES-GCM for Zeus and group chats.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -11,7 +16,6 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   getOrCreateIdentityKeys,
   exportPublicKeyBundle,
-  // Legacy (Zeus / groups / fallback)
   encryptMessage,
   decryptMessage,
   isEncryptedMessage,
@@ -20,7 +24,6 @@ import {
   incrementSessionMessageCount,
   needsKeyRotation,
   rotateSessionKey,
-  // Double Ratchet
   initRatchetAsInitiator,
   initRatchetAsResponder,
   ratchetEncrypt,
@@ -32,15 +35,16 @@ import {
   type RatchetEnvelope,
 } from '@/lib/crypto';
 import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
-import { cryptoRateCheck, isCryptoLocked, onCryptoViolation } from '@/lib/crypto/rateLimiter';
+import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
 import { KX_KEY_PARAMS } from '@/lib/crypto/constants';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
 const RATCHET_DB_NAME = 'forsure-ratchet';
 const RATCHET_DB_VERSION = 1;
 const RATCHET_STORE_NAME = 'ratchet-states';
+const KNOWN_FP_KEY = 'forsure-known-fps';
 
-// ─── IndexedDB ratchet persistence (XSS-resistant) ───
+// ─── IndexedDB ratchet persistence ───
 
 function openRatchetDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -87,7 +91,33 @@ async function loadRatchetLocal(convId: string): Promise<RatchetState | null> {
   }
 }
 
-// Clean up any legacy localStorage ratchet data
+// ─── Fingerprint verification ───
+
+function getKnownFingerprints(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(KNOWN_FP_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function saveKnownFingerprint(userId: string, fp: string) {
+  const known = getKnownFingerprints();
+  known[userId] = fp;
+  localStorage.setItem(KNOWN_FP_KEY, JSON.stringify(known));
+}
+
+function checkFingerprintChange(userId: string, currentFp: string): boolean {
+  const known = getKnownFingerprints();
+  const previousFp = known[userId];
+  if (previousFp && previousFp !== currentFp) {
+    console.warn('[PEER_KEY] fingerprint changed for', userId);
+    return true;
+  }
+  return false;
+}
+
+// Clean up legacy localStorage ratchet data
 function cleanupLegacyStorage() {
   try {
     const keysToRemove: string[] = [];
@@ -101,7 +131,6 @@ function cleanupLegacyStorage() {
   } catch {}
 }
 
-
 // ─── Hook ───
 
 export interface E2EEState {
@@ -110,6 +139,12 @@ export interface E2EEState {
   peerFingerprint: string | null;
   encrypted: boolean;
   ratchetActive: boolean;
+  /** True if peer fingerprint changed since last known value */
+  fingerprintChanged: boolean;
+  /** True if peer has no public keys (encryption impossible) */
+  peerKeyMissing: boolean;
+  /** Initialization error if any */
+  initError: string | null;
 }
 
 export function useE2EE(conversationId: string | undefined, peerUserId: string | undefined) {
@@ -120,6 +155,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     peerFingerprint: null,
     encrypted: false,
     ratchetActive: false,
+    fingerprintChanged: false,
+    peerKeyMissing: false,
+    initError: null,
   });
   const keysRef = useRef<IdentityKeyPair | null>(null);
   const peerKeyRef = useRef<{ identityKey: string; signingKey: string; fingerprint: string } | null>(null);
@@ -156,6 +194,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         setState(s => ({ ...s, fingerprint: bundle.fingerprint }));
       } catch (err) {
         console.error('[E2EE] Init failed:', err);
+        setState(s => ({ ...s, initError: 'Key initialization failed' }));
       }
     })();
   }, [user]);
@@ -164,7 +203,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   useEffect(() => {
     if (!peerUserId || !user) return;
 
-    // Zeus doesn't have E2EE keys — use legacy symmetric encryption
     if (isZeus) {
       setState(s => ({ ...s, encrypted: false, ready: true, ratchetActive: false }));
       return;
@@ -180,6 +218,12 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           .maybeSingle();
 
         if (data) {
+          console.log('[PEER_KEY] loaded', peerUserId);
+
+          // Check for fingerprint change
+          const fpChanged = checkFingerprintChange(peerUserId, data.fingerprint);
+          saveKnownFingerprint(peerUserId, data.fingerprint);
+
           peerKeyRef.current = {
             identityKey: data.identity_key,
             signingKey: data.signing_key,
@@ -191,6 +235,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             const existing = await loadRatchetLocal(conversationId);
             if (existing) {
               ratchetRef.current = existing;
+              console.log('[RATCHET] ready state — loaded from IndexedDB');
             }
           }
 
@@ -200,12 +245,26 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             encrypted: true,
             ready: !!keysRef.current,
             ratchetActive: !!ratchetRef.current,
+            fingerprintChanged: fpChanged,
+            peerKeyMissing: false,
           }));
         } else {
-          setState(s => ({ ...s, encrypted: false, ready: true }));
+          console.log('[PEER_KEY] not found for', peerUserId);
+          setState(s => ({
+            ...s,
+            encrypted: false,
+            ready: true,
+            peerKeyMissing: true,
+          }));
         }
-      } catch {
-        setState(s => ({ ...s, encrypted: false, ready: true }));
+      } catch (err) {
+        console.error('[E2EE] Peer key fetch failed:', err);
+        setState(s => ({
+          ...s,
+          encrypted: false,
+          ready: true,
+          initError: 'Peer key fetch failed',
+        }));
       }
     })();
   }, [peerUserId, user, conversationId, isZeus]);
@@ -216,14 +275,12 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     if (ratchetRef.current) return ratchetRef.current;
 
-    // Rate-limit key derivation (expensive + sensitive)
     if (!cryptoRateCheck('deriveBits')) {
       console.warn('[E2EE] Key derivation rate-limited');
       return null;
     }
 
     try {
-      // X25519 DH to get initial shared secret
       const peerPubRaw = base64ToBuffer(peerKeyRef.current.identityKey);
       const peerPubKey = await crypto.subtle.importKey(
         'raw', peerPubRaw, KX_KEY_PARAMS as any, true, []
@@ -235,7 +292,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         256,
       );
 
-      // Deterministic role: lower fingerprint is initiator
       const myFp = keysRef.current.fingerprint;
       const peerFp = peerKeyRef.current.fingerprint;
       const isInitiator = myFp < peerFp;
@@ -252,15 +308,16 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
       ratchetRef.current = ratchetState;
       await saveRatchetLocal(conversationId, ratchetState);
+      console.log('[RATCHET] ready state — initialized');
       setState(s => ({ ...s, ratchetActive: true }));
       return ratchetState;
     } catch (err) {
-      console.error('[E2EE] Ratchet init failed, falling back to legacy:', err);
+      console.error('[E2EE] Ratchet init failed:', err);
       return null;
     }
   }, [conversationId]);
 
-  // Legacy session fallback
+  // Legacy session (for when ratchet cannot be used)
   const ensureLegacySession = useCallback(async () => {
     if (!conversationId || !keysRef.current || !peerKeyRef.current) return null;
     let session = await loadSessionKey(conversationId);
@@ -273,47 +330,62 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     return session;
   }, [conversationId]);
 
-  // Encrypt — with rate-limiting to detect bulk exfiltration
+  /**
+   * Encrypt — NEVER returns plaintext.
+   * Throws EncryptionError if encryption fails.
+   */
   const encrypt = useCallback(async (plaintext: string): Promise<string> => {
-    if (!state.encrypted || !keysRef.current) return plaintext;
+    // If encryption is not active (Zeus, no peer keys), this is a programming error
+    if (!state.encrypted || !keysRef.current) {
+      throw new EncryptionError('Encryption not available — keys not ready');
+    }
 
     if (!cryptoRateCheck('encrypt')) {
-      console.warn('[E2EE] Encrypt rate-limited — possible exfiltration attempt');
-      return plaintext;
+      throw new EncryptionError('Rate limited — possible exfiltration attempt');
     }
 
-    try {
-      // Try Double Ratchet first
-      const ratchet = await ensureRatchet();
-      if (ratchet) {
-        if (!cryptoRateCheck('sign')) return plaintext;
-        const { envelope, newState } = await ratchetEncrypt(
-          ratchet,
-          plaintext,
-          keysRef.current.signingPrivateKey,
-          keysRef.current.fingerprint,
-        );
-        ratchetRef.current = newState;
-        await saveRatchetLocal(conversationId!, newState);
-        return JSON.stringify(envelope);
+    // Try Double Ratchet first
+    const ratchet = await ensureRatchet();
+    if (ratchet) {
+      if (!cryptoRateCheck('sign')) {
+        throw new EncryptionError('Signing rate limited');
       }
-
-      // Fallback to legacy
-      const session = await ensureLegacySession();
-      if (!session) return plaintext;
-      if (!cryptoRateCheck('sign')) return plaintext;
-      const seq = await incrementSessionMessageCount(conversationId!);
-      return await encryptMessage(
-        plaintext, session.sharedSecret,
-        keysRef.current.signingPrivateKey, keysRef.current.fingerprint, seq,
+      const { envelope, newState } = await ratchetEncrypt(
+        ratchet,
+        plaintext,
+        keysRef.current.signingPrivateKey,
+        keysRef.current.fingerprint,
       );
-    } catch (err) {
-      console.error('[E2EE] Encrypt failed:', err);
-      return plaintext;
+      ratchetRef.current = newState;
+      await saveRatchetLocal(conversationId!, newState);
+      const result = JSON.stringify(envelope);
+      console.log('[E2EE] encrypt success (ratchet)');
+      return result;
     }
+
+    // Fallback to legacy session-based encryption
+    const session = await ensureLegacySession();
+    if (!session) {
+      throw new EncryptionError('No encryption session available');
+    }
+
+    if (!cryptoRateCheck('sign')) {
+      throw new EncryptionError('Signing rate limited');
+    }
+
+    const seq = await incrementSessionMessageCount(conversationId!);
+    const result = await encryptMessage(
+      plaintext, session.sharedSecret,
+      keysRef.current.signingPrivateKey, keysRef.current.fingerprint, seq,
+    );
+    console.log('[E2EE] encrypt success (legacy)');
+    return result;
   }, [state.encrypted, conversationId, ensureRatchet, ensureLegacySession]);
 
-  // Decrypt — with rate-limiting to detect bulk exfiltration
+  /**
+   * Decrypt — NEVER shows raw ciphertext.
+   * Returns explicit error messages on failure.
+   */
   const decrypt = useCallback(async (body: string): Promise<{ text: string; encrypted: boolean; verified: boolean }> => {
     if (!isEncryptedMessage(body) && !isRatchetEnvelope(body)) {
       return { text: body, encrypted: false, verified: false };
@@ -324,8 +396,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     }
 
     try {
-      // Check if it's a ratchet envelope
       if (isRatchetEnvelope(body)) {
+        console.log('[E2EE] decrypt start (ratchet)');
         const envelope: RatchetEnvelope = JSON.parse(body);
         let ratchet = ratchetRef.current || await ensureRatchet();
         if (!ratchet) {
@@ -337,25 +409,51 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         );
         ratchetRef.current = newState;
         await saveRatchetLocal(conversationId!, newState);
+        console.log('[E2EE] decrypt success', verified ? '(verified)' : '(unverified)');
         return { text: plaintext, encrypted: true, verified };
       }
 
       // Legacy envelope
+      console.log('[E2EE] decrypt start (legacy)');
       const session = await ensureLegacySession();
-      if (!session) return { text: '🔒 Message chiffré (clé manquante)', encrypted: true, verified: false };
+      if (!session) {
+        return { text: '🔒 Clé de session manquante', encrypted: true, verified: false };
+      }
       const result = await decryptMessage(body, session.sharedSecret, peerKeyRef.current?.signingKey);
+      console.log('[E2EE] decrypt success', result.verified ? '(verified)' : '(unverified)');
       return { text: result.plaintext, encrypted: true, verified: result.verified };
     } catch (err) {
-      console.error('[E2EE] Decrypt failed:', err);
-      return { text: '🔒 Impossible de déchiffrer', encrypted: true, verified: false };
+      console.error('[E2EE] decrypt failed:', err);
+      return { text: '🔒 Message illisible', encrypted: true, verified: false };
     }
   }, [conversationId, ensureRatchet, ensureLegacySession]);
+
+  /** Check if encryption is ready for this conversation */
+  const isReady = useCallback((): boolean => {
+    return state.encrypted && state.ready && !!keysRef.current && !!peerKeyRef.current;
+  }, [state.encrypted, state.ready]);
+
+  /** Acknowledge fingerprint change */
+  const acknowledgeFingerprint = useCallback(() => {
+    setState(s => ({ ...s, fingerprintChanged: false }));
+  }, []);
 
   return {
     ...state,
     encrypt,
     decrypt,
+    isReady,
+    acknowledgeFingerprint,
   };
+}
+
+// ─── Custom error ───
+
+export class EncryptionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EncryptionError';
+  }
 }
 
 // ─── Helpers ───

@@ -11,3 +11,11 @@ export {
   getMessagingProvider,
   hasExternalProvider,
 } from './provider';
+
+export {
+  messageQueue,
+  getStatusLabel,
+  getStatusIcon,
+  type OutboundMessage,
+  type OutboundMessageStatus,
+} from './messageQueue';

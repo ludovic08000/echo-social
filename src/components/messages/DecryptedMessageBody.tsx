@@ -5,6 +5,8 @@ interface DecryptedMessageBodyProps {
   body: string;
   decrypt: (body: string) => Promise<{ text: string; encrypted: boolean; verified: boolean }>;
   isEncryptionActive: boolean;
+  /** Callback when decryption succeeds — used to cache plaintext for actions */
+  onDecrypted?: (text: string) => void;
 }
 
 /**
@@ -16,6 +18,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   body,
   decrypt,
   isEncryptionActive,
+  onDecrypted,
 }: DecryptedMessageBodyProps) {
   const [displayText, setDisplayText] = useState<string | null>(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
@@ -40,6 +43,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       if (!cancelled) {
         setDisplayText(result.text);
         setIsDecrypting(false);
+        onDecrypted?.(result.text);
       }
     }).catch(() => {
       if (!cancelled) {
@@ -49,7 +53,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     });
 
     return () => { cancelled = true; };
-  }, [body, decrypt, isEncryptionActive]);
+  }, [body, decrypt, isEncryptionActive, onDecrypted]);
 
   if (isDecrypting || displayText === null) {
     return (

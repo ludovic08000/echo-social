@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Send, Plus, Smile, Phone, Video,
   Camera, X, CheckCheck, Pin, PinOff, ChevronDown,
-  Forward, Users, UserPlus, LogOut, Crown, UserMinus, Sparkles, Info
+  Forward, Users, UserPlus, LogOut, Crown, UserMinus, Sparkles, Info,
+  AlertTriangle
 } from 'lucide-react';
 import { format, isSameDay } from 'date-fns';
 import { UserAvatar } from '@/components/UserAvatar';
@@ -18,8 +19,10 @@ import { CallOverlay } from '@/components/CallOverlay';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { toast } from 'sonner';
 import { useE2EE } from '@/hooks/useE2EE';
+import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { EncryptionBadge, EncryptionStatusBar } from './EncryptionBadge';
 import { DecryptedMessageBody } from './DecryptedMessageBody';
+import { OutboundStatusIndicator } from './OutboundStatus';
 
 import { MessageActions } from './MessageActions';
 import { TypingIndicator } from './TypingIndicator';
@@ -33,11 +36,17 @@ interface ChatViewProps {
   conversationId: string;
 }
 
+/**
+ * Cache of decrypted message texts so actions (copy, reply, forward, report)
+ * always use the plaintext, never the raw ciphertext.
+ */
+const decryptedCache = new Map<string, string>();
+
 export function ChatView({ conversationId }: ChatViewProps) {
   const { user } = useAuth();
   const { data: conversations } = useConversations();
   const { data: messages, isLoading } = useMessages(conversationId);
-  const sendMessage = useSendMessage();
+  const legacySendMessage = useSendMessage();
   const deleteForMe = useDeleteMessageForMe();
   const deleteForEveryone = useDeleteMessageForEveryone();
   const markRead = useMarkConversationRead();
@@ -50,11 +59,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [showSharePicker, setShowSharePicker] = useState(false);
   const [pinnedMessages, setPinnedMessages] = useState<Set<string>>(new Set());
-  const [forwardMsg, setForwardMsg] = useState<Message | null>(null);
+  const [forwardMsg, setForwardMsg] = useState<{ id: string; plaintext: string } | null>(null);
   const [showGroupPanel, setShowGroupPanel] = useState(false);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [inviteSearch, setInviteSearch] = useState('');
   const [showNewChat, setShowNewChat] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -72,10 +82,22 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const peerUserId = conversation?.participant?.user_id;
   const e2ee = useE2EE(conversationId, peerUserId);
 
+  // Message queue for encrypted sending
+  const queue = useMessageQueue(
+    conversationId,
+    e2ee.encrypted ? e2ee.encrypt : null,
+    e2ee.isReady(),
+    e2ee.encrypted,
+  );
+
   const { upload, isUploading } = useImageUpload({
     bucket: 'post-images',
     onSuccess: (url) => {
-      sendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
+      if (e2ee.encrypted) {
+        queue.sendMessage('📷 Photo', url).catch(() => toast.error('Erreur envoi photo'));
+      } else {
+        legacySendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
+      }
     },
   });
 
@@ -95,7 +117,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, queue.pendingMessages]);
 
   useEffect(() => {
     if (conversationId) markRead.mutate(conversationId);
@@ -111,30 +133,46 @@ export function ChatView({ conversationId }: ChatViewProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  /**
+   * Get the decrypted text for a message. Falls back to the cache
+   * populated by DecryptedMessageBody.
+   */
+  const getDecryptedText = useCallback((msg: Message): string => {
+    const cached = decryptedCache.get(msg.id);
+    if (cached) return cached;
+    // If it doesn't look encrypted, return body
+    const looksEncrypted = msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"'));
+    if (!looksEncrypted) return msg.body;
+    // Fallback: never show raw ciphertext
+    return '🔒 Message chiffré';
+  }, []);
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || isSending) return;
 
-    let body = replyTo
-      ? `↩️ ${replyTo.profile.name}: "${replyTo.body.slice(0, 50)}${replyTo.body.length > 50 ? '…' : ''}"\n\n${newMessage.trim()}`
-      : newMessage.trim();
+    setIsSending(true);
+    try {
+      let body = replyTo
+        ? `↩️ ${replyTo.profile.name}: "${getDecryptedText(replyTo).slice(0, 50)}${getDecryptedText(replyTo).length > 50 ? '…' : ''}"\n\n${newMessage.trim()}`
+        : newMessage.trim();
 
-    // E2EE: encrypt before sending
-    if (e2ee.encrypted) {
-      body = await e2ee.encrypt(body);
-    }
-
-    sendMessage.mutate(
-      { conversationId, body },
-      {
-        onSuccess: () => {
-          setNewMessage('');
-          setReplyTo(null);
-          setShowEmojis(false);
-          inputRef.current?.focus();
-        },
+      if (e2ee.encrypted) {
+        await queue.sendMessage(body);
+      } else {
+        legacySendMessage.mutate({ conversationId, body });
       }
-    );
+
+      setNewMessage('');
+      setReplyTo(null);
+      setShowEmojis(false);
+      inputRef.current?.focus();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erreur envoi';
+      toast.error(msg);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handleImageUpload = () => {
@@ -157,7 +195,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
     });
   };
 
-  const handleCopy = (text: string) => {
+  const handleCopy = (msg: Message) => {
+    const text = getDecryptedText(msg);
     navigator.clipboard.writeText(text);
     toast.success('Message copié');
   };
@@ -178,11 +217,16 @@ export function ChatView({ conversationId }: ChatViewProps) {
     return groups;
   }, [messages]);
 
+  /** Callback from DecryptedMessageBody to cache decrypted text */
+  const onDecrypted = useCallback((msgId: string, text: string) => {
+    decryptedCache.set(msgId, text);
+  }, []);
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
 
-      {/* Facebook Messenger-style header */}
+      {/* Header */}
       <header className="sticky top-0 z-40 bg-background border-b border-border/40 safe-area-pt">
         <div className="flex items-center gap-2 px-3 h-[60px]">
           <Link to="/messages">
@@ -218,32 +262,14 @@ export function ChatView({ conversationId }: ChatViewProps) {
             )
           )}
 
-          {/* Action buttons - Facebook Messenger style */}
           <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-full text-primary"
-              onClick={() => startCall(conversationId, 'audio')}
-              disabled={callState !== 'idle'}
-            >
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => startCall(conversationId, 'audio')} disabled={callState !== 'idle'}>
               <Phone className="w-5 h-5" />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-full text-primary"
-              onClick={() => startCall(conversationId, 'video')}
-              disabled={callState !== 'idle'}
-            >
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => startCall(conversationId, 'video')} disabled={callState !== 'idle'}>
               <Video className="w-5 h-5" />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-full text-primary"
-              onClick={() => setShowGroupPanel(!showGroupPanel)}
-            >
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => setShowGroupPanel(!showGroupPanel)}>
               <Info className="w-5 h-5" />
             </Button>
           </div>
@@ -257,6 +283,22 @@ export function ChatView({ conversationId }: ChatViewProps) {
         peerFingerprint={e2ee.peerFingerprint}
         ratchetActive={e2ee.ratchetActive}
       />
+
+      {/* Fingerprint change warning */}
+      {e2ee.fingerprintChanged && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20">
+          <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+          <span className="text-[11px] text-amber-700 dark:text-amber-400 font-medium flex-1">
+            ⚠️ La clé de sécurité de ce contact a changé. Vérifiez son identité.
+          </span>
+          <button
+            onClick={e2ee.acknowledgeFingerprint}
+            className="text-[10px] font-semibold text-amber-600 underline underline-offset-2"
+          >
+            OK
+          </button>
+        </div>
+      )}
 
       {/* Group Management Panel */}
       {isGroup && showGroupPanel && (
@@ -375,7 +417,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
             <div className="flex items-center gap-2">
               <Pin className="w-3.5 h-3.5 text-primary flex-shrink-0" />
               <p className="text-xs text-foreground font-medium truncate flex-1">
-                📌 {pinned.length === 1 ? pinned[0].body.slice(0, 60) : `${pinned.length} messages épinglés`}
+                📌 {pinned.length === 1 ? getDecryptedText(pinned[0]).slice(0, 60) : `${pinned.length} messages épinglés`}
               </p>
               {pinned.length === 1 && (
                 <button onClick={() => setPinnedMessages(prev => { const n = new Set(prev); n.delete(pinned[0].id); return n; })} className="text-muted-foreground hover:text-foreground">
@@ -387,7 +429,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         );
       })()}
 
-      {/* Messages area - Facebook Messenger style */}
+      {/* Messages area */}
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
@@ -397,7 +439,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
           <div className="flex items-center justify-center py-12">
             <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
           </div>
-        ) : messages?.length === 0 ? (
+        ) : messages?.length === 0 && queue.pendingMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             {conversation && !conversation.is_group && (
               <>
@@ -413,11 +455,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
                 <button
                   key={suggestion}
                   onClick={async () => {
-                    let body = suggestion;
-                    if (e2ee.encrypted) {
-                      body = await e2ee.encrypt(body);
+                    try {
+                      if (e2ee.encrypted) {
+                        await queue.sendMessage(suggestion);
+                      } else {
+                        legacySendMessage.mutate({ conversationId, body: suggestion });
+                      }
+                    } catch {
+                      toast.error('Erreur envoi');
                     }
-                    sendMessage.mutate({ conversationId, body });
                   }}
                   className="px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 active:scale-95 transition-all"
                 >
@@ -427,168 +473,192 @@ export function ChatView({ conversationId }: ChatViewProps) {
             </div>
           </div>
         ) : (
-          groupedMessages.map((group, gi) => (
-            <div key={gi}>
-              {/* Date separator - clean Facebook style */}
-              <div className="flex items-center justify-center my-4">
-                <span className="text-[11px] font-medium text-muted-foreground px-3 py-1 rounded-full bg-secondary/60 capitalize">
-                  {formatDateSeparator(group.date)}
-                </span>
-              </div>
+          <>
+            {groupedMessages.map((group, gi) => (
+              <div key={gi}>
+                <div className="flex items-center justify-center my-4">
+                  <span className="text-[11px] font-medium text-muted-foreground px-3 py-1 rounded-full bg-secondary/60 capitalize">
+                    {formatDateSeparator(group.date)}
+                  </span>
+                </div>
 
-              {/* Messages */}
-              <div className="space-y-0.5">
-                {group.messages.map((msg, mi) => {
-                  const isMe = msg.sender_id === user?.id;
-                  const prevMsg = mi > 0 ? group.messages[mi - 1] : null;
-                  const nextMsg = mi < group.messages.length - 1 ? group.messages[mi + 1] : null;
-                  const isFirstInGroup = !prevMsg || prevMsg.sender_id !== msg.sender_id;
-                  const isLastInGroup = !nextMsg || nextMsg.sender_id !== msg.sender_id;
-                  const reactions = messageReactions[msg.id] || [];
-                  const looksEncrypted = msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"'));
-                  const isBigEmoji = !looksEncrypted && isSingleEmoji(msg.body);
-                  const isImage = msg.image_url;
+                <div className="space-y-0.5">
+                  {group.messages.map((msg, mi) => {
+                    const isMe = msg.sender_id === user?.id;
+                    const prevMsg = mi > 0 ? group.messages[mi - 1] : null;
+                    const nextMsg = mi < group.messages.length - 1 ? group.messages[mi + 1] : null;
+                    const isFirstInGroup = !prevMsg || prevMsg.sender_id !== msg.sender_id;
+                    const isLastInGroup = !nextMsg || nextMsg.sender_id !== msg.sender_id;
+                    const reactions = messageReactions[msg.id] || [];
+                    const looksEncrypted = msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"'));
+                    const isBigEmoji = !looksEncrypted && isSingleEmoji(msg.body);
+                    const isImage = msg.image_url;
 
                     return (
-                    <div
-                      key={msg.id}
-                      className={cn(
-                        'flex items-end gap-1.5 relative group',
-                        isFirstInGroup ? 'mt-2' : 'mt-px'
-                      )}
-                    >
-                      {/* Avatar for all senders */}
-                      <div className="w-7 flex-shrink-0 mb-0.5">
-                        {isLastInGroup && (
-                          <Link to={`/profile/${msg.sender_id}`}>
-                            <UserAvatar src={msg.profile.avatar_url} alt={msg.profile.name} size="xs" />
-                          </Link>
+                      <div
+                        key={msg.id}
+                        className={cn(
+                          'flex items-end gap-1.5 relative group',
+                          isFirstInGroup ? 'mt-2' : 'mt-px'
                         )}
-                      </div>
-
-                      <div className="max-w-[70%] flex flex-col relative items-start">
-                        <MessageActions
-                          isMe={isMe}
-                          visible={activeMessageId === msg.id}
-                          onClose={() => setActiveMessageId(null)}
-                          onReply={() => setReplyTo(msg)}
-                          onReact={(emoji) => handleReact(msg.id, emoji)}
-                          onCopy={() => handleCopy(msg.body)}
-                          onForward={() => setForwardMsg(msg)}
-                          onPin={() => {
-                            setPinnedMessages(prev => {
-                              const next = new Set(prev);
-                              if (next.has(msg.id)) {
-                                next.delete(msg.id);
-                                toast.success('Message désépinglé');
-                              } else {
-                                next.add(msg.id);
-                                toast.success('Message épinglé 📌');
-                              }
-                              return next;
-                            });
-                          }}
-                          isPinned={pinnedMessages.has(msg.id)}
-                          onDeleteForMe={() => {
-                            deleteForMe.mutate({ messageId: msg.id, conversationId });
-                          }}
-                          onDeleteForEveryone={isMe ? () => {
-                            deleteForEveryone.mutate({ messageId: msg.id, conversationId });
-                          } : undefined}
-                          onReport={async () => {
-                            await supabase.from('abuse_reports').insert({
-                              reporter_id: user!.id,
-                              reported_user_id: msg.sender_id,
-                              report_type: 'message',
-                              description: `Message signalé: "${msg.body.slice(0, 200)}"`,
-                            });
-                            toast.success('Message signalé. Merci pour votre vigilance.');
-                          }}
-                        />
-
-                        {/* Pin indicator */}
-                        {pinnedMessages.has(msg.id) && (
-                          <div className="flex items-center gap-1 mb-0.5">
-                            <Pin className="w-3 h-3 text-primary" />
-                            <span className="text-[10px] text-primary font-medium">Épinglé</span>
-                          </div>
-                        )}
-
-                        {/* Image message */}
-                        {isImage && (
-                          <div className="overflow-hidden mb-0.5 rounded-[18px] rounded-bl-sm">
-                            <img src={msg.image_url!} alt="Photo" className="max-w-full max-h-[300px] object-cover" />
-                          </div>
-                        )}
-
-                        {/* Message bubble */}
-                        <div
-                          onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
-                          onContextMenu={(e) => { e.preventDefault(); setActiveMessageId(msg.id); }}
-                          className={cn(
-                            'cursor-pointer select-none transition-all duration-100',
-                            activeMessageId === msg.id && 'scale-[0.98] opacity-80',
-                            isBigEmoji
-                              ? 'text-4xl leading-none py-1'
-                              : cn(
-                                  'px-3 py-1.5 text-[15px] break-words leading-relaxed',
-                                  isMe
-                                    ? cn(
-                                        'bg-primary text-primary-foreground',
-                                        isFirstInGroup && isLastInGroup && 'rounded-[18px]',
-                                        isFirstInGroup && !isLastInGroup && 'rounded-[18px] rounded-br-[4px]',
-                                        !isFirstInGroup && isLastInGroup && 'rounded-[18px] rounded-tr-[4px]',
-                                        !isFirstInGroup && !isLastInGroup && 'rounded-[18px] rounded-tr-[4px] rounded-br-[4px]'
-                                      )
-                                    : cn(
-                                        'bg-secondary text-foreground',
-                                        isFirstInGroup && isLastInGroup && 'rounded-[18px]',
-                                        isFirstInGroup && !isLastInGroup && 'rounded-[18px] rounded-bl-[4px]',
-                                        !isFirstInGroup && isLastInGroup && 'rounded-[18px] rounded-tl-[4px]',
-                                        !isFirstInGroup && !isLastInGroup && 'rounded-[18px] rounded-tl-[4px] rounded-bl-[4px]'
-                                      )
-                                )
+                      >
+                        <div className="w-7 flex-shrink-0 mb-0.5">
+                          {isLastInGroup && (
+                            <Link to={`/profile/${msg.sender_id}`}>
+                              <UserAvatar src={msg.profile.avatar_url} alt={msg.profile.name} size="xs" />
+                            </Link>
                           )}
-                        >
-                          <DecryptedMessageBody
-                            body={msg.body}
-                            decrypt={e2ee.decrypt}
-                            isEncryptionActive={e2ee.encrypted}
-                          />
                         </div>
 
-                        {/* Reactions */}
-                        {reactions.length > 0 && (
-                          <div className="flex items-center gap-0.5 -mt-1 px-1 relative z-10">
-                            <div className="flex items-center gap-0 bg-background border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm">
-                              {reactions.map((r, i) => (
-                                <span key={i} className="text-xs">{r}</span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
+                        <div className="max-w-[70%] flex flex-col relative items-start">
+                          <MessageActions
+                            isMe={isMe}
+                            visible={activeMessageId === msg.id}
+                            onClose={() => setActiveMessageId(null)}
+                            onReply={() => setReplyTo(msg)}
+                            onReact={(emoji) => handleReact(msg.id, emoji)}
+                            onCopy={() => handleCopy(msg)}
+                            onForward={() => setForwardMsg({ id: msg.id, plaintext: getDecryptedText(msg) })}
+                            onPin={() => {
+                              setPinnedMessages(prev => {
+                                const next = new Set(prev);
+                                if (next.has(msg.id)) {
+                                  next.delete(msg.id);
+                                  toast.success('Message désépinglé');
+                                } else {
+                                  next.add(msg.id);
+                                  toast.success('Message épinglé 📌');
+                                }
+                                return next;
+                              });
+                            }}
+                            isPinned={pinnedMessages.has(msg.id)}
+                            onDeleteForMe={() => {
+                              deleteForMe.mutate({ messageId: msg.id, conversationId });
+                            }}
+                            onDeleteForEveryone={isMe ? () => {
+                              deleteForEveryone.mutate({ messageId: msg.id, conversationId });
+                            } : undefined}
+                            onReport={async () => {
+                              const reportText = getDecryptedText(msg);
+                              await supabase.from('abuse_reports').insert({
+                                reporter_id: user!.id,
+                                reported_user_id: msg.sender_id,
+                                report_type: 'message',
+                                description: `Message signalé: "${reportText.slice(0, 200)}"`,
+                              });
+                              toast.success('Message signalé. Merci pour votre vigilance.');
+                            }}
+                          />
 
-                        {/* Timestamp + read receipt + encryption badge */}
-                        {isLastInGroup && (
-                          <div className="flex items-center gap-1 mt-0.5 px-1">
-                            <span className="text-[11px] text-muted-foreground">
-                              {format(new Date(msg.created_at), 'HH:mm')}
-                            </span>
-                            {e2ee.encrypted && (
-                              <EncryptionBadge encrypted={true} verified={true} size="xs" />
+                          {pinnedMessages.has(msg.id) && (
+                            <div className="flex items-center gap-1 mb-0.5">
+                              <Pin className="w-3 h-3 text-primary" />
+                              <span className="text-[10px] text-primary font-medium">Épinglé</span>
+                            </div>
+                          )}
+
+                          {isImage && (
+                            <div className="overflow-hidden mb-0.5 rounded-[18px] rounded-bl-sm">
+                              <img src={msg.image_url!} alt="Photo" className="max-w-full max-h-[300px] object-cover" />
+                            </div>
+                          )}
+
+                          <div
+                            onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
+                            onContextMenu={(e) => { e.preventDefault(); setActiveMessageId(msg.id); }}
+                            className={cn(
+                              'cursor-pointer select-none transition-all duration-100',
+                              activeMessageId === msg.id && 'scale-[0.98] opacity-80',
+                              isBigEmoji
+                                ? 'text-4xl leading-none py-1'
+                                : cn(
+                                    'px-3 py-1.5 text-[15px] break-words leading-relaxed',
+                                    isMe
+                                      ? cn(
+                                          'bg-primary text-primary-foreground',
+                                          isFirstInGroup && isLastInGroup && 'rounded-[18px]',
+                                          isFirstInGroup && !isLastInGroup && 'rounded-[18px] rounded-br-[4px]',
+                                          !isFirstInGroup && isLastInGroup && 'rounded-[18px] rounded-tr-[4px]',
+                                          !isFirstInGroup && !isLastInGroup && 'rounded-[18px] rounded-tr-[4px] rounded-br-[4px]'
+                                        )
+                                      : cn(
+                                          'bg-secondary text-foreground',
+                                          isFirstInGroup && isLastInGroup && 'rounded-[18px]',
+                                          isFirstInGroup && !isLastInGroup && 'rounded-[18px] rounded-bl-[4px]',
+                                          !isFirstInGroup && isLastInGroup && 'rounded-[18px] rounded-tl-[4px]',
+                                          !isFirstInGroup && !isLastInGroup && 'rounded-[18px] rounded-tl-[4px] rounded-bl-[4px]'
+                                        )
+                                  )
                             )}
-                            {isMe && (
-                              <CheckCheck className="w-3.5 h-3.5 text-primary/70" />
-                            )}
+                          >
+                            <DecryptedMessageBody
+                              body={msg.body}
+                              decrypt={e2ee.decrypt}
+                              isEncryptionActive={e2ee.encrypted}
+                              onDecrypted={(text) => onDecrypted(msg.id, text)}
+                            />
                           </div>
-                        )}
+
+                          {reactions.length > 0 && (
+                            <div className="flex items-center gap-0.5 -mt-1 px-1 relative z-10">
+                              <div className="flex items-center gap-0 bg-background border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm">
+                                {reactions.map((r, i) => (
+                                  <span key={i} className="text-xs">{r}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Timestamp + encryption badge (uses REAL verification state) */}
+                          {isLastInGroup && (
+                            <div className="flex items-center gap-1 mt-0.5 px-1">
+                              <span className="text-[11px] text-muted-foreground">
+                                {format(new Date(msg.created_at), 'HH:mm')}
+                              </span>
+                              {e2ee.encrypted && looksEncrypted && (
+                                <EncryptionBadge
+                                  encrypted={true}
+                                  verified={decryptedCache.has(msg.id) && !e2ee.fingerprintChanged}
+                                  ratchetActive={e2ee.ratchetActive}
+                                  size="xs"
+                                />
+                              )}
+                              {isMe && (
+                                <CheckCheck className="w-3.5 h-3.5 text-primary/70" />
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))
+            ))}
+
+            {/* Pending outbound messages from queue */}
+            {queue.pendingMessages.map(pm => (
+              <div key={pm.localId} className="flex items-end gap-1.5 mt-2">
+                <div className="w-7 flex-shrink-0 mb-0.5" />
+                <div className="max-w-[70%] flex flex-col items-start">
+                  <div className={cn(
+                    'px-3 py-1.5 text-[15px] break-words leading-relaxed rounded-[18px]',
+                    'bg-primary/70 text-primary-foreground',
+                    (pm.status === 'failed_visible') && 'bg-destructive/20 text-destructive border border-destructive/30',
+                  )}>
+                    {pm.plaintext || '…'}
+                  </div>
+                  <OutboundStatusIndicator
+                    status={pm.status}
+                    lastError={pm.lastError}
+                    onRetry={() => queue.retryMessage(pm.localId)}
+                    onRemove={() => queue.removeMessage(pm.localId)}
+                  />
+                </div>
+              </div>
+            ))}
+          </>
         )}
 
         {isTyping && conversation && (
@@ -608,7 +678,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         </button>
       )}
 
-      {/* Reply preview */}
+      {/* Reply preview — uses decrypted text */}
       {replyTo && (
         <div className="border-t border-border/30 bg-secondary/30 px-4 py-2 flex items-center gap-3">
           <div className="w-1 h-8 rounded-full bg-primary flex-shrink-0" />
@@ -616,7 +686,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
             <p className="text-[11px] font-semibold text-primary">
               Réponse à {replyTo.sender_id === user?.id ? 'vous-même' : replyTo.profile.name}
             </p>
-            <p className="text-xs text-muted-foreground truncate">{replyTo.body}</p>
+            <p className="text-xs text-muted-foreground truncate">{getDecryptedText(replyTo)}</p>
           </div>
           <button onClick={() => setReplyTo(null)} className="text-muted-foreground hover:text-foreground">
             <X className="w-4 h-4" />
@@ -656,17 +726,20 @@ export function ChatView({ conversationId }: ChatViewProps) {
       {showSharePicker && (
         <ShareContentPicker
           onShare={(shareText) => {
-            sendMessage.mutate({ conversationId, body: shareText });
+            if (e2ee.encrypted) {
+              queue.sendMessage(shareText).catch(() => toast.error('Erreur'));
+            } else {
+              legacySendMessage.mutate({ conversationId, body: shareText });
+            }
             setShowSharePicker(false);
           }}
           onClose={() => setShowSharePicker(false)}
         />
       )}
 
-      {/* Input Bar - Facebook Messenger style */}
+      {/* Input Bar */}
       <div className="border-t border-border/40 bg-background safe-area-pb">
         <form onSubmit={handleSend} className="flex items-center gap-1.5 px-2 py-2">
-          {/* Quick actions */}
           <button
             type="button"
             onClick={handleImageUpload}
@@ -680,7 +753,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
             )}
           </button>
 
-          {/* Input field */}
           <div className="flex-1 flex items-center bg-secondary rounded-full px-1 min-h-[40px]">
             <button
               type="button"
@@ -702,17 +774,22 @@ export function ChatView({ conversationId }: ChatViewProps) {
             />
           </div>
 
-          {/* Send or Voice */}
           {newMessage.trim() ? (
             <button
               type="submit"
-              disabled={sendMessage.isPending}
+              disabled={isSending}
               className="w-10 h-10 rounded-full flex items-center justify-center text-primary hover:bg-primary/10 transition-colors flex-shrink-0"
             >
               <Send className="w-6 h-6" />
             </button>
           ) : (
-            <VoiceRecordButton onSend={(text) => sendMessage.mutate({ conversationId, body: text })} />
+            <VoiceRecordButton onSend={(text) => {
+              if (e2ee.encrypted) {
+                queue.sendMessage(text).catch(() => toast.error('Erreur'));
+              } else {
+                legacySendMessage.mutate({ conversationId, body: text });
+              }
+            }} />
           )}
         </form>
       </div>
@@ -735,15 +812,19 @@ export function ChatView({ conversationId }: ChatViewProps) {
         onSwitchCamera={switchCamera}
       />
 
-      {/* Forward dialog */}
+      {/* Forward dialog — uses decrypted text */}
       <ForwardMessageDialog
         open={!!forwardMsg}
         onOpenChange={(v) => { if (!v) setForwardMsg(null); }}
-        messageBody={forwardMsg?.body || ''}
+        messageBody={forwardMsg?.plaintext || ''}
         onForward={(targetConvId) => {
           if (forwardMsg) {
-            const forwardBody = `↪️ Message transféré:\n"${forwardMsg.body}"`;
-            sendMessage.mutate({ conversationId: targetConvId, body: forwardBody });
+            const forwardBody = `↪️ Message transféré:\n"${forwardMsg.plaintext}"`;
+            if (e2ee.encrypted) {
+              queue.sendMessage(forwardBody).catch(() => toast.error('Erreur'));
+            } else {
+              legacySendMessage.mutate({ conversationId: targetConvId, body: forwardBody });
+            }
             toast.success('Message transféré');
             setForwardMsg(null);
           }
