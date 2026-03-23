@@ -5,6 +5,8 @@ interface DecryptedMessageBodyProps {
   body: string;
   decrypt: (body: string) => Promise<{ text: string; encrypted: boolean; verified: boolean }>;
   isEncryptionActive: boolean;
+  /** Callback when decryption succeeds — used to cache plaintext for actions */
+  onDecrypted?: (text: string) => void;
 }
 
 /**
