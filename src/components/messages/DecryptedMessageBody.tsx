@@ -53,7 +53,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     });
 
     return () => { cancelled = true; };
-  }, [body, decrypt, isEncryptionActive]);
+  }, [body, decrypt, isEncryptionActive, onDecrypted]);
 
   if (isDecrypting || displayText === null) {
     return (
