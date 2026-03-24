@@ -80,6 +80,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const allFriends = friendsData?.friends || [];
   const navigate = useNavigate();
   const peerUserId = conversation?.participant?.user_id;
+  const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const e2ee = useE2EE(conversationId, peerUserId);
 
   // Message queue for encrypted sending
