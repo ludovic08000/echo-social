@@ -93,9 +93,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const { upload, isUploading } = useImageUpload({
     bucket: 'post-images',
     onSuccess: (url) => {
-      if (e2ee.encrypted) {
+      if (e2ee.encrypted || !isZeusConversation) {
+        // Always use encrypted queue for non-Zeus conversations
         queue.sendMessage('📷 Photo', url).catch(() => toast.error('Erreur envoi photo'));
       } else {
+        // Zeus only
         legacySendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
       }
     },
