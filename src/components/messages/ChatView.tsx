@@ -150,7 +150,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
     return '🔒 Message chiffré';
   }, []);
 
-  const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
+
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
