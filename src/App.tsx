@@ -148,13 +148,13 @@ function AppContent() {
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/forgot-password" element={<PublicOnlyRoute><ForgotPassword /></PublicOnlyRoute>} />
               <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/onboarding" element={<Onboarding />} />
+              <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
               
               {/* Protected routes */}
               <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
-              <Route path="/post/:id" element={<PostDetail />} />
+              <Route path="/post/:id" element={<ProtectedRoute><PostDetail /></ProtectedRoute>} />
               <Route path="/create" element={<ProtectedRoute><CreatePostPage /></ProtectedRoute>} />
-              <Route path="/profile/:id" element={<Profile />} />
+              <Route path="/profile/:id" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               <Route path="/search" element={<ProtectedRoute><Search /></ProtectedRoute>} />
               <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />

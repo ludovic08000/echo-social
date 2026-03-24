@@ -80,6 +80,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const allFriends = friendsData?.friends || [];
   const navigate = useNavigate();
   const peerUserId = conversation?.participant?.user_id;
+  const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const e2ee = useE2EE(conversationId, peerUserId);
 
   // Message queue for encrypted sending
@@ -93,9 +94,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const { upload, isUploading } = useImageUpload({
     bucket: 'post-images',
     onSuccess: (url) => {
-      if (e2ee.encrypted) {
+      if (e2ee.encrypted || !isZeusConversation) {
+        // Always use encrypted queue for non-Zeus conversations
         queue.sendMessage('📷 Photo', url).catch(() => toast.error('Erreur envoi photo'));
       } else {
+        // Zeus only
         legacySendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
       }
     },
@@ -147,9 +150,17 @@ export function ChatView({ conversationId }: ChatViewProps) {
     return '🔒 Message chiffré';
   }, []);
 
+
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || isSending) return;
+
+    // SECURITY: Block plaintext sending for non-Zeus conversations when peer has no keys
+    if (!isZeusConversation && !e2ee.encrypted && e2ee.peerKeyMissing) {
+      toast.error('Impossible d\'envoyer : le contact n\'a pas encore de clé de chiffrement. Réessayez plus tard.');
+      return;
+    }
 
     setIsSending(true);
     try {
@@ -159,8 +170,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
       if (e2ee.encrypted) {
         await queue.sendMessage(body);
-      } else {
+      } else if (isZeusConversation) {
+        // Only Zeus conversations are allowed to send unencrypted
         legacySendMessage.mutate({ conversationId, body });
+      } else {
+        // Non-Zeus, non-encrypted: queue for later encrypted sending
+        await queue.sendMessage(body);
       }
 
       setNewMessage('');
