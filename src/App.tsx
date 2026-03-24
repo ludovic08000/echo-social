@@ -152,7 +152,7 @@ function AppContent() {
               
               {/* Protected routes */}
               <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
-              <Route path="/post/:id" element={<PostDetail />} />
+              <Route path="/post/:id" element={<ProtectedRoute><PostDetail /></ProtectedRoute>} />
               <Route path="/create" element={<ProtectedRoute><CreatePostPage /></ProtectedRoute>} />
               <Route path="/profile/:id" element={<Profile />} />
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
