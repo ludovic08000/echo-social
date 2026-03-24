@@ -345,22 +345,29 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     }
 
     // Try Double Ratchet first
-    const ratchet = await ensureRatchet();
+    let ratchet = await ensureRatchet();
     if (ratchet) {
-      if (!cryptoRateCheck('sign')) {
-        throw new EncryptionError('Signing rate limited');
+      // If responder hasn't received a message yet, sendingChainKey is null.
+      // In that case, skip ratchet and use legacy session instead.
+      if (!ratchet.sendingChainKey) {
+        console.log('[E2EE] Ratchet sending chain not ready, using legacy session');
+        ratchet = null; // fall through to legacy
+      } else {
+        if (!cryptoRateCheck('sign')) {
+          throw new EncryptionError('Signing rate limited');
+        }
+        const { envelope, newState } = await ratchetEncrypt(
+          ratchet,
+          plaintext,
+          keysRef.current.signingPrivateKey,
+          keysRef.current.fingerprint,
+        );
+        ratchetRef.current = newState;
+        await saveRatchetLocal(conversationId!, newState);
+        const result = JSON.stringify(envelope);
+        console.log('[E2EE] encrypt success (ratchet)');
+        return result;
       }
-      const { envelope, newState } = await ratchetEncrypt(
-        ratchet,
-        plaintext,
-        keysRef.current.signingPrivateKey,
-        keysRef.current.fingerprint,
-      );
-      ratchetRef.current = newState;
-      await saveRatchetLocal(conversationId!, newState);
-      const result = JSON.stringify(envelope);
-      console.log('[E2EE] encrypt success (ratchet)');
-      return result;
     }
 
     // Fallback to legacy session-based encryption
