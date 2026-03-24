@@ -117,7 +117,7 @@ function checkFingerprintChange(userId: string, currentFp: string): boolean {
   return false;
 }
 
-// Clean up legacy localStorage ratchet data
+// Clean up legacy localStorage ratchet data + broken session keys
 function cleanupLegacyStorage() {
   try {
     const keysToRemove: string[] = [];
@@ -128,6 +128,34 @@ function cleanupLegacyStorage() {
       }
     }
     keysToRemove.forEach(k => localStorage.removeItem(k));
+
+    // Clear broken ratchet states from IndexedDB (one-time migration v3)
+    const migrationKey = 'forsure-e2ee-migration-v3';
+    if (!localStorage.getItem(migrationKey)) {
+      localStorage.setItem(migrationKey, '1');
+      // Clear all ratchet states so they re-initialize with the fixed protocol
+      const req = indexedDB.open(RATCHET_DB_NAME, RATCHET_DB_VERSION);
+      req.onsuccess = () => {
+        try {
+          const db = req.result;
+          const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
+          tx.objectStore(RATCHET_STORE_NAME).clear();
+          console.log('[E2EE] Cleared stale ratchet states (migration v3)');
+        } catch {}
+      };
+      // Also clear legacy session keys so they re-derive with deterministic salt
+      const req2 = indexedDB.open('forsure-e2ee', 2);
+      req2.onsuccess = () => {
+        try {
+          const db = req2.result;
+          if (db.objectStoreNames.contains('session-keys')) {
+            const tx = db.transaction('session-keys', 'readwrite');
+            tx.objectStore('session-keys').clear();
+            console.log('[E2EE] Cleared stale session keys (migration v3)');
+          }
+        } catch {}
+      };
+    }
   } catch {}
 }
 
@@ -345,22 +373,29 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     }
 
     // Try Double Ratchet first
-    const ratchet = await ensureRatchet();
+    let ratchet = await ensureRatchet();
     if (ratchet) {
-      if (!cryptoRateCheck('sign')) {
-        throw new EncryptionError('Signing rate limited');
+      // If responder hasn't received a message yet, sendingChainKey is null.
+      // In that case, skip ratchet and use legacy session instead.
+      if (!ratchet.sendingChainKey) {
+        console.log('[E2EE] Ratchet sending chain not ready, using legacy session');
+        ratchet = null; // fall through to legacy
+      } else {
+        if (!cryptoRateCheck('sign')) {
+          throw new EncryptionError('Signing rate limited');
+        }
+        const { envelope, newState } = await ratchetEncrypt(
+          ratchet,
+          plaintext,
+          keysRef.current.signingPrivateKey,
+          keysRef.current.fingerprint,
+        );
+        ratchetRef.current = newState;
+        await saveRatchetLocal(conversationId!, newState);
+        const result = JSON.stringify(envelope);
+        console.log('[E2EE] encrypt success (ratchet)');
+        return result;
       }
-      const { envelope, newState } = await ratchetEncrypt(
-        ratchet,
-        plaintext,
-        keysRef.current.signingPrivateKey,
-        keysRef.current.fingerprint,
-      );
-      ratchetRef.current = newState;
-      await saveRatchetLocal(conversationId!, newState);
-      const result = JSON.stringify(envelope);
-      console.log('[E2EE] encrypt success (ratchet)');
-      return result;
     }
 
     // Fallback to legacy session-based encryption
