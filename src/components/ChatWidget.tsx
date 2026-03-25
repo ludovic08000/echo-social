@@ -33,6 +33,7 @@ import { useE2EE } from '@/hooks/useE2EE';
 import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
 import { EncryptionStatusBar } from '@/components/messages/EncryptionBadge';
+import { OutboundStatusIndicator } from '@/components/messages/OutboundStatus';
 import { MessagingPinGate } from '@/components/MessagingPinGate';
 
 
@@ -352,7 +353,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [showAIMenu, setShowAIMenu] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
-  const [isSending, setIsSending] = useState(false);
+  const [isSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -558,10 +559,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     onSuccess: (url) => {
       if (isZeusConversation) {
         sendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
-      } else if (e2ee.encrypted) {
-        queue.sendMessage('📷 Photo', url).catch(() => toast.error('Erreur envoi photo'));
       } else {
-        toast.error('Chiffrement non prêt');
+        queue.sendMessage('📷 Photo', url).catch(() => toast.error('Erreur envoi photo'));
       }
     },
   });
@@ -786,14 +785,15 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             </div>
           </div>
         ) : (
-          groupedMessages.map((group, gi) => (
-            <div key={gi}>
-              <div className="flex items-center justify-center my-3">
-                <span className="text-[9px] font-medium text-muted-foreground bg-secondary/60 px-3 py-0.5 rounded-full capitalize">
-                  {formatDateSeparator(group.date)}
-                </span>
-              </div>
-              <div className="space-y-0.5">
+          <>
+            {groupedMessages.map((group, gi) => (
+              <div key={gi}>
+                <div className="flex items-center justify-center my-3">
+                  <span className="text-[9px] font-medium text-muted-foreground bg-secondary/60 px-3 py-0.5 rounded-full capitalize">
+                    {formatDateSeparator(group.date)}
+                  </span>
+                </div>
+                <div className="space-y-0.5">
                 {group.messages.map((msg, mi) => {
                   const isMe = msg.sender_id === user?.id;
                   const prevMsg = mi > 0 ? group.messages[mi - 1] : null;
@@ -1025,7 +1025,14 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         {isLastInGroup && (
                           <div className="flex items-center gap-0.5 mt-0.5 px-0.5">
                             <span className="text-[8px] text-muted-foreground">{format(new Date(msg.created_at), 'HH:mm')}</span>
-                            {isMe && <CheckCheck className="w-2.5 h-2.5 text-primary/60" />}
+                            {isMe && (
+                              <>
+                                <CheckCheck className="w-2.5 h-2.5 text-primary/60" />
+                                <span className="text-[8px] text-primary/70">
+                                  {msg.status === 'delivered' ? 'Délivré' : 'En attente'}
+                                </span>
+                              </>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1034,7 +1041,29 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                 })}
               </div>
             </div>
-          ))
+          ))}
+
+          {/* Pending outbound messages (local queue) */}
+          {queue.pendingMessages.map(pm => (
+            <div key={pm.localId} className="flex justify-start mt-1 px-2">
+              <div className="max-w-[78%]">
+                <div className={cn(
+                  'px-3 py-1.5 text-xs break-words leading-relaxed rounded-2xl bg-primary/70 text-primary-foreground',
+                  pm.status === 'failed_visible' && 'bg-destructive/20 text-destructive border border-destructive/30',
+                )}>
+                  {pm.plaintext || '…'}
+                </div>
+                <OutboundStatusIndicator
+                  status={pm.status}
+                  lastError={pm.lastError}
+                  onRetry={() => queue.retryMessage(pm.localId)}
+                  onRemove={() => queue.removeMessage(pm.localId)}
+                  className="mt-0 text-[9px]"
+                />
+              </div>
+            </div>
+          ))}
+          </>
         )}
         <div ref={messagesEndRef} />
       </div>
@@ -1272,10 +1301,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             const body = `GIF:${gifUrl}`;
             if (isZeusConversation) {
               sendMessage.mutate({ conversationId, body });
-            } else if (e2ee.encrypted) {
-              try { await queue.sendMessage(body); } catch { toast.error('Erreur envoi GIF'); }
             } else {
-              toast.error('Chiffrement non prêt');
+              queue.sendMessage(body).catch(() => toast.error('Erreur envoi GIF'));
             }
             setShowGifs(false);
           }}
@@ -1311,10 +1338,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             const body = `🎙️ voice:${audioUrl}|dur:${duration}`;
             if (isZeusConversation) {
               sendMessage.mutate({ conversationId, body });
-            } else if (e2ee.encrypted) {
-              try { await queue.sendMessage(body); } catch { toast.error('Erreur envoi vocal'); }
             } else {
-              toast.error('Chiffrement non prêt');
+              queue.sendMessage(body).catch(() => toast.error('Erreur envoi vocal'));
             }
             setShowVoiceRecorder(false);
             setShowVoicemailPrompt(false);
@@ -1433,7 +1458,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             />
 
             {newMessage.trim() ? (
-              <button type="submit" disabled={isSending || sendMessage.isPending} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
+              <button type="submit" disabled={sendMessage.isPending} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
                 <Send className="w-3.5 h-3.5" />
               </button>
             ) : (

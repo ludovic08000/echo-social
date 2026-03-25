@@ -219,7 +219,12 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             updated_at: new Date().toISOString(),
           }, { onConflict: 'user_id,is_active' });
 
-        setState(s => ({ ...s, fingerprint: bundle.fingerprint }));
+        setState(s => ({
+          ...s,
+          fingerprint: bundle.fingerprint,
+          // If peer key already loaded before our key init, mark ready now
+          ready: s.ready || s.encrypted,
+        }));
       } catch (err) {
         console.error('[E2EE] Init failed:', err);
         setState(s => ({ ...s, initError: 'Key initialization failed' }));
@@ -271,6 +276,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             ...s,
             peerFingerprint: data.fingerprint,
             encrypted: true,
+            // Ready only when our keys exist (may race with key init)
             ready: !!keysRef.current,
             ratchetActive: !!ratchetRef.current,
             fingerprintChanged: fpChanged,
@@ -476,9 +482,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
   /** Check if encryption is ready for this conversation */
   const isReady = useCallback((): boolean => {
-    // Ready means: we have our keys AND peer has keys AND state is initialized
-    return state.ready && state.encrypted && !!keysRef.current && !!peerKeyRef.current;
-  }, [state.encrypted, state.ready]);
+    if (isZeus) return true;
+    // Derived readiness from real key refs to avoid stale state race
+    return state.encrypted && !!keysRef.current && !!peerKeyRef.current;
+  }, [state.encrypted, isZeus]);
 
   /** Acknowledge fingerprint change */
   const acknowledgeFingerprint = useCallback(() => {
