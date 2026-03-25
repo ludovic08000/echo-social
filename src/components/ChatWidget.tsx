@@ -576,34 +576,31 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || isSending) return;
+    if (!newMessage.trim()) return;
 
     // For non-Zeus: inform user if peer keys missing but still queue
     if (!isZeusConversation && e2ee.peerKeyMissing) {
       toast.info('Message en attente — le contact n\'a pas encore activé le chiffrement.');
     }
 
-    setIsSending(true);
-    try {
-      const replyText = replyTo ? decryptedCacheRef.current.get(replyTo.id) || replyTo.body : null;
-      const body = replyTo
-        ? `↩️ ${replyTo.profile.name}: "${(replyText || '').slice(0, 40)}…"\n\n${newMessage.trim()}`
-        : newMessage.trim();
+    const replyText = replyTo ? decryptedCacheRef.current.get(replyTo.id) || replyTo.body : null;
+    const body = replyTo
+      ? `↩️ ${replyTo.profile.name}: "${(replyText || '').slice(0, 40)}…"\n\n${newMessage.trim()}`
+      : newMessage.trim();
 
-      if (isZeusConversation) {
-        sendMessage.mutate({ conversationId, body });
-      } else {
-        await queue.sendMessage(body);
-      }
+    // Clear input IMMEDIATELY for instant UX
+    setNewMessage('');
+    setReplyTo(null);
+    setShowEmojis(false);
+    inputRef.current?.focus();
 
-      setNewMessage('');
-      setReplyTo(null);
-      setShowEmojis(false);
-      inputRef.current?.focus();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erreur envoi');
-    } finally {
-      setIsSending(false);
+    if (isZeusConversation) {
+      sendMessage.mutate({ conversationId, body });
+    } else {
+      // Fire-and-forget: queue handles retry/encryption in background
+      queue.sendMessage(body).catch(err => {
+        toast.error(err instanceof Error ? err.message : 'Erreur envoi');
+      });
     }
   };
 
