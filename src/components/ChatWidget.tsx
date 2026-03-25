@@ -729,6 +729,16 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       </div>
 
+      {/* E2EE Status */}
+      {!isZeusConversation && (
+        <EncryptionStatusBar
+          encrypted={e2ee.encrypted}
+          fingerprint={e2ee.fingerprint}
+          peerFingerprint={e2ee.peerFingerprint}
+          ratchetActive={e2ee.ratchetActive}
+        />
+      )}
+
       {/* Pending message request banner */}
       {hasPending && (
         <div className="mx-2 mt-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2.5">
