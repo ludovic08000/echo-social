@@ -334,7 +334,7 @@ export function useChatPin() {
           const iv = base64ToBytes(wrapped.iv);
 
           const plainBuffer = await crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv },
+            { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
             wrapKey,
             cipherBytes,
           );
