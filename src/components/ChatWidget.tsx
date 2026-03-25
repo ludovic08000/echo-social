@@ -787,7 +787,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         ) : (
           <>
             {groupedMessages.map((group, gi) => (
-              <div className="flex items-center justify-center my-3">
+              <div key={gi}>
                 <span className="text-[9px] font-medium text-muted-foreground bg-secondary/60 px-3 py-0.5 rounded-full capitalize">
                   {formatDateSeparator(group.date)}
                 </span>
