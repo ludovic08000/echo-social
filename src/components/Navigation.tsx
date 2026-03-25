@@ -224,10 +224,12 @@ export function DesktopSidebar() {
               <button
                 key="zeus-nav"
                 onClick={() => window.dispatchEvent(new Event('open-zeus'))}
-                className={cn('premium-nav-item w-full')}
+                className={cn('premium-nav-item w-full group')}
               >
-                <item.icon className="w-5 h-5" />
-                <span>{item.label}</span>
+                <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: 'var(--premium-gradient)' }}>
+                  <item.icon className="w-3.5 h-3.5 text-primary-foreground" />
+                </div>
+                <span className="font-semibold text-primary">{item.label} ⚡</span>
               </button>
             );
           }

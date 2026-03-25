@@ -204,22 +204,22 @@ export default function Feed() {
             {isMobile ? (
               <>
                 <div className="px-3"><StoriesBar /></div>
+                <FeedZeusCard />
                 <div className="px-3"><FeedLiveSection /></div>
                 <div className="px-3"><CreatePost /></div>
-                <FeedZeusCard />
               </>
             ) : (
               <>
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="px-4">
                   <StoriesBar />
                 </motion.div>
+                <FeedZeusCard />
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.05 }} className="px-4">
                   <FeedLiveSection />
                 </motion.div>
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }} className="px-4">
                   <CreatePost />
                 </motion.div>
-                <FeedZeusCard />
               </>
             )}
 

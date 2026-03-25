@@ -748,6 +748,24 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
       {/* Input Bar */}
       <div className="border-t border-border/40 bg-background safe-area-pb">
+        {/* Zeus AI helper strip */}
+        {!isZeusConversation && newMessage.length > 10 && (
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/20 bg-accent/30">
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('open-zeus', { detail: { action: 'rewrite', text: newMessage } }))}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-[11px] font-medium hover:bg-primary/15 transition-all active:scale-95"
+            >
+              <Sparkles className="w-3 h-3" />
+              Améliorer avec Zeus
+            </button>
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('open-zeus', { detail: { action: 'translate', text: newMessage } }))}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-secondary/60 text-muted-foreground text-[11px] font-medium hover:bg-secondary hover:text-foreground transition-all active:scale-95"
+            >
+              Traduire
+            </button>
+          </div>
+        )}
         <form onSubmit={handleSend} className="flex items-center gap-1.5 px-2 py-2">
           <button
             type="button"
