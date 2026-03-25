@@ -426,7 +426,9 @@ class MessageQueueManager {
         });
       }
 
-      if (byLocalId.size === 0) return;
+      // Continue reconciliation even when __lid metadata is absent:
+      // fallback matching by encrypted payload is still valid.
+      if (byLocalId.size === 0 && byEncryptedBody.size === 0) return;
 
       const queued = await this.dbGetByConversation(conversationId);
       let changed = false;
