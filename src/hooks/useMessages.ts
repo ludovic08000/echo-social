@@ -274,6 +274,7 @@ export function useMessages(conversationId: string) {
             id: newMsg.id,
             senderId: newMsg.sender_id,
             body: newMsg.body,
+            createdAt: newMsg.created_at,
           }]).catch(() => {});
         }
       )
@@ -341,6 +342,7 @@ export function useMessages(conversationId: string) {
           id: m.id,
           senderId: m.sender_id,
           body: m.body,
+          createdAt: m.created_at,
         })),
       ).catch(() => {});
 
