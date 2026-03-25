@@ -113,17 +113,17 @@ export function MobileNav() {
 
       <nav className={cn(
         "fixed bottom-0 left-0 right-0 z-50 safe-area-pb transition-transform duration-300",
-        "bg-card/95 backdrop-blur-xl border-t border-border/20",
-        "shadow-[0_-2px_16px_hsl(var(--background)/0.6)]",
+        "bg-card/95 backdrop-blur-xl border-t border-border/15",
+        "shadow-[0_-4px_20px_hsl(var(--background)/0.7)]",
         navHidden && "translate-y-full"
       )}>
-        <div className="flex items-stretch h-[56px]">
+        <div className="flex items-stretch h-[58px]">
           <NavItem path="/feed" icon={Home} label="Accueil" />
           <NavItem path="/friends" icon={Users} label="Amis" />
 
           {/* Bouton Créer — centré */}
           <Link to="/create" className="flex flex-col items-center justify-center flex-1 min-w-0">
-            <div className="w-11 h-11 rounded-2xl bg-[image:var(--premium-gradient)] text-primary-foreground flex items-center justify-center shadow-[var(--shadow-gold)] active:scale-90 transition-transform duration-150">
+            <div className="w-12 h-12 rounded-2xl bg-[image:var(--premium-gradient)] text-primary-foreground flex items-center justify-center shadow-[var(--shadow-gold)] active:scale-90 transition-transform duration-150 hover:shadow-[var(--shadow-glow)]">
               <Plus className="w-5 h-5 stroke-[2.5]" />
             </div>
           </Link>
@@ -134,14 +134,14 @@ export function MobileNav() {
           <button
             onClick={() => setShowMore(!showMore)}
             className={cn(
-              'flex flex-col items-center justify-center gap-1 flex-1 min-w-0 py-2 transition-all duration-200',
+              'flex flex-col items-center justify-center gap-0.5 flex-1 min-w-0 py-2 transition-all duration-200',
               showMore ? 'text-primary' : 'text-muted-foreground'
             )}
           >
             <div className={cn('relative p-1.5 rounded-xl transition-all duration-200', showMore && 'bg-primary/10')}>
               <Sparkles className={cn('w-5 h-5', showMore && 'stroke-[2.5]')} />
             </div>
-            <span className={cn('text-[10px] leading-none', showMore ? 'font-bold' : 'font-medium opacity-70')}>Plus</span>
+            <span className={cn('text-[10px] leading-none tracking-tight', showMore ? 'font-bold' : 'font-medium opacity-70')}>Plus</span>
           </button>
         </div>
       </nav>
