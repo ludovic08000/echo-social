@@ -57,16 +57,25 @@ export function useMessageQueue(
           throw new Error('Message not encrypted');
         }
 
-        const { data, error } = await supabase
+        // Deterministic per-message server id for idempotent retries
+        const outboundId = msg.serverId ?? crypto.randomUUID();
+        msg.serverId = outboundId;
+
+        const { error } = await supabase
           .from('messages')
           .insert({
+            id: outboundId,
             conversation_id: msg.conversationId,
             sender_id: msg.senderId,
             body: msg.encryptedBody,
             image_url: msg.imageUrl,
           })
-          .select('id')
-          .single();
+          ;
+
+        // Insert likely already succeeded on a previous attempt; treat as delivered
+        if (error?.code === '23505') {
+          return outboundId;
+        }
 
         if (error) throw error;
 
@@ -80,7 +89,7 @@ export function useMessageQueue(
         queryClient.invalidateQueries({ queryKey: ['messages', msg.conversationId] });
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
 
-        return data.id;
+        return outboundId;
       },
       isReady: (_convId: string) => {
         return readyRef.current && activeRef.current;
