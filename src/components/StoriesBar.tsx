@@ -219,10 +219,10 @@ export function StoriesBar() {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isCreating}
-            className="relative w-[68px] h-[68px] rounded-2xl bg-secondary/40 border border-dashed border-primary/30 flex items-center justify-center transition-all duration-300 hover:bg-primary/5 hover:border-primary/50 group"
+            className="relative w-[60px] h-[60px] rounded-2xl bg-secondary/40 border border-dashed border-primary/30 flex items-center justify-center transition-all duration-300 hover:bg-primary/5 hover:border-primary/50 group"
           >
-            <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-              <Plus className={cn("w-5 h-5 text-primary", isCreating && "animate-spin")} />
+            <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+              <Plus className={cn("w-4 h-4 text-primary", isCreating && "animate-spin")} />
             </div>
           </button>
           <span className="text-[10px] text-muted-foreground font-medium">Story</span>
@@ -249,7 +249,7 @@ export function StoriesBar() {
                 : "bg-border/60"
             )}>
               <div className="p-[2px] rounded-[14px] bg-background">
-                <div className="w-[60px] h-[60px] rounded-xl overflow-hidden">
+                <div className="w-[56px] h-[56px] rounded-xl overflow-hidden">
                   {group.profile.avatar_url ? (
                     <img src={group.profile.avatar_url} alt={group.profile.name} className="w-full h-full object-cover" loading="lazy" />
                   ) : (
@@ -258,7 +258,7 @@ export function StoriesBar() {
                 </div>
               </div>
             </div>
-            <span className="text-[10px] text-muted-foreground truncate w-[68px] text-center font-medium">
+            <span className="text-[10px] text-muted-foreground truncate w-[60px] text-center font-medium">
               {group.user_id === user?.id ? 'Ma story' : group.profile.name.split(' ')[0]}
             </span>
           </button>
