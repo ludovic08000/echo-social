@@ -188,6 +188,24 @@ class MessageQueueManager {
     return latest?.handlers || null;
   }
 
+  /** Return a handler whose secure channel is ready, fallback to latest registered */
+  private getReadyAwareHandlers(conversationId: string): QueueHandlers | null {
+    const entries = this.handlersByConversation.get(conversationId);
+    if (!entries || entries.size === 0) return null;
+
+    for (const entry of entries.values()) {
+      try {
+        if (entry.handlers.isReady(conversationId)) {
+          return entry.handlers;
+        }
+      } catch {
+        // continue to fallback
+      }
+    }
+
+    return this.getHandlers(conversationId);
+  }
+
   /** Enqueue a new outbound message */
   async enqueue(params: {
     conversationId: string;
@@ -241,7 +259,7 @@ class MessageQueueManager {
       if (!msg.encryptedBody) {
         await this.updateStatus(msg, 'encrypting');
 
-        const handlers = this.getHandlers(msg.conversationId);
+        const handlers = this.getReadyAwareHandlers(msg.conversationId);
         if (!handlers?.encrypt) {
           await this.updateStatus(msg, 'waiting_secure_channel', 'Encryption handler not registered');
           this.scheduleRetry(msg);

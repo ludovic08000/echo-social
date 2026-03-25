@@ -495,6 +495,17 @@ export function useDeleteMessageForMe() {
   const { user } = useAuth();
 
   return useMutation({
+    onMutate: async ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
+      await queryClient.cancelQueries({ queryKey: ['messages', conversationId] });
+      const previousMessages = queryClient.getQueryData<Message[]>(['messages', conversationId]);
+
+      queryClient.setQueryData<Message[]>(
+        ['messages', conversationId],
+        (old) => old?.filter(m => m.id !== messageId) || []
+      );
+
+      return { previousMessages, conversationId };
+    },
     mutationFn: async ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
       if (!user) throw new Error('Not authenticated');
 
@@ -502,8 +513,14 @@ export function useDeleteMessageForMe() {
         .from('message_deletions')
         .insert({ message_id: messageId, user_id: user.id });
 
-      if (error) throw error;
+      // Déjà supprimé côté utilisateur -> considérer comme succès idempotent
+      if (error && error.code !== '23505') throw error;
       return conversationId;
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousMessages) {
+        queryClient.setQueryData(['messages', context.conversationId], context.previousMessages);
+      }
     },
     onSuccess: (conversationId) => {
       queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
@@ -518,6 +535,17 @@ export function useDeleteMessageForEveryone() {
   const { user } = useAuth();
 
   return useMutation({
+    onMutate: async ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
+      await queryClient.cancelQueries({ queryKey: ['messages', conversationId] });
+      const previousMessages = queryClient.getQueryData<Message[]>(['messages', conversationId]);
+
+      queryClient.setQueryData<Message[]>(
+        ['messages', conversationId],
+        (old) => old?.filter(m => m.id !== messageId) || []
+      );
+
+      return { previousMessages, conversationId };
+    },
     mutationFn: async ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
       if (!user) throw new Error('Not authenticated');
 
@@ -529,6 +557,11 @@ export function useDeleteMessageForEveryone() {
 
       if (error) throw error;
       return conversationId;
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousMessages) {
+        queryClient.setQueryData(['messages', context.conversationId], context.previousMessages);
+      }
     },
     onSuccess: (conversationId) => {
       queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
