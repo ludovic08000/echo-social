@@ -3493,6 +3493,36 @@ export type Database = {
         }
         Relationships: []
       }
+      user_backups: {
+        Row: {
+          created_at: string
+          encrypted_blob: string
+          id: string
+          iv: string
+          salt: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          encrypted_blob: string
+          id?: string
+          iv: string
+          salt: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          encrypted_blob?: string
+          id?: string
+          iv?: string
+          salt?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: []
+      }
       user_feed: {
         Row: {
           inserted_at: string

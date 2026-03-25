@@ -47,19 +47,29 @@ interface EncryptionStatusBarProps {
 export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, ratchetActive }: EncryptionStatusBarProps) {
   if (!encrypted) return null;
 
+  // Determine correct status label
+  const hasKeys = !!fingerprint && !!peerFingerprint;
+  let statusText: string;
+  let StatusIcon = ShieldCheck;
+
+  if (ratchetActive) {
+    statusText = 'Canal sécurisé renforcé — forward secrecy par message';
+    StatusIcon = Zap;
+  } else if (hasKeys) {
+    statusText = 'Chiffrement de bout en bout activé';
+    StatusIcon = ShieldCheck;
+  } else {
+    statusText = 'Initialisation sécurisée en cours…';
+    StatusIcon = Lock;
+  }
+
   return (
     <div className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-500/5 border-b border-emerald-500/10">
-      {ratchetActive ? (
-        <Zap className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-      ) : (
-        <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-      )}
+      <StatusIcon className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
       <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium">
-        {ratchetActive
-          ? 'Double Ratchet actif — forward secrecy par message'
-          : 'Chiffrement de bout en bout activé'}
+        {statusText}
       </span>
-      {fingerprint && peerFingerprint && (
+      {hasKeys && (
         <button
           onClick={() => {
             const msg = `🔐 Numéros de sécurité\n\nVotre clé:\n${fingerprint}\n\nClé du contact:\n${peerFingerprint}\n\nComparez ces numéros en personne pour vérifier l'identité.`;

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThumbsUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -11,7 +11,6 @@ import {
 import { useAddReaction, useRemoveReaction, REACTION_EMOJIS, REACTION_LABELS, ReactionType } from '@/hooks/useReactions';
 import { useAuth } from '@/lib/auth';
 import { toast } from '@/hooks/use-toast';
-import { useIsMobile } from '@/hooks/use-mobile';
 
 interface ReactionButtonProps {
   postId: string;
@@ -25,11 +24,8 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   const { user } = useAuth();
   const addReaction = useAddReaction();
   const removeReaction = useRemoveReaction();
-  const isMobile = useIsMobile();
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const didLongPress = useRef(false);
 
-  const handleReaction = (reactionType: ReactionType) => {
+  const handleReaction = useCallback((reactionType: ReactionType) => {
     if (!user) {
       toast({ title: 'Connexion requise', description: 'Connectez-vous pour réagir', variant: 'destructive' });
       return;
@@ -40,9 +36,9 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       addReaction.mutate({ postId, reactionType });
     }
     setIsOpen(false);
-  };
+  }, [user, currentReaction, postId, addReaction, removeReaction]);
 
-  const handleQuickLike = () => {
+  const handleQuickLike = useCallback(() => {
     if (!user) {
       toast({ title: 'Connexion requise', description: 'Connectez-vous pour réagir', variant: 'destructive' });
       return;
@@ -52,42 +48,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     } else {
       addReaction.mutate({ postId, reactionType: 'like' });
     }
-  };
-
-  // Mobile: long press to open emoji picker, tap to quick like
-  const handlePointerDown = useCallback(() => {
-    if (!isMobile) return;
-    didLongPress.current = false;
-    longPressTimer.current = setTimeout(() => {
-      didLongPress.current = true;
-      setIsOpen(true);
-    }, 500);
-  }, [isMobile]);
-
-  const handlePointerUp = useCallback(() => {
-    if (!isMobile) return;
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-    if (!didLongPress.current) {
-      handleQuickLike();
-    }
-  }, [isMobile, currentReaction, user, postId]);
-
-  const handlePointerCancel = useCallback(() => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  }, []);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (longPressTimer.current) clearTimeout(longPressTimer.current);
-    };
-  }, []);
+  }, [user, currentReaction, postId, addReaction, removeReaction]);
 
   const emojiVariants = {
     hidden: { scale: 0, y: 10 },
@@ -99,102 +60,70 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     hover: { scale: 1.4, y: -8, transition: { type: 'spring' as const, stiffness: 400 } },
   };
 
+  const EmojiPicker = (
+    <PopoverContent 
+      side="top" 
+      className="w-auto p-2 glass border-border/30 shadow-premium-lg rounded-full"
+      sideOffset={8}
+    >
+      <div className="flex gap-0.5">
+        {(Object.keys(REACTION_EMOJIS) as ReactionType[]).map((type, i) => (
+          <motion.button
+            key={type}
+            custom={i}
+            variants={emojiVariants}
+            initial="hidden"
+            animate="visible"
+            whileHover="hover"
+            onClick={() => handleReaction(type)}
+            className={cn(
+              'p-2 rounded-full transition-colors',
+              currentReaction === type && 'bg-accent ring-2 ring-primary/50'
+            )}
+            title={REACTION_LABELS[type]}
+          >
+            <span className="text-2xl block">{REACTION_EMOJIS[type]}</span>
+          </motion.button>
+        ))}
+      </div>
+    </PopoverContent>
+  );
+
   if (variant === 'facebook') {
     return (
       <Popover open={isOpen} onOpenChange={setIsOpen}>
-        {isMobile ? (
-          /* Mobile: tap = like, long press = emoji picker — no animations */
-          <div className="flex-1">
-            <PopoverTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className={cn(
-                  'w-full h-11 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs transition-all select-none touch-none',
-                  currentReaction && 'text-primary'
-                )}
-                onPointerDown={handlePointerDown}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerCancel}
-                onContextMenu={(e) => e.preventDefault()}
-                onClick={(e) => e.preventDefault()}
-              >
-                {currentReaction ? (
-                  <span className="text-lg">{REACTION_EMOJIS[currentReaction]}</span>
-                ) : (
-                  <ThumbsUp className="w-[18px] h-[18px]" />
-                )}
-                <span className="font-medium">
-                  {currentReaction ? REACTION_LABELS[currentReaction] : "J'aime"}
-                </span>
-              </Button>
-            </PopoverTrigger>
-          </div>
-        ) : (
-          /* Desktop: click opens popover, double-click = quick like */
+        <div className="flex-1 flex">
+          {/* Quick like button — simple tap */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              'flex-1 h-11 gap-1 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs transition-all',
+              currentReaction && 'text-primary'
+            )}
+            onClick={handleQuickLike}
+          >
+            {currentReaction ? (
+              <span className="text-lg">{REACTION_EMOJIS[currentReaction]}</span>
+            ) : (
+              <ThumbsUp className="w-[18px] h-[18px]" />
+            )}
+            <span className="font-medium">
+              {currentReaction ? REACTION_LABELS[currentReaction] : "J'aime"}
+            </span>
+          </Button>
+          {/* Emoji picker trigger — separate small button */}
           <PopoverTrigger asChild>
-            <motion.div className="flex-1" whileTap={{ scale: 0.95 }}>
-              <Button
-                variant="ghost"
-                size="sm"
-                className={cn(
-                  'w-full h-11 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs transition-all',
-                  currentReaction && 'text-primary'
-                )}
-                onDoubleClick={handleQuickLike}
-              >
-                <AnimatePresence mode="wait">
-                  {currentReaction ? (
-                    <motion.span
-                      key={currentReaction}
-                      initial={{ scale: 0, rotate: -180 }}
-                      animate={{ scale: 1, rotate: 0 }}
-                      exit={{ scale: 0, rotate: 180 }}
-                      transition={{ type: 'spring', stiffness: 400 }}
-                      className="text-lg"
-                    >
-                      {REACTION_EMOJIS[currentReaction]}
-                    </motion.span>
-                  ) : (
-                    <motion.div key="default" initial={{ scale: 0 }} animate={{ scale: 1 }}>
-                      <ThumbsUp className="w-[18px] h-[18px]" />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-                <span className="font-medium">
-                  {currentReaction ? REACTION_LABELS[currentReaction] : "J'aime"}
-                </span>
-              </Button>
-            </motion.div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-11 w-9 px-0 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl"
+            >
+              <ChevronIcon />
+            </Button>
           </PopoverTrigger>
-        )}
-        
-        <PopoverContent 
-          side="top" 
-          className="w-auto p-2 glass border-border/30 shadow-premium-lg rounded-full"
-          sideOffset={8}
-        >
-          <div className="flex gap-0.5">
-            {(Object.keys(REACTION_EMOJIS) as ReactionType[]).map((type, i) => (
-              <motion.button
-                key={type}
-                custom={i}
-                variants={emojiVariants}
-                initial="hidden"
-                animate="visible"
-                whileHover="hover"
-                onClick={() => handleReaction(type)}
-                className={cn(
-                  'p-2 rounded-full transition-colors',
-                  currentReaction === type && 'bg-accent ring-2 ring-primary/50'
-                )}
-                title={REACTION_LABELS[type]}
-              >
-                <span className="text-2xl block">{REACTION_EMOJIS[type]}</span>
-              </motion.button>
-            ))}
-          </div>
-        </PopoverContent>
+        </div>
+        {EmojiPicker}
       </Popover>
     );
   }
@@ -202,52 +131,48 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <div className="flex items-center">
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(
+            'h-9 px-3 gap-2 text-muted-foreground hover:text-primary hover:bg-accent',
+            currentReaction && 'text-primary'
+          )}
+          onClick={handleQuickLike}
+        >
+          {currentReaction ? (
+            <AnimatePresence mode="wait">
+              <motion.span
+                key={currentReaction}
+                initial={{ scale: 0, rotate: -180 }}
+                animate={{ scale: 1, rotate: 0 }}
+                exit={{ scale: 0, rotate: 180 }}
+                transition={{ type: 'spring', stiffness: 400 }}
+                className="text-lg"
+              >
+                {REACTION_EMOJIS[currentReaction]}
+              </motion.span>
+            </AnimatePresence>
+          ) : (
+            <ThumbsUp className="w-4 h-4" />
+          )}
+          <span className="text-sm">{reactionsCount || ''}</span>
+        </Button>
         <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn(
-              'h-9 px-3 gap-2 text-muted-foreground hover:text-primary hover:bg-accent',
-              currentReaction && 'text-primary'
-            )}
-            onDoubleClick={handleQuickLike}
-          >
-            {currentReaction ? (
-              <span className="text-lg">{REACTION_EMOJIS[currentReaction]}</span>
-            ) : (
-              <ThumbsUp className="w-4 h-4" />
-            )}
-            <span className="text-sm">{reactionsCount || ''}</span>
+          <Button variant="ghost" size="sm" className="h-9 w-7 px-0">
+            <ChevronIcon />
           </Button>
         </PopoverTrigger>
       </div>
-      
-      <PopoverContent 
-        side="top" 
-        className="w-auto p-2 glass border-border/30 shadow-premium-lg rounded-full"
-        sideOffset={8}
-      >
-        <div className="flex gap-0.5">
-          {(Object.keys(REACTION_EMOJIS) as ReactionType[]).map((type, i) => (
-            <motion.button
-              key={type}
-              custom={i}
-              variants={emojiVariants}
-              initial="hidden"
-              animate="visible"
-              whileHover="hover"
-              onClick={() => handleReaction(type)}
-              className={cn(
-                'p-2 rounded-full transition-colors',
-                currentReaction === type && 'bg-accent ring-2 ring-primary/50'
-              )}
-              title={REACTION_LABELS[type]}
-            >
-              <span className="text-2xl block">{REACTION_EMOJIS[type]}</span>
-            </motion.button>
-          ))}
-        </div>
-      </PopoverContent>
+      {EmojiPicker}
     </Popover>
+  );
+}
+
+function ChevronIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="opacity-50">
+      <path d="M3 5L6 8L9 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
   );
 }
