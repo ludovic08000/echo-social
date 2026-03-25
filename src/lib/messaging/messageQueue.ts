@@ -267,8 +267,13 @@ class MessageQueueManager {
         try {
           await this.dbPut(msg);
         } catch (persistErr) {
-          // Do not retry-send a message already accepted by backend
+          // Do not keep a false pending state when backend already accepted the message
           console.warn('[SEND] local persistence failed after backend success', msg.localId, persistErr);
+          try {
+            await this.dbDelete(msg.localId);
+          } catch {}
+          this.notifyListeners(msg.conversationId);
+          return;
         }
 
         // Remove from queue after short delay (keep for UI display)
