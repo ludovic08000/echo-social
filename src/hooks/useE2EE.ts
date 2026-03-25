@@ -482,9 +482,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
   /** Check if encryption is ready for this conversation */
   const isReady = useCallback((): boolean => {
-    // Ready means: we have our keys AND peer has keys AND state is initialized
-    return state.ready && state.encrypted && !!keysRef.current && !!peerKeyRef.current;
-  }, [state.encrypted, state.ready]);
+    if (isZeus) return true;
+    // Derived readiness from real key refs to avoid stale state race
+    return state.encrypted && !!keysRef.current && !!peerKeyRef.current;
+  }, [state.encrypted, isZeus]);
 
   /** Acknowledge fingerprint change */
   const acknowledgeFingerprint = useCallback(() => {
