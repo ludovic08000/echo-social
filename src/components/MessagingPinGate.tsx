@@ -255,7 +255,7 @@ function PinSetupScreen({ onSetup, processing, error }: {
             </h2>
             <p className="text-sm text-muted-foreground leading-relaxed max-w-xs mx-auto">
               {step === 'create'
-                ? 'Ce code à 6 chiffres protège l'accès à vos conversations chiffrées.'
+                ? 'Ce code à 6 chiffres protège l\'accès à vos conversations chiffrées.'
                 : 'Ressaisissez votre code PIN pour confirmer.'}
             </p>
           </motion.div>
