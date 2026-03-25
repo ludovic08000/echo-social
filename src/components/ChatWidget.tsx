@@ -29,6 +29,10 @@ import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecord
 import { RelayPointPicker } from '@/components/marketplace/RelayPointPicker';
 import { useRealtimeNotificationSound } from '@/hooks/useNotificationSounds';
 import { toast } from 'sonner';
+import { useE2EE } from '@/hooks/useE2EE';
+import { useMessageQueue } from '@/hooks/useMessageQueue';
+import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
+import { EncryptionStatusBar } from '@/components/messages/EncryptionBadge';
 
 
 // ─── Utils ───────────────────────────────────────────────
@@ -347,13 +351,31 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [showAIMenu, setShowAIMenu] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { goBack, closeChat, minimizeChat, state: chatState, openNegotiation: setNegotiationContext } = useChatWidget();
   const conversation = conversations?.find(c => c.id === conversationId);
+  const peerUserId = conversation?.participant?.user_id;
+  const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const negotiationProduct = chatState.negotiationProduct;
+
+  // E2EE integration
+  const e2ee = useE2EE(conversationId, peerUserId);
+  const queue = useMessageQueue(
+    conversationId,
+    e2ee.encrypted ? e2ee.encrypt : null,
+    e2ee.isReady(),
+    e2ee.encrypted,
+  );
+
+  // Decrypted text cache for widget
+  const decryptedCacheRef = useRef<Map<string, string>>(new Map());
+  const onDecrypted = useCallback((msgId: string, text: string) => {
+    decryptedCacheRef.current.set(msgId, text);
+  }, []);
 
   // Auto-load negotiation context from conversation if not set
   const { data: convNegotiations = [] } = useNegotiationsByConversation(!negotiationProduct ? conversationId : undefined);
@@ -533,32 +555,62 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const { upload, isUploading } = useImageUpload({
     bucket: 'post-images',
     onSuccess: (url) => {
-      sendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
+      if (isZeusConversation) {
+        sendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
+      } else if (e2ee.encrypted) {
+        queue.sendMessage('📷 Photo', url).catch(() => toast.error('Erreur envoi photo'));
+      } else {
+        toast.error('Chiffrement non prêt');
+      }
     },
   });
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, queue.pendingMessages]);
 
   useEffect(() => {
     if (conversationId) markRead.mutate(conversationId);
   }, [conversationId]);
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
-    const body = replyTo
-      ? `↩️ ${replyTo.profile.name}: \"${replyTo.body.slice(0, 40)}…\"\n\n${newMessage.trim()}`
-      : newMessage.trim();
-    sendMessage.mutate({ conversationId, body }, {
-      onSuccess: () => {
-        setNewMessage('');
-        setReplyTo(null);
-        setShowEmojis(false);
-        inputRef.current?.focus();
-      },
-    });
+    if (!newMessage.trim() || isSending) return;
+
+    // Block plaintext for non-Zeus
+    if (!isZeusConversation && !e2ee.encrypted) {
+      if (e2ee.peerKeyMissing) {
+        toast.error('Contact sans clé de chiffrement');
+      } else if (!e2ee.ready) {
+        toast.error('Initialisation du chiffrement…');
+      } else {
+        toast.error('Canal sécurisé indisponible');
+      }
+      return;
+    }
+
+    setIsSending(true);
+    try {
+      const replyText = replyTo ? decryptedCacheRef.current.get(replyTo.id) || replyTo.body : null;
+      const body = replyTo
+        ? `↩️ ${replyTo.profile.name}: "${(replyText || '').slice(0, 40)}…"\n\n${newMessage.trim()}`
+        : newMessage.trim();
+
+      if (isZeusConversation) {
+        sendMessage.mutate({ conversationId, body });
+      } else {
+        await queue.sendMessage(body);
+      }
+
+      setNewMessage('');
+      setReplyTo(null);
+      setShowEmojis(false);
+      inputRef.current?.focus();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erreur envoi');
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handleAI = async (action: 'correct' | 'improve' | 'translate', tone?: string) => {
@@ -677,6 +729,16 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       </div>
 
+      {/* E2EE Status */}
+      {!isZeusConversation && (
+        <EncryptionStatusBar
+          encrypted={e2ee.encrypted}
+          fingerprint={e2ee.fingerprint}
+          peerFingerprint={e2ee.peerFingerprint}
+          ratchetActive={e2ee.ratchetActive}
+        />
+      )}
+
       {/* Pending message request banner */}
       {hasPending && (
         <div className="mx-2 mt-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2.5">
@@ -716,7 +778,15 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               {['Salut ! 👋', 'Ça va ? 😊', 'Hey ! ✨'].map(s => (
                 <button
                   key={s}
-                  onClick={() => sendMessage.mutate({ conversationId, body: s })}
+                  onClick={async () => {
+                    if (isZeusConversation) {
+                      sendMessage.mutate({ conversationId, body: s });
+                    } else if (e2ee.encrypted) {
+                      try { await queue.sendMessage(s); } catch { toast.error('Erreur envoi'); }
+                    } else {
+                      toast.error('Chiffrement non prêt');
+                    }
+                  }}
                   className="px-3 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-medium hover:bg-primary/20 transition-all"
                 >
                   {s}
@@ -944,7 +1014,12 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                                   )
                             )}
                           >
-                            <MessageBodyWithLinks body={msg.body} isMe={isMe} />
+                            <DecryptedMessageBody
+                              body={msg.body}
+                              decrypt={e2ee.decrypt}
+                              isEncryptionActive={e2ee.encrypted && !isZeusConversation}
+                              onDecrypted={(text) => onDecrypted(msg.id, text)}
+                            />
                           </div>
                         )}
 
@@ -1202,8 +1277,15 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       {/* GIF picker */}
       {showGifs && !showVoiceRecorder && (
         <GifPicker
-          onSelect={(gifUrl) => {
-            sendMessage.mutate({ conversationId, body: `GIF:${gifUrl}` });
+          onSelect={async (gifUrl) => {
+            const body = `GIF:${gifUrl}`;
+            if (isZeusConversation) {
+              sendMessage.mutate({ conversationId, body });
+            } else if (e2ee.encrypted) {
+              try { await queue.sendMessage(body); } catch { toast.error('Erreur envoi GIF'); }
+            } else {
+              toast.error('Chiffrement non prêt');
+            }
             setShowGifs(false);
           }}
           onClose={() => setShowGifs(false)}
@@ -1234,8 +1316,15 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       {/* Voice recorder */}
       {showVoiceRecorder && (
         <VoiceRecorder
-          onSend={(audioUrl, duration) => {
-            sendMessage.mutate({ conversationId, body: `🎙️ voice:${audioUrl}|dur:${duration}` });
+          onSend={async (audioUrl, duration) => {
+            const body = `🎙️ voice:${audioUrl}|dur:${duration}`;
+            if (isZeusConversation) {
+              sendMessage.mutate({ conversationId, body });
+            } else if (e2ee.encrypted) {
+              try { await queue.sendMessage(body); } catch { toast.error('Erreur envoi vocal'); }
+            } else {
+              toast.error('Chiffrement non prêt');
+            }
             setShowVoiceRecorder(false);
             setShowVoicemailPrompt(false);
           }}
@@ -1353,7 +1442,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             />
 
             {newMessage.trim() ? (
-              <button type="submit" disabled={sendMessage.isPending} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors">
+              <button type="submit" disabled={isSending || sendMessage.isPending} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
                 <Send className="w-3.5 h-3.5" />
               </button>
             ) : (
