@@ -45,6 +45,12 @@ export interface OutboundMessage {
 
 type QueueListener = (messages: OutboundMessage[]) => void;
 
+interface QueueHandlers {
+  encrypt: (plaintext: string, conversationId: string) => Promise<string>;
+  send: (msg: OutboundMessage) => Promise<string>;
+  isReady: (conversationId: string) => boolean;
+}
+
 const DB_NAME = 'forsure-msg-queue';
 const DB_VERSION = 1;
 const STORE_NAME = 'outbound';
@@ -59,9 +65,7 @@ class MessageQueueManager {
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private processing = new Set<string>();
   private dbPromise: Promise<IDBDatabase> | null = null;
-  private sendHandler: ((msg: OutboundMessage) => Promise<string>) | null = null;
-  private encryptHandler: ((plaintext: string, conversationId: string) => Promise<string>) | null = null;
-  private isEncryptionReady: ((conversationId: string) => boolean) | null = null;
+  private handlersByConversation = new Map<string, QueueHandlers>();
 
   // ─── DB ───
 
@@ -128,14 +132,13 @@ class MessageQueueManager {
   // ─── Public API ───
 
   /** Register handlers for encryption and sending */
-  registerHandlers(handlers: {
-    encrypt: (plaintext: string, conversationId: string) => Promise<string>;
-    send: (msg: OutboundMessage) => Promise<string>;
-    isReady: (conversationId: string) => boolean;
-  }) {
-    this.encryptHandler = handlers.encrypt;
-    this.sendHandler = handlers.send;
-    this.isEncryptionReady = handlers.isReady;
+  registerHandlers(conversationId: string, handlers: QueueHandlers) {
+    this.handlersByConversation.set(conversationId, handlers);
+  }
+
+  /** Unregister handlers when a conversation hook unmounts */
+  unregisterHandlers(conversationId: string) {
+    this.handlersByConversation.delete(conversationId);
   }
 
   /** Enqueue a new outbound message */
@@ -190,13 +193,14 @@ class MessageQueueManager {
       if (!msg.encryptedBody) {
         await this.updateStatus(msg, 'encrypting');
 
-        if (!this.encryptHandler) {
+        const handlers = this.handlersByConversation.get(msg.conversationId);
+        if (!handlers?.encrypt) {
           await this.updateStatus(msg, 'waiting_secure_channel', 'Encryption handler not registered');
           this.scheduleRetry(msg);
           return;
         }
 
-        if (this.isEncryptionReady && !this.isEncryptionReady(msg.conversationId)) {
+        if (!handlers.isReady(msg.conversationId)) {
           console.log('[MSG_QUEUE] encryption not ready, waiting', msg.localId);
           await this.updateStatus(msg, 'waiting_secure_channel', 'Secure channel not ready');
           this.scheduleRetry(msg);
@@ -205,17 +209,18 @@ class MessageQueueManager {
 
         try {
           console.log('[E2EE] encrypt start', msg.localId);
-          const encrypted = await this.encryptHandler(msg.plaintext, msg.conversationId);
+          const encrypted = await handlers.encrypt(msg.plaintext, msg.conversationId);
+          const withLocalId = this.attachLocalId(encrypted, msg.localId);
 
           // CRITICAL: Verify encryption actually produced ciphertext
-          if (!encrypted || encrypted === msg.plaintext || !encrypted.startsWith('{')) {
+          if (!withLocalId || withLocalId === msg.plaintext || !withLocalId.startsWith('{')) {
             console.error('[E2EE] encrypt failed — output is plaintext or empty', msg.localId);
             await this.updateStatus(msg, 'waiting_secure_channel', 'Encryption produced invalid output');
             this.scheduleRetry(msg);
             return;
           }
 
-          msg.encryptedBody = encrypted;
+          msg.encryptedBody = withLocalId;
           console.log('[E2EE] encrypt success', msg.localId);
           await this.dbPut(msg);
         } catch (err) {
@@ -230,7 +235,8 @@ class MessageQueueManager {
       // Step 2: Send encrypted payload
       await this.updateStatus(msg, 'sending');
 
-      if (!this.sendHandler) {
+      const handlers = this.handlersByConversation.get(msg.conversationId);
+      if (!handlers?.send) {
         await this.updateStatus(msg, 'retry_pending', 'Send handler not registered');
         this.scheduleRetry(msg);
         return;
@@ -238,7 +244,7 @@ class MessageQueueManager {
 
       try {
         console.log('[SEND] sending encrypted payload', msg.localId);
-        const serverId = await this.sendHandler(msg);
+        const serverId = await handlers.send(msg);
         msg.serverId = serverId;
         msg.status = 'sent';
         msg.updatedAt = Date.now();
@@ -376,12 +382,95 @@ class MessageQueueManager {
     return () => this.listeners.delete(listener);
   }
 
+  /**
+   * Reconcile local pending queue with messages already persisted on backend.
+   * Useful when HTTP acknowledgement was lost but insert actually succeeded.
+   */
+  async reconcileDelivered(
+    conversationId: string,
+    serverMessages: Array<{ id?: string | null; senderId?: string | null; body?: string | null }>,
+  ): Promise<void> {
+    try {
+      const byLocalId = new Map<string, { id: string | null; senderId: string | null }>();
+
+      for (const serverMsg of serverMessages) {
+        const localId = this.extractLocalId(serverMsg.body || '');
+        if (!localId) continue;
+        byLocalId.set(localId, {
+          id: serverMsg.id || null,
+          senderId: serverMsg.senderId || null,
+        });
+      }
+
+      if (byLocalId.size === 0) return;
+
+      const queued = await this.dbGetByConversation(conversationId);
+      let changed = false;
+
+      for (const msg of queued) {
+        if (msg.status === 'sent') continue;
+
+        const serverMatch = byLocalId.get(msg.localId);
+        if (!serverMatch) continue;
+        if (serverMatch.senderId && serverMatch.senderId !== msg.senderId) continue;
+
+        const timer = this.retryTimers.get(msg.localId);
+        if (timer) {
+          clearTimeout(timer);
+          this.retryTimers.delete(msg.localId);
+        }
+
+        msg.serverId = serverMatch.id || msg.serverId;
+        msg.status = 'sent';
+        msg.lastError = null;
+        msg.updatedAt = Date.now();
+        msg.plaintext = '';
+        await this.dbPut(msg);
+
+        setTimeout(() => {
+          this.dbDelete(msg.localId).catch(() => {});
+        }, 5000);
+
+        changed = true;
+      }
+
+      if (changed) {
+        this.notifyListeners(conversationId);
+      }
+    } catch (err) {
+      console.warn('[MSG_QUEUE] reconcileDelivered failed:', err);
+    }
+  }
+
   private async notifyListeners(conversationId: string) {
     try {
       const msgs = await this.dbGetByConversation(conversationId);
       const pending = msgs.filter(m => m.status !== 'sent');
       this.listeners.forEach(fn => fn(pending));
     } catch {}
+  }
+
+  private attachLocalId(encryptedBody: string, localId: string): string {
+    if (!encryptedBody.startsWith('{')) return encryptedBody;
+    try {
+      const payload = JSON.parse(encryptedBody);
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return encryptedBody;
+      if (typeof payload.__lid === 'string') return encryptedBody;
+      return JSON.stringify({ ...payload, __lid: localId });
+    } catch {
+      return encryptedBody;
+    }
+  }
+
+  private extractLocalId(body: string): string | null {
+    if (!body || !body.startsWith('{')) return null;
+    try {
+      const payload = JSON.parse(body);
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+      return typeof payload.__lid === 'string' ? payload.__lid : null;
+    } catch {
+      return null;
+    }
   }
 
   /** Remove a message from the queue (user cancels failed message) */

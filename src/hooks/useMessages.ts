@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { useEffect } from 'react';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
+import { messageQueue } from '@/lib/messaging/messageQueue';
 
 export const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -267,6 +268,13 @@ export function useMessages(conversationId: string) {
 
           // Update conversation last_updated (lightweight)
           queryClient.invalidateQueries({ queryKey: ['conversations'] });
+
+          // Reconcile local queue in case backend insert succeeded but local ACK was lost
+          messageQueue.reconcileDelivered(conversationId, [{
+            id: newMsg.id,
+            senderId: newMsg.sender_id,
+            body: newMsg.body,
+          }]).catch(() => {});
         }
       )
       .on(
@@ -325,6 +333,16 @@ export function useMessages(conversationId: string) {
 
       // Filter out hidden messages
       const visibleMessages = messages.filter(m => !hiddenIds.has(m.id));
+
+      // Reconcile local queue with already delivered backend messages
+      messageQueue.reconcileDelivered(
+        conversationId,
+        visibleMessages.map(m => ({
+          id: m.id,
+          senderId: m.sender_id,
+          body: m.body,
+        })),
+      ).catch(() => {});
 
       const senderIds = [...new Set(visibleMessages.map(m => m.sender_id))];
       const { data: profiles } = await supabase
