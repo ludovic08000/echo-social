@@ -33,6 +33,7 @@ import { useE2EE } from '@/hooks/useE2EE';
 import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
 import { EncryptionStatusBar } from '@/components/messages/EncryptionBadge';
+import { MessagingPinGate } from '@/components/MessagingPinGate';
 
 
 // ─── Utils ───────────────────────────────────────────────
