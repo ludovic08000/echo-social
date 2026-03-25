@@ -11,6 +11,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 interface MessagingPinGateProps {
   children: ReactNode;
+  /** Compact mode for small containers like chat widget */
+  compact?: boolean;
 }
 
 export function MessagingPinGate({ children }: MessagingPinGateProps) {
