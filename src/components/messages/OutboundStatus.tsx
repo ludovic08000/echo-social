@@ -17,7 +17,7 @@ export function OutboundStatusIndicator({ status, lastError, onRetry, onRemove, 
   const label = getStatusLabel(status);
   const isError = status === 'failed_visible';
   const isWaiting = status === 'waiting_secure_channel' || status === 'retry_pending';
-  const canRemove = status !== 'sending' && status !== 'encrypting' && status !== 'sent';
+  const canRemove = status !== 'sending' && status !== 'encrypting';
 
   const IconComponent = {
     lock: Lock,
