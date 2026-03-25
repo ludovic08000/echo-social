@@ -14,16 +14,17 @@ interface RateBucket {
 
 const buckets = new Map<string, RateBucket>();
 
-// Thresholds — legitimate user behavior stays well below these
+// Thresholds — generous for legitimate use, catches only extreme abuse
 const LIMITS: Record<string, { max: number; windowMs: number }> = {
-  encrypt:     { max: 30,  windowMs: 10_000 },  // 30 encrypts per 10s
-  decrypt:     { max: 60,  windowMs: 10_000 },  // 60 decrypts per 10s (loading history)
-  deriveBits:  { max: 10,  windowMs: 60_000 },  // 10 key derivations per minute
-  sign:        { max: 30,  windowMs: 10_000 },  // mirrors encrypt
+  encrypt:     { max: 60,  windowMs: 10_000 },  // 60 encrypts per 10s
+  decrypt:     { max: 500, windowMs: 10_000 },  // 500 decrypts per 10s (loading full history)
+  deriveBits:  { max: 20,  windowMs: 60_000 },  // 20 key derivations per minute
+  sign:        { max: 60,  windowMs: 10_000 },  // mirrors encrypt
 };
 
-let lockdownUntil = 0;
-const LOCKDOWN_DURATION_MS = 30_000; // 30s lockdown on trigger
+// Per-operation lockdown instead of global — decrypt overload must NOT block encrypt/send
+const lockdownUntilMap = new Map<string, number>();
+const LOCKDOWN_DURATION_MS = 5_000; // 5s lockdown (was 30s — too aggressive)
 
 const violationCallbacks: Array<(op: string, count: number) => void> = [];
 
