@@ -52,8 +52,9 @@ interface QueueHandlers {
 }
 
 interface HandlerEntry {
+  id: string;
   handlers: QueueHandlers;
-  refs: number;
+  registeredAt: number;
 }
 
 const DB_NAME = 'forsure-msg-queue';
@@ -70,7 +71,7 @@ class MessageQueueManager {
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private processing = new Set<string>();
   private dbPromise: Promise<IDBDatabase> | null = null;
-  private handlersByConversation = new Map<string, HandlerEntry>();
+  private handlersByConversation = new Map<string, Map<string, HandlerEntry>>();
 
   // ─── DB ───
 
@@ -147,36 +148,44 @@ class MessageQueueManager {
   // ─── Public API ───
 
   /** Register handlers for encryption and sending */
-  registerHandlers(conversationId: string, handlers: QueueHandlers) {
-    const existing = this.handlersByConversation.get(conversationId);
-    if (existing) {
-      this.handlersByConversation.set(conversationId, {
-        handlers,
-        refs: existing.refs + 1,
-      });
-      return;
-    }
-
-    this.handlersByConversation.set(conversationId, {
+  registerHandlers(conversationId: string, handlerId: string, handlers: QueueHandlers) {
+    const existing = this.handlersByConversation.get(conversationId) || new Map<string, HandlerEntry>();
+    existing.set(handlerId, {
+      id: handlerId,
       handlers,
-      refs: 1,
+      registeredAt: Date.now(),
     });
+    this.handlersByConversation.set(conversationId, existing);
   }
 
   /** Unregister handlers when a conversation hook unmounts */
-  unregisterHandlers(conversationId: string) {
-    const existing = this.handlersByConversation.get(conversationId);
-    if (!existing) return;
+  unregisterHandlers(conversationId: string, handlerId: string) {
+    const entries = this.handlersByConversation.get(conversationId);
+    if (!entries) return;
 
-    if (existing.refs <= 1) {
+    entries.delete(handlerId);
+
+    if (entries.size === 0) {
       this.handlersByConversation.delete(conversationId);
       return;
     }
 
-    this.handlersByConversation.set(conversationId, {
-      handlers: existing.handlers,
-      refs: existing.refs - 1,
-    });
+    this.handlersByConversation.set(conversationId, entries);
+  }
+
+  /** Return the most recently registered active handlers for a conversation */
+  private getHandlers(conversationId: string): QueueHandlers | null {
+    const entries = this.handlersByConversation.get(conversationId);
+    if (!entries || entries.size === 0) return null;
+
+    let latest: HandlerEntry | null = null;
+    for (const entry of entries.values()) {
+      if (!latest || entry.registeredAt > latest.registeredAt) {
+        latest = entry;
+      }
+    }
+
+    return latest?.handlers || null;
   }
 
   /** Enqueue a new outbound message */
@@ -232,8 +241,7 @@ class MessageQueueManager {
       if (!msg.encryptedBody) {
         await this.updateStatus(msg, 'encrypting');
 
-        const handlerEntry = this.handlersByConversation.get(msg.conversationId);
-        const handlers = handlerEntry?.handlers;
+        const handlers = this.getHandlers(msg.conversationId);
         if (!handlers?.encrypt) {
           await this.updateStatus(msg, 'waiting_secure_channel', 'Encryption handler not registered');
           this.scheduleRetry(msg);
@@ -275,8 +283,7 @@ class MessageQueueManager {
       // Step 2: Send encrypted payload
       await this.updateStatus(msg, 'sending');
 
-      const handlerEntry = this.handlersByConversation.get(msg.conversationId);
-      const handlers = handlerEntry?.handlers;
+      const handlers = this.getHandlers(msg.conversationId);
       if (!handlers?.send) {
         await this.updateStatus(msg, 'retry_pending', 'Send handler not registered');
         this.scheduleRetry(msg);
