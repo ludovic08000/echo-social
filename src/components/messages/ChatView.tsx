@@ -84,11 +84,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const e2ee = useE2EE(conversationId, peerUserId);
 
   // Message queue for encrypted sending
+  // Always pass encrypt handler so it's available when E2EE becomes ready
   const queue = useMessageQueue(
     conversationId,
-    e2ee.encrypted ? e2ee.encrypt : null,
+    e2ee.encrypt,
     e2ee.isReady(),
-    e2ee.encrypted,
+    !isZeusConversation, // encryption active for all non-Zeus conversations
   );
 
   const { upload, isUploading } = useImageUpload({
@@ -156,16 +157,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
     e.preventDefault();
     if (!newMessage.trim() || isSending) return;
 
-    // SECURITY: Block sending for non-Zeus conversations when encryption not possible
-    if (!isZeusConversation && !e2ee.encrypted) {
-      if (e2ee.peerKeyMissing) {
-        toast.error('Impossible d\'envoyer : le contact n\'a pas encore de clé de chiffrement.');
-      } else if (!e2ee.ready) {
-        toast.error('Initialisation du chiffrement en cours, patientez…');
-      } else {
-        toast.error('Canal sécurisé indisponible. Réessayez dans quelques secondes.');
-      }
-      return;
+    // For non-Zeus: if peer has no keys at all, inform user but still queue
+    // The queue will auto-retry when encryption becomes available
+    if (!isZeusConversation && e2ee.peerKeyMissing) {
+      toast.info('Le contact n\'a pas encore activé le chiffrement. Le message sera envoyé dès qu\'il sera disponible.');
     }
 
     setIsSending(true);

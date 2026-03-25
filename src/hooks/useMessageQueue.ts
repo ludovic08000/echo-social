@@ -42,11 +42,14 @@ export function useMessageQueue(
       encrypt: async (plaintext: string, _convId: string) => {
         if (!activeRef.current) {
           // No encryption needed for this conversation (e.g., Zeus)
-          // But we should never send plaintext for encrypted conversations
           throw new Error('Encryption not active');
         }
         if (!encryptRef.current) {
-          throw new Error('Encrypt function not available');
+          // Encrypt function not yet available — queue will retry
+          throw new Error('Encryption initializing');
+        }
+        if (!readyRef.current) {
+          throw new Error('Encryption not ready yet');
         }
         return encryptRef.current(plaintext);
       },
