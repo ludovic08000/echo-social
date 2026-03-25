@@ -1062,6 +1062,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               </div>
             </div>
           ))}
+          </>
         )}
         <div ref={messagesEndRef} />
       </div>
