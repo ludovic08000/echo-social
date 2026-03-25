@@ -43,11 +43,10 @@ export function useMessageQueue(
         if (!activeRef.current) {
           throw new Error('Encryption not active');
         }
+        // Do not gate on local readyRef here: it can lag behind real crypto readiness.
+        // Let encrypt() attempt directly and report concrete key state errors.
         if (!encryptRef.current) {
           throw new Error('Encryption initializing');
-        }
-        if (!readyRef.current) {
-          throw new Error('Encryption not ready yet');
         }
         return encryptRef.current(plaintext);
       },

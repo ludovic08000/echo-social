@@ -266,13 +266,6 @@ class MessageQueueManager {
           return;
         }
 
-        if (!handlers.isReady(msg.conversationId)) {
-          console.log('[MSG_QUEUE] encryption not ready, waiting', msg.localId);
-          await this.updateStatus(msg, 'waiting_secure_channel', 'Secure channel not ready');
-          this.scheduleRetry(msg, 'secure_wait');
-          return;
-        }
-
         try {
           console.log('[E2EE] encrypt start', msg.localId);
           const encrypted = await handlers.encrypt(msg.plaintext, msg.conversationId);
@@ -291,9 +284,23 @@ class MessageQueueManager {
           await this.dbPut(msg);
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
+          const normalized = errMsg.toLowerCase();
+          const waitingForKeys =
+            normalized.includes('not ready') ||
+            normalized.includes('initializ') ||
+            normalized.includes('keys not ready') ||
+            normalized.includes('encryption not available') ||
+            normalized.includes('key') && normalized.includes('ready');
+
           console.error('[E2EE] encrypt failed', msg.localId, errMsg);
-          await this.updateStatus(msg, 'retry_pending', errMsg);
-          this.scheduleRetry(msg);
+
+          if (waitingForKeys) {
+            await this.updateStatus(msg, 'waiting_secure_channel', errMsg);
+            this.scheduleRetry(msg, 'secure_wait');
+          } else {
+            await this.updateStatus(msg, 'retry_pending', errMsg);
+            this.scheduleRetry(msg);
+          }
           return;
         }
       }
