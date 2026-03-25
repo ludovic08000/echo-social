@@ -32,7 +32,15 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     // Check if body looks like an encrypted envelope
     const looksEncrypted = body.startsWith('{') && (body.includes('"ct"') || body.includes('"hdr"'));
     if (!looksEncrypted) {
-      setDisplayText(body);
+      // SECURITY: In encrypted conversations, non-encrypted messages should be flagged
+      // Allow known system messages (emoji, photo markers, etc.) through
+      const isSystemMsg = body === '📷 Photo' || body.startsWith('🎙️ voice:') || body.startsWith('↩️');
+      if (isSystemMsg) {
+        setDisplayText(body);
+      } else {
+        // Never display raw unencrypted text in an encrypted conversation
+        setDisplayText('⚠️ Message non chiffré');
+      }
       return;
     }
 
