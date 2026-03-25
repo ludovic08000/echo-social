@@ -374,7 +374,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
       
       {/* Actions */}
       {showActions && (
-        <div className="relative flex items-center border-t border-border/20 mx-4 py-1">
+        <div className="relative flex items-center border-t border-border/15 mx-4 py-1.5">
           <ReactionButton 
             postId={post.id}
             currentReaction={post.user_reaction}
@@ -387,7 +387,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
               variant="ghost"
               size="sm"
               onClick={onCommentClick}
-              className="w-full h-11 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs transition-all"
+              className="w-full h-10 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-[13px] transition-all"
             >
               <MessageCircle className="w-[18px] h-[18px]" />
               <span className="font-medium">Commenter</span>
@@ -402,7 +402,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
               variant="ghost"
               size="sm"
               showLabel
-              className="w-full h-11 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs"
+              className="w-full h-10 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-[13px]"
             />
           </div>
         </div>
