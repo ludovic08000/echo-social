@@ -24,6 +24,7 @@ export function useMessageQueue(
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [pendingMessages, setPendingMessages] = useState<OutboundMessage[]>([]);
+  const handlerIdRef = useRef(crypto.randomUUID());
   const encryptRef = useRef(encrypt);
   const readyRef = useRef(isEncryptionReady);
   const activeRef = useRef(isEncryptionActive);
@@ -37,7 +38,7 @@ export function useMessageQueue(
   useEffect(() => {
     if (!user || !conversationId) return;
 
-    messageQueue.registerHandlers(conversationId, {
+    messageQueue.registerHandlers(conversationId, handlerIdRef.current, {
       encrypt: async (plaintext: string, _convId: string) => {
         if (!activeRef.current) {
           // No encryption needed for this conversation (e.g., Zeus)
@@ -100,7 +101,7 @@ export function useMessageQueue(
     messageQueue.resumeForConversation(conversationId);
 
     return () => {
-      messageQueue.unregisterHandlers(conversationId);
+      messageQueue.unregisterHandlers(conversationId, handlerIdRef.current);
     };
   }, [user, conversationId, queryClient]);
 
