@@ -319,7 +319,7 @@ export default function Feed() {
                           transform: `translateY(${virtualRow.start}px)`,
                         }}
                       >
-                        <div className="pb-3">
+                        <div className="pb-4">
                           <PostCard post={post} />
                           <LazyComments postId={post.id} />
                           {renderInjection(virtualRow.index)}
