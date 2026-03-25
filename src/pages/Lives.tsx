@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Radio, Plus, Users, TrendingUp } from 'lucide-react';
+import { Radio, Plus, Users, TrendingUp, Sparkles } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { LiveCard } from '@/components/LiveCard';
 import { useLiveStreams, useStartLive } from '@/hooks/useLiveStreams';

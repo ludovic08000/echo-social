@@ -648,10 +648,10 @@ export function CreatePost() {
             <input type="file" ref={fileInputRef} onChange={(e) => handleFileChange(e, 'image')} accept="image/*" className="hidden" />
             <input type="file" ref={videoInputRef} onChange={(e) => handleFileChange(e, 'video')} accept="video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v" className="hidden" />
             {[
+              { onClick: () => { setExpanded(true); setTimeout(() => textareaRef.current?.focus(), 100); window.dispatchEvent(new CustomEvent('open-zeus', { detail: { action: 'create-post' } })); }, icon: Sparkles, label: 'Zeus IA', iconColor: 'text-primary', hoverColor: 'hover:text-primary' },
               { onClick: () => fileInputRef.current?.click(), icon: Image, label: 'Photo', iconColor: 'text-primary/70', hoverColor: 'hover:text-primary' },
               { onClick: () => videoInputRef.current?.click(), icon: Video, label: 'Vidéo', iconColor: 'text-destructive/70', hoverColor: 'hover:text-destructive' },
               { onClick: () => { setExpanded(true); setExpiryHours(1); }, icon: Timer, label: 'Éphémère', iconColor: 'text-amber-500/70', hoverColor: 'hover:text-amber-500' },
-              { onClick: () => navigate('/marketplace?tab=seller'), icon: ShoppingBag, label: 'Vendre', iconColor: 'text-primary/70', hoverColor: 'hover:text-primary' },
             ].map((item, i) => (
               <motion.button
                 key={i}
