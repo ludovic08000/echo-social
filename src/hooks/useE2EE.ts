@@ -382,8 +382,24 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
    * Throws EncryptionError if encryption fails.
    */
   const encrypt = useCallback(async (plaintext: string): Promise<string> => {
-    // If encryption is not active (Zeus, no peer keys), this is a programming error
-    if (!state.encrypted || !keysRef.current) {
+    // If peer encryption is not active (Zeus, no peer keys), this is a programming error
+    if (!state.encrypted) {
+      throw new EncryptionError('Encryption not available — keys not ready');
+    }
+
+    // Auto-load keys if ref is empty (race with initKeys)
+    if (!keysRef.current && user) {
+      console.log('[E2EE] Keys ref empty at encrypt time, loading on-demand');
+      try {
+        const keys = await getOrCreateIdentityKeys(user.id);
+        keysRef.current = keys;
+      } catch (e) {
+        console.error('[E2EE] On-demand key load failed:', e);
+        throw new EncryptionError('Encryption not available — keys not ready');
+      }
+    }
+
+    if (!keysRef.current) {
       throw new EncryptionError('Encryption not available — keys not ready');
     }
 
