@@ -123,7 +123,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const isOwner = user?.id === post.user_id;
 
   return (
-    <article className="group relative bg-card border border-border/20 sm:rounded-2xl overflow-hidden">
+    <article className="group relative bg-card border border-border/20 sm:rounded-2xl overflow-hidden transition-all duration-300 hover:border-border/40 hover:shadow-[var(--shadow-md)]">
       {/* Subtle gradient overlay on hover */}
       
       
