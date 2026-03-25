@@ -461,7 +461,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       console.error('[E2EE] Legacy encrypt also failed:', legacyErr);
       throw new EncryptionError('Encryption failed — message not sent');
     }
-  }, [state.encrypted, conversationId, ensureRatchet, ensureLegacySession]);
+  }, [state.encrypted, conversationId, user, ensureRatchet, ensureLegacySession]);
 
   /**
    * Decrypt — NEVER shows raw ciphertext.
