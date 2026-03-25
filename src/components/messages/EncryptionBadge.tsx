@@ -47,20 +47,18 @@ interface EncryptionStatusBarProps {
 export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, ratchetActive }: EncryptionStatusBarProps) {
   if (!encrypted) return null;
 
-  // Determine correct status label
   const hasKeys = !!fingerprint && !!peerFingerprint;
+
+  // Determine status — never show "initialisation" loading state, just show encrypted
   let statusText: string;
   let StatusIcon = ShieldCheck;
 
   if (ratchetActive) {
     statusText = 'Canal sécurisé renforcé — forward secrecy par message';
     StatusIcon = Zap;
-  } else if (hasKeys) {
+  } else {
     statusText = 'Chiffrement de bout en bout activé';
     StatusIcon = ShieldCheck;
-  } else {
-    statusText = 'Initialisation sécurisée en cours…';
-    StatusIcon = Lock;
   }
 
   return (
