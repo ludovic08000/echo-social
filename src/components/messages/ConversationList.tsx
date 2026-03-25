@@ -138,10 +138,10 @@ export function ConversationList() {
                 <Link
                   to={`/messages/${conv.id}`}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors",
+                    "flex items-center gap-3 px-3 py-3 rounded-2xl transition-all duration-200",
                     conv.unread_count > 0
-                      ? "bg-primary/5"
-                      : "hover:bg-secondary/60"
+                      ? "bg-primary/5 hover:bg-primary/8"
+                      : "hover:bg-secondary/50"
                   )}
                 >
                   {/* Avatar */}
