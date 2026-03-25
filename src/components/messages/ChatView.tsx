@@ -84,11 +84,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const e2ee = useE2EE(conversationId, peerUserId);
 
   // Message queue for encrypted sending
+  // Always pass encrypt handler so it's available when E2EE becomes ready
   const queue = useMessageQueue(
     conversationId,
-    e2ee.encrypted ? e2ee.encrypt : null,
+    e2ee.encrypt,
     e2ee.isReady(),
-    e2ee.encrypted,
+    !isZeusConversation, // encryption active for all non-Zeus conversations
   );
 
   const { upload, isUploading } = useImageUpload({
