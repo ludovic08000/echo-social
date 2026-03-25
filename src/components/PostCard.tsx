@@ -123,12 +123,12 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const isOwner = user?.id === post.user_id;
 
   return (
-    <article className="group relative bg-card border border-border/20 sm:rounded-2xl overflow-hidden">
+    <article className="group relative bg-card border border-border/20 sm:rounded-2xl overflow-hidden transition-all duration-300 hover:border-border/40 hover:shadow-[var(--shadow-md)]">
       {/* Subtle gradient overlay on hover */}
       
       
       {/* Header */}
-      <div className="relative flex items-center justify-between px-4 pt-4 pb-3">
+      <div className="relative flex items-center justify-between px-4 pt-4 pb-2.5">
         <div className="flex items-center gap-3">
           <Link to={`/profile/${post.user_id}`} className="relative">
               <UserAvatar 
@@ -237,7 +237,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
       <div className="block relative">
         {post.body && (
           <Link to={`/post/${post.id}`}>
-            <p className="px-4 pb-3 text-sm text-foreground whitespace-pre-wrap break-words leading-relaxed">
+            <p className="px-4 pb-3 text-[14px] text-foreground whitespace-pre-wrap break-words leading-[1.6]">
               {post.body}
             </p>
           </Link>
@@ -374,7 +374,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
       
       {/* Actions */}
       {showActions && (
-        <div className="relative flex items-center border-t border-border/20 mx-4 py-1">
+        <div className="relative flex items-center border-t border-border/15 mx-4 py-1.5">
           <ReactionButton 
             postId={post.id}
             currentReaction={post.user_reaction}
@@ -387,7 +387,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
               variant="ghost"
               size="sm"
               onClick={onCommentClick}
-              className="w-full h-11 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs transition-all"
+              className="w-full h-10 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-[13px] transition-all"
             >
               <MessageCircle className="w-[18px] h-[18px]" />
               <span className="font-medium">Commenter</span>
@@ -402,7 +402,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
               variant="ghost"
               size="sm"
               showLabel
-              className="w-full h-11 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs"
+              className="w-full h-10 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-[13px]"
             />
           </div>
         </div>

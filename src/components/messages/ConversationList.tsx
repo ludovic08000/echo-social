@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Send, Search, Plus, Edit, Trash2 } from 'lucide-react';
+import { Send, Search, Plus, Edit, Trash2, Sparkles } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
@@ -37,17 +37,28 @@ export function ConversationList() {
     <AppLayout>
       <div className="max-w-2xl mx-auto">
         {/* Facebook-style header */}
-        <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm px-4 pt-3 pb-2">
+        <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm px-4 pt-4 pb-3">
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-2xl font-extrabold tracking-tight">Discussions</h1>
-            <Button
-              size="icon"
-              variant="secondary"
-              className="h-9 w-9 rounded-full"
-              onClick={() => setShowNewChat(true)}
-            >
-              <Edit className="w-4 h-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-9 w-9 rounded-full text-primary hover:bg-primary/10"
+                onClick={() => window.dispatchEvent(new CustomEvent('open-zeus', { detail: { action: 'message-help' } }))}
+                title="Zeus IA"
+              >
+                <Sparkles className="w-4 h-4" />
+              </Button>
+              <Button
+                size="icon"
+                variant="secondary"
+                className="h-9 w-9 rounded-full"
+                onClick={() => setShowNewChat(true)}
+              >
+                <Edit className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
 
           {/* Search bar */}
@@ -127,10 +138,10 @@ export function ConversationList() {
                 <Link
                   to={`/messages/${conv.id}`}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors",
+                    "flex items-center gap-3 px-3 py-3 rounded-2xl transition-all duration-200",
                     conv.unread_count > 0
-                      ? "bg-primary/5"
-                      : "hover:bg-secondary/60"
+                      ? "bg-primary/5 hover:bg-primary/8"
+                      : "hover:bg-secondary/50"
                   )}
                 >
                   {/* Avatar */}

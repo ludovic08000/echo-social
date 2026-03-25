@@ -319,7 +319,7 @@ export default function Feed() {
                           transform: `translateY(${virtualRow.start}px)`,
                         }}
                       >
-                        <div className="pb-3">
+                        <div className="pb-4">
                           <PostCard post={post} />
                           <LazyComments postId={post.id} />
                           {renderInjection(virtualRow.index)}
@@ -352,11 +352,11 @@ const LazyComments = React.memo(function LazyComments({ postId }: { postId: stri
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="bg-card border border-t-0 border-border/20 rounded-b-2xl -mt-1 overflow-hidden">
+    <div className="bg-card border border-t-0 border-border/15 rounded-b-2xl -mt-1 overflow-hidden">
       {!open ? (
         <button
           onClick={() => setOpen(true)}
-          className="w-full px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/30 transition-colors text-left"
+          className="w-full px-4 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/30 transition-colors text-left font-medium"
         >
           Voir les commentaires…
         </button>

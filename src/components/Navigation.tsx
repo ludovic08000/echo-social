@@ -36,21 +36,21 @@ export function MobileNav() {
 
   const NavItem = ({ path, icon: Icon, label, badge }: { path: string; icon: any; label: string; badge?: number }) => (
     <Link to={path} className={cn(
-      'flex flex-col items-center justify-center gap-1 flex-1 min-w-0 py-2 transition-all duration-200',
+      'flex flex-col items-center justify-center gap-0.5 flex-1 min-w-0 py-2 transition-all duration-200',
       active(path) ? 'text-primary' : 'text-muted-foreground'
     )}>
       <div className={cn(
         'relative p-1.5 rounded-xl transition-all duration-200',
-        active(path) && 'bg-primary/10'
+        active(path) && 'bg-primary/10 shadow-[0_0_8px_hsl(var(--primary)/0.15)]'
       )}>
         <Icon className={cn('w-5 h-5', active(path) && 'stroke-[2.5]')} />
         {(badge ?? 0) > 0 && (
-          <span className="absolute -top-1 -right-1.5 min-w-[16px] h-4 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center px-1">
+          <span className="absolute -top-1 -right-1.5 min-w-[16px] h-4 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center px-1 shadow-sm">
             {(badge ?? 0) > 9 ? '9+' : badge}
           </span>
         )}
       </div>
-      <span className={cn('text-[10px] leading-none', active(path) ? 'font-bold' : 'font-medium opacity-70')}>{label}</span>
+      <span className={cn('text-[10px] leading-none tracking-tight', active(path) ? 'font-bold' : 'font-medium opacity-70')}>{label}</span>
     </Link>
   );
 
@@ -60,10 +60,10 @@ export function MobileNav() {
       {/* Menu étendu */}
       {showMore && (
         <div className="fixed inset-0 z-[60]" onClick={() => setShowMore(false)}>
-          <div className="absolute inset-0 bg-background/70" />
-          <div className="absolute bottom-[68px] left-3 right-3 safe-area-pb z-[61] animate-slide-up">
-            <div className="bg-card/95 rounded-3xl border border-border/30 shadow-[var(--shadow-xl)] p-4">
-              <div className="grid grid-cols-4 gap-3">
+          <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
+          <div className="absolute bottom-[70px] left-3 right-3 safe-area-pb z-[61] animate-slide-up">
+            <div className="bg-card/95 rounded-3xl border border-border/20 shadow-[var(--shadow-xl)] p-5">
+              <div className="grid grid-cols-4 gap-2">
                 {[
                   { path: '/groups', icon: Users, label: 'Groupes' },
                   { path: '/pages', icon: FileText, label: 'Pages' },
@@ -71,7 +71,7 @@ export function MobileNav() {
                   { path: '/ads', icon: Megaphone, label: 'Pub Ads' },
                   { path: '/friends', icon: Heart, label: 'Amis' },
                   { path: '/games', icon: Gamepad2, label: 'Jeux' },
-                   { path: '#zeus', icon: Bot, label: 'Assistant IA' },
+                   { path: '#zeus', icon: Bot, label: 'Zeus IA ⚡' },
                    { path: '/notifications', icon: Bell, label: 'Notifs', badge: unreadCount },
                    { path: '/settings', icon: Settings, label: 'Réglages' },
                  ].map((item) => (
@@ -79,12 +79,12 @@ export function MobileNav() {
                     <button
                       key="zeus"
                       onClick={() => { setShowMore(false); window.dispatchEvent(new Event('open-zeus')); }}
-                      className="flex flex-col items-center gap-1.5 py-3 rounded-2xl text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all duration-200"
+                      className="flex flex-col items-center gap-1.5 py-3 rounded-2xl text-primary hover:bg-primary/5 transition-all duration-200"
                     >
-                      <div className="w-10 h-10 rounded-xl bg-secondary/80 flex items-center justify-center">
-                        <item.icon className="w-5 h-5" />
+                      <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: 'var(--premium-gradient)' }}>
+                        <item.icon className="w-5 h-5 text-primary-foreground" />
                       </div>
-                      <span className="text-[10px] font-medium">{item.label}</span>
+                      <span className="text-[10px] font-bold">{item.label}</span>
                     </button>
                   ) : (
                   <Link
@@ -93,7 +93,7 @@ export function MobileNav() {
                     onClick={() => setShowMore(false)}
                     className="flex flex-col items-center gap-1.5 py-3 rounded-2xl text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all duration-200"
                   >
-                    <div className="relative w-10 h-10 rounded-xl bg-secondary/80 flex items-center justify-center">
+                    <div className="relative w-11 h-11 rounded-xl bg-secondary/60 flex items-center justify-center">
                       <item.icon className="w-5 h-5" />
                       {((item as any).badge ?? 0) > 0 && (
                         <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center px-1">
@@ -113,17 +113,17 @@ export function MobileNav() {
 
       <nav className={cn(
         "fixed bottom-0 left-0 right-0 z-50 safe-area-pb transition-transform duration-300",
-        "bg-card/95 backdrop-blur-xl border-t border-border/20",
-        "shadow-[0_-2px_16px_hsl(var(--background)/0.6)]",
+        "bg-card/95 backdrop-blur-xl border-t border-border/15",
+        "shadow-[0_-4px_20px_hsl(var(--background)/0.7)]",
         navHidden && "translate-y-full"
       )}>
-        <div className="flex items-stretch h-[56px]">
+        <div className="flex items-stretch h-[58px]">
           <NavItem path="/feed" icon={Home} label="Accueil" />
           <NavItem path="/friends" icon={Users} label="Amis" />
 
           {/* Bouton Créer — centré */}
           <Link to="/create" className="flex flex-col items-center justify-center flex-1 min-w-0">
-            <div className="w-11 h-11 rounded-2xl bg-[image:var(--premium-gradient)] text-primary-foreground flex items-center justify-center shadow-[var(--shadow-gold)] active:scale-90 transition-transform duration-150">
+            <div className="w-12 h-12 rounded-2xl bg-[image:var(--premium-gradient)] text-primary-foreground flex items-center justify-center shadow-[var(--shadow-gold)] active:scale-90 transition-transform duration-150 hover:shadow-[var(--shadow-glow)]">
               <Plus className="w-5 h-5 stroke-[2.5]" />
             </div>
           </Link>
@@ -134,14 +134,14 @@ export function MobileNav() {
           <button
             onClick={() => setShowMore(!showMore)}
             className={cn(
-              'flex flex-col items-center justify-center gap-1 flex-1 min-w-0 py-2 transition-all duration-200',
+              'flex flex-col items-center justify-center gap-0.5 flex-1 min-w-0 py-2 transition-all duration-200',
               showMore ? 'text-primary' : 'text-muted-foreground'
             )}
           >
             <div className={cn('relative p-1.5 rounded-xl transition-all duration-200', showMore && 'bg-primary/10')}>
               <Sparkles className={cn('w-5 h-5', showMore && 'stroke-[2.5]')} />
             </div>
-            <span className={cn('text-[10px] leading-none', showMore ? 'font-bold' : 'font-medium opacity-70')}>Plus</span>
+            <span className={cn('text-[10px] leading-none tracking-tight', showMore ? 'font-bold' : 'font-medium opacity-70')}>Plus</span>
           </button>
         </div>
       </nav>
