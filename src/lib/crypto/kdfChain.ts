@@ -33,11 +33,11 @@ export async function kdfChainStep(chainKey: CryptoKey): Promise<{
     crypto.subtle.importKey(
       'raw', mkRaw.slice(0, 32),
       { name: AES_ALGO, length: AES_KEY_LENGTH },
-      true, ['encrypt', 'decrypt']
+      false, ['encrypt', 'decrypt']  // non-exportable for forward secrecy
     ),
     crypto.subtle.importKey(
       'raw', ckRaw.slice(0, 32),
-      'HMAC', true, ['sign']
+      'HMAC', false, ['sign']  // non-exportable chain key
     ),
   ]);
 
