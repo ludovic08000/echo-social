@@ -276,6 +276,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             ...s,
             peerFingerprint: data.fingerprint,
             encrypted: true,
+            // Ready only when our keys exist (may race with key init)
             ready: !!keysRef.current,
             ratchetActive: !!ratchetRef.current,
             fingerprintChanged: fpChanged,
