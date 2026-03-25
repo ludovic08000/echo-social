@@ -559,10 +559,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     onSuccess: (url) => {
       if (isZeusConversation) {
         sendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
-      } else if (e2ee.encrypted) {
-        queue.sendMessage('📷 Photo', url).catch(() => toast.error('Erreur envoi photo'));
       } else {
-        toast.error('Chiffrement non prêt');
+        queue.sendMessage('📷 Photo', url).catch(() => toast.error('Erreur envoi photo'));
       }
     },
   });
