@@ -362,6 +362,21 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const negotiationProduct = chatState.negotiationProduct;
 
+  // E2EE integration
+  const e2ee = useE2EE(conversationId, peerUserId);
+  const queue = useMessageQueue(
+    conversationId,
+    e2ee.encrypted ? e2ee.encrypt : null,
+    e2ee.isReady(),
+    e2ee.encrypted,
+  );
+
+  // Decrypted text cache for widget
+  const decryptedCacheRef = useRef<Map<string, string>>(new Map());
+  const onDecrypted = useCallback((msgId: string, text: string) => {
+    decryptedCacheRef.current.set(msgId, text);
+  }, []);
+
   // Auto-load negotiation context from conversation if not set
   const { data: convNegotiations = [] } = useNegotiationsByConversation(!negotiationProduct ? conversationId : undefined);
   
