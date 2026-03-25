@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Send, Search, Plus, Edit, Trash2 } from 'lucide-react';
+import { Send, Search, Plus, Edit, Trash2, Sparkles } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
