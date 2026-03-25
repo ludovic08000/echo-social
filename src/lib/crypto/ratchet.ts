@@ -298,7 +298,8 @@ async function skipMessages(state: RatchetState, until: number): Promise<Ratchet
 
   let ck = newState.receivingChainKey;
   for (let i = newState.recvCount; i < until; i++) {
-    const { nextChainKey, messageKey } = await kdfChainStep(ck);
+    // Use exportable variant since skipped keys need IndexedDB persistence
+    const { nextChainKey, messageKey } = await kdfChainStepExportable(ck);
     newState.skippedKeys.set(`${dhPub}:${i}`, messageKey);
     ck = nextChainKey;
   }
