@@ -10,23 +10,25 @@ interface OutboundStatusProps {
   className?: string;
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  encrypting: 'Chiffrement...',
+  sending: 'Envoi...',
+  waiting_secure_channel: 'En attente du chiffrement...',
+  retry_pending: 'Nouvel essai...',
+  failed_visible: 'Échec d\'envoi',
+};
+
 export function OutboundStatusIndicator({ status, lastError, onRetry, onRemove, className }: OutboundStatusProps) {
   if (status === 'sent') return null;
 
-  const icon = getStatusIcon(status);
-  const label = getStatusLabel(status);
   const isError = status === 'failed_visible';
   const isWaiting = status === 'waiting_secure_channel' || status === 'retry_pending';
-  const canRemove = status !== 'sending' && status !== 'encrypting';
 
-  const IconComponent = {
-    lock: Lock,
-    clock: Clock,
-    send: Send,
-    check: Check,
-    retry: RefreshCw,
-    error: AlertTriangle,
-  }[icon];
+  const IconComponent = isError ? AlertTriangle
+    : isWaiting ? Clock
+    : status === 'encrypting' ? Lock
+    : status === 'sending' ? Send
+    : Check;
 
   return (
     <div className={cn(
@@ -39,7 +41,9 @@ export function OutboundStatusIndicator({ status, lastError, onRetry, onRemove, 
         (status === 'encrypting' || status === 'sending') && 'animate-pulse',
         isWaiting && 'animate-spin',
       )} />
-      <span className="text-[10px] font-medium">{label}</span>
+      <span className="text-[10px] font-medium">
+        {STATUS_LABELS[status] || status}
+      </span>
       {isError && onRetry && (
         <button
           onClick={onRetry}
@@ -48,7 +52,7 @@ export function OutboundStatusIndicator({ status, lastError, onRetry, onRemove, 
           Réessayer
         </button>
       )}
-      {canRemove && onRemove && (
+      {(isError || isWaiting) && onRemove && (
         <button
           onClick={onRemove}
           className="text-[10px] font-semibold text-muted-foreground underline underline-offset-2 ml-1"
