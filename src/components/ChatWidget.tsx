@@ -788,11 +788,12 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           <>
             {groupedMessages.map((group, gi) => (
               <div key={gi}>
-                <span className="text-[9px] font-medium text-muted-foreground bg-secondary/60 px-3 py-0.5 rounded-full capitalize">
-                  {formatDateSeparator(group.date)}
-                </span>
-              </div>
-              <div className="space-y-0.5">
+                <div className="flex items-center justify-center my-3">
+                  <span className="text-[9px] font-medium text-muted-foreground bg-secondary/60 px-3 py-0.5 rounded-full capitalize">
+                    {formatDateSeparator(group.date)}
+                  </span>
+                </div>
+                <div className="space-y-0.5">
                 {group.messages.map((msg, mi) => {
                   const isMe = msg.sender_id === user?.id;
                   const prevMsg = mi > 0 ? group.messages[mi - 1] : null;
