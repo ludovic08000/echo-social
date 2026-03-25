@@ -82,12 +82,12 @@ export async function kdfRootStep(
     crypto.subtle.importKey(
       'raw', derived.slice(0, 32),
       { name: 'HMAC', hash: 'SHA-256', length: 256 } as any,
-      false, ['sign']  // non-exportable root key
+      true, ['sign']  // exportable — needs serialization for ratchet persistence
     ),
     crypto.subtle.importKey(
       'raw', derived.slice(32, 64),
       { name: 'HMAC', hash: 'SHA-256', length: 256 } as any,
-      false, ['sign']  // non-exportable chain key
+      true, ['sign']  // exportable — needs serialization for ratchet persistence
     ),
   ]);
 
