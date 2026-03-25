@@ -219,10 +219,10 @@ export function StoriesBar() {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isCreating}
-            className="relative w-[68px] h-[68px] rounded-2xl bg-secondary/40 border border-dashed border-primary/30 flex items-center justify-center transition-all duration-300 hover:bg-primary/5 hover:border-primary/50 group"
+            className="relative w-[60px] h-[60px] rounded-2xl bg-secondary/40 border border-dashed border-primary/30 flex items-center justify-center transition-all duration-300 hover:bg-primary/5 hover:border-primary/50 group"
           >
-            <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-              <Plus className={cn("w-5 h-5 text-primary", isCreating && "animate-spin")} />
+            <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+              <Plus className={cn("w-4 h-4 text-primary", isCreating && "animate-spin")} />
             </div>
           </button>
           <span className="text-[10px] text-muted-foreground font-medium">Story</span>
