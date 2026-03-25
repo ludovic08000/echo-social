@@ -264,7 +264,12 @@ class MessageQueueManager {
 
         // Clean up: remove plaintext from persistent storage once sent
         msg.plaintext = '';
-        await this.dbPut(msg);
+        try {
+          await this.dbPut(msg);
+        } catch (persistErr) {
+          // Do not retry-send a message already accepted by backend
+          console.warn('[SEND] local persistence failed after backend success', msg.localId, persistErr);
+        }
 
         // Remove from queue after short delay (keep for UI display)
         setTimeout(() => {
