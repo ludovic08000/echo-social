@@ -414,31 +414,49 @@ class MessageQueueManager {
    */
   async reconcileDelivered(
     conversationId: string,
-    serverMessages: Array<{ id?: string | null; senderId?: string | null; body?: string | null }>,
+    serverMessages: Array<{ id?: string | null; senderId?: string | null; body?: string | null; createdAt?: string | null }>,
   ): Promise<void> {
     try {
-      const byLocalId = new Map<string, { id: string | null; senderId: string | null }>();
-      const byEncryptedBody = new Map<string, { id: string | null; senderId: string | null }>();
+      type ServerMatch = { id: string | null; senderId: string | null; createdAtMs: number | null };
+
+      const byLocalId = new Map<string, ServerMatch>();
+      const byEncryptedBody = new Map<string, ServerMatch>();
+      const byServerId = new Map<string, ServerMatch>();
+      const bySenderTime = new Map<string, ServerMatch[]>();
 
       for (const serverMsg of serverMessages) {
+        const createdAtMs = serverMsg.createdAt ? new Date(serverMsg.createdAt).getTime() : null;
+        const matchMeta: ServerMatch = {
+          id: serverMsg.id || null,
+          senderId: serverMsg.senderId || null,
+          createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : null,
+        };
+
+        if (matchMeta.id) {
+          byServerId.set(matchMeta.id, matchMeta);
+        }
+
         if (serverMsg.body) {
-          byEncryptedBody.set(serverMsg.body, {
-            id: serverMsg.id || null,
-            senderId: serverMsg.senderId || null,
-          });
+          byEncryptedBody.set(serverMsg.body, matchMeta);
         }
 
         const localId = this.extractLocalId(serverMsg.body || '');
-        if (!localId) continue;
-        byLocalId.set(localId, {
-          id: serverMsg.id || null,
-          senderId: serverMsg.senderId || null,
-        });
+        if (localId) {
+          byLocalId.set(localId, matchMeta);
+        }
+
+        if (matchMeta.senderId && matchMeta.createdAtMs) {
+          const senderMatches = bySenderTime.get(matchMeta.senderId) || [];
+          senderMatches.push(matchMeta);
+          bySenderTime.set(matchMeta.senderId, senderMatches);
+        }
       }
+
+      bySenderTime.forEach((list) => list.sort((a, b) => (a.createdAtMs || 0) - (b.createdAtMs || 0)));
 
       // Continue reconciliation even when __lid metadata is absent:
       // fallback matching by encrypted payload is still valid.
-      if (byLocalId.size === 0 && byEncryptedBody.size === 0) return;
+      if (byLocalId.size === 0 && byEncryptedBody.size === 0 && byServerId.size === 0 && bySenderTime.size === 0) return;
 
       const queued = await this.dbGetByConversation(conversationId);
       let changed = false;
@@ -446,8 +464,34 @@ class MessageQueueManager {
       for (const msg of queued) {
         if (msg.status === 'sent') continue;
 
-        const serverMatch = byLocalId.get(msg.localId)
+        let serverMatch = byLocalId.get(msg.localId)
+          ?? (msg.serverId ? byServerId.get(msg.serverId) : undefined)
           ?? (msg.encryptedBody ? byEncryptedBody.get(msg.encryptedBody) : undefined);
+
+        // Last-resort fallback for legacy stuck messages (no __lid/serverId match):
+        // match by same sender and very close timestamp.
+        if (!serverMatch && msg.senderId) {
+          const senderMatches = bySenderTime.get(msg.senderId);
+          if (senderMatches?.length) {
+            let bestIdx = -1;
+            let bestDelta = Number.POSITIVE_INFINITY;
+
+            for (let i = 0; i < senderMatches.length; i++) {
+              const candidateTs = senderMatches[i].createdAtMs;
+              if (!candidateTs) continue;
+              const delta = Math.abs(candidateTs - msg.createdAt);
+              if (delta <= 15000 && delta < bestDelta) {
+                bestDelta = delta;
+                bestIdx = i;
+              }
+            }
+
+            if (bestIdx >= 0) {
+              serverMatch = senderMatches.splice(bestIdx, 1)[0];
+            }
+          }
+        }
+
         if (!serverMatch) continue;
         if (serverMatch.senderId && serverMatch.senderId !== msg.senderId) continue;
 
