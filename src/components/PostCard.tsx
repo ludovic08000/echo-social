@@ -237,7 +237,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
       <div className="block relative">
         {post.body && (
           <Link to={`/post/${post.id}`}>
-            <p className="px-4 pb-3 text-sm text-foreground whitespace-pre-wrap break-words leading-relaxed">
+            <p className="px-4 pb-3 text-[14px] text-foreground whitespace-pre-wrap break-words leading-[1.6]">
               {post.body}
             </p>
           </Link>
