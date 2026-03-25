@@ -29,6 +29,10 @@ import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecord
 import { RelayPointPicker } from '@/components/marketplace/RelayPointPicker';
 import { useRealtimeNotificationSound } from '@/hooks/useNotificationSounds';
 import { toast } from 'sonner';
+import { useE2EE } from '@/hooks/useE2EE';
+import { useMessageQueue } from '@/hooks/useMessageQueue';
+import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
+import { EncryptionStatusBar } from '@/components/messages/EncryptionBadge';
 
 
 // ─── Utils ───────────────────────────────────────────────
