@@ -103,7 +103,7 @@ async function derivePinKey(pin: string, salt: Uint8Array): Promise<CryptoKey> {
   const pinBytes = new TextEncoder().encode(pin);
   const baseKey = await crypto.subtle.importKey('raw', pinBytes, 'PBKDF2', false, ['deriveKey']);
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: salt as Uint8Array<ArrayBuffer>, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
     baseKey,
     { name: 'AES-GCM', length: 256 },
     false,
@@ -116,7 +116,7 @@ async function hashPin(pin: string, salt: Uint8Array): Promise<string> {
   const combined = new Uint8Array(pinBytes.length + salt.length);
   combined.set(pinBytes);
   combined.set(salt, pinBytes.length);
-  const hash = await crypto.subtle.digest('SHA-256', combined);
+  const hash = await crypto.subtle.digest('SHA-256', combined as Uint8Array<ArrayBuffer>);
   return bytesToBase64(new Uint8Array(hash));
 }
 
