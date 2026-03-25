@@ -179,8 +179,8 @@ export function useMessageQueue(
       return;
     }
 
-    // Case 2: E2EE ready → encrypt and send directly (instant)
-    if (isEncryptionReady && encrypt) {
+    // Case 2: Try encrypt + send directly (don't rely on ready state)
+    if (encrypt) {
       try {
         const encrypted = await encrypt(sanitized);
         if (encrypted && encrypted !== sanitized && encrypted.startsWith('{')) {
@@ -203,7 +203,7 @@ export function useMessageQueue(
       }
     }
 
-    // Case 3: E2EE active but not ready → queue (will encrypt + send when ready)
+    // Case 3: encrypt not available yet → queue (will encrypt + send when ready)
     await messageQueue.enqueue({
       conversationId,
       senderId: user.id,
