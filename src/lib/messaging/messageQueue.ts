@@ -51,6 +51,11 @@ interface QueueHandlers {
   isReady: (conversationId: string) => boolean;
 }
 
+interface HandlerEntry {
+  handlers: QueueHandlers;
+  refs: number;
+}
+
 const DB_NAME = 'forsure-msg-queue';
 const DB_VERSION = 1;
 const STORE_NAME = 'outbound';
@@ -65,7 +70,7 @@ class MessageQueueManager {
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private processing = new Set<string>();
   private dbPromise: Promise<IDBDatabase> | null = null;
-  private handlersByConversation = new Map<string, QueueHandlers>();
+  private handlersByConversation = new Map<string, HandlerEntry>();
 
   // ─── DB ───
 
@@ -143,12 +148,35 @@ class MessageQueueManager {
 
   /** Register handlers for encryption and sending */
   registerHandlers(conversationId: string, handlers: QueueHandlers) {
-    this.handlersByConversation.set(conversationId, handlers);
+    const existing = this.handlersByConversation.get(conversationId);
+    if (existing) {
+      this.handlersByConversation.set(conversationId, {
+        handlers,
+        refs: existing.refs + 1,
+      });
+      return;
+    }
+
+    this.handlersByConversation.set(conversationId, {
+      handlers,
+      refs: 1,
+    });
   }
 
   /** Unregister handlers when a conversation hook unmounts */
   unregisterHandlers(conversationId: string) {
-    this.handlersByConversation.delete(conversationId);
+    const existing = this.handlersByConversation.get(conversationId);
+    if (!existing) return;
+
+    if (existing.refs <= 1) {
+      this.handlersByConversation.delete(conversationId);
+      return;
+    }
+
+    this.handlersByConversation.set(conversationId, {
+      handlers: existing.handlers,
+      refs: existing.refs - 1,
+    });
   }
 
   /** Enqueue a new outbound message */
@@ -204,7 +232,8 @@ class MessageQueueManager {
       if (!msg.encryptedBody) {
         await this.updateStatus(msg, 'encrypting');
 
-        const handlers = this.handlersByConversation.get(msg.conversationId);
+        const handlerEntry = this.handlersByConversation.get(msg.conversationId);
+        const handlers = handlerEntry?.handlers;
         if (!handlers?.encrypt) {
           await this.updateStatus(msg, 'waiting_secure_channel', 'Encryption handler not registered');
           this.scheduleRetry(msg);
@@ -246,7 +275,8 @@ class MessageQueueManager {
       // Step 2: Send encrypted payload
       await this.updateStatus(msg, 'sending');
 
-      const handlers = this.handlersByConversation.get(msg.conversationId);
+      const handlerEntry = this.handlersByConversation.get(msg.conversationId);
+      const handlers = handlerEntry?.handlers;
       if (!handlers?.send) {
         await this.updateStatus(msg, 'retry_pending', 'Send handler not registered');
         this.scheduleRetry(msg);
