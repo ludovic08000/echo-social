@@ -336,7 +336,7 @@ export function useChatPin() {
           const plainBuffer = await crypto.subtle.decrypt(
             { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
             wrapKey,
-            cipherBytes,
+            cipherBytes as Uint8Array<ArrayBuffer>,
           );
 
           const rawBlob = new TextDecoder().decode(plainBuffer);
