@@ -1271,10 +1271,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             const body = `GIF:${gifUrl}`;
             if (isZeusConversation) {
               sendMessage.mutate({ conversationId, body });
-            } else if (e2ee.encrypted) {
-              try { await queue.sendMessage(body); } catch { toast.error('Erreur envoi GIF'); }
             } else {
-              toast.error('Chiffrement non prêt');
+              queue.sendMessage(body).catch(() => toast.error('Erreur envoi GIF'));
             }
             setShowGifs(false);
           }}
