@@ -377,7 +377,13 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
    * Throws EncryptionError if encryption fails.
    */
   const encrypt = useCallback(async (plaintext: string): Promise<string> => {
-    // If peer encryption is not active (Zeus, no peer keys), this is a programming error
+    console.log('[E2EE] encrypt() called', {
+      encrypted: state.encrypted,
+      hasKeys: !!keysRef.current,
+      hasPeerKey: !!peerKeyRef.current,
+      conversationId,
+    });
+
     if (!state.encrypted) {
       throw new EncryptionError('Encryption not available — keys not ready');
     }
@@ -406,15 +412,13 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     let ratchet: RatchetState | null = null;
     try {
       ratchet = await ensureRatchet();
+      console.log('[E2EE] ratchet state:', ratchet ? `sendingChainKey=${!!ratchet.sendingChainKey}` : 'null');
     } catch (ratchetInitErr) {
       console.warn('[E2EE] Ratchet init error, falling back to legacy:', ratchetInitErr);
     }
 
     if (ratchet && ratchet.sendingChainKey) {
       try {
-        if (!cryptoRateCheck('sign')) {
-          throw new EncryptionError('Signing rate limited');
-        }
         const { envelope, newState } = await ratchetEncrypt(
           ratchet,
           plaintext,
@@ -424,37 +428,35 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         ratchetRef.current = newState;
         await saveRatchetLocal(conversationId!, newState);
         const result = JSON.stringify(envelope);
-        console.log('[E2EE] encrypt success (ratchet)');
+        console.log('[E2EE] ✅ encrypt success (ratchet)');
         return result;
       } catch (ratchetErr) {
         console.warn('[E2EE] Ratchet encrypt failed, falling back to legacy:', ratchetErr);
-        // Fall through to legacy — NEVER send in plaintext
       }
     } else if (ratchet && !ratchet.sendingChainKey) {
-      console.log('[E2EE] Ratchet sending chain not ready, using legacy session');
+      console.log('[E2EE] Ratchet sending chain not ready (responder), using legacy session');
     }
 
     // Fallback to legacy session-based encryption — still encrypted, never plaintext
     try {
+      console.log('[E2EE] Trying legacy session encrypt...');
       const session = await ensureLegacySession();
       if (!session) {
+        console.error('[E2EE] ❌ No legacy session could be established');
         throw new EncryptionError('No encryption session available');
       }
 
-      if (!cryptoRateCheck('sign')) {
-        throw new EncryptionError('Signing rate limited');
-      }
-
+      console.log('[E2EE] Legacy session OK, encrypting...');
       const seq = await incrementSessionMessageCount(conversationId!);
       const result = await encryptMessage(
         plaintext, session.sharedSecret,
         keysRef.current.signingPrivateKey, keysRef.current.fingerprint, seq,
       );
-      console.log('[E2EE] encrypt success (legacy)');
+      console.log('[E2EE] ✅ encrypt success (legacy)');
       return result;
     } catch (legacyErr) {
-      console.error('[E2EE] Legacy encrypt also failed:', legacyErr);
-      throw new EncryptionError('Encryption failed — message not sent');
+      console.error('[E2EE] ❌ Legacy encrypt failed:', legacyErr);
+      throw new EncryptionError(`Encryption failed: ${legacyErr instanceof Error ? legacyErr.message : String(legacyErr)}`);
     }
   }, [state.encrypted, conversationId, user, ensureRatchet, ensureLegacySession]);
 
