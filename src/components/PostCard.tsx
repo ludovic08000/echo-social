@@ -128,7 +128,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
       
       
       {/* Header */}
-      <div className="relative flex items-center justify-between px-4 pt-4 pb-3">
+      <div className="relative flex items-center justify-between px-4 pt-4 pb-2.5">
         <div className="flex items-center gap-3">
           <Link to={`/profile/${post.user_id}`} className="relative">
               <UserAvatar 
