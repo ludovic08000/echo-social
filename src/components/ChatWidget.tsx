@@ -1014,7 +1014,12 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                                   )
                             )}
                           >
-                            <MessageBodyWithLinks body={msg.body} isMe={isMe} />
+                            <DecryptedMessageBody
+                              body={msg.body}
+                              decrypt={e2ee.decrypt}
+                              isEncryptionActive={e2ee.encrypted && !isZeusConversation}
+                              onDecrypted={(text) => onDecrypted(msg.id, text)}
+                            />
                           </div>
                         )}
 
