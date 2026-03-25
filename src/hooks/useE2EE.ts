@@ -219,7 +219,12 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             updated_at: new Date().toISOString(),
           }, { onConflict: 'user_id,is_active' });
 
-        setState(s => ({ ...s, fingerprint: bundle.fingerprint }));
+        setState(s => ({
+          ...s,
+          fingerprint: bundle.fingerprint,
+          // If peer key already loaded before our key init, mark ready now
+          ready: s.ready || s.encrypted,
+        }));
       } catch (err) {
         console.error('[E2EE] Init failed:', err);
         setState(s => ({ ...s, initError: 'Key initialization failed' }));
