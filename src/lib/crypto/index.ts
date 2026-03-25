@@ -29,7 +29,7 @@ export {
 } from './ratchet';
 
 // KDF chains
-export { kdfChainStep, kdfRootStep } from './kdfChain';
+export { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
 
 // Key management
 export {

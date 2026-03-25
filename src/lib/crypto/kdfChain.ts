@@ -33,7 +33,34 @@ export async function kdfChainStep(chainKey: CryptoKey): Promise<{
     crypto.subtle.importKey(
       'raw', mkRaw.slice(0, 32),
       { name: AES_ALGO, length: AES_KEY_LENGTH },
-      true, ['encrypt', 'decrypt']
+      false, ['encrypt', 'decrypt']  // non-exportable — used once then discarded
+    ),
+    crypto.subtle.importKey(
+      'raw', ckRaw.slice(0, 32),
+      'HMAC', true, ['sign']  // exportable — needs serialization for ratchet persistence
+    ),
+  ]);
+
+  return { nextChainKey, messageKey };
+}
+
+/** Same as kdfChainStep but message key is exportable (for skipped key storage) */
+export async function kdfChainStepExportable(chainKey: CryptoKey): Promise<{
+  nextChainKey: CryptoKey;
+  messageKey: CryptoKey;
+}> {
+  const mkRaw = await crypto.subtle.sign(
+    'HMAC', chainKey, new Uint8Array([0x01]).buffer
+  );
+  const ckRaw = await crypto.subtle.sign(
+    'HMAC', chainKey, new Uint8Array([0x02]).buffer
+  );
+
+  const [messageKey, nextChainKey] = await Promise.all([
+    crypto.subtle.importKey(
+      'raw', mkRaw.slice(0, 32),
+      { name: AES_ALGO, length: AES_KEY_LENGTH },
+      true, ['encrypt', 'decrypt']  // exportable — needs serialization for skipped key cache
     ),
     crypto.subtle.importKey(
       'raw', ckRaw.slice(0, 32),
@@ -82,12 +109,12 @@ export async function kdfRootStep(
     crypto.subtle.importKey(
       'raw', derived.slice(0, 32),
       { name: 'HMAC', hash: 'SHA-256', length: 256 } as any,
-      true, ['sign']
+      true, ['sign']  // exportable — needs serialization for ratchet persistence
     ),
     crypto.subtle.importKey(
       'raw', derived.slice(32, 64),
       { name: 'HMAC', hash: 'SHA-256', length: 256 } as any,
-      true, ['sign']
+      true, ['sign']  // exportable — needs serialization for ratchet persistence
     ),
   ]);
 
