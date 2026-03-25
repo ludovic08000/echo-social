@@ -367,9 +367,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const e2ee = useE2EE(conversationId, peerUserId);
   const queue = useMessageQueue(
     conversationId,
-    e2ee.encrypted ? e2ee.encrypt : null,
+    e2ee.encrypt,
     e2ee.isReady(),
-    e2ee.encrypted,
+    !isZeusConversation,
   );
 
   // Decrypted text cache for widget
