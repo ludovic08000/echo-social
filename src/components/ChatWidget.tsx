@@ -1308,10 +1308,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             const body = `🎙️ voice:${audioUrl}|dur:${duration}`;
             if (isZeusConversation) {
               sendMessage.mutate({ conversationId, body });
-            } else if (e2ee.encrypted) {
-              try { await queue.sendMessage(body); } catch { toast.error('Erreur envoi vocal'); }
             } else {
-              toast.error('Chiffrement non prêt');
+              queue.sendMessage(body).catch(() => toast.error('Erreur envoi vocal'));
             }
             setShowVoiceRecorder(false);
             setShowVoicemailPrompt(false);
