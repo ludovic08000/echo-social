@@ -249,7 +249,7 @@ export function StoriesBar() {
                 : "bg-border/60"
             )}>
               <div className="p-[2px] rounded-[14px] bg-background">
-                <div className="w-[60px] h-[60px] rounded-xl overflow-hidden">
+                <div className="w-[56px] h-[56px] rounded-xl overflow-hidden">
                   {group.profile.avatar_url ? (
                     <img src={group.profile.avatar_url} alt={group.profile.name} className="w-full h-full object-cover" loading="lazy" />
                   ) : (
