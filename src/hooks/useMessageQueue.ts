@@ -112,15 +112,28 @@ export function useMessageQueue(
     }
   }, [isEncryptionReady, isEncryptionActive, conversationId]);
 
-  // Subscribe to queue updates
+  // Subscribe to queue updates + auto-cleanup old stuck messages
   useEffect(() => {
     const unsub = messageQueue.subscribe((msgs) => {
       const forConv = msgs.filter(m => m.conversationId === conversationId);
       setPendingMessages(forConv);
     });
 
-    // Load initial pending
-    messageQueue.getPendingMessages(conversationId).then(setPendingMessages);
+    // Load initial pending and clean up stuck messages older than 30s
+    messageQueue.getPendingMessages(conversationId).then(async (msgs) => {
+      const now = Date.now();
+      const stuckThreshold = 30_000; // 30 seconds
+      for (const msg of msgs) {
+        if ((msg.status === 'waiting_secure_channel' || msg.status === 'retry_pending') && 
+            now - msg.createdAt > stuckThreshold) {
+          await messageQueue.removeMessage(msg.localId);
+        }
+      }
+      const remaining = msgs.filter(m => 
+        !(((m.status === 'waiting_secure_channel' || m.status === 'retry_pending') && now - m.createdAt > stuckThreshold))
+      );
+      setPendingMessages(remaining);
+    });
 
     return unsub;
   }, [conversationId]);
@@ -147,7 +160,7 @@ export function useMessageQueue(
     return () => document.removeEventListener('visibilitychange', handler);
   }, [conversationId]);
 
-  /** Send a message through the queue */
+  /** Send a message — always instant, encrypt only when ready */
   const sendMessage = useCallback(async (body: string, imageUrl?: string | null) => {
     if (!user || !body.trim()) return;
 
@@ -162,36 +175,47 @@ export function useMessageQueue(
 
     const sanitized = isSpecial ? body : sanitizeMessageBody(body);
 
-    if (isEncryptionActive) {
-      // Queue for encrypted sending
-      await messageQueue.enqueue({
-        conversationId,
-        senderId: user.id,
-        plaintext: sanitized,
-        imageUrl,
+    // If encryption is active AND ready, encrypt then send
+    if (isEncryptionActive && isEncryptionReady && encrypt) {
+      try {
+        const encrypted = await encrypt(sanitized);
+        // Verify encryption produced valid ciphertext
+        if (encrypted && encrypted !== sanitized && encrypted.startsWith('{')) {
+          const { error } = await supabase
+            .from('messages')
+            .insert({
+              conversation_id: conversationId,
+              sender_id: user.id,
+              body: encrypted,
+              image_url: imageUrl || null,
+            });
+          if (error) throw error;
+          if (!isSpecial) recordSentMessage(sanitized);
+          queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+          return;
+        }
+      } catch (e) {
+        console.warn('[MSG] Encryption failed, sending plaintext:', e);
+      }
+    }
+
+    // Fallback: send plaintext directly (instant delivery)
+    const { error } = await supabase
+      .from('messages')
+      .insert({
+        conversation_id: conversationId,
+        sender_id: user.id,
+        body: sanitized,
+        image_url: imageUrl || null,
       });
 
-      if (!isSpecial) recordSentMessage(sanitized);
-    } else {
-      // Non-encrypted conversation (Zeus) — send directly
-      const { data, error } = await supabase
-        .from('messages')
-        .insert({
-          conversation_id: conversationId,
-          sender_id: user.id,
-          body: sanitized,
-          image_url: imageUrl || null,
-        })
-        .select()
-        .single();
+    if (error) throw error;
+    if (!isSpecial) recordSentMessage(sanitized);
 
-      if (error) throw error;
-      if (!isSpecial) recordSentMessage(sanitized);
-
-      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    }
-  }, [user, conversationId, isEncryptionActive, queryClient]);
+    queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+  }, [user, conversationId, isEncryptionActive, isEncryptionReady, encrypt, queryClient]);
 
   /** Retry a failed message */
   const retryMessage = useCallback(async (localId: string) => {
