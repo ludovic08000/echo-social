@@ -64,7 +64,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [inviteSearch, setInviteSearch] = useState('');
   const [showNewChat, setShowNewChat] = useState(false);
-  const [isSending, setIsSending] = useState(false);
+  const [isSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
