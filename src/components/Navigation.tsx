@@ -36,21 +36,21 @@ export function MobileNav() {
 
   const NavItem = ({ path, icon: Icon, label, badge }: { path: string; icon: any; label: string; badge?: number }) => (
     <Link to={path} className={cn(
-      'flex flex-col items-center justify-center gap-1 flex-1 min-w-0 py-2 transition-all duration-200',
+      'flex flex-col items-center justify-center gap-0.5 flex-1 min-w-0 py-2 transition-all duration-200',
       active(path) ? 'text-primary' : 'text-muted-foreground'
     )}>
       <div className={cn(
         'relative p-1.5 rounded-xl transition-all duration-200',
-        active(path) && 'bg-primary/10'
+        active(path) && 'bg-primary/10 shadow-[0_0_8px_hsl(var(--primary)/0.15)]'
       )}>
         <Icon className={cn('w-5 h-5', active(path) && 'stroke-[2.5]')} />
         {(badge ?? 0) > 0 && (
-          <span className="absolute -top-1 -right-1.5 min-w-[16px] h-4 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center px-1">
+          <span className="absolute -top-1 -right-1.5 min-w-[16px] h-4 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center px-1 shadow-sm">
             {(badge ?? 0) > 9 ? '9+' : badge}
           </span>
         )}
       </div>
-      <span className={cn('text-[10px] leading-none', active(path) ? 'font-bold' : 'font-medium opacity-70')}>{label}</span>
+      <span className={cn('text-[10px] leading-none tracking-tight', active(path) ? 'font-bold' : 'font-medium opacity-70')}>{label}</span>
     </Link>
   );
 
