@@ -578,16 +578,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     e.preventDefault();
     if (!newMessage.trim() || isSending) return;
 
-    // Block plaintext for non-Zeus
-    if (!isZeusConversation && !e2ee.encrypted) {
-      if (e2ee.peerKeyMissing) {
-        toast.error('Contact sans clé de chiffrement');
-      } else if (!e2ee.ready) {
-        toast.error('Initialisation du chiffrement…');
-      } else {
-        toast.error('Canal sécurisé indisponible');
-      }
-      return;
+    // For non-Zeus: inform user if peer keys missing but still queue
+    if (!isZeusConversation && e2ee.peerKeyMissing) {
+      toast.info('Message en attente — le contact n\'a pas encore activé le chiffrement.');
     }
 
     setIsSending(true);
