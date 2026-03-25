@@ -258,7 +258,7 @@ export function StoriesBar() {
                 </div>
               </div>
             </div>
-            <span className="text-[10px] text-muted-foreground truncate w-[68px] text-center font-medium">
+            <span className="text-[10px] text-muted-foreground truncate w-[60px] text-center font-medium">
               {group.user_id === user?.id ? 'Ma story' : group.profile.name.split(' ')[0]}
             </span>
           </button>
