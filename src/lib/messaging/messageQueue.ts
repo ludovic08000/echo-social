@@ -408,8 +408,16 @@ class MessageQueueManager {
   ): Promise<void> {
     try {
       const byLocalId = new Map<string, { id: string | null; senderId: string | null }>();
+      const byEncryptedBody = new Map<string, { id: string | null; senderId: string | null }>();
 
       for (const serverMsg of serverMessages) {
+        if (serverMsg.body) {
+          byEncryptedBody.set(serverMsg.body, {
+            id: serverMsg.id || null,
+            senderId: serverMsg.senderId || null,
+          });
+        }
+
         const localId = this.extractLocalId(serverMsg.body || '');
         if (!localId) continue;
         byLocalId.set(localId, {
@@ -426,7 +434,8 @@ class MessageQueueManager {
       for (const msg of queued) {
         if (msg.status === 'sent') continue;
 
-        const serverMatch = byLocalId.get(msg.localId);
+        const serverMatch = byLocalId.get(msg.localId)
+          ?? (msg.encryptedBody ? byEncryptedBody.get(msg.encryptedBody) : undefined);
         if (!serverMatch) continue;
         if (serverMatch.senderId && serverMatch.senderId !== msg.senderId) continue;
 
