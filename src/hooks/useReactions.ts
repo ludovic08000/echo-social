@@ -30,14 +30,14 @@ export function useAddReaction() {
     mutationFn: async ({ postId, reactionType }: { postId: string; reactionType: ReactionType }) => {
       if (!user) throw new Error('Not authenticated');
 
-      // First remove any existing reaction
+      // Remove existing reaction first
       await supabase
         .from('likes')
         .delete()
         .eq('user_id', user.id)
         .eq('post_id', postId);
 
-      // Then add the new reaction
+      // Insert new reaction
       const { error } = await supabase
         .from('likes')
         .insert({
@@ -48,30 +48,30 @@ export function useAddReaction() {
 
       if (error) throw error;
 
-      // Create notification for post owner
-      const { data: post } = await supabase
-        .from('posts')
-        .select('user_id')
-        .eq('id', postId)
-        .single();
+      // Notification in separate try/catch — NEVER blocks the reaction
+      try {
+        const { data: post } = await supabase
+          .from('posts')
+          .select('user_id')
+          .eq('id', postId)
+          .single();
 
-      if (post && post.user_id !== user.id) {
-        await supabase.from('notifications').insert({
-          user_id: post.user_id,
-          type: 'reaction',
-          actor_id: user.id,
-          post_id: postId,
-        });
+        if (post && post.user_id !== user.id) {
+          await supabase.from('notifications').insert({
+            user_id: post.user_id,
+            type: 'reaction',
+            actor_id: user.id,
+            post_id: postId,
+          });
+        }
+      } catch (notifErr) {
+        console.warn('[Reactions] Notification failed (non-blocking):', notifErr);
       }
     },
     onMutate: async ({ postId, reactionType }) => {
-      // Cancel outgoing queries
       await queryClient.cancelQueries({ queryKey: ['posts'] });
-
-      // Snapshot previous data
       const previousPosts = queryClient.getQueriesData({ queryKey: ['posts'] });
 
-      // Optimistically update the cache
       queryClient.setQueriesData({ queryKey: ['posts'] }, (old: any) => {
         if (!old?.pages) return old;
         return {
@@ -83,7 +83,8 @@ export function useAddReaction() {
               return {
                 ...post,
                 user_reaction: reactionType,
-                likes_count: hadReaction ? post.likes_count : post.likes_count + 1,
+                is_liked: true,
+                likes_count: hadReaction ? post.likes_count : (post.likes_count || 0) + 1,
               };
             })
           ),
@@ -93,7 +94,6 @@ export function useAddReaction() {
       return { previousPosts };
     },
     onError: (_err, _vars, context) => {
-      // Rollback on error
       if (context?.previousPosts) {
         context.previousPosts.forEach(([key, data]) => {
           queryClient.setQueryData(key, data);
@@ -136,7 +136,8 @@ export function useRemoveReaction() {
               return {
                 ...post,
                 user_reaction: null,
-                likes_count: Math.max(0, post.likes_count - 1),
+                is_liked: false,
+                likes_count: Math.max(0, (post.likes_count || 0) - 1),
               };
             })
           ),
@@ -157,4 +158,3 @@ export function useRemoveReaction() {
     },
   });
 }
-
