@@ -262,14 +262,14 @@ class MessageQueueManager {
         const handlers = this.getReadyAwareHandlers(msg.conversationId);
         if (!handlers?.encrypt) {
           await this.updateStatus(msg, 'waiting_secure_channel', 'Encryption handler not registered');
-          this.scheduleRetry(msg);
+          this.scheduleRetry(msg, 'secure_wait');
           return;
         }
 
         if (!handlers.isReady(msg.conversationId)) {
           console.log('[MSG_QUEUE] encryption not ready, waiting', msg.localId);
           await this.updateStatus(msg, 'waiting_secure_channel', 'Secure channel not ready');
-          this.scheduleRetry(msg);
+          this.scheduleRetry(msg, 'secure_wait');
           return;
         }
 
@@ -282,7 +282,7 @@ class MessageQueueManager {
           if (!withLocalId || withLocalId === msg.plaintext || !withLocalId.startsWith('{')) {
             console.error('[E2EE] encrypt failed — output is plaintext or empty', msg.localId);
             await this.updateStatus(msg, 'waiting_secure_channel', 'Encryption produced invalid output');
-            this.scheduleRetry(msg);
+            this.scheduleRetry(msg, 'secure_wait');
             return;
           }
 
@@ -354,20 +354,42 @@ class MessageQueueManager {
     }
   }
 
-  /** Schedule a retry with exponential backoff */
-  private scheduleRetry(msg: OutboundMessage) {
+  /**
+   * Schedule retry:
+   * - secure_wait: fast polling for E2EE readiness (instant UX)
+   * - retry: exponential backoff for real errors/network issues
+   */
+  private scheduleRetry(msg: OutboundMessage, mode: 'retry' | 'secure_wait' = 'retry') {
     this.clearRetryTimer(msg.localId);
 
-    const delay = Math.min(BASE_RETRY_MS * Math.pow(2, msg.retryCount), MAX_RETRY_MS);
-    console.log(`[SEND] retry scheduled for ${msg.localId} in ${delay}ms (attempt ${msg.retryCount + 1})`);
+    const SECURE_WAIT_RETRY_MS = 300;
+    const SECURE_WAIT_MAX_MS = 20_000;
+
+    const delay = mode === 'secure_wait'
+      ? SECURE_WAIT_RETRY_MS
+      : Math.min(BASE_RETRY_MS * Math.pow(2, msg.retryCount), MAX_RETRY_MS);
+
+    console.log(`[SEND] retry scheduled for ${msg.localId} in ${delay}ms (${mode})`);
 
     const timer = setTimeout(async () => {
       this.retryTimers.delete(msg.localId);
       const latest = await this.dbGet(msg.localId);
-      if (!latest) return;
-      if (latest.status === 'sent') return;
+      if (!latest || latest.status === 'sent') return;
 
-      latest.retryCount++;
+      // Avoid infinite waiting if peer never exposes keys
+      if (mode === 'secure_wait' && Date.now() - latest.createdAt > SECURE_WAIT_MAX_MS) {
+        await this.updateStatus(
+          latest,
+          'failed_visible',
+          'Canal sécurisé indisponible (contact sans clé de chiffrement)'
+        );
+        return;
+      }
+
+      if (mode === 'retry') {
+        latest.retryCount++;
+      }
+
       latest.updatedAt = Date.now();
       // Reset encrypted body to force re-encryption (key may have changed)
       latest.encryptedBody = null;
