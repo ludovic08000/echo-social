@@ -94,12 +94,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const { upload, isUploading } = useImageUpload({
     bucket: 'post-images',
     onSuccess: (url) => {
-      if (e2ee.encrypted || !isZeusConversation) {
-        // Always use encrypted queue for non-Zeus conversations
+      if (isZeusConversation) {
+        legacySendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
+      } else if (e2ee.encrypted) {
         queue.sendMessage('📷 Photo', url).catch(() => toast.error('Erreur envoi photo'));
       } else {
-        // Zeus only
-        legacySendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
+        toast.error('Chiffrement non prêt, impossible d\'envoyer la photo.');
       }
     },
   });
