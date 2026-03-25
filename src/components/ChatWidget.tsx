@@ -351,12 +351,15 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [showAIMenu, setShowAIMenu] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { goBack, closeChat, minimizeChat, state: chatState, openNegotiation: setNegotiationContext } = useChatWidget();
   const conversation = conversations?.find(c => c.id === conversationId);
+  const peerUserId = conversation?.participant?.user_id;
+  const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const negotiationProduct = chatState.negotiationProduct;
 
   // Auto-load negotiation context from conversation if not set
