@@ -251,7 +251,7 @@ export function useSecureBackup() {
         return false;
       }
 
-      const backup = data as { encrypted_blob: string; salt: string; iv: string; version: number };
+      const backup = data as unknown as { encrypted_blob: string; salt: string; iv: string; version: number };
       const keysJson = await decryptBlob(backup.encrypted_blob, backup.salt, backup.iv, password);
       await restoreKeys(keysJson);
 
