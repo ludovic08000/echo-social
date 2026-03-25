@@ -13,7 +13,7 @@
  * State stored locally in IndexedDB, never on server.
  */
 
-import { kdfChainStep, kdfRootStep } from './kdfChain';
+import { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
 import { bufferToBase64, base64ToBuffer, encodeString, randomBytes, decodeString } from './utils';
 import { exportKeyToJWK, importKeyFromJWK } from './utils';
 import { AES_ALGO, IV_LENGTH, PROTOCOL_VERSION, CLASSICAL_KEM_ID, KX_KEY_PARAMS } from './constants';
