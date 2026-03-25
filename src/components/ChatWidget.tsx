@@ -1316,8 +1316,15 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       {/* Voice recorder */}
       {showVoiceRecorder && (
         <VoiceRecorder
-          onSend={(audioUrl, duration) => {
-            sendMessage.mutate({ conversationId, body: `🎙️ voice:${audioUrl}|dur:${duration}` });
+          onSend={async (audioUrl, duration) => {
+            const body = `🎙️ voice:${audioUrl}|dur:${duration}`;
+            if (isZeusConversation) {
+              sendMessage.mutate({ conversationId, body });
+            } else if (e2ee.encrypted) {
+              try { await queue.sendMessage(body); } catch { toast.error('Erreur envoi vocal'); }
+            } else {
+              toast.error('Chiffrement non prêt');
+            }
             setShowVoiceRecorder(false);
             setShowVoicemailPrompt(false);
           }}
