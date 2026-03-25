@@ -195,42 +195,55 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const isZeus = peerUserId === ZEUS_ID;
 
   // Initialize identity keys + publish
+  const initKeys = useCallback(async () => {
+    if (!user) return;
+    try {
+      const keys = await getOrCreateIdentityKeys(user.id);
+      keysRef.current = keys;
+
+      const bundle = await exportPublicKeyBundle(keys);
+
+      await supabase
+        .from('user_public_keys')
+        .upsert({
+          user_id: user.id,
+          identity_key: bundle.identityKey,
+          signing_key: bundle.signingKey,
+          fingerprint: bundle.fingerprint,
+          kem_type: 'X25519',
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id,is_active' });
+
+      setState(s => ({
+        ...s,
+        fingerprint: bundle.fingerprint,
+        ready: s.ready || s.encrypted,
+      }));
+      console.log('[E2EE] Keys initialized & published');
+    } catch (err) {
+      console.error('[E2EE] Init failed:', err);
+      setState(s => ({ ...s, initError: 'Key initialization failed' }));
+    }
+  }, [user]);
+
+  // Auto-init on mount
   useEffect(() => {
     if (!user || initRef.current) return;
     initRef.current = true;
     cleanupLegacyStorage();
+    initKeys();
+  }, [user, initKeys]);
 
-    (async () => {
-      try {
-        const keys = await getOrCreateIdentityKeys(user.id);
-        keysRef.current = keys;
-
-        const bundle = await exportPublicKeyBundle(keys);
-
-        await supabase
-          .from('user_public_keys')
-          .upsert({
-            user_id: user.id,
-            identity_key: bundle.identityKey,
-            signing_key: bundle.signingKey,
-            fingerprint: bundle.fingerprint,
-            kem_type: 'X25519',
-            is_active: true,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'user_id,is_active' });
-
-        setState(s => ({
-          ...s,
-          fingerprint: bundle.fingerprint,
-          // If peer key already loaded before our key init, mark ready now
-          ready: s.ready || s.encrypted,
-        }));
-      } catch (err) {
-        console.error('[E2EE] Init failed:', err);
-        setState(s => ({ ...s, initError: 'Key initialization failed' }));
-      }
-    })();
-  }, [user]);
+  // Re-init when PIN unlocks keys (keys written to IndexedDB after PIN verify)
+  useEffect(() => {
+    const handler = () => {
+      console.log('[E2EE] Keys unlocked via PIN — re-initializing');
+      initKeys();
+    };
+    window.addEventListener('forsure-keys-unlocked', handler);
+    return () => window.removeEventListener('forsure-keys-unlocked', handler);
+  }, [initKeys]);
 
   // Fetch peer public key
   useEffect(() => {

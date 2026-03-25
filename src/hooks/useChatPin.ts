@@ -344,6 +344,8 @@ export function useChatPin() {
           // Write the decrypted keys back to the E2EE IndexedDB
           await writeRawIdentityBlob(user.id, rawBlob);
           console.log('[PIN] Keys unwrapped successfully');
+          // Notify E2EE hook that keys are now available
+          window.dispatchEvent(new CustomEvent('forsure-keys-unlocked'));
         } catch (unwrapErr) {
           console.warn('[PIN] Key unwrap failed (keys may already be accessible):', unwrapErr);
           // Don't block — keys might already be in plain form
