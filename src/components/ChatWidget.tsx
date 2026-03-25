@@ -1442,7 +1442,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             />
 
             {newMessage.trim() ? (
-              <button type="submit" disabled={sendMessage.isPending} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors">
+              <button type="submit" disabled={isSending || sendMessage.isPending} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
                 <Send className="w-3.5 h-3.5" />
               </button>
             ) : (
