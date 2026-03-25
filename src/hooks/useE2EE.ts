@@ -322,11 +322,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     if (ratchetRef.current) return ratchetRef.current;
 
-    if (!cryptoRateCheck('deriveBits')) {
-      console.warn('[E2EE] Key derivation rate-limited');
-      return null;
-    }
-
     try {
       const peerPubRaw = base64ToBuffer(peerKeyRef.current.identityKey);
       const peerPubKey = await crypto.subtle.importKey(
