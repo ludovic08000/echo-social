@@ -1,11 +1,11 @@
 /**
  * useMessageQueue - React hook for the persistent local message queue.
  * 
- * Integrates with useE2EE to provide:
- * - Queue-based sending (never loses messages)
- * - Automatic retry on failure
- * - Proper encryption before sending
- * - Visual status feedback
+ * Strategy:
+ * - When E2EE is ready: encrypt + send directly (instant, no queue)
+ * - When E2EE is active but not ready yet: queue with retry until encryption available
+ * - Zeus conversations: send plaintext directly
+ * - NEVER sends plaintext for encrypted conversations
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -34,18 +34,16 @@ export function useMessageQueue(
   readyRef.current = isEncryptionReady;
   activeRef.current = isEncryptionActive;
 
-  // Register handlers with the queue
+  // Register handlers with the queue (for queued messages that need retry)
   useEffect(() => {
     if (!user || !conversationId) return;
 
     messageQueue.registerHandlers(conversationId, handlerIdRef.current, {
       encrypt: async (plaintext: string, _convId: string) => {
         if (!activeRef.current) {
-          // No encryption needed for this conversation (e.g., Zeus)
           throw new Error('Encryption not active');
         }
         if (!encryptRef.current) {
-          // Encrypt function not yet available — queue will retry
           throw new Error('Encryption initializing');
         }
         if (!readyRef.current) {
@@ -58,7 +56,6 @@ export function useMessageQueue(
           throw new Error('Message not encrypted');
         }
 
-        // Deterministic per-message server id for idempotent retries
         const outboundId = msg.serverId ?? crypto.randomUUID();
         msg.serverId = outboundId;
 
@@ -70,23 +67,16 @@ export function useMessageQueue(
             sender_id: msg.senderId,
             body: msg.encryptedBody,
             image_url: msg.imageUrl,
-          })
-          ;
+          });
 
-        // Insert likely already succeeded on a previous attempt; treat as delivered
-        if (error?.code === '23505') {
-          return outboundId;
-        }
-
+        if (error?.code === '23505') return outboundId;
         if (error) throw error;
 
-        // Update conversation timestamp
         await supabase
           .from('conversations')
           .update({ updated_at: new Date().toISOString() })
           .eq('id', msg.conversationId);
 
-        // Refresh messages cache
         queryClient.invalidateQueries({ queryKey: ['messages', msg.conversationId] });
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
 
@@ -97,7 +87,6 @@ export function useMessageQueue(
       },
     });
 
-    // Process any queued messages that were waiting for handlers
     messageQueue.resumeForConversation(conversationId);
 
     return () => {
@@ -119,18 +108,18 @@ export function useMessageQueue(
       setPendingMessages(forConv);
     });
 
-    // Load initial pending and clean up stuck messages older than 30s
+    // Clean up stuck messages older than 60s on mount
     messageQueue.getPendingMessages(conversationId).then(async (msgs) => {
       const now = Date.now();
-      const stuckThreshold = 30_000; // 30 seconds
+      const stuckThreshold = 60_000;
       for (const msg of msgs) {
-        if ((msg.status === 'waiting_secure_channel' || msg.status === 'retry_pending') && 
+        if ((msg.status === 'waiting_secure_channel' || msg.status === 'retry_pending') &&
             now - msg.createdAt > stuckThreshold) {
           await messageQueue.removeMessage(msg.localId);
         }
       }
-      const remaining = msgs.filter(m => 
-        !(((m.status === 'waiting_secure_channel' || m.status === 'retry_pending') && now - m.createdAt > stuckThreshold))
+      const remaining = msgs.filter(m =>
+        !((m.status === 'waiting_secure_channel' || m.status === 'retry_pending') && now - m.createdAt > stuckThreshold)
       );
       setPendingMessages(remaining);
     });
@@ -141,9 +130,7 @@ export function useMessageQueue(
   // Resume on network restore
   useEffect(() => {
     const handler = () => {
-      if (navigator.onLine) {
-        messageQueue.resumeForConversation(conversationId);
-      }
+      if (navigator.onLine) messageQueue.resumeForConversation(conversationId);
     };
     window.addEventListener('online', handler);
     return () => window.removeEventListener('online', handler);
@@ -152,34 +139,50 @@ export function useMessageQueue(
   // Resume on page visibility
   useEffect(() => {
     const handler = () => {
-      if (document.visibilityState === 'visible') {
-        messageQueue.resumeForConversation(conversationId);
-      }
+      if (document.visibilityState === 'visible') messageQueue.resumeForConversation(conversationId);
     };
     document.addEventListener('visibilitychange', handler);
     return () => document.removeEventListener('visibilitychange', handler);
   }, [conversationId]);
 
-  /** Send a message — always instant, encrypt only when ready */
+  /**
+   * Send a message:
+   * - If E2EE ready → encrypt + send directly (instant)
+   * - If E2EE active but not ready → queue for retry (message stays encrypted when sent)
+   * - If not encrypted (Zeus) → send plaintext directly
+   */
   const sendMessage = useCallback(async (body: string, imageUrl?: string | null) => {
     if (!user || !body.trim()) return;
 
-    // Anti-spam
     const isSpecial = body.startsWith('🎙️ voice:') || body === '📷 Photo';
     if (!isSpecial) {
       const validation = validateMessage(body);
-      if (!validation.valid) {
-        throw new Error(validation.error);
-      }
+      if (!validation.valid) throw new Error(validation.error);
     }
 
     const sanitized = isSpecial ? body : sanitizeMessageBody(body);
 
-    // If encryption is active AND ready, encrypt then send
-    if (isEncryptionActive && isEncryptionReady && encrypt) {
+    // Case 1: Not an encrypted conversation (Zeus) → plaintext direct
+    if (!isEncryptionActive) {
+      const { error } = await supabase
+        .from('messages')
+        .insert({
+          conversation_id: conversationId,
+          sender_id: user.id,
+          body: sanitized,
+          image_url: imageUrl || null,
+        });
+      if (error) throw error;
+      if (!isSpecial) recordSentMessage(sanitized);
+      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      return;
+    }
+
+    // Case 2: E2EE ready → encrypt and send directly (instant)
+    if (isEncryptionReady && encrypt) {
       try {
         const encrypted = await encrypt(sanitized);
-        // Verify encryption produced valid ciphertext
         if (encrypted && encrypted !== sanitized && encrypted.startsWith('{')) {
           const { error } = await supabase
             .from('messages')
@@ -196,25 +199,18 @@ export function useMessageQueue(
           return;
         }
       } catch (e) {
-        console.warn('[MSG] Encryption failed, sending plaintext:', e);
+        console.warn('[MSG] Direct encrypt failed, queuing for retry:', e);
       }
     }
 
-    // Fallback: send plaintext directly (instant delivery)
-    const { error } = await supabase
-      .from('messages')
-      .insert({
-        conversation_id: conversationId,
-        sender_id: user.id,
-        body: sanitized,
-        image_url: imageUrl || null,
-      });
-
-    if (error) throw error;
+    // Case 3: E2EE active but not ready → queue (will encrypt + send when ready)
+    await messageQueue.enqueue({
+      conversationId,
+      senderId: user.id,
+      plaintext: sanitized,
+      imageUrl,
+    });
     if (!isSpecial) recordSentMessage(sanitized);
-
-    queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
   }, [user, conversationId, isEncryptionActive, isEncryptionReady, encrypt, queryClient]);
 
   /** Retry a failed message */
@@ -233,5 +229,7 @@ export function useMessageQueue(
     sendMessage,
     retryMessage,
     removeMessage,
+    /** Whether sending is instant (E2EE ready) or queued */
+    isInstant: !isEncryptionActive || isEncryptionReady,
   };
 }

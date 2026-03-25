@@ -32,15 +32,8 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     // Check if body looks like an encrypted envelope
     const looksEncrypted = body.startsWith('{') && (body.includes('"ct"') || body.includes('"hdr"'));
     if (!looksEncrypted) {
-      // SECURITY: In encrypted conversations, non-encrypted messages should be flagged
-      // Allow known system messages (emoji, photo markers, etc.) through
-      const isSystemMsg = body === '📷 Photo' || body.startsWith('🎙️ voice:') || body.startsWith('↩️');
-      if (isSystemMsg) {
-        setDisplayText(body);
-      } else {
-        // Never display raw unencrypted text in an encrypted conversation
-        setDisplayText('⚠️ Message non chiffré');
-      }
+      // Plain text message — display as-is (system messages, or messages sent before E2EE was ready)
+      setDisplayText(body);
       return;
     }
 
