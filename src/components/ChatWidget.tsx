@@ -1495,7 +1495,7 @@ export function ChatWidget() {
 
   return (
     <div className="fixed bottom-0 right-[80px] z-[60] w-[328px] h-[455px] bg-background border border-border/40 rounded-t-lg shadow-2xl shadow-black/20 flex flex-col animate-in slide-in-from-bottom-4 duration-200 overflow-hidden">
-      <MessagingPinGate>
+      <MessagingPinGate compact>
         {state.conversationId ? (
           <WidgetChatView conversationId={state.conversationId} />
         ) : (
