@@ -230,8 +230,6 @@ export function useMessages(conversationId: string) {
         },
         async (payload) => {
           const newMsg = payload.new as any;
-          // Skip if this is the current user's message (already handled optimistically)
-          if (newMsg.sender_id === user.id) return;
 
           // Fetch profile for sender (use cache first)
           let profile = queryClient.getQueryData<any>(['profile', newMsg.sender_id]);
@@ -252,16 +250,24 @@ export function useMessages(conversationId: string) {
             },
           };
 
-          // Inject directly into cache — no refetch
+          // Inject directly into cache — replaces optimistic messages and prevents duplicates
           queryClient.setQueryData<Message[]>(
             ['messages', conversationId],
             (old) => {
               if (!old) return [enriched];
-              // Prevent duplicates
+              // Remove any optimistic message for this real one, and prevent duplicates
+              const filtered = old.filter(m => 
+                m.id !== enriched.id && !m.id.startsWith('optimistic-')
+              );
+              // Only skip if already present with same id
               if (old.some(m => m.id === enriched.id)) return old;
-              return [...old, enriched];
+              return [...filtered, enriched];
             }
           );
+
+          // Update conversation last_updated (lightweight)
+          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        }
 
           // Update conversation last_updated (lightweight)
           queryClient.invalidateQueries({ queryKey: ['conversations'] });
