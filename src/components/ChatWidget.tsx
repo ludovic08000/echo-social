@@ -1040,7 +1040,28 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                 })}
               </div>
             </div>
-          ))
+          ))}
+
+          {/* Pending outbound messages (local queue) */}
+          {queue.pendingMessages.map(pm => (
+            <div key={pm.localId} className="flex justify-start mt-1 px-2">
+              <div className="max-w-[78%]">
+                <div className={cn(
+                  'px-3 py-1.5 text-xs break-words leading-relaxed rounded-2xl bg-primary/70 text-primary-foreground',
+                  pm.status === 'failed_visible' && 'bg-destructive/20 text-destructive border border-destructive/30',
+                )}>
+                  {pm.plaintext || '…'}
+                </div>
+                <OutboundStatusIndicator
+                  status={pm.status}
+                  lastError={pm.lastError}
+                  onRetry={() => queue.retryMessage(pm.localId)}
+                  onRemove={() => queue.removeMessage(pm.localId)}
+                  className="mt-0 text-[9px]"
+                />
+              </div>
+            </div>
+          ))}
         )}
         <div ref={messagesEndRef} />
       </div>
