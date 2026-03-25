@@ -41,8 +41,9 @@ export function onCryptoViolation(cb: (op: string, count: number) => void) {
 export function cryptoRateCheck(operation: string): boolean {
   const now = Date.now();
 
-  // Circuit breaker active
-  if (now < lockdownUntil) {
+  // Per-operation circuit breaker
+  const opLockdown = lockdownUntilMap.get(operation) || 0;
+  if (now < opLockdown) {
     return false;
   }
 
@@ -58,8 +59,8 @@ export function cryptoRateCheck(operation: string): boolean {
   bucket.count++;
 
   if (bucket.count > limit.max) {
-    // TRIP! Likely automated exfiltration
-    lockdownUntil = now + LOCKDOWN_DURATION_MS;
+    // TRIP! Only lock THIS operation, not all crypto
+    lockdownUntilMap.set(operation, now + LOCKDOWN_DURATION_MS);
     
     console.error(
       `[SECURITY] Crypto rate limit exceeded: ${operation} ` +
@@ -67,13 +68,11 @@ export function cryptoRateCheck(operation: string): boolean {
       `Lockdown activated for ${LOCKDOWN_DURATION_MS / 1000}s.`
     );
 
-    // Notify all registered callbacks
     for (const cb of violationCallbacks) {
       try { cb(operation, bucket.count); } catch {}
     }
 
-    // Clear all buckets on lockdown
-    buckets.clear();
+    buckets.delete(operation);
     return false;
   }
 
@@ -82,11 +81,15 @@ export function cryptoRateCheck(operation: string): boolean {
 
 /** Check if crypto operations are currently locked down */
 export function isCryptoLocked(): boolean {
-  return Date.now() < lockdownUntil;
+  const now = Date.now();
+  for (const until of lockdownUntilMap.values()) {
+    if (now < until) return true;
+  }
+  return false;
 }
 
 /** Reset all rate limits (for testing) */
 export function resetCryptoRateLimits() {
   buckets.clear();
-  lockdownUntil = 0;
+  lockdownUntilMap.clear();
 }
