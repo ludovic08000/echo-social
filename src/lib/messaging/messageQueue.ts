@@ -108,6 +108,16 @@ class MessageQueueManager {
     });
   }
 
+  private async dbGet(localId: string): Promise<OutboundMessage | undefined> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).get(localId);
+      req.onsuccess = () => resolve(req.result as OutboundMessage | undefined);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
   private async dbGetAll(): Promise<OutboundMessage[]> {
     const db = await this.openDB();
     return new Promise((resolve, reject) => {
@@ -187,6 +197,7 @@ class MessageQueueManager {
   private async processMessage(msg: OutboundMessage): Promise<void> {
     if (this.processing.has(msg.localId)) return;
     this.processing.add(msg.localId);
+    this.clearRetryTimer(msg.localId);
 
     try {
       // Step 1: Encrypt
@@ -248,6 +259,7 @@ class MessageQueueManager {
         msg.serverId = serverId;
         msg.status = 'sent';
         msg.updatedAt = Date.now();
+        this.clearRetryTimer(msg.localId);
         console.log('[SEND] backend success', msg.localId, serverId);
 
         // Clean up: remove plaintext from persistent storage once sent
@@ -279,20 +291,23 @@ class MessageQueueManager {
 
   /** Schedule a retry with exponential backoff */
   private scheduleRetry(msg: OutboundMessage) {
-    const existing = this.retryTimers.get(msg.localId);
-    if (existing) clearTimeout(existing);
+    this.clearRetryTimer(msg.localId);
 
     const delay = Math.min(BASE_RETRY_MS * Math.pow(2, msg.retryCount), MAX_RETRY_MS);
     console.log(`[SEND] retry scheduled for ${msg.localId} in ${delay}ms (attempt ${msg.retryCount + 1})`);
 
     const timer = setTimeout(async () => {
       this.retryTimers.delete(msg.localId);
-      msg.retryCount++;
-      msg.updatedAt = Date.now();
+      const latest = await this.dbGet(msg.localId);
+      if (!latest) return;
+      if (latest.status === 'sent') return;
+
+      latest.retryCount++;
+      latest.updatedAt = Date.now();
       // Reset encrypted body to force re-encryption (key may have changed)
-      msg.encryptedBody = null;
-      await this.dbPut(msg);
-      this.processMessage(msg);
+      latest.encryptedBody = null;
+      await this.dbPut(latest);
+      this.processMessage(latest);
     }, delay);
 
     this.retryTimers.set(msg.localId, timer);
@@ -309,6 +324,7 @@ class MessageQueueManager {
 
   /** Retry a failed message manually */
   async retryMessage(localId: string): Promise<void> {
+    this.clearRetryTimer(localId);
     const all = await this.dbGetAll();
     const msg = all.find(m => m.localId === localId);
     if (!msg) return;
@@ -392,8 +408,16 @@ class MessageQueueManager {
   ): Promise<void> {
     try {
       const byLocalId = new Map<string, { id: string | null; senderId: string | null }>();
+      const byEncryptedBody = new Map<string, { id: string | null; senderId: string | null }>();
 
       for (const serverMsg of serverMessages) {
+        if (serverMsg.body) {
+          byEncryptedBody.set(serverMsg.body, {
+            id: serverMsg.id || null,
+            senderId: serverMsg.senderId || null,
+          });
+        }
+
         const localId = this.extractLocalId(serverMsg.body || '');
         if (!localId) continue;
         byLocalId.set(localId, {
@@ -410,7 +434,8 @@ class MessageQueueManager {
       for (const msg of queued) {
         if (msg.status === 'sent') continue;
 
-        const serverMatch = byLocalId.get(msg.localId);
+        const serverMatch = byLocalId.get(msg.localId)
+          ?? (msg.encryptedBody ? byEncryptedBody.get(msg.encryptedBody) : undefined);
         if (!serverMatch) continue;
         if (serverMatch.senderId && serverMatch.senderId !== msg.senderId) continue;
 
@@ -475,12 +500,15 @@ class MessageQueueManager {
 
   /** Remove a message from the queue (user cancels failed message) */
   async removeMessage(localId: string): Promise<void> {
-    const timer = this.retryTimers.get(localId);
-    if (timer) {
-      clearTimeout(timer);
-      this.retryTimers.delete(localId);
-    }
+    this.clearRetryTimer(localId);
     await this.dbDelete(localId);
+  }
+
+  private clearRetryTimer(localId: string) {
+    const timer = this.retryTimers.get(localId);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.retryTimers.delete(localId);
   }
 
   /** Cleanup: remove all sent messages from DB */
