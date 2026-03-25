@@ -16,10 +16,11 @@ const buckets = new Map<string, RateBucket>();
 
 // Thresholds — generous for legitimate use, catches only extreme abuse
 const LIMITS: Record<string, { max: number; windowMs: number }> = {
-  encrypt:     { max: 60,  windowMs: 10_000 },  // 60 encrypts per 10s
+  encrypt:     { max: 120, windowMs: 10_000 },  // 120 encrypts per 10s
   decrypt:     { max: 500, windowMs: 10_000 },  // 500 decrypts per 10s (loading full history)
-  deriveBits:  { max: 20,  windowMs: 60_000 },  // 20 key derivations per minute
-  sign:        { max: 60,  windowMs: 10_000 },  // mirrors encrypt
+  sign:        { max: 120, windowMs: 10_000 },  // mirrors encrypt
+  // deriveBits removed: internal key derivation must never be blocked by rate limiter
+  // — the encrypt/sign limits already protect against abuse
 };
 
 // Per-operation lockdown instead of global — decrypt overload must NOT block encrypt/send
