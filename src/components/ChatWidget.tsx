@@ -555,32 +555,62 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const { upload, isUploading } = useImageUpload({
     bucket: 'post-images',
     onSuccess: (url) => {
-      sendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
+      if (isZeusConversation) {
+        sendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
+      } else if (e2ee.encrypted) {
+        queue.sendMessage('📷 Photo', url).catch(() => toast.error('Erreur envoi photo'));
+      } else {
+        toast.error('Chiffrement non prêt');
+      }
     },
   });
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, queue.pendingMessages]);
 
   useEffect(() => {
     if (conversationId) markRead.mutate(conversationId);
   }, [conversationId]);
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
-    const body = replyTo
-      ? `↩️ ${replyTo.profile.name}: \"${replyTo.body.slice(0, 40)}…\"\n\n${newMessage.trim()}`
-      : newMessage.trim();
-    sendMessage.mutate({ conversationId, body }, {
-      onSuccess: () => {
-        setNewMessage('');
-        setReplyTo(null);
-        setShowEmojis(false);
-        inputRef.current?.focus();
-      },
-    });
+    if (!newMessage.trim() || isSending) return;
+
+    // Block plaintext for non-Zeus
+    if (!isZeusConversation && !e2ee.encrypted) {
+      if (e2ee.peerKeyMissing) {
+        toast.error('Contact sans clé de chiffrement');
+      } else if (!e2ee.ready) {
+        toast.error('Initialisation du chiffrement…');
+      } else {
+        toast.error('Canal sécurisé indisponible');
+      }
+      return;
+    }
+
+    setIsSending(true);
+    try {
+      const replyText = replyTo ? decryptedCacheRef.current.get(replyTo.id) || replyTo.body : null;
+      const body = replyTo
+        ? `↩️ ${replyTo.profile.name}: "${(replyText || '').slice(0, 40)}…"\n\n${newMessage.trim()}`
+        : newMessage.trim();
+
+      if (isZeusConversation) {
+        sendMessage.mutate({ conversationId, body });
+      } else {
+        await queue.sendMessage(body);
+      }
+
+      setNewMessage('');
+      setReplyTo(null);
+      setShowEmojis(false);
+      inputRef.current?.focus();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erreur envoi');
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handleAI = async (action: 'correct' | 'improve' | 'translate', tone?: string) => {
