@@ -163,29 +163,24 @@ export function ChatView({ conversationId }: ChatViewProps) {
       toast.info('Le contact n\'a pas encore activé le chiffrement. Le message sera envoyé dès qu\'il sera disponible.');
     }
 
-    setIsSending(true);
-    try {
-      let body = replyTo
-        ? `↩️ ${replyTo.profile.name}: "${getDecryptedText(replyTo).slice(0, 50)}${getDecryptedText(replyTo).length > 50 ? '…' : ''}"\n\n${newMessage.trim()}`
-        : newMessage.trim();
+    const body = replyTo
+      ? `↩️ ${replyTo.profile.name}: "${getDecryptedText(replyTo).slice(0, 50)}${getDecryptedText(replyTo).length > 50 ? '…' : ''}"\n\n${newMessage.trim()}`
+      : newMessage.trim();
 
-      if (isZeusConversation) {
-        // Only Zeus conversations are allowed to send unencrypted
-        legacySendMessage.mutate({ conversationId, body });
-      } else {
-        // All non-Zeus conversations go through encrypted queue
-        await queue.sendMessage(body);
-      }
+    // Clear input IMMEDIATELY for instant UX
+    setNewMessage('');
+    setReplyTo(null);
+    setShowEmojis(false);
+    inputRef.current?.focus();
 
-      setNewMessage('');
-      setReplyTo(null);
-      setShowEmojis(false);
-      inputRef.current?.focus();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Erreur envoi';
-      toast.error(msg);
-    } finally {
-      setIsSending(false);
+    if (isZeusConversation) {
+      legacySendMessage.mutate({ conversationId, body });
+    } else {
+      // Fire-and-forget: queue handles retry/encryption in background
+      queue.sendMessage(body).catch(err => {
+        const msg = err instanceof Error ? err.message : 'Erreur envoi';
+        toast.error(msg);
+      });
     }
   };
 
