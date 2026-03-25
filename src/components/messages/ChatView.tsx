@@ -94,12 +94,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const { upload, isUploading } = useImageUpload({
     bucket: 'post-images',
     onSuccess: (url) => {
-      if (e2ee.encrypted || !isZeusConversation) {
-        // Always use encrypted queue for non-Zeus conversations
+      if (isZeusConversation) {
+        legacySendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
+      } else if (e2ee.encrypted) {
         queue.sendMessage('📷 Photo', url).catch(() => toast.error('Erreur envoi photo'));
       } else {
-        // Zeus only
-        legacySendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
+        toast.error('Chiffrement non prêt, impossible d\'envoyer la photo.');
       }
     },
   });
@@ -156,9 +156,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
     e.preventDefault();
     if (!newMessage.trim() || isSending) return;
 
-    // SECURITY: Block plaintext sending for non-Zeus conversations when peer has no keys
-    if (!isZeusConversation && !e2ee.encrypted && e2ee.peerKeyMissing) {
-      toast.error('Impossible d\'envoyer : le contact n\'a pas encore de clé de chiffrement. Réessayez plus tard.');
+    // SECURITY: Block sending for non-Zeus conversations when encryption not possible
+    if (!isZeusConversation && !e2ee.encrypted) {
+      if (e2ee.peerKeyMissing) {
+        toast.error('Impossible d\'envoyer : le contact n\'a pas encore de clé de chiffrement.');
+      } else if (!e2ee.ready) {
+        toast.error('Initialisation du chiffrement en cours, patientez…');
+      } else {
+        toast.error('Canal sécurisé indisponible. Réessayez dans quelques secondes.');
+      }
       return;
     }
 
@@ -168,13 +174,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
         ? `↩️ ${replyTo.profile.name}: "${getDecryptedText(replyTo).slice(0, 50)}${getDecryptedText(replyTo).length > 50 ? '…' : ''}"\n\n${newMessage.trim()}`
         : newMessage.trim();
 
-      if (e2ee.encrypted) {
-        await queue.sendMessage(body);
-      } else if (isZeusConversation) {
+      if (isZeusConversation) {
         // Only Zeus conversations are allowed to send unencrypted
         legacySendMessage.mutate({ conversationId, body });
       } else {
-        // Non-Zeus, non-encrypted: queue for later encrypted sending
+        // All non-Zeus conversations go through encrypted queue
         await queue.sendMessage(body);
       }
 
