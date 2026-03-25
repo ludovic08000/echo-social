@@ -249,9 +249,9 @@ export function useChatPin() {
         const iv = crypto.getRandomValues(new Uint8Array(12));
         const plainBytes = new TextEncoder().encode(rawBlob);
         const ciphertext = await crypto.subtle.encrypt(
-          { name: 'AES-GCM', iv },
+          { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
           wrapKey,
-          plainBytes,
+          plainBytes as Uint8Array<ArrayBuffer>,
         );
 
         // Save wrapped keys locally
