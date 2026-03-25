@@ -778,7 +778,15 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               {['Salut ! 👋', 'Ça va ? 😊', 'Hey ! ✨'].map(s => (
                 <button
                   key={s}
-                  onClick={() => sendMessage.mutate({ conversationId, body: s })}
+                  onClick={async () => {
+                    if (isZeusConversation) {
+                      sendMessage.mutate({ conversationId, body: s });
+                    } else if (e2ee.encrypted) {
+                      try { await queue.sendMessage(s); } catch { toast.error('Erreur envoi'); }
+                    } else {
+                      toast.error('Chiffrement non prêt');
+                    }
+                  }}
                   className="px-3 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-medium hover:bg-primary/20 transition-all"
                 >
                   {s}
