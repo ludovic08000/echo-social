@@ -268,10 +268,6 @@ export function useMessages(conversationId: string) {
           // Update conversation last_updated (lightweight)
           queryClient.invalidateQueries({ queryKey: ['conversations'] });
         }
-
-          // Update conversation last_updated (lightweight)
-          queryClient.invalidateQueries({ queryKey: ['conversations'] });
-        }
       )
       .on(
         'postgres_changes',
