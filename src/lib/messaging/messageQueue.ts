@@ -271,13 +271,21 @@ class MessageQueueManager {
           return;
         }
 
+        // Read plaintext from volatile memory
+        const plaintext = this.volatilePlaintext.get(msg.localId);
+        if (!plaintext) {
+          // Plaintext lost (page reload) — message cannot be recovered
+          await this.updateStatus(msg, 'failed_visible', 'Message perdu (rechargement de page)');
+          return;
+        }
+
         try {
           console.log('[E2EE] encrypt start', msg.localId);
-          const encrypted = await handlers.encrypt(msg.plaintext, msg.conversationId);
+          const encrypted = await handlers.encrypt(plaintext, msg.conversationId);
           const withLocalId = this.attachLocalId(encrypted, msg.localId);
 
           // CRITICAL: Verify encryption actually produced ciphertext
-          if (!withLocalId || withLocalId === msg.plaintext || !withLocalId.startsWith('{')) {
+          if (!withLocalId || withLocalId === plaintext || !withLocalId.startsWith('{')) {
             console.error('[E2EE] encrypt failed — output is plaintext or empty', msg.localId);
             await this.updateStatus(msg, 'waiting_secure_channel', 'Encryption produced invalid output');
             this.scheduleRetry(msg, 'secure_wait');
