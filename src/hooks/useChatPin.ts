@@ -372,27 +372,6 @@ export function useChatPin() {
           }
         } catch {}
       }
-          const cipherBytes = base64ToBytes(wrapped.wrappedBlob);
-          const iv = base64ToBytes(wrapped.iv);
-
-          const plainBuffer = await crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
-            wrapKey,
-            cipherBytes as Uint8Array<ArrayBuffer>,
-          );
-
-          const rawBlob = new TextDecoder().decode(plainBuffer);
-
-          // Write the decrypted keys back to the E2EE IndexedDB
-          await writeRawIdentityBlob(user.id, rawBlob);
-          console.log('[PIN] Keys unwrapped successfully');
-          // Notify E2EE hook that keys are now available
-          window.dispatchEvent(new CustomEvent('forsure-keys-unlocked'));
-        } catch (unwrapErr) {
-          console.warn('[PIN] Key unwrap failed (keys may already be accessible):', unwrapErr);
-          // Don't block — keys might already be in plain form
-        }
-      }
 
       // Mark session as unlocked
       sessionStorage.setItem(SESSION_KEY, user.id);
