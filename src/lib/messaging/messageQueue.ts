@@ -27,7 +27,7 @@ export interface OutboundMessage {
   localId: string;
   conversationId: string;
   senderId: string;
-  /** Plaintext stored ONLY locally, never sent to server */
+  /** Runtime-only plaintext (never persisted to IndexedDB) */
   plaintext: string;
   /** Encrypted payload ready to send (null until encryption succeeds) */
   encryptedBody: string | null;
@@ -74,6 +74,7 @@ class MessageQueueManager {
   private handlersByConversation = new Map<string, Map<string, HandlerEntry>>();
   /** SECURITY: Plaintext stored ONLY in volatile memory, never in IndexedDB */
   private volatilePlaintext = new Map<string, string>();
+  private legacyPlaintextScrubbed = false;
 
   // ─── DB ───
 
@@ -82,7 +83,18 @@ class MessageQueueManager {
       this.dbPromise = new Promise((resolve, reject) => {
         const req = indexedDB.open(DB_NAME, DB_VERSION);
         req.onerror = () => { this.dbPromise = null; reject(req.error); };
-        req.onsuccess = () => resolve(req.result);
+        req.onsuccess = async () => {
+          const db = req.result;
+          if (!this.legacyPlaintextScrubbed) {
+            this.legacyPlaintextScrubbed = true;
+            try {
+              await this.scrubLegacyPersistedPlaintext(db);
+            } catch (e) {
+              console.warn('[MSG_QUEUE] legacy plaintext scrub failed', e);
+            }
+          }
+          resolve(db);
+        };
         req.onupgradeneeded = () => {
           const db = req.result;
           if (!db.objectStoreNames.contains(STORE_NAME)) {
@@ -96,11 +108,51 @@ class MessageQueueManager {
     return this.dbPromise;
   }
 
+  private async scrubLegacyPersistedPlaintext(db: IDBDatabase): Promise<void> {
+    const all = await new Promise<OutboundMessage[]>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+
+    const leaked = all.filter((msg) => typeof msg.plaintext === 'string' && msg.plaintext.length > 0);
+    if (!leaked.length) return;
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      for (const msg of leaked) {
+        store.put({ ...msg, plaintext: '' });
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+
+    console.warn(`[MSG_QUEUE] scrubbed ${leaked.length} legacy plaintext message(s) from IndexedDB`);
+  }
+
+  private toPersistedMessage(msg: OutboundMessage): OutboundMessage {
+    return {
+      ...msg,
+      plaintext: '',
+    };
+  }
+
+  private hydrateRuntimeMessage(msg: OutboundMessage): OutboundMessage {
+    const runtimePlaintext = this.volatilePlaintext.get(msg.localId) || '';
+    return {
+      ...msg,
+      plaintext: runtimePlaintext,
+    };
+  }
+
   private async dbPut(msg: OutboundMessage): Promise<void> {
     const db = await this.openDB();
+    const persisted = this.toPersistedMessage(msg);
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).put(msg);
+      tx.objectStore(STORE_NAME).put(persisted);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -121,7 +173,10 @@ class MessageQueueManager {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const req = tx.objectStore(STORE_NAME).get(localId);
-      req.onsuccess = () => resolve(req.result as OutboundMessage | undefined);
+      req.onsuccess = () => {
+        const result = req.result as OutboundMessage | undefined;
+        resolve(result ? this.hydrateRuntimeMessage(result) : undefined);
+      };
       req.onerror = () => reject(req.error);
     });
   }
@@ -131,7 +186,7 @@ class MessageQueueManager {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const req = tx.objectStore(STORE_NAME).getAll();
-      req.onsuccess = () => resolve(req.result || []);
+      req.onsuccess = () => resolve((req.result || []).map((msg) => this.hydrateRuntimeMessage(msg)));
       req.onerror = () => reject(req.error);
     });
   }
@@ -142,7 +197,7 @@ class MessageQueueManager {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const idx = tx.objectStore(STORE_NAME).index('conversationId');
       const req = idx.getAll(conversationId);
-      req.onsuccess = () => resolve(req.result || []);
+      req.onsuccess = () => resolve((req.result || []).map((msg) => this.hydrateRuntimeMessage(msg)));
       req.onerror = () => reject(req.error);
     });
   }
@@ -266,7 +321,7 @@ class MessageQueueManager {
 
         const handlers = this.getReadyAwareHandlers(msg.conversationId);
         if (!handlers?.encrypt) {
-          await this.updateStatus(msg, 'waiting_secure_channel', 'Encryption handler not registered');
+          await this.updateStatus(msg, 'retry_pending', 'Canal sécurisé indisponible');
           this.scheduleRetry(msg, 'secure_wait');
           return;
         }
@@ -287,7 +342,7 @@ class MessageQueueManager {
           // CRITICAL: Verify encryption actually produced ciphertext
           if (!withLocalId || withLocalId === plaintext || !withLocalId.startsWith('{')) {
             console.error('[E2EE] encrypt failed — output is plaintext or empty', msg.localId);
-            await this.updateStatus(msg, 'waiting_secure_channel', 'Encryption produced invalid output');
+            await this.updateStatus(msg, 'retry_pending', 'Canal sécurisé indisponible');
             this.scheduleRetry(msg, 'secure_wait');
             return;
           }
@@ -308,7 +363,7 @@ class MessageQueueManager {
           console.error('[E2EE] encrypt failed', msg.localId, errMsg);
 
           if (waitingForKeys) {
-            await this.updateStatus(msg, 'waiting_secure_channel', errMsg);
+            await this.updateStatus(msg, 'retry_pending', 'Canal sécurisé indisponible');
             this.scheduleRetry(msg, 'secure_wait');
           } else {
             await this.updateStatus(msg, 'retry_pending', errMsg);
@@ -696,10 +751,10 @@ export function getStatusLabel(status: OutboundMessageStatus): string {
     case 'draft': return 'Brouillon';
     case 'pending_local': return 'En attente…';
     case 'encrypting': return 'Sécurisation…';
-    case 'waiting_secure_channel': return 'Canal sécurisé en attente…';
+    case 'waiting_secure_channel': return 'Reconnexion sécurisée…';
     case 'sending': return 'Envoi…';
     case 'sent': return 'Envoyé';
-    case 'retry_pending': return 'À réessayer…';
+    case 'retry_pending': return 'Reconnexion sécurisée…';
     case 'failed_visible': return 'Échec';
   }
 }
