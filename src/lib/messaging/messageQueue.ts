@@ -218,9 +218,9 @@ class MessageQueueManager {
     // Idempotency: check for duplicate within 2 seconds
     const recent = await this.dbGetByConversation(params.conversationId);
     const duplicate = recent.find(m =>
-      m.plaintext === params.plaintext &&
       m.senderId === params.senderId &&
-      Date.now() - m.createdAt < 2000
+      Date.now() - m.createdAt < 2000 &&
+      this.volatilePlaintext.get(m.localId) === params.plaintext
     );
     if (duplicate) {
       console.warn('[MSG_QUEUE] duplicate detected, skipping');
