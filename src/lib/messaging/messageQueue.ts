@@ -231,7 +231,7 @@ class MessageQueueManager {
       localId: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       conversationId: params.conversationId,
       senderId: params.senderId,
-      plaintext: params.plaintext,
+      plaintext: '', // NEVER stored in IndexedDB
       encryptedBody: null,
       imageUrl: params.imageUrl || null,
       status: 'pending_local',
@@ -242,6 +242,9 @@ class MessageQueueManager {
       updatedAt: Date.now(),
       serverId: null,
     };
+
+    // Store plaintext ONLY in volatile memory
+    this.volatilePlaintext.set(msg.localId, params.plaintext);
 
     await this.dbPut(msg);
     console.log('[MSG_QUEUE] created local message', msg.localId);
