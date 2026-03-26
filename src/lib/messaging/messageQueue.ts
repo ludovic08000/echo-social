@@ -1,10 +1,10 @@
 /**
- * Persistent Local Message Queue
+ * Persistent Local Message Queue (v4 — Hardened)
  * 
  * Guarantees:
  * - No message is ever lost
  * - No message is ever sent in plaintext
- * - Messages survive page reload
+ * - Plaintext is NEVER persisted to IndexedDB (volatile memory only)
  * - Automatic retry with exponential backoff
  * - Idempotent: no duplicates
  * 
@@ -72,6 +72,8 @@ class MessageQueueManager {
   private processing = new Set<string>();
   private dbPromise: Promise<IDBDatabase> | null = null;
   private handlersByConversation = new Map<string, Map<string, HandlerEntry>>();
+  /** SECURITY: Plaintext stored ONLY in volatile memory, never in IndexedDB */
+  private volatilePlaintext = new Map<string, string>();
 
   // ─── DB ───
 
@@ -216,9 +218,9 @@ class MessageQueueManager {
     // Idempotency: check for duplicate within 2 seconds
     const recent = await this.dbGetByConversation(params.conversationId);
     const duplicate = recent.find(m =>
-      m.plaintext === params.plaintext &&
       m.senderId === params.senderId &&
-      Date.now() - m.createdAt < 2000
+      Date.now() - m.createdAt < 2000 &&
+      this.volatilePlaintext.get(m.localId) === params.plaintext
     );
     if (duplicate) {
       console.warn('[MSG_QUEUE] duplicate detected, skipping');
@@ -229,7 +231,7 @@ class MessageQueueManager {
       localId: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       conversationId: params.conversationId,
       senderId: params.senderId,
-      plaintext: params.plaintext,
+      plaintext: '', // NEVER stored in IndexedDB
       encryptedBody: null,
       imageUrl: params.imageUrl || null,
       status: 'pending_local',
@@ -240,6 +242,9 @@ class MessageQueueManager {
       updatedAt: Date.now(),
       serverId: null,
     };
+
+    // Store plaintext ONLY in volatile memory
+    this.volatilePlaintext.set(msg.localId, params.plaintext);
 
     await this.dbPut(msg);
     console.log('[MSG_QUEUE] created local message', msg.localId);
@@ -266,13 +271,21 @@ class MessageQueueManager {
           return;
         }
 
+        // Read plaintext from volatile memory
+        const plaintext = this.volatilePlaintext.get(msg.localId);
+        if (!plaintext) {
+          // Plaintext lost (page reload) — message cannot be recovered
+          await this.updateStatus(msg, 'failed_visible', 'Message perdu (rechargement de page)');
+          return;
+        }
+
         try {
           console.log('[E2EE] encrypt start', msg.localId);
-          const encrypted = await handlers.encrypt(msg.plaintext, msg.conversationId);
+          const encrypted = await handlers.encrypt(plaintext, msg.conversationId);
           const withLocalId = this.attachLocalId(encrypted, msg.localId);
 
           // CRITICAL: Verify encryption actually produced ciphertext
-          if (!withLocalId || withLocalId === msg.plaintext || !withLocalId.startsWith('{')) {
+          if (!withLocalId || withLocalId === plaintext || !withLocalId.startsWith('{')) {
             console.error('[E2EE] encrypt failed — output is plaintext or empty', msg.localId);
             await this.updateStatus(msg, 'waiting_secure_channel', 'Encryption produced invalid output');
             this.scheduleRetry(msg, 'secure_wait');
@@ -324,7 +337,8 @@ class MessageQueueManager {
         this.clearRetryTimer(msg.localId);
         console.log('[SEND] backend success', msg.localId, serverId);
 
-        // Clean up: remove plaintext from persistent storage once sent
+        // Clean up: remove volatile plaintext
+        this.volatilePlaintext.delete(msg.localId);
         msg.plaintext = '';
         try {
           await this.dbPut(msg);
@@ -442,12 +456,20 @@ class MessageQueueManager {
       );
 
       for (const msg of pending) {
-        // Restore plaintext for messages not yet sent
-        if (msg.plaintext) {
+        // Only resume if plaintext is still in volatile memory
+        if (this.volatilePlaintext.has(msg.localId)) {
           msg.status = 'pending_local';
           msg.encryptedBody = null;
           await this.dbPut(msg);
           this.processMessage(msg);
+        } else if (msg.encryptedBody) {
+          // Already encrypted, just needs sending
+          msg.status = 'pending_local';
+          await this.dbPut(msg);
+          this.processMessage(msg);
+        } else {
+          // Plaintext lost (page reload) — mark as failed
+          await this.updateStatus(msg, 'failed_visible', 'Message perdu (rechargement de page)');
         }
       }
     } catch (err) {
@@ -464,8 +486,8 @@ class MessageQueueManager {
       );
 
       for (const msg of pending) {
-        if (msg.plaintext) {
-          msg.encryptedBody = null;
+        if (this.volatilePlaintext.has(msg.localId) || msg.encryptedBody) {
+          msg.encryptedBody = msg.encryptedBody || null;
           msg.status = 'pending_local';
           await this.dbPut(msg);
           this.processMessage(msg);
@@ -590,6 +612,7 @@ class MessageQueueManager {
         msg.lastError = null;
         msg.updatedAt = Date.now();
         msg.plaintext = '';
+        this.volatilePlaintext.delete(msg.localId);
         await this.dbPut(msg);
 
         setTimeout(() => {
@@ -641,6 +664,7 @@ class MessageQueueManager {
   /** Remove a message from the queue (user cancels failed message) */
   async removeMessage(localId: string): Promise<void> {
     this.clearRetryTimer(localId);
+    this.volatilePlaintext.delete(localId);
     await this.dbDelete(localId);
   }
 
