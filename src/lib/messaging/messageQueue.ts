@@ -456,12 +456,20 @@ class MessageQueueManager {
       );
 
       for (const msg of pending) {
-        // Restore plaintext for messages not yet sent
-        if (msg.plaintext) {
+        // Only resume if plaintext is still in volatile memory
+        if (this.volatilePlaintext.has(msg.localId)) {
           msg.status = 'pending_local';
           msg.encryptedBody = null;
           await this.dbPut(msg);
           this.processMessage(msg);
+        } else if (msg.encryptedBody) {
+          // Already encrypted, just needs sending
+          msg.status = 'pending_local';
+          await this.dbPut(msg);
+          this.processMessage(msg);
+        } else {
+          // Plaintext lost (page reload) — mark as failed
+          await this.updateStatus(msg, 'failed_visible', 'Message perdu (rechargement de page)');
         }
       }
     } catch (err) {
@@ -478,8 +486,8 @@ class MessageQueueManager {
       );
 
       for (const msg of pending) {
-        if (msg.plaintext) {
-          msg.encryptedBody = null;
+        if (this.volatilePlaintext.has(msg.localId) || msg.encryptedBody) {
+          msg.encryptedBody = msg.encryptedBody || null;
           msg.status = 'pending_local';
           await this.dbPut(msg);
           this.processMessage(msg);
