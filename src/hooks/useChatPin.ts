@@ -111,7 +111,22 @@ async function derivePinKey(pin: string, salt: Uint8Array): Promise<CryptoKey> {
   );
 }
 
-async function hashPin(pin: string, salt: Uint8Array): Promise<string> {
+const PIN_HASH_VERSION_KEY = 'forsure-pin-hash-v';
+
+/** Secure PIN hash using PBKDF2-SHA256 600k iterations (replaces weak SHA-256) */
+async function hashPinSecure(pin: string, salt: Uint8Array): Promise<string> {
+  const pinBytes = new TextEncoder().encode(pin);
+  const baseKey = await crypto.subtle.importKey('raw', pinBytes, 'PBKDF2', false, ['deriveBits']);
+  const derived = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: salt as Uint8Array<ArrayBuffer>, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    baseKey,
+    256,
+  );
+  return bytesToBase64(new Uint8Array(derived));
+}
+
+/** Legacy SHA-256 hash — used ONLY for migration verification */
+async function hashPinLegacy(pin: string, salt: Uint8Array): Promise<string> {
   const pinBytes = new TextEncoder().encode(pin);
   const combined = new Uint8Array(pinBytes.length + salt.length);
   combined.set(pinBytes);
@@ -237,7 +252,7 @@ export function useChatPin() {
       const saltB64 = bytesToBase64(salt);
 
       // Hash PIN for server-side verification
-      const pinHash = await hashPin(pin, salt);
+      const pinHash = await hashPinSecure(pin, salt);
 
       // Derive wrapping key
       const wrapKey = await derivePinKey(pin, salt);
@@ -318,9 +333,25 @@ export function useChatPin() {
 
       // Verify hash
       const salt = base64ToBytes(data.salt);
-      const expectedHash = await hashPin(pin, salt);
+      // Try secure hash first, then legacy for transparent migration
+      const secureHash = await hashPinSecure(pin, salt);
+      let matched = secureHash === data.pin_hash;
 
-      if (expectedHash !== data.pin_hash) {
+      if (!matched) {
+        // Attempt legacy SHA-256 match for migration
+        const legacyHash = await hashPinLegacy(pin, salt);
+        if (legacyHash === data.pin_hash) {
+          matched = true;
+          // Transparent migration: re-hash with PBKDF2 and update server
+          console.log('[PIN] Migrating from SHA-256 to PBKDF2');
+          await supabase.from('user_chat_pins').update({
+            pin_hash: secureHash,
+            updated_at: new Date().toISOString(),
+          }).eq('user_id', user.id);
+        }
+      }
+
+      if (!matched) {
         setState(s => ({ ...s, processing: false, error: 'PIN incorrect' }));
         return false;
       }
