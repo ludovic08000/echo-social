@@ -71,21 +71,21 @@ export default function Lives() {
   return (
     <AppLayout>
       {/* Header */}
-      <header className="flex items-center justify-between mb-6">
+      <header className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="font-display text-2xl font-bold flex items-center gap-2">
-            <Radio className="w-6 h-6 text-red-500" />
+          <h1 className="font-display text-xl font-bold flex items-center gap-2 tracking-tight">
+            <Radio className="w-5 h-5 text-destructive" />
             Lives
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs text-muted-foreground mt-0.5">
             {filteredLives.length} live{filteredLives.length !== 1 ? 's' : ''} en cours
           </p>
         </div>
 
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="pulse-button-gradient">
-              <Plus className="w-4 h-4 mr-2" />
+            <Button size="sm" className="premium-button h-9 px-4 text-xs rounded-xl">
+              <Plus className="w-4 h-4 mr-1.5" />
               Démarrer un live
             </Button>
           </DialogTrigger>
