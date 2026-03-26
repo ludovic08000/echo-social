@@ -157,10 +157,10 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
   if (!stored) return null;
 
   const [publicKey, privateKey, signingPublicKey, signingPrivateKey] = await Promise.all([
-    importKeyFromJWK(stored.publicKeyJWK, KX_KEY_PARAMS as any, []),
-    importKeyFromJWK(stored.privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits']),
-    importKeyFromJWK(stored.signingPublicKeyJWK, SIG_KEY_PARAMS as any, ['verify']),
-    importKeyFromJWK(stored.signingPrivateKeyJWK, SIG_KEY_PARAMS as any, ['sign']),
+    importKeyFromJWK(stored.publicKeyJWK, KX_KEY_PARAMS as any, [], true),     // public: exportable for server
+    importKeyFromJWK(stored.privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits'], false), // PRIVATE: non-extractable
+    importKeyFromJWK(stored.signingPublicKeyJWK, SIG_KEY_PARAMS as any, ['verify'], true),
+    importKeyFromJWK(stored.signingPrivateKeyJWK, SIG_KEY_PARAMS as any, ['sign'], false), // PRIVATE: non-extractable
   ]);
 
   return {
@@ -221,7 +221,7 @@ export async function loadSessionKey(conversationId: string): Promise<SessionKey
   const sharedSecret = await crypto.subtle.importKey(
     'jwk', stored.keyJWK,
     { name: 'AES-GCM', length: 256 },
-    true,
+    false,  // Session keys MUST be non-extractable at runtime
     ['encrypt', 'decrypt']
   );
 
