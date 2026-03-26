@@ -35,12 +35,12 @@ export default function Settings() {
 
   return (
     <AppLayout>
-      <div className="px-4 py-2">
+      <div className="px-4 py-2 max-w-2xl mx-auto">
         <header className="flex items-center gap-3 mb-5">
-          <Button variant="ghost" size="icon" onClick={handleBack} className="h-8 w-8 rounded-full">
+          <Button variant="ghost" size="icon" onClick={handleBack} className="h-9 w-9 rounded-xl">
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <h1 className="text-lg font-bold tracking-tight">{sectionTitle}</h1>
+          <h1 className="text-lg font-bold tracking-tight flex-1">{sectionTitle}</h1>
         </header>
 
         {!activeTab && (

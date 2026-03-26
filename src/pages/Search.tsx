@@ -103,57 +103,76 @@ export default function Search() {
 
   return (
     <AppLayout>
-      <header className="mb-6">
-        <h1 className="text-xl font-bold mb-4">Rechercher</h1>
+      <header className="mb-5">
+        <h1 className="text-xl font-bold mb-4 tracking-tight">Rechercher</h1>
         
         <div className="relative">
-          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+          <SearchIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Rechercher des utilisateurs ou des posts..."
-            className="pulse-input pl-10"
+            className="premium-input pl-10 h-11"
           />
         </div>
+
+        {/* Zeus search helper */}
+        {!debouncedQuery && (
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('open-zeus', { detail: { action: 'search' } }))}
+            className="mt-3 w-full flex items-center gap-3 p-3 rounded-xl border border-primary/15 bg-accent/40 hover:bg-accent hover:border-primary/25 transition-all duration-300 group"
+          >
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--premium-gradient)' }}>
+              <SearchIcon className="w-4 h-4 text-primary-foreground" />
+            </div>
+            <div className="text-left">
+              <p className="text-xs font-semibold text-foreground">Rechercher avec Zeus ⚡</p>
+              <p className="text-[10px] text-muted-foreground">Recherche intelligente par IA</p>
+            </div>
+          </button>
+        )}
       </header>
 
       {debouncedQuery.length >= 2 ? (
         <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="w-full mb-4">
-            <TabsTrigger value="users" className="flex-1">
+          <TabsList className="w-full mb-4 h-10 rounded-xl bg-secondary/50 p-1">
+            <TabsTrigger value="users" className="flex-1 rounded-lg text-xs font-medium data-[state=active]:shadow-sm">
               Utilisateurs {users?.length ? `(${users.length})` : ''}
             </TabsTrigger>
-            <TabsTrigger value="posts" className="flex-1">
+            <TabsTrigger value="posts" className="flex-1 rounded-lg text-xs font-medium data-[state=active]:shadow-sm">
               Posts {posts?.length ? `(${posts.length})` : ''}
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="users">
             {usersLoading ? (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="pulse-card p-4 animate-pulse">
+                  <div key={i} className="premium-card p-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-muted" />
-                      <div className="h-4 w-32 bg-muted rounded" />
+                      <div className="w-10 h-10 rounded-full skeleton" />
+                      <div className="space-y-2 flex-1">
+                        <div className="h-4 w-28 skeleton rounded-lg" />
+                        <div className="h-3 w-40 skeleton rounded-lg" />
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             ) : users?.length === 0 ? (
-              <div className="pulse-card p-8 text-center">
-                <p className="text-muted-foreground">Aucun utilisateur trouvé</p>
+              <div className="premium-card p-8 text-center">
+                <p className="text-muted-foreground text-sm">Aucun utilisateur trouvé</p>
               </div>
             ) : (
               <div className="space-y-2">
                 {users?.map((u) => (
                   <Link key={u.user_id} to={`/profile/${u.user_id}`}>
-                    <div className="pulse-card p-4 flex items-center gap-3 hover:bg-secondary/50 transition-colors">
+                    <div className="premium-card p-3.5 flex items-center gap-3 hover:border-primary/20 active:scale-[0.98] transition-all duration-200">
                       <UserAvatar src={u.avatar_url} alt={u.name} size="md" />
-                      <div>
-                        <p className="font-medium">{u.name}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-sm truncate">{u.name}</p>
                         {u.bio && (
-                          <p className="text-sm text-muted-foreground line-clamp-1">{u.bio}</p>
+                          <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{u.bio}</p>
                         )}
                       </div>
                     </div>
@@ -165,20 +184,20 @@ export default function Search() {
 
           <TabsContent value="posts">
             {postsLoading ? (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {[1, 2].map((i) => (
-                  <div key={i} className="pulse-card p-5 animate-pulse">
-                    <div className="h-4 w-full bg-muted rounded" />
-                    <div className="h-4 w-2/3 bg-muted rounded mt-2" />
+                  <div key={i} className="premium-card p-5">
+                    <div className="h-4 w-full skeleton rounded-lg" />
+                    <div className="h-4 w-2/3 skeleton rounded-lg mt-2" />
                   </div>
                 ))}
               </div>
             ) : posts?.length === 0 ? (
-              <div className="pulse-card p-8 text-center">
-                <p className="text-muted-foreground">Aucun post trouvé</p>
+              <div className="premium-card p-8 text-center">
+                <p className="text-muted-foreground text-sm">Aucun post trouvé</p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {posts?.map((post) => (
                   <PostCard
                     key={post.id}
@@ -191,11 +210,14 @@ export default function Search() {
           </TabsContent>
         </Tabs>
       ) : (
-        <div className="pulse-card p-8 text-center">
-          <p className="text-muted-foreground">
-            Tapez au moins 2 caractères pour rechercher
-          </p>
-        </div>
+        !query && (
+          <div className="premium-card p-8 text-center space-y-3">
+            <SearchIcon className="w-10 h-10 text-muted-foreground/30 mx-auto" />
+            <p className="text-sm text-muted-foreground">
+              Tapez au moins 2 caractères pour rechercher
+            </p>
+          </div>
+        )
       )}
     </AppLayout>
   );

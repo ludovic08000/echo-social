@@ -71,21 +71,21 @@ export default function Lives() {
   return (
     <AppLayout>
       {/* Header */}
-      <header className="flex items-center justify-between mb-6">
+      <header className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="font-display text-2xl font-bold flex items-center gap-2">
-            <Radio className="w-6 h-6 text-red-500" />
+          <h1 className="font-display text-xl font-bold flex items-center gap-2 tracking-tight">
+            <Radio className="w-5 h-5 text-destructive" />
             Lives
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs text-muted-foreground mt-0.5">
             {filteredLives.length} live{filteredLives.length !== 1 ? 's' : ''} en cours
           </p>
         </div>
 
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="pulse-button-gradient">
-              <Plus className="w-4 h-4 mr-2" />
+            <Button size="sm" className="premium-button h-9 px-4 text-xs rounded-xl">
+              <Plus className="w-4 h-4 mr-1.5" />
               Démarrer un live
             </Button>
           </DialogTrigger>
@@ -160,29 +160,29 @@ export default function Lives() {
       </header>
 
       {/* Filters */}
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
+      <div className="flex gap-2 mb-5 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
         <button
           onClick={() => setFilter('all')}
           className={cn(
-            'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
+            'flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200',
             filter === 'all'
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-secondary/50 text-muted-foreground hover:bg-secondary'
+              ? 'bg-primary text-primary-foreground shadow-[var(--shadow-md)]'
+              : 'bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground'
           )}
         >
-          <TrendingUp className="w-4 h-4" />
+          <TrendingUp className="w-3.5 h-3.5" />
           Pour toi
         </button>
         <button
           onClick={() => setFilter('following')}
           className={cn(
-            'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
+            'flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200',
             filter === 'following'
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-secondary/50 text-muted-foreground hover:bg-secondary'
+              ? 'bg-primary text-primary-foreground shadow-[var(--shadow-md)]'
+              : 'bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground'
           )}
         >
-          <Users className="w-4 h-4" />
+          <Users className="w-3.5 h-3.5" />
           Abonnements
         </button>
       </div>
@@ -195,14 +195,16 @@ export default function Lives() {
           ))}
         </div>
       ) : filteredLives.length === 0 ? (
-        <div className="text-center py-16 space-y-6">
-          <Radio className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Aucun live en cours</h2>
-          <p className="text-muted-foreground mb-6">
+        <div className="text-center py-16 space-y-5">
+          <div className="w-16 h-16 rounded-2xl bg-secondary/40 flex items-center justify-center mx-auto">
+            <Radio className="w-8 h-8 text-muted-foreground/50" />
+          </div>
+          <h2 className="text-lg font-semibold">Aucun live en cours</h2>
+          <p className="text-sm text-muted-foreground max-w-xs mx-auto">
             Sois le premier à démarrer un live !
           </p>
-          <Button onClick={() => setIsDialogOpen(true)} className="pulse-button-gradient">
-            <Plus className="w-4 h-4 mr-2" />
+          <Button onClick={() => setIsDialogOpen(true)} size="sm" className="premium-button h-10 px-5 text-xs rounded-xl">
+            <Plus className="w-4 h-4 mr-1.5" />
             Démarrer un live
           </Button>
 
