@@ -398,10 +398,60 @@ export function useChatPin() {
     setState(s => ({ ...s, unlocked: false }));
   }, []);
 
+  /** Request PIN reset via email OTP */
+  const requestReset = useCallback(async (): Promise<boolean> => {
+    if (!user) return false;
+    setState(s => ({ ...s, processing: true, error: null }));
+    try {
+      const { data, error } = await supabase.functions.invoke('verify-chat-pin', {
+        body: { action: 'request-reset' },
+      });
+      if (error || !data?.ok) {
+        setState(s => ({ ...s, processing: false, error: data?.error || 'Erreur envoi email' }));
+        return false;
+      }
+      setState(s => ({ ...s, processing: false }));
+      return true;
+    } catch {
+      setState(s => ({ ...s, processing: false, error: 'Erreur envoi email' }));
+      return false;
+    }
+  }, [user]);
+
+  /** Confirm PIN reset with email OTP code */
+  const confirmReset = useCallback(async (code: string): Promise<boolean> => {
+    if (!user) return false;
+    setState(s => ({ ...s, processing: true, error: null }));
+    try {
+      const { data, error } = await supabase.functions.invoke('verify-chat-pin', {
+        body: { action: 'confirm-reset', code },
+      });
+      if (error || !data?.ok) {
+        setState(s => ({ ...s, processing: false, error: data?.error || 'Code incorrect' }));
+        return false;
+      }
+      // PIN deleted — user will go through setup flow
+      sessionStorage.removeItem(SESSION_KEY);
+      setState({
+        loaded: true,
+        hasPin: false,
+        unlocked: false,
+        error: null,
+        processing: false,
+      });
+      return true;
+    } catch {
+      setState(s => ({ ...s, processing: false, error: 'Erreur vérification' }));
+      return false;
+    }
+  }, [user]);
+
   return {
     ...state,
     setupPin,
     verifyPin,
     lock,
+    requestReset,
+    confirmReset,
   };
 }
