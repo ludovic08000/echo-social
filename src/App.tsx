@@ -58,6 +58,7 @@ const CreatorUpgrade = lazy(() => import("./pages/CreatorUpgrade"));
 const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
+const Unsubscribe = lazy(() => import("./pages/Unsubscribe"));
 
 const queryClient = new QueryClient();
 
@@ -182,6 +183,9 @@ function AppContent() {
               <Route path="/ai-agents" element={<ProtectedRoute><AIAgents /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
               <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />
+              
+              {/* Public utility */}
+              <Route path="/unsubscribe" element={<Unsubscribe />} />
               
               {/* 404 */}
               <Route path="*" element={<NotFound />} />

@@ -4,17 +4,21 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 /**
  * verify-chat-pin — Server-side PIN verification for messaging
  * 
+ * Actions: setup, verify, request-reset, confirm-reset
+ * 
  * SECURITY:
- * - PIN hash (PBKDF2-SHA256, 600k iterations) is computed SERVER-SIDE
- * - Hash is NEVER sent to the client
+ * - PIN hash (PBKDF2-SHA256, 600k iterations) computed SERVER-SIDE
+ * - Hash NEVER sent to client
  * - Rate limiting: 5 attempts max, 5min lockout
- * - Constant-time comparison to prevent timing attacks
+ * - Constant-time comparison
+ * - Reset via email OTP (6-digit code, 10min expiry)
  */
 
 const failedAttempts = new Map<string, { count: number; resetAt: number }>();
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS = 5 * 60_000;
 const PBKDF2_ITERATIONS = 600_000;
+const RESET_CODE_EXPIRY_MS = 10 * 60_000; // 10 minutes
 
 function bytesToBase64(bytes: Uint8Array): string {
   let bin = "";
@@ -29,7 +33,6 @@ function base64ToBytes(b64: string): Uint8Array {
   return bytes;
 }
 
-/** PBKDF2-SHA256 600k iterations — brute-force resistant */
 async function hashPinPBKDF2(pin: string, salt: Uint8Array): Promise<string> {
   const pinBytes = new TextEncoder().encode(pin);
   const baseKey = await crypto.subtle.importKey("raw", pinBytes, "PBKDF2", false, ["deriveBits"]);
@@ -41,7 +44,6 @@ async function hashPinPBKDF2(pin: string, salt: Uint8Array): Promise<string> {
   return bytesToBase64(new Uint8Array(derived));
 }
 
-/** Legacy SHA-256 hash for migration */
 async function hashPinLegacy(pin: string, salt: Uint8Array): Promise<string> {
   const pinBytes = new TextEncoder().encode(pin);
   const combined = new Uint8Array(pinBytes.length + salt.length);
@@ -51,7 +53,6 @@ async function hashPinLegacy(pin: string, salt: Uint8Array): Promise<string> {
   return bytesToBase64(new Uint8Array(hash));
 }
 
-/** Constant-time comparison */
 function constantTimeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let result = 0;
@@ -77,6 +78,12 @@ function recordFailed(userId: string) {
   failedAttempts.set(userId, entry);
 }
 
+function generateResetCode(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(4));
+  const num = ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0;
+  return String(num % 1000000).padStart(6, "0");
+}
+
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
@@ -95,7 +102,6 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Verify JWT
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -107,19 +113,143 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { action, pin } = body;
+    const { action, pin, code } = body;
+    const supabase = createClient(supabaseUrl, serviceKey);
 
+    // ─── REQUEST RESET (send OTP email) ───
+    if (action === "request-reset") {
+      // Rate limit reset requests too
+      const resetKey = `reset-${user.id}`;
+      if (!checkRateLimit(resetKey)) {
+        return new Response(JSON.stringify({ ok: false, error: "Trop de demandes. Réessayez dans 5 minutes." }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Check PIN exists
+      const { data: pinData } = await supabase
+        .from("user_chat_pins")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!pinData) {
+        return new Response(JSON.stringify({ ok: false, error: "Aucun PIN configuré" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Generate 6-digit code
+      const resetCode = generateResetCode();
+      const codeSalt = crypto.getRandomValues(new Uint8Array(16));
+      const codeHash = await hashPinPBKDF2(resetCode, codeSalt);
+      const expiresAt = new Date(Date.now() + RESET_CODE_EXPIRY_MS).toISOString();
+
+      // Store hashed code
+      await supabase.from("user_chat_pins").update({
+        reset_code_hash: codeHash,
+        reset_code_salt: bytesToBase64(codeSalt),
+        reset_code_expires: expiresAt,
+        updated_at: new Date().toISOString(),
+      }).eq("user_id", user.id);
+
+      // Get user's name from profile
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("name")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      // Send email via transactional email system
+      const { error: emailError } = await supabase.functions.invoke("send-transactional-email", {
+        body: {
+          templateName: "pin-reset-code",
+          recipientEmail: user.email,
+          idempotencyKey: `pin-reset-${user.id}-${Date.now()}`,
+          templateData: {
+            code: resetCode,
+            name: profile?.name || undefined,
+          },
+        },
+      });
+
+      if (emailError) {
+        console.error("[chat-pin] Failed to send reset email:", emailError);
+        return new Response(JSON.stringify({ ok: false, error: "Erreur envoi email" }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      console.log(`[chat-pin] reset code sent to user=${user.id}`);
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ─── CONFIRM RESET (verify OTP and clear PIN) ───
+    if (action === "confirm-reset") {
+      if (typeof code !== "string" || !/^\d{6}$/.test(code)) {
+        return new Response(JSON.stringify({ ok: false, error: "Code invalide (6 chiffres)" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const resetKey = `reset-verify-${user.id}`;
+      if (!checkRateLimit(resetKey)) {
+        return new Response(JSON.stringify({ ok: false, error: "Trop de tentatives." }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data, error } = await supabase
+        .from("user_chat_pins")
+        .select("reset_code_hash, reset_code_salt, reset_code_expires")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (error || !data?.reset_code_hash || !data?.reset_code_salt) {
+        return new Response(JSON.stringify({ ok: false, error: "Aucun code de réinitialisation en cours" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Check expiry
+      if (new Date(data.reset_code_expires) < new Date()) {
+        return new Response(JSON.stringify({ ok: false, error: "Code expiré. Demandez un nouveau code." }), {
+          status: 410, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Verify code
+      const salt = base64ToBytes(data.reset_code_salt);
+      const computedHash = await hashPinPBKDF2(code, salt);
+      if (!constantTimeEqual(computedHash, data.reset_code_hash)) {
+        recordFailed(resetKey);
+        return new Response(JSON.stringify({ ok: false, error: "Code incorrect" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Delete the PIN entirely — user will set a new one
+      await supabase.from("user_chat_pins").delete().eq("user_id", user.id);
+      failedAttempts.delete(user.id);
+      failedAttempts.delete(resetKey);
+
+      console.log(`[chat-pin] PIN reset confirmed user=${user.id}`);
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ─── Validate PIN format for setup/verify ───
     if (typeof pin !== "string" || !/^\d{6}$/.test(pin)) {
       return new Response(JSON.stringify({ error: "PIN invalide (6 chiffres)" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const supabase = createClient(supabaseUrl, serviceKey);
-
     switch (action) {
       case "setup": {
-        // Generate server-side salt + hash
         const salt = crypto.getRandomValues(new Uint8Array(32));
         const saltB64 = bytesToBase64(salt);
         const pinHash = await hashPinPBKDF2(pin, salt);
@@ -128,6 +258,9 @@ Deno.serve(async (req) => {
           user_id: user.id,
           pin_hash: pinHash,
           salt: saltB64,
+          reset_code_hash: null,
+          reset_code_salt: null,
+          reset_code_expires: null,
           updated_at: new Date().toISOString(),
         }, { onConflict: "user_id" });
 
@@ -146,7 +279,6 @@ Deno.serve(async (req) => {
           });
         }
 
-        // Fetch hash from DB (NEVER sent to client)
         const { data, error } = await supabase
           .from("user_chat_pins")
           .select("pin_hash, salt")
@@ -164,12 +296,10 @@ Deno.serve(async (req) => {
         const computedHash = await hashPinPBKDF2(pin, salt);
         let matched = constantTimeEqual(computedHash, data.pin_hash);
 
-        // Legacy migration: try SHA-256
         if (!matched) {
           const legacyHash = await hashPinLegacy(pin, salt);
           if (constantTimeEqual(legacyHash, data.pin_hash)) {
             matched = true;
-            // Transparent migration to PBKDF2
             await supabase.from("user_chat_pins").update({
               pin_hash: computedHash,
               updated_at: new Date().toISOString(),
@@ -181,7 +311,6 @@ Deno.serve(async (req) => {
         if (matched) {
           failedAttempts.delete(user.id);
           console.log(`[chat-pin] verify ok user=${user.id}`);
-          // Return salt so client can derive local wrapping key
           return new Response(JSON.stringify({ ok: true, salt: data.salt }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
