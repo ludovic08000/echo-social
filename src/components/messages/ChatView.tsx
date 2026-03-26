@@ -157,6 +157,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
     e.preventDefault();
     if (!newMessage.trim() || isSending) return;
 
+    if (!isZeusConversation && e2ee.fingerprintChanged) {
+      toast.error('Clé de sécurité modifiée : valide d\'abord le contact (bouton OK en haut).');
+      return;
+    }
+
     // For non-Zeus: if peer has no keys at all, inform user but still queue
     // The queue will auto-retry when encryption becomes available
     if (!isZeusConversation && e2ee.peerKeyMissing) {
