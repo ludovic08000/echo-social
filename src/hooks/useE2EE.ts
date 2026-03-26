@@ -258,14 +258,44 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       return;
     }
 
+    let cancelled = false;
+
     (async () => {
       try {
+        // Ensure our own keys are ready first (may race with initKeys)
+        if (!keysRef.current) {
+          console.log('[E2EE] Waiting for own keys before peer fetch...');
+          const keys = await getOrCreateIdentityKeys(user.id);
+          if (cancelled) return;
+          keysRef.current = keys;
+          const bundle = await exportPublicKeyBundle(keys);
+          if (cancelled) return;
+          
+          // Publish if not done yet
+          await supabase
+            .from('user_public_keys')
+            .upsert({
+              user_id: user.id,
+              identity_key: bundle.identityKey,
+              signing_key: bundle.signingKey,
+              fingerprint: bundle.fingerprint,
+              kem_type: 'X25519',
+              is_active: true,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'user_id,is_active' });
+          
+          setState(s => ({ ...s, fingerprint: bundle.fingerprint }));
+          console.log('[E2EE] Own keys loaded on-demand');
+        }
+
         const { data } = await supabase
           .from('user_public_keys')
           .select('identity_key, signing_key, fingerprint')
           .eq('user_id', peerUserId)
           .eq('is_active', true)
           .maybeSingle();
+
+        if (cancelled) return;
 
         if (data) {
           console.log('[PEER_KEY] loaded', peerUserId);
@@ -285,7 +315,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
               ...s,
               peerFingerprint: data.fingerprint,
               encrypted: true,
-              ready: false, // NOT ready until acknowledged
+              ready: false,
               fingerprintChanged: true,
               peerKeyMissing: false,
             }));
@@ -295,29 +325,22 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           // Save fingerprint only if not changed (first time or same)
           saveKnownFingerprint(peerUserId, data.fingerprint);
 
-          // Pre-establish legacy session immediately if we have keys
+          // Pre-establish legacy session immediately
           if (keysRef.current && conversationId) {
             try {
               let session = await loadSessionKey(conversationId);
+              if (cancelled) return;
               if (!session || await needsKeyRotation(conversationId)) {
                 session = await (session
                   ? rotateSessionKey(keysRef.current, data.identity_key, conversationId, data.fingerprint)
                   : establishSession(keysRef.current, data.identity_key, conversationId, data.fingerprint)
                 );
               }
+              if (cancelled) return;
               legacySessionReadyRef.current = true;
-              console.log('[E2EE] Legacy session pre-established ✅');
+              console.log('[E2EE] ✅ Legacy session pre-established — ready to send');
             } catch (e) {
               console.warn('[E2EE] Legacy session pre-establish failed:', e);
-            }
-          }
-
-          // Load existing ratchet state if any
-          if (conversationId) {
-            const existing = await loadRatchetLocal(conversationId);
-            if (existing) {
-              ratchetRef.current = existing;
-              console.log('[RATCHET] loaded from IndexedDB');
             }
           }
 
@@ -325,10 +348,11 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             ...s,
             peerFingerprint: data.fingerprint,
             encrypted: true,
-            ready: !!keysRef.current,
-            ratchetActive: !!ratchetRef.current,
+            ready: true, // We have both keys and peer key
+            ratchetActive: false,
             fingerprintChanged: false,
             peerKeyMissing: false,
+            initError: null,
           }));
         } else {
           console.log('[PEER_KEY] not found for', peerUserId);
@@ -341,14 +365,18 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         }
       } catch (err) {
         console.error('[E2EE] Peer key fetch failed:', err);
-        setState(s => ({
-          ...s,
-          encrypted: false,
-          ready: true,
-          initError: 'Peer key fetch failed',
-        }));
+        if (!cancelled) {
+          setState(s => ({
+            ...s,
+            encrypted: false,
+            ready: true,
+            initError: 'Peer key fetch failed',
+          }));
+        }
       }
     })();
+
+    return () => { cancelled = true; };
   }, [peerUserId, user, conversationId, isZeus]);
 
   // Legacy session — deterministic, always works
