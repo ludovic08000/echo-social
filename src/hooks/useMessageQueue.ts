@@ -212,7 +212,20 @@ export function useMessageQueue(
         }
         console.warn('[MSG] Encrypt returned invalid output:', encrypted?.substring(0, 50));
       } catch (e) {
-        console.error('[MSG] ❌ Direct encrypt failed:', e instanceof Error ? e.message : e);
+          const errMessage = e instanceof Error ? e.message : String(e);
+          const normalized = errMessage.toLowerCase();
+          const requiresSecurityVerification =
+            normalized.includes('clé de sécurité') ||
+            normalized.includes('cle de securite') ||
+            normalized.includes('vérification requise') ||
+            normalized.includes('verification requise') ||
+            normalized.includes('fingerprint');
+
+          console.error('[MSG] ❌ Direct encrypt failed:', errMessage);
+
+          if (requiresSecurityVerification) {
+            throw new Error('Validation de sécurité requise : appuie sur OK en haut avant d\'envoyer.');
+          }
       }
     } else {
       console.warn('[MSG] No encrypt function available, queuing');
