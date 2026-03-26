@@ -195,14 +195,16 @@ export default function Lives() {
           ))}
         </div>
       ) : filteredLives.length === 0 ? (
-        <div className="text-center py-16 space-y-6">
-          <Radio className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Aucun live en cours</h2>
-          <p className="text-muted-foreground mb-6">
+        <div className="text-center py-16 space-y-5">
+          <div className="w-16 h-16 rounded-2xl bg-secondary/40 flex items-center justify-center mx-auto">
+            <Radio className="w-8 h-8 text-muted-foreground/50" />
+          </div>
+          <h2 className="text-lg font-semibold">Aucun live en cours</h2>
+          <p className="text-sm text-muted-foreground max-w-xs mx-auto">
             Sois le premier à démarrer un live !
           </p>
-          <Button onClick={() => setIsDialogOpen(true)} className="pulse-button-gradient">
-            <Plus className="w-4 h-4 mr-2" />
+          <Button onClick={() => setIsDialogOpen(true)} size="sm" className="premium-button h-10 px-5 text-xs rounded-xl">
+            <Plus className="w-4 h-4 mr-1.5" />
             Démarrer un live
           </Button>
 
