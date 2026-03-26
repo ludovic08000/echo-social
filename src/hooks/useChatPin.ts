@@ -247,14 +247,18 @@ export function useChatPin() {
         return false;
       }
 
-      // Generate salt
-      const salt = crypto.getRandomValues(new Uint8Array(32));
-      const saltB64 = bytesToBase64(salt);
+      // Setup PIN server-side (hash computed on server, never on client)
+      const { data: setupResult, error: fnError } = await supabase.functions.invoke('verify-chat-pin', {
+        body: { action: 'setup', pin },
+      });
+      if (fnError || !setupResult?.ok) {
+        setState(s => ({ ...s, processing: false, error: setupResult?.error || 'Erreur création PIN' }));
+        return false;
+      }
 
-      // Hash PIN for server-side verification
-      const pinHash = await hashPinSecure(pin, salt);
-
-      // Derive wrapping key
+      // Derive local wrapping key from server-provided salt
+      const saltB64 = setupResult.salt;
+      const salt = base64ToBytes(saltB64);
       const wrapKey = await derivePinKey(pin, salt);
 
       // Read existing identity keys from IndexedDB
@@ -276,14 +280,6 @@ export function useChatPin() {
           salt: saltB64,
         });
       }
-
-      // Save PIN hash to server
-      await supabase.from('user_chat_pins').upsert({
-        user_id: user.id,
-        pin_hash: pinHash,
-        salt: saltB64,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' });
 
       // Mark session as unlocked
       sessionStorage.setItem(SESSION_KEY, user.id);
@@ -319,48 +315,63 @@ export function useChatPin() {
         return false;
       }
 
-      // Fetch PIN record from server
-      const { data } = await supabase
-        .from('user_chat_pins')
-        .select('pin_hash, salt')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      // Verify PIN server-side (hash NEVER sent to client)
+      const { data: verifyResult, error: fnError } = await supabase.functions.invoke('verify-chat-pin', {
+        body: { action: 'verify', pin },
+      });
 
-      if (!data) {
-        setState(s => ({ ...s, processing: false, error: 'Aucun PIN configuré' }));
+      if (fnError) {
+        setState(s => ({ ...s, processing: false, error: 'Erreur serveur' }));
         return false;
       }
 
-      // Verify hash
-      const salt = base64ToBytes(data.salt);
-      // Try secure hash first, then legacy for transparent migration
-      const secureHash = await hashPinSecure(pin, salt);
-      let matched = secureHash === data.pin_hash;
-
-      if (!matched) {
-        // Attempt legacy SHA-256 match for migration
-        const legacyHash = await hashPinLegacy(pin, salt);
-        if (legacyHash === data.pin_hash) {
-          matched = true;
-          // Transparent migration: re-hash with PBKDF2 and update server
-          console.log('[PIN] Migrating from SHA-256 to PBKDF2');
-          await supabase.from('user_chat_pins').update({
-            pin_hash: secureHash,
-            updated_at: new Date().toISOString(),
-          }).eq('user_id', user.id);
-        }
-      }
-
-      if (!matched) {
-        setState(s => ({ ...s, processing: false, error: 'PIN incorrect' }));
+      if (!verifyResult?.ok) {
+        setState(s => ({ ...s, processing: false, error: verifyResult?.error || 'PIN incorrect' }));
         return false;
       }
 
-      // Try to unwrap keys if wrapped version exists
+      // PIN verified server-side — now unwrap local keys
       const wrapped = await loadWrappedKeys(user.id);
       if (wrapped) {
         try {
           const wrapKey = await derivePinKey(pin, base64ToBytes(wrapped.salt));
+          const cipherBytes = base64ToBytes(wrapped.wrappedBlob);
+          const iv = base64ToBytes(wrapped.iv);
+
+          const plainBuffer = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
+            wrapKey,
+            cipherBytes as Uint8Array<ArrayBuffer>,
+          );
+
+          const rawBlob = new TextDecoder().decode(plainBuffer);
+          await writeRawIdentityBlob(user.id, rawBlob);
+          console.log('[PIN] Keys unwrapped successfully');
+          window.dispatchEvent(new CustomEvent('forsure-keys-unlocked'));
+        } catch (unwrapErr) {
+          console.warn('[PIN] Key unwrap failed (keys may already be accessible):', unwrapErr);
+        }
+      } else if (verifyResult.salt) {
+        // No local wrapped keys but PIN verified — try wrapping existing keys for next time
+        try {
+          const rawBlob = await readRawIdentityBlob(user.id);
+          if (rawBlob) {
+            const salt = base64ToBytes(verifyResult.salt);
+            const wrapKey = await derivePinKey(pin, salt);
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const ciphertext = await crypto.subtle.encrypt(
+              { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
+              wrapKey,
+              new TextEncoder().encode(rawBlob) as Uint8Array<ArrayBuffer>,
+            );
+            await saveWrappedKeys(user.id, {
+              wrappedBlob: bytesToBase64(new Uint8Array(ciphertext)),
+              iv: bytesToBase64(iv),
+              salt: verifyResult.salt,
+            });
+          }
+        } catch {}
+      }
           const cipherBytes = base64ToBytes(wrapped.wrappedBlob);
           const iv = base64ToBytes(wrapped.iv);
 
