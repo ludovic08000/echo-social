@@ -184,6 +184,9 @@ function AppContent() {
               <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
               <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />
               
+              {/* Public utility */}
+              <Route path="/unsubscribe" element={<Unsubscribe />} />
+              
               {/* 404 */}
               <Route path="*" element={<NotFound />} />
             </Routes>
