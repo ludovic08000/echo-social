@@ -160,29 +160,29 @@ export default function Lives() {
       </header>
 
       {/* Filters */}
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
+      <div className="flex gap-2 mb-5 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
         <button
           onClick={() => setFilter('all')}
           className={cn(
-            'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
+            'flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200',
             filter === 'all'
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-secondary/50 text-muted-foreground hover:bg-secondary'
+              ? 'bg-primary text-primary-foreground shadow-[var(--shadow-md)]'
+              : 'bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground'
           )}
         >
-          <TrendingUp className="w-4 h-4" />
+          <TrendingUp className="w-3.5 h-3.5" />
           Pour toi
         </button>
         <button
           onClick={() => setFilter('following')}
           className={cn(
-            'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
+            'flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200',
             filter === 'following'
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-secondary/50 text-muted-foreground hover:bg-secondary'
+              ? 'bg-primary text-primary-foreground shadow-[var(--shadow-md)]'
+              : 'bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground'
           )}
         >
-          <Users className="w-4 h-4" />
+          <Users className="w-3.5 h-3.5" />
           Abonnements
         </button>
       </div>
