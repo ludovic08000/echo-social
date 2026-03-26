@@ -291,6 +291,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         fingerprint={e2ee.fingerprint}
         peerFingerprint={e2ee.peerFingerprint}
         ratchetActive={e2ee.ratchetActive}
+        fingerprintChanged={e2ee.fingerprintChanged}
       />
 
       {/* Fingerprint change warning */}
