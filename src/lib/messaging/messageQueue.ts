@@ -612,6 +612,7 @@ class MessageQueueManager {
         msg.lastError = null;
         msg.updatedAt = Date.now();
         msg.plaintext = '';
+        this.volatilePlaintext.delete(msg.localId);
         await this.dbPut(msg);
 
         setTimeout(() => {
