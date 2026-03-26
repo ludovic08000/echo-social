@@ -190,16 +190,16 @@ export default function Marketplace() {
       <SEOHead title="Marketplace - ForSure" description="Achetez et vendez sur ForSure" />
       <div className="pb-4 space-y-0">
         {/* Hero Header */}
-        <div className="relative overflow-hidden bg-[image:var(--premium-gradient)] px-4 pt-5 pb-6 -mx-4 md:-mx-0 md:rounded-2xl mb-4">
+        <div className="relative overflow-hidden bg-[image:var(--premium-gradient)] px-4 pt-5 pb-5 -mx-4 md:-mx-0 md:rounded-2xl mb-4">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_0%,hsl(0_0%_100%/0.1),transparent_50%)]" />
           <div className="relative z-10">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3">
               <div>
-                <h1 className="text-2xl font-bold text-primary-foreground font-display flex items-center gap-2">
-                  <ShoppingBag className="w-6 h-6" />
+                <h1 className="text-xl font-bold text-primary-foreground font-display flex items-center gap-2 tracking-tight">
+                  <ShoppingBag className="w-5 h-5" />
                   Marketplace
                 </h1>
-                <p className="text-primary-foreground/70 text-xs mt-0.5">Achetez, vendez, échangez</p>
+                <p className="text-primary-foreground/70 text-[11px] mt-0.5">Achetez, vendez, échangez</p>
               </div>
               <div className="flex items-center gap-2">
                 {seller && (
