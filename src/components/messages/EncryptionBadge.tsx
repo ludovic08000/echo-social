@@ -1,4 +1,4 @@
-import { Shield, ShieldCheck, Lock, Zap } from 'lucide-react';
+import { Shield, ShieldCheck, Lock, Zap, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface EncryptionBadgeProps {
@@ -42,10 +42,11 @@ interface EncryptionStatusBarProps {
   fingerprint: string | null;
   peerFingerprint: string | null;
   ratchetActive?: boolean;
+  fingerprintChanged?: boolean;
 }
 
-export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, ratchetActive }: EncryptionStatusBarProps) {
-  if (!encrypted) return null;
+export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, ratchetActive, fingerprintChanged = false }: EncryptionStatusBarProps) {
+  if (!encrypted && !fingerprintChanged) return null;
 
   const hasKeys = !!fingerprint && !!peerFingerprint;
 
@@ -53,7 +54,10 @@ export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, r
   let statusText: string;
   let StatusIcon = ShieldCheck;
 
-  if (ratchetActive) {
+  if (fingerprintChanged) {
+    statusText = 'Validation de sécurité requise avant envoi';
+    StatusIcon = AlertTriangle;
+  } else if (ratchetActive) {
     statusText = 'Canal sécurisé renforcé — forward secrecy par message';
     StatusIcon = Zap;
   } else {
@@ -62,12 +66,23 @@ export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, r
   }
 
   return (
-    <div className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-500/5 border-b border-emerald-500/10">
-      <StatusIcon className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-      <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium">
+    <div className={cn(
+      'flex items-center gap-1.5 px-4 py-1.5 border-b',
+      fingerprintChanged
+        ? 'bg-amber-500/10 border-amber-500/20'
+        : 'bg-emerald-500/5 border-emerald-500/10'
+    )}>
+      <StatusIcon className={cn(
+        'w-3.5 h-3.5 flex-shrink-0',
+        fingerprintChanged ? 'text-amber-600' : 'text-emerald-500'
+      )} />
+      <span className={cn(
+        'text-[10px] font-medium',
+        fingerprintChanged ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400'
+      )}>
         {statusText}
       </span>
-      {hasKeys && (
+      {hasKeys && !fingerprintChanged && (
         <button
           onClick={() => {
             const msg = `🔐 Numéros de sécurité\n\nVotre clé:\n${fingerprint}\n\nClé du contact:\n${peerFingerprint}\n\nComparez ces numéros en personne pour vérifier l'identité.`;
