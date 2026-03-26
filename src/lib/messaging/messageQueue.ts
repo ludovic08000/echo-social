@@ -337,7 +337,8 @@ class MessageQueueManager {
         this.clearRetryTimer(msg.localId);
         console.log('[SEND] backend success', msg.localId, serverId);
 
-        // Clean up: remove plaintext from persistent storage once sent
+        // Clean up: remove volatile plaintext
+        this.volatilePlaintext.delete(msg.localId);
         msg.plaintext = '';
         try {
           await this.dbPut(msg);
