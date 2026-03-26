@@ -4,7 +4,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback, createContext, useContext, type ReactNode } from 'react';
-import { Lock, Shield, ShieldCheck, Eye, EyeOff, KeyRound, ArrowLeft, Fingerprint } from 'lucide-react';
+import { Lock, Shield, ShieldCheck, Eye, EyeOff, KeyRound, ArrowLeft, Fingerprint, Mail, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useChatPin } from '@/hooks/useChatPin';
 import { cn } from '@/lib/utils';
@@ -48,7 +48,13 @@ export function MessagingPinGate({ children, compact = false }: MessagingPinGate
     <CompactCtx.Provider value={compact}>
       {!pin.hasPin
         ? <PinSetupScreen onSetup={pin.setupPin} processing={pin.processing} error={pin.error} />
-        : <PinEntryScreen onVerify={pin.verifyPin} processing={pin.processing} error={pin.error} />
+        : <PinEntryScreen
+            onVerify={pin.verifyPin}
+            processing={pin.processing}
+            error={pin.error}
+            onRequestReset={pin.requestReset}
+            onConfirmReset={pin.confirmReset}
+          />
       }
     </CompactCtx.Provider>
   );
