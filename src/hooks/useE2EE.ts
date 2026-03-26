@@ -399,7 +399,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
    */
   const encrypt = useCallback(async (plaintext: string): Promise<string> => {
     console.log('[E2EE] encrypt() called', {
-      encrypted: state.encrypted,
       hasKeys: !!keysRef.current,
       hasPeerKey: !!peerKeyRef.current,
       fingerprintChanged: state.fingerprintChanged,
@@ -408,10 +407,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     // BLOCK if fingerprint changed and not yet acknowledged
     if (state.fingerprintChanged) {
       throw new EncryptionError('La clé de sécurité du contact a changé — vérification requise');
-    }
-
-    if (!state.encrypted) {
-      throw new EncryptionError('Encryption not available — keys not ready');
     }
 
     // Auto-load keys if ref is empty (race with initKeys)
@@ -426,6 +421,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     if (!keysRef.current) {
       throw new EncryptionError('Encryption not available — keys not ready');
+    }
+
+    if (!peerKeyRef.current) {
+      throw new EncryptionError('Encryption not available — peer key not ready');
     }
 
     if (!cryptoRateCheck('encrypt')) {
@@ -444,14 +443,14 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         plaintext, session.sharedSecret,
         keysRef.current.signingPrivateKey, keysRef.current.fingerprint, seq,
       );
-      console.log('[E2EE] ✅ encrypt success (legacy session)');
+      console.log('[E2EE] ✅ encrypt success');
       return result;
     } catch (err) {
       if (err instanceof EncryptionError) throw err;
       console.error('[E2EE] ❌ Encrypt failed:', err);
       throw new EncryptionError(`Encryption failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [state.encrypted, state.fingerprintChanged, conversationId, user, ensureLegacySession]);
+  }, [state.fingerprintChanged, conversationId, user, ensureLegacySession]);
 
   /**
    * Decrypt — NEVER shows raw ciphertext.
