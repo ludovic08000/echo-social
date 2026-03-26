@@ -72,6 +72,8 @@ class MessageQueueManager {
   private processing = new Set<string>();
   private dbPromise: Promise<IDBDatabase> | null = null;
   private handlersByConversation = new Map<string, Map<string, HandlerEntry>>();
+  /** SECURITY: Plaintext stored ONLY in volatile memory, never in IndexedDB */
+  private volatilePlaintext = new Map<string, string>();
 
   // ─── DB ───
 
