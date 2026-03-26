@@ -1,10 +1,10 @@
 /**
- * Persistent Local Message Queue
+ * Persistent Local Message Queue (v4 — Hardened)
  * 
  * Guarantees:
  * - No message is ever lost
  * - No message is ever sent in plaintext
- * - Messages survive page reload
+ * - Plaintext is NEVER persisted to IndexedDB (volatile memory only)
  * - Automatic retry with exponential backoff
  * - Idempotent: no duplicates
  * 
