@@ -664,6 +664,7 @@ class MessageQueueManager {
   /** Remove a message from the queue (user cancels failed message) */
   async removeMessage(localId: string): Promise<void> {
     this.clearRetryTimer(localId);
+    this.volatilePlaintext.delete(localId);
     await this.dbDelete(localId);
   }
 
