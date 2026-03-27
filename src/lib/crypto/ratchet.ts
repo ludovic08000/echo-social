@@ -345,7 +345,7 @@ async function decryptWithKey(
         ['verify'],
       );
       const sigData = new Uint8Array([
-        ...new Uint8Array(encodeString(JSON.stringify(envelope.hdr))),
+        ...new Uint8Array(encodeString(hardGlobals.jsonStringify(envelope.hdr))),
         ...new Uint8Array(iv),
         ...new Uint8Array(ct),
         ...new Uint8Array(encodeString(`${envelope.ts}`)),
