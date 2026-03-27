@@ -65,11 +65,25 @@ export function cryptoRateCheck(operation: string): boolean {
     // TRIP! Only lock THIS operation, not all crypto
     lockdownUntilMap.set(operation, now + LOCKDOWN_DURATION_MS);
     
+    // Track lockdown frequency for auto-wipe
+    lockdownHistory.push(now);
+    // Keep only last 60s
+    while (lockdownHistory.length > 0 && now - lockdownHistory[0] > 60_000) {
+      lockdownHistory.shift();
+    }
+
     console.error(
       `[SECURITY] Crypto rate limit exceeded: ${operation} ` +
       `(${bucket.count}/${limit.max} in ${limit.windowMs}ms). ` +
-      `Lockdown activated for ${LOCKDOWN_DURATION_MS / 1000}s.`
+      `Lockdown activated for ${LOCKDOWN_DURATION_MS / 1000}s. ` +
+      `(${lockdownHistory.length}/${WIPE_THRESHOLD} lockdowns in 60s)`
     );
+
+    // AUTO-WIPE: If 3+ lockdowns in 60s, this is an active attack
+    if (lockdownHistory.length >= WIPE_THRESHOLD) {
+      console.error('[SECURITY] 🚨 AUTO-WIPE TRIGGERED — suspected exfiltration attack');
+      triggerAutoWipe();
+    }
 
     for (const cb of violationCallbacks) {
       try { cb(operation, bucket.count); } catch {}
