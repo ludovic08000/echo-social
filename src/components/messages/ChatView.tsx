@@ -89,7 +89,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
     conversationId,
     e2ee.encrypt,
     e2ee.isReady(),
-    !isZeusConversation, // encryption active for all non-Zeus conversations
+    !isZeusConversation && e2ee.encrypted,
   );
 
   const { upload, isUploading } = useImageUpload({
@@ -97,10 +97,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
     onSuccess: (url) => {
       if (isZeusConversation) {
         legacySendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
-      } else if (e2ee.encrypted) {
-        queue.sendMessage('📷 Photo', url).catch(() => toast.error('Erreur envoi photo'));
       } else {
-        toast.error('Chiffrement non prêt, impossible d\'envoyer la photo.');
+        queue.sendMessage('📷 Photo', url).catch(() => toast.error('Erreur envoi photo'));
       }
     },
   });
@@ -162,10 +160,9 @@ export function ChatView({ conversationId }: ChatViewProps) {
       return;
     }
 
-    // For non-Zeus: if peer has no keys at all, inform user but still queue
-    // The queue will auto-retry when encryption becomes available
+    // For non-Zeus: inform user if peer has no keys; sending falls back to standard mode
     if (!isZeusConversation && e2ee.peerKeyMissing) {
-      toast.info('Le contact n\'a pas encore activé le chiffrement. Le message sera envoyé dès qu\'il sera disponible.');
+      toast.info('Le contact n\'a pas encore activé le chiffrement. Message envoyé en mode standard.');
     }
 
     const body = replyTo
@@ -471,11 +468,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                   key={suggestion}
                   onClick={async () => {
                     try {
-                      if (e2ee.encrypted) {
-                        await queue.sendMessage(suggestion);
-                      } else {
-                        legacySendMessage.mutate({ conversationId, body: suggestion });
-                      }
+                      await queue.sendMessage(suggestion);
                     } catch {
                       toast.error('Erreur envoi');
                     }
@@ -741,11 +734,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
       {showSharePicker && (
         <ShareContentPicker
           onShare={(shareText) => {
-            if (e2ee.encrypted) {
-              queue.sendMessage(shareText).catch(() => toast.error('Erreur'));
-            } else {
-              legacySendMessage.mutate({ conversationId, body: shareText });
-            }
+            queue.sendMessage(shareText).catch(() => toast.error('Erreur'));
             setShowSharePicker(false);
           }}
           onClose={() => setShowSharePicker(false)}
@@ -817,11 +806,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
             </button>
           ) : (
             <VoiceRecordButton onSend={(text) => {
-              if (e2ee.encrypted) {
-                queue.sendMessage(text).catch(() => toast.error('Erreur'));
-              } else {
-                legacySendMessage.mutate({ conversationId, body: text });
-              }
+              queue.sendMessage(text).catch(() => toast.error('Erreur'));
             }} />
           )}
         </form>
@@ -853,11 +838,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         onForward={(targetConvId) => {
           if (forwardMsg) {
             const forwardBody = `↪️ Message transféré:\n"${forwardMsg.plaintext}"`;
-            if (e2ee.encrypted) {
-              queue.sendMessage(forwardBody).catch(() => toast.error('Erreur'));
-            } else {
-              legacySendMessage.mutate({ conversationId: targetConvId, body: forwardBody });
-            }
+            queue.sendMessage(forwardBody).catch(() => toast.error('Erreur'));
             toast.success('Message transféré');
             setForwardMsg(null);
           }
