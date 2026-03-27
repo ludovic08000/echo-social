@@ -350,7 +350,7 @@ async function decryptWithKey(
         ...new Uint8Array(ct),
         ...new Uint8Array(encodeString(`${envelope.ts}`)),
       ]);
-      verified = await crypto.subtle.verify(
+      verified = await hardCrypto.verify(
         'Ed25519' as any, sigKey, base64ToBuffer(envelope.sig), sigData,
       );
     } catch {
