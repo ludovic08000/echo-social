@@ -147,7 +147,7 @@ export async function encryptMessage(
     seq: sequenceNumber,
   };
 
-  return JSON.stringify(envelope);
+  return hardGlobals.jsonStringify(envelope);
 }
 
 // ─── Decrypt ───
