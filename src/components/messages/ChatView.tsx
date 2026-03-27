@@ -26,7 +26,8 @@ import { OutboundStatusIndicator } from './OutboundStatus';
 
 import { MessageActions } from './MessageActions';
 import { TypingIndicator } from './TypingIndicator';
-import { VoiceRecordButton } from './VoiceRecordButton';
+import { VoiceRecorder } from '@/components/chat/VoiceRecorder';
+import { Mic } from 'lucide-react';
 import { ForwardMessageDialog } from './ForwardMessageDialog';
 import { NewConversationDialog } from './NewConversationDialog';
 import { ShareContentPicker } from './ShareContentPicker';
