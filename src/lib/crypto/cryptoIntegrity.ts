@@ -34,8 +34,12 @@ const _JSONstringify = JSON.stringify;
 const _TextEncoder = TextEncoder;
 const _TextDecoder = TextDecoder;
 const _idbOpen = indexedDB.open.bind(indexedDB);
-const _atob = atob;
-const _btoa = btoa;
+const _atob = globalThis.atob.bind(globalThis);
+const _btoa = globalThis.btoa.bind(globalThis);
+
+// Snapshot object identity for deep tamper detection
+const _subtleRef = crypto.subtle;
+const _cryptoRef = crypto;
 
 /** Hardened crypto.subtle — uses snapshotted references */
 export const hardCrypto = Object.freeze({
@@ -67,9 +71,19 @@ export const hardGlobals = Object.freeze({
 
 let tamperDetected = false;
 const tamperCallbacks: Array<(reason: string) => void> = [];
+// Freeze the array structure — prevent .push()/.length=0 from external code
+Object.defineProperty(tamperCallbacks, 'push', {
+  value: function(this: Array<(reason: string) => void>, ...items: ((reason: string) => void)[]) {
+    return Array.prototype.push.apply(this, items);
+  },
+  writable: false,
+  configurable: false,
+});
 
+/** Register a tamper callback. Only callable via this function. */
 export function onTamperDetected(cb: (reason: string) => void) {
-  tamperCallbacks.push(cb);
+  if (typeof cb !== 'function') return;
+  tamperCallbacks[tamperCallbacks.length] = cb;
 }
 
 function triggerTamper(reason: string) {
@@ -91,7 +105,17 @@ export function isTampered(): boolean {
  */
 export function verifyCryptoIntegrity(): boolean {
   try {
-    // crypto.subtle checks
+    // Object identity checks — detect full object replacement
+    if (crypto !== _cryptoRef) {
+      triggerTamper('crypto object replaced');
+      return false;
+    }
+    if (crypto.subtle !== _subtleRef) {
+      triggerTamper('crypto.subtle object replaced');
+      return false;
+    }
+
+    // crypto.subtle method checks
     const subtleChecks: [string, Function, Function][] = [
       ['encrypt', crypto.subtle.encrypt, _encrypt],
       ['decrypt', crypto.subtle.decrypt, _decrypt],
@@ -131,6 +155,10 @@ export function verifyCryptoIntegrity(): boolean {
       triggerTamper('TextEncoder replaced');
       return false;
     }
+    if (globalThis.TextDecoder !== _TextDecoder) {
+      triggerTamper('TextDecoder replaced');
+      return false;
+    }
     if (globalThis.atob !== _atob) {
       triggerTamper('atob replaced');
       return false;
@@ -155,7 +183,7 @@ export function verifyCryptoIntegrity(): boolean {
  */
 export function hardenPrototypes() {
   try {
-    const criticalMethods = ['toString', 'valueOf', 'constructor'] as const;
+    const criticalMethods = ['toString', 'valueOf', 'constructor', 'hasOwnProperty'] as const;
     for (const method of criticalMethods) {
       const desc = Object.getOwnPropertyDescriptor(Object.prototype, method);
       if (desc && desc.configurable) {
