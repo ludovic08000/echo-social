@@ -4277,6 +4277,7 @@ export type Database = {
           viewer_count: number
         }[]
       }
+      has_chat_pin: { Args: { p_user_id: string }; Returns: boolean }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
