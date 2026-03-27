@@ -66,6 +66,9 @@ export default function Feed() {
     });
   }, [data?.pages]);
 
+  // Force virtualizer to remeasure when posts change (e.g. after delete)
+  const postsKey = useMemo(() => posts.map(p => p.id).join(','), [posts]);
+
   // ── Virtualizer ──
   const virtualizer = useVirtualizer({
     count: posts.length,
@@ -73,6 +76,13 @@ export default function Feed() {
     estimateSize: () => 480, // avg post height
     overscan: 5,
   });
+
+  // Remeasure all items when posts array changes (delete, new page, etc.)
+  useEffect(() => {
+    if (postsKey) {
+      virtualizer.measure();
+    }
+  }, [postsKey]);
 
   // Track feed load performance
   useEffect(() => {

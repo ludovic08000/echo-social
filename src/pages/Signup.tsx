@@ -38,6 +38,10 @@ export default function Signup() {
   const [parentalPin, setParentalPin] = useState('');
   const [parentalPinConfirm, setParentalPinConfirm] = useState('');
   const [showParentalPin, setShowParentalPin] = useState(false);
+  // Anti-bot honeypot (invisible field — bots fill it, humans don't)
+  const [honeypot, setHoneypot] = useState('');
+  // Rate limiting: track form submission time
+  const [formLoadTime] = useState(Date.now());
 
   const currentYear = new Date().getFullYear();
   const years = useMemo(() => Array.from({ length: currentYear - 1920 + 1 }, (_, i) => currentYear - i), [currentYear]);
@@ -58,11 +62,38 @@ export default function Signup() {
     return new Date(Number(birthYear), Number(birthMonth) - 1, Number(birthDay));
   };
 
+  // Common weak passwords blacklist
+  const COMMON_PASSWORDS = [
+    'password', '123456', '12345678', 'qwerty', 'abc123', 'monkey', 'master',
+    'dragon', 'login', 'princess', 'football', 'shadow', 'sunshine', 'trustno1',
+    'iloveyou', 'batman', 'access', 'hello', 'charlie', 'forsure', 'azerty',
+    'motdepasse', 'bonjour', 'soleil', 'amour', 'bienvenue', '000000',
+  ];
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Anti-bot: reject if honeypot is filled
+    if (honeypot) {
+      console.warn('Bot detected');
+      return;
+    }
+
+    // Anti-bot: reject if form was submitted too fast (< 3 seconds)
+    if (Date.now() - formLoadTime < 3000) {
+      toast({ title: 'Trop rapide', description: 'Veuillez remplir le formulaire correctement.', variant: 'destructive' });
+      return;
+    }
+
     if (!lastName.trim() || !firstName.trim()) {
       toast({ title: 'Champs requis', description: 'Le nom et le prénom sont obligatoires.', variant: 'destructive' });
+      return;
+    }
+
+    // Name sanitization: only letters, spaces, hyphens, apostrophes
+    const nameRegex = /^[a-zA-ZÀ-ÿ\s'\-]{2,50}$/;
+    if (!nameRegex.test(lastName.trim()) || !nameRegex.test(firstName.trim())) {
+      toast({ title: 'Nom invalide', description: 'Le nom et prénom ne doivent contenir que des lettres (2 à 50 caractères).', variant: 'destructive' });
       return;
     }
 
@@ -97,20 +128,32 @@ export default function Signup() {
       }
     }
 
+    // Minimum password length
+    if (password.length < 8) {
+      toast({ title: 'Mot de passe trop court', description: 'Minimum 8 caractères requis.', variant: 'destructive' });
+      return;
+    }
+
+    // Common password check
+    if (COMMON_PASSWORDS.includes(password.toLowerCase()) || password.toLowerCase().includes(email.split('@')[0].toLowerCase())) {
+      toast({ title: 'Mot de passe trop commun', description: 'Choisissez un mot de passe unique, pas un mot courant ni votre identifiant.', variant: 'destructive' });
+      return;
+    }
+
     // Vérification force du mot de passe
     const hasUpper = /[A-Z]/.test(password);
     const hasNumber = /[0-9]/.test(password);
     const hasSpecial = /[^A-Za-z0-9]/.test(password);
     let strength = 0;
-    if (password.length >= 6) strength++;
-    if (password.length >= 10) strength++;
+    if (password.length >= 8) strength++;
+    if (password.length >= 12) strength++;
     if (hasUpper) strength++;
     if (hasNumber) strength++;
     if (hasSpecial) strength++;
     if (strength < 3) {
       toast({
         title: 'Mot de passe trop faible',
-        description: 'Votre mot de passe doit contenir au moins 6 caractères, avec des majuscules, des chiffres ou des caractères spéciaux.',
+        description: 'Utilisez au moins 8 caractères avec majuscules, chiffres et caractères spéciaux.',
         variant: 'destructive',
       });
       return;
@@ -118,11 +161,6 @@ export default function Signup() {
 
     if (!acceptedTerms || !acceptedPrivacy) {
       toast({ title: 'Conditions requises', description: 'Veuillez accepter les CGU et la politique de confidentialité pour continuer.', variant: 'destructive' });
-      return;
-    }
-
-    if (password.length < 6) {
-      toast({ title: t('signup.passwordTooShort'), description: t('signup.passwordMinLength'), variant: 'destructive' });
       return;
     }
 
@@ -244,7 +282,12 @@ export default function Signup() {
 
             <div className="space-y-2">
               <Label htmlFor="email">{t('signup.email')} *</Label>
-              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('signup.emailPlaceholder')} className="pulse-input" required />
+              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value.trim())} placeholder={t('signup.emailPlaceholder')} className="pulse-input" required autoComplete="email" />
+            </div>
+
+            {/* Anti-bot honeypot — invisible to users, bots fill it */}
+            <div className="absolute -left-[9999px] opacity-0 h-0 overflow-hidden" aria-hidden="true" tabIndex={-1}>
+              <input type="text" name="website" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} tabIndex={-1} autoComplete="off" />
             </div>
 
             <div className="space-y-2">
@@ -265,7 +308,7 @@ export default function Signup() {
             <div className="space-y-2">
               <Label htmlFor="password">{t('signup.password')} *</Label>
               <div className="relative">
-                <Input id="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('signup.passwordPlaceholder')} className="pulse-input pr-10" required minLength={6} />
+                <Input id="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('signup.passwordPlaceholder')} className="pulse-input pr-10" required minLength={8} autoComplete="new-password" />
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
