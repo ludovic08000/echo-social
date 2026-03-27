@@ -188,7 +188,13 @@ export function ConversationList() {
                               ? `📞 Appel ${conv.last_message.body.includes('video') ? 'vidéo' : 'audio'} terminé`
                               : (conv.last_message.body.startsWith('{') && (conv.last_message.body.includes('"ct"') || conv.last_message.body.includes('"hdr"')))
                                 ? '🔒 Message chiffré'
-                                : conv.last_message.body
+                                : /^🎙️\s*(?:vocal|voice):/.test(conv.last_message.body)
+                                  ? '🎙️ Message vocal'
+                                  : /^GIF:https?:\/\//i.test(conv.last_message.body)
+                                    ? '🖼️ GIF'
+                                    : conv.last_message.body.length > 80
+                                      ? conv.last_message.body.substring(0, 80) + '…'
+                                      : conv.last_message.body
                           : 'Démarrez la conversation…'}
                       </p>
                       {conv.unread_count > 0 && (
