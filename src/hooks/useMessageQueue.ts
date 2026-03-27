@@ -252,8 +252,15 @@ export function useMessageQueue(
   /** Remove a failed message */
   const removeMessage = useCallback(async (localId: string) => {
     await messageQueue.removeMessage(localId);
-    setPendingMessages(prev => prev.filter(m => m.localId !== localId));
+    plaintextCacheRef.current.delete(localId);
+    setRawPendingMessages(prev => prev.filter(m => m.localId !== localId));
   }, []);
+
+  // Enrich pending messages with volatile plaintext from memory cache
+  const pendingMessages = rawPendingMessages.map(m => ({
+    ...m,
+    plaintext: m.plaintext || plaintextCacheRef.current.get(m.localId) || '',
+  }));
 
   return {
     pendingMessages,
