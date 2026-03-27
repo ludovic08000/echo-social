@@ -1,61 +1,56 @@
 /**
- * Shared rate limiter for Edge Functions.
- * Uses in-memory Map (per-isolate) — good enough for Deno Deploy cold-start model.
- * For true distributed rate limiting, use KV or Redis.
+ * Shared rate limiter for Edge Functions — DB-backed (persistent across instances).
+ * Uses public.check_rate_limit() RPC for distributed, crash-safe rate limiting.
  */
 
-interface RateEntry {
-  count: number;
-  resetAt: number;
-}
-
-const store = new Map<string, RateEntry>();
-
-// Cleanup old entries every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of store) {
-    if (now > entry.resetAt) store.delete(key);
-  }
-}, 5 * 60 * 1000);
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 /**
- * Check and apply rate limit.
+ * Check and apply rate limit using persistent DB storage.
  * @returns null if allowed, or a Response(429) if rate-limited.
  */
-export function checkRateLimit(
+export async function checkRateLimit(
   key: string,
   maxRequests: number,
-  windowMs: number,
+  windowSeconds: number,
   headers: Record<string, string>,
-): Response | null {
-  const now = Date.now();
-  let entry = store.get(key);
-
-  if (!entry || now > entry.resetAt) {
-    entry = { count: 1, resetAt: now + windowMs };
-    store.set(key, entry);
-    return null;
-  }
-
-  entry.count++;
-
-  if (entry.count > maxRequests) {
-    const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
-    return new Response(
-      JSON.stringify({ error: "Too many requests", retry_after: retryAfter }),
-      {
-        status: 429,
-        headers: {
-          ...headers,
-          "Content-Type": "application/json",
-          "Retry-After": String(retryAfter),
-        },
-      },
+): Promise<Response | null> {
+  try {
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-  }
 
-  return null;
+    const { data: allowed, error } = await supabase.rpc("check_rate_limit", {
+      p_key: key,
+      p_max_requests: maxRequests,
+      p_window_seconds: windowSeconds,
+    });
+
+    if (error) {
+      console.error("[rate-limit] DB check failed, allowing request:", error.message);
+      return null; // Fail open on DB errors to avoid blocking legitimate users
+    }
+
+    if (!allowed) {
+      return new Response(
+        JSON.stringify({ error: "Too many requests", retry_after: windowSeconds }),
+        {
+          status: 429,
+          headers: {
+            ...headers,
+            "Content-Type": "application/json",
+            "Retry-After": String(windowSeconds),
+          },
+        },
+      );
+    }
+
+    return null;
+  } catch (err) {
+    console.error("[rate-limit] Unexpected error, allowing request:", err);
+    return null; // Fail open
+  }
 }
 
 /**

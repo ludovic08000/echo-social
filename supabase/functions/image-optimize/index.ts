@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
   }
 
   const ip = getClientIP(req);
-  const rateLimited = checkRateLimit(`img-opt:${ip}`, 60, 60_000, headers);
+  const rateLimited = await checkRateLimit(`img-opt:${ip}`, 60, 60, headers);
   if (rateLimited) return rateLimited;
 
   try {
