@@ -436,7 +436,8 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
         pendingSendRef.current = `Traduis ce texte : "${detail.text}"`;
         setInput(pendingSendRef.current);
       } else if (detail?.action === 'rewrite' && detail?.text) {
-        setInput(`Réécris ce texte de manière plus élégante : "${detail.text}"`);
+        pendingSendRef.current = `Réécris ce texte de manière plus élégante : "${detail.text}"`;
+        setInput(pendingSendRef.current);
       } else if (detail?.action) {
         const prompts: Record<string, string> = {
           'search': '',
