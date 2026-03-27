@@ -371,7 +371,7 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
       isMe ? "bg-primary text-primary-foreground" : "bg-secondary",
       error && "opacity-60"
     )}>
-      <audio ref={audioRef} src={audioUrl} preload="metadata" crossOrigin="anonymous" />
+      <audio ref={audioRef} src={audioUrl} preload="metadata" />
       
       <button
         onClick={togglePlay}
