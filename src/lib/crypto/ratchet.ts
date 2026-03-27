@@ -389,7 +389,7 @@ export async function serializeRatchetState(state: RatchetState): Promise<string
 }
 
 export async function deserializeRatchetState(json: string): Promise<RatchetState> {
-  const d = JSON.parse(json);
+  const d = hardGlobals.jsonParse(json);
 
   // ALL keys re-imported as NON-EXTRACTABLE
   const dhSendPub = await importKeyFromJWK(d.dhSendPubJWK, KX_KEY_PARAMS as any, [], false);
