@@ -7,13 +7,14 @@
  * - Fingerprint changes are detected and BLOCK communication until acknowledged
  * - verified=true ONLY when signature is cryptographically verified
  * 
- * ARCHITECTURE (v4):
- * - Primary: Deterministic legacy session (X25519 ECDH → HKDF → AES-256-GCM)
- *   Both sides derive the SAME key from the same shared secret + conversationId.
- *   This ALWAYS works on first message, no handshake needed.
- * - Ratchet upgrade: After both parties have exchanged messages, Double Ratchet
- *   is activated for forward secrecy. Falls back to legacy if ratchet fails.
- * - No fragile initiator/responder role determination.
+ * ARCHITECTURE (v5 — Double Ratchet Primary):
+ * - Primary: Double Ratchet (X25519 DH ratchet + symmetric KDF chain)
+ *   Provides per-message forward secrecy and break-in recovery.
+ *   Auto-initializes on first encrypt if peer DH key is available.
+ * - Fallback: Legacy session (X25519 ECDH → HKDF → AES-256-GCM)
+ *   Used only when ratchet state is unavailable or fails.
+ * - Decrypt auto-upgrades: receiving a ratchet envelope initializes
+ *   the responder-side ratchet for subsequent messages.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
