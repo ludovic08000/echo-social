@@ -292,24 +292,54 @@ serve(async (req) => {
       .order("created_at", { ascending: true })
       .limit(20);
 
-    // ── Fetch user context for Zeus (recent posts, profile, neural engine) ──
+    // ── Fetch user context for Zeus (recent posts, profile, neural engine, MEMORY) ──
     let userContext = "";
     if (agent.slug === "zeus-companion") {
-      const [postsRes, profileRes, metricsRes, feedConfigRes, reportsRes, usageStatsRes] = await Promise.all([
+      const [postsRes, profileRes, metricsRes, feedConfigRes, reportsRes, usageStatsRes, memoriesRes] = await Promise.all([
         supabase.from("posts").select("body, image_url, created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(10),
         supabase.from("profiles").select("name, bio, mood_emoji, city").eq("user_id", userId).maybeSingle(),
-        // Neural Engine: recent metrics
         supabase.from("ai_metrics_log").select("metric_type, value, module_id, created_at").order("created_at", { ascending: false }).limit(50),
-        // Neural Engine: feed algorithm config
         supabase.from("feed_algorithm_config").select("key, value, description").order("key"),
-        // Neural Engine: recent abuse reports
         supabase.from("abuse_reports").select("report_type, status, created_at").order("created_at", { ascending: false }).limit(20),
-        // Neural Engine: platform usage stats
         supabase.from("ai_agent_usage").select("usage_date, message_count").order("usage_date", { ascending: false }).limit(7),
+        // Fetch all memories for this user
+        supabase.from("zeus_memory").select("id, category, content, importance, created_at").eq("user_id", userId).order("importance", { ascending: false }).limit(50),
       ]);
 
       const profile = profileRes.data;
       const posts = postsRes.data || [];
+      const memories = memoriesRes.data || [];
+
+      // ── LONG-TERM MEMORY ──
+      if (memories.length > 0) {
+        const categorized: Record<string, typeof memories> = {};
+        memories.forEach((m: any) => {
+          if (!categorized[m.category]) categorized[m.category] = [];
+          categorized[m.category].push(m);
+        });
+
+        userContext += `\n## 🧠 MÉMOIRE LONG TERME (${memories.length} souvenirs)\n`;
+        userContext += `Tu te SOUVIENS de tout ceci sur l'utilisateur. Utilise ces informations pour personnaliser tes réponses :\n\n`;
+
+        const categoryLabels: Record<string, string> = {
+          preference: '❤️ Préférences', personal: '👤 Personnel', interest: '🎯 Centres d\'intérêt',
+          context: '📌 Contexte', feedback: '💬 Retours', general: '📝 Général',
+          habit: '🔄 Habitudes', emotion: '😊 Émotions', goal: '🎯 Objectifs',
+        };
+
+        for (const [cat, items] of Object.entries(categorized)) {
+          userContext += `### ${categoryLabels[cat] || `📋 ${cat}`}\n`;
+          items.forEach((m: any) => {
+            const date = new Date(m.created_at).toLocaleDateString("fr-FR");
+            userContext += `- ${m.content} _(mémorisé le ${date}, importance: ${m.importance}/10)_\n`;
+          });
+        }
+
+        userContext += `\n**IMPORTANT** : Utilise ces souvenirs naturellement dans tes réponses. Par exemple, si tu sais que l'utilisateur aime le foot, mentionne-le quand c'est pertinent. Si tu sais son prénom, utilise-le !\n`;
+        userContext += `Continue à apprendre : utilise l'outil \`save_memory\` pour mémoriser de nouvelles informations importantes révélées dans la conversation.\n\n`;
+      } else {
+        userContext += `\n## 🧠 MÉMOIRE LONG TERME\nTu n'as encore rien mémorisé sur cet utilisateur. Utilise l'outil \`save_memory\` pour retenir les informations importantes qu'il partage (prénom, intérêts, préférences, contexte personnel, etc.).\n\n`;
+      }
 
       if (profile) {
         userContext += `\n## CONTEXTE UTILISATEUR\n`;
