@@ -540,8 +540,9 @@ serve(async (req) => {
 
       const toolResults = await Promise.all(
         toolCalls.map(async (tc: any) => {
+          const args = JSON.parse(tc.function.arguments || "{}");
+
           if (tc.function.name === "web_search") {
-            const args = JSON.parse(tc.function.arguments || "{}");
             const query = args.query || "";
             const lang = args.language || "fr";
             try {
@@ -562,7 +563,7 @@ serve(async (req) => {
               }
 
               if (results.length === 0) {
-                return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ note: "Aucun résultat web trouvé. Réponds avec tes connaissances.", query }) };
+                return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ note: "Aucun résultat web trouvé.", query }) };
               }
 
               return {
@@ -571,13 +572,95 @@ serve(async (req) => {
                 content: JSON.stringify({
                   query, results_count: results.length,
                   results: results.map((r: any) => ({ title: r.title, snippet: r.snippet, source: r.url })),
-                  instruction: "Synthétise ces résultats de manière claire et cite les sources avec des liens cliquables.",
+                  instruction: "Synthétise ces résultats et cite les sources avec des liens cliquables.",
                 }),
               };
             } catch (err) {
               return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ error: "Recherche échouée", query }) };
             }
           }
+
+          if (tc.function.name === "save_memory") {
+            try {
+              const { content: memContent, category, importance } = args;
+              if (!memContent || memContent.length < 3) {
+                return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ saved: false, reason: "Contenu trop court" }) };
+              }
+              // Check for duplicates (similar content)
+              const { data: existing } = await supabase
+                .from("zeus_memory")
+                .select("id, content")
+                .eq("user_id", userId)
+                .eq("category", category || "general")
+                .limit(100);
+
+              const isDuplicate = (existing || []).some((m: any) =>
+                m.content.toLowerCase().includes(memContent.toLowerCase().slice(0, 30)) ||
+                memContent.toLowerCase().includes(m.content.toLowerCase().slice(0, 30))
+              );
+
+              if (isDuplicate) {
+                // Update importance if higher
+                const match = (existing || []).find((m: any) =>
+                  m.content.toLowerCase().includes(memContent.toLowerCase().slice(0, 30)) ||
+                  memContent.toLowerCase().includes(m.content.toLowerCase().slice(0, 30))
+                );
+                if (match) {
+                  await supabase.from("zeus_memory").update({
+                    content: memContent,
+                    importance: Math.min(10, importance || 5),
+                    updated_at: new Date().toISOString(),
+                  }).eq("id", match.id);
+                }
+                return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ saved: true, updated: true, message: "Souvenir mis à jour" }) };
+              }
+
+              // Limit to 100 memories per user — delete least important if exceeded
+              const { count } = await supabase.from("zeus_memory").select("id", { count: "exact", head: true }).eq("user_id", userId);
+              if ((count || 0) >= 100) {
+                const { data: oldest } = await supabase.from("zeus_memory")
+                  .select("id").eq("user_id", userId)
+                  .order("importance", { ascending: true })
+                  .order("created_at", { ascending: true })
+                  .limit(1);
+                if (oldest?.[0]) await supabase.from("zeus_memory").delete().eq("id", oldest[0].id);
+              }
+
+              await supabase.from("zeus_memory").insert({
+                user_id: userId,
+                category: category || "general",
+                content: memContent,
+                importance: Math.min(10, Math.max(1, importance || 5)),
+                source_message: message.substring(0, 200),
+              });
+
+              return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ saved: true, message: "Mémorisé avec succès !" }) };
+            } catch (err) {
+              console.error("save_memory error:", err);
+              return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ saved: false, error: "Erreur de sauvegarde" }) };
+            }
+          }
+
+          if (tc.function.name === "forget_memory") {
+            try {
+              const keyword = args.memory_content_keyword || "";
+              const { data: matches } = await supabase
+                .from("zeus_memory")
+                .select("id, content")
+                .eq("user_id", userId)
+                .ilike("content", `%${keyword}%`);
+
+              if (matches && matches.length > 0) {
+                const ids = matches.map((m: any) => m.id);
+                await supabase.from("zeus_memory").delete().in("id", ids);
+                return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ deleted: true, count: matches.length, message: `${matches.length} souvenir(s) supprimé(s)` }) };
+              }
+              return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ deleted: false, message: "Aucun souvenir correspondant trouvé" }) };
+            } catch (err) {
+              return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ deleted: false, error: "Erreur" }) };
+            }
+          }
+
           return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ error: "Unknown tool" }) };
         })
       );
@@ -592,7 +675,7 @@ serve(async (req) => {
         body: JSON.stringify({
           model: "google/gemini-3-flash-preview",
           messages: aiMessages,
-          tools: [webSearchTool],
+          tools,
           stream: false,
         }),
       });
