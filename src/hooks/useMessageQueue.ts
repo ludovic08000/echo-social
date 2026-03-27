@@ -106,7 +106,7 @@ export function useMessageQueue(
   useEffect(() => {
     const unsub = messageQueue.subscribe((msgs) => {
       const forConv = msgs.filter(m => m.conversationId === conversationId);
-      setPendingMessages(forConv);
+      setRawPendingMessages(forConv);
     });
 
     // Clean up stuck messages older than 60s on mount
