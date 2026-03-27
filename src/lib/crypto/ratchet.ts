@@ -174,7 +174,7 @@ export async function ratchetEncrypt(
     ...new Uint8Array(encodeString(`${ts}`)),
   ]);
 
-  const sig = await crypto.subtle.sign('Ed25519' as any, signingKey, sigData);
+  const sig = await hardCrypto.sign('Ed25519' as any, signingKey, sigData);
 
   const envelope: RatchetEnvelope = {
     v: PROTOCOL_VERSION,
