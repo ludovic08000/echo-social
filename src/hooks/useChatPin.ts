@@ -188,6 +188,26 @@ async function writeRawIdentityBlob(userId: string, blob: string): Promise<void>
   });
 }
 
+/** Delete raw identity keys from IndexedDB (after PIN wrap) */
+async function deleteRawIdentityBlob(userId: string): Promise<void> {
+  try {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open('forsure-e2ee', 2);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => resolve(req.result);
+    });
+    if (!db.objectStoreNames.contains('identity-keys')) return;
+    const tx = db.transaction('identity-keys', 'readwrite');
+    tx.objectStore('identity-keys').delete(userId);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // DB may not exist yet
+  }
+}
+
 // ─── Hook ───
 
 export function useChatPin() {
