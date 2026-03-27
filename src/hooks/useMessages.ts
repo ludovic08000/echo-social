@@ -7,6 +7,22 @@ import { messageQueue } from '@/lib/messaging/messageQueue';
 
 export const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
 
+// Helper to get the user's custom AI companion name
+async function getCompanionName(userId?: string): Promise<string> {
+  if (!userId) return 'Zeus ⚡';
+  try {
+    const { data } = await supabase
+      .from('zeus_user_settings')
+      .select('custom_name')
+      .eq('user_id', userId)
+      .maybeSingle();
+    const name = data?.custom_name?.trim();
+    return name ? `${name} ⚡` : 'Zeus ⚡';
+  } catch {
+    return 'Zeus ⚡';
+  }
+}
+
 // Send a message to Zeus via the agent-chat edge function, which handles
 // inserting both the user message and Zeus response into the regular messenger
 async function sendToZeus(userId: string, messengerConvId: string, body: string) {
@@ -166,7 +182,8 @@ export function useConversations() {
       const { data: profiles } = await supabase.from('profiles').select('user_id, name, avatar_url').in('user_id', otherUserIds);
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
       if (!profileMap.has(ZEUS_BOT_ID) && otherUserIds.includes(ZEUS_BOT_ID)) {
-        profileMap.set(ZEUS_BOT_ID, { user_id: ZEUS_BOT_ID, name: 'Zeus ⚡', avatar_url: null });
+        const companionName = await getCompanionName(user.id);
+        profileMap.set(ZEUS_BOT_ID, { user_id: ZEUS_BOT_ID, name: companionName, avatar_url: null });
       }
 
       const { data: recentMessages } = await supabase
@@ -246,7 +263,7 @@ export function useMessages(conversationId: string) {
           const enriched = {
             ...newMsg,
             profile: {
-              name: newMsg.sender_id === ZEUS_BOT_ID ? 'Zeus ⚡' : (profile?.name || 'Unknown'),
+              name: newMsg.sender_id === ZEUS_BOT_ID ? (await getCompanionName(user?.id)) : (profile?.name || 'Unknown'),
               avatar_url: profile?.avatar_url || null,
             },
           };
@@ -354,10 +371,13 @@ export function useMessages(conversationId: string) {
 
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
 
+      const hasZeusMessages = visibleMessages.some(m => m.sender_id === ZEUS_BOT_ID);
+      const companionDisplayName = hasZeusMessages ? await getCompanionName(user?.id) : 'Zeus ⚡';
+
       return visibleMessages.map(msg => ({
         ...msg,
         profile: {
-          name: msg.sender_id === ZEUS_BOT_ID ? 'Zeus ⚡' : (profileMap.get(msg.sender_id)?.name || 'Unknown'),
+          name: msg.sender_id === ZEUS_BOT_ID ? companionDisplayName : (profileMap.get(msg.sender_id)?.name || 'Unknown'),
           avatar_url: profileMap.get(msg.sender_id)?.avatar_url || null,
         },
       })) as Message[];

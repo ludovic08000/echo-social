@@ -215,7 +215,7 @@ export function AIAgentChat({ agent, onBack }: Props) {
             ...prev.slice(0, -1),
             {
               role: 'assistant' as const,
-              content: `⚡ **Tu as atteint ta limite de messages gratuits pour aujourd'hui !**\n\nPasse à l'abonnement **Créateur** (5€/mois) pour discuter avec Zeus sans limite, tous les jours. 🚀\n\n[👑 Devenir Créateur](/creator-upgrade)`,
+              content: `⚡ **Tu as atteint ta limite de messages gratuits pour aujourd'hui !**\n\nPasse à l'abonnement **Créateur** (5€/mois) pour discuter sans limite, tous les jours. 🚀\n\n[👑 Devenir Créateur](/creator-upgrade)`,
             },
           ]);
           setIsStreaming(false);
