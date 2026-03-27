@@ -183,7 +183,7 @@ export function verifyCryptoIntegrity(): boolean {
  */
 export function hardenPrototypes() {
   try {
-    const criticalMethods = ['toString', 'valueOf', 'constructor'] as const;
+    const criticalMethods = ['toString', 'valueOf', 'constructor', 'hasOwnProperty'] as const;
     for (const method of criticalMethods) {
       const desc = Object.getOwnPropertyDescriptor(Object.prototype, method);
       if (desc && desc.configurable) {
