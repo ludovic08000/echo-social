@@ -23,11 +23,11 @@ interface WrappedKeyBlob {
 }
 
 function bufToB64(buf: ArrayBuffer): string {
-  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+  return hardGlobals.btoa(String.fromCharCode(...new Uint8Array(buf)));
 }
 
 function b64ToBuf(b64: string): ArrayBuffer {
-  const bin = atob(b64);
+  const bin = hardGlobals.atob(b64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes.buffer;
