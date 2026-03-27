@@ -109,4 +109,36 @@ export function isCryptoLocked(): boolean {
 export function resetCryptoRateLimits() {
   buckets.clear();
   lockdownUntilMap.clear();
+  lockdownHistory.length = 0;
+}
+
+// ─── Auto-wipe on sustained attack ───
+
+const wipeCallbacks: Array<() => void> = [];
+
+/** Register callback for auto-wipe event (e.g. wipeAllKeys + logout) */
+export function onAutoWipe(cb: () => void) {
+  wipeCallbacks.push(cb);
+}
+
+function triggerAutoWipe() {
+  // Wipe all IndexedDB crypto stores
+  try { indexedDB.deleteDatabase('forsure-e2ee'); } catch {}
+  try { indexedDB.deleteDatabase('forsure-ratchet'); } catch {}
+  try { indexedDB.deleteDatabase('forsure-pin-wrap'); } catch {}
+  
+  // Clear localStorage crypto data
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith('forsure-')) keysToRemove.push(key);
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+  } catch {}
+
+  // Notify listeners (e.g. force logout)
+  for (const cb of wipeCallbacks) {
+    try { cb(); } catch {}
+  }
 }
