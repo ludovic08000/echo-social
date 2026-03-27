@@ -11,7 +11,7 @@ const ALLOWED_MIME_TYPES: Record<string, string[]> = {
   stories:     ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"],
   backgrounds: ["image/jpeg", "image/png", "image/webp"],
   documents:   ["image/jpeg", "image/png", "image/webp", "application/pdf"],
-  voice:       ["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/aac", "audio/wav", "audio/x-m4a", "audio/mp4;codecs=mp4a.40.2"],
+  voice:       ["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/aac", "audio/wav", "audio/x-m4a", "audio/mp4;codecs=mp4a.40.2", "application/octet-stream", "audio/x-caf"],
   lives:       ["image/jpeg", "image/png", "image/webp", "video/webm", "video/mp4"],
   feed:        ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"],
   thumbnails:  ["image/jpeg", "image/png", "image/webp"],
@@ -77,7 +77,9 @@ const MIME_EXT_MAP: Record<string, string[]> = {
   "application/pdf": ["pdf"],
 };
 
-function validateMimeExtension(mime: string, filename: string): boolean {
+function validateMimeExtension(mime: string, filename: string, folder?: string): boolean {
+  // Skip extension validation for voice recordings — browsers report inconsistent MIME types
+  if (folder === 'voice') return true;
   const ext = filename.split(".").pop()?.toLowerCase() || "";
   const allowed = MIME_EXT_MAP[mime];
   if (!allowed) return false;
@@ -229,7 +231,7 @@ Deno.serve(async (req) => {
     }
 
     // ─── Validate extension matches MIME ───
-    if (!validateMimeExtension(baseMime, file.name)) {
+    if (!validateMimeExtension(baseMime, file.name, cleanFolder)) {
       return new Response(JSON.stringify({
         error: "L'extension du fichier ne correspond pas à son type MIME",
       }), {
