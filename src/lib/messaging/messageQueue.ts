@@ -688,7 +688,13 @@ class MessageQueueManager {
   private async notifyListeners(conversationId: string) {
     try {
       const msgs = await this.dbGetByConversation(conversationId);
-      const pending = msgs.filter(m => m.status !== 'sent');
+      const pending = msgs
+        .filter(m => m.status !== 'sent')
+        .map(m => ({
+          ...m,
+          // Re-inject volatile plaintext so UI can display the message text
+          plaintext: this.volatilePlaintext.get(m.localId) || m.plaintext || '',
+        }));
       this.listeners.forEach(fn => fn(pending));
     } catch {}
   }
