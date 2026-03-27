@@ -34,8 +34,12 @@ const _JSONstringify = JSON.stringify;
 const _TextEncoder = TextEncoder;
 const _TextDecoder = TextDecoder;
 const _idbOpen = indexedDB.open.bind(indexedDB);
-const _atob = atob;
-const _btoa = btoa;
+const _atob = globalThis.atob.bind(globalThis);
+const _btoa = globalThis.btoa.bind(globalThis);
+
+// Snapshot object identity for deep tamper detection
+const _subtleRef = crypto.subtle;
+const _cryptoRef = crypto;
 
 /** Hardened crypto.subtle — uses snapshotted references */
 export const hardCrypto = Object.freeze({
