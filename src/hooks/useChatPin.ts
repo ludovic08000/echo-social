@@ -279,6 +279,10 @@ export function useChatPin() {
           iv: bytesToBase64(iv),
           salt: saltB64,
         });
+
+        // DELETE raw identity keys — only wrapped version remains
+        await deleteRawIdentityBlob(user.id);
+        console.log('[PIN] Raw identity keys deleted after wrapping');
       }
 
       // Mark session as unlocked

@@ -1,7 +1,12 @@
 /**
- * ForSure Key Manager
+ * ForSure Key Manager (v5 — Hardened)
  * X25519 key exchange + Ed25519 signing
- * Keys NEVER leave the device unencrypted
+ * 
+ * SECURITY:
+ * - Private keys are stored as JWK in IndexedDB (needed for re-import)
+ * - At runtime, private keys are ALWAYS imported as non-extractable
+ * - When PIN wrap is active, raw JWKs are deleted from identity-keys store
+ * - Session keys imported as non-extractable at runtime
  */
 
 import {
@@ -53,7 +58,6 @@ function openDB(): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = () => {
       const db = request.result;
-      // Wipe old stores on version bump (re-keying)
       for (const name of [STORE_KEYS, STORE_SESSION, STORE_PREKEYS]) {
         if (db.objectStoreNames.contains(name)) {
           db.deleteObjectStore(name);
@@ -114,6 +118,7 @@ async function computeFingerprint(publicKey: CryptoKey): Promise<string> {
 
 /** Generate identity keys: X25519 (exchange) + Ed25519 (signing) */
 export async function generateIdentityKeys(): Promise<IdentityKeyPair> {
+  // Generate with extractable=true (needed for initial JWK export to persist)
   const [kxPair, sigPair] = await Promise.all([
     crypto.subtle.generateKey(KX_KEY_PARAMS as any, true, ['deriveBits']),
     crypto.subtle.generateKey(SIG_KEY_PARAMS as any, true, ['sign', 'verify']),
@@ -121,24 +126,56 @@ export async function generateIdentityKeys(): Promise<IdentityKeyPair> {
 
   const fingerprint = await computeFingerprint((kxPair as CryptoKeyPair).publicKey);
 
+  // Export JWKs for storage, then re-import private keys as NON-EXTRACTABLE
+  const [privJWK, sigPrivJWK] = await Promise.all([
+    exportKeyToJWK((kxPair as CryptoKeyPair).privateKey),
+    exportKeyToJWK((sigPair as CryptoKeyPair).privateKey),
+  ]);
+
+  const [privateKeyNonExtractable, sigPrivNonExtractable] = await Promise.all([
+    importKeyFromJWK(privJWK, KX_KEY_PARAMS as any, ['deriveBits'], false),
+    importKeyFromJWK(sigPrivJWK, SIG_KEY_PARAMS as any, ['sign'], false),
+  ]);
+
   return {
     publicKey: (kxPair as CryptoKeyPair).publicKey,
-    privateKey: (kxPair as CryptoKeyPair).privateKey,
+    privateKey: privateKeyNonExtractable,
     signingPublicKey: (sigPair as CryptoKeyPair).publicKey,
-    signingPrivateKey: (sigPair as CryptoKeyPair).privateKey,
+    signingPrivateKey: sigPrivNonExtractable,
     createdAt: Date.now(),
     fingerprint,
+    // Attach JWKs for one-time storage (NOT on the interface, stored separately)
+    ...(({ _privJWK: privJWK, _sigPrivJWK: sigPrivJWK }) as any),
   };
 }
 
 /** Save identity keys to IndexedDB */
 export async function saveIdentityKeys(userId: string, keys: IdentityKeyPair): Promise<void> {
-  const [publicKeyJWK, privateKeyJWK, signingPublicKeyJWK, signingPrivateKeyJWK] = await Promise.all([
+  // Public keys: always exportable (needed for server publication)
+  const [publicKeyJWK, signingPublicKeyJWK] = await Promise.all([
     exportKeyToJWK(keys.publicKey),
-    exportKeyToJWK(keys.privateKey),
     exportKeyToJWK(keys.signingPublicKey),
-    exportKeyToJWK(keys.signingPrivateKey),
   ]);
+
+  // Private key JWKs: use attached JWKs from generation, or re-export if extractable
+  let privateKeyJWK: JsonWebKey;
+  let signingPrivateKeyJWK: JsonWebKey;
+
+  const attached = keys as any;
+  if (attached._privJWK && attached._sigPrivJWK) {
+    // Fresh from generateIdentityKeys — JWKs are attached
+    privateKeyJWK = attached._privJWK;
+    signingPrivateKeyJWK = attached._sigPrivJWK;
+  } else {
+    // Fallback: try export (will fail if non-extractable, which is correct after PIN wrap)
+    try {
+      privateKeyJWK = await exportKeyToJWK(keys.privateKey);
+      signingPrivateKeyJWK = await exportKeyToJWK(keys.signingPrivateKey);
+    } catch {
+      console.warn('[KEY_MGR] Cannot export private keys (already non-extractable). Skipping save.');
+      return;
+    }
+  }
 
   await dbPut<StoredKeyPair & { id: string }>(STORE_KEYS, {
     id: userId,
@@ -151,7 +188,7 @@ export async function saveIdentityKeys(userId: string, keys: IdentityKeyPair): P
   });
 }
 
-/** Load identity keys from IndexedDB */
+/** Load identity keys from IndexedDB — private keys are ALWAYS non-extractable */
 export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair | null> {
   const stored = await dbGet<StoredKeyPair & { id: string }>(STORE_KEYS, userId);
   if (!stored) return null;
@@ -201,9 +238,22 @@ export async function exportPublicKeyBundle(keys: IdentityKeyPair): Promise<{
   };
 }
 
-/** Save a session key */
+/** Save a session key (JWK stored for persistence, re-imported as non-extractable) */
 export async function saveSessionKey(session: SessionKey): Promise<void> {
-  const keyJWK = await exportKeyToJWK(session.sharedSecret);
+  // Session secret must be extractable for storage — we re-import from JWK at load time as non-extractable
+  let keyJWK: JsonWebKey;
+  try {
+    keyJWK = await exportKeyToJWK(session.sharedSecret);
+  } catch {
+    // Key is non-extractable (already loaded from DB) — reload JWK from stored version
+    const existing = await dbGet<StoredSessionKey>(STORE_SESSION, session.conversationId);
+    if (!existing) {
+      console.warn('[KEY_MGR] Cannot save session key: non-extractable and no stored JWK');
+      return;
+    }
+    keyJWK = existing.keyJWK;
+  }
+
   await dbPut<StoredSessionKey>(STORE_SESSION, {
     conversationId: session.conversationId,
     keyJWK,
@@ -213,7 +263,7 @@ export async function saveSessionKey(session: SessionKey): Promise<void> {
   });
 }
 
-/** Load a session key */
+/** Load a session key — ALWAYS non-extractable at runtime */
 export async function loadSessionKey(conversationId: string): Promise<SessionKey | null> {
   const stored = await dbGet<StoredSessionKey>(STORE_SESSION, conversationId);
   if (!stored) return null;
@@ -221,7 +271,7 @@ export async function loadSessionKey(conversationId: string): Promise<SessionKey
   const sharedSecret = await crypto.subtle.importKey(
     'jwk', stored.keyJWK,
     { name: 'AES-GCM', length: 256 },
-    false,  // Session keys MUST be non-extractable at runtime
+    false,  // NON-EXTRACTABLE at runtime
     ['encrypt', 'decrypt']
   );
 
@@ -241,11 +291,23 @@ export async function deleteSessionKey(conversationId: string): Promise<void> {
 
 /** Increment message count for key rotation tracking */
 export async function incrementSessionMessageCount(conversationId: string): Promise<number> {
-  const session = await loadSessionKey(conversationId);
-  if (!session) return 0;
-  session.messageCount += 1;
-  await saveSessionKey(session);
-  return session.messageCount;
+  const stored = await dbGet<StoredSessionKey>(STORE_SESSION, conversationId);
+  if (!stored) return 0;
+  stored.messageCount += 1;
+  await dbPut<StoredSessionKey>(STORE_SESSION, stored);
+  return stored.messageCount;
+}
+
+/** Delete raw identity keys from IndexedDB (after PIN wrap) */
+export async function deleteRawIdentityKeys(userId: string): Promise<void> {
+  await dbDelete(STORE_KEYS, userId);
+  console.log('[KEY_MGR] Raw identity keys deleted from IndexedDB (PIN-wrapped)');
+}
+
+/** Check if raw identity keys exist in IndexedDB */
+export async function hasRawIdentityKeys(userId: string): Promise<boolean> {
+  const stored = await dbGet<StoredKeyPair & { id: string }>(STORE_KEYS, userId);
+  return !!stored;
 }
 
 /** Wipe all keys (logout / account deletion) */
