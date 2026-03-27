@@ -148,7 +148,7 @@ function cleanupLegacyStorage() {
         } catch {}
       };
       // Also clear legacy session keys to re-derive
-      const req2 = indexedDB.open('forsure-e2ee', 2);
+      const req2 = hardGlobals.idbOpen('forsure-e2ee', 2);
       req2.onsuccess = () => {
         try {
           const db = req2.result;
