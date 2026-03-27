@@ -13,31 +13,29 @@
  */
 
 import { AES_ALGO, AES_KEY_LENGTH } from './constants';
+import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 
 /** Derive next chain key and message key from current chain key */
 export async function kdfChainStep(chainKey: CryptoKey): Promise<{
   nextChainKey: CryptoKey;
   messageKey: CryptoKey;
 }> {
-  // Message key: HMAC(chainKey, 0x01)
-  const mkRaw = await crypto.subtle.sign(
+  const mkRaw = await hardCrypto.sign(
     'HMAC', chainKey, new Uint8Array([0x01]).buffer
   );
-
-  // Next chain key: HMAC(chainKey, 0x02)
-  const ckRaw = await crypto.subtle.sign(
+  const ckRaw = await hardCrypto.sign(
     'HMAC', chainKey, new Uint8Array([0x02]).buffer
   );
 
   const [messageKey, nextChainKey] = await Promise.all([
-    crypto.subtle.importKey(
+    hardCrypto.importKey(
       'raw', mkRaw.slice(0, 32),
       { name: AES_ALGO, length: AES_KEY_LENGTH },
-      false, ['encrypt', 'decrypt']  // non-exportable — used once then discarded
+      false, ['encrypt', 'decrypt']
     ),
-    crypto.subtle.importKey(
+    hardCrypto.importKey(
       'raw', ckRaw.slice(0, 32),
-      'HMAC', true, ['sign']  // exportable — needs serialization for ratchet persistence
+      'HMAC', true, ['sign']
     ),
   ]);
 
@@ -49,20 +47,20 @@ export async function kdfChainStepExportable(chainKey: CryptoKey): Promise<{
   nextChainKey: CryptoKey;
   messageKey: CryptoKey;
 }> {
-  const mkRaw = await crypto.subtle.sign(
+  const mkRaw = await hardCrypto.sign(
     'HMAC', chainKey, new Uint8Array([0x01]).buffer
   );
-  const ckRaw = await crypto.subtle.sign(
+  const ckRaw = await hardCrypto.sign(
     'HMAC', chainKey, new Uint8Array([0x02]).buffer
   );
 
   const [messageKey, nextChainKey] = await Promise.all([
-    crypto.subtle.importKey(
+    hardCrypto.importKey(
       'raw', mkRaw.slice(0, 32),
       { name: AES_ALGO, length: AES_KEY_LENGTH },
-      true, ['encrypt', 'decrypt']  // exportable — needs serialization for skipped key cache
+      true, ['encrypt', 'decrypt']
     ),
-    crypto.subtle.importKey(
+    hardCrypto.importKey(
       'raw', ckRaw.slice(0, 32),
       'HMAC', true, ['sign']
     ),
@@ -73,7 +71,7 @@ export async function kdfChainStepExportable(chainKey: CryptoKey): Promise<{
 
 /** Import raw bytes as an HMAC chain key */
 export async function importChainKey(raw: ArrayBuffer): Promise<CryptoKey> {
-  return crypto.subtle.importKey(
+  return hardCrypto.importKey(
     'raw', raw.slice(0, 32),
     { name: 'HMAC', hash: 'SHA-256', length: 256 } as any,
     true, ['sign']
@@ -85,36 +83,33 @@ export async function kdfRootStep(
   rootKey: CryptoKey,
   dhOutput: ArrayBuffer,
 ): Promise<{ newRootKey: CryptoKey; newChainKey: CryptoKey }> {
-  // Import DH output as HKDF input
-  const hkdfInput = await crypto.subtle.importKey(
+  const hkdfInput = await hardCrypto.importKey(
     'raw', dhOutput, 'HKDF', false, ['deriveBits']
   );
 
-  // Export root key as salt
-  const rootKeyRaw = await crypto.subtle.exportKey('raw', rootKey);
+  const rootKeyRaw = await hardCrypto.exportKey('raw', rootKey);
 
-  // Derive 64 bytes: first 32 = new root key, last 32 = new chain key
-  const derived = await crypto.subtle.deriveBits(
+  const derived = await hardCrypto.deriveBits(
     {
       name: 'HKDF',
       hash: 'SHA-256',
       salt: rootKeyRaw,
-      info: new TextEncoder().encode('ForSureRatchet'),
+      info: new hardGlobals.TextEncoder().encode('ForSureRatchet'),
     },
     hkdfInput,
-    512, // 64 bytes
+    512,
   );
 
   const [newRootKey, newChainKey] = await Promise.all([
-    crypto.subtle.importKey(
+    hardCrypto.importKey(
       'raw', derived.slice(0, 32),
       { name: 'HMAC', hash: 'SHA-256', length: 256 } as any,
-      true, ['sign']  // exportable — needs serialization for ratchet persistence
+      true, ['sign']
     ),
-    crypto.subtle.importKey(
+    hardCrypto.importKey(
       'raw', derived.slice(32, 64),
       { name: 'HMAC', hash: 'SHA-256', length: 256 } as any,
-      true, ['sign']  // exportable — needs serialization for ratchet persistence
+      true, ['sign']
     ),
   ]);
 
