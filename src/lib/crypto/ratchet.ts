@@ -168,7 +168,7 @@ export async function ratchetEncrypt(
 
   // Sign: header || iv || ciphertext
   const sigData = new Uint8Array([
-    ...new Uint8Array(encodeString(JSON.stringify(header))),
+    ...new Uint8Array(encodeString(hardGlobals.jsonStringify(header))),
     ...iv,
     ...new Uint8Array(ct as ArrayBuffer),
     ...new Uint8Array(encodeString(`${ts}`)),
