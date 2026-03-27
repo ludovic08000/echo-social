@@ -323,7 +323,7 @@ async function decryptWithKey(
   const iv = base64ToBuffer(envelope.iv);
   const ct = base64ToBuffer(envelope.ct);
 
-  const ptBuf = await crypto.subtle.decrypt(
+  const ptBuf = await hardCrypto.decrypt(
     { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128 },
     messageKey,
     ct,
