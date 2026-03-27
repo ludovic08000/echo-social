@@ -73,19 +73,17 @@ export async function initRatchetAsInitiator(
   peerDhPublicKey: CryptoKey,
 ): Promise<RatchetState> {
   // Generate our first ratchet key pair
-  const dhPair = await crypto.subtle.generateKey(
+  const dhPair = await hardCrypto.generateKey(
     KX_KEY_PARAMS as any, true, ['deriveBits']
   ) as CryptoKeyPair;
 
-  // Initial root key from shared secret
-  const rootKey = await crypto.subtle.importKey(
+  const rootKey = await hardCrypto.importKey(
     'raw', sharedSecret.slice(0, 32),
     { name: 'HMAC', hash: 'SHA-256', length: 256 } as any,
     true, ['sign']
   );
 
-  // Perform first DH ratchet step
-  const dhOutput = await crypto.subtle.deriveBits(
+  const dhOutput = await hardCrypto.deriveBits(
     { name: 'X25519', public: peerDhPublicKey } as any,
     dhPair.privateKey,
     256,
