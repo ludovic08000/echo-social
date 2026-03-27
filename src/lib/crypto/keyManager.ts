@@ -104,7 +104,7 @@ function dbDelete(storeName: string, key: string): Promise<void> {
 // ─── Fingerprint (safety numbers) ───
 
 async function computeFingerprint(publicKey: CryptoKey): Promise<string> {
-  const raw = await crypto.subtle.exportKey('raw', publicKey);
+  const raw = await hardCrypto.exportKey('raw', publicKey);
   const hash = await crypto.subtle.digest('SHA-256', raw);
   const bytes = new Uint8Array(hash);
   let fp = '';
