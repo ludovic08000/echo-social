@@ -81,7 +81,7 @@ export async function wrapKeysWithPin(
   const iv = hardCrypto.getRandomValues(new Uint8Array(12));
   const wrapKey = await deriveWrappingKey(pin, salt);
 
-  const plaintext = new TextEncoder().encode(JSON.stringify(jwkBundle));
+  const plaintext = new hardGlobals.TextEncoder().encode(hardGlobals.jsonStringify(jwkBundle));
   const ciphertext = await hardCrypto.encrypt(
     { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
     wrapKey,
