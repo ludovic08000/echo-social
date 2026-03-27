@@ -149,7 +149,7 @@ function AppContent() {
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/forgot-password" element={<PublicOnlyRoute><ForgotPassword /></PublicOnlyRoute>} />
               <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+              <Route path="/onboarding" element={<Onboarding />} />
               
               {/* Protected routes */}
               <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
