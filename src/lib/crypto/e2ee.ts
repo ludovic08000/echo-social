@@ -23,6 +23,7 @@ import {
   randomBytes, bufferToBase64, base64ToBuffer,
   concatBuffers, encodeString, decodeString,
 } from './utils';
+import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import {
   type IdentityKeyPair, type SessionKey,
   loadSessionKey, saveSessionKey, deleteSessionKey,
