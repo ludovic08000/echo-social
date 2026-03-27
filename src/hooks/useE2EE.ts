@@ -7,13 +7,14 @@
  * - Fingerprint changes are detected and BLOCK communication until acknowledged
  * - verified=true ONLY when signature is cryptographically verified
  * 
- * ARCHITECTURE (v4):
- * - Primary: Deterministic legacy session (X25519 ECDH → HKDF → AES-256-GCM)
- *   Both sides derive the SAME key from the same shared secret + conversationId.
- *   This ALWAYS works on first message, no handshake needed.
- * - Ratchet upgrade: After both parties have exchanged messages, Double Ratchet
- *   is activated for forward secrecy. Falls back to legacy if ratchet fails.
- * - No fragile initiator/responder role determination.
+ * ARCHITECTURE (v5 — Double Ratchet Primary):
+ * - Primary: Double Ratchet (X25519 DH ratchet + symmetric KDF chain)
+ *   Provides per-message forward secrecy and break-in recovery.
+ *   Auto-initializes on first encrypt if peer DH key is available.
+ * - Fallback: Legacy session (X25519 ECDH → HKDF → AES-256-GCM)
+ *   Used only when ratchet state is unavailable or fails.
+ * - Decrypt auto-upgrades: receiving a ratchet envelope initializes
+ *   the responder-side ratchet for subsequent messages.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -30,6 +31,8 @@ import {
   incrementSessionMessageCount,
   needsKeyRotation,
   rotateSessionKey,
+  initRatchetAsInitiator,
+  initRatchetAsResponder,
   ratchetEncrypt,
   ratchetDecrypt,
   serializeRatchetState,
@@ -40,7 +43,7 @@ import {
 } from '@/lib/crypto';
 import { base64ToBuffer } from '@/lib/crypto/utils';
 import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
-import { verifyCryptoIntegrity, isTampered, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
+import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/lib/crypto/cryptoIntegrity';
 import { KX_KEY_PARAMS } from '@/lib/crypto/constants';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
@@ -394,15 +397,67 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   }, [conversationId]);
 
   /**
+   * Initialize Double Ratchet as initiator (sender of first ratchet message).
+   * Derives shared secret from legacy session, then creates ratchet state.
+   */
+  const initRatchetIfNeeded = useCallback(async (): Promise<RatchetState | null> => {
+    if (!conversationId || !keysRef.current || !peerKeyRef.current) return null;
+
+    // Already have a ratchet? Use it.
+    if (ratchetRef.current) return ratchetRef.current;
+
+    // Try loading persisted ratchet
+    const persisted = await loadRatchetLocal(conversationId);
+    if (persisted) {
+      ratchetRef.current = persisted;
+      return persisted;
+    }
+
+    // Initialize as initiator using legacy shared secret as seed
+    try {
+      const session = await ensureLegacySession();
+      if (!session) return null;
+
+      // Import peer identity key as X25519 public key for DH ratchet
+      const peerDhKey = await hardCrypto.importKey(
+        'raw',
+        base64ToBuffer(peerKeyRef.current.identityKey),
+        KX_KEY_PARAMS as any,
+        true,
+        [],
+      );
+
+      // Use shared secret from legacy session as ratchet seed
+      const sharedSecretRaw = await hardCrypto.exportKey('raw', session.sharedSecret);
+
+      const ratchet = await initRatchetAsInitiator(
+        conversationId,
+        sharedSecretRaw,
+        peerDhKey,
+      );
+
+      ratchetRef.current = ratchet;
+      await saveRatchetLocal(conversationId, ratchet);
+      console.log('[E2EE] 🔄 Double Ratchet initialized as initiator');
+      return ratchet;
+    } catch (e) {
+      console.warn('[E2EE] Ratchet init failed, will use legacy:', e);
+      return null;
+    }
+  }, [conversationId, ensureLegacySession]);
+
+  /**
    * Encrypt — NEVER returns plaintext.
-   * Uses legacy session (deterministic, instant) as primary.
-   * Throws EncryptionError if encryption fails.
+   * PRIMARY: Double Ratchet (per-message forward secrecy).
+   * FALLBACK: Legacy session (deterministic AES-GCM).
+   * Throws EncryptionError if all paths fail.
    */
   const encrypt = useCallback(async (plaintext: string): Promise<string> => {
     console.log('[E2EE] encrypt() called', {
       hasKeys: !!keysRef.current,
       hasPeerKey: !!peerKeyRef.current,
       fingerprintChanged: state.fingerprintChanged,
+      hasRatchet: !!ratchetRef.current,
     });
 
     // BLOCK if crypto has been tampered with
@@ -437,7 +492,27 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       throw new EncryptionError('Rate limited — possible exfiltration attempt');
     }
 
-    // PRIMARY: Use legacy session (deterministic, instant, always works)
+    // PRIMARY: Double Ratchet (per-message forward secrecy)
+    try {
+      const ratchet = await initRatchetIfNeeded();
+      if (ratchet) {
+        const { envelope, newState } = await ratchetEncrypt(
+          ratchet,
+          plaintext,
+          keysRef.current.signingPrivateKey,
+          keysRef.current.fingerprint,
+        );
+        ratchetRef.current = newState;
+        await saveRatchetLocal(conversationId!, newState);
+        setState(s => ({ ...s, ratchetActive: true }));
+        console.log('[E2EE] ✅ encrypt via Double Ratchet (forward secrecy)');
+        return hardGlobals.jsonStringify(envelope);
+      }
+    } catch (ratchetErr) {
+      console.warn('[E2EE] Ratchet encrypt failed, falling back to legacy:', ratchetErr);
+    }
+
+    // FALLBACK: Legacy session (deterministic, instant, always works)
     try {
       const session = await ensureLegacySession();
       if (!session) {
@@ -449,14 +524,14 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         plaintext, session.sharedSecret,
         keysRef.current.signingPrivateKey, keysRef.current.fingerprint, seq,
       );
-      console.log('[E2EE] ✅ encrypt success');
+      console.log('[E2EE] ✅ encrypt via legacy session (fallback)');
       return result;
     } catch (err) {
       if (err instanceof EncryptionError) throw err;
       console.error('[E2EE] ❌ Encrypt failed:', err);
       throw new EncryptionError(`Encryption failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [state.fingerprintChanged, conversationId, user, ensureLegacySession]);
+  }, [state.fingerprintChanged, conversationId, user, ensureLegacySession, initRatchetIfNeeded]);
 
   /**
    * Decrypt — NEVER shows raw ciphertext.
@@ -478,9 +553,36 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     try {
       if (isRatchetEnvelope(body)) {
-        // Try ratchet decrypt first
         const envelope: RatchetEnvelope = hardGlobals.jsonParse(body);
         let ratchet = ratchetRef.current;
+
+        // Auto-init ratchet as responder if we don't have one yet
+        if (!ratchet && conversationId && keysRef.current) {
+          try {
+            const persisted = await loadRatchetLocal(conversationId);
+            if (persisted) {
+              ratchet = persisted;
+              ratchetRef.current = ratchet;
+            } else {
+              // Initialize as responder using legacy shared secret as seed
+              const session = await ensureLegacySession();
+              if (session) {
+                const sharedSecretRaw = await hardCrypto.exportKey('raw', session.sharedSecret);
+                // Generate our DH key pair for the ratchet
+                const ourDhPair = await hardCrypto.generateKey(
+                  KX_KEY_PARAMS as any, true, ['deriveBits']
+                ) as CryptoKeyPair;
+                ratchet = await initRatchetAsResponder(
+                  conversationId, sharedSecretRaw, ourDhPair,
+                );
+                ratchetRef.current = ratchet;
+                console.log('[E2EE] 🔄 Double Ratchet initialized as responder');
+              }
+            }
+          } catch (initErr) {
+            console.warn('[E2EE] Ratchet responder init failed:', initErr);
+          }
+        }
 
         if (ratchet) {
           try {
@@ -489,13 +591,14 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             );
             ratchetRef.current = newState;
             await saveRatchetLocal(conversationId!, newState);
+            setState(s => ({ ...s, ratchetActive: true }));
             return { text: plaintext, encrypted: true, verified };
           } catch (ratchetErr) {
             console.warn('[E2EE] Ratchet decrypt failed, trying legacy:', ratchetErr);
           }
         }
 
-        // Ratchet envelopes that can't be decrypted by ratchet
+        // Ratchet envelopes that can't be decrypted — show locked message
         return { text: '🔒 Message illisible (session expirée)', encrypted: true, verified: false };
       }
 
