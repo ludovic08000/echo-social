@@ -683,7 +683,7 @@ export default function Profile() {
                    {isCreator && <TipButton creatorId={userId!} creatorName={profile.name} />}
                   <Button 
                     variant="secondary" 
-                    className="rounded-xl h-10 text-sm whitespace-nowrap shrink-0"
+                    className="rounded-xl h-10 text-sm whitespace-nowrap"
                     onClick={() => {
                       setActiveTab('albums');
                       setSelectedAlbum(null);
