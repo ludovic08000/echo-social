@@ -157,7 +157,7 @@ export async function decryptMessage(
   sessionKey: CryptoKey,
   peerSigningKeyBase64?: string,
 ): Promise<{ plaintext: string; verified: boolean; fingerprint: string }> {
-  const envelope: EncryptedEnvelope = JSON.parse(envelopeStr);
+  const envelope: EncryptedEnvelope = hardGlobals.jsonParse(envelopeStr);
 
   // Accept v1 (legacy P-384) and v2 (X25519) envelopes
   if (envelope.v > PROTOCOL_VERSION) {
