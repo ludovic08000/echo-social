@@ -302,7 +302,28 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
   const [error, setError] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(duration || 0);
+  const [blobSrc, setBlobSrc] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const triedBlobRef = useRef(false);
+
+  // On iOS Safari, webm URLs won't play via <audio src>.
+  // Fallback: fetch as blob and create an object URL, which sometimes works
+  // for formats the browser can partially decode.
+  const tryBlobFallback = useCallback(async () => {
+    if (triedBlobRef.current) return;
+    triedBlobRef.current = true;
+    try {
+      const res = await fetch(audioUrl);
+      if (!res.ok) throw new Error('fetch failed');
+      const blob = await res.blob();
+      // Try to re-tag as audio/mp4 if it's webm (won't fix codec but helps some browsers)
+      const url = URL.createObjectURL(blob);
+      setBlobSrc(url);
+      setError(false);
+    } catch {
+      setError(true);
+    }
+  }, [audioUrl]);
 
   const togglePlay = (e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -318,8 +339,13 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
       audio.volume = 1;
       audio.play().catch((err) => {
         console.error('Voice playback error:', err);
-        setError(true);
-        toast.error('Impossible de lire ce vocal');
+        // Try blob fallback before giving up
+        if (!triedBlobRef.current) {
+          tryBlobFallback();
+        } else {
+          setError(true);
+          toast.error('Impossible de lire ce vocal');
+        }
       });
       return;
     }
@@ -339,13 +365,19 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
     const onEnd = () => { setPlaying(false); setProgress(0); setCurrentTime(0); };
     const onError = () => {
       setPlaying(false);
-      setError(true);
       console.error('Audio element error:', audio.error?.code, audio.error?.message, 'src:', audioUrl);
+      // Try blob fallback on first error
+      if (!triedBlobRef.current) {
+        tryBlobFallback();
+      } else {
+        setError(true);
+      }
     };
     const onLoaded = () => {
       if (audio.duration && isFinite(audio.duration)) {
         setAudioDuration(audio.duration);
       }
+      setError(false);
     };
 
     audio.addEventListener('timeupdate', onTime);
@@ -363,15 +395,23 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
       audio.removeEventListener('error', onError);
       audio.removeEventListener('loadedmetadata', onLoaded);
     };
-  }, [audioUrl]);
+  }, [audioUrl, blobSrc, tryBlobFallback]);
 
-  const formatDuration = (s: number) => {
+  // Cleanup blob URL
+  useEffect(() => {
+    return () => {
+      if (blobSrc) URL.revokeObjectURL(blobSrc);
+    };
+  }, [blobSrc]);
+
+  const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
     const sec = Math.floor(s % 60);
     return `${m}:${sec.toString().padStart(2, '0')}`;
   };
 
-  const displayTime = playing ? formatDuration(currentTime) : formatDuration(audioDuration);
+  const displayTime = playing ? formatTime(currentTime) : formatTime(audioDuration);
+  const effectiveSrc = blobSrc || audioUrl;
 
   return (
     <div className={cn(
@@ -379,7 +419,7 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
       isMe ? "bg-primary text-primary-foreground" : "bg-secondary",
       error && "opacity-60"
     )}>
-      <audio ref={audioRef} src={audioUrl} preload="metadata" />
+      <audio ref={audioRef} src={effectiveSrc} preload="metadata" playsInline />
       
       <button
         onClick={togglePlay}
@@ -404,7 +444,7 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
       <div className="flex-1 flex flex-col gap-0.5">
         {error ? (
           <span className={cn("text-[10px]", isMe ? "text-primary-foreground/70" : "text-muted-foreground")}>
-            Format non supporté
+            Format non supporté sur cet appareil
           </span>
         ) : (
           <>
