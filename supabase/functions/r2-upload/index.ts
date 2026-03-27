@@ -123,12 +123,9 @@ Deno.serve(async (req) => {
     const userId = claimsData?.claims?.sub as string | undefined;
     if (claimsError || !userId) throw new Error("Not authenticated");
 
-    // ─── Rate limit ───
-    if (!checkRateLimit(userId)) {
-      return new Response(JSON.stringify({ error: "Trop de requêtes. Réessayez dans un moment." }), {
-        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    // ─── Rate limit (DB-backed, persistent) ───
+    const rateLimited = await checkRateLimitDB(`upload:${userId}`, RATE_LIMIT, RATE_WINDOW_S, corsHeaders);
+    if (rateLimited) return rateLimited;
 
     // ─── Fetch user profile for folder structure ───
     const serviceClient = createClient(

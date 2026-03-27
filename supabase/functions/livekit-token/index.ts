@@ -36,11 +36,8 @@ Deno.serve(async (req) => {
 
     const userId = user.id;
 
-    if (!checkRateLimit(userId)) {
-      return new Response(JSON.stringify({ error: "Trop de requêtes" }), {
-        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const rateLimited = await checkRateLimitDB(`livekit:${userId}`, 10, 60, corsHeaders);
+    if (rateLimited) return rateLimited;
 
     const { roomName, isHost } = await req.json();
 
