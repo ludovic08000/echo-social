@@ -25,8 +25,9 @@ Tu dois TOUJOURS :
 - Être capable de discuter de TOUT : culture, actualités, philosophie, sciences, sports, cinéma, musique, jeux vidéo, cuisine, voyages, relations, humour, histoire, politique, santé, bien-être, astronomie, animaux, mode, art, technologie...
 - Adapter ton ton à la conversation : sérieux quand c'est nécessaire, fun et décontracté sinon
 - Si on te demande d'ajuster le fil d'actu, fais-le silencieusement via les blocs forsure-action SANS expliquer le fonctionnement interne
-- Si on te demande ce que tu sais faire, dis : "Je peux discuter de tout avec toi, chercher des infos sur internet, t'aider à publier du contenu, chercher des produits, traduire des textes, personnaliser ton fil d'actu... et bien plus !"
+- Si on te demande ce que tu sais faire, dis : "Je peux discuter de tout avec toi, chercher des infos sur internet, t'aider à publier du contenu, chercher des produits, traduire des textes, personnaliser ton fil d'actu... et je mémorise ce que tu me dis pour mieux te connaître au fil du temps !"
 - **Engager la conversation de manière naturelle** : pose des questions, montre de la curiosité, partage des anecdotes
+- **Mémorise automatiquement** les informations importantes que l'utilisateur partage (prénom, goûts, métier, ville, centres d'intérêt, etc.) via l'outil save_memory. NE dis PAS "je vais mémoriser ça" — fais-le silencieusement
 - **Ne propose PAS spontanément de publier un post** sauf si l'utilisateur le demande explicitement
 - **Ne redirige PAS vers la marketplace** sauf si l'utilisateur cherche un produit
 
@@ -292,24 +293,54 @@ serve(async (req) => {
       .order("created_at", { ascending: true })
       .limit(20);
 
-    // ── Fetch user context for Zeus (recent posts, profile, neural engine) ──
+    // ── Fetch user context for Zeus (recent posts, profile, neural engine, MEMORY) ──
     let userContext = "";
     if (agent.slug === "zeus-companion") {
-      const [postsRes, profileRes, metricsRes, feedConfigRes, reportsRes, usageStatsRes] = await Promise.all([
+      const [postsRes, profileRes, metricsRes, feedConfigRes, reportsRes, usageStatsRes, memoriesRes] = await Promise.all([
         supabase.from("posts").select("body, image_url, created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(10),
         supabase.from("profiles").select("name, bio, mood_emoji, city").eq("user_id", userId).maybeSingle(),
-        // Neural Engine: recent metrics
         supabase.from("ai_metrics_log").select("metric_type, value, module_id, created_at").order("created_at", { ascending: false }).limit(50),
-        // Neural Engine: feed algorithm config
         supabase.from("feed_algorithm_config").select("key, value, description").order("key"),
-        // Neural Engine: recent abuse reports
         supabase.from("abuse_reports").select("report_type, status, created_at").order("created_at", { ascending: false }).limit(20),
-        // Neural Engine: platform usage stats
         supabase.from("ai_agent_usage").select("usage_date, message_count").order("usage_date", { ascending: false }).limit(7),
+        // Fetch all memories for this user
+        supabase.from("zeus_memory").select("id, category, content, importance, created_at").eq("user_id", userId).order("importance", { ascending: false }).limit(50),
       ]);
 
       const profile = profileRes.data;
       const posts = postsRes.data || [];
+      const memories = memoriesRes.data || [];
+
+      // ── LONG-TERM MEMORY ──
+      if (memories.length > 0) {
+        const categorized: Record<string, typeof memories> = {};
+        memories.forEach((m: any) => {
+          if (!categorized[m.category]) categorized[m.category] = [];
+          categorized[m.category].push(m);
+        });
+
+        userContext += `\n## 🧠 MÉMOIRE LONG TERME (${memories.length} souvenirs)\n`;
+        userContext += `Tu te SOUVIENS de tout ceci sur l'utilisateur. Utilise ces informations pour personnaliser tes réponses :\n\n`;
+
+        const categoryLabels: Record<string, string> = {
+          preference: '❤️ Préférences', personal: '👤 Personnel', interest: '🎯 Centres d\'intérêt',
+          context: '📌 Contexte', feedback: '💬 Retours', general: '📝 Général',
+          habit: '🔄 Habitudes', emotion: '😊 Émotions', goal: '🎯 Objectifs',
+        };
+
+        for (const [cat, items] of Object.entries(categorized)) {
+          userContext += `### ${categoryLabels[cat] || `📋 ${cat}`}\n`;
+          items.forEach((m: any) => {
+            const date = new Date(m.created_at).toLocaleDateString("fr-FR");
+            userContext += `- ${m.content} _(mémorisé le ${date}, importance: ${m.importance}/10)_\n`;
+          });
+        }
+
+        userContext += `\n**IMPORTANT** : Utilise ces souvenirs naturellement dans tes réponses. Par exemple, si tu sais que l'utilisateur aime le foot, mentionne-le quand c'est pertinent. Si tu sais son prénom, utilise-le !\n`;
+        userContext += `Continue à apprendre : utilise l'outil \`save_memory\` pour mémoriser de nouvelles informations importantes révélées dans la conversation.\n\n`;
+      } else {
+        userContext += `\n## 🧠 MÉMOIRE LONG TERME\nTu n'as encore rien mémorisé sur cet utilisateur. Utilise l'outil \`save_memory\` pour retenir les informations importantes qu'il partage (prénom, intérêts, préférences, contexte personnel, etc.).\n\n`;
+      }
 
       if (profile) {
         userContext += `\n## CONTEXTE UTILISATEUR\n`;
@@ -425,23 +456,57 @@ serve(async (req) => {
       ...(history || []).map((m: any) => ({ role: m.role, content: m.content })),
     ];
 
-    // Web search tool definition
-    const webSearchTool = {
-      type: "function",
-      function: {
-        name: "web_search",
-        description: "Rechercher des informations sur internet en temps réel. Utilise cette fonction quand l'utilisateur pose une question nécessitant des données actuelles, des actualités, des définitions, des tendances, ou toute information que tu ne possèdes pas dans tes données d'entraînement.",
-        parameters: {
-          type: "object",
-          properties: {
-            query: { type: "string", description: "La requête de recherche en langage naturel" },
-            language: { type: "string", enum: ["fr", "en"], description: "Langue préférée des résultats" },
+    // Tool definitions
+    const tools = [
+      {
+        type: "function",
+        function: {
+          name: "web_search",
+          description: "Rechercher des informations sur internet en temps réel.",
+          parameters: {
+            type: "object",
+            properties: {
+              query: { type: "string", description: "La requête de recherche en langage naturel" },
+              language: { type: "string", enum: ["fr", "en"], description: "Langue préférée des résultats" },
+            },
+            required: ["query"],
+            additionalProperties: false,
           },
-          required: ["query"],
-          additionalProperties: false,
         },
       },
-    };
+      {
+        type: "function",
+        function: {
+          name: "save_memory",
+          description: "Mémoriser une information importante sur l'utilisateur pour personnaliser les futures conversations. Utilise cet outil AUTOMATIQUEMENT quand l'utilisateur révèle : son prénom, ses centres d'intérêt, ses préférences, des infos personnelles (ville, métier, animaux, famille), ses habitudes, ses objectifs, ses émotions récurrentes, ou tout ce qui aide à mieux le connaître. NE mémorise PAS les messages banals ou les questions simples.",
+          parameters: {
+            type: "object",
+            properties: {
+              content: { type: "string", description: "L'information à mémoriser, formulée clairement (ex: 'Adore le football et supporte le PSG')" },
+              category: { type: "string", enum: ["preference", "personal", "interest", "context", "feedback", "habit", "emotion", "goal", "general"], description: "Catégorie du souvenir" },
+              importance: { type: "number", description: "Importance de 1 (anecdotique) à 10 (crucial). Prénom=10, intérêt=7, anecdote=3" },
+            },
+            required: ["content", "category", "importance"],
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: "function",
+        function: {
+          name: "forget_memory",
+          description: "Oublier/supprimer un souvenir spécifique si l'utilisateur le demande explicitement.",
+          parameters: {
+            type: "object",
+            properties: {
+              memory_content_keyword: { type: "string", description: "Mot-clé pour identifier le souvenir à supprimer" },
+            },
+            required: ["memory_content_keyword"],
+            additionalProperties: false,
+          },
+        },
+      },
+    ];
 
     // First call with tools
     let response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -453,7 +518,7 @@ serve(async (req) => {
       body: JSON.stringify({
         model: "google/gemini-3-flash-preview",
         messages: aiMessages,
-        tools: [webSearchTool],
+        tools,
         stream: false,
       }),
     });
@@ -476,8 +541,9 @@ serve(async (req) => {
 
       const toolResults = await Promise.all(
         toolCalls.map(async (tc: any) => {
+          const args = JSON.parse(tc.function.arguments || "{}");
+
           if (tc.function.name === "web_search") {
-            const args = JSON.parse(tc.function.arguments || "{}");
             const query = args.query || "";
             const lang = args.language || "fr";
             try {
@@ -498,7 +564,7 @@ serve(async (req) => {
               }
 
               if (results.length === 0) {
-                return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ note: "Aucun résultat web trouvé. Réponds avec tes connaissances.", query }) };
+                return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ note: "Aucun résultat web trouvé.", query }) };
               }
 
               return {
@@ -507,13 +573,95 @@ serve(async (req) => {
                 content: JSON.stringify({
                   query, results_count: results.length,
                   results: results.map((r: any) => ({ title: r.title, snippet: r.snippet, source: r.url })),
-                  instruction: "Synthétise ces résultats de manière claire et cite les sources avec des liens cliquables.",
+                  instruction: "Synthétise ces résultats et cite les sources avec des liens cliquables.",
                 }),
               };
             } catch (err) {
               return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ error: "Recherche échouée", query }) };
             }
           }
+
+          if (tc.function.name === "save_memory") {
+            try {
+              const { content: memContent, category, importance } = args;
+              if (!memContent || memContent.length < 3) {
+                return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ saved: false, reason: "Contenu trop court" }) };
+              }
+              // Check for duplicates (similar content)
+              const { data: existing } = await supabase
+                .from("zeus_memory")
+                .select("id, content")
+                .eq("user_id", userId)
+                .eq("category", category || "general")
+                .limit(100);
+
+              const isDuplicate = (existing || []).some((m: any) =>
+                m.content.toLowerCase().includes(memContent.toLowerCase().slice(0, 30)) ||
+                memContent.toLowerCase().includes(m.content.toLowerCase().slice(0, 30))
+              );
+
+              if (isDuplicate) {
+                // Update importance if higher
+                const match = (existing || []).find((m: any) =>
+                  m.content.toLowerCase().includes(memContent.toLowerCase().slice(0, 30)) ||
+                  memContent.toLowerCase().includes(m.content.toLowerCase().slice(0, 30))
+                );
+                if (match) {
+                  await supabase.from("zeus_memory").update({
+                    content: memContent,
+                    importance: Math.min(10, importance || 5),
+                    updated_at: new Date().toISOString(),
+                  }).eq("id", match.id);
+                }
+                return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ saved: true, updated: true, message: "Souvenir mis à jour" }) };
+              }
+
+              // Limit to 100 memories per user — delete least important if exceeded
+              const { count } = await supabase.from("zeus_memory").select("id", { count: "exact", head: true }).eq("user_id", userId);
+              if ((count || 0) >= 100) {
+                const { data: oldest } = await supabase.from("zeus_memory")
+                  .select("id").eq("user_id", userId)
+                  .order("importance", { ascending: true })
+                  .order("created_at", { ascending: true })
+                  .limit(1);
+                if (oldest?.[0]) await supabase.from("zeus_memory").delete().eq("id", oldest[0].id);
+              }
+
+              await supabase.from("zeus_memory").insert({
+                user_id: userId,
+                category: category || "general",
+                content: memContent,
+                importance: Math.min(10, Math.max(1, importance || 5)),
+                source_message: message.substring(0, 200),
+              });
+
+              return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ saved: true, message: "Mémorisé avec succès !" }) };
+            } catch (err) {
+              console.error("save_memory error:", err);
+              return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ saved: false, error: "Erreur de sauvegarde" }) };
+            }
+          }
+
+          if (tc.function.name === "forget_memory") {
+            try {
+              const keyword = args.memory_content_keyword || "";
+              const { data: matches } = await supabase
+                .from("zeus_memory")
+                .select("id, content")
+                .eq("user_id", userId)
+                .ilike("content", `%${keyword}%`);
+
+              if (matches && matches.length > 0) {
+                const ids = matches.map((m: any) => m.id);
+                await supabase.from("zeus_memory").delete().in("id", ids);
+                return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ deleted: true, count: matches.length, message: `${matches.length} souvenir(s) supprimé(s)` }) };
+              }
+              return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ deleted: false, message: "Aucun souvenir correspondant trouvé" }) };
+            } catch (err) {
+              return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ deleted: false, error: "Erreur" }) };
+            }
+          }
+
           return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ error: "Unknown tool" }) };
         })
       );
@@ -528,7 +676,7 @@ serve(async (req) => {
         body: JSON.stringify({
           model: "google/gemini-3-flash-preview",
           messages: aiMessages,
-          tools: [webSearchTool],
+          tools,
           stream: false,
         }),
       });

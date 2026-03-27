@@ -4056,6 +4056,39 @@ export type Database = {
         }
         Relationships: []
       }
+      zeus_memory: {
+        Row: {
+          category: string
+          content: string
+          created_at: string
+          id: string
+          importance: number
+          source_message: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          category?: string
+          content: string
+          created_at?: string
+          id?: string
+          importance?: number
+          source_message?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          category?: string
+          content?: string
+          created_at?: string
+          id?: string
+          importance?: number
+          source_message?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       zeus_user_settings: {
         Row: {
           created_at: string | null
