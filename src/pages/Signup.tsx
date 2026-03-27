@@ -282,7 +282,12 @@ export default function Signup() {
 
             <div className="space-y-2">
               <Label htmlFor="email">{t('signup.email')} *</Label>
-              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('signup.emailPlaceholder')} className="pulse-input" required />
+              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value.trim())} placeholder={t('signup.emailPlaceholder')} className="pulse-input" required autoComplete="email" />
+            </div>
+
+            {/* Anti-bot honeypot — invisible to users, bots fill it */}
+            <div className="absolute -left-[9999px] opacity-0 h-0 overflow-hidden" aria-hidden="true" tabIndex={-1}>
+              <input type="text" name="website" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} tabIndex={-1} autoComplete="off" />
             </div>
 
             <div className="space-y-2">
