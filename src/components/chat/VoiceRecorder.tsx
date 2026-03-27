@@ -291,29 +291,30 @@ interface VoiceMessagePlayerProps {
 export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePlayerProps) {
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [error, setError] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(duration || 0);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const togglePlay = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (!audioRef.current) return;
+    if (!audioRef.current || error) return;
 
     const audio = audioRef.current;
 
     if (audio.paused) {
-      // If playback reached the end, restart from beginning
       if (audio.duration && audio.currentTime >= audio.duration - 0.05) {
         audio.currentTime = 0;
       }
-
       audio.muted = false;
       audio.volume = 1;
-
-      audio.play().catch(() => {
-        toast.error('Impossible de lire l\'audio');
+      audio.play().catch((err) => {
+        console.error('Voice playback error:', err);
+        setError(true);
+        toast.error('Impossible de lire ce vocal');
       });
       return;
     }
-
     audio.pause();
   };
 
@@ -321,17 +322,30 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
     const audio = audioRef.current;
     if (!audio) return;
 
-    const onTime = () => setProgress(audio.currentTime / (audio.duration || 1));
+    const onTime = () => {
+      setProgress(audio.currentTime / (audio.duration || 1));
+      setCurrentTime(audio.currentTime);
+    };
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
-    const onEnd = () => { setPlaying(false); setProgress(0); };
-    const onError = () => { setPlaying(false); };
+    const onEnd = () => { setPlaying(false); setProgress(0); setCurrentTime(0); };
+    const onError = () => {
+      setPlaying(false);
+      setError(true);
+      console.error('Audio element error:', audio.error?.code, audio.error?.message, 'src:', audioUrl);
+    };
+    const onLoaded = () => {
+      if (audio.duration && isFinite(audio.duration)) {
+        setAudioDuration(audio.duration);
+      }
+    };
 
     audio.addEventListener('timeupdate', onTime);
     audio.addEventListener('play', onPlay);
     audio.addEventListener('pause', onPause);
     audio.addEventListener('ended', onEnd);
     audio.addEventListener('error', onError);
+    audio.addEventListener('loadedmetadata', onLoaded);
 
     return () => {
       audio.removeEventListener('timeupdate', onTime);
@@ -339,8 +353,9 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('ended', onEnd);
       audio.removeEventListener('error', onError);
+      audio.removeEventListener('loadedmetadata', onLoaded);
     };
-  }, []);
+  }, [audioUrl]);
 
   const formatDuration = (s: number) => {
     const m = Math.floor(s / 60);
@@ -348,21 +363,28 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
     return `${m}:${sec.toString().padStart(2, '0')}`;
   };
 
+  const displayTime = playing ? formatDuration(currentTime) : formatDuration(audioDuration);
+
   return (
     <div className={cn(
       "flex items-center gap-2 px-3 py-2 rounded-2xl min-w-[160px]",
-      isMe ? "bg-primary text-primary-foreground" : "bg-secondary"
+      isMe ? "bg-primary text-primary-foreground" : "bg-secondary",
+      error && "opacity-60"
     )}>
-      <audio ref={audioRef} src={audioUrl} preload="metadata" />
+      <audio ref={audioRef} src={audioUrl} preload="metadata" crossOrigin="anonymous" />
       
       <button
         onClick={togglePlay}
+        disabled={error}
         className={cn(
           "w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors",
-          isMe ? "bg-primary-foreground/20 hover:bg-primary-foreground/30" : "bg-primary/10 hover:bg-primary/20"
+          isMe ? "bg-primary-foreground/20 hover:bg-primary-foreground/30" : "bg-primary/10 hover:bg-primary/20",
+          error && "cursor-not-allowed"
         )}
       >
-        {playing ? (
+        {error ? (
+          <X className={cn("w-2.5 h-2.5", isMe ? "text-primary-foreground" : "text-destructive")} />
+        ) : playing ? (
           <Square className={cn("w-2.5 h-2.5 fill-current", isMe ? "text-primary-foreground" : "text-primary")} />
         ) : (
           <svg className={cn("w-3 h-3", isMe ? "text-primary-foreground" : "text-primary")} viewBox="0 0 24 24" fill="currentColor">
@@ -372,15 +394,23 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
       </button>
 
       <div className="flex-1 flex flex-col gap-0.5">
-        <div className={cn("h-1 rounded-full overflow-hidden", isMe ? "bg-primary-foreground/20" : "bg-border")}>
-          <div
-            className={cn("h-full rounded-full transition-all", isMe ? "bg-primary-foreground/70" : "bg-primary/60")}
-            style={{ width: `${progress * 100}%` }}
-          />
-        </div>
-        <span className={cn("text-[9px]", isMe ? "text-primary-foreground/70" : "text-muted-foreground")}>
-          {duration ? formatDuration(duration) : '0:00'}
-        </span>
+        {error ? (
+          <span className={cn("text-[10px]", isMe ? "text-primary-foreground/70" : "text-muted-foreground")}>
+            Format non supporté
+          </span>
+        ) : (
+          <>
+            <div className={cn("h-1 rounded-full overflow-hidden", isMe ? "bg-primary-foreground/20" : "bg-border")}>
+              <div
+                className={cn("h-full rounded-full transition-all", isMe ? "bg-primary-foreground/70" : "bg-primary/60")}
+                style={{ width: `${progress * 100}%` }}
+              />
+            </div>
+            <span className={cn("text-[9px]", isMe ? "text-primary-foreground/70" : "text-muted-foreground")}>
+              {displayTime}
+            </span>
+          </>
+        )}
       </div>
 
       <Mic className={cn("w-3 h-3 flex-shrink-0", isMe ? "text-primary-foreground/50" : "text-muted-foreground/50")} />
