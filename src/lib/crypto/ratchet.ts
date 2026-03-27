@@ -292,7 +292,7 @@ async function skipMessages(state: RatchetState, until: number): Promise<Ratchet
 
   // Get current DH pub for cache key
   const dhPub = newState.dhReceivingKey
-    ? bufferToBase64(await crypto.subtle.exportKey('raw', newState.dhReceivingKey))
+    ? bufferToBase64(await hardCrypto.exportKey('raw', newState.dhReceivingKey))
     : 'init';
 
   let ck = newState.receivingChainKey;
