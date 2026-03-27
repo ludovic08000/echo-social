@@ -144,7 +144,7 @@ export async function unwrapKeysWithPin(
       ciphertext,
     );
 
-    const bundle = JSON.parse(new TextDecoder().decode(plaintext));
+    const bundle = hardGlobals.jsonParse(new hardGlobals.TextDecoder().decode(plaintext));
     console.log('[PIN_WRAP] Keys decrypted successfully');
     return bundle;
   } catch {
