@@ -153,17 +153,20 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
     if (!audioBlob || !user) return;
     setUploading(true);
     try {
-      let ext = 'webm';
-      if (audioBlob.type.includes('mp4')) ext = 'mp4';
-      else if (audioBlob.type.includes('ogg')) ext = 'ogg';
-      else if (audioBlob.type.includes('wav')) ext = 'wav';
+      let ext = 'mp4';
+      const blobType = audioBlob.type.split(';')[0].trim();
+      if (blobType.includes('webm')) ext = 'webm';
+      else if (blobType.includes('ogg')) ext = 'ogg';
+      else if (blobType.includes('wav')) ext = 'wav';
+      else if (blobType.includes('aac')) ext = 'aac';
+      else if (blobType.includes('mp4') || blobType.includes('m4a')) ext = 'mp4';
 
       const { uploadToR2 } = await import('@/lib/r2');
       const { url } = await uploadToR2(audioBlob, 'voice', `voice-${Date.now()}.${ext}`);
       onSend(url, duration);
-    } catch (err) {
-      console.error('Voice upload error:', err);
-      toast.error('Erreur lors de l\'envoi du vocal');
+    } catch (err: any) {
+      console.error('Voice upload error:', err?.message || err);
+      toast.error(`Erreur lors de l'envoi du vocal: ${err?.message || 'Réessayez'}`);
     } finally {
       setUploading(false);
     }
