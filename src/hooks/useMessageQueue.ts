@@ -23,7 +23,9 @@ export function useMessageQueue(
 ) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [pendingMessages, setPendingMessages] = useState<OutboundMessage[]>([]);
+  const [rawPendingMessages, setRawPendingMessages] = useState<OutboundMessage[]>([]);
+  // Volatile plaintext cache — never persisted, survives only in memory
+  const plaintextCacheRef = useRef<Map<string, string>>(new Map());
   const handlerIdRef = useRef(crypto.randomUUID());
   const encryptRef = useRef(encrypt);
   const readyRef = useRef(isEncryptionReady);
