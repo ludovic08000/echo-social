@@ -2,10 +2,25 @@ import { useState, useEffect, memo } from 'react';
 import { Lock } from 'lucide-react';
 import { VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 
-/** Detect voice message pattern: 🎙️ vocal:URL|duration */
+/** Detect voice message pattern — supports multiple formats:
+ *  🎙️ vocal:URL|duration
+ *  🎙️ voice:URL|dur:duration
+ *  🎙️ voice:URL|duration
+ */
 function parseVoiceMessage(text: string): { url: string; duration: number } | null {
-  const match = text.match(/^🎙️\s*vocal:(.+)\|(\d+)$/);
-  if (match) return { url: match[1], duration: parseInt(match[2], 10) };
+  // Format: 🎙️ vocal:URL|123  or  🎙️ voice:URL|123
+  const m1 = text.match(/^🎙️\s*(?:vocal|voice):(.+)\|(\d+)$/);
+  if (m1) return { url: m1[1], duration: parseInt(m1[2], 10) };
+  // Format: 🎙️ voice:URL|dur:123
+  const m2 = text.match(/^🎙️\s*(?:vocal|voice):(.+)\|dur:(\d+)$/);
+  if (m2) return { url: m2[1], duration: parseInt(m2[2], 10) };
+  return null;
+}
+
+/** Detect GIF message pattern: GIF:URL */
+function parseGifMessage(text: string): string | null {
+  const match = text.match(/^GIF:(https?:\/\/.+)$/i);
+  if (match) return match[1];
   return null;
 }
 
@@ -71,6 +86,19 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   const voice = parseVoiceMessage(displayText);
   if (voice) {
     return <VoiceMessagePlayer audioUrl={voice.url} duration={voice.duration} isMe={isMe} />;
+  }
+
+  // Check if it's a GIF message
+  const gifUrl = parseGifMessage(displayText);
+  if (gifUrl) {
+    return (
+      <img
+        src={gifUrl}
+        alt="GIF"
+        className="rounded-lg max-w-[220px] max-h-[200px] object-contain"
+        loading="lazy"
+      />
+    );
   }
 
   return <>{displayText}</>;
