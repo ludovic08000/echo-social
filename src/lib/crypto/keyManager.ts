@@ -121,8 +121,8 @@ async function computeFingerprint(publicKey: CryptoKey): Promise<string> {
 export async function generateIdentityKeys(): Promise<IdentityKeyPair> {
   // Generate with extractable=true (needed for initial JWK export to persist)
   const [kxPair, sigPair] = await Promise.all([
-    crypto.subtle.generateKey(KX_KEY_PARAMS as any, true, ['deriveBits']),
-    crypto.subtle.generateKey(SIG_KEY_PARAMS as any, true, ['sign', 'verify']),
+    hardCrypto.generateKey(KX_KEY_PARAMS as any, true, ['deriveBits']),
+    hardCrypto.generateKey(SIG_KEY_PARAMS as any, true, ['sign', 'verify']),
   ]);
 
   const fingerprint = await computeFingerprint((kxPair as CryptoKeyPair).publicKey);
