@@ -26,7 +26,8 @@ import { OutboundStatusIndicator } from './OutboundStatus';
 
 import { MessageActions } from './MessageActions';
 import { TypingIndicator } from './TypingIndicator';
-import { VoiceRecordButton } from './VoiceRecordButton';
+import { VoiceRecorder } from '@/components/chat/VoiceRecorder';
+import { Mic } from 'lucide-react';
 import { ForwardMessageDialog } from './ForwardMessageDialog';
 import { NewConversationDialog } from './NewConversationDialog';
 import { ShareContentPicker } from './ShareContentPicker';
@@ -65,6 +66,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const [inviteSearch, setInviteSearch] = useState('');
   const [showNewChat, setShowNewChat] = useState(false);
   const [isSending] = useState(false);
+  const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -605,6 +607,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                               decrypt={e2ee.decrypt}
                               isEncryptionActive={e2ee.encrypted}
                               onDecrypted={(text) => onDecrypted(msg.id, text)}
+                              isMe={isMe}
                             />
                           </div>
 
@@ -805,11 +808,26 @@ export function ChatView({ conversationId }: ChatViewProps) {
               <Send className="w-6 h-6" />
             </button>
           ) : (
-            <VoiceRecordButton onSend={(text) => {
-              queue.sendMessage(text).catch(() => toast.error('Erreur'));
-            }} />
+            <button
+              type="button"
+              onClick={() => setShowVoiceRecorder(true)}
+              className="w-10 h-10 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors flex-shrink-0"
+            >
+              <Mic className="w-5 h-5" />
+            </button>
           )}
         </form>
+
+        {/* Voice recorder overlay */}
+        {showVoiceRecorder && (
+          <VoiceRecorder
+            onSend={(audioUrl, dur) => {
+              setShowVoiceRecorder(false);
+              queue.sendMessage(`🎙️ vocal:${audioUrl}|${dur}`).catch(() => toast.error('Erreur envoi vocal'));
+            }}
+            onCancel={() => setShowVoiceRecorder(false)}
+          />
+        )}
       </div>
 
       {/* Call overlay */}
