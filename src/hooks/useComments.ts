@@ -60,6 +60,10 @@ export function useComments(postId: string) {
   });
 }
 
+// Client-side rate limiter for comments
+let lastCommentTime = 0;
+const COMMENT_COOLDOWN_MS = 3000;
+
 export function useCreateComment() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -68,12 +72,23 @@ export function useCreateComment() {
     mutationFn: async ({ postId, body }: { postId: string; body: string }) => {
       if (!user) throw new Error('Not authenticated');
 
+      // Rate limit: 1 comment per 3 seconds
+      const now = Date.now();
+      if (now - lastCommentTime < COMMENT_COOLDOWN_MS) {
+        throw new Error('Attendez quelques secondes avant de commenter à nouveau.');
+      }
+      lastCommentTime = now;
+
+      // Sanitize: strip HTML tags, limit to 1000 chars
+      const sanitizedBody = body.replace(/<[^>]*>/g, '').trim().slice(0, 1000);
+      if (!sanitizedBody) throw new Error('Le commentaire ne peut pas être vide.');
+
       const { data, error } = await supabase
         .from('comments')
         .insert({
           user_id: user.id,
           post_id: postId,
-          body,
+          body: sanitizedBody,
         })
         .select()
         .single();
