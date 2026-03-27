@@ -455,23 +455,57 @@ serve(async (req) => {
       ...(history || []).map((m: any) => ({ role: m.role, content: m.content })),
     ];
 
-    // Web search tool definition
-    const webSearchTool = {
-      type: "function",
-      function: {
-        name: "web_search",
-        description: "Rechercher des informations sur internet en temps réel. Utilise cette fonction quand l'utilisateur pose une question nécessitant des données actuelles, des actualités, des définitions, des tendances, ou toute information que tu ne possèdes pas dans tes données d'entraînement.",
-        parameters: {
-          type: "object",
-          properties: {
-            query: { type: "string", description: "La requête de recherche en langage naturel" },
-            language: { type: "string", enum: ["fr", "en"], description: "Langue préférée des résultats" },
+    // Tool definitions
+    const tools = [
+      {
+        type: "function",
+        function: {
+          name: "web_search",
+          description: "Rechercher des informations sur internet en temps réel.",
+          parameters: {
+            type: "object",
+            properties: {
+              query: { type: "string", description: "La requête de recherche en langage naturel" },
+              language: { type: "string", enum: ["fr", "en"], description: "Langue préférée des résultats" },
+            },
+            required: ["query"],
+            additionalProperties: false,
           },
-          required: ["query"],
-          additionalProperties: false,
         },
       },
-    };
+      {
+        type: "function",
+        function: {
+          name: "save_memory",
+          description: "Mémoriser une information importante sur l'utilisateur pour personnaliser les futures conversations. Utilise cet outil AUTOMATIQUEMENT quand l'utilisateur révèle : son prénom, ses centres d'intérêt, ses préférences, des infos personnelles (ville, métier, animaux, famille), ses habitudes, ses objectifs, ses émotions récurrentes, ou tout ce qui aide à mieux le connaître. NE mémorise PAS les messages banals ou les questions simples.",
+          parameters: {
+            type: "object",
+            properties: {
+              content: { type: "string", description: "L'information à mémoriser, formulée clairement (ex: 'Adore le football et supporte le PSG')" },
+              category: { type: "string", enum: ["preference", "personal", "interest", "context", "feedback", "habit", "emotion", "goal", "general"], description: "Catégorie du souvenir" },
+              importance: { type: "number", description: "Importance de 1 (anecdotique) à 10 (crucial). Prénom=10, intérêt=7, anecdote=3" },
+            },
+            required: ["content", "category", "importance"],
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: "function",
+        function: {
+          name: "forget_memory",
+          description: "Oublier/supprimer un souvenir spécifique si l'utilisateur le demande explicitement.",
+          parameters: {
+            type: "object",
+            properties: {
+              memory_content_keyword: { type: "string", description: "Mot-clé pour identifier le souvenir à supprimer" },
+            },
+            required: ["memory_content_keyword"],
+            additionalProperties: false,
+          },
+        },
+      },
+    ];
 
     // First call with tools
     let response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -483,7 +517,7 @@ serve(async (req) => {
       body: JSON.stringify({
         model: "google/gemini-3-flash-preview",
         messages: aiMessages,
-        tools: [webSearchTool],
+        tools,
         stream: false,
       }),
     });
