@@ -577,6 +577,12 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     e.preventDefault();
     if (!newMessage.trim()) return;
 
+    // Block send if fingerprint changed
+    if (!isZeusConversation && e2ee.fingerprintChanged) {
+      toast.error('Clé de sécurité modifiée — valide d\'abord le contact (bouton OK en haut).');
+      return;
+    }
+
     // For non-Zeus: inform user if peer keys missing but still queue
     if (!isZeusConversation && e2ee.peerKeyMissing) {
       toast.info('Message en attente — le contact n\'a pas encore activé le chiffrement.');
