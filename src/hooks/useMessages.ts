@@ -7,6 +7,22 @@ import { messageQueue } from '@/lib/messaging/messageQueue';
 
 export const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
 
+// Helper to get the user's custom AI companion name
+async function getCompanionName(userId?: string): Promise<string> {
+  if (!userId) return 'Zeus ⚡';
+  try {
+    const { data } = await supabase
+      .from('zeus_user_settings')
+      .select('custom_name')
+      .eq('user_id', userId)
+      .maybeSingle();
+    const name = data?.custom_name?.trim();
+    return name ? `${name} ⚡` : 'Zeus ⚡';
+  } catch {
+    return 'Zeus ⚡';
+  }
+}
+
 // Send a message to Zeus via the agent-chat edge function, which handles
 // inserting both the user message and Zeus response into the regular messenger
 async function sendToZeus(userId: string, messengerConvId: string, body: string) {
