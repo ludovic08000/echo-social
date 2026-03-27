@@ -97,10 +97,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const { upload, isUploading } = useImageUpload({
     bucket: 'post-images',
     onSuccess: (url) => {
+      const isVideo = /\.(mp4|mov|webm|avi|mkv)/i.test(url);
+      const body = isVideo ? '🎬 Vidéo' : '📷 Photo';
       if (isZeusConversation) {
-        legacySendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
+        legacySendMessage.mutate({ conversationId, body, imageUrl: url });
       } else {
-        queue.sendMessage('📷 Photo', url).catch(() => toast.error('Erreur envoi photo'));
+        queue.sendMessage(body, url).catch(() => toast.error('Erreur envoi média'));
       }
     },
   });
