@@ -534,9 +534,10 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     }
   }, [user, queryClient]);
 
-  const sendMessage = useCallback(async () => {
-    if (!input.trim() || !zeusAgentId || loading) return;
-    const userMsg: Msg = { role: 'user', content: input.trim() };
+  const sendMessage = useCallback(async (overrideText?: string) => {
+    const text = overrideText || input.trim();
+    if (!text || !zeusAgentId || loading) return;
+    const userMsg: Msg = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
@@ -612,6 +613,15 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
       setLoading(false);
     }
   }, [input, zeusAgentId, conversationId, loading, refetchConversations]);
+
+  // Auto-send pending translate/rewrite messages
+  useEffect(() => {
+    if (open && pendingSendRef.current && zeusAgentId && !loading) {
+      const text = pendingSendRef.current;
+      pendingSendRef.current = null;
+      sendMessage(text);
+    }
+  }, [open, zeusAgentId, loading, sendMessage]);
 
   const handleRename = () => {
     if (newName.trim()) { updateName.mutate(newName.trim()); }
