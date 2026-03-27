@@ -172,7 +172,7 @@ export async function decryptMessage(
   const ivBytes = base64ToBuffer(envelope.iv);
   const ciphertext = base64ToBuffer(envelope.ct);
 
-  const plaintextBuffer = await crypto.subtle.decrypt(
+  const plaintextBuffer = await hardCrypto.decrypt(
     { name: AES_ALGO, iv: new Uint8Array(ivBytes), tagLength: 128 },
     sessionKey,
     ciphertext,
