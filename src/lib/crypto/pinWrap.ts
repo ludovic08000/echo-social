@@ -35,7 +35,7 @@ function b64ToBuf(b64: string): ArrayBuffer {
 
 /** Derive AES-256 wrapping key from PIN */
 async function deriveWrappingKey(pin: string, salt: Uint8Array): Promise<CryptoKey> {
-  const pinBytes = new TextEncoder().encode(pin);
+  const pinBytes = new hardGlobals.TextEncoder().encode(pin);
   const baseKey = await hardCrypto.importKey('raw', pinBytes, 'PBKDF2', false, ['deriveKey']);
   return hardCrypto.deriveKey(
     { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
