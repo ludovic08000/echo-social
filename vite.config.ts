@@ -12,6 +12,11 @@ export default defineConfig(({ mode }) => ({
       overlay: false,
     },
   },
+  build: {
+    modulePreload: {
+      polyfill: false, // Avoid inline polyfill script — CSP blocks unsafe-inline
+    },
+  },
   plugins: [
     react(),
     mode === "development" && componentTagger(),

@@ -4,10 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
 
-    <!-- CSP: Restrict origins, block eval, limit frame/object injection -->
-    <!-- Note: 'unsafe-inline' kept in script-src for Vite compatibility (module loading);
-         mitigated by strict connect-src, frame-src:none, object-src:none, and session guard -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; script-src-elem 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.supabase.co https://*.r2.dev https://media.tenor.com https://*.tenor.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.r2.dev https://*.livekit.cloud wss://*.livekit.cloud https://tenor.googleapis.com; media-src 'self' blob: https://*.supabase.co https://*.r2.dev; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests;" />
+    <!-- CSP: No unsafe-inline in script-src — all scripts use src attributes.
+         ld+json blocks are non-executable data and don't need script-src allowance. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; script-src-elem 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.supabase.co https://*.r2.dev https://media.tenor.com https://*.tenor.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.r2.dev https://*.livekit.cloud wss://*.livekit.cloud https://tenor.googleapis.com; media-src 'self' blob: https://*.supabase.co https://*.r2.dev; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests;" />
     <title>Forsure — Réseau social éthique sans pub | Alternative Facebook & Instagram</title>
     <meta name="description" content="Forsure est le réseau social éthique français sans publicité ni tracking. Messagerie privée, live streaming, marketplace et canaux TV. L'alternative à Facebook, Instagram et TikTok. Rejoignez la communauté sur forsure.fans." />
     <meta name="author" content="Forsure" />
