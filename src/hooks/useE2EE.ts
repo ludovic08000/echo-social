@@ -109,7 +109,7 @@ function getKnownFingerprints(): Record<string, string> {
 function saveKnownFingerprint(userId: string, fp: string) {
   const known = getKnownFingerprints();
   known[userId] = fp;
-  localStorage.setItem(KNOWN_FP_KEY, JSON.stringify(known));
+  localStorage.setItem(KNOWN_FP_KEY, hardGlobals.jsonStringify(known));
 }
 
 function checkFingerprintChange(userId: string, currentFp: string): boolean {
