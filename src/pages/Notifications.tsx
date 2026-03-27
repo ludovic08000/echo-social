@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Heart, MessageCircle, Check, ShoppingBag } from 'lucide-react';
+import { Heart, MessageCircle, Check, ShoppingBag, UserPlus, UserCheck, Eye, SmilePlus } from 'lucide-react';
 import { useNotifications, useMarkAsRead } from '@/hooks/useNotifications';
 import { AppLayout } from '@/components/AppLayout';
 import { UserAvatar } from '@/components/UserAvatar';
@@ -13,6 +13,7 @@ interface GroupedNotification {
   key: string;
   type: string;
   post_id: string | null;
+  actor_id: string;
   actors: { name: string; avatar_url: string | null }[];
   count: number;
   created_at: string;
@@ -24,10 +25,12 @@ function groupNotifications(notifications: any[]): GroupedNotification[] {
   const groups = new Map<string, GroupedNotification>();
 
   for (const n of notifications) {
-    const key = `${n.type}-${n.post_id || 'no-post'}`;
+    const shouldGroup = !['message', 'friend_request', 'friend_accepted', 'story_view'].includes(n.type);
+    const key = shouldGroup ? `${n.type}-${n.post_id || 'no-post'}` : `${n.type}-${n.id}`;
+
     const existing = groups.get(key);
-    if (existing) {
-      if (!existing.actors.some(a => a.name === n.actor.name)) {
+    if (existing && shouldGroup) {
+      if (!existing.actors.some((a: any) => a.name === n.actor.name)) {
         existing.actors.push({ name: n.actor.name, avatar_url: n.actor.avatar_url });
       }
       existing.count++;
@@ -41,6 +44,7 @@ function groupNotifications(notifications: any[]): GroupedNotification[] {
         key,
         type: n.type,
         post_id: n.post_id,
+        actor_id: n.actor_id,
         actors: [{ name: n.actor.name, avatar_url: n.actor.avatar_url }],
         count: 1,
         created_at: n.created_at,
@@ -58,14 +62,65 @@ function groupNotifications(notifications: any[]): GroupedNotification[] {
 function getNotificationText(group: GroupedNotification): string {
   const othersCount = group.count - 1;
 
-  const action =
-    group.type === 'like' ? 'aimé votre post' :
-    group.type === 'sale' ? 'acheté un de vos produits 🎉' :
-    'commenté votre post';
+  const actionMap: Record<string, string> = {
+    like: 'aimé votre publication',
+    comment: 'commenté votre publication',
+    sale: 'acheté un de vos produits 🎉',
+    friend_request: 'vous a envoyé une demande d\'ami',
+    friend_accepted: 'a accepté votre demande d\'ami',
+    message: 'vous a envoyé un message',
+    reaction: 'a réagi à votre publication',
+    story_view: 'a vu votre story',
+  };
 
-  if (othersCount === 0) return `a ${action}`;
+  const action = actionMap[group.type] || 'a interagi avec vous';
+
+  if (othersCount === 0) return action;
   if (othersCount === 1) return `et ${group.actors[1]?.name || '1 autre'} ont ${action}`;
   return `et ${othersCount} autres ont ${action}`;
+}
+
+function getNotificationLink(group: GroupedNotification): string {
+  switch (group.type) {
+    case 'message':
+      return '/messages';
+    case 'friend_request':
+    case 'friend_accepted':
+      return '/friends';
+    case 'sale':
+      return '/marketplace?sellerTab=orders';
+    case 'story_view':
+      return '/feed';
+    case 'like':
+    case 'comment':
+    case 'reaction':
+      return group.post_id ? `/post/${group.post_id}#comments` : '/feed';
+    default:
+      return '/feed';
+  }
+}
+
+function getNotificationIcon(type: string) {
+  switch (type) {
+    case 'like':
+      return { icon: Heart, className: 'bg-primary', iconClass: 'text-primary-foreground fill-current' };
+    case 'comment':
+      return { icon: MessageCircle, className: 'bg-blue-500', iconClass: 'text-white' };
+    case 'sale':
+      return { icon: ShoppingBag, className: 'bg-green-500', iconClass: 'text-white' };
+    case 'friend_request':
+      return { icon: UserPlus, className: 'bg-amber-500', iconClass: 'text-white' };
+    case 'friend_accepted':
+      return { icon: UserCheck, className: 'bg-emerald-500', iconClass: 'text-white' };
+    case 'message':
+      return { icon: MessageCircle, className: 'bg-primary', iconClass: 'text-primary-foreground' };
+    case 'reaction':
+      return { icon: SmilePlus, className: 'bg-pink-500', iconClass: 'text-white' };
+    case 'story_view':
+      return { icon: Eye, className: 'bg-purple-500', iconClass: 'text-white' };
+    default:
+      return { icon: MessageCircle, className: 'bg-secondary', iconClass: 'text-secondary-foreground' };
+  }
 }
 
 export default function Notifications() {
@@ -120,70 +175,67 @@ export default function Notifications() {
         </div>
       ) : (
         <div className="space-y-2">
-          {grouped.map((group) => (
-            <Link
-              key={group.key}
-              to={group.type === 'sale' ? '/marketplace?sellerTab=orders' : group.post_id ? `/post/${group.post_id}#comments` : '#'}
-              onClick={() => {
-                if (!group.read_at) {
-                  group.ids.forEach(id => markAsRead.mutate(id));
-                }
-              }}
-            >
-              <div
-                className={cn(
-                  'pulse-card p-4 flex items-center gap-3 transition-colors hover:bg-secondary/50',
-                  !group.read_at && 'bg-accent/50'
-                )}
+          {grouped.map((group) => {
+            const { icon: Icon, className: iconBg, iconClass } = getNotificationIcon(group.type);
+
+            return (
+              <Link
+                key={group.key}
+                to={getNotificationLink(group)}
+                onClick={() => {
+                  if (!group.read_at) {
+                    group.ids.forEach(id => markAsRead.mutate(id));
+                  }
+                }}
               >
-                <div className="relative">
-                  <div className="flex -space-x-2">
-                    {group.actors.slice(0, 3).map((actor, i) => (
-                      <UserAvatar
-                        key={i}
-                        src={actor.avatar_url}
-                        alt={actor.name}
-                        size="md"
-                        className={cn(i > 0 && 'ring-2 ring-background')}
-                      />
-                    ))}
+                <div
+                  className={cn(
+                    'pulse-card p-4 flex items-center gap-3 transition-colors hover:bg-secondary/50',
+                    !group.read_at && 'bg-accent/50'
+                  )}
+                >
+                  <div className="relative">
+                    <div className="flex -space-x-2">
+                      {group.actors.slice(0, 3).map((actor, i) => (
+                        <UserAvatar
+                          key={i}
+                          src={actor.avatar_url}
+                          alt={actor.name}
+                          size="md"
+                          className={cn(i > 0 && 'ring-2 ring-background')}
+                        />
+                      ))}
+                    </div>
+                    <div
+                      className={cn(
+                        'absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center',
+                        iconBg
+                      )}
+                    >
+                      <Icon className={cn('w-3 h-3', iconClass)} />
+                    </div>
                   </div>
-                  <div
-                    className={cn(
-                      'absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center',
-                      group.type === 'like' ? 'bg-primary' :
-                      group.type === 'sale' ? 'bg-green-500' : 'bg-secondary'
-                    )}
-                  >
-                    {group.type === 'like' ? (
-                      <Heart className="w-3 h-3 text-primary-foreground fill-current" />
-                    ) : group.type === 'sale' ? (
-                      <ShoppingBag className="w-3 h-3 text-white" />
-                    ) : (
-                      <MessageCircle className="w-3 h-3 text-secondary-foreground" />
-                    )}
+
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm">
+                      <span className="font-medium">{group.actors[0].name}</span>{' '}
+                      {getNotificationText(group)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDistanceToNow(new Date(group.created_at), {
+                        addSuffix: true,
+                        locale: fr,
+                      })}
+                    </p>
                   </div>
-                </div>
 
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm">
-                    <span className="font-medium">{group.actors[0].name}</span>{' '}
-                    {getNotificationText(group)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatDistanceToNow(new Date(group.created_at), {
-                      addSuffix: true,
-                      locale: fr,
-                    })}
-                  </p>
+                  {!group.read_at && (
+                    <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                  )}
                 </div>
-
-                {!group.read_at && (
-                  <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
-                )}
-              </div>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
         </div>
       )}
     </AppLayout>
