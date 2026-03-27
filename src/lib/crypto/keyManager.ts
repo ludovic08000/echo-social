@@ -14,7 +14,7 @@ import {
   KX_KEY_PARAMS, SIG_KEY_PARAMS,
 } from './constants';
 import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, randomBytes } from './utils';
-import { hardCrypto, scrubBuffer } from './cryptoIntegrity';
+import { hardCrypto, hardGlobals, scrubBuffer } from './cryptoIntegrity';
 
 export interface IdentityKeyPair {
   publicKey: CryptoKey;
