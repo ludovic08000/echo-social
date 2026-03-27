@@ -158,7 +158,7 @@ export async function ratchetEncrypt(
 
   // Encrypt
   const iv = randomBytes(IV_LENGTH);
-  const ct = await crypto.subtle.encrypt(
+  const ct = await hardCrypto.encrypt(
     { name: AES_ALGO, iv: new Uint8Array(iv) as unknown as Uint8Array<ArrayBuffer>, tagLength: 128 },
     messageKey,
     encodeString(plaintext),
