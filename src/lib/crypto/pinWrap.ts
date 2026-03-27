@@ -49,7 +49,7 @@ async function deriveWrappingKey(pin: string, salt: Uint8Array): Promise<CryptoK
 /** Open/create the PIN wrap IndexedDB store */
 function openPinDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('forsure-pin-wrap', 1);
+    const req = hardGlobals.idbOpen('forsure-pin-wrap', 1);
     req.onerror = () => reject(req.error);
     req.onsuccess = () => resolve(req.result);
     req.onupgradeneeded = () => {
