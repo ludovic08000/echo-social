@@ -128,20 +128,32 @@ export default function Signup() {
       }
     }
 
+    // Minimum password length
+    if (password.length < 8) {
+      toast({ title: 'Mot de passe trop court', description: 'Minimum 8 caractères requis.', variant: 'destructive' });
+      return;
+    }
+
+    // Common password check
+    if (COMMON_PASSWORDS.includes(password.toLowerCase()) || password.toLowerCase().includes(email.split('@')[0].toLowerCase())) {
+      toast({ title: 'Mot de passe trop commun', description: 'Choisissez un mot de passe unique, pas un mot courant ni votre identifiant.', variant: 'destructive' });
+      return;
+    }
+
     // Vérification force du mot de passe
     const hasUpper = /[A-Z]/.test(password);
     const hasNumber = /[0-9]/.test(password);
     const hasSpecial = /[^A-Za-z0-9]/.test(password);
     let strength = 0;
-    if (password.length >= 6) strength++;
-    if (password.length >= 10) strength++;
+    if (password.length >= 8) strength++;
+    if (password.length >= 12) strength++;
     if (hasUpper) strength++;
     if (hasNumber) strength++;
     if (hasSpecial) strength++;
     if (strength < 3) {
       toast({
         title: 'Mot de passe trop faible',
-        description: 'Votre mot de passe doit contenir au moins 6 caractères, avec des majuscules, des chiffres ou des caractères spéciaux.',
+        description: 'Utilisez au moins 8 caractères avec majuscules, chiffres et caractères spéciaux.',
         variant: 'destructive',
       });
       return;
@@ -149,11 +161,6 @@ export default function Signup() {
 
     if (!acceptedTerms || !acceptedPrivacy) {
       toast({ title: 'Conditions requises', description: 'Veuillez accepter les CGU et la politique de confidentialité pour continuer.', variant: 'destructive' });
-      return;
-    }
-
-    if (password.length < 6) {
-      toast({ title: t('signup.passwordTooShort'), description: t('signup.passwordMinLength'), variant: 'destructive' });
       return;
     }
 
