@@ -660,17 +660,17 @@ export default function Profile() {
             )}
 
             {/* Action buttons */}
-            <div className="flex gap-2 mt-5 overflow-x-auto scrollbar-hide pb-1 -mx-4 px-4">
+            <div className="flex flex-wrap gap-2 mt-5 pb-1">
               {isOwnProfile ? (
                 <>
-                  <Link to="/settings" className="shrink-0">
+                  <Link to="/settings">
                     <Button className="rounded-xl h-10 text-sm whitespace-nowrap">
                       <Edit2 className="w-4 h-4 mr-2" />
                       Modifier le profil
                     </Button>
                   </Link>
                   {!isCreator && (
-                    <Link to="/creator" className="shrink-0">
+                    <Link to="/creator">
                       <Button 
                         variant="outline" 
                         className="rounded-xl h-10 text-sm whitespace-nowrap border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
@@ -683,7 +683,7 @@ export default function Profile() {
                    {isCreator && <TipButton creatorId={userId!} creatorName={profile.name} />}
                   <Button 
                     variant="secondary" 
-                    className="rounded-xl h-10 text-sm whitespace-nowrap shrink-0"
+                    className="rounded-xl h-10 text-sm whitespace-nowrap"
                     onClick={() => {
                       setActiveTab('albums');
                       setSelectedAlbum(null);
@@ -692,7 +692,7 @@ export default function Profile() {
                     <FolderOpen className="w-4 h-4 mr-2" />
                     Mes albums
                   </Button>
-                  <Link to="/feed" className="shrink-0">
+                  <Link to="/feed">
                     <Button variant="secondary" className="rounded-xl h-10 text-sm whitespace-nowrap">
                       <Newspaper className="w-4 h-4 mr-2" />
                       Fil d'actu
@@ -700,7 +700,7 @@ export default function Profile() {
                   </Link>
                   <Button 
                     variant="destructive" 
-                    className="rounded-xl h-10 text-sm whitespace-nowrap shrink-0"
+                    className="rounded-xl h-10 text-sm whitespace-nowrap"
                     onClick={async () => {
                       await supabase.auth.signOut();
                       navigate('/login');
@@ -712,12 +712,10 @@ export default function Profile() {
                 </>
               ) : (
                 <>
-                  <div className="shrink-0">
-                    <FriendshipButton userId={userId!} />
-                  </div>
+                  <FriendshipButton userId={userId!} />
                   <Button 
                     variant="secondary" 
-                    className="rounded-xl h-10 text-sm whitespace-nowrap shrink-0"
+                    className="rounded-xl h-10 text-sm whitespace-nowrap"
                     disabled={createConversation.isPending}
                     onClick={async () => {
                       if (!userId) return;
@@ -726,7 +724,7 @@ export default function Profile() {
                     }}
                   >
                     <MessageCircle className="w-4 h-4 mr-2" />
-                    Envoyer un message
+                    Message
                   </Button>
                    {isCreator && <TipButton creatorId={userId!} creatorName={profile.name} />}
                    <ReportFakeAccountButton reportedUserId={userId!} />
