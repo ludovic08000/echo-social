@@ -61,7 +61,7 @@ export async function performKeyExchange(
   // CRITICAL: Use deterministic salt derived from conversationId so both sides
   // derive the SAME key. A random salt would produce different keys on each side.
   const saltSource = encodeString(`forsure-salt-v${PROTOCOL_VERSION}-${conversationId}`);
-  const salt = new Uint8Array(await crypto.subtle.digest('SHA-256', saltSource)) as Uint8Array<ArrayBuffer>;
+  const salt = new Uint8Array(await hardCrypto.digest('SHA-256', saltSource)) as Uint8Array<ArrayBuffer>;
   const info = encodeString(`forsure-e2ee-v${PROTOCOL_VERSION}-${conversationId}`);
 
   const hkdfKey = await crypto.subtle.importKey(
