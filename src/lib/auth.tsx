@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { generateFingerprint } from '@/hooks/useTrustAndSafety';
+import { startSessionGuard, stopSessionGuard } from '@/lib/sessionGuard';
 
 interface AuthContextType {
   user: User | null;
