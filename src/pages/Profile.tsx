@@ -692,7 +692,7 @@ export default function Profile() {
                     <FolderOpen className="w-4 h-4 mr-2" />
                     Mes albums
                   </Button>
-                  <Link to="/feed" className="shrink-0">
+                  <Link to="/feed">
                     <Button variant="secondary" className="rounded-xl h-10 text-sm whitespace-nowrap">
                       <Newspaper className="w-4 h-4 mr-2" />
                       Fil d'actu
