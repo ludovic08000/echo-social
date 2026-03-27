@@ -237,8 +237,8 @@ export function useChatPin() {
 
         setState({
           loaded: true,
-          hasPin: !!data,
-          unlocked: sessionUnlocked && !!data,
+          hasPin: !!hasPin,
+          unlocked: sessionUnlocked && !!hasPin,
           error: null,
           processing: false,
         });
