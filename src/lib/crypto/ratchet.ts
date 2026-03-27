@@ -111,7 +111,7 @@ export async function initRatchetAsResponder(
   sharedSecret: ArrayBuffer,
   ourDhPair: CryptoKeyPair,
 ): Promise<RatchetState> {
-  const rootKey = await crypto.subtle.importKey(
+  const rootKey = await hardCrypto.importKey(
     'raw', sharedSecret.slice(0, 32),
     { name: 'HMAC', hash: 'SHA-256', length: 256 } as any,
     true, ['sign']
