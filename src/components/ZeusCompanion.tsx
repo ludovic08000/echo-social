@@ -436,7 +436,8 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
         pendingSendRef.current = `Traduis ce texte : "${detail.text}"`;
         setInput(pendingSendRef.current);
       } else if (detail?.action === 'rewrite' && detail?.text) {
-        setInput(`Réécris ce texte de manière plus élégante : "${detail.text}"`);
+        pendingSendRef.current = `Réécris ce texte de manière plus élégante : "${detail.text}"`;
+        setInput(pendingSendRef.current);
       } else if (detail?.action) {
         const prompts: Record<string, string> = {
           'search': '',
@@ -502,8 +503,8 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
       }
 
       // Use agent-actions edge function for publish_post, schedule_post, create_story, generate_image
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const resp = await fetch(`https://${projectId}.supabase.co/functions/v1/agent-actions`, {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const resp = await fetch(`${supabaseUrl}/functions/v1/agent-actions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -545,8 +546,8 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const resp = await fetch(`https://${projectId}.supabase.co/functions/v1/agent-chat`, {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const resp = await fetch(`${supabaseUrl}/functions/v1/agent-chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
