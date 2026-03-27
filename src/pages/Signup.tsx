@@ -62,11 +62,38 @@ export default function Signup() {
     return new Date(Number(birthYear), Number(birthMonth) - 1, Number(birthDay));
   };
 
+  // Common weak passwords blacklist
+  const COMMON_PASSWORDS = [
+    'password', '123456', '12345678', 'qwerty', 'abc123', 'monkey', 'master',
+    'dragon', 'login', 'princess', 'football', 'shadow', 'sunshine', 'trustno1',
+    'iloveyou', 'batman', 'access', 'hello', 'charlie', 'forsure', 'azerty',
+    'motdepasse', 'bonjour', 'soleil', 'amour', 'bienvenue', '000000',
+  ];
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Anti-bot: reject if honeypot is filled
+    if (honeypot) {
+      console.warn('Bot detected');
+      return;
+    }
+
+    // Anti-bot: reject if form was submitted too fast (< 3 seconds)
+    if (Date.now() - formLoadTime < 3000) {
+      toast({ title: 'Trop rapide', description: 'Veuillez remplir le formulaire correctement.', variant: 'destructive' });
+      return;
+    }
+
     if (!lastName.trim() || !firstName.trim()) {
       toast({ title: 'Champs requis', description: 'Le nom et le prénom sont obligatoires.', variant: 'destructive' });
+      return;
+    }
+
+    // Name sanitization: only letters, spaces, hyphens, apostrophes
+    const nameRegex = /^[a-zA-ZÀ-ÿ\s'\-]{2,50}$/;
+    if (!nameRegex.test(lastName.trim()) || !nameRegex.test(firstName.trim())) {
+      toast({ title: 'Nom invalide', description: 'Le nom et prénom ne doivent contenir que des lettres (2 à 50 caractères).', variant: 'destructive' });
       return;
     }
 
