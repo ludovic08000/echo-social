@@ -241,7 +241,6 @@ export function useMessageQueue(
       plaintext: sanitized,
       imageUrl,
     });
-    if (!isSpecial) recordSentMessage(sanitized);
   }, [user, conversationId, isEncryptionActive, encrypt, queryClient]);
 
   /** Retry a failed message */

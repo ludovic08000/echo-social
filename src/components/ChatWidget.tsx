@@ -370,7 +370,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     conversationId,
     e2ee.encrypt,
     e2ee.isReady(),
-    !isZeusConversation,
+    !isZeusConversation && e2ee.encrypted,
   );
 
   // Decrypted text cache for widget
@@ -583,9 +583,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       return;
     }
 
-    // For non-Zeus: inform user if peer keys missing but still queue
+    // For non-Zeus: inform user if peer keys missing (send falls back to standard mode)
     if (!isZeusConversation && e2ee.peerKeyMissing) {
-      toast.info('Message en attente — le contact n\'a pas encore activé le chiffrement.');
+      toast.info('Le contact n\'a pas encore activé le chiffrement. Message envoyé en mode standard.');
     }
 
     const replyText = replyTo ? decryptedCacheRef.current.get(replyTo.id) || replyTo.body : null;
@@ -796,10 +796,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                   onClick={async () => {
                     if (isZeusConversation) {
                       sendMessage.mutate({ conversationId, body: s });
-                    } else if (e2ee.encrypted) {
-                      try { await queue.sendMessage(s); } catch { toast.error('Erreur envoi'); }
                     } else {
-                      toast.error('Chiffrement non prêt');
+                      try { await queue.sendMessage(s); } catch { toast.error('Erreur envoi'); }
                     }
                   }}
                   className="px-3 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-medium hover:bg-primary/20 transition-all"
