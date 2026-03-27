@@ -335,7 +335,7 @@ async function decryptWithKey(
   let verified = false;
   if (peerSigningKeyBase64) {
     try {
-      const sigKey = await crypto.subtle.importKey(
+      const sigKey = await hardCrypto.importKey(
         'raw',
         base64ToBuffer(peerSigningKeyBase64),
         { name: 'Ed25519' } as any,
