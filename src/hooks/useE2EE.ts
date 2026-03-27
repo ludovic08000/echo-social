@@ -405,6 +405,11 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       fingerprintChanged: state.fingerprintChanged,
     });
 
+    // BLOCK if crypto has been tampered with
+    if (isTampered() || !verifyCryptoIntegrity()) {
+      throw new EncryptionError('Crypto integrity compromised — operation blocked');
+    }
+
     // BLOCK if fingerprint changed and not yet acknowledged
     if (state.fingerprintChanged) {
       throw new EncryptionError('La clé de sécurité du contact a changé — vérification requise');
