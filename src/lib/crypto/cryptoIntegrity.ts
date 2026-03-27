@@ -155,6 +155,10 @@ export function verifyCryptoIntegrity(): boolean {
       triggerTamper('TextEncoder replaced');
       return false;
     }
+    if (globalThis.TextDecoder !== _TextDecoder) {
+      triggerTamper('TextDecoder replaced');
+      return false;
+    }
     if (globalThis.atob !== _atob) {
       triggerTamper('atob replaced');
       return false;
