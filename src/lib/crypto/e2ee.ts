@@ -51,7 +51,7 @@ export async function performKeyExchange(
   conversationId: string,
 ): Promise<CryptoKey> {
   // X25519 → 32 bytes (256 bits) shared secret
-  const sharedBits = await crypto.subtle.deriveBits(
+  const sharedBits = await hardCrypto.deriveBits(
     { name: 'X25519', public: peerPublicKey } as any,
     myPrivateKey,
     256,
