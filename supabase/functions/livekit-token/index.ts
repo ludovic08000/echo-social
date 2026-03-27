@@ -2,20 +2,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AccessToken } from "npm:livekit-server-sdk@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 
-// Rate limiting: max 10 token requests per minute per user
-const rateLimiter = new Map<string, { count: number; resetAt: number }>();
-
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const entry = rateLimiter.get(userId);
-  if (!entry || now > entry.resetAt) {
-    rateLimiter.set(userId, { count: 1, resetAt: now + 60000 });
-    return true;
-  }
-  if (entry.count >= 10) return false;
-  entry.count++;
-  return true;
-}
+// DB-backed rate limiting (persistent across instances)
+import { checkRateLimit as checkRateLimitDB } from "../_shared/rate-limit.ts";
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);

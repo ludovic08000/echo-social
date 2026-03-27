@@ -33,22 +33,10 @@ const FOLDER_MAX_SIZES: Record<string, number> = {
   uploads: 10 * 1024 * 1024,
 };
 
-// Rate limiting: simple in-memory tracker (per isolate)
-const uploadTracker = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT = 30; // max uploads per window
-const RATE_WINDOW_MS = 60 * 1000; // 1 minute
-
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const entry = uploadTracker.get(userId);
-  if (!entry || now > entry.resetAt) {
-    uploadTracker.set(userId, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return true;
-  }
-  if (entry.count >= RATE_LIMIT) return false;
-  entry.count++;
-  return true;
-}
+// DB-backed rate limiting (persistent across instances)
+import { checkRateLimit as checkRateLimitDB } from "../_shared/rate-limit.ts";
+const RATE_LIMIT = 30;
+const RATE_WINDOW_S = 60;
 
 // Allowed origins for CORS
 const ALLOWED_ORIGINS_LIST = [
