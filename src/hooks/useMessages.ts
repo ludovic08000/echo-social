@@ -374,7 +374,7 @@ export function useMessages(conversationId: string) {
       return visibleMessages.map(msg => ({
         ...msg,
         profile: {
-          name: msg.sender_id === ZEUS_BOT_ID ? 'Zeus ⚡' : (profileMap.get(msg.sender_id)?.name || 'Unknown'),
+          name: msg.sender_id === ZEUS_BOT_ID ? (await getCompanionName(undefined)) : (profileMap.get(msg.sender_id)?.name || 'Unknown'),
           avatar_url: profileMap.get(msg.sender_id)?.avatar_url || null,
         },
       })) as Message[];
