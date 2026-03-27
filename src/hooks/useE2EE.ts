@@ -138,7 +138,7 @@ function cleanupLegacyStorage() {
     const migrationKey = 'forsure-e2ee-migration-v4';
     if (!localStorage.getItem(migrationKey)) {
       localStorage.setItem(migrationKey, '1');
-      const req = indexedDB.open(RATCHET_DB_NAME, RATCHET_DB_VERSION);
+      const req = hardGlobals.idbOpen(RATCHET_DB_NAME, RATCHET_DB_VERSION);
       req.onsuccess = () => {
         try {
           const db = req.result;
