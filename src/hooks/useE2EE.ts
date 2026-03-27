@@ -100,7 +100,7 @@ async function loadRatchetLocal(convId: string): Promise<RatchetState | null> {
 
 function getKnownFingerprints(): Record<string, string> {
   try {
-    return JSON.parse(localStorage.getItem(KNOWN_FP_KEY) || '{}');
+    return hardGlobals.jsonParse(localStorage.getItem(KNOWN_FP_KEY) || '{}');
   } catch {
     return {};
   }
