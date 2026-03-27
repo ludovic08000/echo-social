@@ -241,7 +241,7 @@ export async function rotateSessionKey(
 export function isEncryptedMessage(body: string): boolean {
   if (!body.startsWith('{')) return false;
   try {
-    const p = JSON.parse(body);
+    const p = hardGlobals.jsonParse(body);
     return p.v !== undefined && p.kem !== undefined && p.ct !== undefined;
   } catch {
     return false;
