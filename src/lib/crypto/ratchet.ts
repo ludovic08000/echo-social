@@ -377,7 +377,7 @@ export async function serializeRatchetState(state: RatchetState): Promise<string
     skippedEntries.push([k, await exportKeyToJWK(v)]);
   }
 
-  return JSON.stringify({
+  return hardGlobals.jsonStringify({
     conversationId: state.conversationId,
     dhSendPubJWK, dhSendPrivJWK, dhRecvJWK,
     rootJWK, sendCKJWK, recvCKJWK,
