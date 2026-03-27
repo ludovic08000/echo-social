@@ -320,12 +320,49 @@ export default function Onboarding() {
     } catch {}
 
     // Save AI companion name
+    const chosenName = aiName.trim() || 'Zeus';
     try {
       await supabase.from('zeus_user_settings').upsert(
-        { user_id: userId, custom_name: aiName.trim() },
+        { user_id: userId, custom_name: chosenName },
         { onConflict: 'user_id' }
       );
     } catch {}
+
+    // Update Zeus welcome DM to use the chosen AI name
+    if (chosenName !== 'Zeus') {
+      try {
+        const zeusId = '00000000-0000-0000-0000-000000000001';
+        // Find the Zeus welcome conversation
+        const { data: convs } = await supabase
+          .from('conversation_participants')
+          .select('conversation_id')
+          .eq('user_id', userId);
+        if (convs) {
+          for (const cp of convs) {
+            const { data: msgs } = await supabase
+              .from('messages')
+              .select('id, body')
+              .eq('conversation_id', cp.conversation_id)
+              .eq('sender_id', zeusId)
+              .limit(1);
+            if (msgs?.[0]) {
+              const updated = msgs[0].body
+                .replace(/Je suis \*\*Zeus\*\*/g, `Je suis **${chosenName}**`)
+                .replace(/Zeus ⚡/g, `${chosenName} ⚡`);
+              if (updated !== msgs[0].body) {
+                await supabase.from('messages').update({ body: updated }).eq('id', msgs[0].id);
+              }
+            }
+          }
+        }
+        // Also update the anonymous wall welcome
+        await supabase
+          .from('anonymous_wall_messages')
+          .update({ message: `👋 Bienvenue sur Forsure ! Je suis ${chosenName}, ton compagnon IA. N'hésite pas à me parler si tu as besoin d'aide ou simplement envie de discuter. Amuse-toi bien ! ⚡` })
+          .eq('author_id', zeusId)
+          .eq('target_user_id', userId);
+      } catch {}
+    }
   };
 
   const handleFinish = async () => {
