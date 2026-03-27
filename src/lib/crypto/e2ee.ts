@@ -192,7 +192,7 @@ export async function decryptMessage(
         ? { name: 'Ed25519' } as any
         : { name: 'ECDSA', namedCurve: 'P-384' };
 
-      const peerSigningKey = await crypto.subtle.importKey(
+      const peerSigningKey = await hardCrypto.importKey(
         'raw', peerSigningRaw, importAlgo, true, ['verify']
       );
 
