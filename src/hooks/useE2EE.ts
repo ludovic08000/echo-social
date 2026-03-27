@@ -40,7 +40,7 @@ import {
 } from '@/lib/crypto';
 import { base64ToBuffer } from '@/lib/crypto/utils';
 import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
-import { verifyCryptoIntegrity, isTampered } from '@/lib/crypto/cryptoIntegrity';
+import { verifyCryptoIntegrity, isTampered, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { KX_KEY_PARAMS } from '@/lib/crypto/constants';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
