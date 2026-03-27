@@ -2,23 +2,22 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 
 /**
- * verify-chat-pin — Server-side PIN verification for messaging
+ * verify-chat-pin — Server-side PIN verification for messaging (v2 — Hardened)
  * 
  * Actions: setup, verify, request-reset, confirm-reset
  * 
  * SECURITY:
  * - PIN hash (PBKDF2-SHA256, 600k iterations) computed SERVER-SIDE
- * - Hash NEVER sent to client
- * - Rate limiting: 5 attempts max, 5min lockout
+ * - Hash NEVER sent to client (RLS blocks pin_hash/salt reads)
+ * - Rate limiting: PERSISTENT in DB (not in-memory Map)
  * - Constant-time comparison
  * - Reset via email OTP (6-digit code, 10min expiry)
  */
 
-const failedAttempts = new Map<string, { count: number; resetAt: number }>();
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS = 5 * 60_000;
 const PBKDF2_ITERATIONS = 600_000;
-const RESET_CODE_EXPIRY_MS = 10 * 60_000; // 10 minutes
+const RESET_CODE_EXPIRY_MS = 10 * 60_000;
 
 function bytesToBase64(bytes: Uint8Array): string {
   let bin = "";
@@ -62,26 +61,65 @@ function constantTimeEqual(a: string, b: string): boolean {
   return result === 0;
 }
 
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const entry = failedAttempts.get(userId);
-  if (entry && now < entry.resetAt && entry.count >= MAX_ATTEMPTS) return false;
-  if (entry && now >= entry.resetAt) failedAttempts.delete(userId);
-  return true;
-}
-
-function recordFailed(userId: string) {
-  const now = Date.now();
-  const entry = failedAttempts.get(userId) || { count: 0, resetAt: now + LOCKOUT_MS };
-  entry.count += 1;
-  entry.resetAt = now + LOCKOUT_MS;
-  failedAttempts.set(userId, entry);
-}
-
 function generateResetCode(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(4));
   const num = ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0;
   return String(num % 1000000).padStart(6, "0");
+}
+
+/** Check rate limit from DB — returns true if allowed */
+async function checkRateLimitDB(
+  supabase: any,
+  userId: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("user_chat_pins")
+    .select("failed_attempts, locked_until")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!data) return true; // No PIN record = no rate limit
+  
+  if (data.locked_until && new Date(data.locked_until) > new Date()) {
+    return false; // Still locked
+  }
+
+  // If lockout expired, reset counter
+  if (data.locked_until && new Date(data.locked_until) <= new Date()) {
+    await supabase.from("user_chat_pins").update({
+      failed_attempts: 0,
+      locked_until: null,
+    }).eq("user_id", userId);
+  }
+
+  return (data.failed_attempts || 0) < MAX_ATTEMPTS;
+}
+
+/** Record a failed attempt in DB */
+async function recordFailedDB(supabase: any, userId: string) {
+  const { data } = await supabase
+    .from("user_chat_pins")
+    .select("failed_attempts")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const newCount = (data?.failed_attempts || 0) + 1;
+  const lockedUntil = newCount >= MAX_ATTEMPTS
+    ? new Date(Date.now() + LOCKOUT_MS).toISOString()
+    : null;
+
+  await supabase.from("user_chat_pins").update({
+    failed_attempts: newCount,
+    locked_until: lockedUntil,
+  }).eq("user_id", userId);
+}
+
+/** Clear failed attempts on success */
+async function clearFailedDB(supabase: any, userId: string) {
+  await supabase.from("user_chat_pins").update({
+    failed_attempts: 0,
+    locked_until: null,
+  }).eq("user_id", userId);
 }
 
 Deno.serve(async (req) => {
@@ -118,15 +156,12 @@ Deno.serve(async (req) => {
 
     // ─── REQUEST RESET (send OTP email) ───
     if (action === "request-reset") {
-      // Rate limit reset requests too
-      const resetKey = `reset-${user.id}`;
-      if (!checkRateLimit(resetKey)) {
+      if (!await checkRateLimitDB(supabase, user.id)) {
         return new Response(JSON.stringify({ ok: false, error: "Trop de demandes. Réessayez dans 5 minutes." }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Check PIN exists
       const { data: pinData } = await supabase
         .from("user_chat_pins")
         .select("id")
@@ -139,13 +174,11 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Generate 6-digit code
       const resetCode = generateResetCode();
       const codeSalt = crypto.getRandomValues(new Uint8Array(16));
       const codeHash = await hashPinPBKDF2(resetCode, codeSalt);
       const expiresAt = new Date(Date.now() + RESET_CODE_EXPIRY_MS).toISOString();
 
-      // Store hashed code
       await supabase.from("user_chat_pins").update({
         reset_code_hash: codeHash,
         reset_code_salt: bytesToBase64(codeSalt),
@@ -153,14 +186,12 @@ Deno.serve(async (req) => {
         updated_at: new Date().toISOString(),
       }).eq("user_id", user.id);
 
-      // Get user's name from profile
       const { data: profile } = await supabase
         .from("profiles")
         .select("name")
         .eq("user_id", user.id)
         .maybeSingle();
 
-      // Send email via transactional email system
       const { error: emailError } = await supabase.functions.invoke("send-transactional-email", {
         body: {
           templateName: "pin-reset-code",
@@ -194,8 +225,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      const resetKey = `reset-verify-${user.id}`;
-      if (!checkRateLimit(resetKey)) {
+      if (!await checkRateLimitDB(supabase, user.id)) {
         return new Response(JSON.stringify({ ok: false, error: "Trop de tentatives." }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -213,28 +243,22 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Check expiry
       if (new Date(data.reset_code_expires) < new Date()) {
         return new Response(JSON.stringify({ ok: false, error: "Code expiré. Demandez un nouveau code." }), {
           status: 410, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Verify code
       const salt = base64ToBytes(data.reset_code_salt);
       const computedHash = await hashPinPBKDF2(code, salt);
       if (!constantTimeEqual(computedHash, data.reset_code_hash)) {
-        recordFailed(resetKey);
+        await recordFailedDB(supabase, user.id);
         return new Response(JSON.stringify({ ok: false, error: "Code incorrect" }), {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Delete the PIN entirely — user will set a new one
       await supabase.from("user_chat_pins").delete().eq("user_id", user.id);
-      failedAttempts.delete(user.id);
-      failedAttempts.delete(resetKey);
-
       console.log(`[chat-pin] PIN reset confirmed user=${user.id}`);
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -258,6 +282,8 @@ Deno.serve(async (req) => {
           user_id: user.id,
           pin_hash: pinHash,
           salt: saltB64,
+          failed_attempts: 0,
+          locked_until: null,
           reset_code_hash: null,
           reset_code_salt: null,
           reset_code_expires: null,
@@ -273,7 +299,7 @@ Deno.serve(async (req) => {
       }
 
       case "verify": {
-        if (!checkRateLimit(user.id)) {
+        if (!await checkRateLimitDB(supabase, user.id)) {
           return new Response(JSON.stringify({ ok: false, error: "Trop de tentatives. Réessayez dans 5 minutes." }), {
             status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
@@ -309,13 +335,13 @@ Deno.serve(async (req) => {
         }
 
         if (matched) {
-          failedAttempts.delete(user.id);
+          await clearFailedDB(supabase, user.id);
           console.log(`[chat-pin] verify ok user=${user.id}`);
           return new Response(JSON.stringify({ ok: true, salt: data.salt }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         } else {
-          recordFailed(user.id);
+          await recordFailedDB(supabase, user.id);
           console.warn(`[chat-pin] verify failed user=${user.id}`);
           return new Response(JSON.stringify({ ok: false, error: "PIN incorrect" }), {
             status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
