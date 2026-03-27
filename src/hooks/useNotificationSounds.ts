@@ -1,5 +1,6 @@
 import { useCallback, useRef, useEffect } from 'react';
 import { useNotificationSettings } from '@/hooks/useNotificationSettings';
+import { useVoiceSettings, shouldSpeak } from '@/hooks/useVoiceSettings';
 
 // Simple tone generator using Web Audio API
 const audioCtxRef: { current: AudioContext | null } = { current: null };
@@ -46,17 +47,55 @@ function playTone(soundType: SoundType = 'default') {
 }
 
 // ─── Voice synthesis (Web Speech API) ───
-// Short notification phrases — NO message content for security
 const VOICE_PHRASES: Record<string, string> = {
   message: 'Nouveau message',
   like: 'Nouveau like',
   comment: 'Nouveau commentaire',
-  friend_request: 'Nouvelle demande d\'ami',
+  friend_request: "Nouvelle demande d'ami",
   friend_accepted: 'Ami accepté',
   post: 'Nouvelle publication',
   live: 'Un live vient de démarrer',
   default: 'Nouvelle notification',
 };
+
+// Localized phrases
+const VOICE_PHRASES_EN: Record<string, string> = {
+  message: 'New message',
+  like: 'New like',
+  comment: 'New comment',
+  friend_request: 'New friend request',
+  friend_accepted: 'Friend accepted',
+  post: 'New post',
+  live: 'A live just started',
+  default: 'New notification',
+};
+
+const VOICE_PHRASES_ES: Record<string, string> = {
+  message: 'Nuevo mensaje',
+  like: 'Nuevo like',
+  comment: 'Nuevo comentario',
+  friend_request: 'Nueva solicitud de amistad',
+  post: 'Nueva publicación',
+  live: 'Un directo acaba de empezar',
+  default: 'Nueva notificación',
+};
+
+const VOICE_PHRASES_DE: Record<string, string> = {
+  message: 'Neue Nachricht',
+  like: 'Neues Like',
+  comment: 'Neuer Kommentar',
+  friend_request: 'Neue Freundschaftsanfrage',
+  post: 'Neuer Beitrag',
+  live: 'Ein Livestream hat begonnen',
+  default: 'Neue Benachrichtigung',
+};
+
+function getPhrasesForLang(lang: string): Record<string, string> {
+  if (lang.startsWith('en')) return VOICE_PHRASES_EN;
+  if (lang.startsWith('es')) return VOICE_PHRASES_ES;
+  if (lang.startsWith('de')) return VOICE_PHRASES_DE;
+  return VOICE_PHRASES;
+}
 
 let voiceSynthAvailable: boolean | null = null;
 
@@ -66,25 +105,29 @@ function isVoiceAvailable(): boolean {
   return voiceSynthAvailable;
 }
 
-function speakNotification(category?: string) {
+export function speakNotification(
+  category?: string,
+  options?: { volume?: number; speed?: number; lang?: string }
+) {
   if (!isVoiceAvailable()) return;
 
   try {
     const synth = window.speechSynthesis;
-    // Cancel any ongoing speech to avoid queue buildup
     synth.cancel();
 
-    const phrase = VOICE_PHRASES[category || 'default'] || VOICE_PHRASES.default;
+    const lang = options?.lang || 'fr-FR';
+    const phrases = getPhrasesForLang(lang);
+    const phrase = phrases[category || 'default'] || phrases.default;
     const utterance = new SpeechSynthesisUtterance(phrase);
-    utterance.lang = 'fr-FR';
-    utterance.rate = 1.1;
+    utterance.lang = lang;
+    utterance.rate = options?.speed ?? 1.1;
     utterance.pitch = 1.0;
-    utterance.volume = 0.7;
+    utterance.volume = options?.volume ?? 0.7;
 
-    // Try to pick a French voice
     const voices = synth.getVoices();
-    const frVoice = voices.find(v => v.lang.startsWith('fr')) || voices[0];
-    if (frVoice) utterance.voice = frVoice;
+    const langPrefix = lang.split('-')[0];
+    const matchVoice = voices.find(v => v.lang.startsWith(langPrefix)) || voices[0];
+    if (matchVoice) utterance.voice = matchVoice;
 
     synth.speak(utterance);
   } catch {
@@ -98,7 +141,6 @@ export function useNotificationSound() {
   const playNotificationSound = useCallback((category?: 'message' | 'like' | 'comment' | 'friend_request') => {
     if (!settings?.sound_enabled) return;
 
-    // Check category-specific settings
     if (category === 'message' && !settings.messages_enabled) return;
     if (category === 'like' && !settings.likes_enabled) return;
     if (category === 'comment' && !settings.comments_enabled) return;
@@ -113,9 +155,9 @@ export function useNotificationSound() {
 export function useRealtimeNotificationSound() {
   const { playNotificationSound } = useNotificationSound();
   const { data: settings } = useNotificationSettings();
+  const { voiceSettings } = useVoiceSettings();
   const lastPlayedRef = useRef(0);
 
-  // Preload voices on mount
   useEffect(() => {
     if (isVoiceAvailable()) {
       window.speechSynthesis.getVoices();
@@ -124,23 +166,22 @@ export function useRealtimeNotificationSound() {
 
   const playWithThrottle = useCallback((category?: 'message' | 'like' | 'comment' | 'friend_request') => {
     const now = Date.now();
-    if (now - lastPlayedRef.current < 2000) return; // throttle 2s
+    if (now - lastPlayedRef.current < 2000) return;
     lastPlayedRef.current = now;
 
-    // Play tone
     playNotificationSound(category);
 
-    // Speak voice notification (after short delay so tone plays first)
-    if (settings?.sound_enabled !== false) {
-      setTimeout(() => speakNotification(category), 300);
+    if (settings?.sound_enabled !== false && shouldSpeak(voiceSettings, category)) {
+      setTimeout(() => speakNotification(category, {
+        volume: voiceSettings.voice_volume,
+        speed: voiceSettings.voice_speed,
+        lang: voiceSettings.voice_lang,
+      }), 300);
     }
-  }, [playNotificationSound, settings]);
+  }, [playNotificationSound, settings, voiceSettings]);
 
   return playWithThrottle;
 }
-
-// Export for direct use
-export { speakNotification };
 
 export const SOUND_OPTIONS = [
   { value: 'default', label: 'Par défaut' },
