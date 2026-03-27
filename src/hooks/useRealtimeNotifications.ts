@@ -66,10 +66,10 @@ export function useRealtimeNotifications() {
             try {
               const { data } = await supabase
                 .from('profiles')
-                .select('display_name')
+                .select('name')
                 .eq('id', actorId)
                 .maybeSingle();
-              if (data?.display_name) senderName = data.display_name;
+              if (data?.name) senderName = data.name;
             } catch {}
           }
 
