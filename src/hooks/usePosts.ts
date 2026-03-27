@@ -214,9 +214,12 @@ export function useCreatePost() {
     mutationFn: async ({ body, imageUrl, expiresAt, publishAt }: { body: string; imageUrl?: string; expiresAt?: string; publishAt?: string }) => {
       if (!user) throw new Error('Not authenticated');
 
+      // Sanitize: strip HTML tags and limit length
+      const sanitizedBody = body.replace(/<[^>]*>/g, '').slice(0, 5000);
+
       const insertData: any = {
         user_id: user.id,
-        body,
+        body: sanitizedBody,
         image_url: imageUrl || null,
       };
       if (expiresAt) insertData.expires_at = expiresAt;
