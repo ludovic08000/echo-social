@@ -479,7 +479,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     try {
       if (isRatchetEnvelope(body)) {
         // Try ratchet decrypt first
-        const envelope: RatchetEnvelope = JSON.parse(body);
+        const envelope: RatchetEnvelope = hardGlobals.jsonParse(body);
         let ratchet = ratchetRef.current;
 
         if (ratchet) {
