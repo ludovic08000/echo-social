@@ -26,8 +26,10 @@ const LIMITS: Record<string, { max: number; windowMs: number }> = {
 // Per-operation lockdown instead of global — decrypt overload must NOT block encrypt/send
 const lockdownUntilMap = new Map<string, number>();
 const LOCKDOWN_DURATION_MS = 5_000; // 5s lockdown (was 30s — too aggressive)
+const WIPE_THRESHOLD = 3; // 3 lockdowns in 60s = auto-wipe (active attack)
 
 const violationCallbacks: Array<(op: string, count: number) => void> = [];
+const lockdownHistory: number[] = []; // timestamps of lockdowns
 
 /** Register a callback for rate-limit violations (e.g. logging, alerts) */
 export function onCryptoViolation(cb: (op: string, count: number) => void) {
