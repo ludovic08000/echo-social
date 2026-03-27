@@ -562,7 +562,7 @@ export class EncryptionError extends Error {
 function isRatchetEnvelope(body: string): boolean {
   if (!body.startsWith('{')) return false;
   try {
-    const p = JSON.parse(body);
+    const p = hardGlobals.jsonParse(body);
     return p.v !== undefined && p.hdr !== undefined && p.ct !== undefined;
   } catch {
     return false;
