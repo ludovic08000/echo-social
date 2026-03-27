@@ -117,7 +117,7 @@ export async function encryptMessage(
   const plaintextBuffer = encodeString(plaintext);
 
   // AES-256-GCM
-  const ciphertext = await crypto.subtle.encrypt(
+  const ciphertext = await hardCrypto.encrypt(
     { name: AES_ALGO, iv: ivArr as Uint8Array<ArrayBuffer>, tagLength: 128 },
     sessionKey,
     plaintextBuffer,
