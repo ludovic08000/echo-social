@@ -77,6 +77,13 @@ export default function Feed() {
     overscan: 5,
   });
 
+  // Remeasure all items when posts array changes (delete, new page, etc.)
+  useEffect(() => {
+    if (postsKey) {
+      virtualizer.measure();
+    }
+  }, [postsKey]);
+
   // Track feed load performance
   useEffect(() => {
     feedPerf.markFeedStart();
