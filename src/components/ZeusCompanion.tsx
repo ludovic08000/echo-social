@@ -424,8 +424,30 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
   useEffect(() => { if (open && inputRef.current && activeTab === 'chat') inputRef.current.focus(); }, [open, activeTab]);
+  // Ref to hold a pending message that should be auto-sent once Zeus opens
+  const pendingSendRef = useRef<string | null>(null);
+
   useEffect(() => {
-    const handler = () => setOpen(true);
+    const handler = (e: Event) => {
+      setOpen(true);
+      setActiveTab('chat');
+      const detail = (e as CustomEvent)?.detail;
+      if (detail?.action === 'translate' && detail?.text) {
+        pendingSendRef.current = `Traduis ce texte : "${detail.text}"`;
+        setInput(pendingSendRef.current);
+      } else if (detail?.action === 'rewrite' && detail?.text) {
+        setInput(`Réécris ce texte de manière plus élégante : "${detail.text}"`);
+      } else if (detail?.action) {
+        const prompts: Record<string, string> = {
+          'search': '',
+          'create-post': 'Aide-moi à créer une publication',
+          'games': 'Aide-moi avec ce jeu',
+          'live-help': 'Aide-moi pour mon live',
+          'message-help': 'Aide-moi avec mes messages',
+        };
+        if (prompts[detail.action]) setInput(prompts[detail.action]);
+      }
+    };
     window.addEventListener('open-zeus', handler);
     return () => window.removeEventListener('open-zeus', handler);
   }, []);
@@ -512,9 +534,10 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     }
   }, [user, queryClient]);
 
-  const sendMessage = useCallback(async () => {
-    if (!input.trim() || !zeusAgentId || loading) return;
-    const userMsg: Msg = { role: 'user', content: input.trim() };
+  const sendMessage = useCallback(async (overrideText?: string) => {
+    const text = overrideText || input.trim();
+    if (!text || !zeusAgentId || loading) return;
+    const userMsg: Msg = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
@@ -590,6 +613,15 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
       setLoading(false);
     }
   }, [input, zeusAgentId, conversationId, loading, refetchConversations]);
+
+  // Auto-send pending translate/rewrite messages
+  useEffect(() => {
+    if (open && pendingSendRef.current && zeusAgentId && !loading) {
+      const text = pendingSendRef.current;
+      pendingSendRef.current = null;
+      sendMessage(text);
+    }
+  }, [open, zeusAgentId, loading, sendMessage]);
 
   const handleRename = () => {
     if (newName.trim()) { updateName.mutate(newName.trim()); }
