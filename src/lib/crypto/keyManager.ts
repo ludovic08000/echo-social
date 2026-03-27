@@ -14,6 +14,7 @@ import {
   KX_KEY_PARAMS, SIG_KEY_PARAMS,
 } from './constants';
 import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, randomBytes } from './utils';
+import { hardCrypto, scrubBuffer } from './cryptoIntegrity';
 
 export interface IdentityKeyPair {
   publicKey: CryptoKey;
@@ -103,8 +104,8 @@ function dbDelete(storeName: string, key: string): Promise<void> {
 // ─── Fingerprint (safety numbers) ───
 
 async function computeFingerprint(publicKey: CryptoKey): Promise<string> {
-  const raw = await crypto.subtle.exportKey('raw', publicKey);
-  const hash = await crypto.subtle.digest('SHA-256', raw);
+  const raw = await hardCrypto.exportKey('raw', publicKey);
+  const hash = await hardCrypto.digest('SHA-256', raw);
   const bytes = new Uint8Array(hash);
   let fp = '';
   for (let i = 0; i < 20; i++) {
@@ -120,8 +121,8 @@ async function computeFingerprint(publicKey: CryptoKey): Promise<string> {
 export async function generateIdentityKeys(): Promise<IdentityKeyPair> {
   // Generate with extractable=true (needed for initial JWK export to persist)
   const [kxPair, sigPair] = await Promise.all([
-    crypto.subtle.generateKey(KX_KEY_PARAMS as any, true, ['deriveBits']),
-    crypto.subtle.generateKey(SIG_KEY_PARAMS as any, true, ['sign', 'verify']),
+    hardCrypto.generateKey(KX_KEY_PARAMS as any, true, ['deriveBits']),
+    hardCrypto.generateKey(SIG_KEY_PARAMS as any, true, ['sign', 'verify']),
   ]);
 
   const fingerprint = await computeFingerprint((kxPair as CryptoKeyPair).publicKey);
@@ -227,8 +228,8 @@ export async function exportPublicKeyBundle(keys: IdentityKeyPair): Promise<{
   fingerprint: string;
 }> {
   const [identityRaw, signingRaw] = await Promise.all([
-    crypto.subtle.exportKey('raw', keys.publicKey),
-    crypto.subtle.exportKey('raw', keys.signingPublicKey),
+    hardCrypto.exportKey('raw', keys.publicKey),
+    hardCrypto.exportKey('raw', keys.signingPublicKey),
   ]);
 
   return {
@@ -268,7 +269,7 @@ export async function loadSessionKey(conversationId: string): Promise<SessionKey
   const stored = await dbGet<StoredSessionKey>(STORE_SESSION, conversationId);
   if (!stored) return null;
 
-  const sharedSecret = await crypto.subtle.importKey(
+  const sharedSecret = await hardCrypto.importKey(
     'jwk', stored.keyJWK,
     { name: 'AES-GCM', length: 256 },
     false,  // NON-EXTRACTABLE at runtime

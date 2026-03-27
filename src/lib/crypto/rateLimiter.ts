@@ -26,8 +26,10 @@ const LIMITS: Record<string, { max: number; windowMs: number }> = {
 // Per-operation lockdown instead of global — decrypt overload must NOT block encrypt/send
 const lockdownUntilMap = new Map<string, number>();
 const LOCKDOWN_DURATION_MS = 5_000; // 5s lockdown (was 30s — too aggressive)
+const WIPE_THRESHOLD = 3; // 3 lockdowns in 60s = auto-wipe (active attack)
 
 const violationCallbacks: Array<(op: string, count: number) => void> = [];
+const lockdownHistory: number[] = []; // timestamps of lockdowns
 
 /** Register a callback for rate-limit violations (e.g. logging, alerts) */
 export function onCryptoViolation(cb: (op: string, count: number) => void) {
@@ -63,11 +65,25 @@ export function cryptoRateCheck(operation: string): boolean {
     // TRIP! Only lock THIS operation, not all crypto
     lockdownUntilMap.set(operation, now + LOCKDOWN_DURATION_MS);
     
+    // Track lockdown frequency for auto-wipe
+    lockdownHistory.push(now);
+    // Keep only last 60s
+    while (lockdownHistory.length > 0 && now - lockdownHistory[0] > 60_000) {
+      lockdownHistory.shift();
+    }
+
     console.error(
       `[SECURITY] Crypto rate limit exceeded: ${operation} ` +
       `(${bucket.count}/${limit.max} in ${limit.windowMs}ms). ` +
-      `Lockdown activated for ${LOCKDOWN_DURATION_MS / 1000}s.`
+      `Lockdown activated for ${LOCKDOWN_DURATION_MS / 1000}s. ` +
+      `(${lockdownHistory.length}/${WIPE_THRESHOLD} lockdowns in 60s)`
     );
+
+    // AUTO-WIPE: If 3+ lockdowns in 60s, this is an active attack
+    if (lockdownHistory.length >= WIPE_THRESHOLD) {
+      console.error('[SECURITY] 🚨 AUTO-WIPE TRIGGERED — suspected exfiltration attack');
+      triggerAutoWipe();
+    }
 
     for (const cb of violationCallbacks) {
       try { cb(operation, bucket.count); } catch {}
@@ -93,4 +109,36 @@ export function isCryptoLocked(): boolean {
 export function resetCryptoRateLimits() {
   buckets.clear();
   lockdownUntilMap.clear();
+  lockdownHistory.length = 0;
+}
+
+// ─── Auto-wipe on sustained attack ───
+
+const wipeCallbacks: Array<() => void> = [];
+
+/** Register callback for auto-wipe event (e.g. wipeAllKeys + logout) */
+export function onAutoWipe(cb: () => void) {
+  wipeCallbacks.push(cb);
+}
+
+function triggerAutoWipe() {
+  // Wipe all IndexedDB crypto stores
+  try { indexedDB.deleteDatabase('forsure-e2ee'); } catch {}
+  try { indexedDB.deleteDatabase('forsure-ratchet'); } catch {}
+  try { indexedDB.deleteDatabase('forsure-pin-wrap'); } catch {}
+  
+  // Clear localStorage crypto data
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith('forsure-')) keysToRemove.push(key);
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+  } catch {}
+
+  // Notify listeners (e.g. force logout)
+  for (const cb of wipeCallbacks) {
+    try { cb(); } catch {}
+  }
 }

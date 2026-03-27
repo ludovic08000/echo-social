@@ -56,4 +56,25 @@ export {
   isCryptoLocked,
   onCryptoViolation,
   resetCryptoRateLimits,
+  onAutoWipe,
 } from './rateLimiter';
+
+// Integrity shield (anti-tampering)
+export {
+  hardCrypto,
+  verifyCryptoIntegrity,
+  isTampered,
+  onTamperDetected,
+  hardenPrototypes,
+  startIntegrityMonitor,
+  stopIntegrityMonitor,
+  scrubBuffer,
+} from './cryptoIntegrity';
+
+// PIN wrapping (keys encrypted at rest)
+export {
+  wrapKeysWithPin,
+  unwrapKeysWithPin,
+  hasWrappedKeys,
+  deleteWrappedKeys,
+} from './pinWrap';

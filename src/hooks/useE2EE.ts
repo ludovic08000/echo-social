@@ -40,6 +40,7 @@ import {
 } from '@/lib/crypto';
 import { base64ToBuffer } from '@/lib/crypto/utils';
 import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
+import { verifyCryptoIntegrity, isTampered } from '@/lib/crypto/cryptoIntegrity';
 import { KX_KEY_PARAMS } from '@/lib/crypto/constants';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
@@ -404,6 +405,11 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       fingerprintChanged: state.fingerprintChanged,
     });
 
+    // BLOCK if crypto has been tampered with
+    if (isTampered() || !verifyCryptoIntegrity()) {
+      throw new EncryptionError('Crypto integrity compromised — operation blocked');
+    }
+
     // BLOCK if fingerprint changed and not yet acknowledged
     if (state.fingerprintChanged) {
       throw new EncryptionError('La clé de sécurité du contact a changé — vérification requise');
@@ -463,6 +469,11 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     if (!cryptoRateCheck('decrypt')) {
       return { text: '🔒 Opération limitée (sécurité)', encrypted: true, verified: false };
+    }
+
+    // Tamper check on decrypt too
+    if (isTampered()) {
+      return { text: '🔒 Intégrité compromise', encrypted: true, verified: false };
     }
 
     try {
