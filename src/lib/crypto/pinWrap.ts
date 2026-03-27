@@ -9,7 +9,7 @@
  * Derivation: PBKDF2-SHA256 (600,000 iterations) from 6-digit PIN
  */
 
-import { hardCrypto } from './cryptoIntegrity';
+import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 
 const PIN_WRAP_STORE = 'pin-wrapped-keys';
 const PBKDF2_ITERATIONS = 600_000;
