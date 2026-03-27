@@ -235,7 +235,7 @@ export async function ratchetDecrypt(
     }
 
     // DH ratchet step
-    const dhOutput = await crypto.subtle.deriveBits(
+    const dhOutput = await hardCrypto.deriveBits(
       { name: 'X25519', public: headerDhKey } as any,
       newState.dhSendingPair.privateKey,
       256,
