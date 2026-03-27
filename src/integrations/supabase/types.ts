@@ -715,6 +715,57 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_logs: {
+        Row: {
+          conversation_id: string | null
+          created_at: string
+          device_fingerprint: string | null
+          event_type: string
+          id: string
+          live_id: string | null
+          media_id: string | null
+          metadata: Json | null
+          post_id: string | null
+          reason_code: string | null
+          status: string | null
+          target_user_id: string | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          conversation_id?: string | null
+          created_at?: string
+          device_fingerprint?: string | null
+          event_type: string
+          id?: string
+          live_id?: string | null
+          media_id?: string | null
+          metadata?: Json | null
+          post_id?: string | null
+          reason_code?: string | null
+          status?: string | null
+          target_user_id?: string | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          conversation_id?: string | null
+          created_at?: string
+          device_fingerprint?: string | null
+          event_type?: string
+          id?: string
+          live_id?: string | null
+          media_id?: string | null
+          metadata?: Json | null
+          post_id?: string | null
+          reason_code?: string | null
+          status?: string | null
+          target_user_id?: string | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       banned_emails: {
         Row: {
           associated_user_id: string | null
@@ -4313,6 +4364,7 @@ export type Database = {
         }
         Returns: number
       }
+      purge_old_audit_logs: { Args: never; Returns: undefined }
       read_email_batch: {
         Args: { batch_size: number; queue_name: string; vt: number }
         Returns: {

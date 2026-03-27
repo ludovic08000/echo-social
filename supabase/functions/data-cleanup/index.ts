@@ -75,6 +75,10 @@ Deno.serve(async (req) => {
     await supabase.rpc("cleanup_old_fingerprints");
     results.fingerprints_cleaned = 1;
 
+    // 8. Purge audit logs older than 6 months (RGPD/CNIL compliance)
+    await supabase.rpc("purge_old_audit_logs");
+    results.audit_logs_purged = 1;
+
     console.log("Cleanup results:", results);
 
     return new Response(
