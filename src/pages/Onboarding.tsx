@@ -50,6 +50,7 @@ export default function Onboarding() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [signupData, setSignupData] = useState<SignupData | null>(null);
   const [accountCreated, setAccountCreated] = useState(false);
+  const [signupAttempted, setSignupAttempted] = useState(false);
 
   // Find friends state
   const sendRequest = useSendFriendRequest();
