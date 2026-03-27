@@ -390,16 +390,17 @@ export async function serializeRatchetState(state: RatchetState): Promise<string
 export async function deserializeRatchetState(json: string): Promise<RatchetState> {
   const d = JSON.parse(json);
 
-  const dhSendPub = await importKeyFromJWK(d.dhSendPubJWK, KX_KEY_PARAMS as any, []);
-  const dhSendPriv = await importKeyFromJWK(d.dhSendPrivJWK, KX_KEY_PARAMS as any, ['deriveBits']);
-  const dhRecv = d.dhRecvJWK ? await importKeyFromJWK(d.dhRecvJWK, KX_KEY_PARAMS as any, []) : null;
-  const rootKey = await importKeyFromJWK(d.rootJWK, { name: 'HMAC', hash: 'SHA-256' } as AlgorithmIdentifier, ['sign']);
-  const sendCK = d.sendCKJWK ? await importKeyFromJWK(d.sendCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign']) : null;
-  const recvCK = d.recvCKJWK ? await importKeyFromJWK(d.recvCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign']) : null;
+  // ALL keys re-imported as NON-EXTRACTABLE
+  const dhSendPub = await importKeyFromJWK(d.dhSendPubJWK, KX_KEY_PARAMS as any, [], false);
+  const dhSendPriv = await importKeyFromJWK(d.dhSendPrivJWK, KX_KEY_PARAMS as any, ['deriveBits'], false);
+  const dhRecv = d.dhRecvJWK ? await importKeyFromJWK(d.dhRecvJWK, KX_KEY_PARAMS as any, [], false) : null;
+  const rootKey = await importKeyFromJWK(d.rootJWK, { name: 'HMAC', hash: 'SHA-256' } as AlgorithmIdentifier, ['sign'], false);
+  const sendCK = d.sendCKJWK ? await importKeyFromJWK(d.sendCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign'], false) : null;
+  const recvCK = d.recvCKJWK ? await importKeyFromJWK(d.recvCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign'], false) : null;
 
   const skippedKeys = new Map<string, CryptoKey>();
   for (const [k, jwk] of d.skippedEntries || []) {
-    skippedKeys.set(k, await importKeyFromJWK(jwk as any, { name: AES_ALGO } as any, ['encrypt', 'decrypt']));
+    skippedKeys.set(k, await importKeyFromJWK(jwk as any, { name: AES_ALGO } as any, ['encrypt', 'decrypt'], false));
   }
 
   return {

@@ -188,6 +188,26 @@ async function writeRawIdentityBlob(userId: string, blob: string): Promise<void>
   });
 }
 
+/** Delete raw identity keys from IndexedDB (after PIN wrap) */
+async function deleteRawIdentityBlob(userId: string): Promise<void> {
+  try {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open('forsure-e2ee', 2);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => resolve(req.result);
+    });
+    if (!db.objectStoreNames.contains('identity-keys')) return;
+    const tx = db.transaction('identity-keys', 'readwrite');
+    tx.objectStore('identity-keys').delete(userId);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // DB may not exist yet
+  }
+}
+
 // ─── Hook ───
 
 export function useChatPin() {
@@ -279,6 +299,10 @@ export function useChatPin() {
           iv: bytesToBase64(iv),
           salt: saltB64,
         });
+
+        // DELETE raw identity keys — only wrapped version remains
+        await deleteRawIdentityBlob(user.id);
+        console.log('[PIN] Raw identity keys deleted after wrapping');
       }
 
       // Mark session as unlocked
@@ -369,6 +393,9 @@ export function useChatPin() {
               iv: bytesToBase64(iv),
               salt: verifyResult.salt,
             });
+            // Delete raw keys after wrapping — only wrapped version remains
+            await deleteRawIdentityBlob(user.id);
+            console.log('[PIN] Existing keys wrapped and raw deleted');
           }
         } catch {}
       }
@@ -392,11 +419,15 @@ export function useChatPin() {
     }
   }, [user]);
 
-  /** Lock messaging (clear session) */
-  const lock = useCallback(() => {
+  /** Lock messaging — clear session AND delete raw identity keys from IndexedDB */
+  const lock = useCallback(async () => {
     sessionStorage.removeItem(SESSION_KEY);
+    // Delete raw identity keys so they're only accessible after PIN unlock
+    if (user) {
+      await deleteRawIdentityBlob(user.id).catch(() => {});
+    }
     setState(s => ({ ...s, unlocked: false }));
-  }, []);
+  }, [user]);
 
   /** Request PIN reset via email OTP */
   const requestReset = useCallback(async (): Promise<boolean> => {
