@@ -64,11 +64,11 @@ export async function performKeyExchange(
   const salt = new Uint8Array(await hardCrypto.digest('SHA-256', saltSource)) as Uint8Array<ArrayBuffer>;
   const info = encodeString(`forsure-e2ee-v${PROTOCOL_VERSION}-${conversationId}`);
 
-  const hkdfKey = await crypto.subtle.importKey(
+  const hkdfKey = await hardCrypto.importKey(
     'raw', sharedBits, 'HKDF', false, ['deriveKey']
   );
 
-  return crypto.subtle.deriveKey(
+  return hardCrypto.deriveKey(
     { name: 'HKDF', hash: HKDF_HASH, salt, info },
     hkdfKey,
     { name: AES_ALGO, length: AES_KEY_LENGTH },
