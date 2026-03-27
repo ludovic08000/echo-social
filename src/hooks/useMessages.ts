@@ -371,10 +371,13 @@ export function useMessages(conversationId: string) {
 
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
 
+      const hasZeusMessages = visibleMessages.some(m => m.sender_id === ZEUS_BOT_ID);
+      const companionDisplayName = hasZeusMessages ? await getCompanionName(user?.id) : 'Zeus ⚡';
+
       return visibleMessages.map(msg => ({
         ...msg,
         profile: {
-          name: msg.sender_id === ZEUS_BOT_ID ? (await getCompanionName(undefined)) : (profileMap.get(msg.sender_id)?.name || 'Unknown'),
+          name: msg.sender_id === ZEUS_BOT_ID ? companionDisplayName : (profileMap.get(msg.sender_id)?.name || 'Unknown'),
           avatar_url: profileMap.get(msg.sender_id)?.avatar_url || null,
         },
       })) as Message[];
