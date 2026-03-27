@@ -182,7 +182,8 @@ export function useConversations() {
       const { data: profiles } = await supabase.from('profiles').select('user_id, name, avatar_url').in('user_id', otherUserIds);
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
       if (!profileMap.has(ZEUS_BOT_ID) && otherUserIds.includes(ZEUS_BOT_ID)) {
-        profileMap.set(ZEUS_BOT_ID, { user_id: ZEUS_BOT_ID, name: 'Zeus ⚡', avatar_url: null });
+        const companionName = await getCompanionName(user.id);
+        profileMap.set(ZEUS_BOT_ID, { user_id: ZEUS_BOT_ID, name: companionName, avatar_url: null });
       }
 
       const { data: recentMessages } = await supabase
