@@ -53,7 +53,7 @@ const KNOWN_FP_KEY = 'forsure-known-fps';
 
 function openRatchetDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(RATCHET_DB_NAME, RATCHET_DB_VERSION);
+    const req = hardGlobals.idbOpen(RATCHET_DB_NAME, RATCHET_DB_VERSION);
     req.onerror = () => reject(req.error);
     req.onsuccess = () => resolve(req.result);
     req.onupgradeneeded = () => {
