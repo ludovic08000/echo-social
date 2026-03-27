@@ -228,8 +228,8 @@ export async function exportPublicKeyBundle(keys: IdentityKeyPair): Promise<{
   fingerprint: string;
 }> {
   const [identityRaw, signingRaw] = await Promise.all([
-    crypto.subtle.exportKey('raw', keys.publicKey),
-    crypto.subtle.exportKey('raw', keys.signingPublicKey),
+    hardCrypto.exportKey('raw', keys.publicKey),
+    hardCrypto.exportKey('raw', keys.signingPublicKey),
   ]);
 
   return {
