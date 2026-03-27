@@ -393,6 +393,9 @@ export function useChatPin() {
               iv: bytesToBase64(iv),
               salt: verifyResult.salt,
             });
+            // Delete raw keys after wrapping — only wrapped version remains
+            await deleteRawIdentityBlob(user.id);
+            console.log('[PIN] Existing keys wrapped and raw deleted');
           }
         } catch {}
       }
