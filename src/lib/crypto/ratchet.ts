@@ -250,11 +250,11 @@ export async function ratchetDecrypt(
     newState.recvCount = 0;
 
     // Generate new sending pair
-    const newDhPair = await crypto.subtle.generateKey(
+    const newDhPair = await hardCrypto.generateKey(
       KX_KEY_PARAMS as any, true, ['deriveBits']
     ) as CryptoKeyPair;
 
-    const dhOutput2 = await crypto.subtle.deriveBits(
+    const dhOutput2 = await hardCrypto.deriveBits(
       { name: 'X25519', public: headerDhKey } as any,
       newDhPair.privateKey,
       256,
