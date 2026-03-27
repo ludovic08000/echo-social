@@ -1,6 +1,9 @@
 /**
  * Cryptographic utility functions
+ * All calls use hardened references from cryptoIntegrity.ts
  */
+
+import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 
 /** Convert ArrayBuffer to Base64 string */
 export function bufferToBase64(buffer: ArrayBuffer): string {
@@ -9,12 +12,12 @@ export function bufferToBase64(buffer: ArrayBuffer): string {
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
-  return btoa(binary);
+  return hardGlobals.btoa(binary);
 }
 
 /** Convert Base64 string to ArrayBuffer */
 export function base64ToBuffer(base64: string): ArrayBuffer {
-  const binary = atob(base64);
+  const binary = hardGlobals.atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
@@ -24,7 +27,7 @@ export function base64ToBuffer(base64: string): ArrayBuffer {
 
 /** Generate cryptographically secure random bytes */
 export function randomBytes(length: number): Uint8Array {
-  return crypto.getRandomValues(new Uint8Array(length));
+  return hardCrypto.getRandomValues(new Uint8Array(length));
 }
 
 /** Constant-time comparison to prevent timing attacks */
@@ -39,7 +42,7 @@ export function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
 
 /** Hash data with SHA-384 */
 export async function sha384(data: ArrayBuffer): Promise<ArrayBuffer> {
-  return crypto.subtle.digest('SHA-384', data);
+  return hardCrypto.digest('SHA-384', data);
 }
 
 /** Concatenate multiple ArrayBuffers */
@@ -56,17 +59,17 @@ export function concatBuffers(...buffers: ArrayBuffer[]): ArrayBuffer {
 
 /** Encode string to ArrayBuffer */
 export function encodeString(str: string): ArrayBuffer {
-  return new TextEncoder().encode(str).buffer;
+  return new hardGlobals.TextEncoder().encode(str).buffer;
 }
 
 /** Decode ArrayBuffer to string */
 export function decodeString(buffer: ArrayBuffer): string {
-  return new TextDecoder().decode(buffer);
+  return new hardGlobals.TextDecoder().decode(buffer);
 }
 
 /** Export CryptoKey to JWK for storage */
 export async function exportKeyToJWK(key: CryptoKey): Promise<JsonWebKey> {
-  return crypto.subtle.exportKey('jwk', key);
+  return hardCrypto.exportKey('jwk', key);
 }
 
 /** Import CryptoKey from JWK */
@@ -76,5 +79,5 @@ export async function importKeyFromJWK(
   usages: KeyUsage[],
   extractable: boolean = true,
 ): Promise<CryptoKey> {
-  return crypto.subtle.importKey('jwk', jwk, algorithm, extractable, usages);
+  return hardCrypto.importKey('jwk', jwk, algorithm, extractable, usages);
 }
