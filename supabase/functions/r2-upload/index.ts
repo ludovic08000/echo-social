@@ -11,7 +11,7 @@ const ALLOWED_MIME_TYPES: Record<string, string[]> = {
   stories:     ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"],
   backgrounds: ["image/jpeg", "image/png", "image/webp"],
   documents:   ["image/jpeg", "image/png", "image/webp", "application/pdf"],
-  voice:       ["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg"],
+  voice:       ["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/aac", "audio/wav", "audio/x-m4a", "audio/mp4;codecs=mp4a.40.2"],
   lives:       ["image/jpeg", "image/png", "image/webp", "video/webm", "video/mp4"],
   feed:        ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/quicktime"],
   thumbnails:  ["image/jpeg", "image/png", "image/webp"],
@@ -69,8 +69,11 @@ const MIME_EXT_MAP: Record<string, string[]> = {
   "video/quicktime": ["mov"],
   "audio/webm": ["webm"],
   "audio/ogg": ["ogg"],
-  "audio/mp4": ["m4a"],
+  "audio/mp4": ["m4a", "mp4"],
   "audio/mpeg": ["mp3"],
+  "audio/aac": ["aac", "m4a"],
+  "audio/wav": ["wav"],
+  "audio/x-m4a": ["m4a"],
   "application/pdf": ["pdf"],
 };
 
