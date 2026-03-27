@@ -71,9 +71,19 @@ export const hardGlobals = Object.freeze({
 
 let tamperDetected = false;
 const tamperCallbacks: Array<(reason: string) => void> = [];
+// Freeze the array structure — prevent .push()/.length=0 from external code
+Object.defineProperty(tamperCallbacks, 'push', {
+  value: function(this: Array<(reason: string) => void>, ...items: ((reason: string) => void)[]) {
+    return Array.prototype.push.apply(this, items);
+  },
+  writable: false,
+  configurable: false,
+});
 
+/** Register a tamper callback. Only callable via this function. */
 export function onTamperDetected(cb: (reason: string) => void) {
-  tamperCallbacks.push(cb);
+  if (typeof cb !== 'function') return;
+  tamperCallbacks[tamperCallbacks.length] = cb;
 }
 
 function triggerTamper(reason: string) {
