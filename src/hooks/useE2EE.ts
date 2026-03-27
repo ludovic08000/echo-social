@@ -471,6 +471,11 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       return { text: '🔒 Opération limitée (sécurité)', encrypted: true, verified: false };
     }
 
+    // Tamper check on decrypt too
+    if (isTampered()) {
+      return { text: '🔒 Intégrité compromise', encrypted: true, verified: false };
+    }
+
     try {
       if (isRatchetEnvelope(body)) {
         // Try ratchet decrypt first
