@@ -137,6 +137,33 @@ export default function Signup() {
       }
     }
 
+    // Verify email domain exists (MX check)
+    setIsLoading(true);
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const verifyResp = await fetch(`${supabaseUrl}/functions/v1/verify-email-domain`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${anonKey}`, 'apikey': anonKey },
+        body: JSON.stringify({ email }),
+      });
+      const verifyData = await verifyResp.json();
+      if (!verifyData.valid) {
+        const reasons: Record<string, string> = {
+          invalid_format: 'Le format de l\'adresse e-mail est invalide.',
+          disposable_email: 'Les adresses e-mail jetables ne sont pas autorisées.',
+          no_mx_record: 'Ce domaine e-mail n\'existe pas ou ne peut pas recevoir de mails. Vérifiez l\'orthographe.',
+        };
+        toast({ title: 'Adresse e-mail invalide', description: reasons[verifyData.reason] || 'Cette adresse e-mail ne semble pas valide.', variant: 'destructive' });
+        setIsLoading(false);
+        return;
+      }
+    } catch {
+      // Be permissive if check fails
+      console.warn('Email domain verification skipped');
+    }
+    setIsLoading(false);
+
     // Store signup data in sessionStorage — account will be created after onboarding
     const fullName = `${firstName.trim()} ${lastName.trim()}`;
     const dobString = `${birthYear}-${birthMonth.padStart(2, '0')}-${birthDay.padStart(2, '0')}`;
