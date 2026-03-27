@@ -51,7 +51,7 @@ function checkRateLimit(userId: string): boolean {
   return true;
 }
 
-// CORS
+// CORS — restricted to actual app domains only
 const ALLOWED_ORIGINS = [
   "https://calm-connect-05.lovable.app",
   "https://id-preview--14bf9f2a-b211-4bff-8f3c-1cd3d8a0a907.lovable.app",
@@ -60,7 +60,7 @@ const ALLOWED_ORIGINS = [
 ];
 function cors(req: Request): Record<string, string> {
   const origin = req.headers.get("origin") || "";
-  const ok = ALLOWED_ORIGINS.includes(origin) || origin.endsWith(".lovable.app") || origin.endsWith(".lovableproject.com");
+  const ok = ALLOWED_ORIGINS.includes(origin);
   return {
     "Access-Control-Allow-Origin": ok ? origin : ALLOWED_ORIGINS[0],
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
