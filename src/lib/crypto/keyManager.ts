@@ -105,7 +105,7 @@ function dbDelete(storeName: string, key: string): Promise<void> {
 
 async function computeFingerprint(publicKey: CryptoKey): Promise<string> {
   const raw = await hardCrypto.exportKey('raw', publicKey);
-  const hash = await crypto.subtle.digest('SHA-256', raw);
+  const hash = await hardCrypto.digest('SHA-256', raw);
   const bytes = new Uint8Array(hash);
   let fp = '';
   for (let i = 0; i < 20; i++) {
