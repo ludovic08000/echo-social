@@ -425,7 +425,32 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
   useEffect(() => { if (open && inputRef.current && activeTab === 'chat') inputRef.current.focus(); }, [open, activeTab]);
   useEffect(() => {
-    const handler = () => setOpen(true);
+    const handler = (e: Event) => {
+      setOpen(true);
+      setActiveTab('chat');
+      const detail = (e as CustomEvent)?.detail;
+      if (detail?.action === 'translate' && detail?.text) {
+        const prompt = `Traduis ce texte : "${detail.text}"`;
+        setInput(prompt);
+        // Auto-send after a short delay to let state settle
+        setTimeout(() => {
+          const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+          const submitBtn = document.querySelector('[data-zeus-submit]') as HTMLButtonElement;
+          submitBtn?.click();
+        }, 300);
+      } else if (detail?.action === 'rewrite' && detail?.text) {
+        setInput(`Réécris ce texte de manière plus élégante : "${detail.text}"`);
+      } else if (detail?.action) {
+        const prompts: Record<string, string> = {
+          'search': '',
+          'create-post': 'Aide-moi à créer une publication',
+          'games': 'Aide-moi avec ce jeu',
+          'live-help': 'Aide-moi pour mon live',
+          'message-help': 'Aide-moi avec mes messages',
+        };
+        if (prompts[detail.action]) setInput(prompts[detail.action]);
+      }
+    };
     window.addEventListener('open-zeus', handler);
     return () => window.removeEventListener('open-zeus', handler);
   }, []);
