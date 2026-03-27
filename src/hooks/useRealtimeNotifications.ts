@@ -10,7 +10,7 @@ import { useQueryClient } from '@tanstack/react-query';
  */
 export function useRealtimeNotifications() {
   const { user } = useAuth();
-  const playSound = useRealtimeNotificationSound();
+  const enqueueSound = useRealtimeNotificationSound();
   const queryClient = useQueryClient();
   const loginSoundPlayed = useRef(false);
 
@@ -21,21 +21,16 @@ export function useRealtimeNotifications() {
 
     const checkUnread = async () => {
       try {
-        const [{ count: unreadNotifs }, { data: convos }] = await Promise.all([
+        const [{ count: unreadNotifs }] = await Promise.all([
           supabase
             .from('notifications')
             .select('*', { count: 'exact', head: true })
             .eq('user_id', user.id)
             .is('read_at', null),
-          supabase
-            .from('conversation_participants')
-            .select('conversation_id, last_read_at')
-            .eq('user_id', user.id),
         ]);
 
         if ((unreadNotifs || 0) > 0) {
-          // Small delay so audio context is unlocked by user interaction
-          setTimeout(() => playSound('message'), 500);
+          setTimeout(() => enqueueSound('message'), 500);
         }
       } catch {}
     };
@@ -60,19 +55,32 @@ export function useRealtimeNotifications() {
           table: 'notifications',
           filter: `user_id=eq.${user.id}`,
         },
-        (payload) => {
-          const type = (payload.new as any)?.type;
-          if (type === 'message') {
-            playSound('message');
-          } else if (type === 'friend_request' || type === 'friend_accepted') {
-            playSound('friend_request');
-          } else if (type === 'comment') {
-            playSound('comment');
-          } else if (type === 'like' || type === 'reaction') {
-            playSound('like');
-          } else {
-            playSound();
+        async (payload) => {
+          const row = payload.new as any;
+          const type: string = row?.type;
+          const actorId: string | undefined = row?.actor_id;
+
+          // Fetch sender display name (non-blocking, best-effort)
+          let senderName: string | undefined;
+          if (actorId) {
+            try {
+              const { data } = await supabase
+                .from('profiles')
+                .select('name')
+                .eq('id', actorId)
+                .maybeSingle();
+              if (data?.name) senderName = data.name;
+            } catch {}
           }
+
+          // Map notification type → sound category
+          let category: string | undefined;
+          if (type === 'message') category = 'message';
+          else if (type === 'friend_request' || type === 'friend_accepted') category = 'friend_request';
+          else if (type === 'comment') category = 'comment';
+          else if (type === 'like' || type === 'reaction') category = 'like';
+
+          enqueueSound(category, senderName);
           queryClient.invalidateQueries({ queryKey: ['notifications'] });
         }
       )
@@ -81,5 +89,5 @@ export function useRealtimeNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, playSound, queryClient]);
+  }, [user, enqueueSound, queryClient]);
 }
