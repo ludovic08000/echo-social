@@ -32,6 +32,7 @@ const NAV_ITEMS = [
   { key: 'subscriptions', label: 'Abonnements', icon: CreditCard },
   { key: 'ai', label: 'Intelligence Artificielle', icon: Brain },
   { key: 'zeus', label: '⚡ Console Zeus', icon: Zap },
+  { key: 'audit_logs', label: 'Journal d\'audit', icon: ScrollText },
   { key: 'monitoring', label: 'Monitoring', icon: Monitor },
   { key: 'security', label: 'Sécurité', icon: Lock },
   { key: 'settings', label: 'Paramètres', icon: Settings },
