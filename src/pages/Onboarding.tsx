@@ -50,6 +50,7 @@ export default function Onboarding() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [signupData, setSignupData] = useState<SignupData | null>(null);
   const [accountCreated, setAccountCreated] = useState(false);
+  const [signupAttempted, setSignupAttempted] = useState(false);
 
   // Find friends state
   const sendRequest = useSendFriendRequest();
@@ -209,18 +210,51 @@ export default function Onboarding() {
     setStep('creating');
 
     try {
+      // Prevent duplicate signUp calls — if already attempted, redirect to login
+      if (signupAttempted) {
+        toast({
+          title: '📧 Vérifiez votre email',
+          description: 'Un lien de confirmation a déjà été envoyé à ' + signupData.email + '. Vérifiez votre boîte de réception (et les spams).',
+        });
+        sessionStorage.removeItem('forsure_signup_pending');
+        navigate('/login', { replace: true });
+        return;
+      }
+
       // 1. Create account
+      setSignupAttempted(true);
       const { error } = await signUp(signupData.email, signupData.password, signupData.name, signupData.dateOfBirth);
       if (error) {
+        // Handle rate limit specifically
+        if (error.message?.toLowerCase().includes('rate limit') || (error as any).status === 429) {
+          toast({
+            title: '⏳ Trop de tentatives',
+            description: 'Un email de confirmation a déjà été envoyé. Vérifiez votre boîte de réception et réessayez dans quelques minutes.',
+          });
+          sessionStorage.removeItem('forsure_signup_pending');
+          navigate('/login', { replace: true });
+          return;
+        }
+        // Handle "user already registered"
+        if (error.message?.toLowerCase().includes('already registered') || error.message?.toLowerCase().includes('already been registered')) {
+          toast({
+            title: 'Compte déjà existant',
+            description: 'Un compte existe déjà avec cet email. Connectez-vous ou réinitialisez votre mot de passe.',
+          });
+          sessionStorage.removeItem('forsure_signup_pending');
+          navigate('/login', { replace: true });
+          return;
+        }
         toast({ title: 'Erreur d\'inscription', description: error.message, variant: 'destructive' });
+        setSignupAttempted(false);
         setStep('ai-name');
         return;
       }
 
-      // 2. Wait for user to be available
+      // 2. Wait for user to be available (email confirmation required)
       let attempts = 0;
       let newUser = null;
-      while (attempts < 15 && !newUser) {
+      while (attempts < 10 && !newUser) {
         await new Promise(r => setTimeout(r, 500));
         const { data } = await supabase.auth.getUser();
         newUser = data?.user;
@@ -228,7 +262,11 @@ export default function Onboarding() {
       }
 
       if (!newUser) {
-        toast({ title: 'Vérifiez votre email', description: 'Un lien de confirmation vous a été envoyé.' });
+        // Email confirmation is required — redirect to login
+        toast({
+          title: '📧 Vérifiez votre email',
+          description: 'Un lien de confirmation vous a été envoyé à ' + signupData.email,
+        });
         sessionStorage.removeItem('forsure_signup_pending');
         navigate('/login', { replace: true });
         return;
@@ -263,6 +301,7 @@ export default function Onboarding() {
       setStep('find-friends');
     } catch (err: any) {
       toast({ title: 'Erreur', description: err.message, variant: 'destructive' });
+      setSignupAttempted(false);
       setStep('ai-name');
     }
   };
