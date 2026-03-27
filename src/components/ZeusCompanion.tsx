@@ -545,8 +545,8 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const resp = await fetch(`https://${projectId}.supabase.co/functions/v1/agent-chat`, {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const resp = await fetch(`${supabaseUrl}/functions/v1/agent-chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
