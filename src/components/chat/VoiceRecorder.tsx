@@ -6,18 +6,26 @@ import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 
 // Detect best supported audio mimeType across browsers
+// Prioritize mp4/aac for maximum cross-platform playback (iOS requires it)
 function getSupportedMimeType(): { mimeType: string; ext: string } {
   if (typeof MediaRecorder === 'undefined') {
-    return { mimeType: '', ext: 'webm' };
+    return { mimeType: '', ext: 'mp4' };
   }
   const types = [
+    // MP4/AAC first — universally playable on iOS, Android, Windows, Mac
+    { mimeType: 'audio/mp4', ext: 'mp4' },
+    { mimeType: 'audio/aac', ext: 'aac' },
+    { mimeType: 'audio/mp4;codecs=mp4a.40.2', ext: 'mp4' },
+    // WebM/Opus — works on Chrome, Firefox, Android but NOT iOS Safari
     { mimeType: 'audio/webm;codecs=opus', ext: 'webm' },
     { mimeType: 'audio/webm', ext: 'webm' },
-    { mimeType: 'audio/mp4', ext: 'mp4' },
+    // Ogg — works on Chrome, Firefox but NOT iOS/Safari
     { mimeType: 'audio/ogg;codecs=opus', ext: 'ogg' },
     { mimeType: 'audio/ogg', ext: 'ogg' },
+    // WAV — large but universally playable
     { mimeType: 'audio/wav', ext: 'wav' },
-    { mimeType: '', ext: 'webm' }, // fallback: let browser choose
+    // Fallback: let browser choose
+    { mimeType: '', ext: 'mp4' },
   ];
   for (const t of types) {
     if (t.mimeType === '' || MediaRecorder.isTypeSupported(t.mimeType)) {
