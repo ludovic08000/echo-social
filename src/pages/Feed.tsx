@@ -66,6 +66,9 @@ export default function Feed() {
     });
   }, [data?.pages]);
 
+  // Force virtualizer to remeasure when posts change (e.g. after delete)
+  const postsKey = useMemo(() => posts.map(p => p.id).join(','), [posts]);
+
   // ── Virtualizer ──
   const virtualizer = useVirtualizer({
     count: posts.length,
