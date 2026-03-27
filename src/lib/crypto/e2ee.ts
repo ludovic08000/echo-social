@@ -202,7 +202,7 @@ export async function decryptMessage(
         encodeString(`${envelope.ts}:${envelope.seq}`),
       );
 
-      verified = await crypto.subtle.verify(
+      verified = await hardCrypto.verify(
         sigAlgo as any,
         peerSigningKey,
         base64ToBuffer(envelope.sig),
