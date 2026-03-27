@@ -23,7 +23,9 @@ export function useMessageQueue(
 ) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [pendingMessages, setPendingMessages] = useState<OutboundMessage[]>([]);
+  const [rawPendingMessages, setRawPendingMessages] = useState<OutboundMessage[]>([]);
+  // Volatile plaintext cache — never persisted, survives only in memory
+  const plaintextCacheRef = useRef<Map<string, string>>(new Map());
   const handlerIdRef = useRef(crypto.randomUUID());
   const encryptRef = useRef(encrypt);
   const readyRef = useRef(isEncryptionReady);
@@ -104,7 +106,7 @@ export function useMessageQueue(
   useEffect(() => {
     const unsub = messageQueue.subscribe((msgs) => {
       const forConv = msgs.filter(m => m.conversationId === conversationId);
-      setPendingMessages(forConv);
+      setRawPendingMessages(forConv);
     });
 
     // Clean up stuck messages older than 60s on mount
@@ -120,7 +122,7 @@ export function useMessageQueue(
       const remaining = msgs.filter(m =>
         !((m.status === 'waiting_secure_channel' || m.status === 'retry_pending') && now - m.createdAt > stuckThreshold)
       );
-      setPendingMessages(remaining);
+      setRawPendingMessages(remaining);
     });
 
     return unsub;
@@ -250,8 +252,15 @@ export function useMessageQueue(
   /** Remove a failed message */
   const removeMessage = useCallback(async (localId: string) => {
     await messageQueue.removeMessage(localId);
-    setPendingMessages(prev => prev.filter(m => m.localId !== localId));
+    plaintextCacheRef.current.delete(localId);
+    setRawPendingMessages(prev => prev.filter(m => m.localId !== localId));
   }, []);
+
+  // Enrich pending messages with volatile plaintext from memory cache
+  const pendingMessages = rawPendingMessages.map(m => ({
+    ...m,
+    plaintext: m.plaintext || plaintextCacheRef.current.get(m.localId) || '',
+  }));
 
   return {
     pendingMessages,
