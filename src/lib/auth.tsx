@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { generateFingerprint } from '@/hooks/useTrustAndSafety';
+import { startSessionGuard, stopSessionGuard } from '@/lib/sessionGuard';
 
 interface AuthContextType {
   user: User | null;
@@ -33,8 +34,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
         setLoading(false);
 
-        // Register fingerprint on sign in
+        // Session guard: start on sign in, stop on sign out
         if (event === 'SIGNED_IN' && session?.user) {
+          startSessionGuard();
+
           setTimeout(() => {
             const fp = generateFingerprint();
             supabase.functions.invoke('anti-abuse', {
@@ -51,6 +54,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               body: { action: 'compute' },
             }).catch(() => {});
           }, 2000);
+        }
+
+        if (event === 'SIGNED_OUT') {
+          stopSessionGuard();
         }
       }
     );
