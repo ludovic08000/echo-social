@@ -416,11 +416,15 @@ export function useChatPin() {
     }
   }, [user]);
 
-  /** Lock messaging (clear session) */
-  const lock = useCallback(() => {
+  /** Lock messaging — clear session AND delete raw identity keys from IndexedDB */
+  const lock = useCallback(async () => {
     sessionStorage.removeItem(SESSION_KEY);
+    // Delete raw identity keys so they're only accessible after PIN unlock
+    if (user) {
+      await deleteRawIdentityBlob(user.id).catch(() => {});
+    }
     setState(s => ({ ...s, unlocked: false }));
-  }, []);
+  }, [user]);
 
   /** Request PIN reset via email OTP */
   const requestReset = useCallback(async (): Promise<boolean> => {
