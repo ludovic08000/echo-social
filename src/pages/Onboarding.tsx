@@ -226,7 +226,7 @@ export default function Onboarding() {
       const { error } = await signUp(signupData.email, signupData.password, signupData.name, signupData.dateOfBirth);
       if (error) {
         // Handle rate limit specifically
-        if (error.message?.toLowerCase().includes('rate limit') || error.status === 429) {
+        if (error.message?.toLowerCase().includes('rate limit') || (error as any).status === 429) {
           toast({
             title: '⏳ Trop de tentatives',
             description: 'Un email de confirmation a déjà été envoyé. Vérifiez votre boîte de réception et réessayez dans quelques minutes.',
