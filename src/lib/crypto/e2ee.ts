@@ -85,7 +85,7 @@ export async function establishSession(
   peerFingerprint: string,
 ): Promise<SessionKey> {
   const peerRaw = base64ToBuffer(peerPublicKeyBase64);
-  const peerPublicKey = await crypto.subtle.importKey(
+  const peerPublicKey = await hardCrypto.importKey(
     'raw', peerRaw, KX_KEY_PARAMS as any, true, []
   );
 
