@@ -263,7 +263,7 @@ export function useMessages(conversationId: string) {
           const enriched = {
             ...newMsg,
             profile: {
-              name: newMsg.sender_id === ZEUS_BOT_ID ? 'Zeus ⚡' : (profile?.name || 'Unknown'),
+              name: newMsg.sender_id === ZEUS_BOT_ID ? (await getCompanionName(user?.id)) : (profile?.name || 'Unknown'),
               avatar_url: profile?.avatar_url || null,
             },
           };
