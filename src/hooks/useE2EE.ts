@@ -553,9 +553,36 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     try {
       if (isRatchetEnvelope(body)) {
-        // Try ratchet decrypt first
         const envelope: RatchetEnvelope = hardGlobals.jsonParse(body);
         let ratchet = ratchetRef.current;
+
+        // Auto-init ratchet as responder if we don't have one yet
+        if (!ratchet && conversationId && keysRef.current) {
+          try {
+            const persisted = await loadRatchetLocal(conversationId);
+            if (persisted) {
+              ratchet = persisted;
+              ratchetRef.current = ratchet;
+            } else {
+              // Initialize as responder using legacy shared secret as seed
+              const session = await ensureLegacySession();
+              if (session) {
+                const sharedSecretRaw = await hardCrypto.exportKey('raw', session.sharedSecret);
+                // Generate our DH key pair for the ratchet
+                const ourDhPair = await hardCrypto.generateKey(
+                  KX_KEY_PARAMS as any, true, ['deriveBits']
+                ) as CryptoKeyPair;
+                ratchet = await initRatchetAsResponder(
+                  conversationId, sharedSecretRaw, ourDhPair,
+                );
+                ratchetRef.current = ratchet;
+                console.log('[E2EE] 🔄 Double Ratchet initialized as responder');
+              }
+            }
+          } catch (initErr) {
+            console.warn('[E2EE] Ratchet responder init failed:', initErr);
+          }
+        }
 
         if (ratchet) {
           try {
@@ -564,13 +591,14 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             );
             ratchetRef.current = newState;
             await saveRatchetLocal(conversationId!, newState);
+            setState(s => ({ ...s, ratchetActive: true }));
             return { text: plaintext, encrypted: true, verified };
           } catch (ratchetErr) {
             console.warn('[E2EE] Ratchet decrypt failed, trying legacy:', ratchetErr);
           }
         }
 
-        // Ratchet envelopes that can't be decrypted by ratchet
+        // Ratchet envelopes that can't be decrypted — show locked message
         return { text: '🔒 Message illisible (session expirée)', encrypted: true, verified: false };
       }
 
