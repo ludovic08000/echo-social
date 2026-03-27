@@ -726,7 +726,26 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           fingerprint={e2ee.fingerprint}
           peerFingerprint={e2ee.peerFingerprint}
           ratchetActive={e2ee.ratchetActive}
+          fingerprintChanged={e2ee.fingerprintChanged}
         />
+      )}
+
+      {/* Fingerprint changed alert with acknowledge button */}
+      {!isZeusConversation && e2ee.fingerprintChanged && (
+        <div className="mx-2 mt-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+            ⚠️ La clé de sécurité du contact a changé.
+          </p>
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Vérifie le contact puis valide pour réactiver l'envoi.
+          </p>
+          <button
+            onClick={e2ee.acknowledgeFingerprint}
+            className="mt-2 px-3 py-1 rounded-full bg-primary text-primary-foreground text-[10px] font-medium hover:opacity-90 transition-opacity"
+          >
+            OK — J'ai vérifié
+          </button>
+        </div>
       )}
 
       {/* Pending message request banner */}
