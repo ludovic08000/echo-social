@@ -532,8 +532,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       throw new EncryptionError(`Encryption failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }, [state.fingerprintChanged, conversationId, user, ensureLegacySession, initRatchetIfNeeded]);
-    }
-  }, [state.fingerprintChanged, conversationId, user, ensureLegacySession]);
 
   /**
    * Decrypt — NEVER shows raw ciphertext.
