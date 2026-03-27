@@ -297,7 +297,36 @@ export function useDeletePost() {
         }
       }
     },
+    onMutate: async (postId) => {
+      await queryClient.cancelQueries({ queryKey: ['posts'] });
+
+      // Optimistically remove from feed cache
+      queryClient.setQueriesData<any>(
+        { queryKey: ['posts', 'friends-feed'] },
+        (old: any) => {
+          if (!old?.pages) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page: any[]) =>
+              page.filter((p: any) => p.id !== postId)
+            ),
+          };
+        }
+      );
+
+      // Also remove from user posts cache
+      queryClient.setQueriesData<any>(
+        { queryKey: ['posts', 'user'] },
+        (old: any) => {
+          if (!Array.isArray(old)) return old;
+          return old.filter((p: any) => p.id !== postId);
+        }
+      );
+    },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['posts'] });
+    },
+    onError: () => {
       queryClient.invalidateQueries({ queryKey: ['posts'] });
     },
   });
