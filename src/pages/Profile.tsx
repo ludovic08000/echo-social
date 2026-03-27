@@ -712,12 +712,10 @@ export default function Profile() {
                 </>
               ) : (
                 <>
-                  <div className="shrink-0">
-                    <FriendshipButton userId={userId!} />
-                  </div>
+                  <FriendshipButton userId={userId!} />
                   <Button 
                     variant="secondary" 
-                    className="rounded-xl h-10 text-sm whitespace-nowrap shrink-0"
+                    className="rounded-xl h-10 text-sm whitespace-nowrap"
                     disabled={createConversation.isPending}
                     onClick={async () => {
                       if (!userId) return;
@@ -726,7 +724,7 @@ export default function Profile() {
                     }}
                   >
                     <MessageCircle className="w-4 h-4 mr-2" />
-                    Envoyer un message
+                    Message
                   </Button>
                    {isCreator && <TipButton creatorId={userId!} creatorName={profile.name} />}
                    <ReportFakeAccountButton reportedUserId={userId!} />
