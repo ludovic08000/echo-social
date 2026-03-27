@@ -122,7 +122,7 @@ export function useMessageQueue(
       const remaining = msgs.filter(m =>
         !((m.status === 'waiting_secure_channel' || m.status === 'retry_pending') && now - m.createdAt > stuckThreshold)
       );
-      setPendingMessages(remaining);
+      setRawPendingMessages(remaining);
     });
 
     return unsub;
