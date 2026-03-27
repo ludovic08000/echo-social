@@ -269,7 +269,7 @@ export async function loadSessionKey(conversationId: string): Promise<SessionKey
   const stored = await dbGet<StoredSessionKey>(STORE_SESSION, conversationId);
   if (!stored) return null;
 
-  const sharedSecret = await crypto.subtle.importKey(
+  const sharedSecret = await hardCrypto.importKey(
     'jwk', stored.keyJWK,
     { name: 'AES-GCM', length: 256 },
     false,  // NON-EXTRACTABLE at runtime
