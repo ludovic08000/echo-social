@@ -40,7 +40,7 @@ import {
 } from '@/lib/crypto';
 import { base64ToBuffer } from '@/lib/crypto/utils';
 import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
-import { verifyCryptoIntegrity, isTampered } from '@/lib/crypto/cryptoIntegrity';
+import { verifyCryptoIntegrity, isTampered, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { KX_KEY_PARAMS } from '@/lib/crypto/constants';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
@@ -53,7 +53,7 @@ const KNOWN_FP_KEY = 'forsure-known-fps';
 
 function openRatchetDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(RATCHET_DB_NAME, RATCHET_DB_VERSION);
+    const req = hardGlobals.idbOpen(RATCHET_DB_NAME, RATCHET_DB_VERSION);
     req.onerror = () => reject(req.error);
     req.onsuccess = () => resolve(req.result);
     req.onupgradeneeded = () => {
@@ -100,7 +100,7 @@ async function loadRatchetLocal(convId: string): Promise<RatchetState | null> {
 
 function getKnownFingerprints(): Record<string, string> {
   try {
-    return JSON.parse(localStorage.getItem(KNOWN_FP_KEY) || '{}');
+    return hardGlobals.jsonParse(localStorage.getItem(KNOWN_FP_KEY) || '{}');
   } catch {
     return {};
   }
@@ -109,7 +109,7 @@ function getKnownFingerprints(): Record<string, string> {
 function saveKnownFingerprint(userId: string, fp: string) {
   const known = getKnownFingerprints();
   known[userId] = fp;
-  localStorage.setItem(KNOWN_FP_KEY, JSON.stringify(known));
+  localStorage.setItem(KNOWN_FP_KEY, hardGlobals.jsonStringify(known));
 }
 
 function checkFingerprintChange(userId: string, currentFp: string): boolean {
@@ -138,7 +138,7 @@ function cleanupLegacyStorage() {
     const migrationKey = 'forsure-e2ee-migration-v4';
     if (!localStorage.getItem(migrationKey)) {
       localStorage.setItem(migrationKey, '1');
-      const req = indexedDB.open(RATCHET_DB_NAME, RATCHET_DB_VERSION);
+      const req = hardGlobals.idbOpen(RATCHET_DB_NAME, RATCHET_DB_VERSION);
       req.onsuccess = () => {
         try {
           const db = req.result;
@@ -148,7 +148,7 @@ function cleanupLegacyStorage() {
         } catch {}
       };
       // Also clear legacy session keys to re-derive
-      const req2 = indexedDB.open('forsure-e2ee', 2);
+      const req2 = hardGlobals.idbOpen('forsure-e2ee', 2);
       req2.onsuccess = () => {
         try {
           const db = req2.result;
@@ -479,7 +479,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     try {
       if (isRatchetEnvelope(body)) {
         // Try ratchet decrypt first
-        const envelope: RatchetEnvelope = JSON.parse(body);
+        const envelope: RatchetEnvelope = hardGlobals.jsonParse(body);
         let ratchet = ratchetRef.current;
 
         if (ratchet) {
@@ -562,7 +562,7 @@ export class EncryptionError extends Error {
 function isRatchetEnvelope(body: string): boolean {
   if (!body.startsWith('{')) return false;
   try {
-    const p = JSON.parse(body);
+    const p = hardGlobals.jsonParse(body);
     return p.v !== undefined && p.hdr !== undefined && p.ct !== undefined;
   } catch {
     return false;
