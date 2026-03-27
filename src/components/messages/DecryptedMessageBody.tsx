@@ -1,24 +1,28 @@
 import { useState, useEffect, memo } from 'react';
 import { Lock } from 'lucide-react';
+import { VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
+
+/** Detect voice message pattern: 🎙️ vocal:URL|duration */
+function parseVoiceMessage(text: string): { url: string; duration: number } | null {
+  const match = text.match(/^🎙️\s*vocal:(.+)\|(\d+)$/);
+  if (match) return { url: match[1], duration: parseInt(match[2], 10) };
+  return null;
+}
 
 interface DecryptedMessageBodyProps {
   body: string;
   decrypt: (body: string) => Promise<{ text: string; encrypted: boolean; verified: boolean }>;
   isEncryptionActive: boolean;
-  /** Callback when decryption succeeds — used to cache plaintext for actions */
   onDecrypted?: (text: string) => void;
+  isMe?: boolean;
 }
 
-/**
- * Component that handles async decryption of E2EE messages.
- * Shows a lock icon while decrypting, then displays the plaintext.
- * Falls back to raw body if decryption fails.
- */
 export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   body,
   decrypt,
   isEncryptionActive,
   onDecrypted,
+  isMe,
 }: DecryptedMessageBodyProps) {
   const [displayText, setDisplayText] = useState<string | null>(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
@@ -29,10 +33,8 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       return;
     }
 
-    // Check if body looks like an encrypted envelope
     const looksEncrypted = body.startsWith('{') && (body.includes('"ct"') || body.includes('"hdr"'));
     if (!looksEncrypted) {
-      // Plain text message — display as-is (system messages, or messages sent before E2EE was ready)
       setDisplayText(body);
       return;
     }
@@ -63,6 +65,12 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
         <span className="text-xs">Déchiffrement...</span>
       </span>
     );
+  }
+
+  // Check if it's a voice message
+  const voice = parseVoiceMessage(displayText);
+  if (voice) {
+    return <VoiceMessagePlayer audioUrl={voice.url} duration={voice.duration} isMe={isMe} />;
   }
 
   return <>{displayText}</>;
