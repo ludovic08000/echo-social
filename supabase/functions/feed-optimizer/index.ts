@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
 
   // Rate limit: 10 req/min per IP
   const ip = getClientIP(req);
-  const rateLimited = checkRateLimit(`feed-opt:${ip}`, 10, 60_000, corsHeaders);
+  const rateLimited = await checkRateLimit(`feed-opt:${ip}`, 10, 60, corsHeaders);
   if (rateLimited) return rateLimited;
 
   try {
