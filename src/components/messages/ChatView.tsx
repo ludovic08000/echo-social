@@ -237,7 +237,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+      <input ref={fileInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleFileChange} />
 
       {/* Header */}
       <header className="sticky top-0 z-40 bg-background border-b border-border/40 safe-area-pt">
