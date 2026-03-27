@@ -16,6 +16,7 @@
 import { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
 import { bufferToBase64, base64ToBuffer, encodeString, randomBytes, decodeString } from './utils';
 import { exportKeyToJWK, importKeyFromJWK } from './utils';
+import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import { AES_ALGO, IV_LENGTH, PROTOCOL_VERSION, CLASSICAL_KEM_ID, KX_KEY_PARAMS } from './constants';
 
 // ─── Types ───
@@ -72,19 +73,17 @@ export async function initRatchetAsInitiator(
   peerDhPublicKey: CryptoKey,
 ): Promise<RatchetState> {
   // Generate our first ratchet key pair
-  const dhPair = await crypto.subtle.generateKey(
+  const dhPair = await hardCrypto.generateKey(
     KX_KEY_PARAMS as any, true, ['deriveBits']
   ) as CryptoKeyPair;
 
-  // Initial root key from shared secret
-  const rootKey = await crypto.subtle.importKey(
+  const rootKey = await hardCrypto.importKey(
     'raw', sharedSecret.slice(0, 32),
     { name: 'HMAC', hash: 'SHA-256', length: 256 } as any,
     true, ['sign']
   );
 
-  // Perform first DH ratchet step
-  const dhOutput = await crypto.subtle.deriveBits(
+  const dhOutput = await hardCrypto.deriveBits(
     { name: 'X25519', public: peerDhPublicKey } as any,
     dhPair.privateKey,
     256,
@@ -112,7 +111,7 @@ export async function initRatchetAsResponder(
   sharedSecret: ArrayBuffer,
   ourDhPair: CryptoKeyPair,
 ): Promise<RatchetState> {
-  const rootKey = await crypto.subtle.importKey(
+  const rootKey = await hardCrypto.importKey(
     'raw', sharedSecret.slice(0, 32),
     { name: 'HMAC', hash: 'SHA-256', length: 256 } as any,
     true, ['sign']
@@ -148,7 +147,7 @@ export async function ratchetEncrypt(
   const { nextChainKey, messageKey } = await kdfChainStep(state.sendingChainKey);
 
   // Build header
-  const dhPubRaw = await crypto.subtle.exportKey('raw', state.dhSendingPair.publicKey);
+  const dhPubRaw = await hardCrypto.exportKey('raw', state.dhSendingPair.publicKey);
   const header: RatchetHeader = {
     dh: bufferToBase64(dhPubRaw),
     pn: state.prevSendCount,
@@ -157,7 +156,7 @@ export async function ratchetEncrypt(
 
   // Encrypt
   const iv = randomBytes(IV_LENGTH);
-  const ct = await crypto.subtle.encrypt(
+  const ct = await hardCrypto.encrypt(
     { name: AES_ALGO, iv: new Uint8Array(iv) as unknown as Uint8Array<ArrayBuffer>, tagLength: 128 },
     messageKey,
     encodeString(plaintext),
@@ -167,13 +166,13 @@ export async function ratchetEncrypt(
 
   // Sign: header || iv || ciphertext
   const sigData = new Uint8Array([
-    ...new Uint8Array(encodeString(JSON.stringify(header))),
+    ...new Uint8Array(encodeString(hardGlobals.jsonStringify(header))),
     ...iv,
     ...new Uint8Array(ct as ArrayBuffer),
     ...new Uint8Array(encodeString(`${ts}`)),
   ]);
 
-  const sig = await crypto.subtle.sign('Ed25519' as any, signingKey, sigData);
+  const sig = await hardCrypto.sign('Ed25519' as any, signingKey, sigData);
 
   const envelope: RatchetEnvelope = {
     v: PROTOCOL_VERSION,
@@ -209,7 +208,7 @@ export async function ratchetDecrypt(
   }
 
   const headerDhRaw = base64ToBuffer(envelope.hdr.dh);
-  const headerDhKey = await crypto.subtle.importKey(
+  const headerDhKey = await hardCrypto.importKey(
     'raw', headerDhRaw, KX_KEY_PARAMS as any, true, []
   );
 
@@ -226,7 +225,7 @@ export async function ratchetDecrypt(
 
   // Check if DH ratchet step needed
   const currentDhPub = newState.dhReceivingKey
-    ? bufferToBase64(await crypto.subtle.exportKey('raw', newState.dhReceivingKey))
+    ? bufferToBase64(await hardCrypto.exportKey('raw', newState.dhReceivingKey))
     : null;
 
   if (currentDhPub !== envelope.hdr.dh) {
@@ -236,7 +235,7 @@ export async function ratchetDecrypt(
     }
 
     // DH ratchet step
-    const dhOutput = await crypto.subtle.deriveBits(
+    const dhOutput = await hardCrypto.deriveBits(
       { name: 'X25519', public: headerDhKey } as any,
       newState.dhSendingPair.privateKey,
       256,
@@ -251,11 +250,11 @@ export async function ratchetDecrypt(
     newState.recvCount = 0;
 
     // Generate new sending pair
-    const newDhPair = await crypto.subtle.generateKey(
+    const newDhPair = await hardCrypto.generateKey(
       KX_KEY_PARAMS as any, true, ['deriveBits']
     ) as CryptoKeyPair;
 
-    const dhOutput2 = await crypto.subtle.deriveBits(
+    const dhOutput2 = await hardCrypto.deriveBits(
       { name: 'X25519', public: headerDhKey } as any,
       newDhPair.privateKey,
       256,
@@ -293,7 +292,7 @@ async function skipMessages(state: RatchetState, until: number): Promise<Ratchet
 
   // Get current DH pub for cache key
   const dhPub = newState.dhReceivingKey
-    ? bufferToBase64(await crypto.subtle.exportKey('raw', newState.dhReceivingKey))
+    ? bufferToBase64(await hardCrypto.exportKey('raw', newState.dhReceivingKey))
     : 'init';
 
   let ck = newState.receivingChainKey;
@@ -324,7 +323,7 @@ async function decryptWithKey(
   const iv = base64ToBuffer(envelope.iv);
   const ct = base64ToBuffer(envelope.ct);
 
-  const ptBuf = await crypto.subtle.decrypt(
+  const ptBuf = await hardCrypto.decrypt(
     { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128 },
     messageKey,
     ct,
@@ -336,7 +335,7 @@ async function decryptWithKey(
   let verified = false;
   if (peerSigningKeyBase64) {
     try {
-      const sigKey = await crypto.subtle.importKey(
+      const sigKey = await hardCrypto.importKey(
         'raw',
         base64ToBuffer(peerSigningKeyBase64),
         { name: 'Ed25519' } as any,
@@ -344,12 +343,12 @@ async function decryptWithKey(
         ['verify'],
       );
       const sigData = new Uint8Array([
-        ...new Uint8Array(encodeString(JSON.stringify(envelope.hdr))),
+        ...new Uint8Array(encodeString(hardGlobals.jsonStringify(envelope.hdr))),
         ...new Uint8Array(iv),
         ...new Uint8Array(ct),
         ...new Uint8Array(encodeString(`${envelope.ts}`)),
       ]);
-      verified = await crypto.subtle.verify(
+      verified = await hardCrypto.verify(
         'Ed25519' as any, sigKey, base64ToBuffer(envelope.sig), sigData,
       );
     } catch {
@@ -376,7 +375,7 @@ export async function serializeRatchetState(state: RatchetState): Promise<string
     skippedEntries.push([k, await exportKeyToJWK(v)]);
   }
 
-  return JSON.stringify({
+  return hardGlobals.jsonStringify({
     conversationId: state.conversationId,
     dhSendPubJWK, dhSendPrivJWK, dhRecvJWK,
     rootJWK, sendCKJWK, recvCKJWK,
@@ -388,7 +387,7 @@ export async function serializeRatchetState(state: RatchetState): Promise<string
 }
 
 export async function deserializeRatchetState(json: string): Promise<RatchetState> {
-  const d = JSON.parse(json);
+  const d = hardGlobals.jsonParse(json);
 
   // ALL keys re-imported as NON-EXTRACTABLE
   const dhSendPub = await importKeyFromJWK(d.dhSendPubJWK, KX_KEY_PARAMS as any, [], false);

@@ -9,7 +9,7 @@
  * Derivation: PBKDF2-SHA256 (600,000 iterations) from 6-digit PIN
  */
 
-import { hardCrypto } from './cryptoIntegrity';
+import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 
 const PIN_WRAP_STORE = 'pin-wrapped-keys';
 const PBKDF2_ITERATIONS = 600_000;
@@ -23,11 +23,11 @@ interface WrappedKeyBlob {
 }
 
 function bufToB64(buf: ArrayBuffer): string {
-  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+  return hardGlobals.btoa(String.fromCharCode(...new Uint8Array(buf)));
 }
 
 function b64ToBuf(b64: string): ArrayBuffer {
-  const bin = atob(b64);
+  const bin = hardGlobals.atob(b64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes.buffer;
@@ -35,7 +35,7 @@ function b64ToBuf(b64: string): ArrayBuffer {
 
 /** Derive AES-256 wrapping key from PIN */
 async function deriveWrappingKey(pin: string, salt: Uint8Array): Promise<CryptoKey> {
-  const pinBytes = new TextEncoder().encode(pin);
+  const pinBytes = new hardGlobals.TextEncoder().encode(pin);
   const baseKey = await hardCrypto.importKey('raw', pinBytes, 'PBKDF2', false, ['deriveKey']);
   return hardCrypto.deriveKey(
     { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
@@ -49,7 +49,7 @@ async function deriveWrappingKey(pin: string, salt: Uint8Array): Promise<CryptoK
 /** Open/create the PIN wrap IndexedDB store */
 function openPinDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('forsure-pin-wrap', 1);
+    const req = hardGlobals.idbOpen('forsure-pin-wrap', 1);
     req.onerror = () => reject(req.error);
     req.onsuccess = () => resolve(req.result);
     req.onupgradeneeded = () => {
@@ -81,7 +81,7 @@ export async function wrapKeysWithPin(
   const iv = hardCrypto.getRandomValues(new Uint8Array(12));
   const wrapKey = await deriveWrappingKey(pin, salt);
 
-  const plaintext = new TextEncoder().encode(JSON.stringify(jwkBundle));
+  const plaintext = new hardGlobals.TextEncoder().encode(hardGlobals.jsonStringify(jwkBundle));
   const ciphertext = await hardCrypto.encrypt(
     { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
     wrapKey,
@@ -144,7 +144,7 @@ export async function unwrapKeysWithPin(
       ciphertext,
     );
 
-    const bundle = JSON.parse(new TextDecoder().decode(plaintext));
+    const bundle = hardGlobals.jsonParse(new hardGlobals.TextDecoder().decode(plaintext));
     console.log('[PIN_WRAP] Keys decrypted successfully');
     return bundle;
   } catch {

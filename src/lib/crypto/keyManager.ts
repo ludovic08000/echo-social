@@ -14,7 +14,7 @@ import {
   KX_KEY_PARAMS, SIG_KEY_PARAMS,
 } from './constants';
 import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, randomBytes } from './utils';
-import { hardCrypto, scrubBuffer } from './cryptoIntegrity';
+import { hardCrypto, hardGlobals, scrubBuffer } from './cryptoIntegrity';
 
 export interface IdentityKeyPair {
   publicKey: CryptoKey;
@@ -54,7 +54,7 @@ interface StoredSessionKey {
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = hardGlobals.idbOpen(DB_NAME, DB_VERSION);
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = () => {

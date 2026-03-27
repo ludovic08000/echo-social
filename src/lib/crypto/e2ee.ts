@@ -23,6 +23,7 @@ import {
   randomBytes, bufferToBase64, base64ToBuffer,
   concatBuffers, encodeString, decodeString,
 } from './utils';
+import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import {
   type IdentityKeyPair, type SessionKey,
   loadSessionKey, saveSessionKey, deleteSessionKey,
@@ -50,7 +51,7 @@ export async function performKeyExchange(
   conversationId: string,
 ): Promise<CryptoKey> {
   // X25519 → 32 bytes (256 bits) shared secret
-  const sharedBits = await crypto.subtle.deriveBits(
+  const sharedBits = await hardCrypto.deriveBits(
     { name: 'X25519', public: peerPublicKey } as any,
     myPrivateKey,
     256,
@@ -60,14 +61,14 @@ export async function performKeyExchange(
   // CRITICAL: Use deterministic salt derived from conversationId so both sides
   // derive the SAME key. A random salt would produce different keys on each side.
   const saltSource = encodeString(`forsure-salt-v${PROTOCOL_VERSION}-${conversationId}`);
-  const salt = new Uint8Array(await crypto.subtle.digest('SHA-256', saltSource)) as Uint8Array<ArrayBuffer>;
+  const salt = new Uint8Array(await hardCrypto.digest('SHA-256', saltSource)) as Uint8Array<ArrayBuffer>;
   const info = encodeString(`forsure-e2ee-v${PROTOCOL_VERSION}-${conversationId}`);
 
-  const hkdfKey = await crypto.subtle.importKey(
+  const hkdfKey = await hardCrypto.importKey(
     'raw', sharedBits, 'HKDF', false, ['deriveKey']
   );
 
-  return crypto.subtle.deriveKey(
+  return hardCrypto.deriveKey(
     { name: 'HKDF', hash: HKDF_HASH, salt, info },
     hkdfKey,
     { name: AES_ALGO, length: AES_KEY_LENGTH },
@@ -84,7 +85,7 @@ export async function establishSession(
   peerFingerprint: string,
 ): Promise<SessionKey> {
   const peerRaw = base64ToBuffer(peerPublicKeyBase64);
-  const peerPublicKey = await crypto.subtle.importKey(
+  const peerPublicKey = await hardCrypto.importKey(
     'raw', peerRaw, KX_KEY_PARAMS as any, true, []
   );
 
@@ -116,7 +117,7 @@ export async function encryptMessage(
   const plaintextBuffer = encodeString(plaintext);
 
   // AES-256-GCM
-  const ciphertext = await crypto.subtle.encrypt(
+  const ciphertext = await hardCrypto.encrypt(
     { name: AES_ALGO, iv: ivArr as Uint8Array<ArrayBuffer>, tagLength: 128 },
     sessionKey,
     plaintextBuffer,
@@ -129,7 +130,7 @@ export async function encryptMessage(
     encodeString(`${timestamp}:${sequenceNumber}`),
   );
 
-  const signature = await crypto.subtle.sign(
+  const signature = await hardCrypto.sign(
     'Ed25519' as any,
     signingKey,
     signatureData,
@@ -146,7 +147,7 @@ export async function encryptMessage(
     seq: sequenceNumber,
   };
 
-  return JSON.stringify(envelope);
+  return hardGlobals.jsonStringify(envelope);
 }
 
 // ─── Decrypt ───
@@ -156,7 +157,7 @@ export async function decryptMessage(
   sessionKey: CryptoKey,
   peerSigningKeyBase64?: string,
 ): Promise<{ plaintext: string; verified: boolean; fingerprint: string }> {
-  const envelope: EncryptedEnvelope = JSON.parse(envelopeStr);
+  const envelope: EncryptedEnvelope = hardGlobals.jsonParse(envelopeStr);
 
   // Accept v1 (legacy P-384) and v2 (X25519) envelopes
   if (envelope.v > PROTOCOL_VERSION) {
@@ -171,7 +172,7 @@ export async function decryptMessage(
   const ivBytes = base64ToBuffer(envelope.iv);
   const ciphertext = base64ToBuffer(envelope.ct);
 
-  const plaintextBuffer = await crypto.subtle.decrypt(
+  const plaintextBuffer = await hardCrypto.decrypt(
     { name: AES_ALGO, iv: new Uint8Array(ivBytes), tagLength: 128 },
     sessionKey,
     ciphertext,
@@ -191,7 +192,7 @@ export async function decryptMessage(
         ? { name: 'Ed25519' } as any
         : { name: 'ECDSA', namedCurve: 'P-384' };
 
-      const peerSigningKey = await crypto.subtle.importKey(
+      const peerSigningKey = await hardCrypto.importKey(
         'raw', peerSigningRaw, importAlgo, true, ['verify']
       );
 
@@ -201,7 +202,7 @@ export async function decryptMessage(
         encodeString(`${envelope.ts}:${envelope.seq}`),
       );
 
-      verified = await crypto.subtle.verify(
+      verified = await hardCrypto.verify(
         sigAlgo as any,
         peerSigningKey,
         base64ToBuffer(envelope.sig),
@@ -240,7 +241,7 @@ export async function rotateSessionKey(
 export function isEncryptedMessage(body: string): boolean {
   if (!body.startsWith('{')) return false;
   try {
-    const p = JSON.parse(body);
+    const p = hardGlobals.jsonParse(body);
     return p.v !== undefined && p.kem !== undefined && p.ct !== undefined;
   } catch {
     return false;
