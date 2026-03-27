@@ -231,12 +231,9 @@ export function useChatPin() {
         // Check session unlock
         const sessionUnlocked = sessionStorage.getItem(SESSION_KEY) === user.id;
 
-        // Check if PIN exists in DB
-        const { data } = await supabase
-          .from('user_chat_pins')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
+        // Check if PIN exists via secure RPC (no direct table access)
+        const { data: hasPin } = await supabase
+          .rpc('has_chat_pin', { p_user_id: user.id });
 
         setState({
           loaded: true,
