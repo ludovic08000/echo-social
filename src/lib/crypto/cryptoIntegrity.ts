@@ -105,7 +105,17 @@ export function isTampered(): boolean {
  */
 export function verifyCryptoIntegrity(): boolean {
   try {
-    // crypto.subtle checks
+    // Object identity checks — detect full object replacement
+    if (crypto !== _cryptoRef) {
+      triggerTamper('crypto object replaced');
+      return false;
+    }
+    if (crypto.subtle !== _subtleRef) {
+      triggerTamper('crypto.subtle object replaced');
+      return false;
+    }
+
+    // crypto.subtle method checks
     const subtleChecks: [string, Function, Function][] = [
       ['encrypt', crypto.subtle.encrypt, _encrypt],
       ['decrypt', crypto.subtle.decrypt, _decrypt],
