@@ -570,7 +570,17 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
                           {isImage && (
                             <div className="overflow-hidden mb-0.5 rounded-[18px] rounded-bl-sm">
-                              <img src={msg.image_url!} alt="Photo" className="max-w-full max-h-[300px] object-cover" />
+                              {/\.(mp4|mov|webm|avi|mkv)/i.test(msg.image_url!) ? (
+                                <video
+                                  src={msg.image_url!}
+                                  controls
+                                  playsInline
+                                  preload="metadata"
+                                  className="max-w-full max-h-[300px] rounded-[18px]"
+                                />
+                              ) : (
+                                <img src={msg.image_url!} alt="Photo" className="max-w-full max-h-[300px] object-cover" />
+                              )}
                             </div>
                           )}
 
