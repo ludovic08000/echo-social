@@ -77,7 +77,9 @@ const MIME_EXT_MAP: Record<string, string[]> = {
   "application/pdf": ["pdf"],
 };
 
-function validateMimeExtension(mime: string, filename: string): boolean {
+function validateMimeExtension(mime: string, filename: string, folder?: string): boolean {
+  // Skip extension validation for voice recordings — browsers report inconsistent MIME types
+  if (folder === 'voice') return true;
   const ext = filename.split(".").pop()?.toLowerCase() || "";
   const allowed = MIME_EXT_MAP[mime];
   if (!allowed) return false;
