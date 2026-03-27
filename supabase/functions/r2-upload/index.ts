@@ -69,8 +69,11 @@ const MIME_EXT_MAP: Record<string, string[]> = {
   "video/quicktime": ["mov"],
   "audio/webm": ["webm"],
   "audio/ogg": ["ogg"],
-  "audio/mp4": ["m4a"],
+  "audio/mp4": ["m4a", "mp4"],
   "audio/mpeg": ["mp3"],
+  "audio/aac": ["aac", "m4a"],
+  "audio/wav": ["wav"],
+  "audio/x-m4a": ["m4a"],
   "application/pdf": ["pdf"],
 };
 
