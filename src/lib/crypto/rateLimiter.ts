@@ -4,13 +4,36 @@
  * If an XSS payload tries to mass-decrypt messages or brute-force
  * key operations, this will detect the anomaly and kill the session.
  *
- * This is NOT a replacement for CSP — it's a last-resort tripwire.
+ * v2: Smarter wipe logic — distinguishes legit bursts from attacks.
  */
 
 interface RateBucket {
   count: number;
   windowStart: number;
 }
+
+// ─── Security journal ───
+interface SecurityEvent {
+  ts: number;
+  op: string;
+  count: number;
+  source: 'lockdown' | 'violation';
+}
+
+const securityJournal: SecurityEvent[] = [];
+const MAX_JOURNAL = 50;
+
+function journalEvent(event: SecurityEvent) {
+  securityJournal.push(event);
+  if (securityJournal.length > MAX_JOURNAL) securityJournal.shift();
+}
+
+/** Get recent security events (for debugging/telemetry) */
+export function getSecurityJournal(): readonly SecurityEvent[] {
+  return securityJournal;
+}
+
+// ─── Rate limiting ───
 
 const buckets = new Map<string, RateBucket>();
 
@@ -19,27 +42,28 @@ const LIMITS: Record<string, { max: number; windowMs: number }> = {
   encrypt:     { max: 120, windowMs: 10_000 },  // 120 encrypts per 10s
   decrypt:     { max: 500, windowMs: 10_000 },  // 500 decrypts per 10s (loading full history)
   sign:        { max: 120, windowMs: 10_000 },  // mirrors encrypt
-  // deriveBits removed: internal key derivation must never be blocked by rate limiter
-  // — the encrypt/sign limits already protect against abuse
 };
 
-// Per-operation lockdown instead of global — decrypt overload must NOT block encrypt/send
+// Per-operation lockdown instead of global
 const lockdownUntilMap = new Map<string, number>();
-const LOCKDOWN_DURATION_MS = 5_000; // 5s lockdown (was 30s — too aggressive)
-const WIPE_THRESHOLD = 3; // 3 lockdowns in 60s = auto-wipe (active attack)
+const LOCKDOWN_DURATION_MS = 5_000;
+
+// Auto-wipe: requires DISTINCT operations hitting lockdown (not just retries on one)
+const WIPE_THRESHOLD = 5;           // 5 lockdowns in 120s (was 3 in 60s)
+const WIPE_WINDOW_MS = 120_000;     // 2-minute window
+const WIPE_MIN_DISTINCT_OPS = 2;    // Must be 2+ different operations (encrypt+decrypt = attack, not a bug)
 
 const violationCallbacks: Array<(op: string, count: number) => void> = [];
-const lockdownHistory: number[] = []; // timestamps of lockdowns
+const lockdownHistory: Array<{ ts: number; op: string }> = [];
 
-/** Register a callback for rate-limit violations (e.g. logging, alerts) */
+/** Register a callback for rate-limit violations */
 export function onCryptoViolation(cb: (op: string, count: number) => void) {
   violationCallbacks.push(cb);
 }
 
 /**
- * Check if an operation is allowed. Call BEFORE performing the crypto op.
+ * Check if an operation is allowed.
  * Returns true if allowed, false if rate-limited.
- * Throws in lockdown mode (circuit breaker).
  */
 export function cryptoRateCheck(operation: string): boolean {
   const now = Date.now();
@@ -51,7 +75,7 @@ export function cryptoRateCheck(operation: string): boolean {
   }
 
   const limit = LIMITS[operation];
-  if (!limit) return true; // Unknown ops pass through
+  if (!limit) return true;
 
   let bucket = buckets.get(operation);
   if (!bucket || now - bucket.windowStart > limit.windowMs) {
@@ -62,26 +86,31 @@ export function cryptoRateCheck(operation: string): boolean {
   bucket.count++;
 
   if (bucket.count > limit.max) {
-    // TRIP! Only lock THIS operation, not all crypto
+    // LOCKDOWN this operation
     lockdownUntilMap.set(operation, now + LOCKDOWN_DURATION_MS);
     
-    // Track lockdown frequency for auto-wipe
-    lockdownHistory.push(now);
-    // Keep only last 60s
-    while (lockdownHistory.length > 0 && now - lockdownHistory[0] > 60_000) {
+    // Journal + track
+    lockdownHistory.push({ ts: now, op: operation });
+    journalEvent({ ts: now, op: operation, count: bucket.count, source: 'lockdown' });
+
+    // Prune old entries
+    while (lockdownHistory.length > 0 && now - lockdownHistory[0].ts > WIPE_WINDOW_MS) {
       lockdownHistory.shift();
     }
 
+    const recentCount = lockdownHistory.length;
+    const distinctOps = new Set(lockdownHistory.map(h => h.op)).size;
+
     console.error(
-      `[SECURITY] Crypto rate limit exceeded: ${operation} ` +
+      `[SECURITY] Rate limit: ${operation} ` +
       `(${bucket.count}/${limit.max} in ${limit.windowMs}ms). ` +
-      `Lockdown activated for ${LOCKDOWN_DURATION_MS / 1000}s. ` +
-      `(${lockdownHistory.length}/${WIPE_THRESHOLD} lockdowns in 60s)`
+      `Lockdown ${LOCKDOWN_DURATION_MS / 1000}s. ` +
+      `[${recentCount}/${WIPE_THRESHOLD} lockdowns, ${distinctOps} distinct ops]`
     );
 
-    // AUTO-WIPE: If 3+ lockdowns in 60s, this is an active attack
-    if (lockdownHistory.length >= WIPE_THRESHOLD) {
-      console.error('[SECURITY] 🚨 AUTO-WIPE TRIGGERED — suspected exfiltration attack');
+    // AUTO-WIPE: Only if sustained multi-operation abuse (not a single React re-render loop)
+    if (recentCount >= WIPE_THRESHOLD && distinctOps >= WIPE_MIN_DISTINCT_OPS) {
+      console.error('[SECURITY] 🚨 AUTO-WIPE — multi-operation exfiltration pattern detected');
       triggerAutoWipe();
     }
 
@@ -110,6 +139,7 @@ export function resetCryptoRateLimits() {
   buckets.clear();
   lockdownUntilMap.clear();
   lockdownHistory.length = 0;
+  securityJournal.length = 0;
 }
 
 // ─── Auto-wipe on sustained attack ───
@@ -122,12 +152,10 @@ export function onAutoWipe(cb: () => void) {
 }
 
 function triggerAutoWipe() {
-  // Wipe all IndexedDB crypto stores
   try { indexedDB.deleteDatabase('forsure-e2ee'); } catch {}
   try { indexedDB.deleteDatabase('forsure-ratchet'); } catch {}
   try { indexedDB.deleteDatabase('forsure-pin-wrap'); } catch {}
   
-  // Clear localStorage crypto data
   try {
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
@@ -137,7 +165,6 @@ function triggerAutoWipe() {
     keysToRemove.forEach(k => localStorage.removeItem(k));
   } catch {}
 
-  // Notify listeners (e.g. force logout)
   for (const cb of wipeCallbacks) {
     try { cb(); } catch {}
   }
