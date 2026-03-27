@@ -660,10 +660,10 @@ export default function Profile() {
             )}
 
             {/* Action buttons */}
-            <div className="flex gap-2 mt-5 overflow-x-auto scrollbar-hide pb-1 -mx-4 px-4">
+            <div className="flex flex-wrap gap-2 mt-5 pb-1">
               {isOwnProfile ? (
                 <>
-                  <Link to="/settings" className="shrink-0">
+                  <Link to="/settings">
                     <Button className="rounded-xl h-10 text-sm whitespace-nowrap">
                       <Edit2 className="w-4 h-4 mr-2" />
                       Modifier le profil
