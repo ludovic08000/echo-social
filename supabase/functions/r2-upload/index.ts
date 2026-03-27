@@ -231,7 +231,7 @@ Deno.serve(async (req) => {
     }
 
     // ─── Validate extension matches MIME ───
-    if (!validateMimeExtension(baseMime, file.name)) {
+    if (!validateMimeExtension(baseMime, file.name, cleanFolder)) {
       return new Response(JSON.stringify({
         error: "L'extension du fichier ne correspond pas à son type MIME",
       }), {
