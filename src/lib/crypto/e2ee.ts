@@ -130,7 +130,7 @@ export async function encryptMessage(
     encodeString(`${timestamp}:${sequenceNumber}`),
   );
 
-  const signature = await crypto.subtle.sign(
+  const signature = await hardCrypto.sign(
     'Ed25519' as any,
     signingKey,
     signatureData,
