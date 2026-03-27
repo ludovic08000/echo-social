@@ -208,7 +208,7 @@ export async function ratchetDecrypt(
   }
 
   const headerDhRaw = base64ToBuffer(envelope.hdr.dh);
-  const headerDhKey = await crypto.subtle.importKey(
+  const headerDhKey = await hardCrypto.importKey(
     'raw', headerDhRaw, KX_KEY_PARAMS as any, true, []
   );
 
