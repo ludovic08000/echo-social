@@ -38,6 +38,10 @@ export default function Signup() {
   const [parentalPin, setParentalPin] = useState('');
   const [parentalPinConfirm, setParentalPinConfirm] = useState('');
   const [showParentalPin, setShowParentalPin] = useState(false);
+  // Anti-bot honeypot (invisible field — bots fill it, humans don't)
+  const [honeypot, setHoneypot] = useState('');
+  // Rate limiting: track form submission time
+  const [formLoadTime] = useState(Date.now());
 
   const currentYear = new Date().getFullYear();
   const years = useMemo(() => Array.from({ length: currentYear - 1920 + 1 }, (_, i) => currentYear - i), [currentYear]);
