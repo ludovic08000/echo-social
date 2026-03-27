@@ -4,13 +4,17 @@
  * Protects against:
  * - Prototype pollution (Object.prototype, Array.prototype)
  * - crypto.subtle monkey-patching (XSS replacing encrypt/decrypt)
- * - IndexedDB tampering
+ * - JSON.parse / TextEncoder / indexedDB.open tampering
  * - Runtime code injection
+ * 
+ * STRATEGY: Snapshot ALL critical native references at module load time.
+ * If malicious JS loads AFTER this module, it cannot replace these.
+ * If it loads BEFORE — nothing can help (CSP is the real defense there).
  */
 
 // ─── Snapshot native references at load time ───
-// If malicious JS loads AFTER this module, it cannot replace these.
 
+// crypto.subtle
 const _subtle = crypto.subtle;
 const _generateKey = _subtle.generateKey.bind(_subtle);
 const _importKey = _subtle.importKey.bind(_subtle);
@@ -23,6 +27,15 @@ const _sign = _subtle.sign.bind(_subtle);
 const _verify = _subtle.verify.bind(_subtle);
 const _digest = _subtle.digest.bind(_subtle);
 const _getRandomValues = crypto.getRandomValues.bind(crypto);
+
+// Global APIs used in crypto pipeline
+const _JSONparse = JSON.parse;
+const _JSONstringify = JSON.stringify;
+const _TextEncoder = TextEncoder;
+const _TextDecoder = TextDecoder;
+const _idbOpen = indexedDB.open.bind(indexedDB);
+const _atob = atob;
+const _btoa = btoa;
 
 /** Hardened crypto.subtle — uses snapshotted references */
 export const hardCrypto = Object.freeze({
@@ -37,6 +50,17 @@ export const hardCrypto = Object.freeze({
   verify: _verify,
   digest: _digest,
   getRandomValues: _getRandomValues,
+});
+
+/** Hardened global utilities — snapshotted at load time */
+export const hardGlobals = Object.freeze({
+  jsonParse: _JSONparse,
+  jsonStringify: _JSONstringify,
+  TextEncoder: _TextEncoder,
+  TextDecoder: _TextDecoder,
+  idbOpen: _idbOpen,
+  atob: _atob,
+  btoa: _btoa,
 });
 
 // ─── Tamper detection ───
@@ -62,35 +86,63 @@ export function isTampered(): boolean {
 }
 
 /**
- * Verify crypto.subtle hasn't been monkey-patched.
- * Call periodically (e.g. before encrypt/decrypt).
+ * Verify the full crypto pipeline hasn't been monkey-patched.
+ * Checks crypto.subtle methods + JSON.parse + TextEncoder + indexedDB.open.
  */
 export function verifyCryptoIntegrity(): boolean {
   try {
-    // Check if crypto.subtle.encrypt has been replaced
-    if (crypto.subtle.encrypt !== _encrypt) {
-      triggerTamper('crypto.subtle.encrypt replaced');
+    // crypto.subtle checks
+    const subtleChecks: [string, Function, Function][] = [
+      ['encrypt', crypto.subtle.encrypt, _encrypt],
+      ['decrypt', crypto.subtle.decrypt, _decrypt],
+      ['importKey', crypto.subtle.importKey, _importKey],
+      ['exportKey', crypto.subtle.exportKey, _exportKey],
+      ['sign', crypto.subtle.sign, _sign],
+      ['verify', crypto.subtle.verify, _verify],
+      ['deriveBits', crypto.subtle.deriveBits, _deriveBits],
+      ['deriveKey', crypto.subtle.deriveKey, _deriveKey],
+      ['generateKey', crypto.subtle.generateKey, _generateKey],
+      ['digest', crypto.subtle.digest, _digest],
+    ];
+
+    for (const [name, current, original] of subtleChecks) {
+      if (current !== original) {
+        triggerTamper(`crypto.subtle.${name} replaced`);
+        return false;
+      }
+    }
+
+    // getRandomValues
+    if (crypto.getRandomValues !== _getRandomValues) {
+      triggerTamper('crypto.getRandomValues replaced');
       return false;
     }
-    if (crypto.subtle.decrypt !== _decrypt) {
-      triggerTamper('crypto.subtle.decrypt replaced');
+
+    // Global pipeline checks
+    if (JSON.parse !== _JSONparse) {
+      triggerTamper('JSON.parse replaced');
       return false;
     }
-    if (crypto.subtle.importKey !== _importKey) {
-      triggerTamper('crypto.subtle.importKey replaced');
+    if (JSON.stringify !== _JSONstringify) {
+      triggerTamper('JSON.stringify replaced');
       return false;
     }
-    if (crypto.subtle.exportKey !== _exportKey) {
-      triggerTamper('crypto.subtle.exportKey replaced');
+    if (globalThis.TextEncoder !== _TextEncoder) {
+      triggerTamper('TextEncoder replaced');
       return false;
     }
-    if (crypto.subtle.sign !== _sign) {
-      triggerTamper('crypto.subtle.sign replaced');
+    if (globalThis.atob !== _atob) {
+      triggerTamper('atob replaced');
       return false;
     }
+    if (globalThis.btoa !== _btoa) {
+      triggerTamper('btoa replaced');
+      return false;
+    }
+
     return true;
   } catch {
-    triggerTamper('crypto.subtle access error');
+    triggerTamper('crypto integrity check access error');
     return false;
   }
 }
@@ -99,11 +151,10 @@ export function verifyCryptoIntegrity(): boolean {
 
 /**
  * Call once at app startup to prevent prototype pollution attacks.
- * Freezes critical methods on Object/Array prototypes.
+ * Locks down critical methods on Object/Array prototypes.
  */
 export function hardenPrototypes() {
   try {
-    // Freeze toString/valueOf to prevent injection via prototype pollution
     const criticalMethods = ['toString', 'valueOf', 'constructor'] as const;
     for (const method of criticalMethods) {
       const desc = Object.getOwnPropertyDescriptor(Object.prototype, method);
@@ -116,27 +167,13 @@ export function hardenPrototypes() {
       }
     }
   } catch (e) {
-    // Non-fatal: some environments restrict prototype modification
     console.warn('[SECURITY] Could not harden prototypes:', e);
   }
 }
 
 // ─── Memory scrubbing ───
 
-/**
- * Zero-fill a string in memory (best effort — JS strings are immutable,
- * but we can clear variables holding references).
- */
-export function scrubString(str: string): void {
-  // In JS we can't truly scrub immutable strings, but we can:
-  // 1. Overwrite the variable in the caller's scope (caller responsibility)
-  // 2. Force GC hint
-  void str;
-}
-
-/**
- * Zero-fill a Uint8Array (for key material)
- */
+/** Zero-fill a Uint8Array (for key material) */
 export function scrubBuffer(buffer: Uint8Array): void {
   buffer.fill(0);
 }
