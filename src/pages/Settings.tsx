@@ -57,7 +57,7 @@ export default function Settings() {
                 <Palette className="w-4 h-4 text-primary" />
                 {t('appearance.title')}
               </h2>
-              <AppearanceSettingsPanel />
+              <AppearanceSettingsPanel key={uxMode} />
             </section>
           </div>
         )}
