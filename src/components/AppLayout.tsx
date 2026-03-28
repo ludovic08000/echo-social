@@ -13,6 +13,7 @@ import { useScreenSize } from '@/hooks/useScreenSize';
 import { useChatWidget } from '@/components/ChatWidgetContext';
 import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { UXModeSwitchCompact } from '@/components/UXModeSwitch';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -40,6 +41,7 @@ function MobileHeader() {
          </Link>
         
         <div className="flex items-center gap-1.5">
+          <UXModeSwitchCompact />
           <Link 
             to="/notifications" 
             className="relative w-9 h-9 rounded-full bg-secondary/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200"
