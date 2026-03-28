@@ -71,7 +71,7 @@ const ProductDetailPage = lazyWithOneRetry(() => import("./pages/ProductDetail")
 const LegalTerms = lazyWithOneRetry(() => import("./pages/LegalTerms"), 'r-legal');
 const PrivacyPolicy = lazyWithOneRetry(() => import("./pages/PrivacyPolicy"), 'r-privacy');
 const AIEngine = lazyWithOneRetry(() => import("./pages/AIEngine"), 'r-ai');
-const AdsManager = lazyWithOneRetry(() => import("./pages/AdsManager"), 'r-ads');
+
 const AIAgents = lazyWithOneRetry(() => import("./pages/AIAgents"), 'r-agents');
 const Admin = lazyWithOneRetry(() => import("./pages/Admin"), 'r-admin');
 const CreatorUpgrade = lazyWithOneRetry(() => import("./pages/CreatorUpgrade"), 'r-creator');
