@@ -416,7 +416,36 @@ async function handleAgentChat(apiKey: string, body: any, userId: string, supaba
   await supabase.from("ai_agent_messages").insert({ conversation_id: convId, role: "user", content: message });
   const { data: history } = await supabase.from("ai_agent_messages").select("role, content").eq("conversation_id", convId).order("created_at", { ascending: true }).limit(20);
 
-  const resp = await callAI(apiKey, { model: "google/gemini-3-flash-preview", messages: [{ role: "system", content: agent.system_prompt + ACTION_SYSTEM_PROMPT }, ...(history || []).map((m: any) => ({ role: m.role, content: m.content }))], stream: true });
+  // Inject user's conversations so Zeus can send messages
+  let conversationsContext = "";
+  try {
+    const { data: userConvs } = await supabase
+      .from("conversation_participants")
+      .select("conversation_id, conversations(id, name, is_group)")
+      .eq("user_id", userId)
+      .limit(30);
+    if (userConvs?.length) {
+      // Get peer names for 1:1 conversations
+      const convIds = userConvs.map((c: any) => c.conversation_id);
+      const { data: allParticipants } = await supabase
+        .from("conversation_participants")
+        .select("conversation_id, user_id, profiles(name)")
+        .in("conversation_id", convIds)
+        .neq("user_id", userId);
+      const peerMap = new Map<string, string>();
+      for (const p of (allParticipants || [])) {
+        peerMap.set(p.conversation_id, (p as any).profiles?.name || "Inconnu");
+      }
+      const convList = userConvs.map((c: any) => {
+        const conv = c.conversations;
+        const name = conv?.is_group ? (conv.name || "Groupe") : (peerMap.get(c.conversation_id) || "Inconnu");
+        return `- ${name}: ${c.conversation_id}`;
+      }).join("\n");
+      conversationsContext = `\n\n## CONVERSATIONS DE L'UTILISATEUR\nVoici les conversations disponibles pour envoyer des messages :\n${convList}\nUtilise le conversation_id exact pour le bloc send_message.`;
+    }
+  } catch { /* ignore */ }
+
+  const resp = await callAI(apiKey, { model: "google/gemini-3-flash-preview", messages: [{ role: "system", content: agent.system_prompt + ACTION_SYSTEM_PROMPT + conversationsContext }, ...(history || []).map((m: any) => ({ role: m.role, content: m.content }))], stream: true });
   const errResp = aiError(resp.status, cors);
   if (errResp) return errResp;
   if (!resp.ok) throw new Error("AI error");
