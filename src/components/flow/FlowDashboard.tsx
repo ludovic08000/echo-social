@@ -13,7 +13,7 @@ const WIDGETS = [
   { icon: Users, label: 'Groupes', path: '/groups', gradient: 'from-cyan-500/20 to-cyan-600/10', iconColor: 'text-cyan-400' },
   { icon: Trophy, label: 'Défis', path: '/challenges', gradient: 'from-amber-500/20 to-yellow-600/10', iconColor: 'text-amber-400' },
   { icon: Bot, label: 'Zeus IA', path: '#zeus', gradient: 'from-orange-500/20 to-amber-600/10', iconColor: 'text-orange-400' },
-  { icon: Bell, label: 'Notifs', path: '/notifications', gradient: 'from-sky-500/20 to-blue-600/10', iconColor: 'text-sky-400', badgeKey: 'notifs' },
+  
   { icon: BookOpen, label: 'Journal', path: '/journal', gradient: 'from-teal-500/20 to-emerald-600/10', iconColor: 'text-teal-400' },
   { icon: Megaphone, label: 'Pub Ads', path: '/ads', gradient: 'from-rose-500/20 to-pink-600/10', iconColor: 'text-rose-400' },
 ];
