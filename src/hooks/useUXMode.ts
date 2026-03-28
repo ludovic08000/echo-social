@@ -54,32 +54,55 @@ function reapplyAppearance(mode: UXMode) {
     root.style.setProperty('--shadow-glow', `0 0 40px hsl(${accentHsl} / 0.25)`);
     root.style.setProperty('--shadow-gold', `0 4px 25px -4px hsl(${accentHsl} / 0.3)`);
     root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(${h} ${s}% ${l}%) 0%, hsl(${h + 15} ${Math.max(s - 10, 30)}% ${l + 5}%) 50%, hsl(${h + 30} ${s}% ${l + 8}%) 100%)`);
+    const isFlow = root.classList.contains('ux-flow');
+
     if (isDark) {
-      root.style.setProperty('--background', `${h} ${Math.max(s - 55, 8)}% 10%`);
-      root.style.setProperty('--foreground', `${h} ${Math.max(s - 50, 5)}% 92%`);
-      root.style.setProperty('--card', `${h} ${Math.max(s - 52, 8)}% 12%`);
-      root.style.setProperty('--card-foreground', `${h} ${Math.max(s - 50, 5)}% 92%`);
-      root.style.setProperty('--muted', `${h} ${Math.max(s - 50, 6)}% 16%`);
-      root.style.setProperty('--muted-foreground', `${h} ${Math.max(s - 45, 8)}% 55%`);
-      root.style.setProperty('--accent', `${h} ${Math.max(s - 30, 10)}% 20%`);
+      const surfaceH = isFlow ? 310 : h;
+      const surfaceS = isFlow ? Math.max(s - 30, 18) : Math.max(s - 55, 8);
+      const bgL = isFlow ? 22 : 18;
+      const cardL = isFlow ? 26 : 22;
+      const mutedL = isFlow ? 28 : 25;
+      const secL = isFlow ? 30 : 27;
+      const borderL = isFlow ? 35 : 30;
+      const accentL = isFlow ? 36 : 32;
+      const fgL = isFlow ? 96 : 95;
+      const mutedFgL = isFlow ? 65 : 60;
+
+      root.style.setProperty('--background', `${surfaceH} ${surfaceS}% ${bgL}%`);
+      root.style.setProperty('--foreground', `${surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
+      root.style.setProperty('--card', `${surfaceH} ${surfaceS}% ${cardL}%`);
+      root.style.setProperty('--card-foreground', `${surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
+      root.style.setProperty('--popover', `${surfaceH} ${surfaceS}% ${cardL}%`);
+      root.style.setProperty('--popover-foreground', `${surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
+      root.style.setProperty('--muted', `${surfaceH} ${Math.max(surfaceS - 4, 6)}% ${mutedL}%`);
+      root.style.setProperty('--muted-foreground', `${surfaceH} ${Math.max(surfaceS - 6, 8)}% ${mutedFgL}%`);
+      root.style.setProperty('--accent', `${isFlow ? 285 : h} ${Math.max(s - 30, 10)}% ${accentL}%`);
       root.style.setProperty('--accent-foreground', `${h} ${Math.max(s - 10, 30)}% 72%`);
-      root.style.setProperty('--secondary', `${h} ${Math.max(s - 48, 8)}% 15%`);
-      root.style.setProperty('--secondary-foreground', `${h} ${Math.max(s - 40, 10)}% 82%`);
-      root.style.setProperty('--border', `${h} ${Math.max(s - 50, 6)}% 18%`);
-      root.style.setProperty('--input', `${h} ${Math.max(s - 50, 6)}% 18%`);
+      root.style.setProperty('--secondary', `${surfaceH} ${surfaceS}% ${secL}%`);
+      root.style.setProperty('--secondary-foreground', `${surfaceH} ${Math.max(surfaceS - 8, 10)}% 82%`);
+      root.style.setProperty('--border', `${surfaceH} ${Math.max(surfaceS - 4, 6)}% ${borderL}%`);
+      root.style.setProperty('--input', `${surfaceH} ${Math.max(surfaceS - 4, 6)}% ${borderL}%`);
+
+      if (isFlow) {
+        root.style.setProperty('--flow-glow', `${h} ${s}% ${l}%`);
+        root.style.setProperty('--flow-warm', `${Math.min(h + 15, 360)} ${Math.min(s + 5, 80)}% ${Math.min(l + 3, 75)}%`);
+        root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(${h} ${s}% ${l}%) 0%, hsl(290 ${Math.max(s - 15, 40)}% ${Math.max(l - 3, 45)}%) 50%, hsl(265 ${Math.max(s - 10, 45)}% ${Math.min(l + 2, 75)}%) 100%)`);
+        root.style.setProperty('--shadow-glow', `0 0 50px hsl(${h} ${s}% ${l}% / 0.35)`);
+        root.style.setProperty('--shadow-gold', `0 4px 30px -4px hsl(${h} ${s}% ${l}% / 0.4)`);
+      }
     } else {
-      root.style.setProperty('--background', `${h} ${Math.max(s - 45, 10)}% 98%`);
-      root.style.setProperty('--foreground', `${h} ${Math.max(s - 40, 10)}% 12%`);
-      root.style.setProperty('--card', `${h} ${Math.max(s - 40, 8)}% 99%`);
-      root.style.setProperty('--card-foreground', `${h} ${Math.max(s - 40, 10)}% 12%`);
-      root.style.setProperty('--muted', `${h} ${Math.max(s - 40, 8)}% 94%`);
-      root.style.setProperty('--muted-foreground', `${h} ${Math.max(s - 35, 10)}% 42%`);
-      root.style.setProperty('--accent', `${h} ${Math.max(s - 25, 15)}% 94%`);
+      root.style.setProperty('--background', `${h} ${Math.max(s - 50, 8)}% 97%`);
+      root.style.setProperty('--foreground', `${h} ${Math.max(s - 40, 15)}% 8%`);
+      root.style.setProperty('--card', `${h} ${Math.max(s - 45, 6)}% 100%`);
+      root.style.setProperty('--card-foreground', `${h} ${Math.max(s - 40, 15)}% 8%`);
+      root.style.setProperty('--muted', `${h} ${Math.max(s - 40, 8)}% 92%`);
+      root.style.setProperty('--muted-foreground', `${h} ${Math.max(s - 30, 12)}% 35%`);
+      root.style.setProperty('--accent', `${h} ${Math.max(s - 25, 15)}% 92%`);
       root.style.setProperty('--accent-foreground', `${h} ${s}% 40%`);
-      root.style.setProperty('--secondary', `${h} ${Math.max(s - 40, 10)}% 93%`);
-      root.style.setProperty('--secondary-foreground', `${h} ${Math.max(s - 35, 10)}% 25%`);
-      root.style.setProperty('--border', `${h} ${Math.max(s - 45, 8)}% 88%`);
-      root.style.setProperty('--input', `${h} ${Math.max(s - 45, 8)}% 88%`);
+      root.style.setProperty('--secondary', `${h} ${Math.max(s - 40, 10)}% 90%`);
+      root.style.setProperty('--secondary-foreground', `${h} ${Math.max(s - 35, 10)}% 18%`);
+      root.style.setProperty('--border', `${h} ${Math.max(s - 40, 10)}% 82%`);
+      root.style.setProperty('--input', `${h} ${Math.max(s - 40, 10)}% 82%`);
     }
   }
 
