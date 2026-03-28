@@ -127,6 +127,108 @@
     --sidebar-border: 220 14% 20%;
     --sidebar-ring: 220 70% 55%;
   }
+
+  /* ═══ MODE FLOW ═══ Warm violet-blue palette ═══ */
+  .dark.ux-flow {
+    --background: 260 22% 12%;
+    --foreground: 250 20% 92%;
+
+    --card: 260 20% 16%;
+    --card-foreground: 250 20% 92%;
+
+    --popover: 260 20% 16%;
+    --popover-foreground: 250 20% 92%;
+
+    --primary: 260 60% 58%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 255 16% 22%;
+    --secondary-foreground: 250 15% 82%;
+
+    --muted: 258 14% 19%;
+    --muted-foreground: 250 12% 55%;
+
+    --accent: 260 30% 25%;
+    --accent-foreground: 260 60% 72%;
+
+    --destructive: 350 65% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 258 16% 24%;
+    --input: 256 14% 21%;
+    --ring: 260 60% 58%;
+
+    --bleu: 260 60% 58%;
+    --bleu-light: 250 55% 68%;
+    --bleu-dark: 265 55% 38%;
+    --blanc: 250 12% 88%;
+    --rouge: 350 60% 55%;
+    --rouge-light: 350 50% 65%;
+
+    --premium-gradient: linear-gradient(135deg, hsl(270 60% 50%) 0%, hsl(240 55% 50%) 50%, hsl(210 65% 50%) 100%);
+    --premium-gradient-subtle: linear-gradient(135deg, hsl(260 25% 18%) 0%, hsl(255 18% 14%) 100%);
+    --premium-gradient-dark: linear-gradient(135deg, hsl(270 55% 35%) 0%, hsl(250 45% 18%) 100%);
+
+    --shadow-sm: 0 1px 3px 0 hsl(270 30% 5% / 0.2);
+    --shadow-md: 0 4px 12px -2px hsl(270 30% 5% / 0.25);
+    --shadow-lg: 0 12px 28px -4px hsl(270 30% 5% / 0.3);
+    --shadow-xl: 0 20px 50px -8px hsl(270 30% 5% / 0.35);
+    --shadow-glow: 0 0 50px hsl(260 60% 55% / 0.35);
+    --shadow-gold: 0 4px 30px -4px hsl(260 60% 55% / 0.4);
+
+    --sidebar-background: 260 20% 14%;
+    --sidebar-foreground: 250 15% 82%;
+    --sidebar-primary: 260 60% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 258 16% 20%;
+    --sidebar-accent-foreground: 250 15% 82%;
+    --sidebar-border: 258 16% 20%;
+    --sidebar-ring: 260 60% 58%;
+
+    /* Flow specific */
+    --flow-glow: 270 65% 55%;
+    --flow-warm: 30 70% 60%;
+  }
+
+  .light.ux-flow {
+    --background: 260 15% 98%;
+    --foreground: 260 30% 15%;
+
+    --card: 260 10% 100%;
+    --card-foreground: 260 30% 15%;
+
+    --popover: 260 10% 100%;
+    --popover-foreground: 260 30% 15%;
+
+    --primary: 260 60% 55%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 260 20% 94%;
+    --secondary-foreground: 260 30% 25%;
+
+    --muted: 258 15% 92%;
+    --muted-foreground: 255 15% 45%;
+
+    --accent: 260 50% 95%;
+    --accent-foreground: 260 60% 45%;
+
+    --destructive: 350 70% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 260 18% 90%;
+    --input: 258 14% 94%;
+    --ring: 260 60% 55%;
+
+    --premium-gradient: linear-gradient(135deg, hsl(270 60% 55%) 0%, hsl(240 55% 55%) 50%, hsl(210 65% 55%) 100%);
+    --premium-gradient-subtle: linear-gradient(135deg, hsl(260 50% 97%) 0%, hsl(255 10% 99%) 100%);
+    --premium-gradient-dark: linear-gradient(135deg, hsl(270 55% 40%) 0%, hsl(250 50% 25%) 100%);
+
+    --shadow-glow: 0 0 35px hsl(260 60% 55% / 0.25);
+    --shadow-gold: 0 4px 22px -4px hsl(260 60% 55% / 0.3);
+
+    --flow-glow: 270 65% 55%;
+    --flow-warm: 30 70% 60%;
+  }
 }
 
 @layer base {
