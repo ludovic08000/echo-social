@@ -429,17 +429,18 @@ export default function AdsManager() {
     }
   }, []);
 
-  const chartData = generateChartData(campaigns || []);
+  const safeCampaigns = Array.isArray(campaigns) ? campaigns : [];
+  const chartData = generateChartData(safeCampaigns);
 
-  const totalImpressions = campaigns?.reduce((s, c) => s + c.impressions, 0) || 0;
-  const totalClicks = campaigns?.reduce((s, c) => s + c.clicks, 0) || 0;
-  const totalSpent = campaigns?.reduce((s, c) => s + c.spent, 0) || 0;
-  const activeCampaigns = campaigns?.filter(c => c.status === 'active') || [];
+  const totalImpressions = safeCampaigns.reduce((s, c) => s + (Number(c.impressions) || 0), 0);
+  const totalClicks = safeCampaigns.reduce((s, c) => s + (Number(c.clicks) || 0), 0);
+  const totalSpent = safeCampaigns.reduce((s, c) => s + (Number(c.spent) || 0), 0);
+  const activeCampaigns = safeCampaigns.filter(c => c.status === 'active');
   const ctr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : '0';
 
   const pieData = [
     { name: 'Actives', value: activeCampaigns.length, color: 'hsl(var(--primary))' },
-    { name: 'Terminées', value: (campaigns?.filter(c => c.status !== 'active').length) || 0, color: 'hsl(var(--muted-foreground))' },
+    { name: 'Terminées', value: safeCampaigns.filter(c => c.status !== 'active').length, color: 'hsl(var(--muted-foreground))' },
   ].filter(d => d.value > 0);
 
   return (
