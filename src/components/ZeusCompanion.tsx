@@ -129,9 +129,10 @@ function ActionCard({ action, onExecute, executing, executed }: {
     generate_image: { icon: <Sparkles className="w-3.5 h-3.5" />, label: 'Générer image' },
     translate: { icon: <Globe className="w-3.5 h-3.5" />, label: 'Traduction' },
     update_feed_config: { icon: <Sliders className="w-3.5 h-3.5" />, label: 'Ajuster algorithme' },
+    send_message: { icon: <MessageSquare className="w-3.5 h-3.5" />, label: `Envoyer à ${action.recipient_name || 'un ami'}` },
   };
   const info = labels[action.type] || { icon: <Zap className="w-3.5 h-3.5" />, label: 'Action' };
-  const preview = action.type === 'update_feed_config' ? '' : (action.body || action.caption || action.translated_text || action.prompt || '');
+  const preview = action.type === 'update_feed_config' ? '' : (action.message_text || action.body || action.caption || action.translated_text || action.prompt || '');
 
   return (
     <div className="mt-2.5 p-3 rounded-xl bg-accent/50 border border-border space-y-2">
