@@ -52,7 +52,26 @@ const ProductDetailPage = lazy(() => import("./pages/ProductDetail"));
 const LegalTerms = lazy(() => import("./pages/LegalTerms"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const AIEngine = lazy(() => import("./pages/AIEngine"));
-const AdsManager = lazy(() => import("./pages/AdsManager"));
+
+const lazyWithOneRetry = <TModule extends { default: React.ComponentType<any> }>(
+  importer: () => Promise<TModule>,
+  retryKey: string
+) => lazy(async () => {
+  try {
+    const mod = await importer();
+    sessionStorage.removeItem(retryKey);
+    return mod;
+  } catch (error) {
+    const alreadyRetried = sessionStorage.getItem(retryKey) === '1';
+    if (!alreadyRetried) {
+      sessionStorage.setItem(retryKey, '1');
+      window.location.reload();
+    }
+    throw error;
+  }
+});
+
+const AdsManager = lazyWithOneRetry(() => import("./pages/AdsManager"), 'retry-ads-route');
 const AIAgents = lazy(() => import("./pages/AIAgents"));
 const Admin = lazy(() => import("./pages/Admin"));
 const CreatorUpgrade = lazy(() => import("./pages/CreatorUpgrade"));
