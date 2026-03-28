@@ -773,7 +773,7 @@ export default function AdsManager() {
             <motion.div key="campaigns" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-4">
               {isLoading ? (
                 <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="h-32 rounded-2xl skeleton" />)}</div>
-              ) : !campaigns?.length ? (
+              ) : !safeCampaigns.length ? (
                 <div className="text-center py-16">
                   <Megaphone className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
                   <h3 className="font-semibold text-foreground mb-2">Aucune campagne</h3>
@@ -781,52 +781,55 @@ export default function AdsManager() {
                   <Button onClick={() => setTab('create')} className="rounded-xl gap-2 premium-button"><Sparkles className="w-4 h-4" />Créer avec l'IA</Button>
                 </div>
               ) : (
-                campaigns.map((campaign, i) => (
-                  <motion.div key={campaign.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                    className="p-4 rounded-2xl bg-card border border-border/30">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-foreground truncate">{campaign.title}</h3>
-                          {campaign.moderation_status === 'approved' && <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />}
-                          {campaign.moderation_status === 'rejected' && <ShieldX className="w-4 h-4 text-destructive shrink-0" />}
+                safeCampaigns.map((campaign, i) => {
+                  const interests = toSafeStringArray((campaign as any).target_interests);
+                  return (
+                    <motion.div key={campaign.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+                      className="p-4 rounded-2xl bg-card border border-border/30">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold text-foreground truncate">{campaign.title}</h3>
+                            {campaign.moderation_status === 'approved' && <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />}
+                            {campaign.moderation_status === 'rejected' && <ShieldX className="w-4 h-4 text-destructive shrink-0" />}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{campaign.body}</p>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{campaign.body}</p>
+                        <span className={cn("px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase shrink-0 ml-2",
+                          campaign.status === 'active' ? 'bg-emerald-500/15 text-emerald-600' :
+                          campaign.status === 'draft' ? 'bg-amber-500/15 text-amber-600' : 'bg-muted text-muted-foreground'
+                        )}>
+                          {campaign.status === 'active' ? 'Active' : campaign.status === 'draft' ? 'Brouillon' : 'Terminée'}
+                        </span>
                       </div>
-                      <span className={cn("px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase shrink-0 ml-2",
-                        campaign.status === 'active' ? 'bg-emerald-500/15 text-emerald-600' :
-                        campaign.status === 'draft' ? 'bg-amber-500/15 text-amber-600' : 'bg-muted text-muted-foreground'
-                      )}>
-                        {campaign.status === 'active' ? 'Active' : campaign.status === 'draft' ? 'Brouillon' : 'Terminée'}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 mb-3 text-[10px]">
-                      <span className="px-2 py-0.5 rounded-md bg-secondary/50 text-muted-foreground">
-                        {campaign.target_age_min}-{campaign.target_age_max} ans
-                      </span>
-                      <span className="px-2 py-0.5 rounded-md bg-secondary/50 text-muted-foreground">
-                        {campaign.target_gender === 'all' ? 'Tous genres' : campaign.target_gender === 'male' ? 'Hommes' : 'Femmes'}
-                      </span>
-                      {(campaign.target_interests ?? []).slice(0, 3).map((int: string) => (
-                        <span key={int} className="px-2 py-0.5 rounded-md bg-primary/10 text-primary">{int}</span>
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1"><Eye className="w-3.5 h-3.5" />{campaign.impressions}</span>
-                      <span className="flex items-center gap-1"><MousePointerClick className="w-3.5 h-3.5" />{campaign.clicks}</span>
-                      <span className="flex items-center gap-1"><DollarSign className="w-3.5 h-3.5" />{campaign.budget}€</span>
-                      <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{format(new Date(campaign.ends_at), 'dd MMM', { locale: fr })}</span>
-                    </div>
-                    {campaign.status === 'active' && (
-                      <div className="mt-3">
-                        <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
-                          <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(((Date.now() - new Date(campaign.starts_at).getTime()) / (new Date(campaign.ends_at).getTime() - new Date(campaign.starts_at).getTime())) * 100, 100)}%` }}
-                            className="h-full rounded-full bg-gradient-to-r from-primary to-primary/60" />
+                      <div className="flex flex-wrap items-center gap-2 mb-3 text-[10px]">
+                        <span className="px-2 py-0.5 rounded-md bg-secondary/50 text-muted-foreground">
+                          {campaign.target_age_min}-{campaign.target_age_max} ans
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md bg-secondary/50 text-muted-foreground">
+                          {campaign.target_gender === 'all' ? 'Tous genres' : campaign.target_gender === 'male' ? 'Hommes' : 'Femmes'}
+                        </span>
+                        {interests.slice(0, 3).map((int: string) => (
+                          <span key={int} className="px-2 py-0.5 rounded-md bg-primary/10 text-primary">{int}</span>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1"><Eye className="w-3.5 h-3.5" />{Number(campaign.impressions) || 0}</span>
+                        <span className="flex items-center gap-1"><MousePointerClick className="w-3.5 h-3.5" />{Number(campaign.clicks) || 0}</span>
+                        <span className="flex items-center gap-1"><DollarSign className="w-3.5 h-3.5" />{Number(campaign.budget) || 0}€</span>
+                        <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{formatSafeCampaignDate(campaign.ends_at)}</span>
+                      </div>
+                      {campaign.status === 'active' && (
+                        <div className="mt-3">
+                          <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+                            <motion.div initial={{ width: 0 }} animate={{ width: `${getCampaignProgress(campaign.starts_at, campaign.ends_at)}%` }}
+                              className="h-full rounded-full bg-gradient-to-r from-primary to-primary/60" />
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </motion.div>
-                ))
+                      )}
+                    </motion.div>
+                  );
+                })
               )}
             </motion.div>
           )}
