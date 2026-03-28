@@ -276,6 +276,9 @@ export function AppearanceSettingsPanel() {
         </div>
       </div>
 
+      {/* Feed customization: font, text color, background color */}
+      <FeedCustomizationSection />
+
       {/* Background customization */}
       <BackgroundSettingsSection />
     </div>
