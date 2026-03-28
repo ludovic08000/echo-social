@@ -21,6 +21,7 @@ export default function Settings() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<string | null>(null);
+  const { mode: uxMode } = useUXMode();
 
   const handleBack = () => {
     if (activeTab) {
