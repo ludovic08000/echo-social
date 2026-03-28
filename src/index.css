@@ -191,43 +191,43 @@
   }
 
   .light.ux-flow {
-    --background: 330 30% 97%;
-    --foreground: 310 35% 18%;
+    --background: 335 35% 97%;
+    --foreground: 320 40% 15%;
 
-    --card: 330 25% 99%;
-    --card-foreground: 310 35% 18%;
+    --card: 335 30% 99%;
+    --card-foreground: 320 40% 15%;
 
-    --popover: 330 25% 99%;
-    --popover-foreground: 310 35% 18%;
+    --popover: 335 30% 99%;
+    --popover-foreground: 320 40% 15%;
 
-    --primary: 330 65% 55%;
+    --primary: 325 72% 58%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 330 30% 93%;
-    --secondary-foreground: 310 30% 28%;
+    --secondary: 335 35% 93%;
+    --secondary-foreground: 320 30% 25%;
 
-    --muted: 325 22% 91%;
-    --muted-foreground: 310 15% 48%;
+    --muted: 330 25% 91%;
+    --muted-foreground: 320 18% 45%;
 
-    --accent: 335 50% 94%;
-    --accent-foreground: 330 60% 42%;
+    --accent: 290 45% 93%;
+    --accent-foreground: 300 60% 40%;
 
     --destructive: 350 70% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 330 25% 88%;
-    --input: 325 20% 93%;
-    --ring: 330 65% 55%;
+    --border: 335 28% 86%;
+    --input: 330 22% 93%;
+    --ring: 325 72% 58%;
 
-    --premium-gradient: linear-gradient(135deg, hsl(340 60% 55%) 0%, hsl(300 50% 52%) 50%, hsl(270 50% 55%) 100%);
-    --premium-gradient-subtle: linear-gradient(135deg, hsl(330 50% 96%) 0%, hsl(320 15% 98%) 100%);
-    --premium-gradient-dark: linear-gradient(135deg, hsl(340 55% 40%) 0%, hsl(300 45% 28%) 100%);
+    --premium-gradient: linear-gradient(135deg, hsl(335 70% 58%) 0%, hsl(290 55% 55%) 50%, hsl(265 55% 58%) 100%);
+    --premium-gradient-subtle: linear-gradient(135deg, hsl(335 55% 96%) 0%, hsl(290 20% 98%) 100%);
+    --premium-gradient-dark: linear-gradient(135deg, hsl(335 55% 42%) 0%, hsl(290 45% 30%) 100%);
 
-    --shadow-glow: 0 0 40px hsl(330 65% 55% / 0.2);
-    --shadow-gold: 0 4px 24px -4px hsl(330 65% 55% / 0.25);
+    --shadow-glow: 0 0 40px hsl(325 72% 58% / 0.22);
+    --shadow-gold: 0 4px 24px -4px hsl(325 72% 58% / 0.28);
 
-    --flow-glow: 330 65% 55%;
-    --flow-warm: 345 70% 60%;
+    --flow-glow: 325 72% 58%;
+    --flow-warm: 340 70% 62%;
   }
 }
 
