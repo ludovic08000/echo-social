@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useUXMode } from '@/hooks/useUXMode';
 
 export interface FeedCustomization {
   fontFamily: string;
@@ -12,7 +13,11 @@ const DEFAULTS: FeedCustomization = {
   bgColor: '',
 };
 
-const STORAGE_KEY = 'feed-customization';
+const BASE_KEY = 'feed-customization';
+
+function storageKey(mode: string) {
+  return `${mode}-${BASE_KEY}`;
+}
 
 export const FONT_OPTIONS = [
   { id: 'system', label: 'Système (défaut)', css: 'inherit' },
