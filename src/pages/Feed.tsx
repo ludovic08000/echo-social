@@ -225,6 +225,10 @@ export default function Feed() {
               )}
             </AnimatePresence>
 
+            {/* Flow mode: search + dashboard */}
+            {isFlow && <FlowUniversalSearch />}
+            {isFlow && <FlowDashboard />}
+
             {isMobile ? (
               <>
                 <div className="px-3"><StoriesBar /></div>
