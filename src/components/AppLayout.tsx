@@ -78,6 +78,8 @@ function MobileHeader() {
 
 export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
   const { user, loading } = useAuth();
+  const { isFlow } = useUXMode();
+  useRealtimeNotifications();
   useRealtimeNotifications();
 
   if (loading) {
