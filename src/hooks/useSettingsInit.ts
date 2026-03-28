@@ -17,7 +17,7 @@ export function useSettingsInit(currentMode?: UXMode) {
     const root = document.documentElement;
 
     // ── Theme mode ──
-    const themeMode = localStorage.getItem('theme-mode') || 'dark';
+    const themeMode = modeGet(mode, 'theme-mode') || 'dark';
     if (themeMode === 'system') {
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       root.classList.toggle('dark', prefersDark);
