@@ -16,6 +16,7 @@ import { useCall } from "@/hooks/useCall";
 import { CallOverlay } from "@/components/CallOverlay";
 import { Suspense, lazy, useCallback, useRef } from "react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
 
 // Eager-load critical routes
 import Landing from "./pages/Landing";
