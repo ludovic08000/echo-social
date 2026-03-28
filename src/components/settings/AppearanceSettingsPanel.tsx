@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Sun, Moon, Monitor, Check, Minus, Plus } from 'lucide-react';
+import { Sun, Moon, Monitor, Check, Minus, Plus, Zap, Waves } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { useTranslation } from '@/lib/i18n';
 import { BackgroundSettingsSection } from './BackgroundSettingsSection';
+import { useUXMode } from '@/hooks/useUXMode';
 
 type ThemeMode = 'light' | 'dark' | 'system';
 
