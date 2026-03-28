@@ -202,12 +202,17 @@ function AppContent() {
   );
 }
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <I18nProvider>
-      <AppContent />
-    </I18nProvider>
-  </QueryClientProvider>
-);
+const App = () => {
+  const uxMode = useUXModeProvider();
+  return (
+    <UXModeContext.Provider value={uxMode}>
+      <QueryClientProvider client={queryClient}>
+        <I18nProvider>
+          <AppContent />
+        </I18nProvider>
+      </QueryClientProvider>
+    </UXModeContext.Provider>
+  );
+};
 
 export default App;
