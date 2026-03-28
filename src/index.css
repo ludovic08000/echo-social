@@ -128,66 +128,66 @@
     --sidebar-ring: 220 70% 58%;
   }
 
-  /* ═══ MODE FLOW ═══ Candy pink-violet, ultra-féminin, doux ═══ */
+  /* ═══ MODE FLOW ═══ Violet clair candy, féminin, doux ═══ */
   .dark.ux-flow {
-    --background: 310 22% 16%;
-    --foreground: 320 18% 95%;
+    --background: 280 20% 18%;
+    --foreground: 285 16% 96%;
 
-    --card: 305 20% 20%;
-    --card-foreground: 320 18% 95%;
+    --card: 278 18% 22%;
+    --card-foreground: 285 16% 96%;
 
-    --popover: 305 20% 20%;
-    --popover-foreground: 320 18% 95%;
+    --popover: 278 18% 22%;
+    --popover-foreground: 285 16% 96%;
 
-    --primary: 325 72% 65%;
+    --primary: 290 65% 65%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 310 22% 24%;
-    --secondary-foreground: 320 20% 88%;
+    --secondary: 280 18% 26%;
+    --secondary-foreground: 285 18% 88%;
 
-    --muted: 305 18% 22%;
-    --muted-foreground: 310 14% 60%;
+    --muted: 278 16% 24%;
+    --muted-foreground: 280 12% 65%;
 
-    --accent: 285 40% 32%;
-    --accent-foreground: 300 55% 78%;
+    --accent: 270 38% 32%;
+    --accent-foreground: 280 50% 78%;
 
     --destructive: 350 65% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 310 20% 30%;
-    --input: 305 18% 24%;
-    --ring: 325 72% 65%;
+    --border: 280 18% 30%;
+    --input: 278 16% 26%;
+    --ring: 290 65% 65%;
 
-    --bleu: 325 72% 65%;
-    --bleu-light: 320 55% 75%;
-    --bleu-dark: 335 55% 45%;
-    --blanc: 320 15% 92%;
+    --bleu: 290 65% 65%;
+    --bleu-light: 285 50% 75%;
+    --bleu-dark: 295 50% 45%;
+    --blanc: 285 14% 92%;
     --rouge: 350 60% 58%;
     --rouge-light: 350 50% 68%;
 
-    --premium-gradient: linear-gradient(135deg, hsl(335 70% 62%) 0%, hsl(290 55% 58%) 50%, hsl(265 60% 62%) 100%);
-    --premium-gradient-subtle: linear-gradient(135deg, hsl(310 22% 22%) 0%, hsl(290 18% 20%) 100%);
-    --premium-gradient-dark: linear-gradient(135deg, hsl(335 55% 40%) 0%, hsl(290 45% 32%) 100%);
+    --premium-gradient: linear-gradient(135deg, hsl(300 60% 62%) 0%, hsl(270 55% 60%) 50%, hsl(250 55% 64%) 100%);
+    --premium-gradient-subtle: linear-gradient(135deg, hsl(280 20% 24%) 0%, hsl(270 16% 20%) 100%);
+    --premium-gradient-dark: linear-gradient(135deg, hsl(300 50% 40%) 0%, hsl(270 42% 32%) 100%);
 
-    --shadow-sm: 0 1px 4px 0 hsl(325 30% 10% / 0.18);
-    --shadow-md: 0 4px 14px -2px hsl(325 30% 10% / 0.22);
-    --shadow-lg: 0 12px 30px -4px hsl(325 30% 10% / 0.28);
-    --shadow-xl: 0 20px 50px -8px hsl(325 30% 10% / 0.35);
-    --shadow-glow: 0 0 50px hsl(325 72% 65% / 0.35);
-    --shadow-gold: 0 4px 30px -4px hsl(325 72% 65% / 0.4);
+    --shadow-sm: 0 1px 4px 0 hsl(280 30% 10% / 0.18);
+    --shadow-md: 0 4px 14px -2px hsl(280 30% 10% / 0.22);
+    --shadow-lg: 0 12px 30px -4px hsl(280 30% 10% / 0.28);
+    --shadow-xl: 0 20px 50px -8px hsl(280 30% 10% / 0.35);
+    --shadow-glow: 0 0 50px hsl(290 65% 65% / 0.3);
+    --shadow-gold: 0 4px 30px -4px hsl(290 65% 65% / 0.35);
 
-    --sidebar-background: 310 20% 18%;
-    --sidebar-foreground: 320 18% 88%;
-    --sidebar-primary: 325 72% 65%;
+    --sidebar-background: 280 18% 20%;
+    --sidebar-foreground: 285 16% 88%;
+    --sidebar-primary: 290 65% 65%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 305 18% 24%;
-    --sidebar-accent-foreground: 320 18% 88%;
-    --sidebar-border: 310 18% 26%;
-    --sidebar-ring: 325 72% 65%;
+    --sidebar-accent: 278 16% 26%;
+    --sidebar-accent-foreground: 285 16% 88%;
+    --sidebar-border: 280 16% 28%;
+    --sidebar-ring: 290 65% 65%;
 
     /* Flow specific */
-    --flow-glow: 325 72% 65%;
-    --flow-warm: 340 70% 68%;
+    --flow-glow: 290 65% 65%;
+    --flow-warm: 300 60% 68%;
   }
 
   .light.ux-flow {
