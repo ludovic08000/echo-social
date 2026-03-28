@@ -15,6 +15,8 @@ import { useChatWidget } from '@/components/ChatWidgetContext';
 import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { UXModeSwitchCompact } from '@/components/UXModeSwitch';
+import { useUXMode } from '@/hooks/useUXMode';
+import { FlowRadialMenu } from '@/components/flow/FlowRadialMenu';
 
 interface AppLayoutProps {
   children: ReactNode;
