@@ -90,17 +90,17 @@ export function useSettingsInit(currentMode?: UXMode) {
     }
 
     // ── Font size ──
-    const fontSize = localStorage.getItem('font-size');
+    const fontSize = modeGet(mode, 'font-size');
     if (fontSize) {
       root.style.fontSize = `${fontSize}px`;
     }
 
     // ── Compact mode ──
-    const compact = localStorage.getItem('compact-mode') === 'true';
+    const compact = modeGet(mode, 'compact-mode') === 'true';
     root.classList.toggle('compact-mode', compact);
 
     // ── Animations ──
-    const animDisabled = localStorage.getItem('animations-disabled') === 'true';
+    const animDisabled = modeGet(mode, 'animations-disabled') === 'true';
     root.classList.toggle('no-animations', animDisabled);
 
     // ── Accessibility prefs ──
