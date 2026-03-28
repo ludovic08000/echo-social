@@ -98,30 +98,41 @@ export function AppearanceSettingsPanel() {
       const isFlow = root.classList.contains('ux-flow');
 
       if (isDark) {
-        // Flow dark = lighter/warmer; Focus dark = standard
-        const bgL = isFlow ? 18 : 10;
-        const cardL = isFlow ? 21 : 12;
-        const mutedL = isFlow ? 25 : 16;
-        const secL = isFlow ? 23 : 15;
-        const borderL = isFlow ? 28 : 18;
-        const accentL = isFlow ? 28 : 20;
+        // Flow dark = candy pink-violet tinted surfaces
+        const surfaceH = isFlow ? 310 : h;
+        const surfaceS = isFlow ? Math.max(s - 30, 18) : Math.max(s - 55, 8);
+        const bgL = isFlow ? 16 : 10;
+        const cardL = isFlow ? 20 : 12;
+        const mutedL = isFlow ? 22 : 16;
+        const secL = isFlow ? 24 : 15;
+        const borderL = isFlow ? 30 : 18;
+        const accentL = isFlow ? 32 : 20;
         const fgL = isFlow ? 95 : 92;
         const mutedFgL = isFlow ? 62 : 55;
 
-        root.style.setProperty('--background', `${h} ${Math.max(s - 55, 8)}% ${bgL}%`);
-        root.style.setProperty('--foreground', `${h} ${Math.max(s - 50, 5)}% ${fgL}%`);
-        root.style.setProperty('--card', `${h} ${Math.max(s - 52, 8)}% ${cardL}%`);
-        root.style.setProperty('--card-foreground', `${h} ${Math.max(s - 50, 5)}% ${fgL}%`);
-        root.style.setProperty('--popover', `${h} ${Math.max(s - 52, 8)}% ${cardL}%`);
-        root.style.setProperty('--popover-foreground', `${h} ${Math.max(s - 50, 5)}% ${fgL}%`);
-        root.style.setProperty('--muted', `${h} ${Math.max(s - 50, 6)}% ${mutedL}%`);
-        root.style.setProperty('--muted-foreground', `${h} ${Math.max(s - 45, 8)}% ${mutedFgL}%`);
-        root.style.setProperty('--accent', `${h} ${Math.max(s - 30, 10)}% ${accentL}%`);
+        root.style.setProperty('--background', `${surfaceH} ${surfaceS}% ${bgL}%`);
+        root.style.setProperty('--foreground', `${surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
+        root.style.setProperty('--card', `${surfaceH} ${surfaceS}% ${cardL}%`);
+        root.style.setProperty('--card-foreground', `${surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
+        root.style.setProperty('--popover', `${surfaceH} ${surfaceS}% ${cardL}%`);
+        root.style.setProperty('--popover-foreground', `${surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
+        root.style.setProperty('--muted', `${surfaceH} ${Math.max(surfaceS - 4, 6)}% ${mutedL}%`);
+        root.style.setProperty('--muted-foreground', `${surfaceH} ${Math.max(surfaceS - 6, 8)}% ${mutedFgL}%`);
+        root.style.setProperty('--accent', `${isFlow ? 285 : h} ${Math.max(s - 30, 10)}% ${accentL}%`);
         root.style.setProperty('--accent-foreground', `${h} ${Math.max(s - 10, 30)}% 72%`);
-        root.style.setProperty('--secondary', `${h} ${Math.max(s - 48, 8)}% ${secL}%`);
-        root.style.setProperty('--secondary-foreground', `${h} ${Math.max(s - 40, 10)}% 82%`);
-        root.style.setProperty('--border', `${h} ${Math.max(s - 50, 6)}% ${borderL}%`);
-        root.style.setProperty('--input', `${h} ${Math.max(s - 50, 6)}% ${borderL}%`);
+        root.style.setProperty('--secondary', `${surfaceH} ${surfaceS}% ${secL}%`);
+        root.style.setProperty('--secondary-foreground', `${surfaceH} ${Math.max(surfaceS - 8, 10)}% 82%`);
+        root.style.setProperty('--border', `${surfaceH} ${Math.max(surfaceS - 4, 6)}% ${borderL}%`);
+        root.style.setProperty('--input', `${surfaceH} ${Math.max(surfaceS - 4, 6)}% ${borderL}%`);
+
+        // Flow-specific glow
+        if (isFlow) {
+          root.style.setProperty('--flow-glow', `${h} ${s}% ${l}%`);
+          root.style.setProperty('--flow-warm', `${Math.min(h + 15, 360)} ${Math.min(s + 5, 80)}% ${Math.min(l + 3, 75)}%`);
+          root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(${h} ${s}% ${l}%) 0%, hsl(${290} ${Math.max(s - 15, 40)}% ${l - 3}%) 50%, hsl(${265} ${Math.max(s - 10, 45)}% ${l + 2}%) 100%)`);
+          root.style.setProperty('--shadow-glow', `0 0 50px hsl(${h} ${s}% ${l}% / 0.35)`);
+          root.style.setProperty('--shadow-gold', `0 4px 30px -4px hsl(${h} ${s}% ${l}% / 0.4)`);
+        }
       } else {
         // Light mode — strong contrast for readability
         root.style.setProperty('--background', `${h} ${Math.max(s - 50, 8)}% 97%`);
