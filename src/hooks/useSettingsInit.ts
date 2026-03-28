@@ -93,7 +93,6 @@ export function useSettingsInit() {
     try {
       const feedCustom = localStorage.getItem('feed-customization');
       if (feedCustom) {
-        const { applyFeedCustomization } = require('@/hooks/useFeedCustomization');
         applyFeedCustomization(JSON.parse(feedCustom));
       }
     } catch {
