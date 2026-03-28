@@ -1,11 +1,18 @@
 import { useEffect } from 'react';
 import { applyFeedCustomization } from '@/hooks/useFeedCustomization';
+import type { UXMode } from '@/hooks/useUXMode';
+
+/** Get mode-scoped key, with fallback to global */
+function modeGet(mode: UXMode, key: string): string | null {
+  return localStorage.getItem(`${mode}-${key}`) ?? localStorage.getItem(key);
+}
 
 /**
  * Reads all persisted settings from localStorage on app startup
  * and applies them to the DOM so they take effect immediately.
  */
-export function useSettingsInit() {
+export function useSettingsInit(currentMode?: UXMode) {
+  const mode: UXMode = currentMode || (localStorage.getItem('ux-mode') as UXMode) || 'focus';
   useEffect(() => {
     const root = document.documentElement;
 
