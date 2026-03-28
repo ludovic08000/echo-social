@@ -200,6 +200,7 @@ function AppContent() {
               <Route path="/marketplace/product/:id" element={<ProtectedRoute><ProductDetailPage /></ProtectedRoute>} />
               <Route path="/ai-engine" element={<ProtectedRoute><AIEngine /></ProtectedRoute>} />
               <Route path="/ads" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
+              <Route path="/publicites" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
               <Route path="/ai-agents" element={<ProtectedRoute><AIAgents /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
               <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />
