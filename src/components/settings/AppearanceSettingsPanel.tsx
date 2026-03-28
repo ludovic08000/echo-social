@@ -101,14 +101,14 @@ export function AppearanceSettingsPanel() {
         // Flow dark = candy pink-violet tinted surfaces
         const surfaceH = isFlow ? 310 : h;
         const surfaceS = isFlow ? Math.max(s - 30, 18) : Math.max(s - 55, 8);
-        const bgL = isFlow ? 16 : 10;
-        const cardL = isFlow ? 20 : 12;
-        const mutedL = isFlow ? 22 : 16;
-        const secL = isFlow ? 24 : 15;
-        const borderL = isFlow ? 30 : 18;
-        const accentL = isFlow ? 32 : 20;
-        const fgL = isFlow ? 95 : 92;
-        const mutedFgL = isFlow ? 62 : 55;
+        const bgL = isFlow ? 22 : 18;
+        const cardL = isFlow ? 26 : 22;
+        const mutedL = isFlow ? 28 : 25;
+        const secL = isFlow ? 30 : 27;
+        const borderL = isFlow ? 35 : 30;
+        const accentL = isFlow ? 36 : 32;
+        const fgL = isFlow ? 96 : 95;
+        const mutedFgL = isFlow ? 65 : 60;
 
         root.style.setProperty('--background', `${surfaceH} ${surfaceS}% ${bgL}%`);
         root.style.setProperty('--foreground', `${surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
