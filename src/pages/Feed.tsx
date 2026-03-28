@@ -49,6 +49,7 @@ export default function Feed() {
   const [pauseDismissed, setPauseDismissed] = useState(false);
   const { data: activeAds } = useActiveAds();
   const feedBgStyle = useCustomBackground('feed');
+  const { feedStyle: feedCustomStyle } = useFeedCustomization();
   const { isMinor, isUnlocked, requestUnlock } = useParentalGate();
   const isMobile = useIsMobile();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
