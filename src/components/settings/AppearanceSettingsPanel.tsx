@@ -197,7 +197,7 @@ export function AppearanceSettingsPanel() {
                 "flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all duration-300",
                 uxMode === m.id
                   ? "border-primary bg-primary/10 shadow-sm"
-                  : "border-border/30 bg-secondary/20 hover:bg-secondary/40"
+                  : "border-border bg-secondary/40 hover:bg-secondary/60"
               )}
             >
               <div className={cn(
@@ -225,7 +225,7 @@ export function AppearanceSettingsPanel() {
                 "flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all duration-200",
                 themeMode === mode.id
                   ? "border-primary bg-primary/10 shadow-sm"
-                  : "border-border/30 bg-secondary/20 hover:bg-secondary/40"
+                  : "border-border bg-secondary/40 hover:bg-secondary/60"
               )}
             >
               <div className={cn(
@@ -252,7 +252,7 @@ export function AppearanceSettingsPanel() {
                 "flex items-center gap-2.5 p-3 rounded-xl border-2 transition-all duration-200",
                 accentColor === color.id
                   ? "border-primary bg-primary/15 ring-1 ring-primary/40"
-                  : "border-border hover:border-primary/40 hover:bg-secondary/40"
+                  : "border-border bg-secondary/40 hover:border-primary/40 hover:bg-secondary/60"
               )}
             >
               <div className={cn("w-8 h-8 rounded-full shadow-md flex-shrink-0 ring-2 ring-white/20", color.preview)} />
