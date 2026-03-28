@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, ShoppingBag, Radio, Gamepad2, Bot, Heart, Users, FileText, Trophy, BookOpen, Video, Megaphone, Bell } from 'lucide-react';
+import { MessageCircle, Radio, Gamepad2, Bot, Heart, Users, Trophy, BookOpen, Megaphone, Bell } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
@@ -9,8 +9,6 @@ const WIDGETS = [
   { icon: MessageCircle, label: 'Messages', path: '/messages', gradient: 'from-blue-500/20 to-blue-600/10', iconColor: 'text-blue-400', badgeKey: 'messages' },
   { icon: Heart, label: 'Amis', path: '/friends', gradient: 'from-pink-500/20 to-rose-500/10', iconColor: 'text-pink-400' },
   { icon: Radio, label: 'Lives', path: '/live', gradient: 'from-red-500/20 to-red-600/10', iconColor: 'text-red-400' },
-  { icon: ShoppingBag, label: 'Market', path: '/marketplace', gradient: 'from-emerald-500/20 to-green-600/10', iconColor: 'text-emerald-400' },
-  { icon: Video, label: 'Vidéos', path: '/videos', gradient: 'from-violet-500/20 to-purple-600/10', iconColor: 'text-violet-400' },
   { icon: Gamepad2, label: 'Jeux', path: '/games', gradient: 'from-purple-500/20 to-indigo-600/10', iconColor: 'text-purple-400' },
   { icon: Users, label: 'Groupes', path: '/groups', gradient: 'from-cyan-500/20 to-cyan-600/10', iconColor: 'text-cyan-400' },
   { icon: Trophy, label: 'Défis', path: '/challenges', gradient: 'from-amber-500/20 to-yellow-600/10', iconColor: 'text-amber-400' },

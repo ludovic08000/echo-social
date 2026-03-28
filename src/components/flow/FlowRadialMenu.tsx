@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, X, MessageCircle, ShoppingBag, Radio, Gamepad2, Bot, Heart, Users, Settings } from 'lucide-react';
+import { Sparkles, X, MessageCircle, Radio, Gamepad2, Bot, Heart, Users, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 
 const MENU_ITEMS = [
   { icon: MessageCircle, label: 'Messages', path: '/messages', color: 'from-blue-400 to-blue-600' },
   { icon: Heart, label: 'Amis', path: '/friends', color: 'from-pink-400 to-rose-500' },
-  { icon: ShoppingBag, label: 'Market', path: '/marketplace', color: 'from-emerald-400 to-green-600' },
   { icon: Radio, label: 'Live', path: '/live', color: 'from-red-400 to-red-600' },
   { icon: Gamepad2, label: 'Jeux', path: '/games', color: 'from-purple-400 to-purple-600' },
   { icon: Bot, label: 'Zeus', path: '#zeus', color: 'from-amber-400 to-orange-500' },
