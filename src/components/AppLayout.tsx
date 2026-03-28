@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ZeusCompanion } from './ZeusCompanion';
+import { OnboardingBubbles } from './OnboardingBubbles';
 import { useAuth } from '@/lib/auth';
 import { MobileNav, DesktopSidebar } from './Navigation';
 import { UserAvatar } from './UserAvatar';
