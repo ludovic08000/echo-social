@@ -500,9 +500,29 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
       }
 
       if (action.type === 'update_feed_config') {
-        // Feed config update is handled via localStorage
         setExecutedActions(prev => new Set([...prev, msgIndex]));
         toast.success('Configuration mise à jour ✓');
+        return;
+      }
+
+      if (action.type === 'send_message') {
+        if (!action.conversation_id || !action.message_text) {
+          toast.error('Données de message incomplètes');
+          return;
+        }
+        // Send message via Supabase insert
+        const { error: msgError } = await supabase.from('messages').insert({
+          conversation_id: action.conversation_id,
+          sender_id: user.id,
+          body: action.message_text,
+        });
+        if (msgError) throw msgError;
+        // Update conversation timestamp
+        await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', action.conversation_id);
+        queryClient.invalidateQueries({ queryKey: ['messages', action.conversation_id] });
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        setExecutedActions(prev => new Set([...prev, msgIndex]));
+        toast.success(`Message envoyé à ${action.recipient_name || 'votre ami'} ✉️`);
         return;
       }
 
