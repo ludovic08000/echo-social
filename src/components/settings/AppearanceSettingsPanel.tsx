@@ -129,23 +129,23 @@ export function AppearanceSettingsPanel() {
         root.style.setProperty('--input', `${h} ${Math.max(s - 45, 8)}% 88%`);
       }
     }
-    localStorage.setItem('accent-color', accentColor);
-  }, [accentColor, themeMode]);
+    localStorage.setItem(modeKey('accent-color'), accentColor);
+  }, [accentColor, themeMode, uxMode]);
 
   useEffect(() => {
     document.documentElement.style.fontSize = `${fontSize}px`;
-    localStorage.setItem('font-size', String(fontSize));
-  }, [fontSize]);
+    localStorage.setItem(modeKey('font-size'), String(fontSize));
+  }, [fontSize, uxMode]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('compact-mode', compactMode);
-    localStorage.setItem('compact-mode', String(compactMode));
-  }, [compactMode]);
+    localStorage.setItem(modeKey('compact-mode'), String(compactMode));
+  }, [compactMode, uxMode]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('no-animations', !animationsEnabled);
-    localStorage.setItem('animations-disabled', String(!animationsEnabled));
-  }, [animationsEnabled]);
+    localStorage.setItem(modeKey('animations-disabled'), String(!animationsEnabled));
+  }, [animationsEnabled, uxMode]);
 
   // Dynamic theme - auto switch based on time of day
   useEffect(() => {
