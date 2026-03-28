@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { applyFeedCustomization } from '@/hooks/useFeedCustomization';
 
 /**
  * Reads all persisted settings from localStorage on app startup
