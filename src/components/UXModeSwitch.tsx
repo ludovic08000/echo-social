@@ -12,7 +12,7 @@ export function UXModeSwitch({ className }: { className?: string }) {
       className={cn(
         'relative flex items-center gap-2 rounded-2xl p-1 transition-all duration-500',
         mode === 'flow'
-          ? 'bg-gradient-to-r from-[hsl(270,60%,30%)] to-[hsl(220,70%,35%)] border border-[hsl(270,50%,50%,0.3)]'
+          ? 'bg-gradient-to-r from-[hsl(330,50%,30%)] to-[hsl(280,50%,32%)] border border-[hsl(320,50%,50%,0.3)]'
           : 'bg-secondary/60 border border-border/40',
         className
       )}
