@@ -251,13 +251,13 @@ export function AppearanceSettingsPanel() {
               className={cn(
                 "flex items-center gap-2.5 p-3 rounded-xl border-2 transition-all duration-200",
                 accentColor === color.id
-                  ? "border-primary bg-primary/5"
-                  : "border-border/30 hover:bg-secondary/30"
+                  ? "border-primary bg-primary/15 ring-1 ring-primary/40"
+                  : "border-border hover:border-primary/40 hover:bg-secondary/40"
               )}
             >
-              <div className={cn("w-7 h-7 rounded-full shadow-sm flex-shrink-0", color.preview)} />
-              <span className="text-xs font-medium truncate">{t(color.labelKey, color.fallback)}</span>
-              {accentColor === color.id && <Check className="w-3.5 h-3.5 text-primary ml-auto flex-shrink-0" />}
+              <div className={cn("w-8 h-8 rounded-full shadow-md flex-shrink-0 ring-2 ring-white/20", color.preview)} />
+              <span className="text-xs font-semibold truncate">{t(color.labelKey, color.fallback)}</span>
+              {accentColor === color.id && <Check className="w-4 h-4 text-primary ml-auto flex-shrink-0" />}
             </button>
           ))}
         </div>
