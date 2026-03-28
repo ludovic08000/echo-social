@@ -15,6 +15,8 @@ import { useChatWidget } from '@/components/ChatWidgetContext';
 import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { UXModeSwitchCompact } from '@/components/UXModeSwitch';
+import { useUXMode } from '@/hooks/useUXMode';
+import { FlowRadialMenu } from '@/components/flow/FlowRadialMenu';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -76,6 +78,8 @@ function MobileHeader() {
 
 export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
   const { user, loading } = useAuth();
+  const { isFlow } = useUXMode();
+  useRealtimeNotifications();
   useRealtimeNotifications();
 
   if (loading) {
@@ -107,6 +111,7 @@ export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
       
       {user && <ZeusCompanion />}
       {user && <OnboardingBubbles />}
+      {user && isFlow && <FlowRadialMenu />}
       <MobileNav />
     </div>
   );

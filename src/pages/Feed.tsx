@@ -22,6 +22,9 @@ import { useParentalGate } from '@/components/ParentalGate';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useFeedScrollMemory } from '@/hooks/useFeedScrollMemory';
 import { useFeedPerformance } from '@/hooks/useFeedPerformance';
+import { useUXMode } from '@/hooks/useUXMode';
+import { FlowUniversalSearch } from '@/components/flow/FlowUniversalSearch';
+import { FlowDashboard } from '@/components/flow/FlowDashboard';
 
 // Lazy-load heavy injection components — only loaded when scrolled into view
 const FriendSuggestions = lazy(() => import('@/components/feed/FriendSuggestions').then(m => ({ default: m.FriendSuggestions })));
@@ -56,6 +59,7 @@ export default function Feed() {
 
   useFeedScrollMemory('feed-main-scroll');
   const feedPerf = useFeedPerformance();
+  const { isFlow } = useUXMode();
 
   // Deduplicate posts across pages to prevent React key warnings
   const posts = useMemo(() => {
@@ -220,6 +224,10 @@ export default function Feed() {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* Flow mode: search + dashboard */}
+            {isFlow && <FlowUniversalSearch />}
+            {isFlow && <FlowDashboard />}
 
             {isMobile ? (
               <>
