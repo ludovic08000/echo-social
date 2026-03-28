@@ -87,5 +87,16 @@ export function useSettingsInit() {
     } catch {
       // ignore parse errors
     }
+
+    // ── Feed customization ──
+    try {
+      const feedCustom = localStorage.getItem('feed-customization');
+      if (feedCustom) {
+        const { applyFeedCustomization } = require('@/hooks/useFeedCustomization');
+        applyFeedCustomization(JSON.parse(feedCustom));
+      }
+    } catch {
+      // ignore
+    }
   }, []);
 }
