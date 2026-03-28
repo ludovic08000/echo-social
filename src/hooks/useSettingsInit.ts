@@ -121,12 +121,12 @@ export function useSettingsInit(currentMode?: UXMode) {
 
     // ── Feed customization ──
     try {
-      const feedCustom = localStorage.getItem('feed-customization');
+      const feedCustom = modeGet(mode, 'feed-customization');
       if (feedCustom) {
         applyFeedCustomization(JSON.parse(feedCustom));
       }
     } catch {
       // ignore
     }
-  }, []);
+  }, [mode]);
 }
