@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Sun, Moon, Monitor, Check, Minus, Plus, Zap, Waves } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Sun, Moon, Monitor, Check, Minus, Plus, Zap, Waves, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
@@ -194,9 +194,39 @@ export function AppearanceSettingsPanel() {
     { id: 'flow' as const, label: 'Flow', icon: <Waves className="w-4 h-4" />, desc: 'Chaleureux, fluide, immersif' },
   ];
 
+  const resetToDefaults = useCallback(() => {
+    // Reset theme
+    setThemeMode('dark');
+    // Reset accent color
+    setAccentColor('bleu');
+    // Reset font size
+    setFontSize(16);
+    // Reset toggles
+    setCompactMode(false);
+    setAnimationsEnabled(true);
+    setDynamicTheme(false);
+    // Clear mode-scoped keys
+    const keys = ['theme-mode', 'accent-color', 'font-size', 'compact-mode', 'animations-disabled', 'dynamic-theme', 'feed-font', 'feed-text-color', 'feed-bg-color', 'custom-bg-url'];
+    keys.forEach(k => {
+      localStorage.removeItem(modeKey(k));
+      localStorage.removeItem(k);
+    });
+    // Reset inline styles
+    const root = document.documentElement;
+    root.style.fontSize = '16px';
+    root.removeAttribute('style');
+  }, [uxMode]);
+
   return (
     <div className="space-y-6">
-      {/* UX Mode Switch */}
+      {/* Reset button */}
+      <button
+        onClick={resetToDefaults}
+        className="w-full flex items-center justify-center gap-2 p-3 rounded-2xl border border-border/40 bg-secondary/30 hover:bg-destructive/10 hover:border-destructive/30 text-muted-foreground hover:text-destructive transition-all duration-200 text-sm font-medium"
+      >
+        <RotateCcw className="w-4 h-4" />
+        Réinitialiser par défaut
+      </button>
       <div className="space-y-3">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Expérience</h3>
         <div className="grid grid-cols-2 gap-3">
