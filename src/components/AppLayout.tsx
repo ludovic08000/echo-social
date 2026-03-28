@@ -106,6 +106,7 @@ export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
       </main>
       
       {user && <ZeusCompanion />}
+      {user && <OnboardingBubbles />}
       <MobileNav />
     </div>
   );
