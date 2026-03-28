@@ -52,9 +52,9 @@ export const BG_COLOR_OPTIONS = [
   { id: '#1c1917', label: 'Charbon', preview: 'bg-[#1c1917]' },
 ];
 
-function load(): FeedCustomization {
+function load(mode: string): FeedCustomization {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey(mode)) || localStorage.getItem(BASE_KEY);
     return raw ? { ...DEFAULTS, ...JSON.parse(raw) } : DEFAULTS;
   } catch {
     return DEFAULTS;
@@ -71,12 +71,18 @@ export function applyFeedCustomization(c: FeedCustomization) {
 }
 
 export function useFeedCustomization() {
-  const [prefs, setPrefs] = useState<FeedCustomization>(load);
+  const { mode } = useUXMode();
+  const [prefs, setPrefs] = useState<FeedCustomization>(() => load(mode));
+
+  // Re-load when mode changes
+  useEffect(() => {
+    setPrefs(load(mode));
+  }, [mode]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+    localStorage.setItem(storageKey(mode), JSON.stringify(prefs));
     applyFeedCustomization(prefs);
-  }, [prefs]);
+  }, [prefs, mode]);
 
   const update = (patch: Partial<FeedCustomization>) =>
     setPrefs(prev => ({ ...prev, ...patch }));
