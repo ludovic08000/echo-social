@@ -31,8 +31,31 @@ export function useSettingsInit() {
     const accentId = localStorage.getItem('accent-color') || 'bleu';
     const accentHsl = accentColors[accentId];
     if (accentHsl) {
+      const parts = accentHsl.split(' ');
+      const h = parseInt(parts[0]);
+      const s = parseInt(parts[1]);
+      const l = parseInt(parts[2]);
+
       root.style.setProperty('--primary', accentHsl);
       root.style.setProperty('--ring', accentHsl);
+      root.style.setProperty('--sidebar-primary', accentHsl);
+      root.style.setProperty('--sidebar-ring', accentHsl);
+      root.style.setProperty('--shadow-glow', `0 0 40px hsl(${accentHsl} / 0.25)`);
+      root.style.setProperty('--shadow-gold', `0 4px 25px -4px hsl(${accentHsl} / 0.3)`);
+      root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(${h} ${s}% ${l}%) 0%, hsl(${h + 15} ${Math.max(s - 10, 30)}% ${l + 5}%) 50%, hsl(${h + 30} ${s}% ${l + 8}%) 100%)`);
+
+      const isDark = root.classList.contains('dark');
+      if (isDark) {
+        root.style.setProperty('--accent', `${h} ${Math.max(s - 30, 10)}% 24%`);
+        root.style.setProperty('--accent-foreground', `${h} ${Math.max(s - 10, 30)}% 72%`);
+        root.style.setProperty('--secondary', `${h} ${Math.max(s - 55, 8)}% 22%`);
+        root.style.setProperty('--secondary-foreground', `${h} ${Math.max(s - 45, 8)}% 82%`);
+      } else {
+        root.style.setProperty('--accent', `${h} ${Math.max(s - 25, 15)}% 95%`);
+        root.style.setProperty('--accent-foreground', `${h} ${s}% 40%`);
+        root.style.setProperty('--secondary', `${h} ${Math.max(s - 50, 10)}% 93%`);
+        root.style.setProperty('--secondary-foreground', `${h} ${Math.max(s - 40, 10)}% 25%`);
+      }
     }
 
     // ── Font size ──
