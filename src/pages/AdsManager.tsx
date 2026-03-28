@@ -787,7 +787,7 @@ export default function AdsManager() {
                       <span className="px-2 py-0.5 rounded-md bg-secondary/50 text-muted-foreground">
                         {campaign.target_gender === 'all' ? 'Tous genres' : campaign.target_gender === 'male' ? 'Hommes' : 'Femmes'}
                       </span>
-                      {campaign.target_interests?.slice(0, 3).map((int: string) => (
+                      {(campaign.target_interests ?? []).slice(0, 3).map((int: string) => (
                         <span key={int} className="px-2 py-0.5 rounded-md bg-primary/10 text-primary">{int}</span>
                       ))}
                     </div>
