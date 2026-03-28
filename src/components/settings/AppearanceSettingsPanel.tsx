@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Sun, Moon, Monitor, Check, Minus, Plus, Zap, Waves } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Sun, Moon, Monitor, Check, Minus, Plus, Zap, Waves, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
