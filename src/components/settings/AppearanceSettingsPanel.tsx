@@ -62,8 +62,9 @@ export function AppearanceSettingsPanel() {
       root.classList.toggle('dark', themeMode === 'dark');
       root.classList.toggle('light', themeMode === 'light');
     }
-    localStorage.setItem('theme-mode', themeMode);
-  }, [themeMode]);
+    localStorage.setItem(modeKey('theme-mode'), themeMode);
+    localStorage.setItem('theme-mode', themeMode); // keep global fallback
+  }, [themeMode, uxMode]);
 
   useEffect(() => {
     const color = accentColors.find(c => c.id === accentColor);
