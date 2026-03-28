@@ -63,7 +63,7 @@ export function UXModeSwitchCompact({ className }: { className?: string }) {
       className={cn(
         'relative w-9 h-9 rounded-full flex items-center justify-center transition-all duration-500',
         isFlow
-          ? 'bg-gradient-to-br from-[hsl(270,55%,45%)] to-[hsl(220,65%,40%)] text-white shadow-[0_0_16px_hsl(270,60%,50%,0.35)]'
+          ? 'bg-gradient-to-br from-[hsl(330,50%,48%)] to-[hsl(280,50%,42%)] text-white shadow-[0_0_16px_hsl(320,55%,50%,0.35)]'
           : 'bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary',
         className
       )}
