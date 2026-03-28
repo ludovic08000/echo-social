@@ -57,14 +57,14 @@ function reapplyAppearance(mode: UXMode) {
     const isFlow = root.classList.contains('ux-flow');
 
     if (isDark) {
-      const surfaceH = isFlow ? 310 : h;
-      const surfaceS = isFlow ? Math.max(s - 30, 18) : Math.max(s - 55, 8);
-      const bgL = isFlow ? 22 : 18;
-      const cardL = isFlow ? 26 : 22;
-      const mutedL = isFlow ? 28 : 25;
-      const secL = isFlow ? 30 : 27;
-      const borderL = isFlow ? 35 : 30;
-      const accentL = isFlow ? 36 : 32;
+      const surfaceH = isFlow ? 280 : h;
+      const surfaceS = isFlow ? Math.max(s - 25, 20) : Math.max(s - 55, 8);
+      const bgL = isFlow ? 18 : 15;
+      const cardL = isFlow ? 22 : 19;
+      const mutedL = isFlow ? 24 : 22;
+      const secL = isFlow ? 26 : 24;
+      const borderL = isFlow ? 30 : 27;
+      const accentL = isFlow ? 32 : 28;
       const fgL = isFlow ? 96 : 95;
       const mutedFgL = isFlow ? 65 : 60;
 
