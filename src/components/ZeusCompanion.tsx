@@ -26,7 +26,7 @@ type ActiveTab = 'chat' | 'algo' | 'history';
 type FeedAlgorithm = 'smart' | 'chronological' | 'friends_first';
 
 interface ActionBlock {
-  type: 'publish_post' | 'schedule_post' | 'create_story' | 'generate_image' | 'translate' | 'update_feed_config';
+  type: 'publish_post' | 'schedule_post' | 'create_story' | 'generate_image' | 'translate' | 'update_feed_config' | 'send_message';
   body?: string;
   caption?: string;
   publish_at?: string;
@@ -34,6 +34,9 @@ interface ActionBlock {
   prompt?: string;
   target_language?: string;
   translated_text?: string;
+  conversation_id?: string;
+  recipient_name?: string;
+  message_text?: string;
 }
 
 interface ProductItem {
