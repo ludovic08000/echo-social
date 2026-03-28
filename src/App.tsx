@@ -25,34 +25,7 @@ import Signup from "./pages/Signup";
 import Feed from "./pages/Feed";
 import NotFound from "./pages/NotFound";
 
-// Lazy-load all secondary routes for smaller initial bundle
-const PostDetail = lazy(() => import("./pages/PostDetail"));
-const CreatePostPage = lazy(() => import("./pages/CreatePostPage"));
-const Profile = lazy(() => import("./pages/Profile"));
-const Search = lazy(() => import("./pages/Search"));
-const Notifications = lazy(() => import("./pages/Notifications"));
-const Settings = lazy(() => import("./pages/Settings"));
-const Messages = lazy(() => import("./pages/Messages"));
-const Friends = lazy(() => import("./pages/Friends"));
-const Groups = lazy(() => import("./pages/Groups"));
-const GroupDetail = lazy(() => import("./pages/GroupDetail"));
-const Pages = lazy(() => import("./pages/Pages"));
-const PageDetail = lazy(() => import("./pages/PageDetail"));
-const Videos = lazy(() => import("./pages/Videos"));
-const Lives = lazy(() => import("./pages/Lives"));
-const LiveWatch = lazy(() => import("./pages/LiveWatch"));
-const LiveScreen = lazy(() => import("./pages/LiveScreen"));
-const Journal = lazy(() => import("./pages/Journal"));
-const Challenges = lazy(() => import("./pages/Challenges"));
-const Games = lazy(() => import("./pages/Games"));
-const FriendMatch = lazy(() => import("./pages/FriendMatch"));
-const Channels = lazy(() => import("./pages/Channels"));
-const Marketplace = lazy(() => import("./pages/Marketplace"));
-const ProductDetailPage = lazy(() => import("./pages/ProductDetail"));
-const LegalTerms = lazy(() => import("./pages/LegalTerms"));
-const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
-const AIEngine = lazy(() => import("./pages/AIEngine"));
-
+// Lazy-load with auto-retry on chunk errors (deploy / cache invalidation)
 const lazyWithOneRetry = <TModule extends { default: React.ComponentType<any> }>(
   importer: () => Promise<TModule>,
   retryKey: string
@@ -71,14 +44,40 @@ const lazyWithOneRetry = <TModule extends { default: React.ComponentType<any> }>
   }
 });
 
-const AdsManager = lazyWithOneRetry(() => import("./pages/AdsManager"), 'retry-ads-route');
-const AIAgents = lazy(() => import("./pages/AIAgents"));
-const Admin = lazy(() => import("./pages/Admin"));
-const CreatorUpgrade = lazy(() => import("./pages/CreatorUpgrade"));
-const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
-const ResetPassword = lazy(() => import("./pages/ResetPassword"));
-const Onboarding = lazy(() => import("./pages/Onboarding"));
-const Unsubscribe = lazy(() => import("./pages/Unsubscribe"));
+const PostDetail = lazyWithOneRetry(() => import("./pages/PostDetail"), 'r-post');
+const CreatePostPage = lazyWithOneRetry(() => import("./pages/CreatePostPage"), 'r-create');
+const Profile = lazyWithOneRetry(() => import("./pages/Profile"), 'r-profile');
+const Search = lazyWithOneRetry(() => import("./pages/Search"), 'r-search');
+const Notifications = lazyWithOneRetry(() => import("./pages/Notifications"), 'r-notifs');
+const Settings = lazyWithOneRetry(() => import("./pages/Settings"), 'r-settings');
+const Messages = lazyWithOneRetry(() => import("./pages/Messages"), 'r-messages');
+const Friends = lazyWithOneRetry(() => import("./pages/Friends"), 'r-friends');
+const Groups = lazyWithOneRetry(() => import("./pages/Groups"), 'r-groups');
+const GroupDetail = lazyWithOneRetry(() => import("./pages/GroupDetail"), 'r-groupd');
+const Pages = lazyWithOneRetry(() => import("./pages/Pages"), 'r-pages');
+const PageDetail = lazyWithOneRetry(() => import("./pages/PageDetail"), 'r-paged');
+const Videos = lazyWithOneRetry(() => import("./pages/Videos"), 'r-videos');
+const Lives = lazyWithOneRetry(() => import("./pages/Lives"), 'r-lives');
+const LiveWatch = lazyWithOneRetry(() => import("./pages/LiveWatch"), 'r-livew');
+const LiveScreen = lazyWithOneRetry(() => import("./pages/LiveScreen"), 'r-lives2');
+const Journal = lazyWithOneRetry(() => import("./pages/Journal"), 'r-journal');
+const Challenges = lazyWithOneRetry(() => import("./pages/Challenges"), 'r-chall');
+const Games = lazyWithOneRetry(() => import("./pages/Games"), 'r-games');
+const FriendMatch = lazyWithOneRetry(() => import("./pages/FriendMatch"), 'r-fmatch');
+const Channels = lazyWithOneRetry(() => import("./pages/Channels"), 'r-channels');
+const Marketplace = lazyWithOneRetry(() => import("./pages/Marketplace"), 'r-market');
+const ProductDetailPage = lazyWithOneRetry(() => import("./pages/ProductDetail"), 'r-product');
+const LegalTerms = lazyWithOneRetry(() => import("./pages/LegalTerms"), 'r-legal');
+const PrivacyPolicy = lazyWithOneRetry(() => import("./pages/PrivacyPolicy"), 'r-privacy');
+const AIEngine = lazyWithOneRetry(() => import("./pages/AIEngine"), 'r-ai');
+const AdsManager = lazyWithOneRetry(() => import("./pages/AdsManager"), 'r-ads');
+const AIAgents = lazyWithOneRetry(() => import("./pages/AIAgents"), 'r-agents');
+const Admin = lazyWithOneRetry(() => import("./pages/Admin"), 'r-admin');
+const CreatorUpgrade = lazyWithOneRetry(() => import("./pages/CreatorUpgrade"), 'r-creator');
+const ForgotPassword = lazyWithOneRetry(() => import("./pages/ForgotPassword"), 'r-forgot');
+const ResetPassword = lazyWithOneRetry(() => import("./pages/ResetPassword"), 'r-reset');
+const Onboarding = lazyWithOneRetry(() => import("./pages/Onboarding"), 'r-onboard');
+const Unsubscribe = lazyWithOneRetry(() => import("./pages/Unsubscribe"), 'r-unsub');
 
 const queryClient = new QueryClient();
 
