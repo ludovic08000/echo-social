@@ -13,6 +13,7 @@ import { useScreenSize } from '@/hooks/useScreenSize';
 import { useChatWidget } from '@/components/ChatWidgetContext';
 import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { UXModeSwitchCompact } from '@/components/UXModeSwitch';
 
 interface AppLayoutProps {
   children: ReactNode;
