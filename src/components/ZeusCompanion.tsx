@@ -26,7 +26,7 @@ type ActiveTab = 'chat' | 'algo' | 'history';
 type FeedAlgorithm = 'smart' | 'chronological' | 'friends_first';
 
 interface ActionBlock {
-  type: 'publish_post' | 'schedule_post' | 'create_story' | 'generate_image' | 'translate' | 'update_feed_config';
+  type: 'publish_post' | 'schedule_post' | 'create_story' | 'generate_image' | 'translate' | 'update_feed_config' | 'send_message';
   body?: string;
   caption?: string;
   publish_at?: string;
@@ -34,6 +34,9 @@ interface ActionBlock {
   prompt?: string;
   target_language?: string;
   translated_text?: string;
+  conversation_id?: string;
+  recipient_name?: string;
+  message_text?: string;
 }
 
 interface ProductItem {
@@ -126,9 +129,10 @@ function ActionCard({ action, onExecute, executing, executed }: {
     generate_image: { icon: <Sparkles className="w-3.5 h-3.5" />, label: 'Générer image' },
     translate: { icon: <Globe className="w-3.5 h-3.5" />, label: 'Traduction' },
     update_feed_config: { icon: <Sliders className="w-3.5 h-3.5" />, label: 'Ajuster algorithme' },
+    send_message: { icon: <MessageSquare className="w-3.5 h-3.5" />, label: `Envoyer à ${action.recipient_name || 'un ami'}` },
   };
   const info = labels[action.type] || { icon: <Zap className="w-3.5 h-3.5" />, label: 'Action' };
-  const preview = action.type === 'update_feed_config' ? '' : (action.body || action.caption || action.translated_text || action.prompt || '');
+  const preview = action.type === 'update_feed_config' ? '' : (action.message_text || action.body || action.caption || action.translated_text || action.prompt || '');
 
   return (
     <div className="mt-2.5 p-3 rounded-xl bg-accent/50 border border-border space-y-2">
@@ -496,9 +500,29 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
       }
 
       if (action.type === 'update_feed_config') {
-        // Feed config update is handled via localStorage
         setExecutedActions(prev => new Set([...prev, msgIndex]));
         toast.success('Configuration mise à jour ✓');
+        return;
+      }
+
+      if (action.type === 'send_message') {
+        if (!action.conversation_id || !action.message_text) {
+          toast.error('Données de message incomplètes');
+          return;
+        }
+        // Send message via Supabase insert
+        const { error: msgError } = await supabase.from('messages').insert({
+          conversation_id: action.conversation_id,
+          sender_id: user.id,
+          body: action.message_text,
+        });
+        if (msgError) throw msgError;
+        // Update conversation timestamp
+        await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', action.conversation_id);
+        queryClient.invalidateQueries({ queryKey: ['messages', action.conversation_id] });
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        setExecutedActions(prev => new Set([...prev, msgIndex]));
+        toast.success(`Message envoyé à ${action.recipient_name || 'votre ami'} ✉️`);
         return;
       }
 

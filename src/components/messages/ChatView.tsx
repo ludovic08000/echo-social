@@ -4,7 +4,7 @@ import {
   ArrowLeft, Send, Plus, Smile, Phone, Video,
   Camera, X, CheckCheck, Pin, PinOff, ChevronDown,
   Forward, Users, UserPlus, LogOut, Crown, UserMinus, Sparkles, Info,
-  AlertTriangle
+  AlertTriangle, Languages
 } from 'lucide-react';
 import { format, isSameDay } from 'date-fns';
 import { UserAvatar } from '@/components/UserAvatar';
@@ -18,6 +18,7 @@ import { useCall } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { toast } from 'sonner';
+import { useMessageTranslation } from '@/hooks/useMessageTranslation';
 import { useE2EE } from '@/hooks/useE2EE';
 import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { EncryptionBadge, EncryptionStatusBar } from './EncryptionBadge';
@@ -67,6 +68,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const [showNewChat, setShowNewChat] = useState(false);
   const [isSending] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
+  const { translations, translating, translate: translateMsg } = useMessageTranslation();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -622,6 +624,32 @@ export function ChatView({ conversationId }: ChatViewProps) {
                               isMe={isMe}
                             />
                           </div>
+
+                          {/* Translate button */}
+                          {!isMe && !isBigEmoji && (
+                            <div className="mt-0.5">
+                              <button
+                                onClick={() => {
+                                  const text = decryptedCache.get(msg.id) || msg.body;
+                                  translateMsg(msg.id, text);
+                                }}
+                                disabled={translating === msg.id}
+                                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+                              >
+                                {translating === msg.id ? (
+                                  <div className="w-3 h-3 rounded-full border border-primary border-t-transparent animate-spin" />
+                                ) : (
+                                  <Languages className="w-3 h-3" />
+                                )}
+                                {translations[msg.id] ? 'Original' : 'Traduire'}
+                              </button>
+                              {translations[msg.id] && (
+                                <div className="mt-0.5 px-3 py-1.5 text-[14px] rounded-[18px] bg-primary/10 border border-primary/20 text-foreground break-words leading-relaxed">
+                                  {translations[msg.id]}
+                                </div>
+                              )}
+                            </div>
+                          )}
 
                           {reactions.length > 0 && (
                             <div className="flex items-center gap-0.5 -mt-1 px-1 relative z-10">

@@ -29,6 +29,7 @@ import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecord
 import { RelayPointPicker } from '@/components/marketplace/RelayPointPicker';
 import { useRealtimeNotificationSound } from '@/hooks/useNotificationSounds';
 import { toast } from 'sonner';
+import { useMessageTranslation } from '@/hooks/useMessageTranslation';
 import { useE2EE } from '@/hooks/useE2EE';
 import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
@@ -354,6 +355,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
   const [isSending] = useState(false);
+  const { translations, translating, translate: translateMsg } = useMessageTranslation();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1034,6 +1036,32 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                               isEncryptionActive={e2ee.encrypted && !isZeusConversation}
                               onDecrypted={(text) => onDecrypted(msg.id, text)}
                             />
+                          </div>
+                        )}
+
+                        {/* Translate button + translation */}
+                        {!isMe && !isCallMessage(msg.body) && !isGifMessage(msg.body) && !isVoiceMessage(msg.body) && (
+                          <div className="mt-0.5">
+                            <button
+                              onClick={() => {
+                                const text = decryptedCacheRef.current.get(msg.id) || msg.body;
+                                translateMsg(msg.id, text);
+                              }}
+                              disabled={translating === msg.id}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+                            >
+                              {translating === msg.id ? (
+                                <div className="w-2.5 h-2.5 rounded-full border border-primary border-t-transparent animate-spin" />
+                              ) : (
+                                <Languages className="w-2.5 h-2.5" />
+                              )}
+                              {translations[msg.id] ? 'Original' : 'Traduire'}
+                            </button>
+                            {translations[msg.id] && (
+                              <div className="mt-0.5 px-3 py-1.5 text-xs rounded-2xl bg-primary/10 border border-primary/20 text-foreground break-words leading-relaxed">
+                                {translations[msg.id]}
+                              </div>
+                            )}
                           </div>
                         )}
 

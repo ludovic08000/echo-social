@@ -395,7 +395,7 @@ async function handlePhotoGuard(apiKey: string, body: any, userId: string, supab
 }
 
 // ── AGENT CHAT: Streaming agent conversation ──
-const ACTION_SYSTEM_PROMPT = `\n\n## CAPACITÉS D'ACTION — OBLIGATOIRE\nTu DOIS inclure un bloc forsure-action quand l'utilisateur demande de publier ou traduire. NE DEMANDE PAS de confirmation, l'interface a un bouton pour ça. Si pas de texte précis, INVENTE un texte engageant.\n\nPublier:\n\`\`\`forsure-action\n{"type": "publish_post", "body": "texte engageant"}\n\`\`\`\n\nTraduire:\n\`\`\`forsure-action\n{"type": "translate", "translated_text": "translated", "target_language": "en", "body": "original"}\n\`\`\`\n\nExemples: "publie" → crée un post inspirant + bloc. "publie sur le sport" → post sport + bloc. "traduis en anglais: bonjour" → bloc translate.\nDate: ${new Date().toISOString()}\nUn bloc par message.`;
+const ACTION_SYSTEM_PROMPT = `\n\n## CAPACITÉS D'ACTION — OBLIGATOIRE\nTu DOIS inclure un bloc forsure-action quand l'utilisateur demande de publier, traduire ou envoyer un message. NE DEMANDE PAS de confirmation, l'interface a un bouton pour ça. Si pas de texte précis, INVENTE un texte engageant.\n\nPublier:\n\`\`\`forsure-action\n{"type": "publish_post", "body": "texte engageant"}\n\`\`\`\n\nTraduire:\n\`\`\`forsure-action\n{"type": "translate", "translated_text": "translated", "target_language": "en", "body": "original"}\n\`\`\`\n\nEnvoyer un message à un ami:\n\`\`\`forsure-action\n{"type": "send_message", "conversation_id": "uuid-de-la-conversation", "recipient_name": "Nom", "message_text": "Le message à envoyer"}\n\`\`\`\n\nExemples: "publie" → crée un post inspirant + bloc. "publie sur le sport" → post sport + bloc. "traduis en anglais: bonjour" → bloc translate. "envoie à Marie: salut ça va" → bloc send_message (demande la conversation si pas précisée). "écris un message à..." → bloc send_message.\nDate: ${new Date().toISOString()}\nUn bloc par message.`;
 
 async function handleAgentChat(apiKey: string, body: any, userId: string, supabase: any, cors: Record<string, string>) {
   const { agent_id, conversation_id, message } = body;
@@ -416,7 +416,36 @@ async function handleAgentChat(apiKey: string, body: any, userId: string, supaba
   await supabase.from("ai_agent_messages").insert({ conversation_id: convId, role: "user", content: message });
   const { data: history } = await supabase.from("ai_agent_messages").select("role, content").eq("conversation_id", convId).order("created_at", { ascending: true }).limit(20);
 
-  const resp = await callAI(apiKey, { model: "google/gemini-3-flash-preview", messages: [{ role: "system", content: agent.system_prompt + ACTION_SYSTEM_PROMPT }, ...(history || []).map((m: any) => ({ role: m.role, content: m.content }))], stream: true });
+  // Inject user's conversations so Zeus can send messages
+  let conversationsContext = "";
+  try {
+    const { data: userConvs } = await supabase
+      .from("conversation_participants")
+      .select("conversation_id, conversations(id, name, is_group)")
+      .eq("user_id", userId)
+      .limit(30);
+    if (userConvs?.length) {
+      // Get peer names for 1:1 conversations
+      const convIds = userConvs.map((c: any) => c.conversation_id);
+      const { data: allParticipants } = await supabase
+        .from("conversation_participants")
+        .select("conversation_id, user_id, profiles(name)")
+        .in("conversation_id", convIds)
+        .neq("user_id", userId);
+      const peerMap = new Map<string, string>();
+      for (const p of (allParticipants || [])) {
+        peerMap.set(p.conversation_id, (p as any).profiles?.name || "Inconnu");
+      }
+      const convList = userConvs.map((c: any) => {
+        const conv = c.conversations;
+        const name = conv?.is_group ? (conv.name || "Groupe") : (peerMap.get(c.conversation_id) || "Inconnu");
+        return `- ${name}: ${c.conversation_id}`;
+      }).join("\n");
+      conversationsContext = `\n\n## CONVERSATIONS DE L'UTILISATEUR\nVoici les conversations disponibles pour envoyer des messages :\n${convList}\nUtilise le conversation_id exact pour le bloc send_message.`;
+    }
+  } catch { /* ignore */ }
+
+  const resp = await callAI(apiKey, { model: "google/gemini-3-flash-preview", messages: [{ role: "system", content: agent.system_prompt + ACTION_SYSTEM_PROMPT + conversationsContext }, ...(history || []).map((m: any) => ({ role: m.role, content: m.content }))], stream: true });
   const errResp = aiError(resp.status, cors);
   if (errResp) return errResp;
   if (!resp.ok) throw new Error("AI error");
