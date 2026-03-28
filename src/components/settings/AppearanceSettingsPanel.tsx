@@ -63,11 +63,46 @@ export function AppearanceSettingsPanel() {
   useEffect(() => {
     const color = accentColors.find(c => c.id === accentColor);
     if (color) {
-      document.documentElement.style.setProperty('--primary', color.hsl);
-      document.documentElement.style.setProperty('--ring', color.hsl);
+      const root = document.documentElement;
+      const hsl = color.hsl;
+      const parts = hsl.split(' ');
+      const h = parseInt(parts[0]);
+      const s = parseInt(parts[1]);
+      const l = parseInt(parts[2]);
+
+      // Primary & ring
+      root.style.setProperty('--primary', hsl);
+      root.style.setProperty('--ring', hsl);
+
+      // Accent tones
+      root.style.setProperty('--accent', `${h} ${Math.max(s - 25, 15)}% 95%`);
+      root.style.setProperty('--accent-foreground', `${h} ${s}% 40%`);
+
+      // Secondary tinted
+      root.style.setProperty('--secondary', `${h} ${Math.max(s - 50, 10)}% 93%`);
+      root.style.setProperty('--secondary-foreground', `${h} ${Math.max(s - 40, 10)}% 25%`);
+
+      // Sidebar primary
+      root.style.setProperty('--sidebar-primary', hsl);
+      root.style.setProperty('--sidebar-ring', hsl);
+
+      // Glow & shadows
+      root.style.setProperty('--shadow-glow', `0 0 40px hsl(${hsl} / 0.25)`);
+      root.style.setProperty('--shadow-gold', `0 4px 25px -4px hsl(${hsl} / 0.3)`);
+
+      // Gradient
+      root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(${h} ${s}% ${l}%) 0%, hsl(${h + 15} ${Math.max(s - 10, 30)}% ${l + 5}%) 50%, hsl(${h + 30} ${s}% ${l + 8}%) 100%)`);
+
+      // Dark mode overrides
+      if (root.classList.contains('dark')) {
+        root.style.setProperty('--accent', `${h} ${Math.max(s - 30, 10)}% 24%`);
+        root.style.setProperty('--accent-foreground', `${h} ${Math.max(s - 10, 30)}% 72%`);
+        root.style.setProperty('--secondary', `${h} ${Math.max(s - 55, 8)}% 22%`);
+        root.style.setProperty('--secondary-foreground', `${h} ${Math.max(s - 45, 8)}% 82%`);
+      }
     }
     localStorage.setItem('accent-color', accentColor);
-  }, [accentColor]);
+  }, [accentColor, themeMode]);
 
   useEffect(() => {
     document.documentElement.style.fontSize = `${fontSize}px`;
