@@ -625,6 +625,32 @@ export function ChatView({ conversationId }: ChatViewProps) {
                             />
                           </div>
 
+                          {/* Translate button */}
+                          {!isMe && !isBigEmoji && (
+                            <div className="mt-0.5">
+                              <button
+                                onClick={() => {
+                                  const text = decryptedCache.get(msg.id) || msg.body;
+                                  translateMsg(msg.id, text);
+                                }}
+                                disabled={translating === msg.id}
+                                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+                              >
+                                {translating === msg.id ? (
+                                  <div className="w-3 h-3 rounded-full border border-primary border-t-transparent animate-spin" />
+                                ) : (
+                                  <Languages className="w-3 h-3" />
+                                )}
+                                {translations[msg.id] ? 'Original' : 'Traduire'}
+                              </button>
+                              {translations[msg.id] && (
+                                <div className="mt-0.5 px-3 py-1.5 text-[14px] rounded-[18px] bg-primary/10 border border-primary/20 text-foreground break-words leading-relaxed">
+                                  {translations[msg.id]}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {reactions.length > 0 && (
                             <div className="flex items-center gap-0.5 -mt-1 px-1 relative z-10">
                               <div className="flex items-center gap-0 bg-background border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm">

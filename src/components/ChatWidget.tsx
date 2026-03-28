@@ -1039,6 +1039,32 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                           </div>
                         )}
 
+                        {/* Translate button + translation */}
+                        {!isMe && !isCallMessage(msg.body) && !isGifMessage(msg.body) && !isVoiceMessage(msg.body) && (
+                          <div className="mt-0.5">
+                            <button
+                              onClick={() => {
+                                const text = decryptedCacheRef.current.get(msg.id) || msg.body;
+                                translateMsg(msg.id, text);
+                              }}
+                              disabled={translating === msg.id}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+                            >
+                              {translating === msg.id ? (
+                                <div className="w-2.5 h-2.5 rounded-full border border-primary border-t-transparent animate-spin" />
+                              ) : (
+                                <Languages className="w-2.5 h-2.5" />
+                              )}
+                              {translations[msg.id] ? 'Original' : 'Traduire'}
+                            </button>
+                            {translations[msg.id] && (
+                              <div className="mt-0.5 px-3 py-1.5 text-xs rounded-2xl bg-primary/10 border border-primary/20 text-foreground break-words leading-relaxed">
+                                {translations[msg.id]}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {reactions.length > 0 && (
                           <div className="flex items-center -mt-1 px-0.5">
                             <div className="flex items-center bg-background border border-border/40 rounded-full px-1 py-0 shadow-sm">
