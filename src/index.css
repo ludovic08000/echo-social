@@ -567,7 +567,93 @@
 
   .animate-slide-up {
     animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ═══════════════════════════════════════════════
+   MODE FLOW — Overrides for warmer, softer UX
+   ═══════════════════════════════════════════════ */
+
+/* Slower, smoother transitions globally */
+.ux-flow * {
+  --flow-duration: 0.45s;
+}
+
+.ux-flow .premium-card {
+  border-radius: 1.25rem;
+  transition-duration: 0.5s;
+  border-color: hsl(var(--border) / 0.25);
+  box-shadow: var(--shadow-md), 0 0 0 1px hsl(var(--flow-glow, 270 65% 55%) / 0.05);
+}
+
+.ux-flow .premium-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg), 0 0 30px hsl(var(--flow-glow, 270 65% 55%) / 0.08);
+}
+
+/* Glass effects are warmer in Flow */
+.ux-flow .glass {
+  background: hsl(var(--card) / 0.88);
+  border-color: hsl(var(--border) / 0.2);
+}
+
+@media (min-width: 768px) {
+  .ux-flow .glass {
+    background: hsl(var(--card) / 0.7);
   }
+}
+
+/* Navigation — softer */
+.ux-flow .premium-nav-item::before {
+  background: var(--premium-gradient);
+  border-radius: 0 4px 4px 0;
+}
+
+/* Buttons — rounder, softer glow */
+.ux-flow .premium-button {
+  border-radius: 1rem;
+  transition-duration: 0.4s;
+}
+
+.ux-flow .premium-button:hover {
+  transform: translateY(-2px) scale(1.03);
+}
+
+/* Body ambient glow for Flow */
+.ux-flow body,
+body.ux-flow {
+  background-image:
+    radial-gradient(ellipse at 15% 0%, hsl(270 60% 50% / 0.06) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 100%, hsl(220 65% 50% / 0.05) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 50%, hsl(30 70% 60% / 0.02) 0%, transparent 60%);
+}
+
+/* Fade-in is slower in Flow */
+.ux-flow .animate-fade-in {
+  animation-duration: 0.6s;
+}
+
+.ux-flow .animate-slide-up {
+  animation-duration: 0.6s;
+}
+
+/* Flow shimmer pulse on scrollbar thumb */
+.ux-flow ::-webkit-scrollbar-thumb {
+  background: hsl(var(--flow-glow, 270 65% 55%) / 0.3);
+}
+
+.ux-flow ::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--flow-glow, 270 65% 55%) / 0.5);
+}
+
+/* Flow mode transition overlay */
+.ux-flow-transition {
+  animation: flowTransition 0.6s ease-out;
+}
+
+@keyframes flowTransition {
+  0% { opacity: 0.7; filter: blur(4px); }
+  100% { opacity: 1; filter: blur(0); }
+}
 
   .animate-scale-in {
     animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
