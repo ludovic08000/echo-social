@@ -113,8 +113,44 @@ export function AppearanceSettingsPanel() {
     }
   };
 
+  const { mode: uxMode, setMode: setUXMode } = useUXMode();
+
+  const uxModes = [
+    { id: 'focus' as const, label: 'Focus', icon: <Zap className="w-4 h-4" />, desc: 'Précis, direct, efficace' },
+    { id: 'flow' as const, label: 'Flow', icon: <Waves className="w-4 h-4" />, desc: 'Chaleureux, fluide, immersif' },
+  ];
+
   return (
     <div className="space-y-6">
+      {/* UX Mode Switch */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Expérience</h3>
+        <div className="grid grid-cols-2 gap-3">
+          {uxModes.map(m => (
+            <button
+              key={m.id}
+              onClick={() => setUXMode(m.id)}
+              className={cn(
+                "flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all duration-300",
+                uxMode === m.id
+                  ? "border-primary bg-primary/10 shadow-sm"
+                  : "border-border/30 bg-secondary/20 hover:bg-secondary/40"
+              )}
+            >
+              <div className={cn(
+                "w-10 h-10 rounded-full flex items-center justify-center transition-colors",
+                uxMode === m.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+              )}>
+                {m.icon}
+              </div>
+              <span className="text-sm font-semibold">{m.label}</span>
+              <span className="text-[10px] text-muted-foreground text-center leading-tight">{m.desc}</span>
+              {uxMode === m.id && <Check className="w-3.5 h-3.5 text-primary" />}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="space-y-3">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('appearance.displayMode')}</h3>
         <div className="grid grid-cols-3 gap-2">
