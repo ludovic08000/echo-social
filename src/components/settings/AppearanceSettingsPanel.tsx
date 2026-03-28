@@ -225,7 +225,7 @@ export function AppearanceSettingsPanel() {
                 "flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all duration-200",
                 themeMode === mode.id
                   ? "border-primary bg-primary/10 shadow-sm"
-                  : "border-border/30 bg-secondary/20 hover:bg-secondary/40"
+                  : "border-border bg-secondary/40 hover:bg-secondary/60"
               )}
             >
               <div className={cn(
