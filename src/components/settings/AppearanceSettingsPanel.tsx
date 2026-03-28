@@ -70,22 +70,18 @@ export function AppearanceSettingsPanel() {
       const h = parseInt(parts[0]);
       const s = parseInt(parts[1]);
       const l = parseInt(parts[2]);
+      const isDark = root.classList.contains('dark');
 
       // Primary & ring
       root.style.setProperty('--primary', hsl);
+      root.style.setProperty('--primary-foreground', isDark ? `${h} ${Math.max(s - 40, 5)}% 98%` : `0 0% 100%`);
       root.style.setProperty('--ring', hsl);
 
-      // Accent tones
-      root.style.setProperty('--accent', `${h} ${Math.max(s - 25, 15)}% 95%`);
-      root.style.setProperty('--accent-foreground', `${h} ${s}% 40%`);
-
-      // Secondary tinted
-      root.style.setProperty('--secondary', `${h} ${Math.max(s - 50, 10)}% 93%`);
-      root.style.setProperty('--secondary-foreground', `${h} ${Math.max(s - 40, 10)}% 25%`);
-
-      // Sidebar primary
+      // Sidebar
       root.style.setProperty('--sidebar-primary', hsl);
       root.style.setProperty('--sidebar-ring', hsl);
+      root.style.setProperty('--sidebar-accent', isDark ? `${h} ${Math.max(s - 40, 8)}% 18%` : `${h} ${Math.max(s - 30, 10)}% 94%`);
+      root.style.setProperty('--sidebar-accent-foreground', isDark ? `${h} ${Math.max(s - 15, 20)}% 80%` : `${h} ${s}% 35%`);
 
       // Glow & shadows
       root.style.setProperty('--shadow-glow', `0 0 40px hsl(${hsl} / 0.25)`);
@@ -94,12 +90,38 @@ export function AppearanceSettingsPanel() {
       // Gradient
       root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(${h} ${s}% ${l}%) 0%, hsl(${h + 15} ${Math.max(s - 10, 30)}% ${l + 5}%) 50%, hsl(${h + 30} ${s}% ${l + 8}%) 100%)`);
 
-      // Dark mode overrides
-      if (root.classList.contains('dark')) {
-        root.style.setProperty('--accent', `${h} ${Math.max(s - 30, 10)}% 24%`);
+      if (isDark) {
+        // Tinted dark backgrounds
+        root.style.setProperty('--background', `${h} ${Math.max(s - 55, 8)}% 10%`);
+        root.style.setProperty('--foreground', `${h} ${Math.max(s - 50, 5)}% 92%`);
+        root.style.setProperty('--card', `${h} ${Math.max(s - 52, 8)}% 12%`);
+        root.style.setProperty('--card-foreground', `${h} ${Math.max(s - 50, 5)}% 92%`);
+        root.style.setProperty('--popover', `${h} ${Math.max(s - 52, 8)}% 12%`);
+        root.style.setProperty('--popover-foreground', `${h} ${Math.max(s - 50, 5)}% 92%`);
+        root.style.setProperty('--muted', `${h} ${Math.max(s - 50, 6)}% 16%`);
+        root.style.setProperty('--muted-foreground', `${h} ${Math.max(s - 45, 8)}% 55%`);
+        root.style.setProperty('--accent', `${h} ${Math.max(s - 30, 10)}% 20%`);
         root.style.setProperty('--accent-foreground', `${h} ${Math.max(s - 10, 30)}% 72%`);
-        root.style.setProperty('--secondary', `${h} ${Math.max(s - 55, 8)}% 22%`);
-        root.style.setProperty('--secondary-foreground', `${h} ${Math.max(s - 45, 8)}% 82%`);
+        root.style.setProperty('--secondary', `${h} ${Math.max(s - 48, 8)}% 15%`);
+        root.style.setProperty('--secondary-foreground', `${h} ${Math.max(s - 40, 10)}% 82%`);
+        root.style.setProperty('--border', `${h} ${Math.max(s - 50, 6)}% 18%`);
+        root.style.setProperty('--input', `${h} ${Math.max(s - 50, 6)}% 18%`);
+      } else {
+        // Tinted light backgrounds
+        root.style.setProperty('--background', `${h} ${Math.max(s - 45, 10)}% 98%`);
+        root.style.setProperty('--foreground', `${h} ${Math.max(s - 40, 10)}% 12%`);
+        root.style.setProperty('--card', `${h} ${Math.max(s - 40, 8)}% 99%`);
+        root.style.setProperty('--card-foreground', `${h} ${Math.max(s - 40, 10)}% 12%`);
+        root.style.setProperty('--popover', `${h} ${Math.max(s - 40, 8)}% 99%`);
+        root.style.setProperty('--popover-foreground', `${h} ${Math.max(s - 40, 10)}% 12%`);
+        root.style.setProperty('--muted', `${h} ${Math.max(s - 40, 8)}% 94%`);
+        root.style.setProperty('--muted-foreground', `${h} ${Math.max(s - 35, 10)}% 42%`);
+        root.style.setProperty('--accent', `${h} ${Math.max(s - 25, 15)}% 94%`);
+        root.style.setProperty('--accent-foreground', `${h} ${s}% 40%`);
+        root.style.setProperty('--secondary', `${h} ${Math.max(s - 40, 10)}% 93%`);
+        root.style.setProperty('--secondary-foreground', `${h} ${Math.max(s - 35, 10)}% 25%`);
+        root.style.setProperty('--border', `${h} ${Math.max(s - 45, 8)}% 88%`);
+        root.style.setProperty('--input', `${h} ${Math.max(s - 45, 8)}% 88%`);
       }
     }
     localStorage.setItem('accent-color', accentColor);
