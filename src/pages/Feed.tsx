@@ -59,6 +59,7 @@ export default function Feed() {
 
   useFeedScrollMemory('feed-main-scroll');
   const feedPerf = useFeedPerformance();
+  const { isFlow } = useUXMode();
 
   // Deduplicate posts across pages to prevent React key warnings
   const posts = useMemo(() => {
