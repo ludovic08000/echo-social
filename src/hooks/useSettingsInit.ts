@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { applyFeedCustomization } from '@/hooks/useFeedCustomization';
 
 /**
  * Reads all persisted settings from localStorage on app startup
@@ -86,6 +87,16 @@ export function useSettingsInit() {
       }
     } catch {
       // ignore parse errors
+    }
+
+    // ── Feed customization ──
+    try {
+      const feedCustom = localStorage.getItem('feed-customization');
+      if (feedCustom) {
+        applyFeedCustomization(JSON.parse(feedCustom));
+      }
+    } catch {
+      // ignore
     }
   }, []);
 }

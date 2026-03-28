@@ -6,6 +6,7 @@ import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { useTranslation } from '@/lib/i18n';
 import { BackgroundSettingsSection } from './BackgroundSettingsSection';
+import { FeedCustomizationSection } from './FeedCustomizationSection';
 import { useUXMode } from '@/hooks/useUXMode';
 
 type ThemeMode = 'light' | 'dark' | 'system';
@@ -275,6 +276,9 @@ export function AppearanceSettingsPanel() {
           <Switch checked={animationsEnabled} onCheckedChange={setAnimationsEnabled} />
         </div>
       </div>
+
+      {/* Feed customization: font, text color, background color */}
+      <FeedCustomizationSection />
 
       {/* Background customization */}
       <BackgroundSettingsSection />

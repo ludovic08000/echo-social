@@ -17,6 +17,7 @@ import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgor
 import { Button } from '@/components/ui/button';
 import { useActiveAds } from '@/hooks/useAdCampaigns';
 import { useCustomBackground } from '@/hooks/useCustomBackground';
+import { useFeedCustomization } from '@/hooks/useFeedCustomization';
 import { useParentalGate } from '@/components/ParentalGate';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useFeedScrollMemory } from '@/hooks/useFeedScrollMemory';
@@ -48,6 +49,7 @@ export default function Feed() {
   const [pauseDismissed, setPauseDismissed] = useState(false);
   const { data: activeAds } = useActiveAds();
   const feedBgStyle = useCustomBackground('feed');
+  const { feedStyle: feedCustomStyle } = useFeedCustomization();
   const { isMinor, isUnlocked, requestUnlock } = useParentalGate();
   const isMobile = useIsMobile();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -169,12 +171,20 @@ export default function Feed() {
     sessionStorage.setItem('forsure-session-start', Date.now().toString());
   };
 
+  const mergedFeedStyle = { ...feedBgStyle, ...feedCustomStyle };
+
   return (
     <AppLayout fullWidth>
       {feedBgStyle && (
         <div className="fixed inset-0 -z-10 opacity-30" style={feedBgStyle} />
       )}
-      <div className="flex justify-center">
+      {feedCustomStyle.backgroundColor && (
+        <div className="fixed inset-0 -z-10" style={{ backgroundColor: feedCustomStyle.backgroundColor }} />
+      )}
+      <div className="flex justify-center" style={{
+        fontFamily: feedCustomStyle.fontFamily,
+        color: feedCustomStyle.color,
+      }}>
         <div className="w-full flex justify-center gap-6 xl:gap-10">
           <div className="flex-1 max-w-[680px] min-w-0">
             {/* Scroll pause reminder */}
