@@ -608,15 +608,20 @@
   border-radius: 0 4px 4px 0;
 }
 
-/* Buttons — rounder, softer glow */
+/* Buttons — extra round candy style */
 .ux-flow .premium-button {
-  border-radius: 1rem;
+  border-radius: 9999px;
   transition-duration: 0.4s;
 }
 
 .ux-flow .premium-button:hover {
-  transform: translateY(-2px) scale(1.03);
+  transform: translateY(-2px) scale(1.04);
 }
+
+/* Flow: rounder everything */
+.ux-flow .rounded-xl { border-radius: 1.25rem; }
+.ux-flow .rounded-2xl { border-radius: 1.5rem; }
+.ux-flow .rounded-lg { border-radius: 1rem; }
 
 /* Body ambient glow for Flow — rose/lavande */
 .ux-flow body,
