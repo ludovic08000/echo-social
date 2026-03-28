@@ -23,6 +23,7 @@ import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Feed from "./pages/Feed";
+import AdsManager from "./pages/AdsManager";
 import NotFound from "./pages/NotFound";
 
 // Lazy-load with auto-retry on chunk errors (deploy / cache invalidation)
@@ -70,7 +71,7 @@ const ProductDetailPage = lazyWithOneRetry(() => import("./pages/ProductDetail")
 const LegalTerms = lazyWithOneRetry(() => import("./pages/LegalTerms"), 'r-legal');
 const PrivacyPolicy = lazyWithOneRetry(() => import("./pages/PrivacyPolicy"), 'r-privacy');
 const AIEngine = lazyWithOneRetry(() => import("./pages/AIEngine"), 'r-ai');
-const AdsManager = lazyWithOneRetry(() => import("./pages/AdsManager"), 'r-ads');
+
 const AIAgents = lazyWithOneRetry(() => import("./pages/AIAgents"), 'r-agents');
 const Admin = lazyWithOneRetry(() => import("./pages/Admin"), 'r-admin');
 const CreatorUpgrade = lazyWithOneRetry(() => import("./pages/CreatorUpgrade"), 'r-creator');
@@ -199,6 +200,7 @@ function AppContent() {
               <Route path="/marketplace/product/:id" element={<ProtectedRoute><ProductDetailPage /></ProtectedRoute>} />
               <Route path="/ai-engine" element={<ProtectedRoute><AIEngine /></ProtectedRoute>} />
               <Route path="/ads" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
+              <Route path="/publicites" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
               <Route path="/ai-agents" element={<ProtectedRoute><AIAgents /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
               <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />
