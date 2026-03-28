@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, X, MessageCircle, ShoppingBag, Radio, Gamepad2, Bot, Heart, Users, Settings } from 'lucide-react';
+import { Sparkles, X, MessageCircle, Radio, Gamepad2, Bot, Heart, Users, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 
