@@ -355,6 +355,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
   const [isSending] = useState(false);
+  const { translations, translating, translate: translateMsg } = useMessageTranslation();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
