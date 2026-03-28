@@ -36,7 +36,7 @@ export function useSettingsInit(currentMode?: UXMode) {
       amber: '35 80% 50%',
       coral: '15 75% 55%',
     };
-    const accentId = localStorage.getItem('accent-color') || 'bleu';
+    const accentId = modeGet(mode, 'accent-color') || 'bleu';
     const accentHsl = accentColors[accentId];
     if (accentHsl) {
       const parts = accentHsl.split(' ');
