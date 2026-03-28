@@ -175,7 +175,7 @@ export function AppearanceSettingsPanel() {
     }
   };
 
-  const { mode: uxMode, setMode: setUXMode } = useUXMode();
+  const { setMode: setUXMode } = useUXMode();
 
   const uxModes = [
     { id: 'focus' as const, label: 'Focus', icon: <Zap className="w-4 h-4" />, desc: 'Précis, direct, efficace' },
