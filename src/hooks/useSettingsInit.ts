@@ -1,16 +1,23 @@
 import { useEffect } from 'react';
 import { applyFeedCustomization } from '@/hooks/useFeedCustomization';
+import type { UXMode } from '@/hooks/useUXMode';
+
+/** Get mode-scoped key, with fallback to global */
+function modeGet(mode: UXMode, key: string): string | null {
+  return localStorage.getItem(`${mode}-${key}`) ?? localStorage.getItem(key);
+}
 
 /**
  * Reads all persisted settings from localStorage on app startup
  * and applies them to the DOM so they take effect immediately.
  */
-export function useSettingsInit() {
+export function useSettingsInit(currentMode?: UXMode) {
+  const mode: UXMode = currentMode || (localStorage.getItem('ux-mode') as UXMode) || 'focus';
   useEffect(() => {
     const root = document.documentElement;
 
     // ── Theme mode ──
-    const themeMode = localStorage.getItem('theme-mode') || 'dark';
+    const themeMode = modeGet(mode, 'theme-mode') || 'dark';
     if (themeMode === 'system') {
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       root.classList.toggle('dark', prefersDark);
@@ -29,7 +36,7 @@ export function useSettingsInit() {
       amber: '35 80% 50%',
       coral: '15 75% 55%',
     };
-    const accentId = localStorage.getItem('accent-color') || 'bleu';
+    const accentId = modeGet(mode, 'accent-color') || 'bleu';
     const accentHsl = accentColors[accentId];
     if (accentHsl) {
       const parts = accentHsl.split(' ');
@@ -83,17 +90,17 @@ export function useSettingsInit() {
     }
 
     // ── Font size ──
-    const fontSize = localStorage.getItem('font-size');
+    const fontSize = modeGet(mode, 'font-size');
     if (fontSize) {
       root.style.fontSize = `${fontSize}px`;
     }
 
     // ── Compact mode ──
-    const compact = localStorage.getItem('compact-mode') === 'true';
+    const compact = modeGet(mode, 'compact-mode') === 'true';
     root.classList.toggle('compact-mode', compact);
 
     // ── Animations ──
-    const animDisabled = localStorage.getItem('animations-disabled') === 'true';
+    const animDisabled = modeGet(mode, 'animations-disabled') === 'true';
     root.classList.toggle('no-animations', animDisabled);
 
     // ── Accessibility prefs ──
@@ -114,12 +121,12 @@ export function useSettingsInit() {
 
     // ── Feed customization ──
     try {
-      const feedCustom = localStorage.getItem('feed-customization');
+      const feedCustom = modeGet(mode, 'feed-customization');
       if (feedCustom) {
         applyFeedCustomization(JSON.parse(feedCustom));
       }
     } catch {
       // ignore
     }
-  }, []);
+  }, [mode]);
 }

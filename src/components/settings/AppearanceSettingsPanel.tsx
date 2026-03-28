@@ -22,6 +22,10 @@ const accentColors = [
 
 export function AppearanceSettingsPanel() {
   const { t } = useTranslation();
+  const { mode: uxMode } = useUXMode();
+
+  // Helper: mode-scoped localStorage key
+  const modeKey = (key: string) => `${uxMode}-${key}`;
 
   const themeModes: { id: ThemeMode; label: string; icon: React.ReactNode }[] = [
     { id: 'light', label: t('appearance.light'), icon: <Sun className="w-4 h-4" /> },
@@ -30,22 +34,22 @@ export function AppearanceSettingsPanel() {
   ];
 
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
-    return (localStorage.getItem('theme-mode') as ThemeMode) || 'dark';
+    return (localStorage.getItem(modeKey('theme-mode')) as ThemeMode) || (localStorage.getItem('theme-mode') as ThemeMode) || 'dark';
   });
   const [accentColor, setAccentColor] = useState(() => {
-    return localStorage.getItem('accent-color') || 'bleu';
+    return localStorage.getItem(modeKey('accent-color')) || localStorage.getItem('accent-color') || 'bleu';
   });
   const [fontSize, setFontSize] = useState(() => {
-    return parseInt(localStorage.getItem('font-size') || '16', 10);
+    return parseInt(localStorage.getItem(modeKey('font-size')) || localStorage.getItem('font-size') || '16', 10);
   });
   const [compactMode, setCompactMode] = useState(() => {
-    return localStorage.getItem('compact-mode') === 'true';
+    return localStorage.getItem(modeKey('compact-mode')) === 'true';
   });
   const [animationsEnabled, setAnimationsEnabled] = useState(() => {
-    return localStorage.getItem('animations-disabled') !== 'true';
+    return localStorage.getItem(modeKey('animations-disabled')) !== 'true';
   });
   const [dynamicTheme, setDynamicTheme] = useState(() => {
-    return localStorage.getItem('dynamic-theme') === 'true';
+    return localStorage.getItem(modeKey('dynamic-theme')) === 'true';
   });
 
   useEffect(() => {
@@ -58,8 +62,9 @@ export function AppearanceSettingsPanel() {
       root.classList.toggle('dark', themeMode === 'dark');
       root.classList.toggle('light', themeMode === 'light');
     }
-    localStorage.setItem('theme-mode', themeMode);
-  }, [themeMode]);
+    localStorage.setItem(modeKey('theme-mode'), themeMode);
+    localStorage.setItem('theme-mode', themeMode); // keep global fallback
+  }, [themeMode, uxMode]);
 
   useEffect(() => {
     const color = accentColors.find(c => c.id === accentColor);
@@ -124,23 +129,23 @@ export function AppearanceSettingsPanel() {
         root.style.setProperty('--input', `${h} ${Math.max(s - 45, 8)}% 88%`);
       }
     }
-    localStorage.setItem('accent-color', accentColor);
-  }, [accentColor, themeMode]);
+    localStorage.setItem(modeKey('accent-color'), accentColor);
+  }, [accentColor, themeMode, uxMode]);
 
   useEffect(() => {
     document.documentElement.style.fontSize = `${fontSize}px`;
-    localStorage.setItem('font-size', String(fontSize));
-  }, [fontSize]);
+    localStorage.setItem(modeKey('font-size'), String(fontSize));
+  }, [fontSize, uxMode]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('compact-mode', compactMode);
-    localStorage.setItem('compact-mode', String(compactMode));
-  }, [compactMode]);
+    localStorage.setItem(modeKey('compact-mode'), String(compactMode));
+  }, [compactMode, uxMode]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('no-animations', !animationsEnabled);
-    localStorage.setItem('animations-disabled', String(!animationsEnabled));
-  }, [animationsEnabled]);
+    localStorage.setItem(modeKey('animations-disabled'), String(!animationsEnabled));
+  }, [animationsEnabled, uxMode]);
 
   // Dynamic theme - auto switch based on time of day
   useEffect(() => {
@@ -171,7 +176,7 @@ export function AppearanceSettingsPanel() {
     }
   };
 
-  const { mode: uxMode, setMode: setUXMode } = useUXMode();
+  const { setMode: setUXMode } = useUXMode();
 
   const uxModes = [
     { id: 'focus' as const, label: 'Focus', icon: <Zap className="w-4 h-4" />, desc: 'Précis, direct, efficace' },

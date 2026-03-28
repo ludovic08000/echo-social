@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useUXMode } from '@/hooks/useUXMode';
 import { ArrowLeft, Palette, Heart, Brain, Accessibility, Baby } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from '@/lib/i18n';
@@ -20,6 +21,7 @@ export default function Settings() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<string | null>(null);
+  const { mode: uxMode } = useUXMode();
 
   const handleBack = () => {
     if (activeTab) {
@@ -56,7 +58,7 @@ export default function Settings() {
                 <Palette className="w-4 h-4 text-primary" />
                 {t('appearance.title')}
               </h2>
-              <AppearanceSettingsPanel />
+              <AppearanceSettingsPanel key={uxMode} />
             </section>
           </div>
         )}
