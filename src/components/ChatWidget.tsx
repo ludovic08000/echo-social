@@ -355,8 +355,18 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
   const [isSending] = useState(false);
-  const { translations, translating, translate: translateMsg } = useMessageTranslation();
+  const { translations, translating, translate: translateMsg, autoTranslateMessages } = useMessageTranslation();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-translate non-French messages
+  useEffect(() => {
+    if (messages?.length) {
+      autoTranslateMessages(
+        messages.map((m: any) => ({ id: m.id, body: m.body, sender_id: m.sender_id })),
+        user?.id
+      );
+    }
+  }, [messages, user?.id, autoTranslateMessages]);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
