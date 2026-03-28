@@ -42,7 +42,7 @@ function generateChartData(campaigns: AdCampaign[]) {
   return days.map(day => {
     const dayStr = format(day, 'dd/MM');
     const factor = Math.random();
-    const totalBudget = campaigns.reduce((s, c) => s + c.budget, 0) || 50;
+    const totalBudget = campaigns.reduce((s, c) => s + (Number(c.budget) || 0), 0) || 50;
     return {
       date: dayStr,
       impressions: Math.floor(factor * totalBudget * 8 + Math.random() * 200),
@@ -50,6 +50,25 @@ function generateChartData(campaigns: AdCampaign[]) {
       spent: +(factor * totalBudget * 0.08 + Math.random() * 2).toFixed(2),
     };
   });
+}
+
+function toSafeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+function formatSafeCampaignDate(value: string | null | undefined): string {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '—';
+  return format(parsed, 'dd MMM', { locale: fr });
+}
+
+function getCampaignProgress(startsAt: string | null | undefined, endsAt: string | null | undefined): number {
+  const start = startsAt ? new Date(startsAt).getTime() : NaN;
+  const end = endsAt ? new Date(endsAt).getTime() : NaN;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  return Math.min(((Date.now() - start) / (end - start)) * 100, 100);
 }
 
 interface ChatMessage {
