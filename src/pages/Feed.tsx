@@ -17,6 +17,7 @@ import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgor
 import { Button } from '@/components/ui/button';
 import { useActiveAds } from '@/hooks/useAdCampaigns';
 import { useCustomBackground } from '@/hooks/useCustomBackground';
+import { useFeedCustomization } from '@/hooks/useFeedCustomization';
 import { useParentalGate } from '@/components/ParentalGate';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useFeedScrollMemory } from '@/hooks/useFeedScrollMemory';
