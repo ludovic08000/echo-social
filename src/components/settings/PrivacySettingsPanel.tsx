@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Shield, Eye, MessageCircle, Heart, Search, BarChart3, Ghost, Globe, Lock, Trash2, AlertTriangle } from 'lucide-react';
+import { Shield, Eye, MessageCircle, Heart, Search, BarChart3, Ghost, Globe, Lock, Trash2, AlertTriangle, KeyRound } from 'lucide-react';
 import { usePrivacySettings, useUpdatePrivacySettings } from '@/hooks/usePrivacySettings';
 import { RestrictedFriendsPanel } from './RestrictedFriendsPanel';
 import { AccountDeletionSection, DataExportSection } from './AccountManagementSections';
@@ -29,6 +29,7 @@ import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { useQueryClient } from '@tanstack/react-query';
+import { useChatPin, type PinMode } from '@/hooks/useChatPin';
 
 function PurgeFeedSection() {
   const { user } = useAuth();
@@ -112,6 +113,62 @@ function PurgeFeedSection() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const PIN_MODE_OPTIONS: { value: PinMode; label: string; description: string }[] = [
+  { value: 'every_open', label: 'À chaque ouverture', description: 'Demande le PIN chaque fois que vous ouvrez la messagerie (le plus sécurisé)' },
+  { value: 'once_per_session', label: 'Une fois par session', description: 'Demande le PIN une seule fois après connexion' },
+  { value: 'on_inactivity', label: 'Après inactivité (5 min)', description: 'Re-demande le PIN après 5 minutes sans activité' },
+  { value: 'on_return', label: 'Au retour sur l\'app', description: 'Re-demande le PIN quand vous revenez sur le site/l\'app' },
+];
+
+function PinModeSection() {
+  const pin = useChatPin();
+
+  if (!pin.hasPin) return null;
+
+  const handleModeChange = async (mode: PinMode) => {
+    const ok = await pin.updatePinMode(mode);
+    if (ok) {
+      toast({ title: 'Mode PIN mis à jour' });
+    } else {
+      toast({ title: 'Erreur', description: 'Impossible de mettre à jour le mode', variant: 'destructive' });
+    }
+  };
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center gap-2">
+        <KeyRound className="w-5 h-5 text-primary" />
+        <h3 className="font-semibold">Code PIN messagerie</h3>
+      </div>
+      <div className="pl-7 space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Choisissez quand votre code PIN est demandé pour accéder à la messagerie chiffrée.
+        </p>
+        <div className="grid gap-2">
+          {PIN_MODE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => handleModeChange(opt.value)}
+              className={`flex flex-col items-start gap-0.5 p-3 rounded-xl border-2 transition-all text-left ${
+                pin.pinMode === opt.value
+                  ? 'border-primary bg-primary/10 shadow-sm'
+                  : 'border-border/50 bg-secondary/20 hover:bg-secondary/40'
+              }`}
+            >
+              <span className={`text-sm font-semibold ${pin.pinMode === opt.value ? 'text-primary' : 'text-foreground'}`}>
+                {opt.label}
+              </span>
+              <span className="text-[11px] text-muted-foreground leading-snug">
+                {opt.description}
+              </span>
+            </button>
+          ))}
         </div>
       </div>
     </section>
@@ -448,6 +505,9 @@ export function PrivacySettingsPanel() {
           </div>
         </div>
       </section>
+
+      {/* PIN Mode Settings */}
+      <PinModeSection />
 
       {/* Purge Feed */}
       <PurgeFeedSection />

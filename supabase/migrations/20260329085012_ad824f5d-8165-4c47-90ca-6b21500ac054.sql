@@ -1,0 +1,2 @@
+ALTER TABLE public.user_chat_pins ADD COLUMN IF NOT EXISTS pin_mode text NOT NULL DEFAULT 'every_open';
+COMMENT ON COLUMN public.user_chat_pins.pin_mode IS 'PIN trigger mode: every_open, once_per_session, on_inactivity, on_return';
