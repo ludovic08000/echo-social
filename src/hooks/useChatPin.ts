@@ -229,8 +229,26 @@ export function useChatPin() {
     unlocked: false,
     error: null,
     processing: false,
+    pinMode: 'every_open',
   });
   const checkedRef = useRef(false);
+  const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pinModeRef = useRef<PinMode>('every_open');
+
+  // Fetch PIN mode from DB
+  const fetchPinMode = useCallback(async (): Promise<PinMode> => {
+    if (!user) return 'every_open';
+    try {
+      const { data } = await supabase
+        .from('user_chat_pins')
+        .select('pin_mode')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      return (data?.pin_mode as PinMode) || 'every_open';
+    } catch {
+      return 'every_open';
+    }
+  }, [user]);
 
   // Check if user has a PIN and if session is unlocked
   useEffect(() => {
@@ -239,43 +257,100 @@ export function useChatPin() {
 
     (async () => {
       try {
-        // Check session unlock
         const sessionUnlocked = sessionStorage.getItem(SESSION_KEY) === user.id;
-
-        // Check if PIN exists via secure RPC (no direct table access)
         const { data: hasPin } = await supabase
           .rpc('has_chat_pin', { p_user_id: user.id });
+        
+        const mode = !!hasPin ? await fetchPinMode() : 'every_open';
+        pinModeRef.current = mode;
+
+        // For 'every_open' mode, session unlock doesn't count (must enter each time)
+        const effectiveUnlock = mode === 'every_open' ? false : (sessionUnlocked && !!hasPin);
 
         setState({
           loaded: true,
           hasPin: !!hasPin,
-          unlocked: sessionUnlocked && !!hasPin,
+          unlocked: effectiveUnlock,
           error: null,
           processing: false,
+          pinMode: mode,
         });
       } catch (err) {
         console.error('[PIN] Check failed:', err);
         setState(s => ({ ...s, loaded: true, error: 'Erreur vérification PIN' }));
       }
     })();
+  }, [user, fetchPinMode]);
+
+  // Handle 'on_return' mode: re-lock when tab loses visibility
+  useEffect(() => {
+    if (!user || !state.hasPin) return;
+    
+    const handleVisibility = () => {
+      if (document.hidden && pinModeRef.current === 'on_return' && state.unlocked) {
+        sessionStorage.removeItem(SESSION_KEY);
+        if (user) deleteRawIdentityBlob(user.id).catch(() => {});
+        setState(s => ({ ...s, unlocked: false }));
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [user, state.hasPin, state.unlocked]);
+
+  // Handle 'on_inactivity' mode: re-lock after 5 min idle
+  useEffect(() => {
+    if (!user || !state.hasPin || !state.unlocked || pinModeRef.current !== 'on_inactivity') return;
+
+    const resetTimer = () => {
+      if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+      inactivityTimer.current = setTimeout(() => {
+        sessionStorage.removeItem(SESSION_KEY);
+        if (user) deleteRawIdentityBlob(user.id).catch(() => {});
+        setState(s => ({ ...s, unlocked: false }));
+      }, INACTIVITY_TIMEOUT);
+    };
+
+    resetTimer();
+    const events = ['click', 'keydown', 'touchstart', 'scroll', 'mousemove'] as const;
+    events.forEach(e => window.addEventListener(e, resetTimer, { passive: true }));
+
+    return () => {
+      if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+      events.forEach(e => window.removeEventListener(e, resetTimer));
+    };
+  }, [user, state.hasPin, state.unlocked]);
+
+  /** Update PIN mode */
+  const updatePinMode = useCallback(async (mode: PinMode): Promise<boolean> => {
+    if (!user) return false;
+    try {
+      const { error } = await supabase
+        .from('user_chat_pins')
+        .update({ pin_mode: mode })
+        .eq('user_id', user.id);
+      if (error) throw error;
+      pinModeRef.current = mode;
+      setState(s => ({ ...s, pinMode: mode }));
+      return true;
+    } catch {
+      return false;
+    }
   }, [user]);
 
   /**
    * Set up a new PIN for the first time.
-   * Wraps existing identity keys with the PIN-derived key.
    */
   const setupPin = useCallback(async (pin: string): Promise<boolean> => {
     if (!user) return false;
     setState(s => ({ ...s, processing: true, error: null }));
 
     try {
-      // Validate PIN format (6 digits)
       if (!/^\d{6}$/.test(pin)) {
         setState(s => ({ ...s, processing: false, error: 'Le PIN doit contenir exactement 6 chiffres' }));
         return false;
       }
 
-      // Setup PIN server-side (hash computed on server, never on client)
       const { data: setupResult, error: fnError } = await supabase.functions.invoke('verify-chat-pin', {
         body: { action: 'setup', pin },
       });
@@ -284,15 +359,12 @@ export function useChatPin() {
         return false;
       }
 
-      // Derive local wrapping key from server-provided salt
       const saltB64 = setupResult.salt;
       const salt = base64ToBytes(saltB64);
       const wrapKey = await derivePinKey(pin, salt);
 
-      // Read existing identity keys from IndexedDB
       const rawBlob = await readRawIdentityBlob(user.id);
       if (rawBlob) {
-        // Encrypt the keys with PIN-derived key
         const iv = crypto.getRandomValues(new Uint8Array(12));
         const plainBytes = new TextEncoder().encode(rawBlob);
         const ciphertext = await crypto.subtle.encrypt(
@@ -300,30 +372,24 @@ export function useChatPin() {
           wrapKey,
           plainBytes as Uint8Array<ArrayBuffer>,
         );
-
-        // Save wrapped keys locally
         await saveWrappedKeys(user.id, {
           wrappedBlob: bytesToBase64(new Uint8Array(ciphertext)),
           iv: bytesToBase64(iv),
           salt: saltB64,
         });
-
-        // DELETE raw identity keys — only wrapped version remains
         await deleteRawIdentityBlob(user.id);
         console.log('[PIN] Raw identity keys deleted after wrapping');
       }
 
-      // Mark session as unlocked
       sessionStorage.setItem(SESSION_KEY, user.id);
-
       setState({
         loaded: true,
         hasPin: true,
         unlocked: true,
         error: null,
         processing: false,
+        pinMode: 'every_open',
       });
-
       return true;
     } catch (err) {
       console.error('[PIN] Setup failed:', err);
@@ -333,21 +399,18 @@ export function useChatPin() {
   }, [user]);
 
   /**
-   * Verify PIN and unlock messaging for this session.
-   * Unwraps identity keys with the PIN-derived key.
+   * Verify PIN and unlock messaging.
    */
   const verifyPin = useCallback(async (pin: string): Promise<boolean> => {
     if (!user) return false;
     setState(s => ({ ...s, processing: true, error: null }));
 
     try {
-      // Validate format
       if (!/^\d{6}$/.test(pin)) {
         setState(s => ({ ...s, processing: false, error: 'PIN invalide' }));
         return false;
       }
 
-      // Verify PIN server-side (hash NEVER sent to client)
       const { data: verifyResult, error: fnError } = await supabase.functions.invoke('verify-chat-pin', {
         body: { action: 'verify', pin },
       });
@@ -362,29 +425,25 @@ export function useChatPin() {
         return false;
       }
 
-      // PIN verified server-side — now unwrap local keys
       const wrapped = await loadWrappedKeys(user.id);
       if (wrapped) {
         try {
           const wrapKey = await derivePinKey(pin, base64ToBytes(wrapped.salt));
           const cipherBytes = base64ToBytes(wrapped.wrappedBlob);
           const iv = base64ToBytes(wrapped.iv);
-
           const plainBuffer = await crypto.subtle.decrypt(
             { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
             wrapKey,
             cipherBytes as Uint8Array<ArrayBuffer>,
           );
-
           const rawBlob = new TextDecoder().decode(plainBuffer);
           await writeRawIdentityBlob(user.id, rawBlob);
           console.log('[PIN] Keys unwrapped successfully');
           window.dispatchEvent(new CustomEvent('forsure-keys-unlocked'));
         } catch (unwrapErr) {
-          console.warn('[PIN] Key unwrap failed (keys may already be accessible):', unwrapErr);
+          console.warn('[PIN] Key unwrap failed:', unwrapErr);
         }
       } else if (verifyResult.salt) {
-        // No local wrapped keys but PIN verified — try wrapping existing keys for next time
         try {
           const rawBlob = await readRawIdentityBlob(user.id);
           if (rawBlob) {
@@ -401,15 +460,15 @@ export function useChatPin() {
               iv: bytesToBase64(iv),
               salt: verifyResult.salt,
             });
-            // Delete raw keys after wrapping — only wrapped version remains
             await deleteRawIdentityBlob(user.id);
             console.log('[PIN] Existing keys wrapped and raw deleted');
           }
         } catch {}
       }
 
-      // Mark session as unlocked
       sessionStorage.setItem(SESSION_KEY, user.id);
+      const mode = await fetchPinMode();
+      pinModeRef.current = mode;
 
       setState({
         loaded: true,
@@ -417,6 +476,7 @@ export function useChatPin() {
         unlocked: true,
         error: null,
         processing: false,
+        pinMode: mode,
       });
 
       return true;
@@ -425,12 +485,11 @@ export function useChatPin() {
       setState(s => ({ ...s, processing: false, error: 'Erreur vérification' }));
       return false;
     }
-  }, [user]);
+  }, [user, fetchPinMode]);
 
-  /** Lock messaging — clear session AND delete raw identity keys from IndexedDB */
+  /** Lock messaging */
   const lock = useCallback(async () => {
     sessionStorage.removeItem(SESSION_KEY);
-    // Delete raw identity keys so they're only accessible after PIN unlock
     if (user) {
       await deleteRawIdentityBlob(user.id).catch(() => {});
     }
@@ -469,7 +528,6 @@ export function useChatPin() {
         setState(s => ({ ...s, processing: false, error: data?.error || 'Code incorrect' }));
         return false;
       }
-      // PIN deleted — user will go through setup flow
       sessionStorage.removeItem(SESSION_KEY);
       setState({
         loaded: true,
@@ -477,6 +535,7 @@ export function useChatPin() {
         unlocked: false,
         error: null,
         processing: false,
+        pinMode: 'every_open',
       });
       return true;
     } catch {
@@ -492,5 +551,6 @@ export function useChatPin() {
     lock,
     requestReset,
     confirmReset,
+    updatePinMode,
   };
 }
