@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Shield, Eye, MessageCircle, Heart, Search, BarChart3, Ghost, Globe, Lock, Trash2, AlertTriangle } from 'lucide-react';
+import { Shield, Eye, MessageCircle, Heart, Search, BarChart3, Ghost, Globe, Lock, Trash2, AlertTriangle, KeyRound } from 'lucide-react';
 import { usePrivacySettings, useUpdatePrivacySettings } from '@/hooks/usePrivacySettings';
 import { RestrictedFriendsPanel } from './RestrictedFriendsPanel';
 import { AccountDeletionSection, DataExportSection } from './AccountManagementSections';
@@ -29,6 +29,7 @@ import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { useQueryClient } from '@tanstack/react-query';
+import { useChatPin, type PinMode } from '@/hooks/useChatPin';
 
 function PurgeFeedSection() {
   const { user } = useAuth();
