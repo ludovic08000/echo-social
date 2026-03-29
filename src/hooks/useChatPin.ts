@@ -7,17 +7,26 @@
  * - Without the correct PIN, keys cannot be decrypted → messages unreadable
  * - PIN hash (SHA-256 with random salt) stored server-side for verification
  * - Unlocked state persists for the session only (sessionStorage flag)
+ * 
+ * PIN modes:
+ * - every_open: Ask PIN every time messaging is opened (default, most secure)
+ * - once_per_session: Ask PIN once after login, then free access
+ * - on_inactivity: Re-ask PIN after 5 minutes of inactivity
+ * - on_return: Re-ask PIN when user returns to the tab/app after leaving
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 
+export type PinMode = 'every_open' | 'once_per_session' | 'on_inactivity' | 'on_return';
+
 const SESSION_KEY = 'forsure-pin-unlocked';
 const PIN_WRAP_DB = 'forsure-pin-wrap';
 const PIN_WRAP_VERSION = 1;
 const PIN_WRAP_STORE = 'wrapped-keys';
 const PBKDF2_ITERATIONS = 600_000;
+const INACTIVITY_TIMEOUT = 5 * 60_000; // 5 minutes
 
 // ─── Types ───
 
