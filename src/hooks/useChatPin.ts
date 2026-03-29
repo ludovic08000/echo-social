@@ -41,6 +41,8 @@ export interface ChatPinState {
   error: string | null;
   /** Loading state for async operations */
   processing: boolean;
+  /** Current PIN mode */
+  pinMode: PinMode;
 }
 
 // ─── IndexedDB for wrapped keys ───
