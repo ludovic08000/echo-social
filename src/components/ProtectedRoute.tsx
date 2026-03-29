@@ -1,7 +1,9 @@
+import { useState, useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useProfile } from '@/hooks/useProfile';
 import { AgeFlaggedScreen } from '@/components/AgeFlaggedScreen';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -11,6 +13,25 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { user, loading } = useAuth();
   const location = useLocation();
   const { data: profile, isLoading: profileLoading } = useProfile();
+  const [isRecovery, setIsRecovery] = useState(false);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecovery(true);
+      }
+    });
+    // Also check URL hash on mount
+    if (window.location.hash.includes('type=recovery')) {
+      setIsRecovery(true);
+    }
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // If user landed via password recovery link, force them to reset password
+  if (isRecovery && location.pathname !== '/reset-password') {
+    return <Navigate to="/reset-password" replace />;
+  }
 
   // Show loading state
   if (loading || (user && profileLoading)) {

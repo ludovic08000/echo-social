@@ -97,10 +97,14 @@ export default function ResetPassword() {
     setSuccess(true);
     toast({
       title: 'Mot de passe modifié ✅',
-      description: 'Votre mot de passe a été mis à jour avec succès.',
+      description: 'Votre mot de passe a été mis à jour. Veuillez vous reconnecter.',
     });
 
-    setTimeout(() => navigate('/feed'), 3000);
+    // Sign out to force fresh login with new password
+    setTimeout(async () => {
+      await supabase.auth.signOut();
+      navigate('/login', { replace: true });
+    }, 3000);
   };
 
   if (!isRecovery && !success) {
