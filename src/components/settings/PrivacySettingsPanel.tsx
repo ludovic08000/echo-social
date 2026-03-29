@@ -450,6 +450,9 @@ export function PrivacySettingsPanel() {
         </div>
       </section>
 
+      {/* PIN Mode Settings */}
+      <PinModeSection />
+
       {/* Purge Feed */}
       <PurgeFeedSection />
 
