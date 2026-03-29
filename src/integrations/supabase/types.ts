@@ -3692,6 +3692,7 @@ export type Database = {
           id: string
           locked_until: string | null
           pin_hash: string
+          pin_mode: string
           reset_code_expires: string | null
           reset_code_hash: string | null
           reset_code_salt: string | null
@@ -3705,6 +3706,7 @@ export type Database = {
           id?: string
           locked_until?: string | null
           pin_hash: string
+          pin_mode?: string
           reset_code_expires?: string | null
           reset_code_hash?: string | null
           reset_code_salt?: string | null
@@ -3718,6 +3720,7 @@ export type Database = {
           id?: string
           locked_until?: string | null
           pin_hash?: string
+          pin_mode?: string
           reset_code_expires?: string | null
           reset_code_hash?: string | null
           reset_code_salt?: string | null
