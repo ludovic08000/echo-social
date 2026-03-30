@@ -129,8 +129,6 @@ const PIN_MODE_OPTIONS: { value: PinMode; label: string; description: string }[]
 function PinModeSection() {
   const pin = useChatPin();
 
-  if (!pin.hasPin) return null;
-
   const handleModeChange = async (mode: PinMode) => {
     const ok = await pin.updatePinMode(mode);
     if (ok) {
@@ -147,29 +145,40 @@ function PinModeSection() {
         <h3 className="font-semibold">Code PIN messagerie</h3>
       </div>
       <div className="pl-7 space-y-3">
-        <p className="text-xs text-muted-foreground">
-          Choisissez quand votre code PIN est demandé pour accéder à la messagerie chiffrée.
-        </p>
-        <div className="grid gap-2">
-          {PIN_MODE_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => handleModeChange(opt.value)}
-              className={`flex flex-col items-start gap-0.5 p-3 rounded-xl border-2 transition-all text-left ${
-                pin.pinMode === opt.value
-                  ? 'border-primary bg-primary/10 shadow-sm'
-                  : 'border-border/50 bg-secondary/20 hover:bg-secondary/40'
-              }`}
-            >
-              <span className={`text-sm font-semibold ${pin.pinMode === opt.value ? 'text-primary' : 'text-foreground'}`}>
-                {opt.label}
-              </span>
-              <span className="text-[11px] text-muted-foreground leading-snug">
-                {opt.description}
-              </span>
-            </button>
-          ))}
-        </div>
+        {!pin.hasPin ? (
+          <div className="p-4 rounded-xl border-2 border-dashed border-border/50 bg-secondary/10 text-center space-y-2">
+            <Lock className="w-8 h-8 mx-auto text-muted-foreground/60" />
+            <p className="text-sm text-muted-foreground">
+              Aucun code PIN configuré. Accédez à la messagerie pour en créer un.
+            </p>
+          </div>
+        ) : (
+          <>
+            <p className="text-xs text-muted-foreground">
+              Choisissez quand votre code PIN est demandé pour accéder à la messagerie chiffrée.
+            </p>
+            <div className="grid gap-2">
+              {PIN_MODE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => handleModeChange(opt.value)}
+                  className={`flex flex-col items-start gap-0.5 p-3 rounded-xl border-2 transition-all text-left ${
+                    pin.pinMode === opt.value
+                      ? 'border-primary bg-primary/10 shadow-sm'
+                      : 'border-border/50 bg-secondary/20 hover:bg-secondary/40'
+                  }`}
+                >
+                  <span className={`text-sm font-semibold ${pin.pinMode === opt.value ? 'text-primary' : 'text-foreground'}`}>
+                    {opt.label}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground leading-snug">
+                    {opt.description}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </section>
   );
