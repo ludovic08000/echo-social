@@ -205,18 +205,28 @@ export function SettingsProfileTab() {
       <section className="premium-card overflow-hidden">
         <h2 className="text-sm font-semibold px-5 pt-5 pb-3">{t('settings.account')}</h2>
         <div className="divide-y divide-border/30">
-          {[
-            { icon: Download, label: t('settings.downloadData') },
-            { icon: Shield, label: t('settings.changePassword') },
-          ].map((item) => (
-            <button key={item.label} className="w-full flex items-center justify-between px-5 py-3.5 text-sm hover:bg-secondary/40 transition-colors">
-              <div className="flex items-center gap-3">
-                <item.icon className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm">{item.label}</span>
-              </div>
-              <ChevronRight className="w-4 h-4 text-muted-foreground" />
-            </button>
-          ))}
+          <button
+            onClick={handleDownloadData}
+            disabled={isExporting}
+            className="w-full flex items-center justify-between px-5 py-3.5 text-sm hover:bg-secondary/40 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <Download className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm">{isExporting ? 'Génération…' : t('settings.downloadData')}</span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+          </button>
+          <button
+            onClick={handleChangePassword}
+            disabled={isChangingPassword}
+            className="w-full flex items-center justify-between px-5 py-3.5 text-sm hover:bg-secondary/40 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <Shield className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm">{isChangingPassword ? 'Envoi…' : t('settings.changePassword')}</span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+          </button>
         </div>
       </section>
 
