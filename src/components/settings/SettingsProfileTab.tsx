@@ -40,6 +40,52 @@ export function SettingsProfileTab() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [isRequestingDeletion, setIsRequestingDeletion] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  const handleDownloadData = async () => {
+    if (!user) return;
+    setIsExporting(true);
+    try {
+      await supabase.auth.refreshSession();
+      const { data, error } = await supabase.functions.invoke('data-export', {
+        body: { type: 'basic' },
+      });
+      if (error) throw error;
+      if (data?.download_url) {
+        const link = document.createElement('a');
+        link.href = data.download_url;
+        link.download = `forsure-export-${new Date().toISOString().split('T')[0]}.json`;
+        link.click();
+        toast({ title: 'Export téléchargé avec succès' });
+      } else if (data?.message) {
+        toast({ title: data.message });
+      }
+    } catch {
+      toast({ title: 'Erreur lors de l\'export', variant: 'destructive' });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!user?.email) return;
+    setIsChangingPassword(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      toast({
+        title: 'E-mail envoyé',
+        description: 'Consultez votre boîte mail pour réinitialiser votre mot de passe.',
+      });
+    } catch {
+      toast({ title: 'Erreur', description: 'Impossible d\'envoyer l\'e-mail.', variant: 'destructive' });
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
 
   useEffect(() => {
     if (profile) {
@@ -205,18 +251,28 @@ export function SettingsProfileTab() {
       <section className="premium-card overflow-hidden">
         <h2 className="text-sm font-semibold px-5 pt-5 pb-3">{t('settings.account')}</h2>
         <div className="divide-y divide-border/30">
-          {[
-            { icon: Download, label: t('settings.downloadData') },
-            { icon: Shield, label: t('settings.changePassword') },
-          ].map((item) => (
-            <button key={item.label} className="w-full flex items-center justify-between px-5 py-3.5 text-sm hover:bg-secondary/40 transition-colors">
-              <div className="flex items-center gap-3">
-                <item.icon className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm">{item.label}</span>
-              </div>
-              <ChevronRight className="w-4 h-4 text-muted-foreground" />
-            </button>
-          ))}
+          <button
+            onClick={handleDownloadData}
+            disabled={isExporting}
+            className="w-full flex items-center justify-between px-5 py-3.5 text-sm hover:bg-secondary/40 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <Download className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm">{isExporting ? 'Génération…' : t('settings.downloadData')}</span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+          </button>
+          <button
+            onClick={handleChangePassword}
+            disabled={isChangingPassword}
+            className="w-full flex items-center justify-between px-5 py-3.5 text-sm hover:bg-secondary/40 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <Shield className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm">{isChangingPassword ? 'Envoi…' : t('settings.changePassword')}</span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+          </button>
         </div>
       </section>
 
