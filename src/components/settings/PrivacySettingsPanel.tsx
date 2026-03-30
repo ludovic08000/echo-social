@@ -129,8 +129,6 @@ const PIN_MODE_OPTIONS: { value: PinMode; label: string; description: string }[]
 function PinModeSection() {
   const pin = useChatPin();
 
-  if (!pin.hasPin) return null;
-
   const handleModeChange = async (mode: PinMode) => {
     const ok = await pin.updatePinMode(mode);
     if (ok) {
