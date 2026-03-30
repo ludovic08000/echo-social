@@ -325,15 +325,26 @@ export function useChatPin() {
   const updatePinMode = useCallback(async (mode: PinMode): Promise<boolean> => {
     if (!user) return false;
     try {
-      const { error } = await supabase
+      // First try update
+      const { data, error } = await supabase
         .from('user_chat_pins')
         .update({ pin_mode: mode })
-        .eq('user_id', user.id);
-      if (error) throw error;
+        .eq('user_id', user.id)
+        .select('id');
+      if (error) {
+        console.error('[PIN] updatePinMode error:', error);
+        throw error;
+      }
+      // If no row was updated (no PIN set yet), fail gracefully
+      if (!data || data.length === 0) {
+        console.warn('[PIN] No PIN row found to update mode');
+        return false;
+      }
       pinModeRef.current = mode;
       setState(s => ({ ...s, pinMode: mode }));
       return true;
-    } catch {
+    } catch (e) {
+      console.error('[PIN] updatePinMode catch:', e);
       return false;
     }
   }, [user]);
