@@ -40,6 +40,52 @@ export function SettingsProfileTab() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [isRequestingDeletion, setIsRequestingDeletion] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  const handleDownloadData = async () => {
+    if (!user) return;
+    setIsExporting(true);
+    try {
+      await supabase.auth.refreshSession();
+      const { data, error } = await supabase.functions.invoke('data-export', {
+        body: { type: 'basic' },
+      });
+      if (error) throw error;
+      if (data?.download_url) {
+        const link = document.createElement('a');
+        link.href = data.download_url;
+        link.download = `forsure-export-${new Date().toISOString().split('T')[0]}.json`;
+        link.click();
+        toast({ title: 'Export téléchargé avec succès' });
+      } else if (data?.message) {
+        toast({ title: data.message });
+      }
+    } catch {
+      toast({ title: 'Erreur lors de l\'export', variant: 'destructive' });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!user?.email) return;
+    setIsChangingPassword(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      toast({
+        title: 'E-mail envoyé',
+        description: 'Consultez votre boîte mail pour réinitialiser votre mot de passe.',
+      });
+    } catch {
+      toast({ title: 'Erreur', description: 'Impossible d\'envoyer l\'e-mail.', variant: 'destructive' });
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
 
   useEffect(() => {
     if (profile) {
