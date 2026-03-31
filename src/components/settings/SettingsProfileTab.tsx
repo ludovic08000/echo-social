@@ -69,7 +69,10 @@ export function SettingsProfileTab() {
   };
 
   const handleChangePassword = async () => {
-    if (!user?.email) return;
+    if (!user?.email) {
+      toast({ title: 'Erreur', description: 'Aucun e-mail associé à ce compte.', variant: 'destructive' });
+      return;
+    }
     setIsChangingPassword(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
@@ -77,11 +80,12 @@ export function SettingsProfileTab() {
       });
       if (error) throw error;
       toast({
-        title: 'E-mail envoyé',
+        title: 'E-mail envoyé ✉️',
         description: 'Consultez votre boîte mail pour réinitialiser votre mot de passe.',
       });
-    } catch {
-      toast({ title: 'Erreur', description: 'Impossible d\'envoyer l\'e-mail.', variant: 'destructive' });
+    } catch (err) {
+      console.error('[Password] Reset email error:', err);
+      toast({ title: 'Erreur', description: 'Impossible d\'envoyer l\'e-mail de réinitialisation.', variant: 'destructive' });
     } finally {
       setIsChangingPassword(false);
     }
