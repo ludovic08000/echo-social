@@ -355,7 +355,6 @@ export function useChatPin() {
   /**
    * Set up a new PIN for the first time.
    */
-   */
   const setupPin = useCallback(async (pin: string): Promise<boolean> => {
     if (!user) return false;
     setState(s => ({ ...s, processing: true, error: null }));
