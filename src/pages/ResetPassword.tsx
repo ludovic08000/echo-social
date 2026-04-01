@@ -20,13 +20,12 @@ export default function ResetPassword() {
   const [success, setSuccess] = useState(false);
 
   // Check recovery synchronously on first render to avoid flash of "invalid link"
-  const initialHash = window.location.hash;
-  const initialRecovery = isRecoveryPending() || initialHash.includes('type=recovery') || initialHash.includes('access_token');
-  const [isRecovery, setIsRecovery] = useState(initialRecovery);
-
-  if (initialRecovery && !isRecoveryPending()) {
-    setRecoveryFlag();
-  }
+  const [isRecovery, setIsRecovery] = useState(() => {
+    const hash = window.location.hash;
+    const found = isRecoveryPending() || hash.includes('type=recovery') || hash.includes('access_token');
+    if (found && !isRecoveryPending()) setRecoveryFlag();
+    return found;
+  });
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
