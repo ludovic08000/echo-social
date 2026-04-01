@@ -352,7 +352,9 @@ export function useChatPin() {
       return false;
     }
   }, [user]);
+  /**
    * Set up a new PIN for the first time.
+   */
    */
   const setupPin = useCallback(async (pin: string): Promise<boolean> => {
     if (!user) return false;
