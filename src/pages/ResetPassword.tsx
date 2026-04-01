@@ -21,9 +21,9 @@ export default function ResetPassword() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    // Listen for the PASSWORD_RECOVERY event from the URL hash
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
+        setRecoveryFlag();
         setIsRecovery(true);
       }
     });
@@ -31,6 +31,7 @@ export default function ResetPassword() {
     // Also check hash for recovery type
     const hash = window.location.hash;
     if (hash.includes('type=recovery')) {
+      setRecoveryFlag();
       setIsRecovery(true);
     }
 
