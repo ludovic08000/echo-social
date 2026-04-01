@@ -3,6 +3,7 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { generateFingerprint } from '@/hooks/useTrustAndSafety';
 import { startSessionGuard, stopSessionGuard } from '@/lib/sessionGuard';
+import { setRecoveryFlag } from '@/components/ProtectedRoute';
 
 interface AuthContextType {
   user: User | null;
