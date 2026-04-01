@@ -35,6 +35,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
         setLoading(false);
 
+        // Intercept recovery at the earliest point
+        if (event === 'PASSWORD_RECOVERY') {
+          setRecoveryFlag();
+        }
+
         // Session guard: start on sign in, stop on sign out
         if (event === 'SIGNED_IN' && session?.user) {
           startSessionGuard();
