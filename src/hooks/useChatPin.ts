@@ -327,8 +327,10 @@ export function useChatPin() {
     try {
       const { error } = await supabase
         .from('user_chat_pins')
-        .update({ pin_mode: mode, updated_at: new Date().toISOString() })
-        .eq('user_id', user.id);
+        .upsert(
+          { user_id: user.id, pin_mode: mode, updated_at: new Date().toISOString() },
+          { onConflict: 'user_id' }
+        );
       if (error) {
         console.error('[PIN] updatePinMode error:', error);
         return false;
