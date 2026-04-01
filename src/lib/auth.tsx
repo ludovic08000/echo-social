@@ -3,6 +3,7 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { generateFingerprint } from '@/hooks/useTrustAndSafety';
 import { startSessionGuard, stopSessionGuard } from '@/lib/sessionGuard';
+import { setRecoveryFlag } from '@/components/ProtectedRoute';
 
 interface AuthContextType {
   user: User | null;
@@ -33,6 +34,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
+
+        // Intercept recovery at the earliest point
+        if (event === 'PASSWORD_RECOVERY') {
+          setRecoveryFlag();
+        }
 
         // Session guard: start on sign in, stop on sign out
         if (event === 'SIGNED_IN' && session?.user) {

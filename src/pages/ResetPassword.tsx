@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { clearRecoveryFlag, setRecoveryFlag } from '@/components/ProtectedRoute';
 import loginBg from '@/assets/login-bg.png';
 
 export default function ResetPassword() {
@@ -20,9 +21,9 @@ export default function ResetPassword() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    // Listen for the PASSWORD_RECOVERY event from the URL hash
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
+        setRecoveryFlag();
         setIsRecovery(true);
       }
     });
@@ -30,6 +31,7 @@ export default function ResetPassword() {
     // Also check hash for recovery type
     const hash = window.location.hash;
     if (hash.includes('type=recovery')) {
+      setRecoveryFlag();
       setIsRecovery(true);
     }
 
@@ -100,8 +102,9 @@ export default function ResetPassword() {
       description: 'Votre mot de passe a été mis à jour. Veuillez vous reconnecter.',
     });
 
-    // Sign out to force fresh login with new password
+    // Clear recovery flag and sign out to force fresh login
     setTimeout(async () => {
+      clearRecoveryFlag();
       await supabase.auth.signOut();
       navigate('/login', { replace: true });
     }, 3000);

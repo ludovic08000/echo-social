@@ -5,6 +5,19 @@ import { useProfile } from '@/hooks/useProfile';
 import { AgeFlaggedScreen } from '@/components/AgeFlaggedScreen';
 import { supabase } from '@/integrations/supabase/client';
 
+const RECOVERY_FLAG = 'forsure-recovery-pending';
+
+/** Persist recovery state so navigation cannot bypass it */
+export function setRecoveryFlag() {
+  sessionStorage.setItem(RECOVERY_FLAG, '1');
+}
+export function clearRecoveryFlag() {
+  sessionStorage.removeItem(RECOVERY_FLAG);
+}
+export function isRecoveryPending(): boolean {
+  return sessionStorage.getItem(RECOVERY_FLAG) === '1';
+}
+
 interface ProtectedRouteProps {
   children: React.ReactNode;
 }
@@ -13,23 +26,32 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { user, loading } = useAuth();
   const location = useLocation();
   const { data: profile, isLoading: profileLoading } = useProfile();
-  const [isRecovery, setIsRecovery] = useState(false);
+  const [recoveryDetected, setRecoveryDetected] = useState(isRecoveryPending());
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
-        setIsRecovery(true);
+        setRecoveryFlag();
+        setRecoveryDetected(true);
       }
     });
     // Also check URL hash on mount
     if (window.location.hash.includes('type=recovery')) {
-      setIsRecovery(true);
+      setRecoveryFlag();
+      setRecoveryDetected(true);
     }
     return () => subscription.unsubscribe();
   }, []);
 
-  // If user landed via password recovery link, force them to reset password
-  if (isRecovery && location.pathname !== '/reset-password') {
+  // Re-check sessionStorage on every render (covers navigation)
+  useEffect(() => {
+    if (isRecoveryPending() && !recoveryDetected) {
+      setRecoveryDetected(true);
+    }
+  }, [location.pathname, recoveryDetected]);
+
+  // If recovery is pending, FORCE to reset-password — no exceptions
+  if (recoveryDetected && location.pathname !== '/reset-password') {
     return <Navigate to="/reset-password" replace />;
   }
 
