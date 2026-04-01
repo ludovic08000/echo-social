@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { clearRecoveryFlag, setRecoveryFlag } from '@/components/ProtectedRoute';
+import { clearRecoveryFlag, setRecoveryFlag, isRecoveryPending } from '@/components/ProtectedRoute';
 import loginBg from '@/assets/login-bg.png';
 
 export default function ResetPassword() {
@@ -17,8 +17,15 @@ export default function ResetPassword() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isRecovery, setIsRecovery] = useState(false);
   const [success, setSuccess] = useState(false);
+
+  // Check recovery synchronously on first render to avoid flash of "invalid link"
+  const [isRecovery, setIsRecovery] = useState(() => {
+    const hash = window.location.hash;
+    const found = isRecoveryPending() || hash.includes('type=recovery') || hash.includes('access_token');
+    if (found && !isRecoveryPending()) setRecoveryFlag();
+    return found;
+  });
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
@@ -27,13 +34,6 @@ export default function ResetPassword() {
         setIsRecovery(true);
       }
     });
-
-    // Also check hash for recovery type
-    const hash = window.location.hash;
-    if (hash.includes('type=recovery')) {
-      setRecoveryFlag();
-      setIsRecovery(true);
-    }
 
     return () => subscription.unsubscribe();
   }, []);
