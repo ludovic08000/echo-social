@@ -3,7 +3,17 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { generateFingerprint } from '@/hooks/useTrustAndSafety';
 import { startSessionGuard, stopSessionGuard } from '@/lib/sessionGuard';
-import { setRecoveryFlag } from '@/components/ProtectedRoute';
+import { setRecoveryFlag, isRecoveryPending } from '@/components/ProtectedRoute';
+
+/** Check URL hash for recovery tokens BEFORE any session is exposed */
+function detectRecoveryFromHash(): boolean {
+  const hash = window.location.hash;
+  if (hash.includes('type=recovery')) {
+    setRecoveryFlag();
+    return true;
+  }
+  return false;
+}
 
 interface AuthContextType {
   user: User | null;
@@ -16,14 +26,19 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Detect recovery from URL hash synchronously at module load
+const initialRecovery = detectRecoveryFromHash() || isRecoveryPending();
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recoveryMode, setRecoveryMode] = useState(initialRecovery);
 
   useEffect(() => {
     // Get session first for fastest possible auth resolution
     supabase.auth.getSession().then(({ data: { session } }) => {
+      // If recovery is pending, expose user but ProtectedRoute will redirect
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
@@ -31,17 +46,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        // Intercept recovery at the earliest point
+        if (event === 'PASSWORD_RECOVERY') {
+          setRecoveryFlag();
+          setRecoveryMode(true);
+        }
+
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
 
-        // Intercept recovery at the earliest point
-        if (event === 'PASSWORD_RECOVERY') {
-          setRecoveryFlag();
-        }
-
         // Session guard: start on sign in, stop on sign out
         if (event === 'SIGNED_IN' && session?.user) {
+          // Don't start session guard or fingerprint in recovery mode
+          if (isRecoveryPending()) return;
+
           startSessionGuard();
 
           setTimeout(() => {
@@ -63,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         if (event === 'SIGNED_OUT') {
+          setRecoveryMode(false);
           stopSessionGuard();
         }
       }
