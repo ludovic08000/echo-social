@@ -672,8 +672,30 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         return { text: '🔒 Message illisible (session expirée)', encrypted: true, verified: false };
       }
 
-      // Legacy envelope
-      const session = await ensureLegacySession();
+      // Legacy or prekey-based envelope
+      const parsed = hardGlobals.jsonParse(body);
+
+      // Handle prekey-based messages (receiver side)
+      if (parsed.prekey && user && conversationId) {
+        try {
+          const prekeySecret = await deriveFromOwnPrekey(
+            user.id,
+            parsed.prekey.id,
+            parsed.prekey.senderKey,
+            conversationId,
+          );
+          if (prekeySecret) {
+            const result = await decryptMessage(body, prekeySecret, peerKeyRef.current?.signingKey);
+            console.log('[E2EE] ✅ decrypt via prekey (first contact)');
+            return { text: result.plaintext, encrypted: true, verified: result.verified };
+          }
+        } catch (prekeyErr) {
+          console.warn('[E2EE] Prekey decrypt failed:', prekeyErr);
+        }
+      }
+
+      // Standard legacy session
+      let session = peerKeyRef.current ? await ensureLegacySession() : await loadSessionKey(conversationId!);
       if (!session) {
         return { text: '🔒 Clé de session manquante', encrypted: true, verified: false };
       }
@@ -683,7 +705,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       console.error('[E2EE] decrypt failed:', err);
       return { text: '🔒 Message illisible', encrypted: true, verified: false };
     }
-  }, [conversationId, ensureLegacySession]);
+  }, [conversationId, ensureLegacySession, user]);
 
   /** Check if encryption is ready for this conversation */
   const isReady = useCallback((): boolean => {
