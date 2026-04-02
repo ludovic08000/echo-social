@@ -51,8 +51,10 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }, [location.pathname, recoveryDetected]);
 
   // If recovery is pending, FORCE to reset-password — no exceptions
-  if (recoveryDetected && location.pathname !== '/reset-password') {
-    return <Navigate to="/reset-password" replace />;
+  if (recoveryDetected || isRecoveryPending()) {
+    if (location.pathname !== '/reset-password') {
+      return <Navigate to="/reset-password" replace />;
+    }
   }
 
   // Show loading state

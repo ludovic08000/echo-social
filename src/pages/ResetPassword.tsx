@@ -102,12 +102,12 @@ export default function ResetPassword() {
       description: 'Votre mot de passe a été mis à jour. Veuillez vous reconnecter.',
     });
 
-    // Clear recovery flag and sign out to force fresh login
-    setTimeout(async () => {
-      clearRecoveryFlag();
-      await supabase.auth.signOut();
+    // Immediately clear recovery flag and sign out — no delay
+    clearRecoveryFlag();
+    await supabase.auth.signOut();
+    setTimeout(() => {
       navigate('/login', { replace: true });
-    }, 3000);
+    }, 2000);
   };
 
   if (!isRecovery && !success) {
