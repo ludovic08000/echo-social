@@ -227,12 +227,17 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id,is_active' });
 
+      // Generate prekeys if needed (Signal-style)
+      refillPrekeysIfNeeded(user.id).catch(e => 
+        console.warn('[E2EE] Prekey refill failed:', e)
+      );
+
       setState(s => ({
         ...s,
         fingerprint: bundle.fingerprint,
         ready: s.ready || s.encrypted,
       }));
-      console.log('[E2EE] Keys initialized & published');
+      console.log('[E2EE] Keys initialized & published (with prekeys)');
     } catch (err) {
       console.error('[E2EE] Init failed:', err);
       setState(s => ({ ...s, initError: 'Key initialization failed' }));
