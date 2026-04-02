@@ -201,6 +201,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const keysRef = useRef<IdentityKeyPair | null>(null);
   const peerKeyRef = useRef<{ identityKey: string; signingKey: string; fingerprint: string } | null>(null);
   const ratchetRef = useRef<RatchetState | null>(null);
+  const prekeyInfoRef = useRef<{ prekeyId: number; senderPublicKey: string } | null>(null);
   const initRef = useRef(false);
   const legacySessionReadyRef = useRef(false);
 
