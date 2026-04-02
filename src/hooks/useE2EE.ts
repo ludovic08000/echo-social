@@ -37,11 +37,15 @@ import {
   ratchetDecrypt,
   serializeRatchetState,
   deserializeRatchetState,
+  generateAndUploadPrekeys,
+  refillPrekeysIfNeeded,
+  consumePeerPrekey,
+  deriveFromOwnPrekey,
   type IdentityKeyPair,
   type RatchetState,
   type RatchetEnvelope,
 } from '@/lib/crypto';
-import { base64ToBuffer } from '@/lib/crypto/utils';
+import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
 import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
 import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/lib/crypto/cryptoIntegrity';
 import { KX_KEY_PARAMS } from '@/lib/crypto/constants';
