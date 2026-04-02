@@ -78,3 +78,12 @@ export {
   hasWrappedKeys,
   deleteWrappedKeys,
 } from './pinWrap';
+
+// Signal-style prekey system
+export {
+  generateAndUploadPrekeys,
+  refillPrekeysIfNeeded,
+  consumePeerPrekey,
+  deriveFromOwnPrekey,
+  getPeerPrekeyCount,
+} from './prekeys';
