@@ -712,7 +712,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     if (isZeus) return true;
     // Block if fingerprint changed
     if (state.fingerprintChanged) return false;
-    return state.encrypted && !!keysRef.current && !!peerKeyRef.current;
+    // Ready if we have identity-based or prekey-based encryption
+    return state.encrypted && !!keysRef.current && (!!peerKeyRef.current || legacySessionReadyRef.current);
   }, [state.encrypted, state.fingerprintChanged, isZeus]);
 
   /** Acknowledge fingerprint change — user explicitly trusts new key */
