@@ -37,11 +37,15 @@ import {
   ratchetDecrypt,
   serializeRatchetState,
   deserializeRatchetState,
+  generateAndUploadPrekeys,
+  refillPrekeysIfNeeded,
+  consumePeerPrekey,
+  deriveFromOwnPrekey,
   type IdentityKeyPair,
   type RatchetState,
   type RatchetEnvelope,
 } from '@/lib/crypto';
-import { base64ToBuffer } from '@/lib/crypto/utils';
+import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
 import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
 import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/lib/crypto/cryptoIntegrity';
 import { KX_KEY_PARAMS } from '@/lib/crypto/constants';
@@ -197,6 +201,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const keysRef = useRef<IdentityKeyPair | null>(null);
   const peerKeyRef = useRef<{ identityKey: string; signingKey: string; fingerprint: string } | null>(null);
   const ratchetRef = useRef<RatchetState | null>(null);
+  const prekeyInfoRef = useRef<{ prekeyId: number; senderPublicKey: string } | null>(null);
   const initRef = useRef(false);
   const legacySessionReadyRef = useRef(false);
 
@@ -223,12 +228,17 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id,is_active' });
 
+      // Generate prekeys if needed (Signal-style)
+      refillPrekeysIfNeeded(user.id).catch(e => 
+        console.warn('[E2EE] Prekey refill failed:', e)
+      );
+
       setState(s => ({
         ...s,
         fingerprint: bundle.fingerprint,
         ready: s.ready || s.encrypted,
       }));
-      console.log('[E2EE] Keys initialized & published');
+      console.log('[E2EE] Keys initialized & published (with prekeys)');
     } catch (err) {
       console.error('[E2EE] Init failed:', err);
       setState(s => ({ ...s, initError: 'Key initialization failed' }));
@@ -359,7 +369,52 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             initError: null,
           }));
         } else {
-          console.log('[PEER_KEY] not found for', peerUserId);
+          console.log('[PEER_KEY] No identity key found for', peerUserId, '— trying prekey exchange');
+
+          // Try prekey-based key exchange (Signal-style)
+          if (keysRef.current && conversationId) {
+            try {
+              const result = await consumePeerPrekey(
+                keysRef.current.privateKey,
+                peerUserId,
+                conversationId,
+              );
+              if (result && !cancelled) {
+                // Store as a session key for this conversation
+                const { saveSessionKey } = await import('@/lib/crypto/keyManager');
+                await saveSessionKey({
+                  conversationId,
+                  sharedSecret: result.sharedSecret,
+                  messageCount: 0,
+                  createdAt: Date.now(),
+                  peerFingerprint: `prekey:${result.prekeyId}`,
+                });
+                legacySessionReadyRef.current = true;
+
+                // Export our public key so peer can derive the same secret
+                const ourPublicRaw = await hardCrypto.exportKey('raw', keysRef.current.publicKey);
+                prekeyInfoRef.current = {
+                  prekeyId: result.prekeyId,
+                  senderPublicKey: bufferToBase64(ourPublicRaw),
+                };
+
+                setState(s => ({
+                  ...s,
+                  encrypted: true,
+                  ready: true,
+                  peerKeyMissing: false,
+                  initError: null,
+                }));
+                console.log('[PEER_KEY] ✅ Prekey exchange successful — encrypted mode');
+                return;
+              }
+            } catch (prekeyErr) {
+              console.warn('[PEER_KEY] Prekey exchange failed:', prekeyErr);
+            }
+          }
+
+          // No identity key AND no prekeys — encryption impossible, BLOCK sending
+          console.warn('[PEER_KEY] ⛔ No encryption possible for', peerUserId);
           setState(s => ({
             ...s,
             encrypted: false,
@@ -484,47 +539,62 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       throw new EncryptionError('Encryption not available — keys not ready');
     }
 
-    if (!peerKeyRef.current) {
-      throw new EncryptionError('Encryption not available — peer key not ready');
+    // If peer has no identity key but we have a prekey-based session, use it
+    if (!peerKeyRef.current && !legacySessionReadyRef.current) {
+      throw new EncryptionError('🔒 Chiffrement impossible — le contact n\'a pas encore de clés. Le message sera envoyé dès qu\'il se connectera.');
     }
 
     if (!cryptoRateCheck('encrypt')) {
       throw new EncryptionError('Rate limited — possible exfiltration attempt');
     }
 
-    // PRIMARY: Double Ratchet (per-message forward secrecy)
-    try {
-      const ratchet = await initRatchetIfNeeded();
-      if (ratchet) {
-        const { envelope, newState } = await ratchetEncrypt(
-          ratchet,
-          plaintext,
-          keysRef.current.signingPrivateKey,
-          keysRef.current.fingerprint,
-        );
-        ratchetRef.current = newState;
-        await saveRatchetLocal(conversationId!, newState);
-        setState(s => ({ ...s, ratchetActive: true }));
-        console.log('[E2EE] ✅ encrypt via Double Ratchet (forward secrecy)');
-        return hardGlobals.jsonStringify(envelope);
+    // PRIMARY: Double Ratchet (per-message forward secrecy) — only if peer has identity key
+    if (peerKeyRef.current) {
+      try {
+        const ratchet = await initRatchetIfNeeded();
+        if (ratchet) {
+          const { envelope, newState } = await ratchetEncrypt(
+            ratchet,
+            plaintext,
+            keysRef.current.signingPrivateKey,
+            keysRef.current.fingerprint,
+          );
+          ratchetRef.current = newState;
+          await saveRatchetLocal(conversationId!, newState);
+          setState(s => ({ ...s, ratchetActive: true }));
+          console.log('[E2EE] ✅ encrypt via Double Ratchet (forward secrecy)');
+          return hardGlobals.jsonStringify(envelope);
+        }
+      } catch (ratchetErr) {
+        console.warn('[E2EE] Ratchet encrypt failed, falling back to legacy:', ratchetErr);
       }
-    } catch (ratchetErr) {
-      console.warn('[E2EE] Ratchet encrypt failed, falling back to legacy:', ratchetErr);
     }
 
-    // FALLBACK: Legacy session (deterministic, instant, always works)
+    // FALLBACK: Legacy or prekey-based session (AES-GCM)
     try {
-      const session = await ensureLegacySession();
+      let session = peerKeyRef.current ? await ensureLegacySession() : await loadSessionKey(conversationId!);
       if (!session) {
         throw new EncryptionError('No encryption session available');
       }
 
       const seq = await incrementSessionMessageCount(conversationId!);
-      const result = await encryptMessage(
+      let result = await encryptMessage(
         plaintext, session.sharedSecret,
         keysRef.current.signingPrivateKey, keysRef.current.fingerprint, seq,
       );
-      console.log('[E2EE] ✅ encrypt via legacy session (fallback)');
+
+      // If this is a prekey-based message, wrap with prekey metadata so receiver can derive
+      if (prekeyInfoRef.current && !peerKeyRef.current) {
+        const envelope = hardGlobals.jsonParse(result);
+        envelope.prekey = {
+          id: prekeyInfoRef.current.prekeyId,
+          senderKey: prekeyInfoRef.current.senderPublicKey,
+        };
+        result = hardGlobals.jsonStringify(envelope);
+        console.log('[E2EE] ✅ encrypt via prekey session (first contact)');
+      } else {
+        console.log('[E2EE] ✅ encrypt via legacy session (fallback)');
+      }
       return result;
     } catch (err) {
       if (err instanceof EncryptionError) throw err;
@@ -602,8 +672,30 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         return { text: '🔒 Message illisible (session expirée)', encrypted: true, verified: false };
       }
 
-      // Legacy envelope
-      const session = await ensureLegacySession();
+      // Legacy or prekey-based envelope
+      const parsed = hardGlobals.jsonParse(body);
+
+      // Handle prekey-based messages (receiver side)
+      if (parsed.prekey && user && conversationId) {
+        try {
+          const prekeySecret = await deriveFromOwnPrekey(
+            user.id,
+            parsed.prekey.id,
+            parsed.prekey.senderKey,
+            conversationId,
+          );
+          if (prekeySecret) {
+            const result = await decryptMessage(body, prekeySecret, peerKeyRef.current?.signingKey);
+            console.log('[E2EE] ✅ decrypt via prekey (first contact)');
+            return { text: result.plaintext, encrypted: true, verified: result.verified };
+          }
+        } catch (prekeyErr) {
+          console.warn('[E2EE] Prekey decrypt failed:', prekeyErr);
+        }
+      }
+
+      // Standard legacy session
+      let session = peerKeyRef.current ? await ensureLegacySession() : await loadSessionKey(conversationId!);
       if (!session) {
         return { text: '🔒 Clé de session manquante', encrypted: true, verified: false };
       }
@@ -613,14 +705,15 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       console.error('[E2EE] decrypt failed:', err);
       return { text: '🔒 Message illisible', encrypted: true, verified: false };
     }
-  }, [conversationId, ensureLegacySession]);
+  }, [conversationId, ensureLegacySession, user]);
 
   /** Check if encryption is ready for this conversation */
   const isReady = useCallback((): boolean => {
     if (isZeus) return true;
     // Block if fingerprint changed
     if (state.fingerprintChanged) return false;
-    return state.encrypted && !!keysRef.current && !!peerKeyRef.current;
+    // Ready if we have identity-based or prekey-based encryption
+    return state.encrypted && !!keysRef.current && (!!peerKeyRef.current || legacySessionReadyRef.current);
   }, [state.encrypted, state.fingerprintChanged, isZeus]);
 
   /** Acknowledge fingerprint change — user explicitly trusts new key */

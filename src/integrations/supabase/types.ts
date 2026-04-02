@@ -3799,6 +3799,36 @@ export type Database = {
         }
         Relationships: []
       }
+      user_prekeys: {
+        Row: {
+          consumed_at: string | null
+          consumed_by: string | null
+          created_at: string
+          id: string
+          prekey_id: number
+          public_key: string
+          user_id: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          consumed_by?: string | null
+          created_at?: string
+          id?: string
+          prekey_id: number
+          public_key: string
+          user_id: string
+        }
+        Update: {
+          consumed_at?: string | null
+          consumed_by?: string | null
+          created_at?: string
+          id?: string
+          prekey_id?: number
+          public_key?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_public_keys: {
         Row: {
           created_at: string
@@ -4273,6 +4303,13 @@ export type Database = {
       }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_old_fingerprints: { Args: never; Returns: undefined }
+      consume_prekey: {
+        Args: { p_peer_user_id: string }
+        Returns: {
+          prekey_id: number
+          public_key: string
+        }[]
+      }
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
