@@ -595,9 +595,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       return;
     }
 
-    // For non-Zeus: inform user if peer keys missing (send falls back to standard mode)
+    // BLOCK plaintext: if peer has no keys AND no prekey session, refuse to send
     if (!isZeusConversation && e2ee.peerKeyMissing) {
-      toast.info('Le contact n\'a pas encore activé le chiffrement. Message envoyé en mode standard.');
+      toast.error('🔒 Envoi impossible : le contact n\'a pas encore de clés de chiffrement.');
+      return;
     }
 
     const replyText = replyTo ? decryptedCacheRef.current.get(replyTo.id) || replyTo.body : null;
