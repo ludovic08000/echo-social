@@ -116,7 +116,7 @@ export default function Landing() {
       </section>
 
       {/* ═══════════════════ INTRO SEO TEXT ═══════════════════ */}
-      <section className="px-6 py-16 sm:py-20">
+      <section className="px-4 sm:px-6 py-16 sm:py-20">
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-2xl sm:text-3xl font-bold text-foreground mb-6">
             Pourquoi choisir Forsure comme réseau social ?
@@ -136,7 +136,7 @@ export default function Landing() {
       </section>
 
       {/* ═══════════════════ FEATURES ═══════════════════ */}
-      <section className="px-6 py-16 sm:py-20 bg-muted/20">
+      <section className="px-4 sm:px-6 py-16 sm:py-20 bg-muted/20">
         <div className="max-w-5xl mx-auto">
           <h2 className="text-2xl sm:text-3xl font-bold text-foreground text-center mb-4">
             Toutes les fonctionnalités dont vous avez besoin
@@ -158,7 +158,7 @@ export default function Landing() {
       </section>
 
       {/* ═══════════════════ ADVANTAGES / DIFFERENTIATION ═══════════════════ */}
-      <section className="px-6 py-16 sm:py-20">
+      <section className="px-4 sm:px-6 py-16 sm:py-20">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-2xl sm:text-3xl font-bold text-foreground text-center mb-4">
             Ce qui rend Forsure unique
@@ -184,7 +184,7 @@ export default function Landing() {
       </section>
 
       {/* ═══════════════════ COMPARISON SECTION ═══════════════════ */}
-      <section className="px-6 py-16 sm:py-20 bg-muted/20">
+      <section className="px-4 sm:px-6 py-16 sm:py-20 bg-muted/20">
         <div className="max-w-3xl mx-auto">
           <h2 className="text-2xl sm:text-3xl font-bold text-foreground text-center mb-6">
             Forsure vs les réseaux sociaux traditionnels
@@ -225,7 +225,7 @@ export default function Landing() {
       </section>
 
       {/* ═══════════════════ CTA SECTION ═══════════════════ */}
-      <section className="px-6 py-16 sm:py-20">
+      <section className="px-4 sm:px-6 py-16 sm:py-20">
         <div className="max-w-2xl mx-auto text-center">
           <h2 className="text-2xl sm:text-3xl font-bold text-foreground mb-4">
             Rejoignez le réseau social de nouvelle génération
@@ -244,7 +244,7 @@ export default function Landing() {
       </section>
 
       {/* ═══════════════════ FAQ SEO ═══════════════════ */}
-      <section className="px-6 py-16 sm:py-20 bg-muted/20">
+      <section className="px-4 sm:px-6 py-16 sm:py-20 bg-muted/20">
         <div className="max-w-3xl mx-auto">
           <h2 className="text-2xl sm:text-3xl font-bold text-foreground text-center mb-10">
             Questions fréquentes sur Forsure
