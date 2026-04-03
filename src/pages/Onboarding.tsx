@@ -13,16 +13,9 @@ import { useSendFriendRequest } from '@/hooks/useFriendships';
 import { UserAvatar } from '@/components/UserAvatar';
 import { MatchedContact } from '@/hooks/useContactSync';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { loadSignupDataRaw, loadSignupData, clearSignupData, hasSignupData, computeAgeFromDOB, type SignupPayload } from '@/lib/signupIntegrity';
 
-interface SignupData {
-  email: string;
-  password: string;
-  name: string;
-  dateOfBirth: string;
-  phoneNumber: string;
-  parentalPin: string | null;
-  age: number;
-}
+type SignupData = SignupPayload;
 
 const INTERESTS = [
   { value: 'gaming', label: 'Gaming', emoji: '🎮', color: 'border-purple-500/40 bg-purple-500/10 text-purple-300' },
@@ -51,6 +44,7 @@ export default function Onboarding() {
   const [signupData, setSignupData] = useState<SignupData | null>(null);
   const [accountCreated, setAccountCreated] = useState(false);
   const [signupAttempted, setSignupAttempted] = useState(false);
+  const [integrityVerified, setIntegrityVerified] = useState(false);
 
   // Find friends state
   const sendRequest = useSendFriendRequest();
@@ -66,21 +60,13 @@ export default function Onboarding() {
 
   // Load pending signup data
   useEffect(() => {
-    const raw = sessionStorage.getItem('forsure_signup_pending');
-    if (raw) {
-      try {
-        setSignupData(JSON.parse(raw));
-      } catch {
-        navigate('/signup', { replace: true });
-      }
-    }
+    const raw = loadSignupDataRaw();
+    if (raw) setSignupData(raw);
   }, [navigate]);
 
-  // If user is already logged in and no pending signup, redirect (already onboarded user)
   // If no signup data and no user, redirect to signup
   if (!signupData && !user) {
-    const raw = sessionStorage.getItem('forsure_signup_pending');
-    if (!raw) return <Navigate to="/signup" replace />;
+    if (!hasSignupData()) return <Navigate to="/signup" replace />;
   }
 
   function normalizePhone(phone: string): string {
@@ -206,6 +192,19 @@ export default function Onboarding() {
       return;
     }
 
+    // Verify HMAC integrity before creating account
+    const verified = await loadSignupData(signupData.password);
+    if (!verified) {
+      toast({ title: '⚠️ Données corrompues', description: 'Les données d\'inscription ont été modifiées. Veuillez recommencer.', variant: 'destructive' });
+      clearSignupData();
+      navigate('/signup', { replace: true });
+      return;
+    }
+    setIntegrityVerified(true);
+
+    // Recompute age from DOB (never trust stored age)
+    const age = computeAgeFromDOB(verified.dateOfBirth);
+
     // Show creating step
     setStep('creating');
 
@@ -216,7 +215,7 @@ export default function Onboarding() {
           title: '📧 Vérifiez votre email',
           description: 'Un lien de confirmation a déjà été envoyé à ' + signupData.email + '. Vérifiez votre boîte de réception (et les spams).',
         });
-        sessionStorage.removeItem('forsure_signup_pending');
+        clearSignupData();
         navigate('/login', { replace: true });
         return;
       }
@@ -231,7 +230,7 @@ export default function Onboarding() {
             title: '⏳ Trop de tentatives',
             description: 'Un email de confirmation a déjà été envoyé. Vérifiez votre boîte de réception et réessayez dans quelques minutes.',
           });
-          sessionStorage.removeItem('forsure_signup_pending');
+          clearSignupData();
           navigate('/login', { replace: true });
           return;
         }
@@ -241,7 +240,7 @@ export default function Onboarding() {
             title: 'Compte déjà existant',
             description: 'Un compte existe déjà avec cet email. Connectez-vous ou réinitialisez votre mot de passe.',
           });
-          sessionStorage.removeItem('forsure_signup_pending');
+          clearSignupData();
           navigate('/login', { replace: true });
           return;
         }
@@ -267,24 +266,24 @@ export default function Onboarding() {
           title: '📧 Vérifiez votre email',
           description: 'Un lien de confirmation vous a été envoyé à ' + signupData.email,
         });
-        sessionStorage.removeItem('forsure_signup_pending');
+        clearSignupData();
         navigate('/login', { replace: true });
         return;
       }
 
       // 3. Save phone number
-      if (signupData.phoneNumber) {
+      if (verified.phoneNumber) {
         await supabase.functions.invoke('save-phone', {
-          body: { phone_number: signupData.phoneNumber },
+          body: { phone_number: verified.phoneNumber },
         }).catch(() => {});
       }
 
       // 4. Save parental controls if minor
-      if (signupData.parentalPin && signupData.age < 16) {
+      if (verified.parentalPin && age < 16) {
         await supabase.functions.invoke('verify-parental-pin', {
           body: {
             action: 'set',
-            pin: signupData.parentalPin,
+            pin: verified.parentalPin,
             allowed_categories: ['education', 'sport', 'gaming', 'musique', 'art', 'humour'],
           },
         }).catch(() => {});
@@ -294,7 +293,7 @@ export default function Onboarding() {
       await savePreferences(newUser.id);
 
       // Clear pending data
-      sessionStorage.removeItem('forsure_signup_pending');
+      clearSignupData();
       setAccountCreated(true);
 
       toast({ title: 'Compte créé ! 🎉' });
