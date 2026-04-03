@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { sanitizeUrl } from '@/lib/sanitizeUrl';
 
 type VisibilityLevel = 'public' | 'friends' | 'only_me';
 

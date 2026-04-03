@@ -14,6 +14,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { sanitizeUrl } from '@/lib/sanitizeUrl';
 
 const CATEGORY_LABELS: Record<string, string> = {
   business: 'Entreprise',
