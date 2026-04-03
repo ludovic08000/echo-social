@@ -74,26 +74,26 @@ export default function Landing() {
   }
 
   return (
-    <div className="min-h-screen relative flex flex-col overflow-hidden bg-background">
+    <div className="min-h-screen relative flex flex-col overflow-x-hidden bg-background">
       {/* ═══════════════════ HERO SECTION ═══════════════════ */}
-      <section className="relative flex flex-col items-center justify-center px-6 py-20 sm:py-28 overflow-hidden">
+      <section className="relative flex flex-col items-center justify-center px-4 sm:px-6 py-16 sm:py-28 overflow-hidden">
         <div 
           className="absolute inset-0 bg-no-repeat bg-cover animate-fade-in"
           style={{ backgroundImage: `url(${loginBg})`, backgroundPosition: 'center 25%' }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/85 to-background/50" />
 
-        <div className="relative z-10 max-w-3xl mx-auto text-center animate-fade-in">
-          <div className="flex items-center justify-center mb-8">
-            <BrandLogo className="h-20 sm:h-28 md:h-32 w-auto drop-shadow-[0_0_40px_hsl(220,70%,50%,0.5)]" />
+        <div className="relative z-10 w-full max-w-3xl mx-auto text-center animate-fade-in px-2">
+          <div className="flex items-center justify-center mb-6 sm:mb-8">
+            <BrandLogo className="h-16 sm:h-24 md:h-32 w-auto drop-shadow-[0_0_40px_hsl(220,70%,50%,0.5)]" />
           </div>
           
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-display font-bold tracking-tight text-foreground mb-5 leading-tight">
+          <h1 className="text-2xl sm:text-4xl md:text-5xl font-display font-bold tracking-tight text-foreground mb-4 sm:mb-5 leading-tight break-words">
             Le réseau social éthique,{' '}
             <span className="text-gradient-gold">sans publicité ni tracking</span>
           </h1>
           
-          <p className="text-lg sm:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto leading-relaxed">
+          <p className="text-base sm:text-xl text-muted-foreground mb-6 sm:mb-8 max-w-2xl mx-auto leading-relaxed">
             Forsure est l'alternative française à Facebook, Instagram et TikTok. 
             Messagerie privée, live streaming gratuit, marketplace et canaux TV — 
             le tout sans exploiter vos données personnelles.
