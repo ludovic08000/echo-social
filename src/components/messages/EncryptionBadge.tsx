@@ -67,7 +67,7 @@ export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, r
     statusText = '⚠️ Clé de sécurité modifiée — vérification obligatoire avant envoi';
     StatusIcon = AlertTriangle;
   } else if (ratchetActive) {
-    statusText = 'Canal sécurisé renforcé — forward secrecy par message';
+    statusText = 'X3DH + Double Ratchet — forward secrecy par message';
     StatusIcon = Zap;
   } else {
     statusText = 'Chiffrement de bout en bout activé';
