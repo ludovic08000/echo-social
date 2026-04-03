@@ -361,8 +361,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         if (data) {
           console.log('[PEER_KEY] loaded', peerUserId);
 
-          // Check for fingerprint change — DO NOT auto-save
-          const fpChanged = checkFingerprintChange(peerUserId, data.fingerprint);
+          // Check for fingerprint change — server-backed + local
+          const { changed: fpChanged } = await checkFingerprintChangeWithServer(peerUserId, data.fingerprint);
 
           peerKeyRef.current = {
             identityKey: data.identity_key,
@@ -383,8 +383,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             return;
           }
 
-          // Save fingerprint only if not changed (first time or same)
+          // Save fingerprint both locally and server-side
           saveKnownFingerprint(peerUserId, data.fingerprint);
+          saveKnownFingerprintServer(peerUserId, data.fingerprint);
 
           // Pre-establish legacy session immediately
           if (keysRef.current && conversationId) {
