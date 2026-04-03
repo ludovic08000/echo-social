@@ -10,6 +10,7 @@ import { ChatWidgetProvider, useChatWidget } from "@/components/ChatWidgetContex
 import { ChatWidget } from "@/components/ChatWidget";
 import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
 import { RecoveryFlowGuard } from "@/components/RecoveryFlowGuard";
+import { CookieConsentBanner } from "@/components/CookieConsentBanner";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
 import { useIncomingCall, endActiveCall } from "@/hooks/useIncomingCall";
 import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
@@ -218,6 +219,7 @@ function AppContent() {
             </Suspense>
             </ErrorBoundary>
             <ChatWidget />
+            <CookieConsentBanner />
           </BrowserRouter>
         </TooltipProvider>
       </ChatWidgetProvider>
