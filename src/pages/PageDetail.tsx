@@ -204,7 +204,7 @@ export default function PageDetail() {
           {(page.website_url || page.phone || page.email || page.address) && (
             <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
               {page.website_url && (
-                <a href={page.website_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-primary transition-colors">
+                <a href={sanitizeUrl(page.website_url)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-primary transition-colors">
                   <Globe className="w-4 h-4" /> Site web
                 </a>
               )}

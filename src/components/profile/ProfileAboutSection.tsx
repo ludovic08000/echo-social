@@ -408,7 +408,7 @@ export function ProfileAboutSection({ profile, isOwnProfile, isFriend }: Profile
               <Link2 className="w-[18px] h-[18px]" />
             </div>
             <div className="flex-1 min-w-0">
-              <a href={profile.website_url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-primary hover:underline truncate block">
+              <a href={sanitizeUrl(profile.website_url)} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-primary hover:underline truncate block">
                 {profile.website_url.replace(/^https?:\/\//, '')}
               </a>
               <p className="text-[11px] text-muted-foreground/70 mt-0.5">Site web</p>

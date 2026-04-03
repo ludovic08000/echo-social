@@ -36,7 +36,7 @@ import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody
 import { EncryptionBadge, EncryptionStatusBar } from '@/components/messages/EncryptionBadge';
 import { OutboundStatusIndicator } from '@/components/messages/OutboundStatus';
 import { MessagingPinGate } from '@/components/MessagingPinGate';
-
+import { sanitizeUrl } from '@/lib/sanitizeUrl';
 
 // ─── Utils ───────────────────────────────────────────────
 function formatMessageTime(dateStr: string) {
