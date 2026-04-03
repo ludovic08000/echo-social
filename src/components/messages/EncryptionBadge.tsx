@@ -15,22 +15,31 @@ export function EncryptionBadge({ encrypted, verified, ratchetActive, size = 'xs
 
   if (!encrypted) return null;
 
+  const label = verified
+    ? (ratchetActive ? 'Chiffré · Vérifié' : 'Chiffré · Vérifié')
+    : ratchetActive
+      ? 'Double Ratchet'
+      : 'Chiffré';
+
   return (
     <span className={cn(
       'inline-flex items-center gap-0.5',
-      verified ? 'text-emerald-500' : 'text-primary/60',
+      verified ? 'text-emerald-500' : 'text-muted-foreground',
       className
     )}>
       {verified ? (
-        <ShieldCheck className={iconSize} />
+        <ShieldCheck className={cn(iconSize, 'text-emerald-500')} />
       ) : ratchetActive ? (
-        <Zap className={iconSize} />
+        <Zap className={cn(iconSize, 'text-primary')} />
       ) : (
         <Lock className={iconSize} />
       )}
       {showLabel && (
-        <span className="text-[9px] font-medium">
-          {verified ? 'Vérifié' : ratchetActive ? 'Double Ratchet' : 'Chiffré'}
+        <span className={cn(
+          'text-[9px] font-medium',
+          verified ? 'text-emerald-500' : 'text-muted-foreground'
+        )}>
+          {label}
         </span>
       )}
     </span>

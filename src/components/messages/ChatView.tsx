@@ -672,7 +672,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                             </div>
                           )}
 
-                          {/* Timestamp + encryption badge (uses REAL verification state) */}
+                          {/* Timestamp + encryption badge */}
                           {isLastInGroup && (
                             <div className="flex items-center gap-1 mt-0.5 px-1">
                               <span className="text-[11px] text-muted-foreground">
@@ -684,6 +684,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                                   verified={decryptedCache.has(msg.id) && !e2ee.fingerprintChanged}
                                   ratchetActive={e2ee.ratchetActive}
                                   size="xs"
+                                  showLabel
                                 />
                               )}
                               {isMe && (
