@@ -3,10 +3,12 @@
  * Hybrid Post-Quantum Ready Encryption System
  * 
  * Primitives (Signal-grade):
- *   Key Exchange: X25519 (Curve25519 ECDH)
- *   Signatures:   Ed25519
- *   Encryption:   AES-256-GCM
- *   Derivation:   HKDF-SHA-256
+ *   Key Agreement: X3DH (Extended Triple Diffie-Hellman) / PQXDH (future)
+ *   Key Exchange:  X25519 (Curve25519 ECDH)
+ *   Signatures:    Ed25519
+ *   Encryption:    AES-256-GCM
+ *   Derivation:    HKDF-SHA-256
+ *   Ratchet:       Double Ratchet (DH + symmetric KDF chains)
  */
 
 // X25519 key exchange (same as Signal)
