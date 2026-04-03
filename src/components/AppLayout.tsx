@@ -63,6 +63,12 @@ function MobileHeader() {
               <span className="absolute top-0.5 right-0.5 w-[8px] h-[8px] rounded-full bg-destructive ring-2 ring-background" />
             )}
           </button>
+          <Link
+            to={`/profile/${user.id}`}
+            className="w-8 h-8 rounded-full overflow-hidden active:scale-90 transition-transform"
+          >
+            <UserAvatar src={profile?.avatar_url} alt={profile?.name || ''} size="sm" />
+          </Link>
         </div>
       </div>
     </header>
