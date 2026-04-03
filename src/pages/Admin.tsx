@@ -107,7 +107,7 @@ export default function Admin() {
     setCollapsedGroups(prev => ({ ...prev, [label]: !prev[label] }));
   };
 
-  const currentItem = NAV_GROUPS.flatMap(g => g.items).find(i => i.key === section);
+  const currentItem = NAV_GROUPS.flatMap(g => g.items).find(i => i.key === section) as { key: string; label: string; icon: any } | undefined;
 
   const renderSection = () => {
     switch (section) {
