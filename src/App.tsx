@@ -219,6 +219,7 @@ function AppContent() {
             </Suspense>
             </ErrorBoundary>
             <ChatWidget />
+            <CookieConsentBanner />
           </BrowserRouter>
         </TooltipProvider>
       </ChatWidgetProvider>
