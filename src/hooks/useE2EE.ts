@@ -28,6 +28,7 @@ import {
   isEncryptedMessage,
   establishSession,
   loadSessionKey,
+  saveSessionKey,
   incrementSessionMessageCount,
   needsKeyRotation,
   rotateSessionKey,
@@ -41,9 +42,16 @@ import {
   refillPrekeysIfNeeded,
   consumePeerPrekey,
   deriveFromOwnPrekey,
+  // X3DH
+  x3dhInitiate,
+  x3dhRespond,
+  fetchPrekeyBundle,
+  generateAndUploadSignedPrekey,
+  refreshSignedPrekeyIfNeeded,
   type IdentityKeyPair,
   type RatchetState,
   type RatchetEnvelope,
+  type X3DHInitialMessage,
 } from '@/lib/crypto';
 import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
 import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
