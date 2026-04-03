@@ -113,8 +113,8 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 async function derivePinKey(pin: string, salt: Uint8Array): Promise<CryptoKey> {
   const pinBytes = new TextEncoder().encode(pin);
-  const baseKey = await crypto.subtle.importKey('raw', pinBytes, 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey(
+  const baseKey = await hardCrypto.importKey('raw', pinBytes, 'PBKDF2', false, ['deriveKey']);
+  return hardCrypto.deriveKey(
     { name: 'PBKDF2', salt: salt as Uint8Array<ArrayBuffer>, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
     baseKey,
     { name: 'AES-GCM', length: 256 },
