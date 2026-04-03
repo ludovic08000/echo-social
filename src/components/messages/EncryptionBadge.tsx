@@ -16,9 +16,9 @@ export function EncryptionBadge({ encrypted, verified, ratchetActive, size = 'xs
   if (!encrypted) return null;
 
   const label = verified
-    ? (ratchetActive ? 'Chiffré · Vérifié' : 'Chiffré · Vérifié')
+    ? (ratchetActive ? 'X3DH · Vérifié' : 'Chiffré · Vérifié')
     : ratchetActive
-      ? 'Double Ratchet'
+      ? 'X3DH · Double Ratchet'
       : 'Chiffré';
 
   return (
