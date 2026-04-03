@@ -18,12 +18,17 @@ export default function ForgotPassword() {
     e.preventDefault();
     setIsLoading(true);
 
-    const siteUrl = window.location.hostname.includes('forsure.fans')
-      ? 'https://forsure.fans'
-      : window.location.origin;
+    const ALLOWED_ORIGINS = [
+      'https://forsure.fans',
+      'https://calm-connect-05.lovable.app',
+    ];
+    const currentOrigin = window.location.origin;
+    const redirectBase = ALLOWED_ORIGINS.includes(currentOrigin)
+      ? currentOrigin
+      : ALLOWED_ORIGINS[0];
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${siteUrl}/reset-password`,
+      redirectTo: `${redirectBase}/reset-password`,
     });
 
     setIsLoading(false);
