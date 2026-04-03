@@ -1257,6 +1257,36 @@ export type Database = {
         }
         Relationships: []
       }
+      device_link_tokens: {
+        Row: {
+          claimed_at: string | null
+          created_at: string
+          encrypted_payload: string | null
+          expires_at: string
+          id: string
+          token_hash: string
+          user_id: string
+        }
+        Insert: {
+          claimed_at?: string | null
+          created_at?: string
+          encrypted_payload?: string | null
+          expires_at?: string
+          id?: string
+          token_hash: string
+          user_id: string
+        }
+        Update: {
+          claimed_at?: string | null
+          created_at?: string
+          encrypted_payload?: string | null
+          expires_at?: string
+          id?: string
+          token_hash?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       email_send_log: {
         Row: {
           created_at: string
@@ -4410,6 +4440,7 @@ export type Database = {
         Returns: boolean
       }
       cleanup_ai_cache: { Args: never; Returns: undefined }
+      cleanup_expired_device_links: { Args: never; Returns: undefined }
       cleanup_old_fingerprints: { Args: never; Returns: undefined }
       consume_prekey: {
         Args: { p_peer_user_id: string }
