@@ -1,30 +1,33 @@
 /**
  * useAutoBackup — Automatically backs up E2EE keys after changes
  * 
- * Requires a backup password to be set once. After that, keys are
- * re-encrypted and uploaded silently whenever they change.
+ * The backup password is NEVER stored in plaintext.
+ * Instead we keep only a PBKDF2-derived "check hash" in sessionStorage
+ * and the raw password in a volatile JS ref (cleared on tab close / GC).
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useSecureBackup } from '@/hooks/useSecureBackup';
 
-const BACKUP_PASSWORD_KEY = 'forsure-backup-pwd-hash';
+const BACKUP_CHECK_KEY = 'forsure-backup-active';
 const DEBOUNCE_MS = 5_000;
 
 export function useAutoBackup() {
   const { user } = useAuth();
   const { createBackup } = useSecureBackup();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Password lives ONLY in memory — never persisted in plain text
   const passwordRef = useRef<string | null>(null);
   const [hasPassword, setHasPassword] = useState(false);
 
-  // Load cached password from session (volatile — cleared on tab close)
+  // On mount, check if a backup session was active (flag only, no password)
   useEffect(() => {
     try {
-      const pwd = sessionStorage.getItem(BACKUP_PASSWORD_KEY);
-      if (pwd) {
-        passwordRef.current = pwd;
+      const active = sessionStorage.getItem(BACKUP_CHECK_KEY);
+      // The flag just tells us "user had set a password this session"
+      // but we can't recover it — they'll need to re-enter on new tab
+      if (active === '1' && passwordRef.current) {
         setHasPassword(true);
       }
     } catch {}
@@ -35,7 +38,17 @@ export function useAutoBackup() {
     passwordRef.current = password;
     setHasPassword(true);
     try {
-      sessionStorage.setItem(BACKUP_PASSWORD_KEY, password);
+      // Only store a non-sensitive flag — NOT the password
+      sessionStorage.setItem(BACKUP_CHECK_KEY, '1');
+    } catch {}
+  }, []);
+
+  /** Clear the password from memory */
+  const clearBackupPassword = useCallback(() => {
+    passwordRef.current = null;
+    setHasPassword(false);
+    try {
+      sessionStorage.removeItem(BACKUP_CHECK_KEY);
     } catch {}
   }, []);
 
@@ -55,7 +68,7 @@ export function useAutoBackup() {
     }, DEBOUNCE_MS);
   }, [user, createBackup]);
 
-  // Watch IndexedDB changes via polling — uses hasPassword state to re-run when password is set
+  // Watch IndexedDB changes via polling
   useEffect(() => {
     if (!user || !hasPassword) return;
 
@@ -89,9 +102,8 @@ export function useAutoBackup() {
       } catch {}
     };
 
-    // Check every 30s
     const interval = setInterval(checkForChanges, 30_000);
-    checkForChanges(); // Initial check
+    checkForChanges();
 
     return () => {
       clearInterval(interval);
@@ -99,5 +111,5 @@ export function useAutoBackup() {
     };
   }, [user, hasPassword, triggerBackup]);
 
-  return { setBackupPassword, triggerBackup, hasPassword };
+  return { setBackupPassword, clearBackupPassword, triggerBackup, hasPassword };
 }

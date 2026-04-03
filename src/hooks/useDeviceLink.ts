@@ -1,10 +1,9 @@
 /**
  * useDeviceLink — QR-based device-to-device E2EE key transfer
  *
- * Flow:
- * 1. Source device: createLink() → generates QR containing token + password
- * 2. Source device: auto-collects keys, encrypts with password, uploads
- * 3. New device: claimLink(token, password) → downloads + decrypts keys
+ * Security: The QR code contains ONLY the claim token.
+ * The encryption PIN is communicated via a separate channel (shown on screen separately).
+ * This prevents a single-channel compromise from exposing both claim + decrypt capability.
  */
 
 import { useCallback, useState } from 'react';
@@ -29,6 +28,13 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
     false,
     ['encrypt', 'decrypt'],
   );
+}
+
+/** Generate a random 8-character alphanumeric PIN */
+function generatePin(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // No ambiguous chars (0/O, 1/I/L)
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  return Array.from(bytes).map(b => chars[b % chars.length]).join('');
 }
 
 /** Collect all E2EE keys from local storage */
@@ -143,9 +149,11 @@ export function useDeviceLink() {
 
   /**
    * Creates a device link from the source device.
-   * Returns { qrData } containing the token + password to encode in a QR.
+   * Returns:
+   *  - qrData: contains ONLY the claim token (safe to display in QR)
+   *  - pin: the encryption PIN (must be communicated separately)
    */
-  const createLink = useCallback(async (): Promise<{ qrData: string } | null> => {
+  const createLink = useCallback(async (): Promise<{ qrData: string; pin: string } | null> => {
     if (!user) { setError('Non authentifié'); return null; }
     setIsLoading(true);
     setError(null);
@@ -160,15 +168,14 @@ export function useDeviceLink() {
 
       const token = tokenData.token as string;
 
-      // 2. Generate a one-time password for encryption
-      const pwdBytes = crypto.getRandomValues(new Uint8Array(24));
-      const password = btoa(String.fromCharCode(...pwdBytes));
+      // 2. Generate a separate PIN for encryption (NOT included in QR)
+      const pin = generatePin();
 
-      // 3. Collect + encrypt keys
+      // 3. Collect + encrypt keys using PIN as password
       const keysJson = await collectLocalKeys();
       const salt = crypto.getRandomValues(new Uint8Array(32));
       const iv = crypto.getRandomValues(new Uint8Array(12));
-      const key = await deriveKey(password, salt);
+      const key = await deriveKey(pin, salt);
       const ciphertext = await crypto.subtle.encrypt(
         { name: 'AES-GCM', iv },
         key,
@@ -188,9 +195,9 @@ export function useDeviceLink() {
       );
       if (uploadError) throw uploadError;
 
-      // 5. Return QR data (token + password)
-      const qrData = JSON.stringify({ t: token, p: password });
-      return { qrData };
+      // 5. QR contains ONLY the token — PIN is separate
+      const qrData = JSON.stringify({ t: token });
+      return { qrData, pin };
     } catch (err: any) {
       setError(err.message || 'Erreur de liaison');
       return null;
@@ -200,15 +207,17 @@ export function useDeviceLink() {
   }, [user]);
 
   /**
-   * Claims keys on the new device using data scanned from QR.
+   * Claims keys on the new device.
+   * @param qrData - scanned from QR (contains token)
+   * @param pin - communicated separately (verbal, SMS, etc.)
    */
-  const claimLink = useCallback(async (qrData: string): Promise<boolean> => {
+  const claimLink = useCallback(async (qrData: string, pin: string): Promise<boolean> => {
     if (!user) { setError('Non authentifié'); return false; }
     setIsLoading(true);
     setError(null);
 
     try {
-      const { t: token, p: password } = JSON.parse(qrData);
+      const { t: token } = JSON.parse(qrData);
 
       // 1. Claim from server
       const { data: claimData, error: claimError } = await supabase.functions.invoke(
@@ -217,12 +226,12 @@ export function useDeviceLink() {
       );
       if (claimError) throw claimError;
 
-      // 2. Decrypt payload
+      // 2. Decrypt payload using the separately-provided PIN
       const envelope = JSON.parse(claimData.encrypted_payload);
       const salt = new Uint8Array(base64ToBuffer(envelope.salt));
       const iv = new Uint8Array(base64ToBuffer(envelope.iv));
       const ct = base64ToBuffer(envelope.ct);
-      const key = await deriveKey(password, salt);
+      const key = await deriveKey(pin, salt);
       const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
       const keysJson = new TextDecoder().decode(plainBuf);
 
@@ -233,7 +242,7 @@ export function useDeviceLink() {
       return true;
     } catch (err: any) {
       if (err.name === 'OperationError') {
-        setError('QR code invalide ou expiré');
+        setError('Code PIN incorrect ou token expiré');
       } else {
         setError(err.message || 'Erreur de récupération');
       }
