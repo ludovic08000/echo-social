@@ -79,6 +79,7 @@ const CreatorUpgrade = lazyWithOneRetry(() => import("./pages/CreatorUpgrade"), 
 const ForgotPassword = lazyWithOneRetry(() => import("./pages/ForgotPassword"), 'r-forgot');
 const ResetPassword = lazyWithOneRetry(() => import("./pages/ResetPassword"), 'r-reset');
 const Onboarding = lazyWithOneRetry(() => import("./pages/Onboarding"), 'r-onboard');
+const AuthConfirmPage = lazyWithOneRetry(() => import("./pages/AuthConfirm"), 'r-authconfirm');
 const Unsubscribe = lazyWithOneRetry(() => import("./pages/Unsubscribe"), 'r-unsub');
 
 const queryClient = new QueryClient();
