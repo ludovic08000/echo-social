@@ -231,10 +231,10 @@ export default function Feed() {
 
             {isMobile ? (
               <>
-                <div className="px-3"><StoriesBar /></div>
+                <StoriesBar />
                 <FeedZeusCard />
-                <div className="px-3"><FeedLiveSection /></div>
-                <div className="px-3"><CreatePost /></div>
+                <FeedLiveSection />
+                <div className="px-3 pb-2"><CreatePost /></div>
               </>
             ) : (
               <>
