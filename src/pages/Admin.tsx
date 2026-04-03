@@ -155,7 +155,7 @@ export default function Admin() {
                   {group.items.map(item => (
                     <button
                       key={item.key}
-                      onClick={() => { setSection(item.key); setMobileMenuOpen(false); }}
+                      onClick={() => { setSection(item.key as AdminSection); setMobileMenuOpen(false); }}
                       className={cn(
                         'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all',
                         section === item.key
