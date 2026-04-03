@@ -3802,6 +3802,36 @@ export type Database = {
         }
         Relationships: []
       }
+      user_known_fingerprints: {
+        Row: {
+          acknowledged: boolean
+          fingerprint: string
+          first_seen_at: string
+          id: string
+          last_seen_at: string
+          peer_user_id: string
+          user_id: string
+        }
+        Insert: {
+          acknowledged?: boolean
+          fingerprint: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          peer_user_id: string
+          user_id: string
+        }
+        Update: {
+          acknowledged?: boolean
+          fingerprint?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          peer_user_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_prekeys: {
         Row: {
           consumed_at: string | null
