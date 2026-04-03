@@ -324,7 +324,6 @@ export default function Feed() {
 
                 {/* Virtualized posts list */}
                 <div
-                  className="px-0 sm:px-4"
                   style={{
                     height: `${virtualizer.getTotalSize()}px`,
                     width: '100%',
@@ -347,7 +346,7 @@ export default function Feed() {
                           transform: `translateY(${virtualRow.start}px)`,
                         }}
                       >
-                        <div className="pb-4">
+                        <div className="pb-2 sm:pb-4 sm:px-4">
                           <PostCard post={post} />
                           <LazyComments postId={post.id} />
                           {renderInjection(virtualRow.index)}
