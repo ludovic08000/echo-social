@@ -6,6 +6,7 @@ import { useTranslation } from '@/lib/i18n';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useAgeVerification } from '@/hooks/useAgeVerification';
 import { supabase } from '@/integrations/supabase/client';
+import { getSafeRedirectUrl } from '@/lib/urlUtils';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
