@@ -7,11 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Search, Ban, AlertTriangle, UserX, Pencil, X, Check, Eye } from 'lucide-react';
+import { Search, Ban, AlertTriangle, UserX, Pencil, X, Check, Eye, Users, ShieldAlert } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface EditingUser {
   user_id: string;
@@ -21,10 +22,32 @@ interface EditingUser {
   profile_type: string;
 }
 
+function Modal({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
+  if (!open) return null;
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/50" />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          className="relative bg-background border border-border rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto shadow-2xl"
+          onClick={e => e.stopPropagation()}
+        >
+          {children}
+        </motion.div>
+      </div>
+    </AnimatePresence>
+  );
+}
+
 export function UsersSection() {
   const [search, setSearch] = useState('');
   const [editingUser, setEditingUser] = useState<EditingUser | null>(null);
   const [viewUser, setViewUser] = useState<any>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState('');
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
@@ -39,9 +62,6 @@ export function UsersSection() {
     },
   });
 
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState('');
-
   const banUser = useMutation({
     mutationFn: async (userId: string) => {
       if (!user) throw new Error('Non authentifié');
@@ -54,17 +74,10 @@ export function UsersSection() {
 
   const updateUser = useMutation({
     mutationFn: async (data: EditingUser) => {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ name: data.name, city: data.city, bio: data.bio, profile_type: data.profile_type })
-        .eq('user_id', data.user_id);
+      const { error } = await supabase.from('profiles').update({ name: data.name, city: data.city, bio: data.bio, profile_type: data.profile_type }).eq('user_id', data.user_id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      toast({ title: '✅ Profil mis à jour' });
-      setEditingUser(null);
-      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-    },
+    onSuccess: () => { toast({ title: '✅ Profil mis à jour' }); setEditingUser(null); queryClient.invalidateQueries({ queryKey: ['admin-users'] }); },
     onError: (e: any) => toast({ title: 'Erreur', description: e.message, variant: 'destructive' }),
   });
 
@@ -76,7 +89,7 @@ export function UsersSection() {
       return data;
     },
     onSuccess: (data) => {
-      toast({ title: '🗑️ Utilisateur supprimé', description: data?.warning || 'Compte et données supprimés définitivement.' });
+      toast({ title: '🗑️ Utilisateur supprimé', description: data?.warning || 'Compte et données supprimés.' });
       setDeleteTarget(null);
       setDeleteConfirm('');
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
@@ -84,158 +97,171 @@ export function UsersSection() {
     onError: (e: any) => toast({ title: 'Erreur', description: e.message, variant: 'destructive' }),
   });
 
-  const startEdit = (u: any) => {
-    setEditingUser({
-      user_id: u.user_id,
-      name: u.name || '',
-      city: u.city || '',
-      bio: u.bio || '',
-      profile_type: u.profile_type || 'user',
-    });
-  };
-
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-foreground">Utilisateurs</h2>
-        <Badge variant="secondary">{users?.length || 0} résultats</Badge>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Users className="w-5 h-5 text-primary" />
+          <h2 className="text-lg font-bold text-foreground">Utilisateurs</h2>
+        </div>
+        <Badge variant="secondary" className="shrink-0">{users?.length || 0}</Badge>
       </div>
+
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input placeholder="Rechercher par nom..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+        <Input placeholder="Rechercher par nom…" value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
       </div>
-      <div className="rounded-xl border border-border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nom</TableHead>
-              <TableHead>Ville</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Inscrit le</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Chargement...</TableCell></TableRow>
-            ) : !users?.length ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Aucun utilisateur</TableCell></TableRow>
-            ) : users.map(u => (
-              <TableRow key={u.user_id}>
-                <TableCell className="font-medium text-sm">{u.name}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{u.city || '-'}</TableCell>
-                <TableCell><Badge variant="secondary" className="text-[10px]">{u.profile_type || 'user'}</Badge></TableCell>
-                <TableCell className="text-xs text-muted-foreground">{format(new Date(u.created_at), 'dd/MM/yyyy', { locale: fr })}</TableCell>
-                <TableCell>
-                  <div className="flex gap-1.5">
-                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setViewUser(u)}>
-                      <Eye className="w-3 h-3" />
-                    </Button>
-                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => startEdit(u)}>
-                      <Pencil className="w-3 h-3" />
-                    </Button>
-                    <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => banUser.mutate(u.user_id)}>
-                      <Ban className="w-3 h-3 mr-1" /> Bannir
-                    </Button>
-                    <Button size="sm" variant="outline" className="h-7 text-xs border-destructive/30 text-destructive hover:bg-destructive hover:text-destructive-foreground" onClick={() => setDeleteTarget({ id: u.user_id, name: u.name || 'Inconnu' })}>
-                      <UserX className="w-3 h-3" />
-                    </Button>
+
+      {/* Card-based user list for better responsiveness */}
+      {isLoading ? (
+        <div className="text-center py-12 text-muted-foreground text-sm">Chargement…</div>
+      ) : !users?.length ? (
+        <div className="text-center py-12 text-muted-foreground text-sm">Aucun utilisateur trouvé</div>
+      ) : (
+        <div className="space-y-2">
+          {users.map((u, i) => (
+            <motion.div key={u.user_id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }}>
+              <Card className="overflow-hidden">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-3">
+                    {/* Avatar */}
+                    <div className="w-10 h-10 rounded-full bg-accent flex items-center justify-center shrink-0 overflow-hidden">
+                      {u.avatar_url ? (
+                        <img src={u.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <Users className="w-4 h-4 text-muted-foreground" />
+                      )}
+                    </div>
+
+                    {/* Info */}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-foreground truncate">{u.name || 'Sans nom'}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] text-muted-foreground truncate">{u.city || 'Aucune ville'}</span>
+                        <Badge variant="secondary" className="text-[10px] shrink-0">{u.profile_type || 'user'}</Badge>
+                        <span className="text-[10px] text-muted-foreground shrink-0">
+                          {format(new Date(u.created_at), 'dd/MM/yy', { locale: fr })}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setViewUser(u)} title="Voir">
+                        <Eye className="w-4 h-4" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditingUser({
+                        user_id: u.user_id, name: u.name || '', city: u.city || '', bio: u.bio || '', profile_type: u.profile_type || 'user',
+                      })} title="Modifier">
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-8 w-8 text-amber-600 hover:text-amber-700 hover:bg-amber-500/10" onClick={() => banUser.mutate(u.user_id)} title="Bannir">
+                        <Ban className="w-4 h-4" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => setDeleteTarget({ id: u.user_id, name: u.name || 'Inconnu' })} title="Supprimer">
+                        <UserX className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* View user detail modal */}
-      {viewUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setViewUser(null)}>
-          <div className="bg-background border border-border rounded-xl p-6 w-full max-w-md mx-4 space-y-3" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-lg">Détails utilisateur</h3>
-              <Button size="sm" variant="ghost" onClick={() => setViewUser(null)}><X className="w-4 h-4" /></Button>
-            </div>
-            {viewUser.avatar_url && <img src={viewUser.avatar_url} className="w-16 h-16 rounded-full object-cover" alt="" />}
-            <div className="space-y-2 text-sm">
-              <p><strong>Nom :</strong> {viewUser.name || '-'}</p>
-              <p><strong>Ville :</strong> {viewUser.city || '-'}</p>
-              <p><strong>Bio :</strong> {viewUser.bio || '-'}</p>
-              <p><strong>Type :</strong> {viewUser.profile_type || 'user'}</p>
-              <p><strong>Inscrit :</strong> {format(new Date(viewUser.created_at), 'dd/MM/yyyy HH:mm', { locale: fr })}</p>
-              <p className="text-xs text-muted-foreground">ID : {viewUser.user_id}</p>
-            </div>
-          </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
         </div>
       )}
 
-      {/* Edit user modal */}
-      {editingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingUser(null)}>
-          <div className="bg-background border border-border rounded-xl p-6 w-full max-w-md mx-4 space-y-4" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-lg">Modifier le profil</h3>
-              <Button size="sm" variant="ghost" onClick={() => setEditingUser(null)}><X className="w-4 h-4" /></Button>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-sm font-medium">Nom</label>
-                <Input value={editingUser.name} onChange={e => setEditingUser({ ...editingUser, name: e.target.value })} />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Ville</label>
-                <Input value={editingUser.city} onChange={e => setEditingUser({ ...editingUser, city: e.target.value })} />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Bio</label>
-                <Textarea value={editingUser.bio} onChange={e => setEditingUser({ ...editingUser, bio: e.target.value })} rows={3} />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Type de profil</label>
-                <Select value={editingUser.profile_type} onValueChange={v => setEditingUser({ ...editingUser, profile_type: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="user">Utilisateur</SelectItem>
-                    <SelectItem value="creator">Créateur</SelectItem>
-                    <SelectItem value="business">Business</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" size="sm" onClick={() => setEditingUser(null)}>Annuler</Button>
-              <Button size="sm" onClick={() => updateUser.mutate(editingUser)} disabled={updateUser.isPending}>
-                <Check className="w-3 h-3 mr-1" /> {updateUser.isPending ? 'Enregistrement…' : 'Enregistrer'}
-              </Button>
-            </div>
+      {/* View Modal */}
+      <Modal open={!!viewUser} onClose={() => setViewUser(null)}>
+        <div className="p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-lg text-foreground">Détails</h3>
+            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setViewUser(null)}><X className="w-4 h-4" /></Button>
           </div>
+          {viewUser && (
+            <>
+              <div className="flex items-center gap-3">
+                <div className="w-14 h-14 rounded-full bg-accent overflow-hidden shrink-0">
+                  {viewUser.avatar_url ? <img src={viewUser.avatar_url} className="w-full h-full object-cover" alt="" /> : <Users className="w-6 h-6 text-muted-foreground m-auto mt-4" />}
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-foreground truncate">{viewUser.name || '-'}</p>
+                  <p className="text-sm text-muted-foreground truncate">{viewUser.city || 'Aucune ville'}</p>
+                </div>
+              </div>
+              <div className="space-y-2 text-sm">
+                <p><span className="text-muted-foreground">Bio :</span> {viewUser.bio || '-'}</p>
+                <p><span className="text-muted-foreground">Type :</span> <Badge variant="secondary">{viewUser.profile_type || 'user'}</Badge></p>
+                <p><span className="text-muted-foreground">Inscrit :</span> {format(new Date(viewUser.created_at), 'dd/MM/yyyy HH:mm', { locale: fr })}</p>
+                <p className="text-xs text-muted-foreground font-mono break-all">ID : {viewUser.user_id}</p>
+              </div>
+            </>
+          )}
         </div>
-      )}
+      </Modal>
 
-      {/* Delete confirmation modal */}
-      {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => { setDeleteTarget(null); setDeleteConfirm(''); }}>
-          <div className="bg-background border border-border rounded-xl p-6 w-full max-w-md mx-4 space-y-4" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-2 text-destructive">
-              <AlertTriangle className="w-5 h-5" />
-              <h3 className="font-bold text-lg">Supprimer définitivement</h3>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Vous êtes sur le point de supprimer <strong className="text-foreground">{deleteTarget.name}</strong> et toutes ses données. Cette action est <strong>irréversible</strong>.
-            </p>
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Tapez <strong>SUPPRIMER</strong> pour confirmer :</p>
-              <Input value={deleteConfirm} onChange={e => setDeleteConfirm(e.target.value)} placeholder="SUPPRIMER" />
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" size="sm" onClick={() => { setDeleteTarget(null); setDeleteConfirm(''); }}>Annuler</Button>
-              <Button variant="destructive" size="sm" disabled={deleteConfirm !== 'SUPPRIMER' || deleteUser.isPending} onClick={() => deleteUser.mutate(deleteTarget.id)}>
-                {deleteUser.isPending ? 'Suppression…' : 'Supprimer définitivement'}
-              </Button>
-            </div>
+      {/* Edit Modal */}
+      <Modal open={!!editingUser} onClose={() => setEditingUser(null)}>
+        <div className="p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-lg text-foreground">Modifier le profil</h3>
+            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditingUser(null)}><X className="w-4 h-4" /></Button>
           </div>
+          {editingUser && (
+            <>
+              <div className="space-y-3">
+                <div><label className="text-xs font-medium text-muted-foreground">Nom</label><Input value={editingUser.name} onChange={e => setEditingUser({ ...editingUser, name: e.target.value })} /></div>
+                <div><label className="text-xs font-medium text-muted-foreground">Ville</label><Input value={editingUser.city} onChange={e => setEditingUser({ ...editingUser, city: e.target.value })} /></div>
+                <div><label className="text-xs font-medium text-muted-foreground">Bio</label><Textarea value={editingUser.bio} onChange={e => setEditingUser({ ...editingUser, bio: e.target.value })} rows={3} /></div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Type</label>
+                  <Select value={editingUser.profile_type} onValueChange={v => setEditingUser({ ...editingUser, profile_type: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="user">Utilisateur</SelectItem>
+                      <SelectItem value="creator">Créateur</SelectItem>
+                      <SelectItem value="business">Business</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end pt-2">
+                <Button variant="outline" size="sm" onClick={() => setEditingUser(null)}>Annuler</Button>
+                <Button size="sm" onClick={() => updateUser.mutate(editingUser)} disabled={updateUser.isPending}>
+                  <Check className="w-3.5 h-3.5 mr-1" />
+                  <span className="truncate">{updateUser.isPending ? 'Enregistrement…' : 'Enregistrer'}</span>
+                </Button>
+              </div>
+            </>
+          )}
         </div>
-      )}
+      </Modal>
+
+      {/* Delete Modal */}
+      <Modal open={!!deleteTarget} onClose={() => { setDeleteTarget(null); setDeleteConfirm(''); }}>
+        <div className="p-6 space-y-4">
+          <div className="flex items-center gap-2 text-destructive">
+            <AlertTriangle className="w-5 h-5 shrink-0" />
+            <h3 className="font-bold text-lg">Supprimer définitivement</h3>
+          </div>
+          {deleteTarget && (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Suppression de <strong className="text-foreground">{deleteTarget.name}</strong> et toutes ses données. <strong>Irréversible.</strong>
+              </p>
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Tapez <strong>SUPPRIMER</strong> :</p>
+                <Input value={deleteConfirm} onChange={e => setDeleteConfirm(e.target.value)} placeholder="SUPPRIMER" />
+              </div>
+              <div className="flex gap-2 justify-end pt-2">
+                <Button variant="outline" size="sm" onClick={() => { setDeleteTarget(null); setDeleteConfirm(''); }}>Annuler</Button>
+                <Button variant="destructive" size="sm" disabled={deleteConfirm !== 'SUPPRIMER' || deleteUser.isPending} onClick={() => deleteUser.mutate(deleteTarget.id)}>
+                  <span className="truncate">{deleteUser.isPending ? 'Suppression…' : 'Supprimer'}</span>
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }
