@@ -50,6 +50,14 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
     const looksEncrypted = body.startsWith('{') && (body.includes('"ct"') || body.includes('"hdr"'));
     if (!looksEncrypted) {
+      // SECURITY: In an encrypted conversation, reject plaintext payloads
+      // Only allow known safe system messages (emoji-only, system prefixes)
+      const isSystemMessage = /^(↩️|📷|🎬|🎙️|GIF:)/.test(body);
+      const isEmojiOnly = /^[\p{Emoji}\s]+$/u.test(body) && body.length <= 20;
+      if (!isSystemMessage && !isEmojiOnly) {
+        setDisplayText('⚠️ Message non conforme (non chiffré)');
+        return;
+      }
       setDisplayText(body);
       return;
     }

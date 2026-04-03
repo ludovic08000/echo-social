@@ -609,6 +609,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
    */
   const decrypt = useCallback(async (body: string): Promise<{ text: string; encrypted: boolean; verified: boolean }> => {
     if (!isEncryptedMessage(body) && !isRatchetEnvelope(body)) {
+      // SECURITY: In an encrypted conversation, plaintext is suspicious
+      // Return it marked as non-encrypted so the UI layer can decide
       return { text: body, encrypted: false, verified: false };
     }
 
