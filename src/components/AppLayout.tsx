@@ -87,10 +87,9 @@ export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      {user && <DesktopSidebar />}
       <MobileHeader />
 
-      <main className="pb-16 md:pl-64">
+      <main className="pb-16">
         {fullWidth ? (
           <div className="mx-auto max-w-[1280px]">
             {children}
