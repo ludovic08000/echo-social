@@ -60,11 +60,28 @@ export default function Onboarding() {
   const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
   const hasPickerAPI = typeof navigator !== 'undefined' && !isIOS && 'contacts' in navigator && 'ContactsManager' in window;
 
-  // Load pending signup data
+  // Load pending signup data OR restore server state for logged-in users
   useEffect(() => {
     const raw = loadSignupDataRaw();
-    if (raw) setSignupData(raw);
-  }, [navigate]);
+    if (raw) {
+      setSignupData(raw);
+    } else if (user) {
+      // Already logged-in user — fetch server onboarding state to resume
+      supabase.rpc('get_onboarding_state', { _user_id: user.id } as any)
+        .then(({ data }: any) => {
+          if (!data) return;
+          const state = data as any;
+          if (state.onboarding_completed) {
+            navigate('/feed', { replace: true });
+            return;
+          }
+          const serverStep = state.onboarding_step ?? 0;
+          if (serverStep >= 2) setStep('find-friends');
+          else if (serverStep >= 1) setStep('ai-name');
+          else setStep('interests');
+        });
+    }
+  }, [user, navigate]);
 
   // If no signup data and no user, redirect to signup
   if (!signupData && !user) {
@@ -392,17 +409,23 @@ export default function Onboarding() {
 
   const handleFinish = async () => {
     setIsSubmitting(true);
-    // Mark onboarding as completed server-side with step enforcement
     if (user) {
       try {
-        // Advance to final step, then mark completed
-        await supabase.rpc('advance_onboarding_step', {
+        // Server-side validation: checks step >= 2, name exists, 3+ interests
+        const { error } = await supabase.rpc('complete_onboarding', {
           _user_id: user.id,
-          _expected_step: 2 as any,
-        });
-        await supabase.from('profiles').update({ onboarding_completed: true } as any).eq('user_id', user.id);
-      } catch (err) {
-        console.warn('[Onboarding] Step enforcement error:', err);
+        } as any);
+        if (error) {
+          console.error('[Onboarding] Server rejected completion:', error.message);
+          toast({ title: 'Erreur', description: 'Impossible de finaliser l\'onboarding. Vérifiez vos choix.', variant: 'destructive' });
+          setIsSubmitting(false);
+          return;
+        }
+      } catch (err: any) {
+        console.error('[Onboarding] completion error:', err);
+        toast({ title: 'Erreur', description: err.message, variant: 'destructive' });
+        setIsSubmitting(false);
+        return;
       }
     }
     toast({ title: `Bienvenue sur ForSure ! 🎉`, description: `${aiName.trim()} est prêt à t'accompagner !` });
