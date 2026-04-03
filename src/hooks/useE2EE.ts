@@ -730,22 +730,38 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     try {
       if (isRatchetEnvelope(body)) {
-        const envelope: RatchetEnvelope = hardGlobals.jsonParse(body);
+        const parsed = hardGlobals.jsonParse(body);
+        const envelope: RatchetEnvelope = parsed;
+        const x3dhHeader: X3DHInitialMessage | undefined = parsed.x3dh;
         let ratchet = ratchetRef.current;
 
         // Auto-init ratchet as responder if we don't have one yet
-        if (!ratchet && conversationId && keysRef.current) {
+        if (!ratchet && conversationId && keysRef.current && user) {
           try {
             const persisted = await loadRatchetLocal(conversationId);
             if (persisted) {
               ratchet = persisted;
               ratchetRef.current = ratchet;
+            } else if (x3dhHeader) {
+              // X3DH responder: derive shared secret from the X3DH header
+              const sharedSecret = await x3dhRespond(
+                keysRef.current,
+                user.id,
+                x3dhHeader,
+              );
+              const ourDhPair = await hardCrypto.generateKey(
+                KX_KEY_PARAMS as any, true, ['deriveBits']
+              ) as CryptoKeyPair;
+              ratchet = await initRatchetAsResponder(
+                conversationId, sharedSecret, ourDhPair,
+              );
+              ratchetRef.current = ratchet;
+              console.log('[E2EE] 🔄 Double Ratchet initialized via X3DH (responder)');
             } else {
-              // Initialize as responder using legacy shared secret as seed
+              // Fallback: legacy shared secret as seed
               const session = await ensureLegacySession();
               if (session) {
                 const sharedSecretRaw = await hardCrypto.exportKey('raw', session.sharedSecret);
-                // Generate our DH key pair for the ratchet
                 const ourDhPair = await hardCrypto.generateKey(
                   KX_KEY_PARAMS as any, true, ['deriveBits']
                 ) as CryptoKeyPair;
@@ -753,7 +769,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
                   conversationId, sharedSecretRaw, ourDhPair,
                 );
                 ratchetRef.current = ratchet;
-                console.log('[E2EE] 🔄 Double Ratchet initialized as responder');
+                console.log('[E2EE] 🔄 Double Ratchet initialized as responder (legacy fallback)');
               }
             }
           } catch (initErr) {
