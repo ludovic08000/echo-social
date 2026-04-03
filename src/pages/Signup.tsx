@@ -216,7 +216,9 @@ export default function Signup() {
       age,
     };
 
-    sessionStorage.setItem('forsure_signup_pending', JSON.stringify(signupData));
+    // Use HMAC-signed storage to prevent tampering
+    const { storeSignupData } = await import('@/lib/signupIntegrity');
+    await storeSignupData(signupData);
     navigate('/onboarding');
   };
 
