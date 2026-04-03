@@ -45,9 +45,19 @@ export default function AIEngine() {
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('modules');
   const { zeusName } = useZeusSettings();
+  const navigate = useNavigate();
+  const { data: isAdmin, isLoading: adminLoading } = useIsAdmin();
 
   const modules = useMemo(() => getAIModules(), []);
   const stats = useMemo(() => getAIEngineStats(), []);
+
+  // Redirect non-admins
+  useEffect(() => {
+    if (!adminLoading && !isAdmin) {
+      navigate('/feed', { replace: true });
+      toast({ title: 'Accès refusé', description: "Réservé aux administrateurs.", variant: 'destructive' });
+    }
+  }, [isAdmin, adminLoading, navigate]);
 
   const filtered = selectedCategory === 'all'
     ? modules
