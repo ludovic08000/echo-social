@@ -80,6 +80,10 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // DDoS protection
+  const ddosBlock = await ddosShield(req, corsHeaders, "standard", "anti-abuse");
+  if (ddosBlock) return ddosBlock;
+
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
