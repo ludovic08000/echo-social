@@ -4482,6 +4482,7 @@ export type Database = {
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_expired_device_links: { Args: never; Returns: undefined }
       cleanup_old_fingerprints: { Args: never; Returns: undefined }
+      complete_onboarding: { Args: { _user_id: string }; Returns: boolean }
       consume_prekey: {
         Args: { p_peer_user_id: string }
         Returns: {
