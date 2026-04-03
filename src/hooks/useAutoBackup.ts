@@ -5,7 +5,7 @@
  * re-encrypted and uploaded silently whenever they change.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useSecureBackup } from '@/hooks/useSecureBackup';
 
@@ -17,25 +17,30 @@ export function useAutoBackup() {
   const { createBackup } = useSecureBackup();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const passwordRef = useRef<string | null>(null);
+  const [hasPassword, setHasPassword] = useState(false);
 
   // Load cached password from session (volatile — cleared on tab close)
   useEffect(() => {
     try {
       const pwd = sessionStorage.getItem(BACKUP_PASSWORD_KEY);
-      if (pwd) passwordRef.current = pwd;
+      if (pwd) {
+        passwordRef.current = pwd;
+        setHasPassword(true);
+      }
     } catch {}
   }, []);
 
   /** Set the backup password for this session (called once by user) */
-  const setBackupPassword = (password: string) => {
+  const setBackupPassword = useCallback((password: string) => {
     passwordRef.current = password;
+    setHasPassword(true);
     try {
       sessionStorage.setItem(BACKUP_PASSWORD_KEY, password);
     } catch {}
-  };
+  }, []);
 
   /** Trigger a debounced backup */
-  const triggerBackup = () => {
+  const triggerBackup = useCallback(() => {
     if (!user || !passwordRef.current) return;
 
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -48,11 +53,11 @@ export function useAutoBackup() {
         console.warn('[AutoBackup] Failed:', e);
       }
     }, DEBOUNCE_MS);
-  };
+  }, [user, createBackup]);
 
-  // Watch IndexedDB changes via a polling approach (IDB has no native change events)
+  // Watch IndexedDB changes via polling — uses hasPassword state to re-run when password is set
   useEffect(() => {
-    if (!user || !passwordRef.current) return;
+    if (!user || !hasPassword) return;
 
     let lastHash = '';
 
@@ -92,7 +97,7 @@ export function useAutoBackup() {
       clearInterval(interval);
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [user, createBackup]);
+  }, [user, hasPassword, triggerBackup]);
 
-  return { setBackupPassword, triggerBackup, hasPassword: !!passwordRef.current };
+  return { setBackupPassword, triggerBackup, hasPassword };
 }
