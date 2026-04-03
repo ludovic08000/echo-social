@@ -145,8 +145,8 @@ export default function Signup() {
     const hasNumber = /[0-9]/.test(password);
     const hasSpecial = /[^A-Za-z0-9]/.test(password);
     let strength = 0;
-    if (password.length >= 8) strength++;
-    if (password.length >= 12) strength++;
+    if (password.length >= 10) strength++;
+    if (password.length >= 14) strength++;
     if (hasUpper) strength++;
     if (hasNumber) strength++;
     if (hasSpecial) strength++;
