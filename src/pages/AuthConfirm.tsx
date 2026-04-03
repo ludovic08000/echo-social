@@ -22,7 +22,7 @@ export default function AuthConfirm() {
           .from('profiles')
           .select('onboarding_completed')
           .eq('user_id', session.user.id)
-          .single();
+          .single() as any;
 
         setStatus('success');
 
