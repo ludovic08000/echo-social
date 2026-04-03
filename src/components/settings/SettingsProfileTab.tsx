@@ -77,7 +77,7 @@ export function SettingsProfileTab() {
     setIsChangingPassword(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: getSafeRedirectUrl('/reset-password'),
       });
       if (error) throw error;
       // Sign out IMMEDIATELY after requesting password reset from settings
