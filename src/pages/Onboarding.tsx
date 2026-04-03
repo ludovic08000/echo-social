@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
-import { Sparkles, Check, Zap, ArrowRight, Users, Phone, Upload, FileText, Loader2 } from 'lucide-react';
+import { Sparkles, Check, Zap, ArrowRight, Users, Phone, Upload, FileText, Loader2, Eye, EyeOff, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import BrandLogo from '@/components/BrandLogo';
@@ -13,9 +13,9 @@ import { useSendFriendRequest } from '@/hooks/useFriendships';
 import { UserAvatar } from '@/components/UserAvatar';
 import { MatchedContact } from '@/hooks/useContactSync';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { loadSignupDataRaw, loadSignupData, clearSignupData, hasSignupData, computeAgeFromDOB, type SignupPayload } from '@/lib/signupIntegrity';
+import { loadSignupDataRaw, loadSignupData, clearSignupData, hasSignupData, computeAgeFromDOB, type StoredSignupData, type SignupPayload } from '@/lib/signupIntegrity';
 
-type SignupData = SignupPayload;
+type SignupData = StoredSignupData;
 
 const INTERESTS = [
   { value: 'gaming', label: 'Gaming', emoji: '🎮', color: 'border-purple-500/40 bg-purple-500/10 text-purple-300' },
@@ -45,6 +45,8 @@ export default function Onboarding() {
   const [accountCreated, setAccountCreated] = useState(false);
   const [signupAttempted, setSignupAttempted] = useState(false);
   const [integrityVerified, setIntegrityVerified] = useState(false);
+  const [passwordForSignup, setPasswordForSignup] = useState<string>('');
+  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
 
   // Find friends state
   const sendRequest = useSendFriendRequest();
@@ -176,7 +178,7 @@ export default function Onboarding() {
     setStep('ai-name');
   };
 
-  // After AI name → create account, then go to find-friends
+  // After AI name → ask for password re-entry, then create account
   const handleAiNameDone = async () => {
     if (!aiName.trim()) {
       toast({ title: 'Donne un nom à ton IA !', variant: 'destructive' });
@@ -192,15 +194,22 @@ export default function Onboarding() {
       return;
     }
 
-    // Verify HMAC integrity before creating account
-    const verified = await loadSignupData(signupData.password);
+    // Show password prompt — password is NOT stored in sessionStorage
+    setShowPasswordPrompt(true);
+  };
+
+  const handlePasswordSubmitAndCreate = async () => {
+    if (!signupData || !passwordForSignup) return;
+
+    // Verify HMAC integrity with the re-entered password
+    const verified = await loadSignupData(passwordForSignup);
     if (!verified) {
-      toast({ title: '⚠️ Données corrompues', description: 'Les données d\'inscription ont été modifiées. Veuillez recommencer.', variant: 'destructive' });
-      clearSignupData();
-      navigate('/signup', { replace: true });
+      toast({ title: '⚠️ Mot de passe incorrect ou données corrompues', description: 'Vérifiez votre mot de passe ou recommencez l\'inscription.', variant: 'destructive' });
+      setPasswordForSignup('');
       return;
     }
     setIntegrityVerified(true);
+    setShowPasswordPrompt(false);
 
     // Recompute age from DOB (never trust stored age)
     const age = computeAgeFromDOB(verified.dateOfBirth);
@@ -222,7 +231,7 @@ export default function Onboarding() {
 
       // 1. Create account
       setSignupAttempted(true);
-      const { error } = await signUp(signupData.email, signupData.password, signupData.name, signupData.dateOfBirth);
+      const { error } = await signUp(signupData.email, verified.password, signupData.name, signupData.dateOfBirth);
       if (error) {
         // Handle rate limit specifically
         if (error.message?.toLowerCase().includes('rate limit') || (error as any).status === 429) {
@@ -366,6 +375,10 @@ export default function Onboarding() {
 
   const handleFinish = async () => {
     setIsSubmitting(true);
+    // Mark onboarding as completed server-side
+    if (user) {
+      try { await supabase.from('profiles').update({ onboarding_completed: true } as any).eq('user_id', user.id); } catch {}
+    }
     toast({ title: `Bienvenue sur ForSure ! 🎉`, description: `${aiName.trim()} est prêt à t'accompagner !` });
     navigate('/feed', { replace: true });
   };
@@ -557,6 +570,50 @@ export default function Onboarding() {
                     Suivant <ArrowRight className="w-4 h-4" />
                   </Button>
                 </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Password re-entry modal */}
+          {showPasswordPrompt && (
+            <motion.div
+              key="password-prompt"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm px-4"
+            >
+              <div className="pulse-card p-6 sm:p-8 max-w-sm w-full">
+                <div className="flex items-center justify-center mb-4">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Lock className="w-6 h-6 text-primary" />
+                  </div>
+                </div>
+                <h2 className="text-lg font-bold text-center mb-2">Confirmez votre mot de passe</h2>
+                <p className="text-sm text-muted-foreground text-center mb-4">
+                  Par sécurité, saisissez à nouveau votre mot de passe pour créer votre compte.
+                </p>
+                <form onSubmit={(e) => { e.preventDefault(); handlePasswordSubmitAndCreate(); }} className="space-y-4">
+                  <div className="relative">
+                    <Input
+                      type="password"
+                      value={passwordForSignup}
+                      onChange={(e) => setPasswordForSignup(e.target.value)}
+                      placeholder="Votre mot de passe"
+                      className="text-center h-12"
+                      autoFocus
+                      required
+                      minLength={10}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button type="button" variant="ghost" onClick={() => setShowPasswordPrompt(false)} className="flex-1">
+                      Retour
+                    </Button>
+                    <Button type="submit" disabled={passwordForSignup.length < 10} className="pulse-button-gradient flex-1">
+                      Créer mon compte
+                    </Button>
+                  </div>
+                </form>
               </div>
             </motion.div>
           )}

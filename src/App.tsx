@@ -79,6 +79,7 @@ const CreatorUpgrade = lazyWithOneRetry(() => import("./pages/CreatorUpgrade"), 
 const ForgotPassword = lazyWithOneRetry(() => import("./pages/ForgotPassword"), 'r-forgot');
 const ResetPassword = lazyWithOneRetry(() => import("./pages/ResetPassword"), 'r-reset');
 const Onboarding = lazyWithOneRetry(() => import("./pages/Onboarding"), 'r-onboard');
+const AuthConfirmPage = lazyWithOneRetry(() => import("./pages/AuthConfirm"), 'r-authconfirm');
 const Unsubscribe = lazyWithOneRetry(() => import("./pages/Unsubscribe"), 'r-unsub');
 
 const queryClient = new QueryClient();
@@ -172,6 +173,7 @@ function AppContent() {
               <Route path="/forgot-password" element={<PublicOnlyRoute><ForgotPassword /></PublicOnlyRoute>} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/onboarding" element={<Onboarding />} />
+              <Route path="/auth/confirm" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}><AuthConfirmPage /></Suspense>} />
               
               {/* Protected routes */}
               <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
