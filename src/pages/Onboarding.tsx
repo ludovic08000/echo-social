@@ -570,6 +570,50 @@ export default function Onboarding() {
             </motion.div>
           )}
 
+          {/* Password re-entry modal */}
+          {showPasswordPrompt && (
+            <motion.div
+              key="password-prompt"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm px-4"
+            >
+              <div className="pulse-card p-6 sm:p-8 max-w-sm w-full">
+                <div className="flex items-center justify-center mb-4">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Lock className="w-6 h-6 text-primary" />
+                  </div>
+                </div>
+                <h2 className="text-lg font-bold text-center mb-2">Confirmez votre mot de passe</h2>
+                <p className="text-sm text-muted-foreground text-center mb-4">
+                  Par sécurité, saisissez à nouveau votre mot de passe pour créer votre compte.
+                </p>
+                <form onSubmit={(e) => { e.preventDefault(); handlePasswordSubmitAndCreate(); }} className="space-y-4">
+                  <div className="relative">
+                    <Input
+                      type="password"
+                      value={passwordForSignup}
+                      onChange={(e) => setPasswordForSignup(e.target.value)}
+                      placeholder="Votre mot de passe"
+                      className="text-center h-12"
+                      autoFocus
+                      required
+                      minLength={10}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button type="button" variant="ghost" onClick={() => setShowPasswordPrompt(false)} className="flex-1">
+                      Retour
+                    </Button>
+                    <Button type="submit" disabled={passwordForSignup.length < 10} className="pulse-button-gradient flex-1">
+                      Créer mon compte
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            </motion.div>
+          )}
+
           {step === 'creating' && (
             <motion.div
               key="creating"
