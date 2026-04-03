@@ -283,9 +283,12 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id,is_active' });
 
-      // Generate prekeys if needed (Signal-style)
-      refillPrekeysIfNeeded(user.id).catch(e => 
-        console.warn('[E2EE] Prekey refill failed:', e)
+      // Generate prekeys + signed prekeys if needed (Signal/X3DH-style)
+      Promise.all([
+        refillPrekeysIfNeeded(user.id),
+        refreshSignedPrekeyIfNeeded(user.id, keys.signingPrivateKey),
+      ]).catch(e => 
+        console.warn('[E2EE] Prekey/SPK refill failed:', e)
       );
 
       setState(s => ({
