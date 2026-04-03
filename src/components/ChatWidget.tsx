@@ -79,7 +79,7 @@ function MessageBodyWithLinks({ body, isMe }: { body: string; isMe: boolean }) {
         URL_REGEX.test(part) ? (
           <a
             key={i}
-            href={part}
+            href={sanitizeUrl(part)}
             target="_blank"
             rel="noopener noreferrer"
             onClick={e => e.stopPropagation()}
