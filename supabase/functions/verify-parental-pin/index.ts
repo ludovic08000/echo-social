@@ -91,6 +91,29 @@ Deno.serve(async (req) => {
           });
         }
 
+        // Server-side age verification: compute age from profile DOB
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("date_of_birth")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (profile?.date_of_birth) {
+          const dob = new Date(profile.date_of_birth);
+          const today = new Date();
+          let serverAge = today.getFullYear() - dob.getFullYear();
+          const m = today.getMonth() - dob.getMonth();
+          if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) serverAge--;
+
+          // Only allow parental controls for minors (< 16)
+          if (serverAge >= 16) {
+            console.warn(`[parental-pin] rejected: user=${user.id} age=${serverAge} >= 16`);
+            return new Response(JSON.stringify({ error: "Le contrôle parental est réservé aux mineurs de moins de 16 ans." }), {
+              status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        }
+
         const pinHash = await hashPinServer(pin, user.id);
         const categories = Array.isArray(allowed_categories) && allowed_categories.length > 0
           ? allowed_categories
