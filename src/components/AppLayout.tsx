@@ -43,31 +43,41 @@ function MobileHeader() {
            <BrandLogo className="h-6 w-auto" />
          </Link>
         
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <UXModeSwitchCompact />
+
+          {/* Notification button — glassmorphism capsule */}
           <Link 
             to="/notifications" 
-            className="relative w-8 h-8 rounded-xl bg-secondary/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors active:scale-95"
+            className="relative group w-9 h-9 rounded-2xl bg-gradient-to-br from-accent/60 to-secondary/40 backdrop-blur-md border border-border/15 flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/25 hover:shadow-[0_0_12px_hsl(var(--primary)/0.12)] transition-all duration-300 active:scale-90"
           >
-            <Bell className="w-[18px] h-[18px]" strokeWidth={1.6} />
+            <Bell className="w-[17px] h-[17px] transition-transform duration-300 group-hover:scale-110" strokeWidth={1.8} />
             {unreadCount && unreadCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-[9px] h-[9px] rounded-full bg-destructive ring-[1.5px] ring-background" />
+              <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center px-1 ring-2 ring-background shadow-sm animate-scale-in" />
             )}
           </Link>
+
+          {/* Messages button — glassmorphism capsule */}
           <button 
             onClick={() => isMobile ? navigate('/messages') : openChat()}
-            className="relative w-8 h-8 rounded-xl bg-secondary/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors active:scale-95"
+            className="relative group w-9 h-9 rounded-2xl bg-gradient-to-br from-accent/60 to-secondary/40 backdrop-blur-md border border-border/15 flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/25 hover:shadow-[0_0_12px_hsl(var(--primary)/0.12)] transition-all duration-300 active:scale-90"
           >
-            <MessageCircle className="w-[18px] h-[18px]" strokeWidth={1.6} />
+            <MessageCircle className="w-[17px] h-[17px] transition-transform duration-300 group-hover:scale-110" strokeWidth={1.8} />
             {unreadMessages > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-[9px] h-[9px] rounded-full bg-destructive ring-[1.5px] ring-background" />
+              <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center px-1 ring-2 ring-background shadow-sm animate-scale-in">
+                {unreadMessages > 9 ? '9+' : unreadMessages}
+              </span>
             )}
           </button>
+
+          {/* Avatar — premium ring */}
           <Link
             to={`/profile/${user.id}`}
-            className="w-8 h-8 rounded-xl overflow-hidden ring-1 ring-border/30 hover:ring-primary/40 transition-all active:scale-95"
+            className="w-9 h-9 rounded-2xl overflow-hidden border-2 border-transparent bg-gradient-to-br from-primary/20 to-accent/30 p-[2px] hover:from-primary/40 hover:to-primary/20 transition-all duration-300 active:scale-90"
           >
-            <UserAvatar src={profile?.avatar_url} alt={profile?.name || ''} size="sm" />
+            <div className="w-full h-full rounded-[calc(1rem-2px)] overflow-hidden">
+              <UserAvatar src={profile?.avatar_url} alt={profile?.name || ''} size="sm" />
+            </div>
           </Link>
         </div>
       </div>
