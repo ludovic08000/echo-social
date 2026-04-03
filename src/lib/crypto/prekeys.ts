@@ -62,7 +62,7 @@ async function savePrivatePrekey(userId: string, prekeyId: number, privateKey: C
   });
 }
 
-async function loadPrivatePrekey(userId: string, prekeyId: number): Promise<CryptoKey | null> {
+export async function loadPrivatePrekey(userId: string, prekeyId: number): Promise<CryptoKey | null> {
   try {
     const db = await openPrekeyDB();
     const tx = db.transaction(PREKEY_STORE, 'readonly');

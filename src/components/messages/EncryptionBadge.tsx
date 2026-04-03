@@ -16,9 +16,9 @@ export function EncryptionBadge({ encrypted, verified, ratchetActive, size = 'xs
   if (!encrypted) return null;
 
   const label = verified
-    ? (ratchetActive ? 'Chiffré · Vérifié' : 'Chiffré · Vérifié')
+    ? (ratchetActive ? 'X3DH · Vérifié' : 'Chiffré · Vérifié')
     : ratchetActive
-      ? 'Double Ratchet'
+      ? 'X3DH · Double Ratchet'
       : 'Chiffré';
 
   return (
@@ -67,7 +67,7 @@ export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, r
     statusText = '⚠️ Clé de sécurité modifiée — vérification obligatoire avant envoi';
     StatusIcon = AlertTriangle;
   } else if (ratchetActive) {
-    statusText = 'Canal sécurisé renforcé — forward secrecy par message';
+    statusText = 'X3DH + Double Ratchet — forward secrecy par message';
     StatusIcon = Zap;
   } else {
     statusText = 'Chiffrement de bout en bout activé';

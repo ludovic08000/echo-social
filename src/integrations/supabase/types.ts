@@ -3949,6 +3949,39 @@ export type Database = {
         }
         Relationships: []
       }
+      user_signed_prekeys: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          is_active: boolean
+          public_key: string
+          signature: string
+          spk_id: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          is_active?: boolean
+          public_key: string
+          signature: string
+          spk_id: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          is_active?: boolean
+          public_key?: string
+          signature?: string
+          spk_id?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       video_comments: {
         Row: {
           body: string
@@ -4538,6 +4571,14 @@ export type Database = {
           total_views: number
           user_id: string
           viewer_count: number
+        }[]
+      }
+      get_signed_prekey: {
+        Args: { p_user_id: string }
+        Returns: {
+          public_key: string
+          signature: string
+          spk_id: number
         }[]
       }
       has_chat_pin: { Args: { p_user_id: string }; Returns: boolean }
