@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark, ShieldAlert, AlertTriangle, Eye } from 'lucide-react';
+import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark, ShieldAlert, AlertTriangle, Eye, Send } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Post, useDeletePost } from '@/hooks/usePosts';
 import { supabase } from '@/integrations/supabase/client';
@@ -25,7 +25,6 @@ import { toast } from 'sonner';
 import { FeedAutoplayVideo } from './FeedAutoplayVideo';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { imagePresets } from '@/lib/imageOptimize';
-// guessVideoMime removed — using src directly for universal codec support
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -58,7 +57,6 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const postUrl = generatePostUrl(post.id);
   const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
 
-  // Fetch video view count
   const { data: videoViewCount } = useQuery({
     queryKey: ['post-views', post.id],
     queryFn: async () => {
@@ -72,7 +70,6 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
     staleTime: 60_000,
   });
 
-  // Track video view on play
   const trackVideoView = () => {
     if (viewTracked || !user || !isVideoPost) return;
     setViewTracked(true);
@@ -123,28 +120,24 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const isOwner = user?.id === post.user_id;
 
   return (
-    <article className="group relative bg-card border border-border/20 sm:rounded-2xl overflow-hidden transition-all duration-300 hover:border-border/40 hover:shadow-[var(--shadow-md)]">
-      {/* Subtle gradient overlay on hover */}
-      
-      
-      {/* Header */}
-      <div className="relative flex items-center justify-between px-4 pt-4 pb-2.5">
-        <div className="flex items-center gap-3">
-          <Link to={`/profile/${post.user_id}`} className="relative">
-              <UserAvatar 
-                src={post.profile.avatar_url} 
-                alt={post.profile.name} 
-                size="md" 
-                moodEmoji={post.profile.mood_emoji}
-              />
-            <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-card" />
+    <article className="group relative bg-card sm:border sm:border-border/20 sm:rounded-2xl overflow-hidden transition-all duration-300">
+      {/* Header — Instagram style */}
+      <div className="flex items-center justify-between px-3 py-2.5">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <Link to={`/profile/${post.user_id}`} className="relative flex-shrink-0">
+            <UserAvatar 
+              src={post.profile.avatar_url} 
+              alt={post.profile.name} 
+              size="sm" 
+              moodEmoji={post.profile.mood_emoji}
+            />
           </Link>
           
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <Link 
                 to={`/profile/${post.user_id}`}
-                className="font-semibold text-sm text-foreground hover:text-primary transition-colors block truncate"
+                className="font-semibold text-[13px] text-foreground hover:text-primary transition-colors truncate"
               >
                 {post.profile.name}
               </Link>
@@ -153,160 +146,202 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
             </div>
             <div className="flex items-center gap-1.5">
               <Link to={`/post/${post.id}`}>
-                <span className="text-muted-foreground text-xs hover:text-foreground transition-colors">
+                <span className="text-muted-foreground text-[11px] hover:text-foreground transition-colors">
                   {formatDistanceToNow(new Date(post.created_at), { addSuffix: true, locale: fr })}
                 </span>
               </Link>
               {timeLeft && (
-                isMobile ? (
-                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-medium backdrop-blur-sm">
-                    <Timer className="w-2.5 h-2.5" />
-                    {timeLeft}
-                  </span>
-                ) : (
-                  <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-medium backdrop-blur-sm">
-                    <Timer className="w-2.5 h-2.5" />
-                    {timeLeft}
-                  </motion.span>
-                )
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-medium">
+                  <Timer className="w-2.5 h-2.5" />
+                  {timeLeft}
+                </span>
               )}
             </div>
           </div>
         </div>
         
-        <div className="flex items-center gap-1">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+              <MoreHorizontal className="w-5 h-5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="rounded-xl border-border/30 shadow-lg">
+            <DropdownMenuItem asChild>
+              <ShareButton 
+                url={postUrl} 
+                title={`Post de ${post.profile.name}`}
+                text={post.body?.slice(0, 100)}
+                variant="ghost"
+                showLabel
+                className="w-full justify-start p-0"
+              />
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setSaved(!saved)}>
+              <Bookmark className={cn("w-4 h-4 mr-2", saved && "fill-current")} />
+              {saved ? 'Retirer' : 'Enregistrer'}
+            </DropdownMenuItem>
+            {isOwner && (
+              <DropdownMenuItem onClick={handleDelete} className="text-destructive">
+                <Trash2 className="w-4 h-4 mr-2" />
+                Supprimer
+              </DropdownMenuItem>
+            )}
+            {!isOwner && (
+              <DropdownMenuItem 
+                onClick={async () => {
+                  try {
+                    await reportUser.mutateAsync({
+                      reportedUserId: post.user_id,
+                      reportType: 'inappropriate_content',
+                      description: `Signalement - post ${post.id}`,
+                    });
+                    toast.success('✅ Signalement envoyé !');
+                  } catch {
+                    toast.error('Erreur lors du signalement');
+                  }
+                }}
+                className="text-destructive"
+              >
+                <ShieldAlert className="w-4 h-4 mr-2" />
+                Signaler
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* Media — full width, no padding, no border radius on mobile */}
+      {post.image_url && (
+        <div className="relative w-full overflow-hidden bg-muted/30 aspect-[4/5]">
+          {!mediaLoaded && !videoError && (
+            <div className="absolute inset-0 skeleton" />
+          )}
+          {isVideoPost ? (
+            videoError ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-muted/70">
+                <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-background/80 border border-border/40">
+                  <AlertTriangle className="w-4 h-4 text-destructive" />
+                  <span className="text-xs font-medium text-foreground">Format vidéo non supporté</span>
+                </div>
+              </div>
+            ) : (
+              <>
+                <FeedAutoplayVideo
+                  src={post.image_url!}
+                  onMediaLoaded={() => setMediaLoaded(true)}
+                  onVideoError={() => { setMediaLoaded(true); setVideoError(true); }}
+                  onPlay={() => trackVideoView()}
+                />
+                {typeof videoViewCount === 'number' && videoViewCount > 0 && (
+                  <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1 text-white text-xs bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1">
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>{videoViewCount > 1000 ? `${(videoViewCount / 1000).toFixed(1)}K` : videoViewCount}</span>
+                  </div>
+                )}
+              </>
+            )
+          ) : (
+            <Link to={`/post/${post.id}`}>
+              <img
+                src={imagePresets.postThumbnail(post.image_url) || post.image_url}
+                alt="Image du post"
+                loading="lazy"
+                decoding="async"
+                className={cn(
+                  "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
+                  mediaLoaded ? "opacity-100" : "opacity-0"
+                )}
+                onLoad={() => setMediaLoaded(true)}
+              />
+            </Link>
+          )}
+        </div>
+      )}
+
+      {/* Action bar — Instagram/Meta style: icons left, bookmark right */}
+      {showActions && (
+        <div className="flex items-center justify-between px-3 pt-2 pb-1">
+          <div className="flex items-center -ml-2">
+            <ReactionButton 
+              postId={post.id}
+              currentReaction={post.user_reaction}
+              reactionsCount={0}
+              variant="instagram"
+            />
+            <button
+              onClick={onCommentClick}
+              className="h-10 w-10 flex items-center justify-center text-foreground hover:text-muted-foreground transition-colors active:scale-90"
+            >
+              <MessageCircle className="w-[22px] h-[22px]" />
+            </button>
+            <ShareButton
+              url={postUrl}
+              title={`Post de ${post.profile.name}`}
+              text={post.body?.slice(0, 100)}
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 text-foreground hover:text-muted-foreground p-0"
+            />
+          </div>
           <button
             onClick={() => setSaved(!saved)}
             className={cn(
-              "h-8 w-8 rounded-xl flex items-center justify-center transition-colors",
-              saved ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+              "h-10 w-10 flex items-center justify-center transition-colors active:scale-90",
+              saved ? "text-foreground" : "text-foreground hover:text-muted-foreground"
             )}
           >
-            <Bookmark className={cn("w-4 h-4", saved && "fill-current")} />
+            <Bookmark className={cn("w-[22px] h-[22px]", saved && "fill-current")} />
           </button>
-          
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl text-muted-foreground hover:text-foreground">
-                <MoreHorizontal className="w-4 h-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="rounded-xl glass border-border/30 shadow-[var(--shadow-lg)]">
-              <DropdownMenuItem asChild>
-                <ShareButton 
-                  url={postUrl} 
-                  title={`Post de ${post.profile.name}`}
-                  text={post.body?.slice(0, 100)}
-                  variant="ghost"
-                  showLabel
-                  className="w-full justify-start p-0"
-                />
-              </DropdownMenuItem>
-              {isOwner && (
-                <DropdownMenuItem onClick={handleDelete} className="text-destructive">
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Supprimer
-                </DropdownMenuItem>
-              )}
-              {!isOwner && (
-                <DropdownMenuItem 
-                  onClick={async () => {
-                    try {
-                      await reportUser.mutateAsync({
-                        reportedUserId: post.user_id,
-                        reportType: 'inappropriate_content',
-                        description: `Signalement - post ${post.id}`,
-                      });
-                      toast.success('✅ Signalement envoyé !');
-                    } catch {
-                      toast.error('Erreur lors du signalement');
-                    }
-                  }}
-                  className="text-destructive"
-                >
-                  <ShieldAlert className="w-4 h-4 mr-2" />
-                  Signaler ce contenu
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
-      </div>
+      )}
 
-      {/* Content */}
-      <div className="block relative">
-        {post.body && (
+      {/* Likes count — Instagram style */}
+      {post.likes_count > 0 && (
+        <div className="px-3 pb-1">
+          <span className="text-[13px] font-semibold text-foreground">
+            {post.likes_count} J'aime{post.likes_count > 1 ? '' : ''}
+          </span>
+        </div>
+      )}
+
+      {/* Text content */}
+      {post.body && (
+        <div className="px-3 pb-2">
           <Link to={`/post/${post.id}`}>
-            <p className="px-4 pb-3 text-[14px] text-foreground whitespace-pre-wrap break-words leading-[1.6]">
-              {post.body}
+            <p className="text-[13px] text-foreground leading-[1.5]">
+              <Link to={`/profile/${post.user_id}`} className="font-semibold mr-1.5 hover:text-primary transition-colors">
+                {post.profile.name}
+              </Link>
+              <span className="whitespace-pre-wrap break-words">{post.body}</span>
             </p>
           </Link>
-        )}
-        
-        {post.image_url && (
-          <div className="relative w-full overflow-hidden bg-muted/40 aspect-[4/5]">
-            {!mediaLoaded && !videoError && (
-              <div className="absolute inset-0 skeleton" />
-            )}
-            {isVideoPost ? (
-              videoError ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-muted/70">
-                  <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-background/80 border border-border/40">
-                    <AlertTriangle className="w-4 h-4 text-destructive" />
-                    <span className="text-xs font-medium text-foreground">Format vidéo non supporté</span>
-                  </div>
-                </div>
-              ) : (
-              <>
-                  <FeedAutoplayVideo
-                    src={post.image_url!}
-                    onMediaLoaded={() => setMediaLoaded(true)}
-                    onVideoError={() => { setMediaLoaded(true); setVideoError(true); }}
-                    onPlay={() => trackVideoView()}
-                  />
-                  {typeof videoViewCount === 'number' && videoViewCount > 0 && (
-                    <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1 text-white text-xs bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1">
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>{videoViewCount > 1000 ? `${(videoViewCount / 1000).toFixed(1)}K` : videoViewCount}</span>
-                    </div>
-                  )}
-                </>
-              )
-            ) : (
-              <Link to={`/post/${post.id}`}>
-                <img
-                  src={imagePresets.postThumbnail(post.image_url) || post.image_url}
-                  alt="Image du post"
-                  loading="lazy"
-                  decoding="async"
-                  className={cn(
-                    "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
-                    mediaLoaded ? "opacity-100" : "opacity-0"
-                  )}
-                   onLoad={() => setMediaLoaded(true)}
-                 />
-              </Link>
-            )}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Comments count link */}
+      {post.comments_count > 0 && (
+        <button onClick={onCommentClick} className="px-3 pb-1 text-[13px] text-muted-foreground hover:text-foreground transition-colors">
+          Voir les {post.comments_count} commentaire{post.comments_count > 1 ? 's' : ''}
+        </button>
+      )}
 
       {/* AI Actions */}
       {post.body && (aiSummariesEnabled || autoTranslateEnabled) && (
-        <div className="relative px-4 pb-2 flex flex-wrap gap-1.5">
+        <div className="px-3 pb-2 flex flex-wrap gap-1.5">
           {aiSummariesEnabled && post.body.length >= 100 && (
             <button
               onClick={handleSummarize}
               disabled={summaryLoading}
               className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-medium transition-all border backdrop-blur-sm",
+                "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all",
                 summary
-                  ? "bg-primary/10 text-primary border-primary/30 shadow-[0_2px_8px_hsl(220_70%_50%/0.12)]"
-                  : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60 hover:border-primary/20 hover:shadow-[0_2px_8px_hsl(220_70%_50%/0.08)]"
+                  ? "bg-primary/10 text-primary"
+                  : "bg-secondary/40 text-muted-foreground hover:bg-secondary/60"
               )}
             >
               {summaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-              {summary ? 'Masquer résumé' : 'Résumer'}
+              {summary ? 'Masquer' : 'Résumer'}
             </button>
           )}
           {autoTranslateEnabled && (
@@ -314,10 +349,10 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
               onClick={handleTranslate}
               disabled={translateLoading}
               className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-medium transition-all border backdrop-blur-sm",
+                "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all",
                 translation
-                  ? "bg-primary/10 text-primary border-primary/30 shadow-[0_2px_8px_hsl(220_70%_50%/0.12)]"
-                  : "bg-secondary/40 text-muted-foreground border-border/30 hover:bg-secondary/60 hover:border-primary/20 hover:shadow-[0_2px_8px_hsl(220_70%_50%/0.08)]"
+                  ? "bg-primary/10 text-primary"
+                  : "bg-secondary/40 text-muted-foreground hover:bg-secondary/60"
               )}
             >
               {translateLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3 h-3" />}
@@ -329,90 +364,35 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
 
       {/* AI Results */}
       {(summary || translation) && (
-        <div className="relative px-4 pb-3 space-y-2">
+        <div className="px-3 pb-3 space-y-2">
           {summary && (
-            <div className="p-3 rounded-xl glass border-primary/20 shadow-[0_2px_12px_hsl(220_70%_50%/0.06)]">
-              <div className="flex items-center gap-1.5 mb-1.5">
+            <div className="p-2.5 rounded-xl bg-secondary/30 border border-border/20">
+              <div className="flex items-center gap-1.5 mb-1">
                 <Sparkles className="w-3 h-3 text-primary" />
                 <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Résumé IA</span>
               </div>
-              <p className="text-sm text-foreground leading-relaxed">{summary}</p>
+              <p className="text-[13px] text-foreground leading-relaxed">{summary}</p>
             </div>
           )}
           {translation && (
-            <div className="p-3 rounded-xl glass border-primary/20 shadow-[0_2px_12px_hsl(220_70%_50%/0.06)]">
-              <div className="flex items-center gap-1.5 mb-1.5">
+            <div className="p-2.5 rounded-xl bg-secondary/30 border border-border/20">
+              <div className="flex items-center gap-1.5 mb-1">
                 <Languages className="w-3 h-3 text-primary" />
                 <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Traduction</span>
               </div>
-              <p className="text-sm text-foreground leading-relaxed">{translation}</p>
+              <p className="text-[13px] text-foreground leading-relaxed">{translation}</p>
             </div>
           )}
         </div>
       )}
 
-      {/* Reactions Count */}
-      {(post.likes_count > 0 || post.comments_count > 0) && (
-        <div className="relative flex items-center justify-between px-4 py-2 text-xs text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            {post.likes_count > 0 && (
-              <div className="flex items-center gap-1">
-                <div className="w-[18px] h-[18px] rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-[0_2px_6px_hsl(220_70%_50%/0.3)]">
-                  <ThumbsUp className="w-2.5 h-2.5 text-primary-foreground" />
-                </div>
-                <span className="font-medium">{post.likes_count}</span>
-              </div>
-            )}
-          </div>
-          {post.comments_count > 0 && (
-            <button onClick={onCommentClick} className="hover:text-foreground transition-colors hover:underline">
-              {post.comments_count} commentaire{post.comments_count > 1 ? 's' : ''}
-            </button>
-          )}
-        </div>
-      )}
-      
-      {/* Actions */}
-      {showActions && (
-        <div className="relative flex items-center border-t border-border/15 mx-4 py-1.5">
-          <ReactionButton 
-            postId={post.id}
-            currentReaction={post.user_reaction}
-            reactionsCount={0}
-            variant="facebook"
-          />
-          
-          <div className="flex-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onCommentClick}
-              className="w-full h-10 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-[13px] transition-all"
-            >
-              <MessageCircle className="w-[18px] h-[18px]" />
-              <span className="font-medium">Commenter</span>
-            </Button>
-          </div>
-          
-          <div className="flex-1">
-            <ShareButton
-              url={postUrl}
-              title={`Post de ${post.profile.name}`}
-              text={post.body?.slice(0, 100)}
-              variant="ghost"
-              size="sm"
-              showLabel
-              className="w-full h-10 gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-[13px]"
-            />
-          </div>
-        </div>
-      )}
+      {/* Bottom spacing for mobile separation */}
+      <div className="h-1 sm:hidden" />
     </article>
   );
 }, (prev, next) => {
   return prev.post.id === next.post.id
     && prev.post.likes_count === next.post.likes_count
     && prev.post.comments_count === next.post.comments_count
-    && prev.post.is_liked === next.post.is_liked
     && prev.post.user_reaction === next.post.user_reaction;
 });
