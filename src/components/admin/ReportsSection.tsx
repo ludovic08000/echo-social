@@ -3,9 +3,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Card, CardContent } from '@/components/ui/card';
+import { Flag, CheckCircle, XCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { motion } from 'framer-motion';
 
 export function ReportsSection() {
   const queryClient = useQueryClient();
@@ -38,50 +40,59 @@ export function ReportsSection() {
     onSuccess: () => { toast({ title: 'Signalement traité' }); queryClient.invalidateQueries({ queryKey: ['admin-reports'] }); },
   });
 
+  const pendingCount = reports?.filter(r => r.status === 'pending').length || 0;
+
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-bold text-foreground">Signalements</h2>
-      <div className="rounded-xl border border-border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Signalé par</TableHead>
-              <TableHead>Utilisateur signalé</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Statut</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Chargement...</TableCell></TableRow>
-            ) : !reports?.length ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Aucun signalement</TableCell></TableRow>
-            ) : reports.map(r => (
-              <TableRow key={r.id}>
-                <TableCell className="text-sm">{r.reporterName}</TableCell>
-                <TableCell className="text-sm font-medium">{r.reportedName}</TableCell>
-                <TableCell><Badge variant="secondary" className="text-[10px]">{r.report_type}</Badge></TableCell>
-                <TableCell>
-                  <Badge variant={r.status === 'pending' ? 'destructive' : 'secondary'} className="text-[10px]">
-                    {r.status === 'pending' ? 'En attente' : r.status === 'resolved' ? 'Résolu' : r.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-xs text-muted-foreground">{format(new Date(r.created_at), 'dd/MM HH:mm', { locale: fr })}</TableCell>
-                <TableCell>
-                  {r.status === 'pending' && (
-                    <div className="flex gap-1">
-                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateReport.mutate({ id: r.id, status: 'resolved', resolution: 'Approuvé par admin' })}>Résoudre</Button>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => updateReport.mutate({ id: r.id, status: 'dismissed', resolution: 'Rejeté' })}>Rejeter</Button>
-                    </div>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Flag className="w-5 h-5 text-primary" />
+          <h2 className="text-lg font-bold text-foreground">Signalements</h2>
+        </div>
+        {pendingCount > 0 && <Badge variant="destructive" className="shrink-0">{pendingCount} en attente</Badge>}
       </div>
+
+      {isLoading ? (
+        <div className="text-center py-12 text-muted-foreground text-sm">Chargement…</div>
+      ) : !reports?.length ? (
+        <div className="text-center py-12 text-muted-foreground text-sm">Aucun signalement</div>
+      ) : (
+        <div className="space-y-2">
+          {reports.map((r, i) => (
+            <motion.div key={r.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }}>
+              <Card className={r.status === 'pending' ? 'border-amber-500/30' : ''}>
+                <CardContent className="p-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold text-foreground truncate">{r.reportedName}</span>
+                        <Badge variant="secondary" className="text-[10px] shrink-0">{r.report_type}</Badge>
+                        <Badge variant={r.status === 'pending' ? 'destructive' : 'secondary'} className="text-[10px] shrink-0">
+                          {r.status === 'pending' ? 'En attente' : r.status === 'resolved' ? 'Résolu' : r.status}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Signalé par <span className="font-medium">{r.reporterName}</span> · {format(new Date(r.created_at), 'dd/MM HH:mm', { locale: fr })}
+                      </p>
+                      {r.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{r.description}</p>}
+                    </div>
+                    {r.status === 'pending' && (
+                      <div className="flex gap-1 shrink-0">
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-green-600 hover:bg-green-500/10" onClick={() => updateReport.mutate({ id: r.id, status: 'resolved', resolution: 'Approuvé' })} title="Résoudre">
+                          <CheckCircle className="w-4 h-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => updateReport.mutate({ id: r.id, status: 'dismissed', resolution: 'Rejeté' })} title="Rejeter">
+                          <XCircle className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
-import { Users, FileText, DollarSign, Flag, CreditCard, MessageSquare } from 'lucide-react';
+import { Users, FileText, DollarSign, Flag, CreditCard, MessageSquare, LayoutDashboard } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { cn } from '@/lib/utils';
 
 export function DashboardSection() {
   const { data: stats, isLoading } = useQuery({
@@ -29,32 +30,35 @@ export function DashboardSection() {
     },
   });
 
-  if (isLoading) return <div className="text-center py-12 text-muted-foreground">Chargement...</div>;
+  if (isLoading) return <div className="text-center py-12 text-muted-foreground text-sm">Chargement…</div>;
 
   const cards = [
     { label: 'Utilisateurs', value: stats?.totalUsers || 0, icon: Users, color: 'text-blue-600 bg-blue-500/10' },
     { label: 'Publications', value: stats?.totalPosts || 0, icon: FileText, color: 'text-purple-600 bg-purple-500/10' },
-    { label: 'Revenus total', value: `${(stats?.totalRevenue || 0).toFixed(2)}€`, icon: DollarSign, color: 'text-emerald-600 bg-emerald-500/10' },
-    { label: 'Signalements en attente', value: stats?.pendingReports || 0, icon: Flag, color: 'text-amber-600 bg-amber-500/10' },
+    { label: 'Revenus', value: `${(stats?.totalRevenue || 0).toFixed(2)}€`, icon: DollarSign, color: 'text-emerald-600 bg-emerald-500/10' },
+    { label: 'Signalements', value: stats?.pendingReports || 0, icon: Flag, color: stats?.pendingReports ? 'text-red-600 bg-red-500/10' : 'text-amber-600 bg-amber-500/10' },
     { label: 'Commandes', value: stats?.totalOrders || 0, icon: CreditCard, color: 'text-blue-600 bg-blue-500/10' },
     { label: 'Messages IA (7j)', value: stats?.agentMessages7d || 0, icon: MessageSquare, color: 'text-purple-600 bg-purple-500/10' },
   ];
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-lg font-bold text-foreground">Vue d'ensemble</h2>
+    <div className="space-y-5">
+      <div className="flex items-center gap-2">
+        <LayoutDashboard className="w-5 h-5 text-primary" />
+        <h2 className="text-lg font-bold text-foreground">Vue d'ensemble</h2>
+      </div>
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         {cards.map((card, i) => (
           <motion.div key={card.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-            <Card>
+            <Card className="overflow-hidden">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${card.color}`}>
+                  <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shrink-0', card.color)}>
                     <card.icon className="w-5 h-5" />
                   </div>
-                  <div>
-                    <p className="text-lg font-bold text-foreground">{card.value}</p>
-                    <p className="text-[10px] text-muted-foreground">{card.label}</p>
+                  <div className="min-w-0">
+                    <p className="text-lg font-bold text-foreground truncate">{card.value}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{card.label}</p>
                   </div>
                 </div>
               </CardContent>
