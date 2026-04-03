@@ -73,6 +73,7 @@ export default function Admin() {
       case 'zeus': return <ZeusSection />;
       case 'audit_logs': return <AuditLogsSection />;
       case 'monitoring': return <MonitoringSection />;
+      case 'security_ai': return <SecurityMonitoringSection />;
       case 'security': return <SecuritySection />;
       case 'settings': return <SettingsSection />;
     }
