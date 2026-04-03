@@ -203,7 +203,7 @@ export default function PrivacyPolicy() {
             <h2 className="text-xl font-semibold text-foreground">8. Cookies</h2>
             <p>Forsure utilise <strong>uniquement des cookies techniques</strong> strictement nécessaires :</p>
             <ul className="list-disc pl-6 space-y-1">
-              <li>Cookie d'authentification (session utilisateur)</li>
+              <li>Cookie d'authentification (session utilisateur) — <strong>Secure, HttpOnly, SameSite=Strict</strong></li>
               <li>Préférences d'affichage (thème clair/sombre, langue)</li>
             </ul>
             <p className="font-semibold mt-2">🚫 Aucun cookie publicitaire, aucun cookie de traçage, aucun cookie tiers.</p>

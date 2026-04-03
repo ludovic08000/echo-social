@@ -60,7 +60,7 @@ export default function LegalTerms() {
 
           <section>
             <h2 className="text-xl font-semibold text-foreground">Article 6 — Cookies</h2>
-            <p>Forsure utilise uniquement des cookies techniques strictement nécessaires au fonctionnement du service (authentification, session). Aucun cookie publicitaire ou de traçage n'est utilisé, conformément à la directive ePrivacy et aux recommandations de la CNIL.</p>
+            <p>Forsure utilise uniquement des cookies techniques strictement nécessaires au fonctionnement du service (authentification, session), protégés par les attributs <strong>Secure, HttpOnly et SameSite=Strict</strong>. Aucun cookie publicitaire ou de traçage n'est utilisé, conformément à la directive ePrivacy et aux recommandations de la CNIL.</p>
           </section>
 
           <section>
