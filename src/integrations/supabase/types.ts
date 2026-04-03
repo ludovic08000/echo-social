@@ -3243,6 +3243,129 @@ export type Database = {
         }
         Relationships: []
       }
+      security_ai_patterns: {
+        Row: {
+          confidence: number
+          created_at: string
+          detection_rule: string
+          id: string
+          is_active: boolean
+          last_matched_at: string | null
+          pattern_name: string
+          pattern_signature: Json
+          severity: string
+          source: string
+          times_matched: number
+          updated_at: string
+        }
+        Insert: {
+          confidence?: number
+          created_at?: string
+          detection_rule: string
+          id?: string
+          is_active?: boolean
+          last_matched_at?: string | null
+          pattern_name: string
+          pattern_signature?: Json
+          severity?: string
+          source?: string
+          times_matched?: number
+          updated_at?: string
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          detection_rule?: string
+          id?: string
+          is_active?: boolean
+          last_matched_at?: string | null
+          pattern_name?: string
+          pattern_signature?: Json
+          severity?: string
+          source?: string
+          times_matched?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      security_alert_config: {
+        Row: {
+          alert_email: string
+          created_at: string
+          id: string
+          is_active: boolean
+          min_severity: string
+        }
+        Insert: {
+          alert_email: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          min_severity?: string
+        }
+        Update: {
+          alert_email?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          min_severity?: string
+        }
+        Relationships: []
+      }
+      security_incidents: {
+        Row: {
+          ai_analysis: string | null
+          ai_recommendation: string | null
+          alert_sent: boolean
+          attack_vector: string | null
+          created_at: string
+          id: string
+          incident_type: string
+          raw_data: Json | null
+          resolved_at: string | null
+          severity: string
+          source_ip: string | null
+          status: string
+          success: boolean
+          target_endpoint: string | null
+          vulnerability_found: string | null
+        }
+        Insert: {
+          ai_analysis?: string | null
+          ai_recommendation?: string | null
+          alert_sent?: boolean
+          attack_vector?: string | null
+          created_at?: string
+          id?: string
+          incident_type?: string
+          raw_data?: Json | null
+          resolved_at?: string | null
+          severity?: string
+          source_ip?: string | null
+          status?: string
+          success?: boolean
+          target_endpoint?: string | null
+          vulnerability_found?: string | null
+        }
+        Update: {
+          ai_analysis?: string | null
+          ai_recommendation?: string | null
+          alert_sent?: boolean
+          attack_vector?: string | null
+          created_at?: string
+          id?: string
+          incident_type?: string
+          raw_data?: Json | null
+          resolved_at?: string | null
+          severity?: string
+          source_ip?: string | null
+          status?: string
+          success?: boolean
+          target_endpoint?: string | null
+          vulnerability_found?: string | null
+        }
+        Relationships: []
+      }
       security_logs: {
         Row: {
           created_at: string

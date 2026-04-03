@@ -6,13 +6,14 @@ import { toast } from '@/hooks/use-toast';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import {
   Shield, Users, Activity, LayoutDashboard, FileText, Flag, BarChart3, CreditCard, Lock, Settings,
-  ChevronRight, Brain, Zap, Archive, Gauge, Monitor, ScrollText
+  ChevronRight, Brain, Zap, Archive, Gauge, Monitor, ScrollText, ShieldAlert
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   DashboardSection, UsersSection, PostsSection, ReportsSection,
   StatsSection, SubscriptionsSection, SecuritySection, SettingsSection,
   AISection, PlatformHealthDashboard, FeedIntelligenceSection, MonitoringSection,
+  SecurityMonitoringSection,
 } from '@/components/admin';
 import { VerificationsSection } from '@/components/admin/VerificationsSection';
 import { ArchivesSection } from '@/components/admin/ArchivesSection';
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
   { key: 'zeus', label: '⚡ Console Zeus', icon: Zap },
   { key: 'audit_logs', label: 'Journal d\'audit', icon: ScrollText },
   { key: 'monitoring', label: 'Monitoring', icon: Monitor },
+  { key: 'security_ai', label: 'IA Sécurité', icon: ShieldAlert },
   { key: 'security', label: 'Sécurité', icon: Lock },
   { key: 'settings', label: 'Paramètres', icon: Settings },
 ] as const;
@@ -71,6 +73,7 @@ export default function Admin() {
       case 'zeus': return <ZeusSection />;
       case 'audit_logs': return <AuditLogsSection />;
       case 'monitoring': return <MonitoringSection />;
+      case 'security_ai': return <SecurityMonitoringSection />;
       case 'security': return <SecuritySection />;
       case 'settings': return <SettingsSection />;
     }
