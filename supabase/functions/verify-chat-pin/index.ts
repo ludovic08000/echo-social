@@ -129,6 +129,10 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // DDoS protection — critical tier for PIN verification
+  const ddosBlock = await ddosShield(req, corsHeaders, "critical", "verify-chat-pin");
+  if (ddosBlock) return ddosBlock;
+
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
