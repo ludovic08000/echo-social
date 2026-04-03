@@ -18,6 +18,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
+import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 
 export type PinMode = 'every_open' | 'once_per_session' | 'on_inactivity' | 'on_return';
 
