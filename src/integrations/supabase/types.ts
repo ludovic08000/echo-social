@@ -1218,6 +1218,42 @@ export type Database = {
         }
         Relationships: []
       }
+      ddos_ip_tracker: {
+        Row: {
+          blocked_until: string | null
+          created_at: string
+          endpoint: string
+          id: string
+          ip_address: string
+          penalty_level: number
+          request_count: number
+          updated_at: string
+          window_start: string
+        }
+        Insert: {
+          blocked_until?: string | null
+          created_at?: string
+          endpoint?: string
+          id?: string
+          ip_address: string
+          penalty_level?: number
+          request_count?: number
+          updated_at?: string
+          window_start?: string
+        }
+        Update: {
+          blocked_until?: string | null
+          created_at?: string
+          endpoint?: string
+          id?: string
+          ip_address?: string
+          penalty_level?: number
+          request_count?: number
+          updated_at?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       device_fingerprints: {
         Row: {
           created_at: string
@@ -4490,6 +4526,16 @@ export type Database = {
           public_key: string
         }[]
       }
+      ddos_check_ip: {
+        Args: {
+          p_endpoint?: string
+          p_ip: string
+          p_max_requests?: number
+          p_window_seconds?: number
+        }
+        Returns: Json
+      }
+      ddos_cleanup: { Args: never; Returns: undefined }
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
