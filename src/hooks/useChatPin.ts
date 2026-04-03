@@ -329,24 +329,17 @@ export function useChatPin() {
       return false;
     }
     try {
-      const { data, error } = await supabase
+      // Simple update without .select() to avoid PostgREST count issues
+      const { error, count } = await supabase
         .from('user_chat_pins')
         .update({ pin_mode: mode })
-        .eq('user_id', user.id)
-        .select('pin_mode')
-        .maybeSingle();
+        .eq('user_id', user.id);
 
       if (error) {
         console.error('[PIN] updatePinMode error:', error);
         return false;
       }
 
-      if (!data) {
-        console.warn('[PIN] updatePinMode: no row found to update');
-        return false;
-      }
-
-      console.log('[PIN] updatePinMode success:', data.pin_mode);
       pinModeRef.current = mode;
       setState(s => ({ ...s, pinMode: mode }));
       return true;
