@@ -7,30 +7,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Globe, Lock, UserX, AlertTriangle, Ban, Search, RefreshCw, Mail } from 'lucide-react';
-import { format } from 'date-fns';
-import { fr } from 'date-fns/locale';
+import { Globe, Lock, UserX, AlertTriangle, Ban, Mail } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 
 export function SecuritySection() {
-  const [search, setSearch] = useState('');
   const [newIp, setNewIp] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [reason, setReason] = useState('');
   const [emailReason, setEmailReason] = useState('');
   const queryClient = useQueryClient();
   const { user } = useAuth();
-
-  const { data: logs, isLoading: logsLoading, refetch: refetchLogs } = useQuery({
-    queryKey: ['security-logs'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('security_logs').select('*').order('created_at', { ascending: false }).limit(100);
-      if (error) throw error;
-      return data;
-    },
-  });
 
   const { data: bannedIps } = useQuery({
     queryKey: ['banned-ips'],
@@ -97,7 +84,7 @@ export function SecuritySection() {
   const banEmail = useMutation({
     mutationFn: async () => {
       if (!newEmail.trim() || !user) throw new Error('Email requis');
-      const { error } = await supabase.from('banned_emails').insert({ email: newEmail.trim().toLowerCase(), reason: emailReason.trim() || 'Usurpation d\'identité', banned_by: user.id });
+      const { error } = await supabase.from('banned_emails').insert({ email: newEmail.trim().toLowerCase(), reason: emailReason.trim() || 'Banni par admin', banned_by: user.id });
       if (error) throw error;
     },
     onSuccess: () => { toast({ title: '🚫 Email banni' }); setNewEmail(''); setEmailReason(''); queryClient.invalidateQueries({ queryKey: ['banned-emails'] }); },
@@ -119,21 +106,35 @@ export function SecuritySection() {
     onSuccess: () => { toast({ title: 'Utilisateur débanni' }); queryClient.invalidateQueries({ queryKey: ['banned-users-security'] }); },
   });
 
-  const filteredLogs = logs?.filter(l => !search.trim() || l.event_type?.toLowerCase().includes(search.toLowerCase()) || l.ip_address?.toLowerCase().includes(search.toLowerCase()));
-
   return (
-    <div className="space-y-6">
-      <h2 className="text-lg font-bold text-foreground">Sécurité & Anti-Usurpation</h2>
+    <div className="space-y-5">
+      <div className="flex items-center gap-2">
+        <Lock className="w-5 h-5 text-primary" />
+        <h2 className="text-lg font-bold text-foreground">Sécurité & Anti-abus</h2>
+      </div>
 
+      {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: 'IPs bannies', value: bannedIps?.length || 0, icon: Globe, color: 'text-red-600 bg-red-500/10' },
-          { label: 'Emails bannis', value: bannedEmails?.length || 0, icon: Lock, color: 'text-orange-600 bg-orange-500/10' },
+          { label: 'Emails bannis', value: bannedEmails?.length || 0, icon: Mail, color: 'text-orange-600 bg-orange-500/10' },
           { label: 'Comptes bannis', value: bannedUsers?.length || 0, icon: UserX, color: 'text-destructive bg-destructive/10' },
           { label: 'IPs suspectes', value: suspiciousActivity?.suspiciousIps.length || 0, icon: AlertTriangle, color: 'text-amber-600 bg-amber-500/10' },
         ].map((card, i) => (
           <motion.div key={card.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-            <Card><CardContent className="p-4"><div className="flex items-center gap-3"><div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', card.color)}><card.icon className="w-5 h-5" /></div><div><p className="text-lg font-bold text-foreground">{card.value}</p><p className="text-[10px] text-muted-foreground">{card.label}</p></div></div></CardContent></Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shrink-0', card.color)}>
+                    <card.icon className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-lg font-bold text-foreground">{card.value}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{card.label}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </motion.div>
         ))}
       </div>
@@ -141,17 +142,19 @@ export function SecuritySection() {
       {/* Ban IP */}
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><Globe className="w-4 h-4" /> Bannir une IP</CardTitle></CardHeader>
-        <CardContent>
-          <div className="flex gap-2">
+        <CardContent className="space-y-3">
+          <div className="flex flex-col sm:flex-row gap-2">
             <Input placeholder="Adresse IP" value={newIp} onChange={e => setNewIp(e.target.value)} className="flex-1" />
             <Input placeholder="Raison (optionnel)" value={reason} onChange={e => setReason(e.target.value)} className="flex-1" />
-            <Button onClick={() => banIp.mutate()} disabled={!newIp.trim()}><Ban className="w-4 h-4 mr-1" /> Bannir</Button>
+            <Button onClick={() => banIp.mutate()} disabled={!newIp.trim()} className="shrink-0">
+              <Ban className="w-4 h-4 mr-1" /> <span className="truncate">Bannir</span>
+            </Button>
           </div>
           {bannedIps && bannedIps.length > 0 && (
-            <div className="mt-3 space-y-1">{bannedIps.map(ip => (
-              <div key={ip.id} className="flex items-center justify-between p-2 rounded-lg bg-secondary/30 text-sm">
-                <span className="font-mono">{ip.ip_address}</span>
-                <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => unbanIp.mutate(ip.id)}>Débannir</Button>
+            <div className="space-y-1">{bannedIps.map(ip => (
+              <div key={ip.id} className="flex items-center justify-between p-2.5 rounded-lg bg-accent text-sm gap-2">
+                <span className="font-mono text-xs truncate">{ip.ip_address}</span>
+                <Button size="sm" variant="ghost" className="h-7 text-xs shrink-0" onClick={() => unbanIp.mutate(ip.id)}>Débannir</Button>
               </div>
             ))}</div>
           )}
@@ -161,17 +164,19 @@ export function SecuritySection() {
       {/* Ban Email */}
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><Mail className="w-4 h-4" /> Bannir un email</CardTitle></CardHeader>
-        <CardContent>
-          <div className="flex gap-2">
+        <CardContent className="space-y-3">
+          <div className="flex flex-col sm:flex-row gap-2">
             <Input placeholder="Email" value={newEmail} onChange={e => setNewEmail(e.target.value)} className="flex-1" />
             <Input placeholder="Raison" value={emailReason} onChange={e => setEmailReason(e.target.value)} className="flex-1" />
-            <Button onClick={() => banEmail.mutate()} disabled={!newEmail.trim()}><Ban className="w-4 h-4 mr-1" /> Bannir</Button>
+            <Button onClick={() => banEmail.mutate()} disabled={!newEmail.trim()} className="shrink-0">
+              <Ban className="w-4 h-4 mr-1" /> <span className="truncate">Bannir</span>
+            </Button>
           </div>
           {bannedEmails && bannedEmails.length > 0 && (
-            <div className="mt-3 space-y-1">{bannedEmails.map(em => (
-              <div key={em.id} className="flex items-center justify-between p-2 rounded-lg bg-secondary/30 text-sm">
-                <span>{em.email}</span>
-                <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => unbanEmail.mutate(em.id)}>Débannir</Button>
+            <div className="space-y-1">{bannedEmails.map(em => (
+              <div key={em.id} className="flex items-center justify-between p-2.5 rounded-lg bg-accent text-sm gap-2">
+                <span className="text-xs truncate">{em.email}</span>
+                <Button size="sm" variant="ghost" className="h-7 text-xs shrink-0" onClick={() => unbanEmail.mutate(em.id)}>Débannir</Button>
               </div>
             ))}</div>
           )}
@@ -184,48 +189,46 @@ export function SecuritySection() {
           <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><UserX className="w-4 h-4" /> Comptes bannis</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-1">{bannedUsers.map((b: any) => (
-              <div key={b.id} className="flex items-center justify-between p-2 rounded-lg bg-secondary/30 text-sm">
-                <span>{b.profile?.name || b.user_id.slice(0, 8)} — {b.reason}</span>
-                <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => unbanUser.mutate(b.id)}>Débannir</Button>
+              <div key={b.id} className="flex items-center justify-between p-2.5 rounded-lg bg-accent text-sm gap-2">
+                <span className="truncate">{b.profile?.name || b.user_id.slice(0, 8)} — {b.reason}</span>
+                <Button size="sm" variant="ghost" className="h-7 text-xs shrink-0" onClick={() => unbanUser.mutate(b.id)}>Débannir</Button>
               </div>
             ))}</div>
           </CardContent>
         </Card>
       )}
 
-      {/* Security Logs */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm">Logs de sécurité</CardTitle>
-            <div className="flex gap-2">
-              <div className="relative"><Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" /><Input placeholder="Filtrer..." value={search} onChange={e => setSearch(e.target.value)} className="pl-7 h-8 w-48 text-xs" /></div>
-              <Button size="sm" variant="outline" onClick={() => refetchLogs()} className="h-8"><RefreshCw className="w-3.5 h-3.5" /></Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-xl border border-border overflow-hidden">
-            <Table>
-              <TableHeader><TableRow><TableHead>Type</TableHead><TableHead>IP</TableHead><TableHead>Détails</TableHead><TableHead>Date</TableHead></TableRow></TableHeader>
-              <TableBody>
-                {logsLoading ? (
-                  <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Chargement...</TableCell></TableRow>
-                ) : !filteredLogs?.length ? (
-                  <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Aucun log</TableCell></TableRow>
-                ) : filteredLogs.slice(0, 30).map((log: any) => (
-                  <TableRow key={log.id}>
-                    <TableCell><Badge variant={log.event_type?.includes('attack') || log.event_type?.includes('suspicious') ? 'destructive' : 'secondary'} className="text-[10px]">{log.event_type}</Badge></TableCell>
-                    <TableCell className="text-xs font-mono">{log.ip_address || '-'}</TableCell>
-                    <TableCell className="text-xs max-w-[200px] truncate">{JSON.stringify(log.details) || '-'}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{format(new Date(log.created_at), 'dd/MM HH:mm', { locale: fr })}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Flagged Users */}
+      {suspiciousActivity?.flaggedUsers && suspiciousActivity.flaggedUsers.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-amber-500" /> Utilisateurs signalés</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-1">{suspiciousActivity.flaggedUsers.map((u: any) => (
+              <div key={u.user_id} className="flex items-center justify-between p-2.5 rounded-lg bg-accent text-sm gap-2">
+                <div className="min-w-0">
+                  <span className="font-medium truncate block">{u.name}</span>
+                  <span className="text-xs text-muted-foreground">Score: {u.trust_score} · {u.reports_received} signalements · {u.flag_reason}</span>
+                </div>
+              </div>
+            ))}</div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Suspicious IPs */}
+      {suspiciousActivity?.suspiciousIps && suspiciousActivity.suspiciousIps.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><Globe className="w-4 h-4 text-amber-500" /> IPs multi-comptes</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-1">{suspiciousActivity.suspiciousIps.map(([ip, userIds]) => (
+              <div key={ip} className="flex items-center justify-between p-2.5 rounded-lg bg-accent text-sm gap-2">
+                <span className="font-mono text-xs truncate">{ip}</span>
+                <Badge variant="destructive" className="text-[10px] shrink-0">{userIds.length} comptes</Badge>
+              </div>
+            ))}</div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
