@@ -19,17 +19,8 @@ export default function ForgotPassword() {
     e.preventDefault();
     setIsLoading(true);
 
-    const ALLOWED_ORIGINS = [
-      'https://forsure.fans',
-      'https://calm-connect-05.lovable.app',
-    ];
-    const currentOrigin = window.location.origin;
-    const redirectBase = ALLOWED_ORIGINS.includes(currentOrigin)
-      ? currentOrigin
-      : ALLOWED_ORIGINS[0];
-
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${redirectBase}/reset-password`,
+      redirectTo: getSafeRedirectUrl('/reset-password'),
     });
 
     setIsLoading(false);
