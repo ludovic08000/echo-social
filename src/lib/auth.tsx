@@ -110,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/login?confirmed=1`,
+        emailRedirectTo: `${window.location.origin}/auth/confirm`,
         data: { name, date_of_birth: dateOfBirth },
       },
     });

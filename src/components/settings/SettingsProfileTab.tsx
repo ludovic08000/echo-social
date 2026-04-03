@@ -79,15 +79,13 @@ export function SettingsProfileTab() {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       if (error) throw error;
+      // Sign out IMMEDIATELY after requesting password reset from settings
+      await signOut();
       toast({
         title: 'E-mail envoyé ✉️',
-        description: 'Consultez votre boîte mail. Vous allez être déconnecté par sécurité.',
+        description: 'Consultez votre boîte mail pour réinitialiser votre mot de passe.',
       });
-      // Sign out immediately after requesting password reset from settings
-      setTimeout(async () => {
-        await signOut();
-        navigate('/login', { replace: true });
-      }, 2000);
+      navigate('/login', { replace: true });
     } catch (err) {
       console.error('[Password] Reset email error:', err);
       toast({ title: 'Erreur', description: 'Impossible d\'envoyer l\'e-mail de réinitialisation.', variant: 'destructive' });

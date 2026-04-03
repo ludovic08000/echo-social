@@ -178,7 +178,7 @@ export default function Onboarding() {
     setStep('ai-name');
   };
 
-  // After AI name → create account, then go to find-friends
+  // After AI name → ask for password re-entry, then create account
   const handleAiNameDone = async () => {
     if (!aiName.trim()) {
       toast({ title: 'Donne un nom à ton IA !', variant: 'destructive' });
@@ -194,15 +194,22 @@ export default function Onboarding() {
       return;
     }
 
-    // Verify HMAC integrity before creating account
-    const verified = await loadSignupData(signupData.password);
+    // Show password prompt — password is NOT stored in sessionStorage
+    setShowPasswordPrompt(true);
+  };
+
+  const handlePasswordSubmitAndCreate = async () => {
+    if (!signupData || !passwordForSignup) return;
+
+    // Verify HMAC integrity with the re-entered password
+    const verified = await loadSignupData(passwordForSignup);
     if (!verified) {
-      toast({ title: '⚠️ Données corrompues', description: 'Les données d\'inscription ont été modifiées. Veuillez recommencer.', variant: 'destructive' });
-      clearSignupData();
-      navigate('/signup', { replace: true });
+      toast({ title: '⚠️ Mot de passe incorrect ou données corrompues', description: 'Vérifiez votre mot de passe ou recommencez l\'inscription.', variant: 'destructive' });
+      setPasswordForSignup('');
       return;
     }
     setIntegrityVerified(true);
+    setShowPasswordPrompt(false);
 
     // Recompute age from DOB (never trust stored age)
     const age = computeAgeFromDOB(verified.dateOfBirth);
@@ -224,7 +231,7 @@ export default function Onboarding() {
 
       // 1. Create account
       setSignupAttempted(true);
-      const { error } = await signUp(signupData.email, signupData.password, signupData.name, signupData.dateOfBirth);
+      const { error } = await signUp(signupData.email, verified.password, signupData.name, signupData.dateOfBirth);
       if (error) {
         // Handle rate limit specifically
         if (error.message?.toLowerCase().includes('rate limit') || (error as any).status === 429) {

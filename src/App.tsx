@@ -172,6 +172,7 @@ function AppContent() {
               <Route path="/forgot-password" element={<PublicOnlyRoute><ForgotPassword /></PublicOnlyRoute>} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/onboarding" element={<Onboarding />} />
+              <Route path="/auth/confirm" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>{(() => { const AuthConfirm = lazyWithOneRetry(() => import("./pages/AuthConfirm"), 'r-authconfirm'); return <AuthConfirm />; })()}</Suspense>} />
               
               {/* Protected routes */}
               <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
