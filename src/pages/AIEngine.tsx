@@ -63,6 +63,8 @@ export default function AIEngine() {
     ? modules
     : modules.filter(m => m.category === selectedCategory);
 
+  if (adminLoading || !isAdmin) return null;
+
   return (
     <AppLayout>
       <SEOHead title="Moteur IA — ForSure" description="Intelligence artificielle auto-apprenante et modération révolutionnaire" />
