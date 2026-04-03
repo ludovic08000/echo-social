@@ -13,9 +13,9 @@ import { useSendFriendRequest } from '@/hooks/useFriendships';
 import { UserAvatar } from '@/components/UserAvatar';
 import { MatchedContact } from '@/hooks/useContactSync';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { loadSignupDataRaw, loadSignupData, clearSignupData, hasSignupData, computeAgeFromDOB, type SignupPayload } from '@/lib/signupIntegrity';
+import { loadSignupDataRaw, loadSignupData, clearSignupData, hasSignupData, computeAgeFromDOB, type StoredSignupData, type SignupPayload } from '@/lib/signupIntegrity';
 
-type SignupData = SignupPayload;
+type SignupData = StoredSignupData;
 
 const INTERESTS = [
   { value: 'gaming', label: 'Gaming', emoji: '🎮', color: 'border-purple-500/40 bg-purple-500/10 text-purple-300' },
