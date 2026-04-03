@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { KeyBackupPanel } from '@/components/KeyBackupPanel';
 import { Shield, Eye, MessageCircle, Heart, Search, BarChart3, Ghost, Globe, Lock, Trash2, AlertTriangle, KeyRound } from 'lucide-react';
 import { usePrivacySettings, useUpdatePrivacySettings } from '@/hooks/usePrivacySettings';
 import { RestrictedFriendsPanel } from './RestrictedFriendsPanel';
@@ -525,6 +526,9 @@ export function PrivacySettingsPanel() {
       <section className="space-y-4">
         <RestrictedFriendsPanel />
       </section>
+
+      {/* E2EE Key Backup & Transfer */}
+      <KeyBackupPanel />
 
       {/* Data Export */}
       <DataExportSection />
