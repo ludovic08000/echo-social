@@ -283,7 +283,19 @@ export function ChatView({ conversationId }: ChatViewProps) {
                   <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-background" />
                 </div>
                 <div className="min-w-0">
-                  <span className="text-[15px] font-semibold block truncate leading-tight">{conversation.participant.name}</span>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[15px] font-semibold block truncate leading-tight">{conversation.participant.name}</span>
+                    {!isZeusConversation && e2ee.encrypted && (
+                      <EncryptionBadge
+                        encrypted
+                        verified={!e2ee.fingerprintChanged}
+                        ratchetActive={e2ee.ratchetActive}
+                        size="sm"
+                        showLabel
+                        className="shrink-0"
+                      />
+                    )}
+                  </div>
                   <span className="text-[11px] text-emerald-600 dark:text-emerald-400 leading-tight">Actif(ve) maintenant</span>
                 </div>
               </Link>

@@ -1101,8 +1101,17 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         )}
 
                         {isLastInGroup && (
-                          <div className="flex items-center gap-0.5 mt-0.5 px-0.5">
+                          <div className="flex items-center gap-0.5 mt-0.5 px-0.5 flex-wrap">
                             <span className="text-[8px] text-muted-foreground">{format(new Date(msg.created_at), 'HH:mm')}</span>
+                            {!isZeusConversation && e2ee.encrypted && msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"')) && (
+                              <EncryptionBadge
+                                encrypted
+                                verified={decryptedCacheRef.current.has(msg.id) && !e2ee.fingerprintChanged}
+                                ratchetActive={e2ee.ratchetActive}
+                                size="xs"
+                                showLabel
+                              />
+                            )}
                             {isMe && (
                               <>
                                 <CheckCheck className="w-2.5 h-2.5 text-primary/60" />
