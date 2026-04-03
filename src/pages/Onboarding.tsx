@@ -375,9 +375,18 @@ export default function Onboarding() {
 
   const handleFinish = async () => {
     setIsSubmitting(true);
-    // Mark onboarding as completed server-side
+    // Mark onboarding as completed server-side with step enforcement
     if (user) {
-      try { await supabase.from('profiles').update({ onboarding_completed: true } as any).eq('user_id', user.id); } catch {}
+      try {
+        // Advance to final step, then mark completed
+        await supabase.rpc('advance_onboarding_step', {
+          _user_id: user.id,
+          _expected_step: 2 as any,
+        });
+        await supabase.from('profiles').update({ onboarding_completed: true } as any).eq('user_id', user.id);
+      } catch (err) {
+        console.warn('[Onboarding] Step enforcement error:', err);
+      }
     }
     toast({ title: `Bienvenue sur ForSure ! 🎉`, description: `${aiName.trim()} est prêt à t'accompagner !` });
     navigate('/feed', { replace: true });
