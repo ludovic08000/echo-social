@@ -9,34 +9,60 @@ export default function AuthConfirm() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
     const checkConfirmation = async () => {
-      // Small delay to let Supabase process the token from the URL hash
-      await new Promise(r => setTimeout(r, 1500));
+      try {
+        // Small delay to let Supabase process the token from the URL hash
+        await new Promise(r => setTimeout(r, 1500));
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        // Check if profile has onboarding_completed
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('onboarding_completed')
-          .eq('user_id', session.user.id)
-          .single() as any;
+        // Check for error params in URL (Supabase puts them in hash or query)
+        const hashParams = new URLSearchParams(window.location.hash.replace('#', '?'));
+        const errorCode = searchParams.get('error_code') || hashParams.get('error_code');
+        const errorDescription = searchParams.get('error_description') || hashParams.get('error_description');
 
-        setStatus('success');
+        if (errorCode || errorDescription) {
+          setErrorMessage(errorDescription?.replace(/\+/g, ' ') || 'Lien invalide ou expiré.');
+          setStatus('error');
+          return;
+        }
 
-        setTimeout(() => {
-          if (profile && !profile.onboarding_completed) {
-            navigate('/onboarding', { replace: true });
-          } else {
-            navigate('/feed', { replace: true });
-          }
-        }, 2000);
-      } else {
-        // No session yet — user likely needs to go to login
-        setStatus('success');
-        setTimeout(() => navigate('/login?confirmed=1', { replace: true }), 2000);
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+        if (sessionError) {
+          console.error('[AuthConfirm] Session error:', sessionError);
+          setErrorMessage(sessionError.message || 'Erreur de vérification de session.');
+          setStatus('error');
+          return;
+        }
+
+        if (session?.user) {
+          // Check if profile has onboarding_completed
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('onboarding_completed')
+            .eq('user_id', session.user.id)
+            .single() as any;
+
+          setStatus('success');
+
+          setTimeout(() => {
+            if (profile && !profile.onboarding_completed) {
+              navigate('/onboarding', { replace: true });
+            } else {
+              navigate('/feed', { replace: true });
+            }
+          }, 2000);
+        } else {
+          // No session — user confirmed email but needs to log in
+          setStatus('success');
+          setTimeout(() => navigate('/login?confirmed=1', { replace: true }), 2000);
+        }
+      } catch (err: any) {
+        console.error('[AuthConfirm] Unexpected error:', err);
+        setErrorMessage(err?.message || 'Une erreur inattendue est survenue.');
+        setStatus('error');
       }
     };
 
@@ -71,10 +97,17 @@ export default function AuthConfirm() {
           <>
             <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-4" />
             <h1 className="text-xl font-bold mb-2">Erreur de confirmation</h1>
-            <p className="text-sm text-muted-foreground mb-4">Le lien est peut-être expiré. Veuillez réessayer.</p>
-            <Button onClick={() => navigate('/login', { replace: true })} variant="outline" size="sm">
-              Retour à la connexion
-            </Button>
+            <p className="text-sm text-muted-foreground mb-4">
+              {errorMessage || 'Le lien est peut-être expiré. Veuillez réessayer.'}
+            </p>
+            <div className="space-y-2">
+              <Button onClick={() => navigate('/login', { replace: true })} variant="outline" size="sm" className="w-full">
+                Retour à la connexion
+              </Button>
+              <Button onClick={() => navigate('/signup', { replace: true })} variant="ghost" size="sm" className="w-full text-xs">
+                Créer un nouveau compte
+              </Button>
+            </div>
           </>
         )}
       </div>

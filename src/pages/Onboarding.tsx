@@ -301,11 +301,28 @@ export default function Onboarding() {
       // 5. Save interests & AI name
       await savePreferences(newUser.id);
 
+      // 5b. Advance onboarding step server-side (step 0 → 1)
+      try {
+        await supabase.rpc('advance_onboarding_step', {
+          _user_id: newUser.id,
+          _expected_step: 0 as any,
+        });
+      } catch {}
+
       // Clear pending data
       clearSignupData();
       setAccountCreated(true);
 
       toast({ title: 'Compte créé ! 🎉' });
+
+      // Advance step 1 → 2 (entering find-friends)
+      try {
+        await supabase.rpc('advance_onboarding_step', {
+          _user_id: newUser.id,
+          _expected_step: 1 as any,
+        });
+      } catch {}
+
       setStep('find-friends');
     } catch (err: any) {
       toast({ title: 'Erreur', description: err.message, variant: 'destructive' });
