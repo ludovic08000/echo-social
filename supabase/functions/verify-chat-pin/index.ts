@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { ddosShield } from "../_shared/ddos-shield.ts";
 
 /**
  * verify-chat-pin — Server-side PIN verification for messaging (v2 — Hardened)
