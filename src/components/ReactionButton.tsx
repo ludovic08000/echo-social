@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ThumbsUp } from 'lucide-react';
+import { Heart, ThumbsUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,7 +16,7 @@ interface ReactionButtonProps {
   postId: string;
   currentReaction?: ReactionType | null;
   reactionsCount: number;
-  variant?: 'default' | 'facebook';
+  variant?: 'default' | 'facebook' | 'instagram';
 }
 
 export function ReactionButton({ postId, currentReaction, reactionsCount, variant = 'default' }: ReactionButtonProps) {
@@ -63,7 +63,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   const EmojiPicker = (
     <PopoverContent 
       side="top" 
-      className="w-auto p-2 glass border-border/30 shadow-premium-lg rounded-full"
+      className="w-auto p-1.5 bg-card border-border/30 shadow-xl rounded-full"
       sideOffset={8}
     >
       <div className="flex gap-0.5">
@@ -77,23 +77,55 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
             whileHover="hover"
             onClick={() => handleReaction(type)}
             className={cn(
-              'p-2 rounded-full transition-colors',
+              'p-1.5 rounded-full transition-colors',
               currentReaction === type && 'bg-accent ring-2 ring-primary/50'
             )}
             title={REACTION_LABELS[type]}
           >
-            <span className="text-2xl block">{REACTION_EMOJIS[type]}</span>
+            <span className="text-[22px] block">{REACTION_EMOJIS[type]}</span>
           </motion.button>
         ))}
       </div>
     </PopoverContent>
   );
 
+  // Instagram variant — heart icon, double tap feel
+  if (variant === 'instagram') {
+    return (
+      <Popover open={isOpen} onOpenChange={setIsOpen}>
+        <div className="flex items-center">
+          <button
+            onClick={handleQuickLike}
+            className="h-10 w-10 flex items-center justify-center transition-transform active:scale-75"
+          >
+            {currentReaction ? (
+              <motion.span
+                key={currentReaction}
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="text-[22px] block"
+              >
+                {REACTION_EMOJIS[currentReaction]}
+              </motion.span>
+            ) : (
+              <Heart className="w-[22px] h-[22px] text-foreground" />
+            )}
+          </button>
+          <PopoverTrigger asChild>
+            <button className="h-8 w-5 flex items-center justify-center text-muted-foreground">
+              <ChevronIcon />
+            </button>
+          </PopoverTrigger>
+        </div>
+        {EmojiPicker}
+      </Popover>
+    );
+  }
+
   if (variant === 'facebook') {
     return (
       <Popover open={isOpen} onOpenChange={setIsOpen}>
         <div className="flex-1 flex">
-          {/* Quick like button — simple tap */}
           <Button
             variant="ghost"
             size="sm"
@@ -112,7 +144,6 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
               {currentReaction ? REACTION_LABELS[currentReaction] : "J'aime"}
             </span>
           </Button>
-          {/* Emoji picker trigger — separate small button */}
           <PopoverTrigger asChild>
             <Button
               variant="ghost"
@@ -171,7 +202,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
 
 function ChevronIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="opacity-50">
+    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className="opacity-40">
       <path d="M3 5L6 8L9 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );

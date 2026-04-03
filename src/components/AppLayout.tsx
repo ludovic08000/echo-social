@@ -37,39 +37,32 @@ function MobileHeader() {
   if (!user) return null;
 
   return (
-    <header className="sticky top-0 z-40 glass safe-area-pt">
-      <div className="flex items-center justify-between h-14 px-4">
+    <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-xl border-b border-border/10 safe-area-pt">
+      <div className="flex items-center justify-between h-12 px-3">
          <Link to="/feed" className="flex items-center">
-           <BrandLogo className="h-7 w-auto drop-shadow-[0_0_12px_hsl(220,70%,50%,0.3)]" />
+           <BrandLogo className="h-6 w-auto" />
          </Link>
         
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
           <UXModeSwitchCompact />
           <Link 
             to="/notifications" 
-            className="relative w-9 h-9 rounded-full bg-secondary/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200"
+            className="relative w-9 h-9 rounded-full flex items-center justify-center text-foreground active:scale-90 transition-transform"
           >
-            <Bell className="w-[18px] h-[18px]" />
+            <Bell className="w-[22px] h-[22px]" />
             {unreadCount && unreadCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-[18px] h-[18px] rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center ring-2 ring-background">
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
+              <span className="absolute top-0.5 right-0.5 w-[8px] h-[8px] rounded-full bg-destructive ring-2 ring-background" />
             )}
           </Link>
           <button 
             onClick={() => isMobile ? navigate('/messages') : openChat()}
-            className="relative w-9 h-9 rounded-full bg-secondary/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200"
+            className="relative w-9 h-9 rounded-full flex items-center justify-center text-foreground active:scale-90 transition-transform"
           >
-            <MessageCircle className="w-[18px] h-[18px]" />
+            <MessageCircle className="w-[22px] h-[22px]" />
             {unreadMessages > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-[18px] h-[18px] rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center ring-2 ring-background">
-                {unreadMessages > 9 ? '9+' : unreadMessages}
-              </span>
+              <span className="absolute top-0.5 right-0.5 w-[8px] h-[8px] rounded-full bg-destructive ring-2 ring-background" />
             )}
           </button>
-          <Link to={`/profile/${user.id}`} className="flex-shrink-0 ml-0.5">
-            <UserAvatar src={profile?.avatar_url} alt={profile?.name} size="sm" />
-          </Link>
         </div>
       </div>
     </header>
@@ -79,7 +72,6 @@ function MobileHeader() {
 export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
   const { user, loading } = useAuth();
   const { isFlow } = useUXMode();
-  useRealtimeNotifications();
   useRealtimeNotifications();
 
   if (loading) {
@@ -97,9 +89,9 @@ export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
     <div className="min-h-screen bg-background">
       <MobileHeader />
 
-      <main className="pb-20">
+      <main className="pb-16">
         {fullWidth ? (
-          <div className="mx-auto px-4 max-w-[1280px]">
+          <div className="mx-auto max-w-[1280px]">
             {children}
           </div>
         ) : (

@@ -231,10 +231,10 @@ export default function Feed() {
 
             {isMobile ? (
               <>
-                <div className="px-3"><StoriesBar /></div>
+                <StoriesBar />
                 <FeedZeusCard />
-                <div className="px-3"><FeedLiveSection /></div>
-                <div className="px-3"><CreatePost /></div>
+                <FeedLiveSection />
+                <div className="px-3 pb-2"><CreatePost /></div>
               </>
             ) : (
               <>
@@ -324,7 +324,6 @@ export default function Feed() {
 
                 {/* Virtualized posts list */}
                 <div
-                  className="px-0 sm:px-4"
                   style={{
                     height: `${virtualizer.getTotalSize()}px`,
                     width: '100%',
@@ -347,7 +346,7 @@ export default function Feed() {
                           transform: `translateY(${virtualRow.start}px)`,
                         }}
                       >
-                        <div className="pb-4">
+                        <div className="pb-2 sm:pb-4 sm:px-4">
                           <PostCard post={post} />
                           <LazyComments postId={post.id} />
                           {renderInjection(virtualRow.index)}
@@ -380,11 +379,11 @@ const LazyComments = React.memo(function LazyComments({ postId }: { postId: stri
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="bg-card border border-t-0 border-border/15 rounded-b-2xl -mt-1 overflow-hidden">
+    <div className="bg-card sm:border sm:border-t-0 sm:border-border/15 sm:rounded-b-2xl sm:-mt-1 overflow-hidden">
       {!open ? (
         <button
           onClick={() => setOpen(true)}
-          className="w-full px-4 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/30 transition-colors text-left font-medium"
+          className="w-full px-3 py-2 text-[13px] text-muted-foreground hover:text-foreground transition-colors text-left"
         >
           Voir les commentaires…
         </button>
