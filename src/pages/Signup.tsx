@@ -196,9 +196,12 @@ export default function Signup() {
         setIsLoading(false);
         return;
       }
-    } catch {
-      // Be permissive if check fails
-      console.warn('Email domain verification skipped');
+    } catch (verifyErr) {
+      // Fail-closed: block signup if domain verification service is unavailable
+      console.error('Email domain verification failed:', verifyErr);
+      toast({ title: 'Vérification impossible', description: 'Impossible de vérifier votre adresse e-mail. Veuillez réessayer.', variant: 'destructive' });
+      setIsLoading(false);
+      return;
     }
     setIsLoading(false);
 
