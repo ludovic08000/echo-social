@@ -3028,6 +3028,7 @@ export type Database = {
           mood_updated_at: string | null
           name: string
           onboarding_completed: boolean
+          onboarding_step: number
           phone_number: string | null
           profile_bg_url: string | null
           profile_music_url: string | null
@@ -3062,6 +3063,7 @@ export type Database = {
           mood_updated_at?: string | null
           name: string
           onboarding_completed?: boolean
+          onboarding_step?: number
           phone_number?: string | null
           profile_bg_url?: string | null
           profile_music_url?: string | null
@@ -3096,6 +3098,7 @@ export type Database = {
           mood_updated_at?: string | null
           name?: string
           onboarding_completed?: boolean
+          onboarding_step?: number
           phone_number?: string | null
           profile_bg_url?: string | null
           profile_music_url?: string | null
@@ -4464,6 +4467,10 @@ export type Database = {
       }
     }
     Functions: {
+      advance_onboarding_step: {
+        Args: { _expected_step: number; _user_id: string }
+        Returns: number
+      }
       can_view_order: {
         Args: { _buyer_id: string; _order_id: string }
         Returns: boolean
@@ -4539,6 +4546,7 @@ export type Database = {
           user_id: string
         }[]
       }
+      get_onboarding_state: { Args: { _user_id: string }; Returns: Json }
       get_parental_controls: {
         Args: { p_user_id: string }
         Returns: {
