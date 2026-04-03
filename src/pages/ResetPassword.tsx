@@ -127,7 +127,12 @@ export default function ResetPassword() {
               Ce lien de réinitialisation n'est plus valide. Demandez-en un nouveau.
             </p>
             <Link to="/forgot-password">
-              <Button className="w-full">Demander un nouveau lien</Button>
+              <Button className="w-full" onClick={async (e) => {
+                e.preventDefault();
+                clearRecoveryFlag();
+                await supabase.auth.signOut();
+                window.location.href = '/forgot-password';
+              }}>Demander un nouveau lien</Button>
             </Link>
           </div>
         </div>
