@@ -513,7 +513,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
   /**
    * Initialize Double Ratchet as initiator (sender of first ratchet message).
-   * Derives shared secret from legacy session, then creates ratchet state.
+   * Uses X3DH for key agreement (3 or 4 DH operations) then seeds Double Ratchet.
+   * Falls back to legacy DH if X3DH bundle is unavailable.
    */
   const initRatchetIfNeeded = useCallback(async (): Promise<RatchetState | null> => {
     if (!conversationId || !keysRef.current || !peerKeyRef.current) return null;
@@ -528,12 +529,48 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       return persisted;
     }
 
-    // Initialize as initiator using legacy shared secret as seed
+    // PRIMARY: X3DH key agreement (Signal spec)
+    try {
+      const bundle = await fetchPrekeyBundle(peerUserId!);
+      if (bundle) {
+        const x3dhResult = await x3dhInitiate(keysRef.current, bundle);
+
+        // Store X3DH metadata for the initial message header
+        const myPubRaw = await hardCrypto.exportKey('raw', keysRef.current.publicKey);
+        x3dhInfoRef.current = {
+          ik: bufferToBase64(myPubRaw),
+          ek: x3dhResult.ephemeralKey,
+          spkId: x3dhResult.usedSPKId,
+          opkId: x3dhResult.usedOTPKId,
+          kemCt: x3dhResult.kemCiphertext,
+        };
+
+        // Import peer SPK as DH ratchet key for Double Ratchet init
+        const peerSPKKey = await hardCrypto.importKey(
+          'raw', base64ToBuffer(bundle.signedPrekey),
+          KX_KEY_PARAMS as any, true, [],
+        );
+
+        const ratchet = await initRatchetAsInitiator(
+          conversationId,
+          x3dhResult.sharedSecret,
+          peerSPKKey,
+        );
+
+        ratchetRef.current = ratchet;
+        await saveRatchetLocal(conversationId, ratchet);
+        console.log('[E2EE] 🔄 Double Ratchet initialized via X3DH (initiator)');
+        return ratchet;
+      }
+    } catch (x3dhErr) {
+      console.warn('[E2EE] X3DH init failed, falling back to legacy DH:', x3dhErr);
+    }
+
+    // FALLBACK: Legacy single-DH session
     try {
       const session = await ensureLegacySession();
       if (!session) return null;
 
-      // Import peer identity key as X25519 public key for DH ratchet
       const peerDhKey = await hardCrypto.importKey(
         'raw',
         base64ToBuffer(peerKeyRef.current.identityKey),
@@ -542,7 +579,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         [],
       );
 
-      // Use shared secret from legacy session as ratchet seed
       const sharedSecretRaw = await hardCrypto.exportKey('raw', session.sharedSecret);
 
       const ratchet = await initRatchetAsInitiator(
@@ -553,7 +589,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
       ratchetRef.current = ratchet;
       await saveRatchetLocal(conversationId, ratchet);
-      console.log('[E2EE] 🔄 Double Ratchet initialized as initiator');
+      console.log('[E2EE] 🔄 Double Ratchet initialized via legacy DH (fallback)');
       return ratchet;
     } catch (e) {
       console.warn('[E2EE] Ratchet init failed, will use legacy:', e);
