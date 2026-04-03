@@ -99,7 +99,6 @@ async function loadWrappedKeys(userId: string): Promise<{
 // ─── Crypto helpers ───
 
 function base64ToBytes(b64: string): Uint8Array {
-  const { hardGlobals } = require('@/lib/crypto/cryptoIntegrity');
   const bin = hardGlobals.atob(b64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
@@ -107,7 +106,6 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
-  const { hardGlobals } = require('@/lib/crypto/cryptoIntegrity');
   let bin = '';
   for (const b of bytes) bin += String.fromCharCode(b);
   return hardGlobals.btoa(bin);
