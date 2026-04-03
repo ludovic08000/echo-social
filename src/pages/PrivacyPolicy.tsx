@@ -1,4 +1,4 @@
-import { ArrowLeft, Shield, Lock, Eye, Trash2, Download, UserCheck, Bell, Brain, ShoppingBag, Video, MessageSquare, Gamepad2 } from 'lucide-react';
+import { ArrowLeft, Shield, Lock, Eye, Trash2, Download, UserCheck, Bell, Brain, ShoppingBag, Video, MessageSquare, Gamepad2, Fingerprint, Radar, KeyRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 
@@ -16,7 +16,7 @@ export default function PrivacyPolicy() {
           <Shield className="w-8 h-8 text-primary" />
           <h1 className="text-3xl font-bold">Politique de Confidentialité</h1>
         </div>
-        <p className="text-sm text-muted-foreground mb-8">Dernière mise à jour : 10 mars 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Dernière mise à jour : 3 avril 2026</p>
 
         <div className="prose prose-invert max-w-none space-y-8 text-foreground/90">
 
@@ -91,9 +91,10 @@ export default function PrivacyPolicy() {
 
             <h3 className="text-lg font-medium text-foreground mt-4">3.5. Données techniques et de sécurité</h3>
             <ul className="list-disc pl-6 space-y-1">
-              <li>Adresse IP et logs de connexion (obligation légale LCEN)</li>
+              <li>Adresse IP et logs de connexion (obligation légale LCEN — conservés 12 mois)</li>
               <li>User-agent du navigateur</li>
               <li>Empreinte de l'appareil (à des fins exclusivement anti-fraude, pour détecter les usurpations d'identité et comptes multiples abusifs)</li>
+              <li>Clés publiques cryptographiques (pour le chiffrement de bout en bout des messages)</li>
             </ul>
           </section>
 
@@ -104,22 +105,28 @@ export default function PrivacyPolicy() {
             <h3 className="text-lg font-medium text-foreground mt-4 flex items-center gap-2">
               <Brain className="w-4 h-4 text-primary" /> 4.1. Intelligence artificielle (Zeus & Agents IA)
             </h3>
-            <p>Forsure intègre un assistant IA (<strong>Zeus</strong>) et des agents IA spécialisés. Ces outils :</p>
+            <p>Forsure intègre un assistant IA (<strong>Zeus</strong>), des agents IA spécialisés, ainsi qu'un <strong>moteur IA de sécurité auto-apprenant</strong>. Ces outils :</p>
             <ul className="list-disc pl-6 space-y-1">
               <li>Utilisent vos messages <strong>uniquement dans le cadre de votre conversation</strong></li>
               <li>Ne stockent <strong>aucun historique</strong> à des fins d'entraînement de modèles tiers</li>
               <li>Aident à la modération de contenu de manière transparente avec possibilité de recours humain</li>
               <li>L'assistant IA vendeur (coach) analyse uniquement les données de votre boutique pour vous conseiller</li>
+              <li>Le moteur IA de sécurité détecte les menaces (DDoS, intrusions, abus) et génère des rapports d'incidents automatisés, sans analyser vos contenus personnels</li>
+              <li>L'IA apprend localement des patterns de menaces pour réduire la dépendance aux services tiers, <strong>sans utiliser de données utilisateurs</strong></li>
             </ul>
 
             <h3 className="text-lg font-medium text-foreground mt-4 flex items-center gap-2">
               <MessageSquare className="w-4 h-4 text-primary" /> 4.2. Messagerie et appels
             </h3>
             <ul className="list-disc pl-6 space-y-1">
-              <li>Les messages sont chiffrés en transit (TLS)</li>
+              <li><strong>Chiffrement de bout en bout (E2EE)</strong> pour les conversations privées 1-à-1 via le protocole <strong>X3DH + Double Ratchet</strong> (standard Signal)</li>
+              <li>Les clés privées ne quittent <strong>jamais votre appareil</strong> — Forsure ne peut pas lire vos messages chiffrés</li>
+              <li>Vérification d'identité cryptographique par empreinte de clé (fingerprint) pour détecter les changements d'appareil</li>
+              <li>Protection d'accès à la messagerie par <strong>code PIN dédié</strong> (hachage PBKDF2 côté serveur)</li>
               <li>Les appels audio/vidéo transitent par une infrastructure sécurisée (LiveKit)</li>
-              <li>Un système anti-spam analyse les messages pour détecter les abus, sans lire le contenu manuellement</li>
+              <li>Un système anti-spam analyse les métadonnées pour détecter les abus, <strong>sans lire le contenu des messages chiffrés</strong></li>
               <li>Vous pouvez supprimer vos messages à tout moment</li>
+              <li>Sauvegarde chiffrée des clés E2EE avec transfert sécurisé entre appareils via QR code</li>
             </ul>
 
             <h3 className="text-lg font-medium text-foreground mt-4 flex items-center gap-2">
@@ -139,6 +146,7 @@ export default function PrivacyPolicy() {
               <li>L'algorithme de recommandation est basé sur vos <strong>interactions sociales</strong> (amis, likes), pas sur un profilage commercial</li>
               <li>Vous pouvez consulter les facteurs de scoring de chaque publication</li>
               <li>Aucun contenu sponsorisé caché — les publicités sont clairement identifiées</li>
+              <li>L'algorithme est optimisé par une IA de feed avec des recommandations transparentes et réversibles</li>
             </ul>
 
             <h3 className="text-lg font-medium text-foreground mt-4 flex items-center gap-2">
@@ -156,11 +164,12 @@ export default function PrivacyPolicy() {
             <p>Forsure accorde une importance particulière à la <strong>protection des utilisateurs de moins de 18 ans</strong> :</p>
             <ul className="list-disc pl-6 space-y-2">
               <li>Vérification d'âge obligatoire à l'inscription (13 ans minimum, conformément au RGPD)</li>
-              <li>Système de <strong>contrôle parental</strong> avec code PIN configurable par les parents</li>
-              <li>Restrictions automatiques pour les mineurs : contacts avec les adultes surveillés et journalisés</li>
+              <li>Système de <strong>contrôle parental</strong> avec code PIN sécurisé (8-12 caractères, hachage serveur) configurable par les parents</li>
+              <li>Filtrage de contenu par catégories autorisées (éducation, sport, gaming, musique, art, humour)</li>
+              <li>Restrictions automatiques pour les mineurs : <strong>seuls les amis approuvés</strong> peuvent envoyer des messages</li>
               <li>Badge « mineur protégé » visible pour sensibiliser les autres utilisateurs</li>
               <li>Bouton de signalement spécifique pour les interactions impliquant un mineur</li>
-              <li>Fonctionnalités de <strong>bien-être numérique</strong> : détox programmée, rappels de pause</li>
+              <li>Fonctionnalités de <strong>bien-être numérique</strong> : détox programmée, rappels de pause, limite de temps quotidienne</li>
             </ul>
           </section>
 
@@ -171,7 +180,7 @@ export default function PrivacyPolicy() {
               <li><strong>Consentement</strong> (Art. 6.1.a RGPD) : acceptation des CGU lors de l'inscription</li>
               <li><strong>Exécution du contrat</strong> (Art. 6.1.b RGPD) : fourniture du service, marketplace</li>
               <li><strong>Obligation légale</strong> (Art. 6.1.c RGPD) : conservation des logs de connexion (LCEN)</li>
-              <li><strong>Intérêt légitime</strong> (Art. 6.1.f RGPD) : sécurité anti-fraude, détection d'usurpation d'identité</li>
+              <li><strong>Intérêt légitime</strong> (Art. 6.1.f RGPD) : sécurité anti-fraude, détection d'usurpation d'identité, protection DDoS</li>
             </ul>
           </section>
 
@@ -180,11 +189,12 @@ export default function PrivacyPolicy() {
             <h2 className="text-xl font-semibold text-foreground">7. Durée de conservation</h2>
             <ul className="list-disc pl-6 space-y-1">
               <li>Données de compte : durée de l'inscription + 30 jours après suppression</li>
-              <li>Logs de connexion : 12 mois (obligation légale LCEN)</li>
-              <li>Contenus supprimés : effacés sous 30 jours</li>
-              <li>Empreintes d'appareil : conservées tant que le compte est actif, supprimées avec le compte</li>
+              <li>Logs de connexion et empreintes d'appareil : <strong>12 mois</strong> (obligation légale LCEN)</li>
+              <li>Contenus supprimés : effacés sous 30 jours via processus automatisé</li>
+              <li>Clés cryptographiques : supprimées avec le compte</li>
               <li>Données de commande marketplace : conformément aux obligations comptables légales</li>
               <li>Archives d'usurpation d'identité : conservées à des fins de prévention et obligations légales</li>
+              <li>Patterns de sécurité IA : conservés de manière anonymisée (aucune donnée personnelle)</li>
             </ul>
           </section>
 
@@ -230,16 +240,44 @@ export default function PrivacyPolicy() {
               <Shield className="w-5 h-5 text-primary" /> 10. Sécurité des données
             </h2>
             <p>Nous mettons en œuvre des mesures techniques et organisationnelles conformes à l'état de l'art :</p>
+
+            <h3 className="text-lg font-medium text-foreground mt-4 flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-primary" /> 10.1. Chiffrement
+            </h3>
             <ul className="list-disc pl-6 space-y-1">
+              <li><strong>Chiffrement de bout en bout (E2EE)</strong> des messages privés via X3DH + Double Ratchet (protocole Signal)</li>
+              <li>Architecture <strong>prête pour le post-quantique</strong> (PQXDH)</li>
               <li>Chiffrement des données en transit (TLS/HTTPS)</li>
-              <li>Authentification sécurisée avec vérification e-mail</li>
+              <li>Sauvegarde chiffrée des clés avec transfert sécurisé entre appareils</li>
+              <li>Hachage des codes PIN via PBKDF2 côté serveur</li>
+            </ul>
+
+            <h3 className="text-lg font-medium text-foreground mt-4 flex items-center gap-2">
+              <Fingerprint className="w-4 h-4 text-primary" /> 10.2. Authentification et accès
+            </h3>
+            <ul className="list-disc pl-6 space-y-1">
+              <li>Authentification sécurisée avec <strong>vérification e-mail obligatoire</strong> (domaine MX vérifié)</li>
+              <li>Politique de mot de passe stricte (10 caractères minimum, score de complexité 3/4, blacklist)</li>
+              <li>Protection anti-bot à l'inscription (honeypot, délai de soumission 3s)</li>
               <li>Connexion via Google OAuth 2.0 disponible</li>
+              <li>Gardien de session : déconnexion automatique après 30 min d'inactivité ou changement d'appareil</li>
+              <li>URLs de redirection sécurisées via whitelist de domaines contrôlés</li>
+            </ul>
+
+            <h3 className="text-lg font-medium text-foreground mt-4 flex items-center gap-2">
+              <Radar className="w-4 h-4 text-primary" /> 10.3. Protection de la plateforme
+            </h3>
+            <ul className="list-disc pl-6 space-y-1">
+              <li><strong>Protection DDoS</strong> avec rate limiting adaptatif et pénalités progressives</li>
               <li>Contrôle d'accès par rôles (Row Level Security)</li>
-              <li>Système de score de confiance pour détecter les comportements suspects</li>
-              <li>Détection automatique d'usurpation d'identité avec archivage légal</li>
-              <li>Système de bannissement (utilisateur, e-mail, IP) en cas d'abus</li>
-              <li>Modération IA avec feedback humain et règles apprises</li>
+              <li>Système de <strong>score de confiance</strong> (Trust Score 0-100) pour détecter les comportements suspects</li>
+              <li>Détection automatique d'usurpation d'identité avec archivage légal des preuves</li>
+              <li>Système de bannissement multi-niveaux (utilisateur, e-mail, IP) en cas d'abus</li>
+              <li>Modération IA avec feedback humain et <strong>règles auto-apprises</strong></li>
               <li>Protection anti-capture d'écran sur les contenus sensibles (photos protégées)</li>
+              <li><strong>IA SOC (Security Operations Center)</strong> : monitoring continu, analyse des menaces et alertes d'intrusion en temps réel</li>
+              <li>Anti-spam : rate limiting par action (30 msg/min max), détection de doublons, cooldown entre envois</li>
+              <li>Politique de sécurité du contenu (CSP) stricte interdisant l'exécution de scripts non autorisés</li>
             </ul>
           </section>
 
@@ -283,21 +321,35 @@ export default function PrivacyPolicy() {
             <ul className="list-disc pl-6 space-y-1">
               <li>Paramétrage granulaire (likes, commentaires, messages, demandes d'amis, stories, etc.)</li>
               <li>Choix des sons de notification</li>
-              <li>Activation/désactivation des notifications e-mail</li>
-              <li>Paramètres de confidentialité configurables (qui peut voir votre profil, vos publications, etc.)</li>
+              <li>Activation/désactivation des notifications e-mail avec lien de désinscription dans chaque e-mail</li>
+              <li>Paramètres de confidentialité configurables (qui peut voir votre profil, vos publications, statut en ligne, etc.)</li>
               <li>Gestion des amis restreints</li>
+              <li>Mode fantôme (ghost mode) pour naviguer de manière invisible</li>
             </ul>
           </section>
 
-          {/* 15. Modification */}
+          {/* 15. Onboarding sécurisé */}
           <section>
-            <h2 className="text-xl font-semibold text-foreground">15. Modification de cette politique</h2>
+            <h2 className="text-xl font-semibold text-foreground">15. Processus d'inscription sécurisé</h2>
+            <p>L'inscription sur Forsure suit un processus contrôlé :</p>
+            <ul className="list-disc pl-6 space-y-1">
+              <li>Vérification du domaine e-mail (MX check) avant envoi du lien de confirmation</li>
+              <li>Protection anti-bot (honeypot, délai minimal de 3 secondes)</li>
+              <li>Données temporaires protégées par signature HMAC-SHA256 (le mot de passe brut n'est jamais stocké côté client)</li>
+              <li>Progression d'onboarding verrouillée côté serveur</li>
+              <li>Confirmation e-mail avec attente active de la session (pas de délai arbitraire)</li>
+            </ul>
+          </section>
+
+          {/* 16. Modification */}
+          <section>
+            <h2 className="text-xl font-semibold text-foreground">16. Modification de cette politique</h2>
             <p>Nous nous réservons le droit de modifier cette politique. En cas de changement substantiel, vous serez informé via une notification dans l'application. La date de dernière mise à jour figure en haut de cette page.</p>
           </section>
 
-          {/* 16. Réclamation */}
+          {/* 17. Réclamation */}
           <section>
-            <h2 className="text-xl font-semibold text-foreground">16. Réclamation</h2>
+            <h2 className="text-xl font-semibold text-foreground">17. Réclamation</h2>
             <p>Vous pouvez introduire une réclamation auprès de la <strong>Commission Nationale de l'Informatique et des Libertés (CNIL)</strong> :</p>
             <p><a href="https://www.cnil.fr" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">🔗 www.cnil.fr</a></p>
           </section>
