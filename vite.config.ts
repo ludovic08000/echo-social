@@ -13,8 +13,9 @@ export default defineConfig(({ mode }) => ({
     },
   },
   build: {
+    sourcemap: false, // No source maps in production — prevents code inspection
     modulePreload: {
-      polyfill: false, // Avoid inline polyfill script — CSP blocks unsafe-inline
+      polyfill: false,
     },
   },
   plugins: [
