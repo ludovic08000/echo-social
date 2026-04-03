@@ -2997,6 +2997,7 @@ export type Database = {
           mood_text: string | null
           mood_updated_at: string | null
           name: string
+          onboarding_completed: boolean
           phone_number: string | null
           profile_bg_url: string | null
           profile_music_url: string | null
@@ -3030,6 +3031,7 @@ export type Database = {
           mood_text?: string | null
           mood_updated_at?: string | null
           name: string
+          onboarding_completed?: boolean
           phone_number?: string | null
           profile_bg_url?: string | null
           profile_music_url?: string | null
@@ -3063,6 +3065,7 @@ export type Database = {
           mood_text?: string | null
           mood_updated_at?: string | null
           name?: string
+          onboarding_completed?: boolean
           phone_number?: string | null
           profile_bg_url?: string | null
           profile_music_url?: string | null
