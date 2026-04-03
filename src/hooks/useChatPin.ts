@@ -128,8 +128,8 @@ const PIN_HASH_VERSION_KEY = 'forsure-pin-hash-v';
 /** Secure PIN hash using PBKDF2-SHA256 600k iterations (replaces weak SHA-256) */
 async function hashPinSecure(pin: string, salt: Uint8Array): Promise<string> {
   const pinBytes = new TextEncoder().encode(pin);
-  const baseKey = await crypto.subtle.importKey('raw', pinBytes, 'PBKDF2', false, ['deriveBits']);
-  const derived = await crypto.subtle.deriveBits(
+  const baseKey = await hardCrypto.importKey('raw', pinBytes, 'PBKDF2', false, ['deriveBits']);
+  const derived = await hardCrypto.deriveBits(
     { name: 'PBKDF2', salt: salt as Uint8Array<ArrayBuffer>, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
     baseKey,
     256,
@@ -143,7 +143,7 @@ async function hashPinLegacy(pin: string, salt: Uint8Array): Promise<string> {
   const combined = new Uint8Array(pinBytes.length + salt.length);
   combined.set(pinBytes);
   combined.set(salt, pinBytes.length);
-  const hash = await crypto.subtle.digest('SHA-256', combined as Uint8Array<ArrayBuffer>);
+  const hash = await hardCrypto.digest('SHA-256', combined as Uint8Array<ArrayBuffer>);
   return bytesToBase64(new Uint8Array(hash));
 }
 
@@ -380,9 +380,9 @@ export function useChatPin() {
 
       const rawBlob = await readRawIdentityBlob(user.id);
       if (rawBlob) {
-        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const iv = hardCrypto.getRandomValues(new Uint8Array(12));
         const plainBytes = new TextEncoder().encode(rawBlob);
-        const ciphertext = await crypto.subtle.encrypt(
+        const ciphertext = await hardCrypto.encrypt(
           { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
           wrapKey,
           plainBytes as Uint8Array<ArrayBuffer>,
@@ -446,7 +446,7 @@ export function useChatPin() {
           const wrapKey = await derivePinKey(pin, base64ToBytes(wrapped.salt));
           const cipherBytes = base64ToBytes(wrapped.wrappedBlob);
           const iv = base64ToBytes(wrapped.iv);
-          const plainBuffer = await crypto.subtle.decrypt(
+          const plainBuffer = await hardCrypto.decrypt(
             { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
             wrapKey,
             cipherBytes as Uint8Array<ArrayBuffer>,
@@ -464,8 +464,8 @@ export function useChatPin() {
           if (rawBlob) {
             const salt = base64ToBytes(verifyResult.salt);
             const wrapKey = await derivePinKey(pin, salt);
-            const iv = crypto.getRandomValues(new Uint8Array(12));
-            const ciphertext = await crypto.subtle.encrypt(
+            const iv = hardCrypto.getRandomValues(new Uint8Array(12));
+            const ciphertext = await hardCrypto.encrypt(
               { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
               wrapKey,
               new TextEncoder().encode(rawBlob) as Uint8Array<ArrayBuffer>,
