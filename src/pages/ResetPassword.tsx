@@ -201,10 +201,10 @@ export default function ResetPassword() {
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Minimum 6 caractères"
+                      placeholder="Minimum 10 caractères"
                       className="bg-background/50 border-border/50 pr-10"
                       required
-                      minLength={6}
+                      minLength={10}
                     />
                     <button
                       type="button"
