@@ -2,7 +2,7 @@
  * KDF Chain tests — forward secrecy verification
  */
 import { describe, it, expect } from 'vitest';
-import { kdfChainStep, kdfRootStep } from '../kdfChain';
+import { kdfChainStepExportable, kdfRootStep } from '../kdfChain';
 
 async function makeChainKey(): Promise<CryptoKey> {
   const raw = crypto.getRandomValues(new Uint8Array(32));
@@ -16,11 +16,10 @@ async function makeChainKey(): Promise<CryptoKey> {
 describe('kdfChainStep', () => {
   it('produces different chain key and message key', async () => {
     const ck = await makeChainKey();
-    const { nextChainKey, messageKey } = await kdfChainStep(ck);
+    const { nextChainKey, messageKey } = await kdfChainStepExportable(ck);
 
     const ckRaw = await crypto.subtle.exportKey('raw', nextChainKey);
     const mkRaw = await crypto.subtle.exportKey('raw', messageKey);
-    // They should be different
     expect(new Uint8Array(ckRaw)).not.toEqual(new Uint8Array(mkRaw));
   });
 
@@ -29,8 +28,8 @@ describe('kdfChainStep', () => {
     const ck1 = await crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256', length: 256 }, true, ['sign']);
     const ck2 = await crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256', length: 256 }, true, ['sign']);
 
-    const r1 = await kdfChainStep(ck1);
-    const r2 = await kdfChainStep(ck2);
+    const r1 = await kdfChainStepExportable(ck1);
+    const r2 = await kdfChainStepExportable(ck2);
 
     const mk1 = new Uint8Array(await crypto.subtle.exportKey('raw', r1.messageKey));
     const mk2 = new Uint8Array(await crypto.subtle.exportKey('raw', r2.messageKey));
@@ -42,13 +41,12 @@ describe('kdfChainStep', () => {
     const messageKeys: string[] = [];
 
     for (let i = 0; i < 5; i++) {
-      const { nextChainKey, messageKey } = await kdfChainStep(ck);
+      const { nextChainKey, messageKey } = await kdfChainStepExportable(ck);
       const raw = new Uint8Array(await crypto.subtle.exportKey('raw', messageKey));
       messageKeys.push(Array.from(raw).join(','));
       ck = nextChainKey;
     }
 
-    // All message keys must be unique
     const unique = new Set(messageKeys);
     expect(unique.size).toBe(5);
   });
