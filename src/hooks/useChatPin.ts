@@ -324,27 +324,29 @@ export function useChatPin() {
 
   /** Update PIN mode */
   const updatePinMode = useCallback(async (mode: PinMode): Promise<boolean> => {
-    if (!user) return false;
+    if (!user) {
+      console.warn('[PIN] updatePinMode: no user');
+      return false;
+    }
     try {
-      // Check if a row exists first
-      const { data: existing } = await supabase
+      const { data, error } = await supabase
         .from('user_chat_pins')
-        .select('id')
+        .update({ pin_mode: mode })
         .eq('user_id', user.id)
+        .select('pin_mode')
         .maybeSingle();
 
-      if (existing) {
-        // Row exists — update it
-        const { error } = await supabase
-          .from('user_chat_pins')
-          .update({ pin_mode: mode, updated_at: new Date().toISOString() })
-          .eq('user_id', user.id);
-        if (error) {
-          console.error('[PIN] updatePinMode error:', error);
-          return false;
-        }
+      if (error) {
+        console.error('[PIN] updatePinMode error:', error);
+        return false;
       }
-      // If no row yet (PIN not created), just save locally — it will be written when PIN is set
+
+      if (!data) {
+        console.warn('[PIN] updatePinMode: no row found to update');
+        return false;
+      }
+
+      console.log('[PIN] updatePinMode success:', data.pin_mode);
       pinModeRef.current = mode;
       setState(s => ({ ...s, pinMode: mode }));
       return true;
