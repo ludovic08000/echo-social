@@ -78,6 +78,8 @@ export function SecurityMonitoringSection() {
   });
 
   // Run manual scan
+  const [lastScanResult, setLastScanResult] = useState<any>(null);
+
   const runScan = useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase.functions.invoke('security-monitor');
@@ -85,9 +87,10 @@ export function SecurityMonitoringSection() {
       return data;
     },
     onSuccess: (data) => {
+      setLastScanResult(data);
       toast({
         title: '🔍 Scan terminé',
-        description: `${data.incidents_detected} incidents détectés, ${data.patterns_learned} patterns appris. Santé: ${data.platform_health}`,
+        description: `${data.incidents_detected} incidents, ${data.local_detections} détections locales, ${data.patterns_learned} patterns appris. ${data.ai_used ? 'IA+Heuristiques' : 'Mode autonome'}`,
       });
       queryClient.invalidateQueries({ queryKey: ['security-incidents'] });
       queryClient.invalidateQueries({ queryKey: ['security-ai-patterns'] });
