@@ -13,6 +13,7 @@ import {
   DashboardSection, UsersSection, PostsSection, ReportsSection,
   StatsSection, SubscriptionsSection, SecuritySection, SettingsSection,
   AISection, PlatformHealthDashboard, FeedIntelligenceSection, MonitoringSection,
+  SecurityMonitoringSection,
 } from '@/components/admin';
 import { VerificationsSection } from '@/components/admin/VerificationsSection';
 import { ArchivesSection } from '@/components/admin/ArchivesSection';
