@@ -55,7 +55,7 @@ export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, r
   let StatusIcon = ShieldCheck;
 
   if (fingerprintChanged) {
-    statusText = 'Validation de sécurité requise avant envoi';
+    statusText = '⚠️ Clé de sécurité modifiée — vérification obligatoire avant envoi';
     StatusIcon = AlertTriangle;
   } else if (ratchetActive) {
     statusText = 'Canal sécurisé renforcé — forward secrecy par message';
