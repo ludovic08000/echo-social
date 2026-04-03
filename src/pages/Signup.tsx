@@ -153,7 +153,7 @@ export default function Signup() {
     if (strength < 3) {
       toast({
         title: 'Mot de passe trop faible',
-        description: 'Utilisez au moins 8 caractères avec majuscules, chiffres et caractères spéciaux.',
+        description: 'Utilisez au moins 10 caractères avec majuscules, chiffres et caractères spéciaux.',
         variant: 'destructive',
       });
       return;
