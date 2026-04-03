@@ -71,9 +71,9 @@ const NAV_GROUPS = [
       { key: 'settings', label: 'Paramètres', icon: Settings },
     ],
   },
-] as const;
+];
 
-type AdminSection = typeof NAV_GROUPS[number]['items'][number]['key'];
+type AdminSection = 'dashboard' | 'health' | 'stats' | 'monitoring' | 'users' | 'posts' | 'reports' | 'verifications' | 'archives' | 'subscriptions' | 'feed_intelligence' | 'ai' | 'zeus' | 'security_ai' | 'security' | 'audit_logs' | 'settings';
 
 export default function Admin() {
   const [section, setSection] = useState<AdminSection>('dashboard');
