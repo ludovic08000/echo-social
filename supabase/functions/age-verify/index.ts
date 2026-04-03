@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { ddosShield } from "../_shared/ddos-shield.ts";
 
 /**
  * age-verify: Uses AI vision to estimate age from an uploaded photo.
@@ -21,6 +22,10 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // DDoS protection — critical tier for identity verification
+  const ddosBlock = await ddosShield(req, corsHeaders, "critical", "age-verify");
+  if (ddosBlock) return ddosBlock;
 
   try {
     // Auth
