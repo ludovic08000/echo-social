@@ -67,7 +67,7 @@ function MobileHeader() {
             to={`/profile/${user.id}`}
             className="w-8 h-8 rounded-full overflow-hidden active:scale-90 transition-transform"
           >
-            <UserAvatar userId={user.id} size="sm" />
+            <UserAvatar src={profile?.avatar_url} alt={profile?.name || ''} size="sm" />
           </Link>
         </div>
       </div>
