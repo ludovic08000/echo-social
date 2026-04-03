@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
-import { Sparkles, Check, Zap, ArrowRight, Users, Phone, Upload, FileText, Loader2 } from 'lucide-react';
+import { Sparkles, Check, Zap, ArrowRight, Users, Phone, Upload, FileText, Loader2, Eye, EyeOff, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import BrandLogo from '@/components/BrandLogo';
