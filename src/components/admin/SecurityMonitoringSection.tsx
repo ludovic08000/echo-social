@@ -78,6 +78,8 @@ export function SecurityMonitoringSection() {
   });
 
   // Run manual scan
+  const [lastScanResult, setLastScanResult] = useState<any>(null);
+
   const runScan = useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase.functions.invoke('security-monitor');
@@ -85,9 +87,10 @@ export function SecurityMonitoringSection() {
       return data;
     },
     onSuccess: (data) => {
+      setLastScanResult(data);
       toast({
         title: '🔍 Scan terminé',
-        description: `${data.incidents_detected} incidents détectés, ${data.patterns_learned} patterns appris. Santé: ${data.platform_health}`,
+        description: `${data.incidents_detected} incidents, ${data.local_detections} détections locales, ${data.patterns_learned} patterns appris. ${data.ai_used ? 'IA+Heuristiques' : 'Mode autonome'}`,
       });
       queryClient.invalidateQueries({ queryKey: ['security-incidents'] });
       queryClient.invalidateQueries({ queryKey: ['security-ai-patterns'] });
@@ -277,10 +280,62 @@ export function SecurityMonitoringSection() {
             </div>
           )}
           <p className="text-[10px] text-muted-foreground mt-3 text-center">
-            🧠 L'IA analyse chaque incident et crée/renforce automatiquement des patterns de détection. Plus elle analyse, plus elle devient précise.
+            🧠 L'IA analyse chaque incident et crée des patterns exploitables par le moteur local. Plus elle apprend, moins Gemini est nécessaire.
           </p>
         </CardContent>
       </Card>
+
+      {/* Autonomy Progress */}
+      {lastScanResult && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-primary" /> Progression vers l'autonomie
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Mode dernier scan :</span>
+              <Badge variant={lastScanResult.ai_used ? 'secondary' : 'default'} className="text-[10px]">
+                {lastScanResult.ai_used ? '🤖 IA + Heuristiques' : '⚡ 100% Autonome'}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Détections locales :</span>
+              <span className="font-medium text-foreground">{lastScanResult.local_detections}/{lastScanResult.incidents_detected}</span>
+            </div>
+            {lastScanResult.autonomy_score != null && (
+              <div>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span className="text-muted-foreground">Score d'autonomie :</span>
+                  <span className="font-bold text-foreground">{Math.round(lastScanResult.autonomy_score * 100)}%</span>
+                </div>
+                <div className="w-full h-3 rounded-full bg-secondary overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-primary/70 to-primary transition-all duration-500"
+                    style={{ width: `${Math.round(lastScanResult.autonomy_score * 100)}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  {lastScanResult.autonomy_score >= 0.8 ? '🟢 L\'IA locale est quasi-autonome' :
+                   lastScanResult.autonomy_score >= 0.5 ? '🟡 Apprentissage en bonne voie' :
+                   '🔴 Gemini encore très utilisé — plus de scans nécessaires'}
+                </p>
+              </div>
+            )}
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Patterns totaux :</span>
+              <span className="font-medium text-foreground">{lastScanResult.patterns_total || patternCount}</span>
+            </div>
+            {lastScanResult.self_improvement && (
+              <div className="p-3 rounded-lg bg-secondary/30 border border-border/50">
+                <p className="text-[10px] font-medium text-muted-foreground mb-1">🧠 Notes d'auto-amélioration :</p>
+                <p className="text-xs text-foreground">{lastScanResult.self_improvement}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
