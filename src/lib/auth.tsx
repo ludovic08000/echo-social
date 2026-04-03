@@ -3,16 +3,11 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { generateFingerprint } from '@/hooks/useTrustAndSafety';
 import { startSessionGuard, stopSessionGuard } from '@/lib/sessionGuard';
-import { setRecoveryFlag, isRecoveryPending } from '@/components/ProtectedRoute';
+import { detectAndStoreRecoveryFromHash, isRecoveryPending, setRecoveryFlag } from '@/lib/authRecovery';
 
 /** Check URL hash for recovery tokens BEFORE any session is exposed */
 function detectRecoveryFromHash(): boolean {
-  const hash = window.location.hash;
-  if (hash.includes('type=recovery')) {
-    setRecoveryFlag();
-    return true;
-  }
-  return false;
+  return detectAndStoreRecoveryFromHash();
 }
 
 interface AuthContextType {
@@ -33,12 +28,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [recoveryMode, setRecoveryMode] = useState(initialRecovery);
 
   useEffect(() => {
     // Get session first for fastest possible auth resolution
     supabase.auth.getSession().then(({ data: { session } }) => {
-      // If recovery is pending, expose user but ProtectedRoute will redirect
+      if (initialRecovery || detectRecoveryFromHash() || isRecoveryPending()) {
+        stopSessionGuard();
+        setSession(null);
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
@@ -46,10 +47,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        // Intercept recovery at the earliest point
         if (event === 'PASSWORD_RECOVERY') {
           setRecoveryFlag();
-          setRecoveryMode(true);
+          stopSessionGuard();
+          setSession(null);
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
+        if (event === 'SIGNED_OUT') {
+          stopSessionGuard();
+          setSession(null);
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
+        if (detectRecoveryFromHash() || isRecoveryPending()) {
+          stopSessionGuard();
+          setSession(null);
+          setUser(null);
+          setLoading(false);
+          return;
         }
 
         setSession(session);
@@ -58,7 +78,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Session guard: start on sign in, stop on sign out
         if (event === 'SIGNED_IN' && session?.user) {
-          // Don't start session guard or fingerprint in recovery mode
           if (isRecoveryPending()) return;
 
           startSessionGuard();
@@ -79,11 +98,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               body: { action: 'compute' },
             }).catch(() => {});
           }, 2000);
-        }
-
-        if (event === 'SIGNED_OUT') {
-          setRecoveryMode(false);
-          stopSessionGuard();
         }
       }
     );

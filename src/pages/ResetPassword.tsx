@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { clearRecoveryFlag, setRecoveryFlag, isRecoveryPending } from '@/components/ProtectedRoute';
+import { clearRecoveryFlag, detectAndStoreRecoveryFromHash, isRecoveryPending, setRecoveryFlag } from '@/lib/authRecovery';
 import loginBg from '@/assets/login-bg.png';
 
 export default function ResetPassword() {
@@ -21,10 +21,8 @@ export default function ResetPassword() {
 
   // Check recovery synchronously on first render to avoid flash of "invalid link"
   const [isRecovery, setIsRecovery] = useState(() => {
-    const hash = window.location.hash;
-    const found = isRecoveryPending() || hash.includes('type=recovery') || hash.includes('access_token');
-    if (found && !isRecoveryPending()) setRecoveryFlag();
-    return found;
+    const detected = detectAndStoreRecoveryFromHash();
+    return isRecoveryPending() || detected;
   });
 
   useEffect(() => {
@@ -102,9 +100,10 @@ export default function ResetPassword() {
       description: 'Votre mot de passe a été mis à jour. Veuillez vous reconnecter.',
     });
 
-    // Immediately clear recovery flag and sign out — no delay
-    clearRecoveryFlag();
     await supabase.auth.signOut();
+    clearRecoveryFlag();
+    window.history.replaceState(null, document.title, `${window.location.pathname}${window.location.search}`);
+
     setTimeout(() => {
       navigate('/login', { replace: true });
     }, 2000);

@@ -9,6 +9,7 @@ import { I18nProvider } from "@/lib/i18n";
 import { ChatWidgetProvider, useChatWidget } from "@/components/ChatWidgetContext";
 import { ChatWidget } from "@/components/ChatWidget";
 import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
+import { RecoveryFlowGuard } from "@/components/RecoveryFlowGuard";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
 import { useIncomingCall, endActiveCall } from "@/hooks/useIncomingCall";
 import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
@@ -155,6 +156,7 @@ function AppContent() {
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <RecoveryFlowGuard />
             <IncomingCallHandler />
             <ErrorBoundary>
             <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
