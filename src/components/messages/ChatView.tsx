@@ -687,6 +687,9 @@ export function ChatView({ conversationId }: ChatViewProps) {
                                   showLabel
                                 />
                               )}
+                              {e2ee.encrypted && !looksEncrypted && !isZeusConversation && (
+                                <span className="text-[9px] text-muted-foreground/60">non chiffré</span>
+                              )}
                               {isMe && (
                                 <CheckCheck className="w-3.5 h-3.5 text-primary/70" />
                               )}
