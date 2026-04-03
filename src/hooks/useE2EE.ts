@@ -769,8 +769,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   /** Acknowledge fingerprint change — user explicitly trusts new key */
   const acknowledgeFingerprint = useCallback(() => {
     if (peerKeyRef.current && peerUserId) {
-      // Only NOW save the new fingerprint
+      // Save new fingerprint locally AND server-side
       saveKnownFingerprint(peerUserId, peerKeyRef.current.fingerprint);
+      saveKnownFingerprintServer(peerUserId, peerKeyRef.current.fingerprint);
     }
     // Clear ratchet state since keys changed
     if (conversationId) {
