@@ -35,6 +35,7 @@ const NAV_ITEMS = [
   { key: 'zeus', label: '⚡ Console Zeus', icon: Zap },
   { key: 'audit_logs', label: 'Journal d\'audit', icon: ScrollText },
   { key: 'monitoring', label: 'Monitoring', icon: Monitor },
+  { key: 'security_ai', label: 'IA Sécurité', icon: ShieldAlert },
   { key: 'security', label: 'Sécurité', icon: Lock },
   { key: 'settings', label: 'Paramètres', icon: Settings },
 ] as const;
