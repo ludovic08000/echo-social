@@ -14,10 +14,7 @@ export default function AuthConfirm() {
   useEffect(() => {
     const checkConfirmation = async () => {
       try {
-        // Small delay to let Supabase process the token from the URL hash
-        await new Promise(r => setTimeout(r, 1500));
-
-        // Check for error params in URL (Supabase puts them in hash or query)
+        // Check for error params in URL first (no need to wait)
         const hashParams = new URLSearchParams(window.location.hash.replace('#', '?'));
         const errorCode = searchParams.get('error_code') || hashParams.get('error_code');
         const errorDescription = searchParams.get('error_description') || hashParams.get('error_description');
@@ -28,17 +25,24 @@ export default function AuthConfirm() {
           return;
         }
 
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-        if (sessionError) {
-          console.error('[AuthConfirm] Session error:', sessionError);
-          setErrorMessage(sessionError.message || 'Erreur de vérification de session.');
-          setStatus('error');
-          return;
+        // Active polling: wait for session to be available (max ~10s)
+        let session = null;
+        for (let i = 0; i < 20; i++) {
+          const { data, error: sessionError } = await supabase.auth.getSession();
+          if (sessionError) {
+            console.error('[AuthConfirm] Session error:', sessionError);
+            setErrorMessage(sessionError.message || 'Erreur de vérification de session.');
+            setStatus('error');
+            return;
+          }
+          if (data.session?.user) {
+            session = data.session;
+            break;
+          }
+          await new Promise(r => setTimeout(r, 500));
         }
 
         if (session?.user) {
-          // Check if profile has onboarding_completed
           const { data: profile } = await supabase
             .from('profiles')
             .select('onboarding_completed')
@@ -55,7 +59,7 @@ export default function AuthConfirm() {
             }
           }, 2000);
         } else {
-          // No session — user confirmed email but needs to log in
+          // No session after polling — user confirmed but needs to log in
           setStatus('success');
           setTimeout(() => navigate('/login?confirmed=1', { replace: true }), 2000);
         }
