@@ -644,7 +644,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       throw new EncryptionError('Rate limited — possible exfiltration attempt');
     }
 
-    // PRIMARY: Double Ratchet (per-message forward secrecy) — only if peer has identity key
+    // PRIMARY: Double Ratchet with X3DH (per-message forward secrecy) — only if peer has identity key
     if (peerKeyRef.current) {
       try {
         const ratchet = await initRatchetIfNeeded();
@@ -658,8 +658,17 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           ratchetRef.current = newState;
           await saveRatchetLocal(conversationId!, newState);
           setState(s => ({ ...s, ratchetActive: true }));
-          console.log('[E2EE] ✅ encrypt via Double Ratchet (forward secrecy)');
-          return hardGlobals.jsonStringify(envelope);
+
+          // Attach X3DH header to the FIRST message so responder can derive the same SK
+          const ratchetEnv = envelope as any;
+          if (x3dhInfoRef.current) {
+            ratchetEnv.x3dh = x3dhInfoRef.current;
+            x3dhInfoRef.current = null; // Only attach once
+            console.log('[E2EE] ✅ encrypt via X3DH + Double Ratchet (initial message)');
+          } else {
+            console.log('[E2EE] ✅ encrypt via Double Ratchet (forward secrecy)');
+          }
+          return hardGlobals.jsonStringify(ratchetEnv);
         }
       } catch (ratchetErr) {
         console.warn('[E2EE] Ratchet encrypt failed, falling back to legacy:', ratchetErr);
