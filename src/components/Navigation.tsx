@@ -113,17 +113,16 @@ export function MobileNav() {
 
       <nav className={cn(
         "fixed bottom-0 left-0 right-0 z-50 safe-area-pb transition-transform duration-300",
-        "bg-card/95 backdrop-blur-xl border-t border-border/15",
-        "shadow-[0_-4px_20px_hsl(var(--background)/0.7)]",
+        "bg-background/95 backdrop-blur-xl border-t border-border/10",
         navHidden && "translate-y-full"
       )}>
-        <div className="flex items-stretch h-[58px]">
+        <div className="flex items-stretch h-[50px]">
           <NavItem path="/feed" icon={Home} label="Accueil" />
           <NavItem path="/friends" icon={Users} label="Amis" />
 
           {/* Bouton Créer — centré */}
           <Link to="/create" className="flex flex-col items-center justify-center flex-1 min-w-0">
-            <div className="w-12 h-12 rounded-2xl bg-[image:var(--premium-gradient)] text-primary-foreground flex items-center justify-center shadow-[var(--shadow-gold)] active:scale-90 transition-transform duration-150 hover:shadow-[var(--shadow-glow)]">
+            <div className="w-10 h-10 rounded-xl bg-[image:var(--premium-gradient)] text-primary-foreground flex items-center justify-center shadow-[var(--shadow-gold)] active:scale-90 transition-transform duration-150">
               <Plus className="w-5 h-5 stroke-[2.5]" />
             </div>
           </Link>
