@@ -81,11 +81,30 @@ export function sanitizeUrl(url: string): string | null {
 // Shareable URL Generators
 // ============================================
 
+const ALLOWED_ORIGINS = [
+  'https://forsure.fans',
+  'https://www.forsure.fans',
+  'https://calm-connect-05.lovable.app',
+  'https://id-preview--14bf9f2a-b211-4bff-8f3c-1cd3d8a0a907.lovable.app',
+] as const;
+
+/**
+ * Returns a controlled base URL — never trusts window.location.origin blindly.
+ * Falls back to production domain if the current origin is not whitelisted.
+ */
 export function getBaseUrl(): string {
   if (typeof window !== 'undefined') {
-    return window.location.origin;
+    const origin = window.location.origin;
+    if ((ALLOWED_ORIGINS as readonly string[]).includes(origin) || origin.endsWith('.lovableproject.com')) {
+      return origin;
+    }
   }
-  return import.meta.env.VITE_APP_URL || 'https://pulse.app';
+  return ALLOWED_ORIGINS[0]; // forsure.fans
+}
+
+/** Builds a safe redirect URL for auth flows (password reset, email confirm, etc.) */
+export function getSafeRedirectUrl(path: string): string {
+  return `${getBaseUrl()}${path}`;
 }
 
 export function generateProfileUrl(userId: string): string {

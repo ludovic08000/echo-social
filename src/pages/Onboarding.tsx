@@ -301,11 +301,28 @@ export default function Onboarding() {
       // 5. Save interests & AI name
       await savePreferences(newUser.id);
 
+      // 5b. Advance onboarding step server-side (step 0 → 1)
+      try {
+        await supabase.rpc('advance_onboarding_step', {
+          _user_id: newUser.id,
+          _expected_step: 0 as any,
+        });
+      } catch {}
+
       // Clear pending data
       clearSignupData();
       setAccountCreated(true);
 
       toast({ title: 'Compte créé ! 🎉' });
+
+      // Advance step 1 → 2 (entering find-friends)
+      try {
+        await supabase.rpc('advance_onboarding_step', {
+          _user_id: newUser.id,
+          _expected_step: 1 as any,
+        });
+      } catch {}
+
       setStep('find-friends');
     } catch (err: any) {
       toast({ title: 'Erreur', description: err.message, variant: 'destructive' });
@@ -375,9 +392,18 @@ export default function Onboarding() {
 
   const handleFinish = async () => {
     setIsSubmitting(true);
-    // Mark onboarding as completed server-side
+    // Mark onboarding as completed server-side with step enforcement
     if (user) {
-      try { await supabase.from('profiles').update({ onboarding_completed: true } as any).eq('user_id', user.id); } catch {}
+      try {
+        // Advance to final step, then mark completed
+        await supabase.rpc('advance_onboarding_step', {
+          _user_id: user.id,
+          _expected_step: 2 as any,
+        });
+        await supabase.from('profiles').update({ onboarding_completed: true } as any).eq('user_id', user.id);
+      } catch (err) {
+        console.warn('[Onboarding] Step enforcement error:', err);
+      }
     }
     toast({ title: `Bienvenue sur ForSure ! 🎉`, description: `${aiName.trim()} est prêt à t'accompagner !` });
     navigate('/feed', { replace: true });
