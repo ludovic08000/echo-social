@@ -13,6 +13,7 @@ import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { sanitizeUrl } from '@/lib/sanitizeUrl';
 
 function formatTime(d: string) {
   const date = new Date(d);
@@ -28,7 +29,7 @@ function MsgBody({ body, isMe }: { body: string; isMe: boolean }) {
   if (!URL_REGEX.test(body)) return <>{body}</>;
   const parts = body.split(URL_REGEX_G);
   return <>{parts.map((p, i) => URL_REGEX.test(p) ? (
-    <a key={i} href={p} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+    <a key={i} href={sanitizeUrl(p)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
       className={cn('underline break-all', isMe ? 'text-primary-foreground/90' : 'text-primary')}>
       {p.length > 40 ? p.slice(0, 37) + '…' : p}
     </a>
