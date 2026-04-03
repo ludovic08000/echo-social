@@ -527,6 +527,9 @@ export function PrivacySettingsPanel() {
         <RestrictedFriendsPanel />
       </section>
 
+      {/* E2EE Key Backup & Transfer */}
+      <KeyBackupPanel />
+
       {/* Data Export */}
       <DataExportSection />
 
