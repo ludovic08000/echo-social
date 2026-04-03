@@ -700,7 +700,19 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                 <div className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 border border-primary" />
               </Link>
               <Link to={`/profile/${conversation.participant.user_id}`} className="min-w-0">
-                <p className="text-xs font-semibold truncate hover:underline">{conversation.participant.name}</p>
+                <div className="flex items-center gap-1 min-w-0">
+                  <p className="text-xs font-semibold truncate hover:underline">{conversation.participant.name}</p>
+                  {!isZeusConversation && e2ee.encrypted && (
+                    <EncryptionBadge
+                      encrypted
+                      verified={!e2ee.fingerprintChanged}
+                      ratchetActive={e2ee.ratchetActive}
+                      size="xs"
+                      showLabel
+                      className="shrink-0 text-primary-foreground"
+                    />
+                  )}
+                </div>
                 <p className="text-[9px] opacity-80 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                   En ligne
