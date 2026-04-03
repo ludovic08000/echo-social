@@ -375,6 +375,10 @@ export default function Onboarding() {
 
   const handleFinish = async () => {
     setIsSubmitting(true);
+    // Mark onboarding as completed server-side
+    if (user) {
+      await supabase.from('profiles').update({ onboarding_completed: true } as any).eq('user_id', user.id).throwOnError().catch(() => {});
+    }
     toast({ title: `Bienvenue sur ForSure ! 🎉`, description: `${aiName.trim()} est prêt à t'accompagner !` });
     navigate('/feed', { replace: true });
   };
