@@ -62,7 +62,7 @@ export async function kdfChainStepExportable(chainKey: CryptoKey): Promise<{
     ),
     hardCrypto.importKey(
       'raw', ckRaw.slice(0, 32),
-      'HMAC', true, ['sign']
+      { name: 'HMAC', hash: 'SHA-256', length: 256 } as any, true, ['sign']
     ),
   ]);
 
