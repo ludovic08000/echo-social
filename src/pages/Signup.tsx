@@ -129,8 +129,8 @@ export default function Signup() {
     }
 
     // Minimum password length
-    if (password.length < 8) {
-      toast({ title: 'Mot de passe trop court', description: 'Minimum 8 caractères requis.', variant: 'destructive' });
+    if (password.length < 10) {
+      toast({ title: 'Mot de passe trop court', description: 'Minimum 10 caractères requis.', variant: 'destructive' });
       return;
     }
 
@@ -145,15 +145,15 @@ export default function Signup() {
     const hasNumber = /[0-9]/.test(password);
     const hasSpecial = /[^A-Za-z0-9]/.test(password);
     let strength = 0;
-    if (password.length >= 8) strength++;
-    if (password.length >= 12) strength++;
+    if (password.length >= 10) strength++;
+    if (password.length >= 14) strength++;
     if (hasUpper) strength++;
     if (hasNumber) strength++;
     if (hasSpecial) strength++;
     if (strength < 3) {
       toast({
         title: 'Mot de passe trop faible',
-        description: 'Utilisez au moins 8 caractères avec majuscules, chiffres et caractères spéciaux.',
+        description: 'Utilisez au moins 10 caractères avec majuscules, chiffres et caractères spéciaux.',
         variant: 'destructive',
       });
       return;
@@ -196,9 +196,12 @@ export default function Signup() {
         setIsLoading(false);
         return;
       }
-    } catch {
-      // Be permissive if check fails
-      console.warn('Email domain verification skipped');
+    } catch (verifyErr) {
+      // Fail-closed: block signup if domain verification service is unavailable
+      console.error('Email domain verification failed:', verifyErr);
+      toast({ title: 'Vérification impossible', description: 'Impossible de vérifier votre adresse e-mail. Veuillez réessayer.', variant: 'destructive' });
+      setIsLoading(false);
+      return;
     }
     setIsLoading(false);
 
@@ -213,10 +216,11 @@ export default function Signup() {
       dateOfBirth: dobString,
       phoneNumber: phoneNumber.trim(),
       parentalPin: isMinor ? parentalPin : null,
-      age,
     };
 
-    sessionStorage.setItem('forsure_signup_pending', JSON.stringify(signupData));
+    // Use HMAC-signed storage to prevent tampering
+    const { storeSignupData } = await import('@/lib/signupIntegrity');
+    await storeSignupData(signupData);
     navigate('/onboarding');
   };
 
@@ -308,7 +312,7 @@ export default function Signup() {
             <div className="space-y-2">
               <Label htmlFor="password">{t('signup.password')} *</Label>
               <div className="relative">
-                <Input id="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('signup.passwordPlaceholder')} className="pulse-input pr-10" required minLength={8} autoComplete="new-password" />
+                <Input id="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('signup.passwordPlaceholder')} className="pulse-input pr-10" required minLength={10} autoComplete="new-password" />
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>

@@ -39,10 +39,26 @@ export default function ResetPassword() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (password.length < 6) {
+    if (password.length < 10) {
       toast({
         title: 'Mot de passe trop court',
-        description: 'Le mot de passe doit contenir au moins 6 caractères.',
+        description: 'Le mot de passe doit contenir au moins 10 caractères.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Common weak passwords blacklist
+    const COMMON_PASSWORDS = [
+      'password', '123456', '12345678', 'qwerty', 'abc123', 'monkey', 'master',
+      'dragon', 'login', 'princess', 'football', 'shadow', 'sunshine', 'trustno1',
+      'iloveyou', 'batman', 'access', 'hello', 'charlie', 'forsure', 'azerty',
+      'motdepasse', 'bonjour', 'soleil', 'amour', 'bienvenue', '000000', '1234567890',
+    ];
+    if (COMMON_PASSWORDS.includes(password.toLowerCase())) {
+      toast({
+        title: 'Mot de passe trop commun',
+        description: 'Choisissez un mot de passe unique et personnel.',
         variant: 'destructive',
       });
       return;
@@ -52,8 +68,8 @@ export default function ResetPassword() {
     const hasNumber = /[0-9]/.test(password);
     const hasSpecial = /[^A-Za-z0-9]/.test(password);
     let strength = 0;
-    if (password.length >= 6) strength++;
     if (password.length >= 10) strength++;
+    if (password.length >= 14) strength++;
     if (hasUpper) strength++;
     if (hasNumber) strength++;
     if (hasSpecial) strength++;
@@ -185,10 +201,10 @@ export default function ResetPassword() {
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Minimum 6 caractères"
+                      placeholder="Minimum 10 caractères"
                       className="bg-background/50 border-border/50 pr-10"
                       required
-                      minLength={6}
+                      minLength={10}
                     />
                     <button
                       type="button"
@@ -211,7 +227,7 @@ export default function ResetPassword() {
                     placeholder="Retapez votre mot de passe"
                     className="bg-background/50 border-border/50"
                     required
-                    minLength={6}
+                    minLength={10}
                   />
                 </div>
 
