@@ -2,6 +2,8 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useZeusSettings } from '@/hooks/useZeusCompanion';
 import { useNavigate } from 'react-router-dom';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
+import { toast } from '@/hooks/use-toast';
 import { AppLayout } from '@/components/AppLayout';
 import { SEOHead } from '@/components/SEOHead';
 import {
@@ -43,13 +45,25 @@ export default function AIEngine() {
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('modules');
   const { zeusName } = useZeusSettings();
+  const navigate = useNavigate();
+  const { data: isAdmin, isLoading: adminLoading } = useIsAdmin();
 
   const modules = useMemo(() => getAIModules(), []);
   const stats = useMemo(() => getAIEngineStats(), []);
 
+  // Redirect non-admins
+  useEffect(() => {
+    if (!adminLoading && !isAdmin) {
+      navigate('/feed', { replace: true });
+      toast({ title: 'Accès refusé', description: "Réservé aux administrateurs.", variant: 'destructive' });
+    }
+  }, [isAdmin, adminLoading, navigate]);
+
   const filtered = selectedCategory === 'all'
     ? modules
     : modules.filter(m => m.category === selectedCategory);
+
+  if (adminLoading || !isAdmin) return null;
 
   return (
     <AppLayout>
