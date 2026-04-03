@@ -33,7 +33,7 @@ import { useMessageTranslation } from '@/hooks/useMessageTranslation';
 import { useE2EE } from '@/hooks/useE2EE';
 import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
-import { EncryptionStatusBar } from '@/components/messages/EncryptionBadge';
+import { EncryptionBadge, EncryptionStatusBar } from '@/components/messages/EncryptionBadge';
 import { OutboundStatusIndicator } from '@/components/messages/OutboundStatus';
 import { MessagingPinGate } from '@/components/MessagingPinGate';
 
@@ -700,7 +700,19 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                 <div className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 border border-primary" />
               </Link>
               <Link to={`/profile/${conversation.participant.user_id}`} className="min-w-0">
-                <p className="text-xs font-semibold truncate hover:underline">{conversation.participant.name}</p>
+                <div className="flex items-center gap-1 min-w-0">
+                  <p className="text-xs font-semibold truncate hover:underline">{conversation.participant.name}</p>
+                  {!isZeusConversation && e2ee.encrypted && (
+                    <EncryptionBadge
+                      encrypted
+                      verified={!e2ee.fingerprintChanged}
+                      ratchetActive={e2ee.ratchetActive}
+                      size="xs"
+                      showLabel
+                      className="shrink-0 text-primary-foreground"
+                    />
+                  )}
+                </div>
                 <p className="text-[9px] opacity-80 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                   En ligne
@@ -1089,8 +1101,17 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         )}
 
                         {isLastInGroup && (
-                          <div className="flex items-center gap-0.5 mt-0.5 px-0.5">
+                          <div className="flex items-center gap-0.5 mt-0.5 px-0.5 flex-wrap">
                             <span className="text-[8px] text-muted-foreground">{format(new Date(msg.created_at), 'HH:mm')}</span>
+                            {!isZeusConversation && e2ee.encrypted && msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"')) && (
+                              <EncryptionBadge
+                                encrypted
+                                verified={decryptedCacheRef.current.has(msg.id) && !e2ee.fingerprintChanged}
+                                ratchetActive={e2ee.ratchetActive}
+                                size="xs"
+                                showLabel
+                              />
+                            )}
                             {isMe && (
                               <>
                                 <CheckCheck className="w-2.5 h-2.5 text-primary/60" />
