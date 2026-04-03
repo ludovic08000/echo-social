@@ -216,7 +216,6 @@ export default function Signup() {
       dateOfBirth: dobString,
       phoneNumber: phoneNumber.trim(),
       parentalPin: isMinor ? parentalPin : null,
-      age,
     };
 
     // Use HMAC-signed storage to prevent tampering

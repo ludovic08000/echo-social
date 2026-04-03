@@ -227,7 +227,7 @@ export default function ResetPassword() {
                     placeholder="Retapez votre mot de passe"
                     className="bg-background/50 border-border/50"
                     required
-                    minLength={6}
+                    minLength={10}
                   />
                 </div>
 
