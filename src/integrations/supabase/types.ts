@@ -4205,6 +4205,30 @@ export type Database = {
         }
         Relationships: []
       }
+      anonymous_wall_public: {
+        Row: {
+          created_at: string | null
+          id: string | null
+          is_approved: boolean | null
+          message: string | null
+          target_user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string | null
+          is_approved?: boolean | null
+          message?: string | null
+          target_user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string | null
+          is_approved?: boolean | null
+          message?: string | null
+          target_user_id?: string | null
+        }
+        Relationships: []
+      }
       feed_posts_enriched: {
         Row: {
           author_avatar_url: string | null
@@ -4219,6 +4243,57 @@ export type Database = {
           image_url: string | null
           likes_count: number | null
           user_id: string | null
+        }
+        Relationships: []
+      }
+      profiles_public: {
+        Row: {
+          age_verified: boolean | null
+          avatar_url: string | null
+          bio: string | null
+          city: string | null
+          created_at: string | null
+          date_of_birth: string | null
+          mood_emoji: string | null
+          name: string | null
+          onboarding_completed: boolean | null
+          phone_number: string | null
+          profile_music_url: string | null
+          profile_type: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          age_verified?: boolean | null
+          avatar_url?: string | null
+          bio?: string | null
+          city?: string | null
+          created_at?: string | null
+          date_of_birth?: never
+          mood_emoji?: string | null
+          name?: string | null
+          onboarding_completed?: boolean | null
+          phone_number?: never
+          profile_music_url?: string | null
+          profile_type?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          age_verified?: boolean | null
+          avatar_url?: string | null
+          bio?: string | null
+          city?: string | null
+          created_at?: string | null
+          date_of_birth?: never
+          mood_emoji?: string | null
+          name?: string | null
+          onboarding_completed?: boolean | null
+          phone_number?: never
+          profile_music_url?: string | null
+          profile_type?: string | null
+          updated_at?: string | null
+          user_id?: string | null
         }
         Relationships: []
       }
