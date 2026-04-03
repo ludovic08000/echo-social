@@ -6,7 +6,7 @@ import { toast } from '@/hooks/use-toast';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import {
   Shield, Users, Activity, LayoutDashboard, FileText, Flag, BarChart3, CreditCard, Lock, Settings,
-  ChevronRight, Brain, Zap, Archive, Gauge, Monitor, ScrollText
+  ChevronRight, Brain, Zap, Archive, Gauge, Monitor, ScrollText, ShieldAlert
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
