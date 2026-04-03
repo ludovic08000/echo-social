@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { ddosShield } from "../_shared/ddos-shield.ts";
 
 // Rate limits per action type (per hour)
 const RATE_LIMITS: Record<string, number> = {
