@@ -103,7 +103,7 @@ async function loadRatchetLocal(convId: string): Promise<RatchetState | null> {
   }
 }
 
-// ─── Fingerprint verification ───
+// ─── Fingerprint verification (server-backed + local cache) ───
 
 function getKnownFingerprints(): Record<string, string> {
   try {
@@ -117,6 +117,53 @@ function saveKnownFingerprint(userId: string, fp: string) {
   const known = getKnownFingerprints();
   known[userId] = fp;
   localStorage.setItem(KNOWN_FP_KEY, hardGlobals.jsonStringify(known));
+}
+
+/** Save fingerprint to server for cross-device verification */
+async function saveKnownFingerprintServer(peerUserId: string, fp: string) {
+  try {
+    await supabase
+      .from('user_known_fingerprints')
+      .upsert({
+        user_id: (await supabase.auth.getUser()).data.user?.id,
+        peer_user_id: peerUserId,
+        fingerprint: fp,
+        last_seen_at: new Date().toISOString(),
+        acknowledged: true,
+      }, { onConflict: 'user_id,peer_user_id' });
+  } catch (e) {
+    console.warn('[E2EE] Server fingerprint save failed:', e);
+  }
+}
+
+/** Check fingerprint against both local AND server records */
+async function checkFingerprintChangeWithServer(
+  peerUserId: string, currentFp: string
+): Promise<{ changed: boolean; previousFp: string | null }> {
+  // Check local first (fast)
+  const known = getKnownFingerprints();
+  const localPrevious = known[peerUserId];
+  if (localPrevious && localPrevious !== currentFp) {
+    return { changed: true, previousFp: localPrevious };
+  }
+
+  // Check server (authoritative, survives device changes)
+  try {
+    const { data } = await supabase
+      .from('user_known_fingerprints')
+      .select('fingerprint')
+      .eq('peer_user_id', peerUserId)
+      .maybeSingle();
+
+    if (data && data.fingerprint !== currentFp) {
+      console.warn('[PEER_KEY] ⚠️ Server-side fingerprint mismatch for', peerUserId);
+      return { changed: true, previousFp: data.fingerprint };
+    }
+  } catch {
+    // Fallback to local-only check
+  }
+
+  return { changed: false, previousFp: null };
 }
 
 function checkFingerprintChange(userId: string, currentFp: string): boolean {
