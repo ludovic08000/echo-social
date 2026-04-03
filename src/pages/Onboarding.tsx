@@ -60,11 +60,30 @@ export default function Onboarding() {
   const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
   const hasPickerAPI = typeof navigator !== 'undefined' && !isIOS && 'contacts' in navigator && 'ContactsManager' in window;
 
-  // Load pending signup data
+  // Load pending signup data OR restore server state for logged-in users
   useEffect(() => {
     const raw = loadSignupDataRaw();
-    if (raw) setSignupData(raw);
-  }, [navigate]);
+    if (raw) {
+      setSignupData(raw);
+    } else if (user) {
+      // Already logged-in user — fetch server onboarding state to resume
+      supabase.rpc('get_onboarding_state', { _user_id: user.id } as any)
+        .then(({ data }) => {
+          if (!data) return;
+          const state = data as any;
+          if (state.onboarding_completed) {
+            navigate('/feed', { replace: true });
+            return;
+          }
+          // Resume at the correct step based on server state
+          const serverStep = state.onboarding_step ?? 0;
+          if (serverStep >= 2) setStep('find-friends');
+          else if (serverStep >= 1) setStep('ai-name');
+          else setStep('interests');
+        })
+        .catch(() => {});
+    }
+  }, [user, navigate]);
 
   // If no signup data and no user, redirect to signup
   if (!signupData && !user) {
