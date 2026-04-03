@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { ddosShield } from "../_shared/ddos-shield.ts";
 
 // Rate limits per action type (per hour)
 const RATE_LIMITS: Record<string, number> = {
@@ -78,6 +79,10 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // DDoS protection
+  const ddosBlock = await ddosShield(req, corsHeaders, "standard", "anti-abuse");
+  if (ddosBlock) return ddosBlock;
 
   try {
     const authHeader = req.headers.get("Authorization");

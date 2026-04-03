@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { ddosShield } from "../_shared/ddos-shield.ts";
 
 // Whitelist of allowed Stripe price IDs
 const ALLOWED_PRICE_IDS = new Set<string>();
@@ -13,6 +14,10 @@ serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: cors });
   }
+
+  // DDoS protection — critical tier for payments
+  const ddosBlock = await ddosShield(req, cors, "critical", "create-checkout");
+  if (ddosBlock) return ddosBlock;
 
   try {
     // Auth check
