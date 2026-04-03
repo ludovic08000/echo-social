@@ -108,13 +108,17 @@ const EMOJI_CATEGORIES = [
 
 // Helper to detect voice messages, GIFs, and call events
 function isVoiceMessage(body: string): boolean {
-  return body.startsWith('🎙️ ') && body.includes('voice:');
+  return body.startsWith('🎙️ ') && (body.includes('voice:') || body.includes('vocal:'));
 }
 
 function getVoiceData(body: string): { url: string; duration: number } | null {
-  const match = body.match(/voice:(.*?)(?:\|dur:(\d+))?$/);
-  if (!match) return null;
-  return { url: match[1], duration: parseInt(match[2] || '0', 10) };
+  // Format: 🎙️ vocal:URL|duration  or  🎙️ voice:URL|duration
+  const m1 = body.match(/(?:vocal|voice):(.*?)\|(\d+)$/);
+  if (m1) return { url: m1[1], duration: parseInt(m1[2], 10) };
+  // Format: 🎙️ voice:URL|dur:duration
+  const m2 = body.match(/(?:vocal|voice):(.*?)\|dur:(\d+)$/);
+  if (m2) return { url: m2[1], duration: parseInt(m2[2], 10) };
+  return null;
 }
 
 function isGifMessage(body: string): boolean {
