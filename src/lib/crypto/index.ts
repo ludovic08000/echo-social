@@ -86,4 +86,18 @@ export {
   consumePeerPrekey,
   deriveFromOwnPrekey,
   getPeerPrekeyCount,
+  loadPrivatePrekey,
 } from './prekeys';
+
+// X3DH key agreement (Signal spec)
+export {
+  x3dhInitiate,
+  x3dhRespond,
+  fetchPrekeyBundle,
+  generateAndUploadSignedPrekey,
+  refreshSignedPrekeyIfNeeded,
+  isPQXDHAvailable,
+  type X3DHPrekeyBundle,
+  type X3DHResult,
+  type X3DHInitialMessage,
+} from './x3dh';
