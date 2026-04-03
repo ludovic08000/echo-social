@@ -43,29 +43,29 @@ function MobileHeader() {
            <BrandLogo className="h-6 w-auto" />
          </Link>
         
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           <UXModeSwitchCompact />
           <Link 
             to="/notifications" 
-            className="relative w-9 h-9 rounded-full flex items-center justify-center text-foreground active:scale-90 transition-transform"
+            className="relative w-8 h-8 rounded-xl bg-secondary/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors active:scale-95"
           >
-            <Bell className="w-[22px] h-[22px]" strokeWidth={1.7} />
+            <Bell className="w-[18px] h-[18px]" strokeWidth={1.6} />
             {unreadCount && unreadCount > 0 && (
-              <span className="absolute top-0.5 right-0.5 w-[8px] h-[8px] rounded-full bg-destructive ring-2 ring-background" />
+              <span className="absolute -top-0.5 -right-0.5 w-[9px] h-[9px] rounded-full bg-destructive ring-[1.5px] ring-background" />
             )}
           </Link>
           <button 
             onClick={() => isMobile ? navigate('/messages') : openChat()}
-            className="relative w-9 h-9 rounded-full flex items-center justify-center text-foreground active:scale-90 transition-transform"
+            className="relative w-8 h-8 rounded-xl bg-secondary/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors active:scale-95"
           >
-            <MessageCircle className="w-[22px] h-[22px]" strokeWidth={1.7} />
+            <MessageCircle className="w-[18px] h-[18px]" strokeWidth={1.6} />
             {unreadMessages > 0 && (
-              <span className="absolute top-0.5 right-0.5 w-[8px] h-[8px] rounded-full bg-destructive ring-2 ring-background" />
+              <span className="absolute -top-0.5 -right-0.5 w-[9px] h-[9px] rounded-full bg-destructive ring-[1.5px] ring-background" />
             )}
           </button>
           <Link
             to={`/profile/${user.id}`}
-            className="w-8 h-8 rounded-full overflow-hidden active:scale-90 transition-transform"
+            className="w-8 h-8 rounded-xl overflow-hidden ring-1 ring-border/30 hover:ring-primary/40 transition-all active:scale-95"
           >
             <UserAvatar src={profile?.avatar_url} alt={profile?.name || ''} size="sm" />
           </Link>
