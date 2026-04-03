@@ -129,8 +129,8 @@ export default function Signup() {
     }
 
     // Minimum password length
-    if (password.length < 8) {
-      toast({ title: 'Mot de passe trop court', description: 'Minimum 8 caractères requis.', variant: 'destructive' });
+    if (password.length < 10) {
+      toast({ title: 'Mot de passe trop court', description: 'Minimum 10 caractères requis.', variant: 'destructive' });
       return;
     }
 
