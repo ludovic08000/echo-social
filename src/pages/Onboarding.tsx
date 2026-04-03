@@ -45,6 +45,8 @@ export default function Onboarding() {
   const [accountCreated, setAccountCreated] = useState(false);
   const [signupAttempted, setSignupAttempted] = useState(false);
   const [integrityVerified, setIntegrityVerified] = useState(false);
+  const [passwordForSignup, setPasswordForSignup] = useState<string>('');
+  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
 
   // Find friends state
   const sendRequest = useSendFriendRequest();
