@@ -228,7 +228,7 @@ export default function Feed() {
                 <FeedZeusCard />
               </div>
             ) : (
-              <>
+              <div className="space-y-5">
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="px-4">
                   <div className="rounded-[30px] border border-border/30 bg-card/80 backdrop-blur-sm overflow-hidden shadow-[0_18px_50px_-24px_hsl(var(--foreground)/0.18)]">
                     <div className="px-2 pt-2 pb-1">
@@ -243,11 +243,11 @@ export default function Feed() {
                   <CreatePost />
                 </motion.div>
                 <FeedZeusCard />
-              </>
+              </div>
             )}
 
             {isLoading ? (
-              <div className="space-y-3 px-4">
+              <div className="space-y-5 px-4 mt-5">
                 {[1, 2, 3].map((i) => (
                   <motion.div
                     key={i}
@@ -318,7 +318,7 @@ export default function Feed() {
                 )}
 
                 {/* Posts list — clean spacing */}
-                <div className="sm:space-y-3 sm:px-4">
+                <div className="space-y-4 sm:space-y-5 sm:px-4 mt-4">
                   {posts.map((post, index) => (
                     <div key={post.id}>
                       <PostCard post={post} />
