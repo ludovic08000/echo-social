@@ -15,11 +15,7 @@ const SENDER_DOMAIN = "notify.forsure.fans"
 // even though actual sending uses the subdomain above.
 const FROM_DOMAIN = "notify.forsure.fans"
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
-}
+import { getCorsHeaders } from "../_shared/cors.ts";
 
 // Generate a cryptographically random 32-byte hex token
 function generateToken(): string {
