@@ -22,8 +22,8 @@ export function SEOHead({ title, description, image, url, type = 'website', user
     const siteBase = 'https://forsure.fans';
     const fullTitle = title
       ? `${title} — ${siteName}`
-      : 'Forsure — Réseau social éthique sans pub | Alternative Facebook & Instagram';
-    const desc = description || 'Forsure est le réseau social éthique français sans publicité ni tracking. Messagerie privée, live streaming, marketplace et canaux TV.';
+      : 'Forsure — Réseau social gratuit sans pub | Alternative Facebook Instagram TikTok';
+    const desc = description || 'Forsure est le réseau social éthique français 100% gratuit, sans publicité ni tracking. Messagerie privée chiffrée, live streaming, marketplace, appels vidéo et canaux TV. L\'alternative à Facebook, Instagram et TikTok.';
     const pageUrl = url || `${siteBase}${window.location.pathname}`;
     const ogImage = image || `${siteBase}/og-image.png`;
 
@@ -108,7 +108,7 @@ export function SEOHead({ title, description, image, url, type = 'website', user
     jsonLd.textContent = JSON.stringify(structuredData);
 
     return () => {
-      document.title = 'Forsure — Réseau social éthique sans pub | Alternative Facebook & Instagram';
+      document.title = 'Forsure — Réseau social gratuit sans pub | Alternative Facebook Instagram TikTok';
     };
   }, [title, description, image, url, type, username, noindex]);
 
