@@ -370,25 +370,5 @@ export default function Feed() {
   );
 }
 
-/**
- * Lazy-loaded comments: only fetches data when the user clicks to expand.
- * Prevents N+1 comment queries on feed load.
- */
-const LazyComments = React.memo(function LazyComments({ postId }: { postId: string }) {
-  const [open, setOpen] = useState(false);
 
-  return (
-    <div className="bg-card sm:border sm:border-t-0 sm:border-border/15 sm:rounded-b-2xl sm:-mt-1 overflow-hidden">
-      {!open ? (
-        <button
-          onClick={() => setOpen(true)}
-          className="w-full px-3 py-2 text-[13px] text-muted-foreground hover:text-foreground transition-colors text-left"
-        >
-          Voir les commentaires…
-        </button>
-      ) : (
-        <CommentsList postId={postId} />
-      )}
-    </div>
-  );
-});
+
