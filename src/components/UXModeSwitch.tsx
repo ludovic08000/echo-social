@@ -23,7 +23,7 @@ export function UXModeSwitch({ className }: { className?: string }) {
         className={cn(
           'absolute top-1 bottom-1 rounded-xl',
           mode === 'flow'
-            ? 'bg-[hsl(320,50%,55%,0.4)] border border-[hsl(320,55%,60%,0.3)]'
+            ? 'bg-[hsl(335,65%,58%,0.4)] border border-[hsl(335,65%,65%,0.3)]'
             : 'bg-white/[0.12] border border-white/[0.1]'
         )}
         initial={false}
