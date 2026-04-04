@@ -116,10 +116,22 @@ async function uploadProxy(
   // Simulate progress for proxy uploads (no real XHR progress through SDK)
   onProgress?.({ loaded: 0, total: file.size, percent: 10 });
 
-  const { data, error } = await supabase.functions.invoke<{ url: string; path: string }>('r2-upload', {
-    body: formData,
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  let data: { url: string; path: string } | null = null;
+  let error: { message?: string } | null = null;
+
+  try {
+    const result = await supabase.functions.invoke<{ url: string; path: string }>('r2-upload', {
+      body: formData,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    data = result.data ?? null;
+    error = result.error ? { message: result.error.message } : null;
+  } catch (invokeError) {
+    error = {
+      message: invokeError instanceof Error ? invokeError.message : 'Erreur réseau via invoke',
+    };
+  }
 
   if (!error && data?.url && data?.path) {
     onProgress?.({ loaded: file.size, total: file.size, percent: 100 });
@@ -143,7 +155,7 @@ async function uploadProxy(
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({ error: 'Upload failed' }));
-    throw new Error(err.error || `Upload failed: ${response.status}`);
+    throw new Error(err.error || error?.message || `Upload failed: ${response.status}`);
   }
 
   const result = await response.json();
