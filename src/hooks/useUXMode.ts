@@ -161,9 +161,10 @@ export function useUXModeProvider() {
   const setMode = useCallback((m: UXMode) => {
     localStorage.setItem('ux-mode', m);
     setModeState(m);
-    // Re-apply that mode's appearance settings
-    setTimeout(() => reapplyAppearance(m), 0);
-  }, []);
+    // Apply class immediately so reapplyAppearance sees the correct state
+    applyMode(m);
+    reapplyAppearance(m);
+  }, [applyMode]);
 
   const toggleMode = useCallback(() => {
     setMode(mode === 'focus' ? 'flow' : 'focus');
