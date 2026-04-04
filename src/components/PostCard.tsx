@@ -150,7 +150,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const isOwner = user?.id === post.user_id;
 
   return (
-    <article className="group relative bg-card sm:border sm:border-border/20 sm:rounded-2xl overflow-hidden transition-all duration-300">
+    <article className="group relative bg-card border-y border-border/20 sm:border sm:border-border/20 sm:rounded-2xl overflow-hidden transition-all duration-300">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5">
         <div className="flex items-center gap-2.5 min-w-0">
