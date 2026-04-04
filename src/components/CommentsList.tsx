@@ -85,8 +85,10 @@ export function CommentsList({ postId }: CommentsListProps) {
     setUploading(true);
     try {
       const url = await upload(file);
-      setAttachedMedia(url);
-      setMediaType(isVideo ? 'video' : 'image');
+      if (url) {
+        setAttachedMedia(url);
+        setMediaType(isVideo ? 'video' : 'image');
+      }
     } catch {
       toast.error("Erreur lors de l'upload");
     } finally {
