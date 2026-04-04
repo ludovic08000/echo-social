@@ -206,7 +206,7 @@ export function CommentsList({ postId }: CommentsListProps) {
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
                 placeholder="Commentez..."
-                className="w-full bg-secondary/50 rounded-full px-4 py-2 pr-24 text-[13px] outline-none placeholder:text-muted-foreground focus:bg-secondary/70 transition-colors"
+                className="w-full bg-secondary/50 rounded-full px-4 py-2 pr-36 text-[13px] outline-none placeholder:text-muted-foreground focus:bg-secondary/70 transition-colors"
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
                 <Popover>
