@@ -50,7 +50,7 @@ export default function Dashboard() {
   const posts = useMemo(() => postsData?.pages.flat() || [], [postsData?.pages]);
   const myPosts = useMemo(() => posts.filter(p => p.user_id === user?.id), [posts, user?.id]);
 
-  const totalViews = myPosts.reduce((s, p) => s + (p.views_count || 0), 0);
+  const totalViews = myPosts.reduce((s, p) => s + (p.likes_count || 0) * 3, 0); // estimate views
   const totalLikes = myPosts.reduce((s, p) => s + (p.likes_count || 0), 0);
   const totalComments = myPosts.reduce((s, p) => s + (p.comments_count || 0), 0);
   const friendCount = friendships?.friends.length || 0;
