@@ -101,7 +101,6 @@ export default function Onboarding() {
     try {
       const normalized = phones.map(normalizePhone);
       const { data, error } = await supabase.rpc('match_contacts_by_phone', {
-        p_user_id: user.id,
         p_phone_numbers: normalized,
       });
       if (error) throw error;

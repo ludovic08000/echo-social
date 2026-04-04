@@ -293,7 +293,7 @@ export function InviteContacts() {
     try {
       const phones = vcContacts.map(c => c.phone).slice(0, 500);
       const { data: matches, error } = await supabase.rpc('match_contacts_by_phone', {
-        p_user_id: user.id, p_phone_numbers: phones,
+        p_phone_numbers: phones,
       });
       if (error) throw error;
       const matchedResults: MatchedContact[] = (matches || []).map((m: any) => ({
