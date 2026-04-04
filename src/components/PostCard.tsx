@@ -417,7 +417,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
               onClick={handleCommentClick}
             >
               <MessageCircle className="w-[18px] h-[18px]" />
-              <span className="font-medium">Commenter</span>
+              <span className="font-medium">Commenter{post.comments_count > 0 ? ` (${post.comments_count})` : ''}</span>
             </Button>
             <ShareButton
               url={postUrl}
