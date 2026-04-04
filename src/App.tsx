@@ -25,6 +25,7 @@ import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Feed from "./pages/Feed";
+import Dashboard from "./pages/Dashboard";
 import AdsManager from "./pages/AdsManager";
 import NotFound from "./pages/NotFound";
 
@@ -82,7 +83,7 @@ const ResetPassword = lazyWithOneRetry(() => import("./pages/ResetPassword"), 'r
 const Onboarding = lazyWithOneRetry(() => import("./pages/Onboarding"), 'r-onboard');
 const AuthConfirmPage = lazyWithOneRetry(() => import("./pages/AuthConfirm"), 'r-authconfirm');
 const Unsubscribe = lazyWithOneRetry(() => import("./pages/Unsubscribe"), 'r-unsub');
-const Dashboard = lazyWithOneRetry(() => import("./pages/Dashboard"), 'r-dash');
+// Dashboard is now eagerly loaded above
 
 const queryClient = new QueryClient();
 
