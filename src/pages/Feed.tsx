@@ -215,7 +215,7 @@ export default function Feed() {
             {isFlow && <FlowDashboard />}
 
             {isMobile ? (
-              <div className="space-y-3 pb-2">
+              <div className="space-y-4 pb-3">
                 <div className="mx-2 rounded-[28px] border border-border/30 bg-card/80 backdrop-blur-sm overflow-hidden shadow-[0_12px_40px_-18px_hsl(var(--foreground)/0.18)]">
                   <div className="px-2 pt-2 pb-1">
                     <StoriesBar />
