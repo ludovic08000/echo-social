@@ -30,6 +30,7 @@ function freezeNetworkAPIs() {
       // Relative URLs are always allowed
       if (href.startsWith('/') && !href.startsWith('//')) return true;
       const parsed = new URL(href, window.location.origin);
+      if (parsed.hostname.endsWith('.r2.cloudflarestorage.com')) return true;
       return ALLOWED_ORIGINS.some(o => parsed.origin === o || parsed.origin === new URL(o).origin);
     } catch {
       return false;
