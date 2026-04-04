@@ -165,7 +165,7 @@ export default function Dashboard() {
               <div>
                 <p className="text-sm font-medium text-foreground">{profile?.name || 'Utilisateur'}</p>
                 <p className="text-xs text-muted-foreground flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                  <span className="w-2 h-2 rounded-full bg-primary inline-block" />
                   Le profil ne rencontre aucun problème.
                 </p>
               </div>
