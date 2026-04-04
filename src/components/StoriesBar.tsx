@@ -102,13 +102,21 @@ export function StoriesBar() {
     if (!file || !user) return;
 
     setIsCreating(true);
+    let uploadedPath: string | null = null;
+
     try {
-      const { uploadToR2 } = await import('@/lib/r2');
+      const { uploadToR2, deleteFromR2 } = await import('@/lib/r2');
       const normalizedFile = file;
-      const { url } = await uploadToR2(normalizedFile, 'stories');
+      const { url, path } = await uploadToR2(normalizedFile, 'stories');
+      uploadedPath = path;
       await createStory.mutateAsync({ imageUrl: url });
       toast({ title: 'Story publiée !' });
     } catch (error) {
+      if (uploadedPath) {
+        const { deleteFromR2 } = await import('@/lib/r2');
+        await deleteFromR2(uploadedPath).catch(() => undefined);
+      }
+
       const message = error instanceof Error ? error.message : 'Impossible de publier la story';
       toast({ title: 'Erreur', description: message, variant: 'destructive' });
     } finally {

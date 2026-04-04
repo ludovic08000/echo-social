@@ -43,7 +43,7 @@ export function useStories() {
     queryKey: ['stories'],
     queryFn: async () => {
       const now = new Date().toISOString();
-      
+
       const { data: stories, error } = await supabase
         .from('stories')
         .select('*')
@@ -52,17 +52,22 @@ export function useStories() {
 
       if (error) throw error;
 
-      // Get profile info
-      const userIds = [...new Set(stories.map(s => s.user_id))];
-      const { data: profiles } = await supabase
+      const activeStories = stories ?? [];
+      if (activeStories.length === 0) {
+        return [];
+      }
+
+      const userIds = [...new Set(activeStories.map((story) => story.user_id))];
+      const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('user_id, name, avatar_url')
         .in('user_id', userIds);
 
+      if (profilesError) throw profilesError;
+
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
 
-      // Get view counts, like counts, and user's own views/likes
-      const storyIds = stories.map(s => s.id);
+      const storyIds = activeStories.map((story) => story.id);
       const [viewsRes, userViewsRes, likesRes, userLikesRes] = await Promise.all([
         supabase.from('story_views').select('story_id').in('story_id', storyIds),
         user
@@ -86,7 +91,7 @@ export function useStories() {
         likesCount[v.story_id] = (likesCount[v.story_id] || 0) + 1;
       });
 
-      const enrichedStories: Story[] = stories.map(story => {
+      const enrichedStories: Story[] = activeStories.map(story => {
         const profile = profileMap.get(story.user_id);
         return {
           ...story,
@@ -145,18 +150,16 @@ export function useCreateStory() {
     mutationFn: async ({ imageUrl, caption }: { imageUrl: string; caption?: string }) => {
       if (!user) throw new Error('Not authenticated');
 
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('stories')
         .insert({
           user_id: user.id,
           image_url: imageUrl,
-          caption: caption || null,
-        })
-        .select()
-        .single();
+          caption: caption?.trim() || null,
+        });
 
       if (error) throw error;
-      return data;
+      return { imageUrl };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stories'] });
@@ -179,7 +182,7 @@ export function useViewStory() {
           viewer_id: user.id,
         }, { onConflict: 'story_id,viewer_id' });
 
-      if (error && !error.message.includes('duplicate')) throw error;
+      if (error && error.code !== '23505') throw error;
 
       // Get story owner and create notification
       const { data: story } = await supabase
@@ -215,13 +218,14 @@ export function useLikeStory() {
       if (!user) return;
 
       if (isLiked) {
-        await supabase.from('story_likes').delete().eq('story_id', storyId).eq('user_id', user.id);
+        const { error } = await supabase.from('story_likes').delete().eq('story_id', storyId).eq('user_id', user.id);
+        if (error) throw error;
       } else {
         const { error } = await supabase.from('story_likes').upsert({
           story_id: storyId,
           user_id: user.id,
         }, { onConflict: 'story_id,user_id' });
-        if (error && !error.message.includes('duplicate')) throw error;
+        if (error && error.code !== '23505') throw error;
       }
     },
     onSuccess: () => {
