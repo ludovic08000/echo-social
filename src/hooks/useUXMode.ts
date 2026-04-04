@@ -57,45 +57,45 @@ function reapplyAppearance(mode: UXMode) {
     const isFlow = root.classList.contains('ux-flow');
 
     if (isDark) {
-      const surfaceH = isFlow ? 295 : h;
-      const surfaceS = isFlow ? Math.max(s - 15, 22) : Math.max(s - 55, 8);
-      const bgL = isFlow ? 12 : 15;
-      const cardL = isFlow ? 16 : 19;
-      const mutedL = isFlow ? 18 : 22;
-      const secL = isFlow ? 20 : 24;
-      const borderL = isFlow ? 28 : 27;
-      const accentL = isFlow ? 24 : 28;
+      const surfaceH = isFlow ? 332 : h;
+      const surfaceS = isFlow ? 28 : Math.max(s - 55, 8);
+      const bgL = isFlow ? 10 : 15;
+      const cardL = isFlow ? 14 : 19;
+      const mutedL = isFlow ? 16 : 22;
+      const secL = isFlow ? 18 : 24;
+      const borderL = isFlow ? 24 : 27;
+      const accentL = isFlow ? 22 : 28;
       const fgL = isFlow ? 96 : 95;
-      const mutedFgL = isFlow ? 62 : 60;
+      const mutedFgL = isFlow ? 60 : 60;
 
-      root.style.setProperty('--background', `${surfaceH} ${surfaceS}% ${bgL}%`);
-      root.style.setProperty('--foreground', `${isFlow ? 330 : surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
+      root.style.setProperty('--background', `${isFlow ? 330 : surfaceH} ${isFlow ? 30 : surfaceS}% ${bgL}%`);
+      root.style.setProperty('--foreground', `${isFlow ? 335 : surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
       root.style.setProperty('--card', `${surfaceH} ${surfaceS}% ${cardL}%`);
-      root.style.setProperty('--card-foreground', `${isFlow ? 330 : surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
+      root.style.setProperty('--card-foreground', `${isFlow ? 335 : surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
       root.style.setProperty('--popover', `${surfaceH} ${surfaceS}% ${cardL}%`);
-      root.style.setProperty('--popover-foreground', `${isFlow ? 330 : surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
+      root.style.setProperty('--popover-foreground', `${isFlow ? 335 : surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
       root.style.setProperty('--muted', `${surfaceH} ${Math.max(surfaceS - 4, 6)}% ${mutedL}%`);
-      root.style.setProperty('--muted-foreground', `${isFlow ? 320 : surfaceH} ${Math.max(surfaceS - 6, 8)}% ${mutedFgL}%`);
-      root.style.setProperty('--accent', `${isFlow ? 310 : h} ${Math.max(s - 30, 10)}% ${accentL}%`);
-      root.style.setProperty('--accent-foreground', `${isFlow ? 335 : h} ${Math.max(s - 10, 30)}% 72%`);
-      root.style.setProperty('--secondary', `${surfaceH} ${surfaceS}% ${secL}%`);
+      root.style.setProperty('--muted-foreground', `${isFlow ? 335 : surfaceH} ${Math.max(surfaceS - 6, 8)}% ${mutedFgL}%`);
+      root.style.setProperty('--accent', `${isFlow ? 338 : h} ${Math.max(s - 30, 10)}% ${accentL}%`);
+      root.style.setProperty('--accent-foreground', `${isFlow ? 340 : h} ${Math.max(s - 10, 30)}% 72%`);
+      root.style.setProperty('--secondary', `${isFlow ? 335 : surfaceH} ${surfaceS}% ${secL}%`);
       root.style.setProperty('--secondary-foreground', `${surfaceH} ${Math.max(surfaceS - 8, 10)}% 82%`);
-      root.style.setProperty('--border', `${isFlow ? 310 : surfaceH} ${Math.max(surfaceS - 4, 6)}% ${borderL}%`);
+      root.style.setProperty('--border', `${isFlow ? 338 : surfaceH} ${Math.max(surfaceS - 4, 6)}% ${borderL}%`);
       root.style.setProperty('--input', `${surfaceH} ${Math.max(surfaceS - 4, 6)}% ${borderL}%`);
 
       if (isFlow) {
-        // Pink glow Barbie theme — candy/strawberry
-        const glowH = 335;
-        const glowS = 80;
-        const glowL = 65;
+        // Pink glow Barbie — same hue as light (340°)
+        const glowH = 340;
+        const glowS = 82;
+        const glowL = 62;
         root.style.setProperty('--primary', `${glowH} ${glowS}% ${glowL}%`);
         root.style.setProperty('--primary-foreground', '0 0% 100%');
         root.style.setProperty('--ring', `${glowH} ${glowS}% ${glowL}%`);
         root.style.setProperty('--flow-glow', `${glowH} ${glowS}% ${glowL}%`);
-        root.style.setProperty('--flow-warm', `345 75% 68%`);
-        root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(340 85% 62%) 0%, hsl(310 65% 55%) 50%, hsl(285 55% 58%) 100%)`);
-        root.style.setProperty('--shadow-glow', `0 0 60px hsl(${glowH} ${glowS}% ${glowL}% / 0.35), 0 0 120px hsl(310 60% 55% / 0.15)`);
-        root.style.setProperty('--shadow-gold', `0 4px 35px -4px hsl(${glowH} ${glowS}% ${glowL}% / 0.4)`);
+        root.style.setProperty('--flow-warm', `345 78% 66%`);
+        root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(340 85% 60%) 0%, hsl(320 68% 55%) 50%, hsl(300 55% 56%) 100%)`);
+        root.style.setProperty('--shadow-glow', `0 0 60px hsl(${glowH} ${glowS}% ${glowL}% / 0.35), 0 0 120px hsl(325 65% 55% / 0.15)`);
+        root.style.setProperty('--shadow-gold', `0 4px 35px -4px hsl(${glowH} ${glowS}% ${glowL}% / 0.42)`);
       }
     } else {
       const flowLight = isFlow;
