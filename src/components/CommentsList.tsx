@@ -83,7 +83,7 @@ export function CommentsList({ postId }: CommentsListProps) {
 
     setUploading(true);
     try {
-      const url = await upload(file, 'comments');
+      const url = await upload(file);
       setAttachedMedia(url);
       setMediaType(isVideo ? 'video' : 'image');
     } catch {
