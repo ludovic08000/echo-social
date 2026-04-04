@@ -277,28 +277,20 @@ export function CreatePost() {
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="relative rounded-2xl border border-border/30 bg-card overflow-hidden transition-all duration-500 hover:border-primary/15 hover:shadow-[0_8px_30px_-8px_hsl(220_70%_50%/0.1)]"
-      style={{ boxShadow: 'var(--shadow-md)' }}
+      className="relative bg-card border-y border-border/20 sm:border sm:border-border/20 sm:rounded-2xl overflow-hidden"
     >
-      {/* Top accent bar */}
-      <div className="h-[2px] w-full" style={{ background: 'var(--premium-gradient)' }} />
-      
-      <div className="p-4">
-        <div className="flex gap-3 items-start">
-          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+      <div className="px-3 py-2.5">
+        <div className="flex gap-3 items-center">
+          <motion.div whileTap={{ scale: 0.95 }}>
             <UserAvatar 
               src={profile?.avatar_url} 
               alt={profile?.name} 
-              size="md" 
+              size="sm" 
               moodEmoji={(profile as any)?.mood_emoji}
             />
           </motion.div>
           
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-2">
-              <MoodPicker />
-            </div>
-
             <AnimatePresence mode="wait">
               {!expanded ? (
                 <motion.button
@@ -310,7 +302,7 @@ export function CreatePost() {
                     setExpanded(true);
                     setTimeout(() => textareaRef.current?.focus(), 100);
                   }}
-                  className="w-full text-left px-4 py-3 rounded-xl bg-secondary/40 hover:bg-secondary/60 text-sm text-muted-foreground transition-all duration-300 border border-transparent hover:border-primary/10 hover:shadow-[0_2px_10px_hsl(220_70%_50%/0.06)]"
+                  className="w-full text-left px-4 py-2.5 rounded-full bg-secondary/40 hover:bg-secondary/60 text-sm text-muted-foreground transition-all duration-300 border border-border/20"
                 >
                   Quoi de neuf, {profile?.name?.split(' ')[0] || ''} ?
                 </motion.button>
