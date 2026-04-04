@@ -108,7 +108,7 @@ export function SEOHead({ title, description, image, url, type = 'website', user
     jsonLd.textContent = JSON.stringify(structuredData);
 
     return () => {
-      document.title = 'Forsure — Réseau social éthique sans pub | Alternative Facebook & Instagram';
+      document.title = 'Forsure — Réseau social gratuit sans pub | Alternative Facebook Instagram TikTok';
     };
   }, [title, description, image, url, type, username, noindex]);
 
