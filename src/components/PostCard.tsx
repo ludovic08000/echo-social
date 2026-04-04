@@ -364,8 +364,8 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         </div>
       )}
 
-      {/* Engagement summary — Facebook style: reaction emojis + count left, comments/shares right */}
-      {showActions && (post.likes_count > 0 || post.comments_count > 0) && (
+      {/* Engagement summary — Facebook style */}
+      {showActions && (
         <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5">
           {/* Left: reaction emojis + count */}
           {post.likes_count > 0 ? (
@@ -387,16 +387,14 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
             </div>
           ) : <div />}
           
-          {/* Right: comment + share counts */}
+          {/* Right: comment count — always visible */}
           <div className="flex items-center gap-3 text-[13px] text-muted-foreground">
-            {post.comments_count > 0 && (
-              <button 
-                onClick={handleCommentClick}
-                className="hover:text-foreground transition-colors hover:underline"
-              >
-                {post.comments_count} commentaire{post.comments_count > 1 ? 's' : ''}
-              </button>
-            )}
+            <button 
+              onClick={handleCommentClick}
+              className="hover:text-foreground transition-colors hover:underline"
+            >
+              {post.comments_count} commentaire{post.comments_count !== 1 ? 's' : ''}
+            </button>
           </div>
         </div>
       )}
@@ -419,7 +417,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
               onClick={handleCommentClick}
             >
               <MessageCircle className="w-[18px] h-[18px]" />
-              <span className="font-medium">Commenter</span>
+              <span className="font-medium">Commenter{post.comments_count > 0 ? ` (${post.comments_count})` : ''}</span>
             </Button>
             <ShareButton
               url={postUrl}
