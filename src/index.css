@@ -130,64 +130,64 @@
 
   /* ═══ MODE GLOW ═══ Rose bonbon, fraise, Barbie, candy — DARK ═══ */
   .dark.ux-flow {
-    --background: 290 28% 12%;
-    --foreground: 330 20% 96%;
+    --background: 330 30% 10%;
+    --foreground: 335 22% 96%;
 
-    --card: 295 24% 16%;
-    --card-foreground: 330 20% 96%;
+    --card: 332 28% 14%;
+    --card-foreground: 335 22% 96%;
 
-    --popover: 295 24% 16%;
-    --popover-foreground: 330 20% 96%;
+    --popover: 332 28% 14%;
+    --popover-foreground: 335 22% 96%;
 
-    --primary: 335 80% 65%;
+    --primary: 340 82% 62%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 300 22% 20%;
-    --secondary-foreground: 330 20% 88%;
+    --secondary: 335 26% 18%;
+    --secondary-foreground: 335 22% 88%;
 
-    --muted: 295 20% 18%;
-    --muted-foreground: 320 15% 62%;
+    --muted: 332 24% 16%;
+    --muted-foreground: 335 18% 60%;
 
-    --accent: 310 40% 24%;
-    --accent-foreground: 335 65% 78%;
+    --accent: 338 42% 22%;
+    --accent-foreground: 340 68% 78%;
 
     --destructive: 0 70% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 310 30% 28%;
-    --input: 300 22% 20%;
-    --ring: 335 80% 65%;
+    --border: 338 32% 24%;
+    --input: 335 26% 18%;
+    --ring: 340 82% 62%;
 
-    --bleu: 335 80% 65%;
-    --bleu-light: 340 65% 75%;
-    --bleu-dark: 330 60% 45%;
-    --blanc: 330 18% 92%;
-    --rouge: 350 70% 58%;
-    --rouge-light: 350 55% 68%;
+    --bleu: 340 82% 62%;
+    --bleu-light: 342 68% 72%;
+    --bleu-dark: 338 62% 42%;
+    --blanc: 335 20% 92%;
+    --rouge: 350 72% 56%;
+    --rouge-light: 350 58% 66%;
 
-    --premium-gradient: linear-gradient(135deg, hsl(340 85% 62%) 0%, hsl(310 65% 55%) 50%, hsl(285 55% 58%) 100%);
-    --premium-gradient-subtle: linear-gradient(135deg, hsl(300 24% 18%) 0%, hsl(290 20% 14%) 100%);
-    --premium-gradient-dark: linear-gradient(135deg, hsl(340 65% 40%) 0%, hsl(300 45% 28%) 100%);
+    --premium-gradient: linear-gradient(135deg, hsl(340 85% 60%) 0%, hsl(320 68% 55%) 50%, hsl(300 55% 56%) 100%);
+    --premium-gradient-subtle: linear-gradient(135deg, hsl(332 28% 16%) 0%, hsl(330 24% 12%) 100%);
+    --premium-gradient-dark: linear-gradient(135deg, hsl(340 68% 38%) 0%, hsl(325 48% 26%) 100%);
 
-    --shadow-sm: 0 1px 4px 0 hsl(310 40% 8% / 0.2);
-    --shadow-md: 0 4px 16px -2px hsl(310 40% 8% / 0.25);
-    --shadow-lg: 0 12px 32px -4px hsl(335 50% 50% / 0.2);
-    --shadow-xl: 0 20px 50px -8px hsl(335 50% 50% / 0.3);
-    --shadow-glow: 0 0 60px hsl(335 80% 65% / 0.35), 0 0 120px hsl(310 60% 55% / 0.15);
-    --shadow-gold: 0 4px 35px -4px hsl(335 80% 65% / 0.4);
+    --shadow-sm: 0 1px 4px 0 hsl(335 40% 6% / 0.22);
+    --shadow-md: 0 4px 16px -2px hsl(335 40% 6% / 0.28);
+    --shadow-lg: 0 12px 32px -4px hsl(340 55% 50% / 0.22);
+    --shadow-xl: 0 20px 50px -8px hsl(340 55% 50% / 0.32);
+    --shadow-glow: 0 0 60px hsl(340 82% 62% / 0.35), 0 0 120px hsl(325 65% 55% / 0.15);
+    --shadow-gold: 0 4px 35px -4px hsl(340 82% 62% / 0.42);
 
-    --sidebar-background: 295 24% 14%;
-    --sidebar-foreground: 330 18% 88%;
-    --sidebar-primary: 335 80% 65%;
+    --sidebar-background: 330 28% 12%;
+    --sidebar-foreground: 335 20% 88%;
+    --sidebar-primary: 340 82% 62%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 300 20% 22%;
-    --sidebar-accent-foreground: 330 18% 88%;
-    --sidebar-border: 310 24% 25%;
-    --sidebar-ring: 335 80% 65%;
+    --sidebar-accent: 335 24% 20%;
+    --sidebar-accent-foreground: 335 20% 88%;
+    --sidebar-border: 338 26% 22%;
+    --sidebar-ring: 340 82% 62%;
 
     /* Glow specific */
-    --flow-glow: 335 80% 65%;
-    --flow-warm: 345 75% 68%;
+    --flow-glow: 340 82% 62%;
+    --flow-warm: 345 78% 66%;
   }
 
   /* ═══ MODE GLOW ═══ Rose bonbon, fraise, Barbie, candy — LIGHT ═══ */
