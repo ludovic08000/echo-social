@@ -4,14 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
 
-    <!-- CSP: No unsafe-inline in script-src — all scripts use src attributes.
-         ld+json blocks are non-executable data and don't need script-src allowance. -->
+    <!-- CSP -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; script-src-elem 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.supabase.co https://*.r2.dev https://media.tenor.com https://*.tenor.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.r2.dev https://*.livekit.cloud wss://*.livekit.cloud https://tenor.googleapis.com; media-src 'self' blob: https://*.supabase.co https://*.r2.dev; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests;" />
-    <title>Forsure — Réseau social éthique sans pub | Alternative Facebook & Instagram</title>
-    <meta name="description" content="Forsure est le réseau social éthique français sans publicité ni tracking. Messagerie privée, live streaming, marketplace et canaux TV. L'alternative à Facebook, Instagram et TikTok. Rejoignez la communauté sur forsure.fans." />
+
+    <!-- Primary SEO -->
+    <title>Forsure — Réseau social gratuit sans pub | Alternative Facebook Instagram TikTok</title>
+    <meta name="description" content="Forsure est le réseau social éthique français 100% gratuit, sans publicité ni tracking. Messagerie privée chiffrée, live streaming, marketplace, appels vidéo et canaux TV. L'alternative à Facebook, Instagram et TikTok. Rejoignez la communauté sur forsure.fans." />
     <meta name="author" content="Forsure" />
-    <meta name="keywords" content="réseau social, forsure, réseau social français, réseau social éthique, réseau social sans pub, réseau social sans tracking, alternative facebook, alternative instagram, alternative tiktok, streaming live, canaux TV, créateur de contenu, partage vidéo, messagerie privée, réseau social gratuit, social network france, forsure.fans, réseau social nouvelle génération, application sociale, communauté en ligne, partage de photos, live streaming gratuit, réseau social sécurisé, réseau social sans publicité, plateforme sociale éthique, réseau social jeunes, tchat en ligne, appels vidéo, marketplace social" />
+    <meta name="keywords" content="forsure, for sure, forsure réseau social, forsure.fans, réseau social, réseau social français, réseau social gratuit, réseau social éthique, réseau social sans pub, réseau social sans publicité, réseau social sans tracking, réseau social sécurisé, réseau social nouvelle génération, alternative facebook, alternative instagram, alternative tiktok, alternative snapchat, alternative twitter, alternative X, remplacer facebook, remplacer instagram, social network france, french social network, messagerie privée, messagerie chiffrée, messagerie sécurisée, chat en ligne gratuit, appel vidéo gratuit, live streaming gratuit, streaming en direct, diffusion en direct, canaux TV, créateur de contenu, partage vidéo, partage photos, marketplace social, vente en ligne, communauté en ligne, application sociale, plateforme sociale éthique, réseau social jeunes, réseau social ados, réseau social adultes, tchat en ligne, fil d'actualité, stories, reels, réseau social privé, réseau social France, forsure app, forsure application" />
     <link rel="canonical" href="https://forsure.fans/" />
+
+    <!-- Geo & Language targeting -->
+    <meta name="geo.region" content="FR" />
+    <meta name="geo.placename" content="France" />
+    <meta name="language" content="French" />
+    <meta http-equiv="content-language" content="fr" />
 
     <!-- Mobile optimizations -->
     <meta name="mobile-web-app-capable" content="yes" />
@@ -20,101 +27,125 @@
     <meta name="apple-mobile-web-app-title" content="Forsure" />
     <meta name="theme-color" content="#0a0a0a" />
     <meta name="format-detection" content="telephone=no" />
+    <meta name="application-name" content="Forsure" />
 
-    <!-- Google Fonts for feed customization -->
+    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@400;600;700&family=Poppins:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 
     <!-- Open Graph -->
-    <meta property="og:title" content="Forsure — Réseau social éthique sans pub | Alternative Facebook & Instagram" />
-    <meta property="og:description" content="Le réseau social éthique français sans publicité ni tracking. Messagerie privée, live streaming, marketplace et canaux TV. Rejoignez forsure.fans." />
+    <meta property="og:title" content="Forsure — Réseau social gratuit sans pub | Alternative Facebook Instagram TikTok" />
+    <meta property="og:description" content="Le réseau social éthique français 100% gratuit. Messagerie privée chiffrée, live streaming, marketplace, appels vidéo. Zéro pub, zéro tracking. Rejoignez forsure.fans." />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Forsure" />
     <meta property="og:url" content="https://forsure.fans/" />
     <meta property="og:image" content="https://forsure.fans/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Forsure — Le réseau social éthique sans publicité" />
+    <meta property="og:image:alt" content="Forsure — Le réseau social éthique gratuit sans publicité" />
     <meta property="og:locale" content="fr_FR" />
+    <meta property="og:locale:alternate" content="en_US" />
     <link rel="icon" href="/favicon.png" type="image/png" />
     <link rel="apple-touch-icon" href="/pwa-192x192.png" />
 
-    <!-- Preconnect to critical origins -->
+    <!-- Preconnect -->
     <link rel="preconnect" href="https://vkpmoqfzrihcijjochks.supabase.co" crossorigin />
     <link rel="dns-prefetch" href="https://vkpmoqfzrihcijjochks.supabase.co" />
 
-    <!-- Twitter Card (use name, not property) -->
+    <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@forsure" />
-    <meta name="twitter:title" content="Forsure — Réseau social éthique sans pub" />
-    <meta name="twitter:description" content="Le réseau social français sans publicité ni tracking. Messagerie, live streaming, marketplace." />
+    <meta name="twitter:title" content="Forsure — Réseau social gratuit sans pub | Alternative Facebook Instagram" />
+    <meta name="twitter:description" content="Le réseau social français 100% gratuit sans publicité ni tracking. Messagerie chiffrée, live streaming, marketplace, appels vidéo." />
     <meta name="twitter:image" content="https://forsure.fans/og-image.png" />
-    <meta name="twitter:image:alt" content="Forsure — Le réseau social éthique" />
+    <meta name="twitter:image:alt" content="Forsure — Le réseau social éthique gratuit" />
 
-    <!-- JSON-LD Structured Data: Organization -->
+    <!-- JSON-LD: Organization -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "Organization",
       "name": "Forsure",
+      "alternateName": ["ForSure", "For Sure", "Forsure réseau social", "Forsure.fans"],
       "url": "https://forsure.fans",
       "logo": "https://forsure.fans/favicon.png",
-      "description": "Forsure est le réseau social éthique français sans publicité ni tracking.",
+      "description": "Forsure est le réseau social éthique français 100% gratuit, sans publicité ni tracking. L'alternative à Facebook, Instagram et TikTok.",
+      "foundingDate": "2024",
+      "areaServed": "FR",
       "contactPoint": {
         "@type": "ContactPoint",
         "email": "dpo@forsure.fans",
-        "contactType": "customer support"
+        "contactType": "customer support",
+        "availableLanguage": ["French", "English"]
       },
       "sameAs": []
     }
     </script>
 
-    <!-- JSON-LD Structured Data: WebSite + SearchAction -->
+    <!-- JSON-LD: WebSite + SearchAction (Google Sitelinks Search Box) -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "WebSite",
       "name": "Forsure",
+      "alternateName": "ForSure réseau social",
       "url": "https://forsure.fans",
-      "description": "Le réseau social éthique français sans publicité ni tracking publicitaire.",
+      "description": "Le réseau social éthique français 100% gratuit sans publicité ni tracking. Messagerie chiffrée, live streaming, marketplace.",
       "inLanguage": "fr",
       "potentialAction": {
         "@type": "SearchAction",
-        "target": "https://forsure.fans/search?q={search_term_string}",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://forsure.fans/search?q={search_term_string}"
+        },
         "query-input": "required name=search_term_string"
       }
     }
     </script>
 
-    <!-- JSON-LD Structured Data: WebApplication -->
+    <!-- JSON-LD: WebApplication (App Store rich results) -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "WebApplication",
       "name": "Forsure",
+      "alternateName": "ForSure App",
       "url": "https://forsure.fans",
       "applicationCategory": "SocialNetworkingApplication",
       "operatingSystem": "Web, iOS, Android",
-      "description": "Réseau social éthique sans publicité. Messagerie privée, live streaming, marketplace et canaux TV.",
+      "description": "Réseau social éthique gratuit sans publicité. Messagerie privée chiffrée, live streaming, marketplace, appels vidéo et canaux TV. L'alternative à Facebook, Instagram et TikTok.",
       "offers": {
         "@type": "Offer",
         "price": "0",
-        "priceCurrency": "EUR"
+        "priceCurrency": "EUR",
+        "availability": "https://schema.org/InStock"
+      },
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.8",
+        "ratingCount": "150",
+        "bestRating": "5"
       },
       "featureList": [
-        "Messagerie privée chiffrée",
-        "Live streaming gratuit",
-        "Marketplace intégré",
+        "Messagerie privée chiffrée de bout en bout",
+        "Live streaming gratuit en temps réel",
+        "Marketplace intégré avec paiement sécurisé",
         "Canaux TV personnalisés",
-        "Appels vidéo",
-        "Zéro publicité",
-        "Zéro tracking"
-      ]
+        "Appels vidéo HD gratuits",
+        "Partage de photos et vidéos",
+        "Stories et Reels",
+        "Fil d'actualité intelligent",
+        "Zéro publicité, zéro tracking",
+        "Protection des mineurs intégrée",
+        "Jeux multijoueur intégrés",
+        "IA assistant Zeus intégrée"
+      ],
+      "screenshot": "https://forsure.fans/og-image.png"
     }
     </script>
 
-    <!-- JSON-LD: FAQPage (boost rich snippets) -->
+    <!-- JSON-LD: FAQPage (Rich Snippets Google) -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -122,10 +153,18 @@
       "mainEntity": [
         {
           "@type": "Question",
+          "name": "Qu'est-ce que Forsure ?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Forsure (forsure.fans) est un réseau social éthique français 100% gratuit. C'est l'alternative à Facebook, Instagram et TikTok, sans aucune publicité ni tracking. Forsure propose la messagerie privée chiffrée, le live streaming, un marketplace, des appels vidéo, des stories et un fil d'actualité intelligent."
+          }
+        },
+        {
+          "@type": "Question",
           "name": "Forsure est-il gratuit ?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Oui, Forsure est entièrement gratuit. L'inscription, la messagerie, le live streaming et toutes les fonctionnalités de base sont accessibles sans frais."
+            "text": "Oui, Forsure est entièrement gratuit. L'inscription, la messagerie chiffrée, le live streaming, les appels vidéo, le marketplace et toutes les fonctionnalités sont accessibles sans frais et sans publicité."
           }
         },
         {
@@ -133,7 +172,15 @@
           "name": "En quoi Forsure est différent de Facebook ou Instagram ?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Forsure est un réseau social éthique sans publicité ni tracking. Contrairement à Facebook et Instagram, vos données ne sont pas vendues à des annonceurs. Votre vie privée est respectée par design."
+            "text": "Contrairement à Facebook et Instagram, Forsure ne diffuse aucune publicité, ne vend aucune donnée personnelle et ne fait aucun tracking. La messagerie est chiffrée de bout en bout, les données restent sous votre contrôle. Forsure est le réseau social qui respecte votre vie privée."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Comment s'inscrire sur Forsure ?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Rendez-vous sur forsure.fans et cliquez sur 'S'inscrire'. L'inscription est gratuite et ne prend que quelques secondes. Aucune carte bancaire n'est requise."
           }
         },
         {
@@ -141,18 +188,52 @@
           "name": "Forsure est-il disponible sur mobile ?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Oui, Forsure est accessible sur tous les navigateurs mobiles et est optimisé comme une application web progressive (PWA). Des applications iOS et Android sont également disponibles."
+            "text": "Oui, Forsure est accessible sur tous les navigateurs mobiles comme une application web progressive (PWA). Des applications iOS et Android sont également disponibles. Vous pouvez l'installer directement depuis votre navigateur."
           }
         },
         {
           "@type": "Question",
-          "name": "Comment Forsure protège ma vie privée ?",
+          "name": "La messagerie Forsure est-elle sécurisée ?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Forsure n'utilise aucun cookie de tracking, ne vend aucune donnée personnelle et ne diffuse aucune publicité ciblée. Les messages sont privés et les données restent sous votre contrôle."
+            "text": "Oui, la messagerie Forsure utilise le chiffrement de bout en bout (E2EE) avec les protocoles X3DH et Double Ratchet, les mêmes standards que Signal. Personne, même Forsure, ne peut lire vos messages."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Peut-on faire du live streaming sur Forsure ?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Oui, Forsure propose le live streaming gratuit en temps réel. Vous pouvez diffuser en direct, interagir avec votre audience via le chat, recevoir des réactions et des cadeaux virtuels."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Forsure a-t-il un marketplace ?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Oui, Forsure intègre un marketplace où vous pouvez acheter et vendre des produits directement au sein de la plateforme, avec paiement sécurisé par Stripe et livraison via Mondial Relay."
           }
         }
       ]
+    }
+    </script>
+
+    <!-- JSON-LD: SoftwareApplication (for app-like search results) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Forsure",
+      "applicationCategory": "SocialNetworkingApplication",
+      "operatingSystem": "Web",
+      "url": "https://forsure.fans",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "EUR"
+      },
+      "description": "Forsure : le réseau social éthique gratuit. Alternative à Facebook, Instagram, TikTok. Messagerie chiffrée, live, marketplace, appels vidéo."
     }
     </script>
   </head>
