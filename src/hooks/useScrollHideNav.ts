@@ -1,27 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 
-function isAppleMobileWebKit() {
-  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
-  const ua = navigator.userAgent || '';
-  const isIOS = /iPhone|iPad|iPod/i.test(ua);
-  const isIPadOSDesktopUA = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
-  return isIOS || isIPadOSDesktopUA;
-}
-
 /**
  * Returns true when the bottom nav should be hidden (user scrolling down).
- * On iOS/iPadOS Safari we keep nav stable to avoid bounce/jitter.
  */
-export function useScrollHideNav(threshold = 18) {
+export function useScrollHideNav(threshold = 12) {
   const [hidden, setHidden] = useState(false);
   const lastScrollY = useRef(0);
 
   useEffect(() => {
-    if (isAppleMobileWebKit()) {
-      setHidden(false);
-      return;
-    }
-
     let ticking = false;
 
     const handleScroll = () => {
@@ -29,23 +15,18 @@ export function useScrollHideNav(threshold = 18) {
       ticking = true;
       requestAnimationFrame(() => {
         const currentY = window.scrollY;
-        const last = lastScrollY.current;
-        const delta = currentY - last;
+        const delta = currentY - lastScrollY.current;
 
-        if (Math.abs(delta) < threshold) {
-          ticking = false;
-          return;
+        if (Math.abs(delta) >= threshold) {
+          if (currentY < 60) {
+            setHidden(false);
+          } else if (delta > 0) {
+            setHidden(true);
+          } else {
+            setHidden(false);
+          }
+          lastScrollY.current = currentY;
         }
-
-        if (currentY < 80) {
-          setHidden(false);
-        } else if (delta > threshold && currentY > 140) {
-          setHidden((prev) => (prev ? prev : true));
-        } else if (delta < -threshold) {
-          setHidden((prev) => (prev ? false : prev));
-        }
-
-        lastScrollY.current = currentY;
         ticking = false;
       });
     };
