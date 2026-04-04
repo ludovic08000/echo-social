@@ -309,10 +309,10 @@ export default function Feed() {
                   </div>
                 )}
 
-                {/* Posts list — natural flow, no virtualizer gaps */}
-                <div className="space-y-2 sm:space-y-4">
+                {/* Posts list — clean spacing */}
+                <div className="sm:space-y-3 sm:px-4">
                   {posts.map((post, index) => (
-                    <div key={post.id} className="sm:px-4">
+                    <div key={post.id}>
                       <PostCard post={post} />
                       {renderInjection(index)}
                     </div>
