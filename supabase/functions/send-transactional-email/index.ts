@@ -15,11 +15,7 @@ const SENDER_DOMAIN = "notify.forsure.fans"
 // even though actual sending uses the subdomain above.
 const FROM_DOMAIN = "notify.forsure.fans"
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
-}
+import { getCorsHeaders } from "../_shared/cors.ts";
 
 // Generate a cryptographically random 32-byte hex token
 function generateToken(): string {
@@ -35,6 +31,7 @@ function generateToken(): string {
 // reaches this code. No in-function auth check is needed.
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })

@@ -90,7 +90,6 @@ Deno.serve(async (req) => {
     if (allPhones.length > 0) {
       const phoneBatch = allPhones.slice(0, 500);
       const { data } = await supabase.rpc("match_contacts_by_phone", {
-        p_user_id: user.id,
         p_phone_numbers: phoneBatch,
       });
       phoneMatches = data || [];

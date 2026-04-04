@@ -4776,16 +4776,26 @@ export type Database = {
         Returns: boolean
       }
       is_user_minor: { Args: { p_user_id: string }; Returns: boolean }
-      match_contacts_by_phone: {
-        Args: { p_phone_numbers: string[]; p_user_id: string }
-        Returns: {
-          avatar_url: string
-          is_friend: boolean
-          name: string
-          phone_number: string
-          user_id: string
-        }[]
-      }
+      match_contacts_by_phone:
+        | {
+            Args: { p_phone_numbers: string[] }
+            Returns: {
+              avatar_url: string
+              is_friend: boolean
+              name: string
+              user_id: string
+            }[]
+          }
+        | {
+            Args: { p_phone_numbers: string[]; p_user_id: string }
+            Returns: {
+              avatar_url: string
+              is_friend: boolean
+              name: string
+              phone_number: string
+              user_id: string
+            }[]
+          }
       move_to_dlq: {
         Args: {
           dlq_name: string

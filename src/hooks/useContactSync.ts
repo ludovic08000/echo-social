@@ -89,7 +89,6 @@ export function useContactSync() {
       const phoneToContact = new Map(parsed.map(c => [c.phone, c]));
 
       const { data: matches, error } = await supabase.rpc('match_contacts_by_phone', {
-        p_user_id: user.id,
         p_phone_numbers: phones,
       });
 
