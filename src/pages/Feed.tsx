@@ -30,17 +30,14 @@ const FriendSuggestions = lazy(() => import('@/components/feed/FriendSuggestions
 const FriendSuggestionsByCity = lazy(() => import('@/components/feed/FriendSuggestionsByCity').then(m => ({ default: m.FriendSuggestionsByCity })));
 const FeedReelsSection = lazy(() => import('@/components/feed/FeedReelsSection').then(m => ({ default: m.FeedReelsSection })));
 const FeedMarketplaceSection = lazy(() => import('@/components/feed/FeedMarketplaceSection').then(m => ({ default: m.FeedMarketplaceSection })));
-const FeedMediaSection = lazy(() => import('@/components/feed/FeedMediaSection').then(m => ({ default: m.FeedMediaSection })));
 
-const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'media' | 'marketplace'> = {
-  2: 'marketplace',
+
+const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'marketplace'> = {
   4: 'suggestions_city',
-  6: 'suggestions',
-  9: 'media',
-  12: 'marketplace',
-  15: 'reels',
-  23: 'marketplace',
-  27: 'suggestions',
+  8: 'suggestions',
+  14: 'marketplace',
+  20: 'reels',
+  28: 'suggestions',
 };
 
 export default function Feed() {
@@ -152,7 +149,7 @@ export default function Feed() {
         {type === 'reels' && <FeedReelsSection />}
         {type === 'suggestions' && <FriendSuggestions />}
         {type === 'suggestions_city' && <FriendSuggestionsByCity />}
-        {type === 'media' && <FeedMediaSection />}
+        
         {type === 'marketplace' && <FeedMarketplaceSection />}
       </Suspense>
     );
