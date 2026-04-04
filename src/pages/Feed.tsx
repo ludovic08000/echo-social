@@ -150,7 +150,7 @@ export default function Feed() {
         {type === 'reels' && <FeedReelsSection />}
         {type === 'suggestions' && <FriendSuggestions />}
         {type === 'suggestions_city' && <FriendSuggestionsByCity />}
-        
+        {type === 'media' && <FeedMediaSection />}
         {type === 'marketplace' && <FeedMarketplaceSection />}
       </Suspense>
     );
