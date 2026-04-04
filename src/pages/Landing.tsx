@@ -3,6 +3,7 @@ import { Sparkles, Shield, MessageCircle, Video, Store, Tv, Users, Zap, Lock, He
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
+import { SEOHead } from '@/components/SEOHead';
 import Feed from './Feed';
 import loginBg from '@/assets/login-bg.png';
 import { useState } from 'react';
