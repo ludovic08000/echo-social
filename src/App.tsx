@@ -82,6 +82,7 @@ const ResetPassword = lazyWithOneRetry(() => import("./pages/ResetPassword"), 'r
 const Onboarding = lazyWithOneRetry(() => import("./pages/Onboarding"), 'r-onboard');
 const AuthConfirmPage = lazyWithOneRetry(() => import("./pages/AuthConfirm"), 'r-authconfirm');
 const Unsubscribe = lazyWithOneRetry(() => import("./pages/Unsubscribe"), 'r-unsub');
+const Dashboard = lazyWithOneRetry(() => import("./pages/Dashboard"), 'r-dash');
 
 const queryClient = new QueryClient();
 
