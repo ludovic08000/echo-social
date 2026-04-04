@@ -12,7 +12,7 @@ export function UXModeSwitch({ className }: { className?: string }) {
       className={cn(
         'relative flex items-center gap-2 rounded-2xl p-1 transition-all duration-500',
         mode === 'flow'
-          ? 'bg-gradient-to-r from-[hsl(330,50%,30%)] to-[hsl(280,50%,32%)] border border-[hsl(320,50%,50%,0.3)]'
+          ? 'bg-gradient-to-r from-[hsl(340,70%,45%)] to-[hsl(310,55%,42%)] border border-[hsl(335,65%,55%,0.4)]'
           : 'bg-secondary/60 border border-border/40',
         className
       )}
@@ -23,7 +23,7 @@ export function UXModeSwitch({ className }: { className?: string }) {
         className={cn(
           'absolute top-1 bottom-1 rounded-xl',
           mode === 'flow'
-            ? 'bg-[hsl(320,50%,55%,0.4)] border border-[hsl(320,55%,60%,0.3)]'
+            ? 'bg-[hsl(335,65%,58%,0.4)] border border-[hsl(335,65%,65%,0.3)]'
             : 'bg-white/[0.12] border border-white/[0.1]'
         )}
         initial={false}
@@ -63,7 +63,7 @@ export function UXModeSwitchCompact({ className }: { className?: string }) {
       className={cn(
         'relative w-9 h-9 rounded-full flex items-center justify-center transition-all duration-500',
         isFlow
-          ? 'bg-gradient-to-br from-[hsl(330,50%,48%)] to-[hsl(280,50%,42%)] text-white shadow-[0_0_16px_hsl(320,55%,50%,0.35)]'
+          ? 'bg-gradient-to-br from-[hsl(340,75%,52%)] to-[hsl(310,55%,45%)] text-white shadow-[0_0_20px_hsl(335,70%,55%,0.4)]'
           : 'bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary',
         className
       )}
