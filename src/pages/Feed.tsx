@@ -176,6 +176,7 @@ export default function Feed() {
         color: feedCustomStyle.color,
       }}>
         <div className="w-full flex justify-center gap-6 xl:gap-10">
+          <FeedLeftSidebar />
           <div className="flex-1 max-w-[680px] min-w-0">
             {/* Scroll pause reminder */}
             <AnimatePresence>
