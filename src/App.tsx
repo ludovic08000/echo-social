@@ -82,6 +82,7 @@ const ResetPassword = lazyWithOneRetry(() => import("./pages/ResetPassword"), 'r
 const Onboarding = lazyWithOneRetry(() => import("./pages/Onboarding"), 'r-onboard');
 const AuthConfirmPage = lazyWithOneRetry(() => import("./pages/AuthConfirm"), 'r-authconfirm');
 const Unsubscribe = lazyWithOneRetry(() => import("./pages/Unsubscribe"), 'r-unsub');
+const Dashboard = lazyWithOneRetry(() => import("./pages/Dashboard"), 'r-dash');
 
 const queryClient = new QueryClient();
 
@@ -209,6 +210,7 @@ function AppContent() {
               <Route path="/ai-agents" element={<ProtectedRoute><AIAgents /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
               <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               
               {/* Public utility */}
               <Route path="/unsubscribe" element={<Unsubscribe />} />
