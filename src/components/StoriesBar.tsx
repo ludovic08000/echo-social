@@ -211,12 +211,21 @@ export function StoriesBar() {
 
   return (
     <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v"
+        className="hidden"
+        onChange={handleFileSelect}
+      />
       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide px-2">
         {/* Create Story Card */}
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={isCreating}
-          className="flex-shrink-0 w-[110px] h-[190px] rounded-xl overflow-hidden relative group bg-card border border-border/20"
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => { if (!isCreating) fileInputRef.current?.click(); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') fileInputRef.current?.click(); }}
+          className="flex-shrink-0 w-[110px] h-[190px] rounded-xl overflow-hidden relative group bg-card border border-border/20 cursor-pointer"
         >
           {/* User photo top half */}
           <div className="h-[130px] w-full overflow-hidden bg-muted">
@@ -236,14 +245,7 @@ export function StoriesBar() {
           <div className="h-[60px] flex items-end justify-center pb-2">
             <span className="text-[11px] font-semibold text-foreground text-center leading-tight">Créer une<br/>story</span>
           </div>
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*,video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v"
-          className="hidden"
-          onChange={handleFileSelect}
-        />
+        </div>
 
         {/* Story Cards */}
         {groupedStories?.map((group) => (
