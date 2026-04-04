@@ -24,9 +24,10 @@ export async function uploadToR2(
   if (!session) throw new Error('Not authenticated');
 
   const fileName = customFileName || (file instanceof File ? file.name : `file-${Date.now()}.bin`);
+  const forceProxyUpload = category === 'stories';
 
   // Large files → try presigned direct upload, fallback to proxy
-  if (file.size >= PRESIGN_THRESHOLD) {
+  if (!forceProxyUpload && file.size >= PRESIGN_THRESHOLD) {
     try {
       return await uploadPresigned(file, category, fileName, session.access_token, onProgress);
     } catch (err) {
