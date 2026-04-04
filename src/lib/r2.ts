@@ -7,11 +7,53 @@ import { supabase } from '@/integrations/supabase/client';
  */
 
 const PRESIGN_THRESHOLD = 8 * 1024 * 1024; // 8 MB
+const DEFAULT_CONTENT_TYPE = 'application/octet-stream';
 
 export interface UploadProgress {
   loaded: number;
   total: number;
   percent: number;
+}
+
+function normalizeContentType(file: File | Blob): string {
+  return file.type?.split(';')[0].trim() || DEFAULT_CONTENT_TYPE;
+}
+
+function getFunctionsBaseUrl(): string {
+  const configuredUrl = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, '');
+  if (configuredUrl) return `${configuredUrl}/functions/v1`;
+
+  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+  if (projectId) return `https://${projectId}.supabase.co/functions/v1`;
+
+  throw new Error('Configuration backend manquante');
+}
+
+function getFunctionHeaders(token: string, contentType?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+
+  const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  if (publishableKey) {
+    headers.apikey = publishableKey;
+  }
+
+  if (contentType) {
+    headers['Content-Type'] = contentType;
+  }
+
+  return headers;
+}
+
+async function extractFunctionError(response: Response, fallbackMessage: string): Promise<string> {
+  const payload = await response.json().catch(() => null);
+
+  if (payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string') {
+    return payload.error;
+  }
+
+  return fallbackMessage;
 }
 
 export async function uploadToR2(
@@ -24,20 +66,17 @@ export async function uploadToR2(
   if (!session) throw new Error('Not authenticated');
 
   const fileName = customFileName || (file instanceof File ? file.name : `file-${Date.now()}.bin`);
-  const forceProxyUpload = category === 'stories';
+  const shouldPreferPresignedUpload = category === 'stories' || file.size >= PRESIGN_THRESHOLD;
 
-  // Large files → try presigned direct upload, fallback to proxy
-  if (!forceProxyUpload && file.size >= PRESIGN_THRESHOLD) {
+  // Stories always try direct signed upload first to avoid multipart proxy issues.
+  if (shouldPreferPresignedUpload) {
     try {
       return await uploadPresigned(file, category, fileName, session.access_token, onProgress);
     } catch (err) {
       console.warn('Presigned upload failed, falling back to proxy:', err);
-      // Fallback to proxy (works up to ~50MB via edge function)
-      return uploadProxy(file, category, fileName, session.access_token, onProgress);
     }
   }
 
-  // Small files → proxy (existing path)
   return uploadProxy(file, category, fileName, session.access_token, onProgress);
 }
 
@@ -49,30 +88,36 @@ async function uploadPresigned(
   token: string,
   onProgress?: (p: UploadProgress) => void,
 ): Promise<{ url: string; path: string }> {
-  // 1. Get presigned URL from edge function
-  const { data, error } = await supabase.functions.invoke<{
+  const contentType = normalizeContentType(file);
+  const response = await fetch(`${getFunctionsBaseUrl()}/r2-presign`, {
+    method: 'POST',
+    headers: getFunctionHeaders(token, 'application/json'),
+    body: JSON.stringify({
+      folder,
+      filename,
+      contentType,
+      fileSize: file.size,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await extractFunctionError(response, 'Impossible d\'obtenir l\'URL d\'upload'));
+  }
+
+  const data = (await response.json()) as {
     uploadUrl: string;
     fileUrl: string;
     path: string;
-  }>('r2-presign', {
-    body: {
-      folder,
-      filename,
-      contentType: file.type || 'application/octet-stream',
-      fileSize: file.size,
-    },
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  };
 
-  if (error || !data?.uploadUrl) {
-    throw new Error((error as any)?.message || 'Impossible d\'obtenir l\'URL d\'upload');
+  if (!data?.uploadUrl || !data?.fileUrl || !data?.path) {
+    throw new Error('Réponse d\'upload invalide');
   }
 
-  // 2. Upload directly to R2 with progress via XHR
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', data.uploadUrl, true);
-    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.setRequestHeader('Content-Type', contentType);
 
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable && onProgress) {
@@ -113,52 +158,23 @@ async function uploadProxy(
   formData.append('file', file, fileName);
   formData.append('folder', category);
 
-  // Simulate progress for proxy uploads (no real XHR progress through SDK)
   onProgress?.({ loaded: 0, total: file.size, percent: 10 });
 
-  let data: { url: string; path: string } | null = null;
-  let error: { message?: string } | null = null;
-
-  try {
-    const result = await supabase.functions.invoke<{ url: string; path: string }>('r2-upload', {
-      body: formData,
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    data = result.data ?? null;
-    error = result.error ? { message: result.error.message } : null;
-  } catch (invokeError) {
-    error = {
-      message: invokeError instanceof Error ? invokeError.message : 'Erreur réseau via invoke',
-    };
-  }
-
-  if (!error && data?.url && data?.path) {
-    onProgress?.({ loaded: file.size, total: file.size, percent: 100 });
-    return data;
-  }
-
-  // Fallback: direct fetch
-  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-  const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-  const response = await fetch(
-    `https://${projectId}.supabase.co/functions/v1/r2-upload`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        apikey: publishableKey,
-      },
-      body: formData,
-    }
-  );
+  const response = await fetch(`${getFunctionsBaseUrl()}/r2-upload`, {
+    method: 'POST',
+    headers: getFunctionHeaders(token),
+    body: formData,
+  });
 
   if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Upload failed' }));
-    throw new Error(err.error || error?.message || `Upload failed: ${response.status}`);
+    throw new Error(await extractFunctionError(response, `Upload failed: ${response.status}`));
   }
 
-  const result = await response.json();
+  const result = await response.json() as { url: string; path: string };
+  if (!result?.url || !result?.path) {
+    throw new Error('Réponse d\'upload invalide');
+  }
+
   onProgress?.({ loaded: file.size, total: file.size, percent: 100 });
   return result;
 }
@@ -170,32 +186,13 @@ export async function deleteFromR2(filePath: string): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
 
-  const { error } = await supabase.functions.invoke('r2-upload', {
+  const response = await fetch(`${getFunctionsBaseUrl()}/r2-upload`, {
     method: 'DELETE',
-    body: { path: filePath },
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
-    },
+    headers: getFunctionHeaders(session.access_token, 'application/json'),
+    body: JSON.stringify({ path: filePath }),
   });
 
-  if (!error) return;
-
-  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-  const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-  const response = await fetch(
-    `https://${projectId}.supabase.co/functions/v1/r2-upload`,
-    {
-      method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        apikey: publishableKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ path: filePath }),
-    }
-  );
-
   if (!response.ok) {
-    console.error('R2 delete failed:', response.status);
+    throw new Error(await extractFunctionError(response, `R2 delete failed: ${response.status}`));
   }
 }
