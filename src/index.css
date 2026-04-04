@@ -282,6 +282,29 @@
     );
   }
 
+  /* Glow mode: pink glowing borders on cards */
+  .ux-flow .premium-card {
+    border-color: hsl(var(--flow-glow) / 0.25);
+    box-shadow: var(--shadow-md), 0 0 20px hsl(var(--flow-glow) / 0.1);
+  }
+
+  .ux-flow .premium-card:hover {
+    border-color: hsl(var(--flow-glow) / 0.45);
+    box-shadow: var(--shadow-lg), 0 0 35px hsl(var(--flow-glow) / 0.2);
+  }
+
+  /* Glow mode: feed post cards get visible glowing contours */
+  .ux-flow article.group {
+    border: 1px solid hsl(var(--flow-glow) / 0.2) !important;
+    box-shadow: 0 0 18px hsl(var(--flow-glow) / 0.08), 0 2px 8px hsl(var(--flow-glow) / 0.05);
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+
+  .ux-flow article.group:hover {
+    border-color: hsl(var(--flow-glow) / 0.4) !important;
+    box-shadow: 0 0 30px hsl(var(--flow-glow) / 0.15), 0 4px 16px hsl(var(--flow-glow) / 0.1);
+  }
+
   .premium-card:hover {
     box-shadow: var(--shadow-lg);
     border-color: hsl(var(--bleu) / 0.2);
