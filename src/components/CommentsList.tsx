@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Trash2, Send, Smile, Camera, Image as ImageIcon, Languages, Loader2, ChevronDown, ThumbsUp } from 'lucide-react';
+import { sanitizeUrl } from '@/lib/sanitizeUrl';
 import { useComments, useCreateComment, useDeleteComment, Comment } from '@/hooks/useComments';
 import { useAuth } from '@/lib/auth';
 import { UserAvatar } from './UserAvatar';
@@ -359,7 +360,7 @@ function CommentItem({ comment, isOwner, onDelete }: CommentItemProps) {
   );
 }
 
-/** Parse media URLs and GIF markers from comment body */
+/** Parse media URLs and GIF markers from comment body — sanitized */
 function parseCommentMedia(body: string) {
   let text = body;
   let mediaUrl: string | null = null;
@@ -367,23 +368,29 @@ function parseCommentMedia(body: string) {
   let isVideo = false;
   let isImage = false;
 
-  // GIF:url
-  const gifMatch = text.match(/GIF:(https?:\/\/[^\s]+)/i);
+  // GIF:url — only accept https
+  const gifMatch = text.match(/GIF:(https:\/\/[^\s]+)/i);
   if (gifMatch) {
-    mediaUrl = gifMatch[1];
-    isGif = true;
+    const sanitized = sanitizeUrl(gifMatch[1]);
+    if (sanitized !== '#') {
+      mediaUrl = sanitized;
+      isGif = true;
+    }
     text = text.replace(gifMatch[0], '').trim();
   }
 
-  // Direct media URL on its own line
+  // Direct media URL on its own line — only https with known extensions
   if (!mediaUrl) {
-    const urlMatch = text.match(/(https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|mp4|webm|mov))(\?[^\s]*)?/i);
+    const urlMatch = text.match(/(https:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|mp4|webm|mov))(\?[^\s]*)?/i);
     if (urlMatch) {
-      mediaUrl = urlMatch[0];
-      const ext = urlMatch[2].toLowerCase();
-      isVideo = ['mp4', 'webm', 'mov'].includes(ext);
-      isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
-      isGif = ext === 'gif';
+      const sanitized = sanitizeUrl(urlMatch[0]);
+      if (sanitized !== '#') {
+        mediaUrl = sanitized;
+        const ext = urlMatch[2].toLowerCase();
+        isVideo = ['mp4', 'webm', 'mov'].includes(ext);
+        isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+        isGif = ext === 'gif';
+      }
       text = text.replace(urlMatch[0], '').trim();
     }
   }
