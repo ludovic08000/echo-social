@@ -21,7 +21,7 @@ export function useUXMode() {
 }
 
 /** Reapply mode-scoped appearance settings to the DOM */
-function reapplyAppearance(mode: UXMode) {
+export function reapplyAppearance(mode: UXMode) {
   const root = document.documentElement;
   const get = (key: string) => localStorage.getItem(`${mode}-${key}`) ?? localStorage.getItem(key);
 

@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { useTranslation } from '@/lib/i18n';
 import { BackgroundSettingsSection } from './BackgroundSettingsSection';
 import { FeedCustomizationSection } from './FeedCustomizationSection';
-import { useUXMode } from '@/hooks/useUXMode';
+import { useUXMode, reapplyAppearance } from '@/hooks/useUXMode';
 
 type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -52,106 +52,16 @@ export function AppearanceSettingsPanel() {
     return localStorage.getItem(modeKey('dynamic-theme')) === 'true';
   });
 
+  // Save theme + accent to localStorage, then let reapplyAppearance handle ALL CSS vars
   useEffect(() => {
-    const root = document.documentElement;
-    if (themeMode === 'system') {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      root.classList.toggle('dark', prefersDark);
-      root.classList.toggle('light', !prefersDark);
-    } else {
-      root.classList.toggle('dark', themeMode === 'dark');
-      root.classList.toggle('light', themeMode === 'light');
-    }
     localStorage.setItem(modeKey('theme-mode'), themeMode);
-    localStorage.setItem('theme-mode', themeMode); // keep global fallback
+    localStorage.setItem('theme-mode', themeMode);
+    reapplyAppearance(uxMode);
   }, [themeMode, uxMode]);
 
   useEffect(() => {
-    const color = accentColors.find(c => c.id === accentColor);
-    if (color) {
-      const root = document.documentElement;
-      const hsl = color.hsl;
-      const parts = hsl.split(' ');
-      const h = parseInt(parts[0]);
-      const s = parseInt(parts[1]);
-      const l = parseInt(parts[2]);
-      const isDark = root.classList.contains('dark');
-
-      // Primary & ring
-      root.style.setProperty('--primary', hsl);
-      root.style.setProperty('--primary-foreground', isDark ? `${h} ${Math.max(s - 40, 5)}% 98%` : `0 0% 100%`);
-      root.style.setProperty('--ring', hsl);
-
-      // Sidebar
-      root.style.setProperty('--sidebar-primary', hsl);
-      root.style.setProperty('--sidebar-ring', hsl);
-      root.style.setProperty('--sidebar-accent', isDark ? `${h} ${Math.max(s - 40, 8)}% 18%` : `${h} ${Math.max(s - 30, 10)}% 94%`);
-      root.style.setProperty('--sidebar-accent-foreground', isDark ? `${h} ${Math.max(s - 15, 20)}% 80%` : `${h} ${s}% 35%`);
-
-      // Glow & shadows
-      root.style.setProperty('--shadow-glow', `0 0 40px hsl(${hsl} / 0.25)`);
-      root.style.setProperty('--shadow-gold', `0 4px 25px -4px hsl(${hsl} / 0.3)`);
-
-      // Gradient
-      root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(${h} ${s}% ${l}%) 0%, hsl(${h + 15} ${Math.max(s - 10, 30)}% ${l + 5}%) 50%, hsl(${h + 30} ${s}% ${l + 8}%) 100%)`);
-
-      const isFlow = root.classList.contains('ux-flow');
-
-      if (isDark) {
-        // Flow dark = candy pink-violet tinted surfaces
-        const surfaceH = isFlow ? 280 : h;
-        const surfaceS = isFlow ? Math.max(s - 25, 20) : Math.max(s - 55, 8);
-        const bgL = isFlow ? 18 : 15;
-        const cardL = isFlow ? 22 : 19;
-        const mutedL = isFlow ? 24 : 22;
-        const secL = isFlow ? 26 : 24;
-        const borderL = isFlow ? 30 : 27;
-        const accentL = isFlow ? 32 : 28;
-        const fgL = isFlow ? 96 : 95;
-        const mutedFgL = isFlow ? 65 : 60;
-
-        root.style.setProperty('--background', `${surfaceH} ${surfaceS}% ${bgL}%`);
-        root.style.setProperty('--foreground', `${surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
-        root.style.setProperty('--card', `${surfaceH} ${surfaceS}% ${cardL}%`);
-        root.style.setProperty('--card-foreground', `${surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
-        root.style.setProperty('--popover', `${surfaceH} ${surfaceS}% ${cardL}%`);
-        root.style.setProperty('--popover-foreground', `${surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
-        root.style.setProperty('--muted', `${surfaceH} ${Math.max(surfaceS - 4, 6)}% ${mutedL}%`);
-        root.style.setProperty('--muted-foreground', `${surfaceH} ${Math.max(surfaceS - 6, 8)}% ${mutedFgL}%`);
-        root.style.setProperty('--accent', `${isFlow ? 285 : h} ${Math.max(s - 30, 10)}% ${accentL}%`);
-        root.style.setProperty('--accent-foreground', `${h} ${Math.max(s - 10, 30)}% 72%`);
-        root.style.setProperty('--secondary', `${surfaceH} ${surfaceS}% ${secL}%`);
-        root.style.setProperty('--secondary-foreground', `${surfaceH} ${Math.max(surfaceS - 8, 10)}% 82%`);
-        root.style.setProperty('--border', `${surfaceH} ${Math.max(surfaceS - 4, 6)}% ${borderL}%`);
-        root.style.setProperty('--input', `${surfaceH} ${Math.max(surfaceS - 4, 6)}% ${borderL}%`);
-
-        // Flow-specific glow
-        if (isFlow) {
-          root.style.setProperty('--flow-glow', `${h} ${s}% ${l}%`);
-          root.style.setProperty('--flow-warm', `${Math.min(h + 15, 360)} ${Math.min(s + 5, 80)}% ${Math.min(l + 3, 75)}%`);
-          root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(${h} ${s}% ${l}%) 0%, hsl(${290} ${Math.max(s - 15, 40)}% ${l - 3}%) 50%, hsl(${265} ${Math.max(s - 10, 45)}% ${l + 2}%) 100%)`);
-          root.style.setProperty('--shadow-glow', `0 0 50px hsl(${h} ${s}% ${l}% / 0.35)`);
-          root.style.setProperty('--shadow-gold', `0 4px 30px -4px hsl(${h} ${s}% ${l}% / 0.4)`);
-        }
-      } else {
-        // Light mode — strong contrast for readability
-        root.style.setProperty('--background', `${h} ${Math.max(s - 50, 8)}% 97%`);
-        root.style.setProperty('--foreground', `${h} ${Math.max(s - 40, 15)}% 8%`);
-        root.style.setProperty('--card', `${h} ${Math.max(s - 45, 6)}% 100%`);
-        root.style.setProperty('--card-foreground', `${h} ${Math.max(s - 40, 15)}% 8%`);
-        root.style.setProperty('--popover', `${h} ${Math.max(s - 45, 6)}% 100%`);
-        root.style.setProperty('--popover-foreground', `${h} ${Math.max(s - 40, 15)}% 8%`);
-        root.style.setProperty('--muted', `${h} ${Math.max(s - 40, 8)}% 92%`);
-        root.style.setProperty('--muted-foreground', `${h} ${Math.max(s - 30, 12)}% 35%`);
-        root.style.setProperty('--accent', `${h} ${Math.max(s - 25, 15)}% 92%`);
-        root.style.setProperty('--accent-foreground', `${h} ${s}% 35%`);
-        root.style.setProperty('--secondary', `${h} ${Math.max(s - 40, 10)}% 90%`);
-        root.style.setProperty('--secondary-foreground', `${h} ${Math.max(s - 35, 10)}% 18%`);
-        root.style.setProperty('--border', `${h} ${Math.max(s - 40, 10)}% 82%`);
-        root.style.setProperty('--input', `${h} ${Math.max(s - 40, 10)}% 82%`);
-      }
-    }
     localStorage.setItem(modeKey('accent-color'), accentColor);
+    reapplyAppearance(uxMode);
   }, [accentColor, themeMode, uxMode]);
 
   useEffect(() => {
