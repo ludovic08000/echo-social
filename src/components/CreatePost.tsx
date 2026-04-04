@@ -277,9 +277,9 @@ export function CreatePost() {
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="relative bg-card border-y border-border/20 sm:border sm:border-border/20 sm:rounded-2xl overflow-hidden"
+      className="relative bg-card border-y border-border/20 sm:border sm:border-border/20 sm:rounded-[26px] overflow-hidden shadow-[0_12px_36px_-20px_hsl(var(--foreground)/0.18)]"
     >
-      <div className="px-3 py-2.5">
+      <div className="px-3 py-3 sm:px-4">
         <div className="flex gap-3 items-center">
           <motion.div whileTap={{ scale: 0.95 }}>
             <UserAvatar 

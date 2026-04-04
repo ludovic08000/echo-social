@@ -215,24 +215,34 @@ export default function Feed() {
             {isFlow && <FlowDashboard />}
 
             {isMobile ? (
-              <>
+              <div className="space-y-3 pb-2">
+                <div className="mx-2 rounded-[28px] border border-border/30 bg-card/80 backdrop-blur-sm overflow-hidden shadow-[0_12px_40px_-18px_hsl(var(--foreground)/0.18)]">
+                  <div className="px-2 pt-2 pb-1">
+                    <StoriesBar />
+                  </div>
+                  <div className="px-2 pb-2">
+                    <FeedLiveSection />
+                  </div>
+                </div>
                 <CreatePost />
-                <StoriesBar />
                 <FeedZeusCard />
-                <FeedLiveSection />
-              </>
+              </div>
             ) : (
               <>
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="px-4">
-                  <CreatePost />
+                  <div className="rounded-[30px] border border-border/30 bg-card/80 backdrop-blur-sm overflow-hidden shadow-[0_18px_50px_-24px_hsl(var(--foreground)/0.18)]">
+                    <div className="px-2 pt-2 pb-1">
+                      <StoriesBar />
+                    </div>
+                    <div className="px-2 pb-2">
+                      <FeedLiveSection />
+                    </div>
+                  </div>
                 </motion.div>
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.05 }} className="px-4">
-                  <StoriesBar />
+                  <CreatePost />
                 </motion.div>
                 <FeedZeusCard />
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }} className="px-4">
-                  <FeedLiveSection />
-                </motion.div>
               </>
             )}
 
