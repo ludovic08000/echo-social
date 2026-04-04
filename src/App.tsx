@@ -210,6 +210,7 @@ function AppContent() {
               <Route path="/ai-agents" element={<ProtectedRoute><AIAgents /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
               <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               
               {/* Public utility */}
               <Route path="/unsubscribe" element={<Unsubscribe />} />
