@@ -30,7 +30,7 @@ const FriendSuggestions = lazy(() => import('@/components/feed/FriendSuggestions
 const FriendSuggestionsByCity = lazy(() => import('@/components/feed/FriendSuggestionsByCity').then(m => ({ default: m.FriendSuggestionsByCity })));
 const FeedReelsSection = lazy(() => import('@/components/feed/FeedReelsSection').then(m => ({ default: m.FeedReelsSection })));
 const FeedMarketplaceSection = lazy(() => import('@/components/feed/FeedMarketplaceSection').then(m => ({ default: m.FeedMarketplaceSection })));
-const FeedMediaSection = lazy(() => import('@/components/feed/FeedMediaSection').then(m => ({ default: m.FeedMediaSection })));
+
 
 const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'marketplace'> = {
   4: 'suggestions_city',
