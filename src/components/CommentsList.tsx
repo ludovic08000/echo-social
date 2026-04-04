@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Trash2, Send, Smile, Camera, Image as ImageIcon, Languages, Loader2, ChevronDown, ThumbsUp } from 'lucide-react';
+import { Trash2, Send, Smile, Camera, Image as ImageIcon, Languages, Loader2, ChevronDown, ThumbsUp, Sparkles, Wand2 } from 'lucide-react';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
+import { supabase } from '@/integrations/supabase/client';
 import { useComments, useCreateComment, useDeleteComment, Comment } from '@/hooks/useComments';
 import { useAuth } from '@/lib/auth';
 import { UserAvatar } from './UserAvatar';
@@ -39,8 +40,27 @@ export function CommentsList({ postId }: CommentsListProps) {
   const [mediaType, setMediaType] = useState<'image' | 'gif' | 'video' | null>(null);
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [aiLoading, setAiLoading] = useState<'translate' | 'improve' | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { upload } = useR2Upload({ folder: 'images', maxSizeMB: 20 });
+
+  const handleAI = async (action: 'translate' | 'improve') => {
+    if (!newComment.trim() || aiLoading) return;
+    setAiLoading(action);
+    try {
+      const prompt = action === 'translate'
+        ? `Détecte la langue du texte suivant et traduis-le en français si ce n'est pas du français, sinon traduis-le en anglais. Réponds UNIQUEMENT avec la traduction, rien d'autre : "${newComment}"`
+        : `Corrige l'orthographe, la grammaire et améliore le style de ce texte tout en gardant le même sens et la même langue. Réponds UNIQUEMENT avec le texte amélioré, rien d'autre : "${newComment}"`;
+      const { data } = await supabase.functions.invoke('zeus', {
+        body: { message: prompt, context: action === 'translate' ? 'translation' : 'correction' }
+      });
+      if (data?.reply) setNewComment(data.reply.replace(/^["']|["']$/g, ''));
+    } catch {
+      toast.error("Erreur IA, réessayez");
+    } finally {
+      setAiLoading(null);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -186,9 +206,33 @@ export function CommentsList({ postId }: CommentsListProps) {
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
                 placeholder="Commentez..."
-                className="w-full bg-secondary/50 rounded-full px-4 py-2 pr-24 text-[13px] outline-none placeholder:text-muted-foreground focus:bg-secondary/70 transition-colors"
+                className="w-full bg-secondary/50 rounded-full px-4 py-2 pr-36 text-[13px] outline-none placeholder:text-muted-foreground focus:bg-secondary/70 transition-colors"
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                {/* AI: Translate */}
+                {newComment.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => handleAI('translate')}
+                    disabled={!!aiLoading}
+                    className="p-1 rounded-full text-muted-foreground hover:text-primary transition-colors"
+                    title="Traduire"
+                  >
+                    {aiLoading === 'translate' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Languages className="w-3.5 h-3.5" />}
+                  </button>
+                )}
+                {/* AI: Improve */}
+                {newComment.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => handleAI('improve')}
+                    disabled={!!aiLoading}
+                    className="p-1 rounded-full text-muted-foreground hover:text-primary transition-colors"
+                    title="Corriger & améliorer"
+                  >
+                    {aiLoading === 'improve' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                  </button>
+                )}
                 <Popover>
                   <PopoverTrigger asChild>
                     <button type="button" className="p-1 rounded-full text-muted-foreground hover:text-foreground transition-colors">
