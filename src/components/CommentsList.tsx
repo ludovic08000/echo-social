@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Trash2, Send, Smile, Camera, Image as ImageIcon, Languages, Loader2, ChevronDown, ThumbsUp } from 'lucide-react';
+import { Trash2, Send, Smile, Camera, Image as ImageIcon, Languages, Loader2, ChevronDown, ThumbsUp, Sparkles, Wand2 } from 'lucide-react';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
+import { supabase } from '@/integrations/supabase/client';
 import { useComments, useCreateComment, useDeleteComment, Comment } from '@/hooks/useComments';
 import { useAuth } from '@/lib/auth';
 import { UserAvatar } from './UserAvatar';
