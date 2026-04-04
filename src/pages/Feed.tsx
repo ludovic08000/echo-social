@@ -247,7 +247,7 @@ export default function Feed() {
             )}
 
             {isLoading ? (
-              <div className="space-y-3 px-4">
+              <div className="space-y-5 px-4">
                 {[1, 2, 3].map((i) => (
                   <motion.div
                     key={i}
