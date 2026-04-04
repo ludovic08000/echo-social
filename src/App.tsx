@@ -25,6 +25,7 @@ import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Feed from "./pages/Feed";
+import Dashboard from "./pages/Dashboard";
 import AdsManager from "./pages/AdsManager";
 import NotFound from "./pages/NotFound";
 
