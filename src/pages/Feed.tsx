@@ -348,7 +348,6 @@ export default function Feed() {
                       >
                         <div className="pb-2 sm:pb-4 sm:px-4">
                           <PostCard post={post} />
-                          <LazyComments postId={post.id} />
                           {renderInjection(virtualRow.index)}
                         </div>
                       </div>
