@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark, ShieldAlert, AlertTriangle, Eye, Send, Globe, X } from 'lucide-react';
+import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark, ShieldAlert, AlertTriangle, Eye, Send, Globe } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Post, useDeletePost } from '@/hooks/usePosts';
 import { supabase } from '@/integrations/supabase/client';
@@ -150,7 +150,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const isOwner = user?.id === post.user_id;
 
   return (
-    <article className="group relative bg-card sm:border sm:border-border/20 sm:rounded-2xl overflow-hidden transition-all duration-300">
+    <article className="group relative bg-card border-y border-border/20 sm:border sm:border-border/20 sm:rounded-2xl overflow-hidden transition-all duration-300">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -191,10 +191,10 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
           </div>
         </div>
         
-        <div className="flex items-center gap-1">
+        <div className="flex items-center">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+              <button className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
                 <MoreHorizontal className="w-5 h-5" />
               </button>
             </DropdownMenuTrigger>
@@ -241,9 +241,6 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-          <button className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
-            <X className="w-5 h-5" />
-          </button>
         </div>
       </div>
 
@@ -431,8 +428,8 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         </>
       )}
 
-      {/* Bottom spacing for mobile separation */}
-      <div className="h-1 sm:hidden" />
+      {/* Mobile separator */}
+      <div className="h-2 bg-secondary/30 sm:hidden" />
     </article>
   );
 }, (prev, next) => {
