@@ -104,11 +104,11 @@ async function uploadPresigned(
     throw new Error(await extractFunctionError(response, 'Impossible d\'obtenir l\'URL d\'upload'));
   }
 
-  const data = await response.json() as {
+  const data = (await response.json()) as {
     uploadUrl: string;
     fileUrl: string;
     path: string;
-  });
+  };
 
   if (!data?.uploadUrl || !data?.fileUrl || !data?.path) {
     throw new Error('Réponse d\'upload invalide');

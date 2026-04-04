@@ -105,7 +105,7 @@ export function StoriesBar() {
     let uploadedPath: string | null = null;
 
     try {
-      const { uploadToR2, deleteFromR2 } = await import('@/lib/r2');
+      const { uploadToR2 } = await import('@/lib/r2');
       const normalizedFile = file;
       const { url, path } = await uploadToR2(normalizedFile, 'stories');
       uploadedPath = path;
