@@ -428,8 +428,8 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         </>
       )}
 
-      {/* Bottom spacing for mobile separation */}
-      <div className="h-1 sm:hidden" />
+      {/* Mobile separator */}
+      <div className="h-2 bg-secondary/30 sm:hidden" />
     </article>
   );
 }, (prev, next) => {
