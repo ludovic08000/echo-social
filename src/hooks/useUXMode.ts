@@ -57,52 +57,74 @@ function reapplyAppearance(mode: UXMode) {
     const isFlow = root.classList.contains('ux-flow');
 
     if (isDark) {
-      const surfaceH = isFlow ? 280 : h;
-      const surfaceS = isFlow ? Math.max(s - 25, 20) : Math.max(s - 55, 8);
-      const bgL = isFlow ? 18 : 15;
-      const cardL = isFlow ? 22 : 19;
-      const mutedL = isFlow ? 24 : 22;
-      const secL = isFlow ? 26 : 24;
-      const borderL = isFlow ? 30 : 27;
-      const accentL = isFlow ? 32 : 28;
+      const surfaceH = isFlow ? 295 : h;
+      const surfaceS = isFlow ? Math.max(s - 15, 22) : Math.max(s - 55, 8);
+      const bgL = isFlow ? 12 : 15;
+      const cardL = isFlow ? 16 : 19;
+      const mutedL = isFlow ? 18 : 22;
+      const secL = isFlow ? 20 : 24;
+      const borderL = isFlow ? 28 : 27;
+      const accentL = isFlow ? 24 : 28;
       const fgL = isFlow ? 96 : 95;
-      const mutedFgL = isFlow ? 65 : 60;
+      const mutedFgL = isFlow ? 62 : 60;
 
       root.style.setProperty('--background', `${surfaceH} ${surfaceS}% ${bgL}%`);
-      root.style.setProperty('--foreground', `${surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
+      root.style.setProperty('--foreground', `${isFlow ? 330 : surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
       root.style.setProperty('--card', `${surfaceH} ${surfaceS}% ${cardL}%`);
-      root.style.setProperty('--card-foreground', `${surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
+      root.style.setProperty('--card-foreground', `${isFlow ? 330 : surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
       root.style.setProperty('--popover', `${surfaceH} ${surfaceS}% ${cardL}%`);
-      root.style.setProperty('--popover-foreground', `${surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
+      root.style.setProperty('--popover-foreground', `${isFlow ? 330 : surfaceH} ${Math.max(surfaceS - 10, 5)}% ${fgL}%`);
       root.style.setProperty('--muted', `${surfaceH} ${Math.max(surfaceS - 4, 6)}% ${mutedL}%`);
-      root.style.setProperty('--muted-foreground', `${surfaceH} ${Math.max(surfaceS - 6, 8)}% ${mutedFgL}%`);
-      root.style.setProperty('--accent', `${isFlow ? 285 : h} ${Math.max(s - 30, 10)}% ${accentL}%`);
-      root.style.setProperty('--accent-foreground', `${h} ${Math.max(s - 10, 30)}% 72%`);
+      root.style.setProperty('--muted-foreground', `${isFlow ? 320 : surfaceH} ${Math.max(surfaceS - 6, 8)}% ${mutedFgL}%`);
+      root.style.setProperty('--accent', `${isFlow ? 310 : h} ${Math.max(s - 30, 10)}% ${accentL}%`);
+      root.style.setProperty('--accent-foreground', `${isFlow ? 335 : h} ${Math.max(s - 10, 30)}% 72%`);
       root.style.setProperty('--secondary', `${surfaceH} ${surfaceS}% ${secL}%`);
       root.style.setProperty('--secondary-foreground', `${surfaceH} ${Math.max(surfaceS - 8, 10)}% 82%`);
-      root.style.setProperty('--border', `${surfaceH} ${Math.max(surfaceS - 4, 6)}% ${borderL}%`);
+      root.style.setProperty('--border', `${isFlow ? 310 : surfaceH} ${Math.max(surfaceS - 4, 6)}% ${borderL}%`);
       root.style.setProperty('--input', `${surfaceH} ${Math.max(surfaceS - 4, 6)}% ${borderL}%`);
 
       if (isFlow) {
-        root.style.setProperty('--flow-glow', `${h} ${s}% ${l}%`);
-        root.style.setProperty('--flow-warm', `${Math.min(h + 15, 360)} ${Math.min(s + 5, 80)}% ${Math.min(l + 3, 75)}%`);
-        root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(${h} ${s}% ${l}%) 0%, hsl(290 ${Math.max(s - 15, 40)}% ${Math.max(l - 3, 45)}%) 50%, hsl(265 ${Math.max(s - 10, 45)}% ${Math.min(l + 2, 75)}%) 100%)`);
-        root.style.setProperty('--shadow-glow', `0 0 50px hsl(${h} ${s}% ${l}% / 0.35)`);
-        root.style.setProperty('--shadow-gold', `0 4px 30px -4px hsl(${h} ${s}% ${l}% / 0.4)`);
+        // Pink glow Barbie theme — candy/strawberry
+        const glowH = 335;
+        const glowS = 80;
+        const glowL = 65;
+        root.style.setProperty('--primary', `${glowH} ${glowS}% ${glowL}%`);
+        root.style.setProperty('--primary-foreground', '0 0% 100%');
+        root.style.setProperty('--ring', `${glowH} ${glowS}% ${glowL}%`);
+        root.style.setProperty('--flow-glow', `${glowH} ${glowS}% ${glowL}%`);
+        root.style.setProperty('--flow-warm', `345 75% 68%`);
+        root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(340 85% 62%) 0%, hsl(310 65% 55%) 50%, hsl(285 55% 58%) 100%)`);
+        root.style.setProperty('--shadow-glow', `0 0 60px hsl(${glowH} ${glowS}% ${glowL}% / 0.35), 0 0 120px hsl(310 60% 55% / 0.15)`);
+        root.style.setProperty('--shadow-gold', `0 4px 35px -4px hsl(${glowH} ${glowS}% ${glowL}% / 0.4)`);
       }
     } else {
-      root.style.setProperty('--background', `${h} ${Math.max(s - 50, 8)}% 97%`);
-      root.style.setProperty('--foreground', `${h} ${Math.max(s - 40, 15)}% 8%`);
-      root.style.setProperty('--card', `${h} ${Math.max(s - 45, 6)}% 100%`);
-      root.style.setProperty('--card-foreground', `${h} ${Math.max(s - 40, 15)}% 8%`);
-      root.style.setProperty('--muted', `${h} ${Math.max(s - 40, 8)}% 92%`);
-      root.style.setProperty('--muted-foreground', `${h} ${Math.max(s - 30, 12)}% 35%`);
-      root.style.setProperty('--accent', `${h} ${Math.max(s - 25, 15)}% 92%`);
-      root.style.setProperty('--accent-foreground', `${h} ${s}% 40%`);
-      root.style.setProperty('--secondary', `${h} ${Math.max(s - 40, 10)}% 90%`);
-      root.style.setProperty('--secondary-foreground', `${h} ${Math.max(s - 35, 10)}% 18%`);
-      root.style.setProperty('--border', `${h} ${Math.max(s - 40, 10)}% 82%`);
-      root.style.setProperty('--input', `${h} ${Math.max(s - 40, 10)}% 82%`);
+      const flowLight = isFlow;
+      const bgH = flowLight ? 330 : h;
+      const bgS = flowLight ? 50 : Math.max(s - 50, 8);
+      root.style.setProperty('--background', `${bgH} ${bgS}% ${flowLight ? 96 : 97}%`);
+      root.style.setProperty('--foreground', `${flowLight ? 320 : h} ${Math.max(s - 40, 15)}% ${flowLight ? 12 : 8}%`);
+      root.style.setProperty('--card', `${flowLight ? 335 : h} ${flowLight ? 45 : Math.max(s - 45, 6)}% ${flowLight ? 99 : 100}%`);
+      root.style.setProperty('--card-foreground', `${flowLight ? 320 : h} ${Math.max(s - 40, 15)}% ${flowLight ? 12 : 8}%`);
+      root.style.setProperty('--muted', `${flowLight ? 330 : h} ${flowLight ? 35 : Math.max(s - 40, 8)}% ${flowLight ? 90 : 92}%`);
+      root.style.setProperty('--muted-foreground', `${flowLight ? 320 : h} ${flowLight ? 22 : Math.max(s - 30, 12)}% ${flowLight ? 42 : 35}%`);
+      root.style.setProperty('--accent', `${flowLight ? 310 : h} ${flowLight ? 50 : Math.max(s - 25, 15)}% 92%`);
+      root.style.setProperty('--accent-foreground', `${flowLight ? 335 : h} ${flowLight ? 70 : s}% 40%`);
+      root.style.setProperty('--secondary', `${flowLight ? 335 : h} ${flowLight ? 45 : Math.max(s - 40, 10)}% ${flowLight ? 92 : 90}%`);
+      root.style.setProperty('--secondary-foreground', `${flowLight ? 320 : h} ${Math.max(s - 35, 10)}% 18%`);
+      root.style.setProperty('--border', `${flowLight ? 335 : h} ${flowLight ? 40 : Math.max(s - 40, 10)}% ${flowLight ? 84 : 82}%`);
+      root.style.setProperty('--input', `${flowLight ? 330 : h} ${flowLight ? 35 : Math.max(s - 40, 10)}% ${flowLight ? 92 : 82}%`);
+
+      if (flowLight) {
+        const glowH = 340;
+        const glowS = 82;
+        const glowL = 58;
+        root.style.setProperty('--primary', `${glowH} ${glowS}% ${glowL}%`);
+        root.style.setProperty('--primary-foreground', '0 0% 100%');
+        root.style.setProperty('--ring', `${glowH} ${glowS}% ${glowL}%`);
+        root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(340 85% 58%) 0%, hsl(310 60% 55%) 50%, hsl(285 55% 58%) 100%)`);
+        root.style.setProperty('--shadow-glow', `0 0 50px hsl(${glowH} ${glowS}% ${glowL}% / 0.25), 0 0 100px hsl(310 60% 55% / 0.1)`);
+        root.style.setProperty('--shadow-gold', `0 4px 28px -4px hsl(${glowH} ${glowS}% ${glowL}% / 0.3)`);
+      }
     }
   }
 
