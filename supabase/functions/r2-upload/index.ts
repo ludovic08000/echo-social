@@ -64,6 +64,8 @@ const MIME_EXT_MAP: Record<string, string[]> = {
   "image/png": ["png"],
   "image/webp": ["webp"],
   "image/gif": ["gif"],
+  "image/heic": ["heic"],
+  "image/heif": ["heif", "heic"],
   "video/mp4": ["mp4"],
   "video/webm": ["webm"],
   "video/quicktime": ["mov"],

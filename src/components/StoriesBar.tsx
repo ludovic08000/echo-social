@@ -216,7 +216,7 @@ export function StoriesBar() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*,video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v"
+        accept="image/*,image/heic,image/heif,video/*,.heic,.heif,.mp4,.mov,.m4v,.webm"
         className="hidden"
         onChange={handleFileSelect}
       />
