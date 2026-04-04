@@ -2,6 +2,10 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 
+// ─── Runtime Shield: block XSS exploitation at boot ───
+import { activateRuntimeShield } from '@/lib/runtimeShield';
+activateRuntimeShield();
+
 // ─── Console lockdown: must run BEFORE any other import logs ───
 import { captureInternalLogger, lockdownConsole } from '@/lib/consoleGuard';
 captureInternalLogger();
