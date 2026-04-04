@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useCallback, useState, useMemo, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import { usePosts } from '@/hooks/usePosts';
 import { AppLayout } from '@/components/AppLayout';
 import { CreatePost } from '@/components/CreatePost';
@@ -55,11 +54,13 @@ export default function Feed() {
   const { feedStyle: feedCustomStyle } = useFeedCustomization();
   const { isMinor, isUnlocked, requestUnlock } = useParentalGate();
   const isMobile = useIsMobile();
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useFeedScrollMemory('feed-main-scroll');
   const feedPerf = useFeedPerformance();
   const { isFlow } = useUXMode();
+
+  // Infinite scroll sentinel
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   // Deduplicate posts across pages to prevent React key warnings
   const posts = useMemo(() => {
@@ -71,24 +72,6 @@ export default function Feed() {
       return true;
     });
   }, [data?.pages]);
-
-  // Force virtualizer to remeasure when posts change (e.g. after delete)
-  const postsKey = useMemo(() => posts.map(p => p.id).join(','), [posts]);
-
-  // ── Virtualizer ──
-  const virtualizer = useVirtualizer({
-    count: posts.length,
-    getScrollElement: () => document.documentElement,
-    estimateSize: () => 480, // avg post height
-    overscan: 5,
-  });
-
-  // Remeasure all items when posts array changes (delete, new page, etc.)
-  useEffect(() => {
-    if (postsKey) {
-      virtualizer.measure();
-    }
-  }, [postsKey]);
 
   // Track feed load performance
   useEffect(() => {
@@ -135,15 +118,21 @@ export default function Feed() {
     };
   }, [pauseDismissed]);
 
-  // Infinite scroll: trigger fetch when last virtual items are near
+  // Infinite scroll via IntersectionObserver (replaces buggy virtualizer)
   useEffect(() => {
-    const items = virtualizer.getVirtualItems();
-    const lastItem = items[items.length - 1];
-    if (!lastItem) return;
-    if (lastItem.index >= posts.length - 3 && hasNextPage && !isFetchingNextPage) {
-      fetchNextPage();
-    }
-  }, [virtualizer.getVirtualItems(), hasNextPage, isFetchingNextPage, fetchNextPage, posts.length]);
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { rootMargin: '400px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const renderInjection = useCallback((index: number) => {
     const type = INJECTION_MAP[index];
@@ -174,8 +163,6 @@ export default function Feed() {
     setPauseDismissed(true);
     sessionStorage.setItem('forsure-session-start', Date.now().toString());
   };
-
-  const mergedFeedStyle = { ...feedBgStyle, ...feedCustomStyle };
 
   return (
     <AppLayout fullWidth>
@@ -322,38 +309,18 @@ export default function Feed() {
                   </div>
                 )}
 
-                {/* Virtualized posts list */}
-                <div
-                  style={{
-                    height: `${virtualizer.getTotalSize()}px`,
-                    width: '100%',
-                    position: 'relative',
-                  }}
-                >
-                  {virtualizer.getVirtualItems().map((virtualRow) => {
-                    const post = posts[virtualRow.index];
-                    if (!post) return null;
-                    return (
-                      <div
-                        key={post.id}
-                        data-index={virtualRow.index}
-                        ref={virtualizer.measureElement}
-                        style={{
-                          position: 'absolute',
-                          top: 0,
-                          left: 0,
-                          width: '100%',
-                          transform: `translateY(${virtualRow.start}px)`,
-                        }}
-                      >
-                        <div className="pb-2 sm:pb-4 sm:px-4">
-                          <PostCard post={post} />
-                          {renderInjection(virtualRow.index)}
-                        </div>
-                      </div>
-                    );
-                  })}
+                {/* Posts list — natural flow, no virtualizer gaps */}
+                <div className="space-y-2 sm:space-y-4">
+                  {posts.map((post, index) => (
+                    <div key={post.id} className="sm:px-4">
+                      <PostCard post={post} />
+                      {renderInjection(index)}
+                    </div>
+                  ))}
                 </div>
+
+                {/* Infinite scroll sentinel */}
+                <div ref={sentinelRef} className="h-4" />
 
                 {isFetchingNextPage && (
                   <div className="flex justify-center py-8">
@@ -369,6 +336,4 @@ export default function Feed() {
     </AppLayout>
   );
 }
-
-
 
