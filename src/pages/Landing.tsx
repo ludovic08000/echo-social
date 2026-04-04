@@ -284,7 +284,7 @@ export default function Landing() {
 
       {/* ═══════════════════ FOOTER ═══════════════════ */}
       <footer className="relative z-10 w-full border-t border-border bg-background/80 backdrop-blur-md py-8 px-6">
-        <nav className="max-w-3xl mx-auto flex flex-col items-center gap-4">
+        <nav className="max-w-4xl mx-auto flex flex-col items-center gap-5" aria-label="Pied de page Forsure">
           <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-6">
             <a href="https://forsure.fans/privacy" className="text-base font-semibold text-primary underline underline-offset-4 hover:text-primary/80 transition-colors">
               🔒 Politique de confidentialité
@@ -293,7 +293,13 @@ export default function Landing() {
               📜 Conditions Générales d'Utilisation
             </a>
           </div>
-          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} Forsure — Réseau social éthique français — Contact : <a href="mailto:dpo@forsure.fans" className="underline">dpo@forsure.fans</a></p>
+          <p className="text-xs text-muted-foreground text-center leading-relaxed max-w-xl">
+            <strong>Forsure</strong> — Réseau social éthique français gratuit sans publicité. 
+            Alternative à Facebook, Instagram, TikTok, Snapchat et Twitter/X. 
+            Messagerie chiffrée, live streaming, marketplace, appels vidéo, canaux TV, jeux multijoueur. 
+            Contact : <a href="mailto:dpo@forsure.fans" className="underline hover:text-primary">dpo@forsure.fans</a>
+          </p>
+          <p className="text-[10px] text-muted-foreground/60">© {new Date().getFullYear()} Forsure · forsure.fans · Tous droits réservés</p>
         </nav>
       </footer>
     </div>
