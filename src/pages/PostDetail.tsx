@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, MoreHorizontal } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
@@ -8,6 +8,7 @@ import { AppLayout } from '@/components/AppLayout';
 import { PostCard } from '@/components/PostCard';
 import { CommentsList } from '@/components/CommentsList';
 import { Button } from '@/components/ui/button';
+import { UserAvatar } from '@/components/UserAvatar';
 
 export default function PostDetail() {
   const { id } = useParams<{ id: string }>();
@@ -20,7 +21,7 @@ export default function PostDetail() {
     if (location.hash === '#comments' && commentsRef.current) {
       setTimeout(() => commentsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
     }
-  }, [location.hash, commentsRef.current]);
+  }, [location.hash]);
 
   const { data: post, isLoading } = useQuery({
     queryKey: ['post', id],
@@ -35,14 +36,12 @@ export default function PostDetail() {
 
       if (error) throw error;
 
-      // Get profile
       const { data: profile } = await supabase
         .from('profiles')
         .select('name, avatar_url')
         .eq('user_id', postData.user_id)
         .single();
 
-      // Only need user's own like status now (counts are denormalized)
       const userLikeRes = user
         ? await supabase.from('likes').select('id, reaction_type').eq('user_id', user.id).eq('post_id', id).maybeSingle()
         : { data: null };
@@ -68,7 +67,7 @@ export default function PostDetail() {
   if (isLoading) {
     return (
       <AppLayout>
-        <div className="pulse-card p-5 animate-pulse">
+        <div className="p-5 animate-pulse space-y-4">
           <div className="flex gap-3">
             <div className="w-10 h-10 rounded-full bg-muted" />
             <div className="flex-1 space-y-3">
@@ -76,6 +75,7 @@ export default function PostDetail() {
               <div className="h-4 w-full bg-muted rounded" />
             </div>
           </div>
+          <div className="h-64 bg-muted rounded-xl" />
         </div>
       </AppLayout>
     );
@@ -84,7 +84,7 @@ export default function PostDetail() {
   if (!post) {
     return (
       <AppLayout>
-        <div className="pulse-card p-8 text-center">
+        <div className="p-8 text-center">
           <p className="text-muted-foreground">Post non trouvé</p>
           <Link to="/feed">
             <Button variant="ghost" className="mt-4">
@@ -98,26 +98,34 @@ export default function PostDetail() {
 
   return (
     <AppLayout>
-      <header className="flex items-center gap-3 mb-4">
+      {/* Header — Facebook style */}
+      <header className="flex items-center gap-3 px-3 py-2 border-b border-border/20 bg-card sticky top-12 z-30">
         <Link to="/feed">
-          <Button variant="ghost" size="icon" className="shrink-0">
+          <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9 rounded-full">
             <ArrowLeft className="w-5 h-5" />
           </Button>
         </Link>
-        <h1 className="text-lg font-semibold">Post</h1>
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <UserAvatar src={post.profile.avatar_url} alt={post.profile.name} size="sm" />
+          <div className="min-w-0">
+            <p className="text-[14px] font-semibold truncate">{post.profile.name}</p>
+          </div>
+        </div>
+        <button className="h-9 w-9 rounded-full flex items-center justify-center text-muted-foreground hover:bg-secondary/50 transition-colors">
+          <MoreHorizontal className="w-5 h-5" />
+        </button>
       </header>
 
-      <div className="pulse-card overflow-hidden">
-        <div className="p-4 sm:p-5">
-          <PostCard post={post} showActions={true} />
-        </div>
-        
-        <div ref={commentsRef} className="border-t border-border/50">
-          <h2 className="px-4 py-3 font-semibold text-sm text-muted-foreground">
-            Commentaires
-          </h2>
-          <CommentsList postId={post.id} />
-        </div>
+      {/* Post content */}
+      <div className="bg-card">
+        <PostCard post={post} showActions={true} onCommentClick={() => {
+          commentsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }} />
+      </div>
+      
+      {/* Comments section */}
+      <div ref={commentsRef} className="bg-card border-t border-border/20">
+        <CommentsList postId={post.id} />
       </div>
     </AppLayout>
   );
