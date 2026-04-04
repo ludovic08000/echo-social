@@ -3245,9 +3245,13 @@ export type Database = {
       }
       security_ai_patterns: {
         Row: {
+          autonomy_level: number | null
+          avg_reaction_ms: number | null
           confidence: number
+          confirmed_count: number | null
           created_at: string
           detection_rule: string
+          false_positive_count: number | null
           id: string
           is_active: boolean
           last_matched_at: string | null
@@ -3259,9 +3263,13 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          autonomy_level?: number | null
+          avg_reaction_ms?: number | null
           confidence?: number
+          confirmed_count?: number | null
           created_at?: string
           detection_rule: string
+          false_positive_count?: number | null
           id?: string
           is_active?: boolean
           last_matched_at?: string | null
@@ -3273,9 +3281,13 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          autonomy_level?: number | null
+          avg_reaction_ms?: number | null
           confidence?: number
+          confirmed_count?: number | null
           created_at?: string
           detection_rule?: string
+          false_positive_count?: number | null
           id?: string
           is_active?: boolean
           last_matched_at?: string | null
@@ -3318,7 +3330,12 @@ export type Database = {
           ai_recommendation: string | null
           alert_sent: boolean
           attack_vector: string | null
+          autonomy_level: number | null
+          confidence_factors: Json | null
+          confidence_score: number | null
           created_at: string
+          detection_source: string | null
+          human_verified: boolean | null
           id: string
           incident_type: string
           raw_data: Json | null
@@ -3329,13 +3346,19 @@ export type Database = {
           success: boolean
           target_endpoint: string | null
           vulnerability_found: string | null
+          was_false_positive: boolean | null
         }
         Insert: {
           ai_analysis?: string | null
           ai_recommendation?: string | null
           alert_sent?: boolean
           attack_vector?: string | null
+          autonomy_level?: number | null
+          confidence_factors?: Json | null
+          confidence_score?: number | null
           created_at?: string
+          detection_source?: string | null
+          human_verified?: boolean | null
           id?: string
           incident_type?: string
           raw_data?: Json | null
@@ -3346,13 +3369,19 @@ export type Database = {
           success?: boolean
           target_endpoint?: string | null
           vulnerability_found?: string | null
+          was_false_positive?: boolean | null
         }
         Update: {
           ai_analysis?: string | null
           ai_recommendation?: string | null
           alert_sent?: boolean
           attack_vector?: string | null
+          autonomy_level?: number | null
+          confidence_factors?: Json | null
+          confidence_score?: number | null
           created_at?: string
+          detection_source?: string | null
+          human_verified?: boolean | null
           id?: string
           incident_type?: string
           raw_data?: Json | null
@@ -3363,6 +3392,7 @@ export type Database = {
           success?: boolean
           target_endpoint?: string | null
           vulnerability_found?: string | null
+          was_false_positive?: boolean | null
         }
         Relationships: []
       }
@@ -3393,6 +3423,69 @@ export type Database = {
           ip_address?: string | null
           user_agent?: string | null
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      security_quality_metrics: {
+        Row: {
+          ai_cost_saved: boolean | null
+          ai_detections: number | null
+          autonomy_level: number | null
+          autonomy_score: number | null
+          confirmed_threats: number | null
+          created_at: string
+          detection_rate: number | null
+          false_negatives: number | null
+          false_positives: number | null
+          gemini_calls: number | null
+          id: string
+          local_detections: number | null
+          metadata: Json | null
+          patterns_learned: number | null
+          patterns_used: number | null
+          reaction_time_ms: number | null
+          scan_id: string
+          total_incidents: number | null
+        }
+        Insert: {
+          ai_cost_saved?: boolean | null
+          ai_detections?: number | null
+          autonomy_level?: number | null
+          autonomy_score?: number | null
+          confirmed_threats?: number | null
+          created_at?: string
+          detection_rate?: number | null
+          false_negatives?: number | null
+          false_positives?: number | null
+          gemini_calls?: number | null
+          id?: string
+          local_detections?: number | null
+          metadata?: Json | null
+          patterns_learned?: number | null
+          patterns_used?: number | null
+          reaction_time_ms?: number | null
+          scan_id: string
+          total_incidents?: number | null
+        }
+        Update: {
+          ai_cost_saved?: boolean | null
+          ai_detections?: number | null
+          autonomy_level?: number | null
+          autonomy_score?: number | null
+          confirmed_threats?: number | null
+          created_at?: string
+          detection_rate?: number | null
+          false_negatives?: number | null
+          false_positives?: number | null
+          gemini_calls?: number | null
+          id?: string
+          local_detections?: number | null
+          metadata?: Json | null
+          patterns_learned?: number | null
+          patterns_used?: number | null
+          reaction_time_ms?: number | null
+          scan_id?: string
+          total_incidents?: number | null
         }
         Relationships: []
       }
