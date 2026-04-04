@@ -76,6 +76,11 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen relative flex flex-col overflow-x-hidden bg-background">
+      <SEOHead
+        title="Réseau social gratuit sans pub — Alternative Facebook Instagram TikTok"
+        description="Forsure est le réseau social éthique français 100% gratuit. Messagerie privée chiffrée, live streaming, marketplace, appels vidéo. Zéro pub, zéro tracking. Rejoignez forsure.fans."
+        url="https://forsure.fans/"
+      />
       {/* ═══════════════════ HERO SECTION ═══════════════════ */}
       <section className="relative flex flex-col items-center justify-center px-4 sm:px-6 py-16 sm:py-28 overflow-hidden">
         <div 
