@@ -198,7 +198,11 @@ export function ConversationList() {
                           : 'Démarrez la conversation…'}
                       </p>
                       {conv.unread_count > 0 && (
-                        <div className="w-3 h-3 rounded-full bg-primary flex-shrink-0" />
+                        <div className="min-w-[20px] h-5 rounded-full bg-primary flex items-center justify-center flex-shrink-0 px-1.5">
+                          <span className="text-[11px] font-bold text-primary-foreground leading-none">
+                            {conv.unread_count > 99 ? '99+' : conv.unread_count}
+                          </span>
+                        </div>
                       )}
                     </div>
                   </div>
