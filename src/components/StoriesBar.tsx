@@ -201,11 +201,9 @@ export function StoriesBar() {
 
   if (isLoading) {
     return (
-      <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide px-2">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="flex-shrink-0 w-[72px]">
-            <div className="w-[72px] h-[72px] rounded-2xl skeleton" />
-          </div>
+          <div key={i} className="flex-shrink-0 w-[110px] h-[190px] rounded-xl skeleton" />
         ))}
       </div>
     );
@@ -213,54 +211,85 @@ export function StoriesBar() {
 
   return (
     <>
-      <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-        {/* Add Story Button */}
-        <div className="flex-shrink-0 flex flex-col items-center gap-1">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isCreating}
-            className="relative w-[60px] h-[60px] rounded-2xl bg-secondary/40 border border-dashed border-primary/30 flex items-center justify-center transition-all duration-300 hover:bg-primary/5 hover:border-primary/50 group"
-          >
-            <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-              <Plus className={cn("w-4 h-4 text-primary", isCreating && "animate-spin")} />
-            </div>
-          </button>
-          <span className="text-[10px] text-muted-foreground font-medium">Story</span>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v"
-            className="hidden"
-            onChange={handleFileSelect}
-          />
-        </div>
+      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide px-2">
+        {/* Create Story Card */}
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isCreating}
+          className="flex-shrink-0 w-[110px] h-[190px] rounded-xl overflow-hidden relative group bg-card border border-border/20"
+        >
+          {/* User photo top half */}
+          <div className="h-[130px] w-full overflow-hidden bg-muted">
+            {user && (
+              <img 
+                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`} 
+                alt="" 
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              />
+            )}
+          </div>
+          {/* Plus button */}
+          <div className="absolute left-1/2 -translate-x-1/2 top-[118px] w-9 h-9 rounded-full bg-primary border-4 border-card flex items-center justify-center z-10">
+            <Plus className={cn("w-5 h-5 text-primary-foreground", isCreating && "animate-spin")} />
+          </div>
+          {/* Bottom label */}
+          <div className="h-[60px] flex items-end justify-center pb-2">
+            <span className="text-[11px] font-semibold text-foreground text-center leading-tight">Créer une<br/>story</span>
+          </div>
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v"
+          className="hidden"
+          onChange={handleFileSelect}
+        />
 
-        {/* Stories */}
+        {/* Story Cards */}
         {groupedStories?.map((group) => (
           <button
             key={group.user_id}
             onClick={() => openStory(group)}
-            className="flex-shrink-0 flex flex-col items-center gap-1"
+            className="flex-shrink-0 w-[110px] h-[190px] rounded-xl overflow-hidden relative group"
           >
-            <div className={cn(
-              "p-[2px] rounded-2xl transition-all duration-300",
-              group.has_unviewed 
-                ? "bg-[image:var(--premium-gradient)] shadow-[0_2px_12px_hsl(220_70%_50%/0.25)]" 
-                : "bg-border/60"
-            )}>
-              <div className="p-[2px] rounded-[14px] bg-background">
-                <div className="w-[56px] h-[56px] rounded-xl overflow-hidden">
-                  {group.profile.avatar_url ? (
-                    <img src={group.profile.avatar_url} alt={group.profile.name} className="w-full h-full object-cover" loading="lazy" />
-                  ) : (
-                    <UserAvatar src={null} alt={group.profile.name} size="lg" />
-                  )}
+            {/* Full cover photo */}
+            <div className="absolute inset-0">
+              {group.stories[0]?.image_url ? (
+                <img 
+                  src={group.stories[0].image_url} 
+                  alt={group.profile.name} 
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="w-full h-full bg-muted" />
+              )}
+              {/* Gradient overlay */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+            </div>
+            {/* Unviewed ring avatar */}
+            <div className="absolute top-2 left-2 z-10">
+              <div className={cn(
+                "p-[2px] rounded-full",
+                group.has_unviewed ? "bg-primary" : "bg-border/60"
+              )}>
+                <div className="p-[1px] rounded-full bg-card">
+                  <div className="w-9 h-9 rounded-full overflow-hidden">
+                    {group.profile.avatar_url ? (
+                      <img src={group.profile.avatar_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    ) : (
+                      <UserAvatar src={null} alt={group.profile.name} size="sm" />
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-            <span className="text-[10px] text-muted-foreground truncate w-[60px] text-center font-medium">
-              {group.user_id === user?.id ? 'Ma story' : group.profile.name.split(' ')[0]}
-            </span>
+            {/* Name at bottom */}
+            <div className="absolute bottom-0 left-0 right-0 p-2 z-10">
+              <span className="text-white text-[11px] font-semibold drop-shadow-lg leading-tight line-clamp-2">
+                {group.user_id === user?.id ? 'Ma story' : group.profile.name}
+              </span>
+            </div>
           </button>
         ))}
       </div>
