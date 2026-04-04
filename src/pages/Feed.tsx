@@ -318,7 +318,7 @@ export default function Feed() {
                 )}
 
                 {/* Posts list — clean spacing */}
-                <div className="sm:space-y-3 sm:px-4">
+                <div className="space-y-4 sm:space-y-5 sm:px-4 mt-4">
                   {posts.map((post, index) => (
                     <div key={post.id}>
                       <PostCard post={post} />
