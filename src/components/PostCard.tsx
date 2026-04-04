@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark, ShieldAlert, AlertTriangle, Eye, Send } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark, ShieldAlert, AlertTriangle, Eye, Send, Globe, X } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Post, useDeletePost } from '@/hooks/usePosts';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
@@ -15,7 +15,7 @@ import { useIsCreator } from '@/hooks/useCreator';
 import { Button } from '@/components/ui/button';
 import { ReactionButton } from './ReactionButton';
 import { cn } from '@/lib/utils';
-import { ReactionType } from '@/hooks/useReactions';
+import { ReactionType, REACTION_EMOJIS } from '@/hooks/useReactions';
 import { ShareButton } from './ShareButton';
 import { generatePostUrl } from '@/lib/urlUtils';
 import { useAIContent } from '@/hooks/useAIContent';
@@ -40,6 +40,7 @@ interface PostCardProps {
 
 export const PostCard = memo(function PostCard({ post, showActions = true, onCommentClick }: PostCardProps) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const deletePost = useDeletePost();
   const { data: isPostAuthorCreator } = useIsCreator(post.user_id);
   const { summarize, translate, summaryLoading, translateLoading, aiSummariesEnabled, autoTranslateEnabled } = useAIContent();
@@ -67,6 +68,27 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
       return count || 0;
     },
     enabled: isVideoPost,
+    staleTime: 60_000,
+  });
+
+  // Fetch top 2 reaction types for the post
+  const { data: topReactions } = useQuery({
+    queryKey: ['post-top-reactions', post.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('likes')
+        .select('reaction_type')
+        .eq('post_id', post.id)
+        .not('reaction_type', 'is', null);
+      if (!data || data.length === 0) return ['like'];
+      const counts: Record<string, number> = {};
+      data.forEach((r: any) => { counts[r.reaction_type] = (counts[r.reaction_type] || 0) + 1; });
+      return Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 2)
+        .map(([type]) => type);
+    },
+    enabled: post.likes_count > 0,
     staleTime: 60_000,
   });
 
@@ -117,11 +139,19 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
     deletePost.mutate(post.id);
   };
 
+  const handleCommentClick = () => {
+    if (onCommentClick) {
+      onCommentClick();
+    } else {
+      navigate(`/post/${post.id}#comments`);
+    }
+  };
+
   const isOwner = user?.id === post.user_id;
 
   return (
     <article className="group relative bg-card sm:border sm:border-border/20 sm:rounded-2xl overflow-hidden transition-all duration-300">
-      {/* Header — Instagram style */}
+      {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5">
         <div className="flex items-center gap-2.5 min-w-0">
           <Link to={`/profile/${post.user_id}`} className="relative flex-shrink-0">
@@ -150,6 +180,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                   {formatDistanceToNow(new Date(post.created_at), { addSuffix: true, locale: fr })}
                 </span>
               </Link>
+              <Globe className="w-2.5 h-2.5 text-muted-foreground" />
               {timeLeft && (
                 <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-medium">
                   <Timer className="w-2.5 h-2.5" />
@@ -160,173 +191,72 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
           </div>
         </div>
         
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
-              <MoreHorizontal className="w-5 h-5" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="rounded-xl border-border/30 shadow-lg">
-            <DropdownMenuItem asChild>
-              <ShareButton 
-                url={postUrl} 
-                title={`Post de ${post.profile.name}`}
-                text={post.body?.slice(0, 100)}
-                variant="ghost"
-                showLabel
-                className="w-full justify-start p-0"
-              />
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setSaved(!saved)}>
-              <Bookmark className={cn("w-4 h-4 mr-2", saved && "fill-current")} />
-              {saved ? 'Retirer' : 'Enregistrer'}
-            </DropdownMenuItem>
-            {isOwner && (
-              <DropdownMenuItem onClick={handleDelete} className="text-destructive">
-                <Trash2 className="w-4 h-4 mr-2" />
-                Supprimer
-              </DropdownMenuItem>
-            )}
-            {!isOwner && (
-              <DropdownMenuItem 
-                onClick={async () => {
-                  try {
-                    await reportUser.mutateAsync({
-                      reportedUserId: post.user_id,
-                      reportType: 'inappropriate_content',
-                      description: `Signalement - post ${post.id}`,
-                    });
-                    toast.success('✅ Signalement envoyé !');
-                  } catch {
-                    toast.error('Erreur lors du signalement');
-                  }
-                }}
-                className="text-destructive"
-              >
-                <ShieldAlert className="w-4 h-4 mr-2" />
-                Signaler
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      {/* Media — full width, no padding, no border radius on mobile */}
-      {post.image_url && (
-        <div className="relative w-full overflow-hidden bg-muted/30 aspect-[4/5]">
-          {!mediaLoaded && !videoError && (
-            <div className="absolute inset-0 skeleton" />
-          )}
-          {isVideoPost ? (
-            videoError ? (
-              <div className="absolute inset-0 flex items-center justify-center bg-muted/70">
-                <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-background/80 border border-border/40">
-                  <AlertTriangle className="w-4 h-4 text-destructive" />
-                  <span className="text-xs font-medium text-foreground">Format vidéo non supporté</span>
-                </div>
-              </div>
-            ) : (
-              <>
-                <FeedAutoplayVideo
-                  src={post.image_url!}
-                  onMediaLoaded={() => setMediaLoaded(true)}
-                  onVideoError={() => { setMediaLoaded(true); setVideoError(true); }}
-                  onPlay={() => trackVideoView()}
+        <div className="flex items-center gap-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                <MoreHorizontal className="w-5 h-5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="rounded-xl border-border/30 shadow-lg">
+              <DropdownMenuItem asChild>
+                <ShareButton 
+                  url={postUrl} 
+                  title={`Post de ${post.profile.name}`}
+                  text={post.body?.slice(0, 100)}
+                  variant="ghost"
+                  showLabel
+                  className="w-full justify-start p-0"
                 />
-                {typeof videoViewCount === 'number' && videoViewCount > 0 && (
-                  <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1 text-white text-xs bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1">
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>{videoViewCount > 1000 ? `${(videoViewCount / 1000).toFixed(1)}K` : videoViewCount}</span>
-                  </div>
-                )}
-              </>
-            )
-          ) : (
-            <Link to={`/post/${post.id}`}>
-              <img
-                src={imagePresets.postThumbnail(post.image_url) || post.image_url}
-                alt="Image du post"
-                loading="lazy"
-                decoding="async"
-                className={cn(
-                  "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
-                  mediaLoaded ? "opacity-100" : "opacity-0"
-                )}
-                onLoad={() => setMediaLoaded(true)}
-              />
-            </Link>
-          )}
-        </div>
-      )}
-
-      {/* Action bar — Instagram/Meta style: icons left, bookmark right */}
-      {showActions && (
-        <div className="flex items-center justify-between px-3 pt-2 pb-1">
-          <div className="flex items-center -ml-2">
-            <ReactionButton 
-              postId={post.id}
-              currentReaction={post.user_reaction}
-              reactionsCount={0}
-              variant="instagram"
-            />
-            <button
-              onClick={onCommentClick}
-              className="h-10 w-10 flex items-center justify-center text-foreground hover:text-muted-foreground transition-colors active:scale-90"
-            >
-              <MessageCircle className="w-[22px] h-[22px]" />
-            </button>
-            <ShareButton
-              url={postUrl}
-              title={`Post de ${post.profile.name}`}
-              text={post.body?.slice(0, 100)}
-              variant="ghost"
-              size="icon"
-              className="h-10 w-10 text-foreground hover:text-muted-foreground p-0"
-            />
-          </div>
-          <button
-            onClick={() => setSaved(!saved)}
-            className={cn(
-              "h-10 w-10 flex items-center justify-center transition-colors active:scale-90",
-              saved ? "text-foreground" : "text-foreground hover:text-muted-foreground"
-            )}
-          >
-            <Bookmark className={cn("w-[22px] h-[22px]", saved && "fill-current")} />
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSaved(!saved)}>
+                <Bookmark className={cn("w-4 h-4 mr-2", saved && "fill-current")} />
+                {saved ? 'Retirer' : 'Enregistrer'}
+              </DropdownMenuItem>
+              {isOwner && (
+                <DropdownMenuItem onClick={handleDelete} className="text-destructive">
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Supprimer
+                </DropdownMenuItem>
+              )}
+              {!isOwner && (
+                <DropdownMenuItem 
+                  onClick={async () => {
+                    try {
+                      await reportUser.mutateAsync({
+                        reportedUserId: post.user_id,
+                        reportType: 'inappropriate_content',
+                        description: `Signalement - post ${post.id}`,
+                      });
+                      toast.success('✅ Signalement envoyé !');
+                    } catch {
+                      toast.error('Erreur lors du signalement');
+                    }
+                  }}
+                  className="text-destructive"
+                >
+                  <ShieldAlert className="w-4 h-4 mr-2" />
+                  Signaler
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <button className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+            <X className="w-5 h-5" />
           </button>
         </div>
-      )}
+      </div>
 
-      {/* Likes count — Instagram style */}
-      {post.likes_count > 0 && (
-        <div className="px-3 pb-1">
-          <span className="text-[13px] font-semibold text-foreground">
-            {post.likes_count} J'aime{post.likes_count > 1 ? '' : ''}
-          </span>
-        </div>
-      )}
-
-      {/* Text content */}
+      {/* Text content — above media like Facebook */}
       {post.body && (
         <div className="px-3 pb-2">
-          <Link to={`/post/${post.id}`}>
-            <p className="text-[13px] text-foreground leading-[1.5]">
-              <Link to={`/profile/${post.user_id}`} className="font-semibold mr-1.5 hover:text-primary transition-colors">
-                {post.profile.name}
-              </Link>
-              <span className="whitespace-pre-wrap break-words">{post.body}</span>
-            </p>
-          </Link>
+          <p className="text-[14px] text-foreground leading-[1.5] whitespace-pre-wrap break-words">
+            {post.body}
+          </p>
         </div>
       )}
 
-      {/* Comments count link */}
-      {post.comments_count > 0 && (
-        <button onClick={onCommentClick} className="px-3 pb-1 text-[13px] text-muted-foreground hover:text-foreground transition-colors">
-          Voir les {post.comments_count} commentaire{post.comments_count > 1 ? 's' : ''}
-        </button>
-      )}
-
-      {/* AI Actions */}
+      {/* AI Actions — translate / summarize */}
       {post.body && (aiSummariesEnabled || autoTranslateEnabled) && (
         <div className="px-3 pb-2 flex flex-wrap gap-1.5">
           {aiSummariesEnabled && post.body.length >= 100 && (
@@ -364,7 +294,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
 
       {/* AI Results */}
       {(summary || translation) && (
-        <div className="px-3 pb-3 space-y-2">
+        <div className="px-3 pb-2 space-y-2">
           {summary && (
             <div className="p-2.5 rounded-xl bg-secondary/30 border border-border/20">
               <div className="flex items-center gap-1.5 mb-1">
@@ -384,6 +314,123 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
             </div>
           )}
         </div>
+      )}
+
+      {/* Media — full width */}
+      {post.image_url && (
+        <div className="relative w-full overflow-hidden bg-muted/30">
+          {!mediaLoaded && !videoError && (
+            <div className="absolute inset-0 skeleton aspect-[4/5]" />
+          )}
+          {isVideoPost ? (
+            videoError ? (
+              <div className="aspect-[4/5] flex items-center justify-center bg-muted/70">
+                <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-background/80 border border-border/40">
+                  <AlertTriangle className="w-4 h-4 text-destructive" />
+                  <span className="text-xs font-medium text-foreground">Format vidéo non supporté</span>
+                </div>
+              </div>
+            ) : (
+              <>
+                <FeedAutoplayVideo
+                  src={post.image_url!}
+                  onMediaLoaded={() => setMediaLoaded(true)}
+                  onVideoError={() => { setMediaLoaded(true); setVideoError(true); }}
+                  onPlay={() => trackVideoView()}
+                />
+                {typeof videoViewCount === 'number' && videoViewCount > 0 && (
+                  <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1 text-white text-xs bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1">
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>{videoViewCount > 1000 ? `${(videoViewCount / 1000).toFixed(1)}K` : videoViewCount}</span>
+                  </div>
+                )}
+              </>
+            )
+          ) : (
+            <Link to={`/post/${post.id}`}>
+              <img
+                src={imagePresets.postThumbnail(post.image_url) || post.image_url}
+                alt="Image du post"
+                loading="lazy"
+                decoding="async"
+                className={cn(
+                  "w-full transition-opacity duration-300",
+                  mediaLoaded ? "opacity-100" : "opacity-0"
+                )}
+                onLoad={() => setMediaLoaded(true)}
+              />
+            </Link>
+          )}
+        </div>
+      )}
+
+      {/* Engagement summary — Facebook style: reaction emojis + count left, comments/shares right */}
+      {showActions && (post.likes_count > 0 || post.comments_count > 0) && (
+        <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5">
+          {/* Left: reaction emojis + count */}
+          {post.likes_count > 0 ? (
+            <div className="flex items-center gap-1.5">
+              <div className="flex -space-x-1">
+                {(topReactions || ['like']).map((type, i) => (
+                  <span 
+                    key={type} 
+                    className="w-[18px] h-[18px] rounded-full bg-primary/10 flex items-center justify-center text-[11px] ring-2 ring-card"
+                    style={{ zIndex: 2 - i }}
+                  >
+                    {REACTION_EMOJIS[type as ReactionType] || '👍'}
+                  </span>
+                ))}
+              </div>
+              <span className="text-[13px] text-muted-foreground">
+                {post.likes_count}
+              </span>
+            </div>
+          ) : <div />}
+          
+          {/* Right: comment + share counts */}
+          <div className="flex items-center gap-3 text-[13px] text-muted-foreground">
+            {post.comments_count > 0 && (
+              <button 
+                onClick={handleCommentClick}
+                className="hover:text-foreground transition-colors hover:underline"
+              >
+                {post.comments_count} commentaire{post.comments_count > 1 ? 's' : ''}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Action bar — Facebook style: 3 equal buttons */}
+      {showActions && (
+        <>
+          <div className="mx-3 border-t border-border/20" />
+          <div className="flex items-center px-1 py-0.5">
+            <ReactionButton 
+              postId={post.id}
+              currentReaction={post.user_reaction}
+              reactionsCount={0}
+              variant="facebook"
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex-1 h-11 gap-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs"
+              onClick={handleCommentClick}
+            >
+              <MessageCircle className="w-[18px] h-[18px]" />
+              <span className="font-medium">Commenter</span>
+            </Button>
+            <ShareButton
+              url={postUrl}
+              title={`Post de ${post.profile.name}`}
+              text={post.body?.slice(0, 100)}
+              variant="ghost"
+              className="flex-1 h-11 gap-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs font-medium"
+              showLabel
+            />
+          </div>
+        </>
       )}
 
       {/* Bottom spacing for mobile separation */}
