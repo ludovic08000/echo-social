@@ -40,8 +40,27 @@ export function CommentsList({ postId }: CommentsListProps) {
   const [mediaType, setMediaType] = useState<'image' | 'gif' | 'video' | null>(null);
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [aiLoading, setAiLoading] = useState<'translate' | 'improve' | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { upload } = useR2Upload({ folder: 'images', maxSizeMB: 20 });
+
+  const handleAI = async (action: 'translate' | 'improve') => {
+    if (!newComment.trim() || aiLoading) return;
+    setAiLoading(action);
+    try {
+      const prompt = action === 'translate'
+        ? `Détecte la langue du texte suivant et traduis-le en français si ce n'est pas du français, sinon traduis-le en anglais. Réponds UNIQUEMENT avec la traduction, rien d'autre : "${newComment}"`
+        : `Corrige l'orthographe, la grammaire et améliore le style de ce texte tout en gardant le même sens et la même langue. Réponds UNIQUEMENT avec le texte amélioré, rien d'autre : "${newComment}"`;
+      const { data } = await supabase.functions.invoke('zeus', {
+        body: { message: prompt, context: action === 'translate' ? 'translation' : 'correction' }
+      });
+      if (data?.reply) setNewComment(data.reply.replace(/^["']|["']$/g, ''));
+    } catch {
+      toast.error("Erreur IA, réessayez");
+    } finally {
+      setAiLoading(null);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
