@@ -104,11 +104,13 @@ export function StoriesBar() {
     setIsCreating(true);
     try {
       const { uploadToR2 } = await import('@/lib/r2');
-      const { url } = await uploadToR2(file, 'stories');
+      const normalizedFile = file;
+      const { url } = await uploadToR2(normalizedFile, 'stories');
       await createStory.mutateAsync({ imageUrl: url });
       toast({ title: 'Story publiée !' });
     } catch (error) {
-      toast({ title: 'Erreur', description: 'Impossible de publier la story', variant: 'destructive' });
+      const message = error instanceof Error ? error.message : 'Impossible de publier la story';
+      toast({ title: 'Erreur', description: message, variant: 'destructive' });
     } finally {
       setIsCreating(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -214,7 +216,7 @@ export function StoriesBar() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*,video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v"
+        accept="image/*,image/heic,image/heif,video/*,.heic,.heif,.mp4,.mov,.m4v,.webm"
         className="hidden"
         onChange={handleFileSelect}
       />
