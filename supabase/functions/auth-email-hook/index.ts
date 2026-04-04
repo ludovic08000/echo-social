@@ -11,6 +11,9 @@ import { ReauthenticationEmail } from '../_shared/email-templates/reauthenticati
 
 import { getCorsHeaders } from "../_shared/cors.ts";
 
+// Module-level corsHeaders, set per-request in Deno.serve
+let corsHeaders: Record<string, string> = {};
+
 const EMAIL_SUBJECTS: Record<string, string> = {
   signup: 'Confirmez votre adresse e-mail — Forsure',
   invite: 'Vous avez été invité(e) sur Forsure',
