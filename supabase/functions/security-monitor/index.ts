@@ -652,15 +652,16 @@ JSON:
 
     // ── ÉTAPE 4 : Quality metrics ──
     const reactionTime = Math.round(performance.now() - scanStart);
-    const localOnly = incidents.filter(i => i.detection_source !== "ai").length;
-    const autonomyScore = incidents.length > 0 ? localOnly / incidents.length : 1.0;
+    // Autonomy = incidents handled WITHOUT Gemini (Level 1 + Level 3) / total
+    const handledWithoutAI = incidents.filter(i => i.autonomy_level !== 2).length;
+    const autonomyScore = incidents.length > 0 ? handledWithoutAI / incidents.length : 1.0;
     const detectionRate = incidents.length > 0 ? 1.0 : 0; // No ground truth yet, will improve with human verification
 
     await supabase.from("security_quality_metrics").insert({
       scan_id: scanId,
       total_incidents: incidents.length,
       local_detections: patternDetections.length,
-      ai_detections: incidents.length - localOnly,
+      ai_detections: ambiguousIncidents.length,
       false_positives: 0, // Updated when admin marks false positive
       false_negatives: 0, // Updated when missed threat detected later
       confirmed_threats: level3Blocks.length,
