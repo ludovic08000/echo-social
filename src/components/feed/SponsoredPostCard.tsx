@@ -5,6 +5,7 @@ import { AdCampaign } from '@/hooks/useAdCampaigns';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { useEffect, useRef } from 'react';
+import { sanitizeUrl } from '@/lib/sanitizeUrl';
 
 interface SponsoredPostCardProps {
   ad: AdCampaign;

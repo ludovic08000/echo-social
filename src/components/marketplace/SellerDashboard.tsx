@@ -15,6 +15,7 @@ import { Store, Package, TrendingUp, Trash2, Eye, Truck, Loader2, CheckCircle2, 
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { escapeHtml } from '@/lib/sanitizeUrl';
 
 
 export function SellerDashboard() {
