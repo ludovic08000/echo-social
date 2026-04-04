@@ -84,19 +84,19 @@ td{padding:8px 12px;border:1px solid #ddd}
 .sig-box{border:1px dashed #ccc;width:200px;height:80px;display:flex;align-items:flex-end;justify-content:center;padding:8px;font-size:11px;color:#999}
 @media print{body{padding:20px}}
 </style></head><body>
-<div class="header"><div><h1>BORDEREAU DE LIVRAISON</h1><p style="color:#666">N° ${order.order_number}</p></div><div style="text-align:right"><p><strong>${seller?.store_name || 'Vendeur'}</strong></p><p style="color:#666">Date : ${date}</p></div></div>
+<div class="header"><div><h1>BORDEREAU DE LIVRAISON</h1><p style="color:#666">N° ${escapeHtml(order.order_number)}</p></div><div style="text-align:right"><p><strong>${escapeHtml(seller?.store_name || 'Vendeur')}</strong></p><p style="color:#666">Date : ${escapeHtml(date)}</p></div></div>
 <div class="info-grid">
-<div class="box"><h3>Expéditeur</h3><p><strong>${seller?.store_name || 'Vendeur'}</strong></p></div>
-<div class="box"><h3>Destinataire — Point Relais</h3><p><strong>${relayName}</strong></p><p>${relayAddress}</p><p>${relayCity}</p>${order.shipping_relay_country ? `<p>${order.shipping_relay_country}</p>` : ''}</div>
+<div class="box"><h3>Expéditeur</h3><p><strong>${escapeHtml(seller?.store_name || 'Vendeur')}</strong></p></div>
+<div class="box"><h3>Destinataire — Point Relais</h3><p><strong>${escapeHtml(relayName)}</strong></p><p>${escapeHtml(relayAddress)}</p><p>${escapeHtml(relayCity)}</p>${order.shipping_relay_country ? `<p>${escapeHtml(order.shipping_relay_country)}</p>` : ''}</div>
 </div>
 <table><thead><tr><th>Produit</th><th style="width:60px;text-align:center">Qté</th><th style="width:100px;text-align:right">Prix unit.</th><th style="width:100px;text-align:right">Total</th></tr></thead><tbody>
-${items.map((item: any) => `<tr><td>${item.title}</td><td style="text-align:center">${item.quantity}</td><td style="text-align:right">${Number(item.price).toFixed(2)} €</td><td style="text-align:right">${Number(item.subtotal).toFixed(2)} €</td></tr>`).join('')}
+${items.map((item: any) => `<tr><td>${escapeHtml(item.title)}</td><td style="text-align:center">${escapeHtml(String(item.quantity))}</td><td style="text-align:right">${Number(item.price).toFixed(2)} €</td><td style="text-align:right">${Number(item.subtotal).toFixed(2)} €</td></tr>`).join('')}
 <tr class="total-row"><td colspan="3" style="text-align:right">TOTAL</td><td style="text-align:right">${Number(order.total).toFixed(2)} €</td></tr>
 </tbody></table>
-${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :</strong> ${order.tracking_number}</p>` : ''}
-<p style="margin-bottom:16px"><strong>Poids du colis :</strong> ${weightLabel} · <strong>Frais Mondial Relay :</strong> ${shippingCost.toFixed(2)} €</p>
+${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :</strong> ${escapeHtml(order.tracking_number)}</p>` : ''}
+<p style="margin-bottom:16px"><strong>Poids du colis :</strong> ${escapeHtml(weightLabel)} · <strong>Frais Mondial Relay :</strong> ${shippingCost.toFixed(2)} €</p>
 <div class="footer"><div class="sig-box">Signature expéditeur</div><div class="sig-box">Signature réceptionnaire</div></div>
-<script>window.onload=()=>window.print()</script>
+<script>window.onload=()=>window.print()<\/script>
 </body></html>`;
 
     const blob = new Blob([html], { type: 'text/html' });

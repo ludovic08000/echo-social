@@ -34,7 +34,10 @@ export function SponsoredPostCard({ ad }: SponsoredPostCardProps) {
         interaction_type: 'click',
       });
     }
-    if (ad.cta_url) window.open(ad.cta_url, '_blank');
+    if (ad.cta_url) {
+      const safe = sanitizeUrl(ad.cta_url);
+      if (safe !== '#') window.open(safe, '_blank', 'noopener,noreferrer');
+    }
   };
 
   return (
