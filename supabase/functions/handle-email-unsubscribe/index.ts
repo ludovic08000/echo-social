@@ -13,6 +13,8 @@ function jsonResponse(data: Record<string, unknown>, status = 200): Response {
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  _corsHeaders = corsHeaders;
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
