@@ -39,7 +39,7 @@ export function CommentsList({ postId }: CommentsListProps) {
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { upload } = useR2Upload();
+  const { upload } = useR2Upload({ folder: 'images', maxSizeMB: 20 });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
