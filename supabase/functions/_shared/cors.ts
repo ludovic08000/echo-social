@@ -1,8 +1,16 @@
-// Allowed origins for CORS — production domains only
+// Allowed origins for CORS — production + preview domains
 const ALLOWED_ORIGINS = [
   'https://forsure.fans',
   'https://www.forsure.fans',
 ];
+
+function isAllowedOrigin(origin: string): boolean {
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  // Allow Lovable preview/dev domains
+  if (/^https:\/\/[a-z0-9-]+--[a-f0-9-]+\.lovable\.app$/.test(origin)) return true;
+  if (origin === 'https://calm-connect-05.lovable.app') return true;
+  return false;
+}
 
 export function getCorsHeaders(req?: Request): Record<string, string> {
   const origin = req?.headers?.get('origin') || '';
