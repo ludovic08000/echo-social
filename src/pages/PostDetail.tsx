@@ -4,6 +4,7 @@ import { ArrowLeft, MoreHorizontal } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { ReactionType } from '@/hooks/useReactions';
 import { AppLayout } from '@/components/AppLayout';
 import { PostCard } from '@/components/PostCard';
 import { CommentsList } from '@/components/CommentsList';
@@ -59,6 +60,7 @@ export default function PostDetail() {
         likes_count: postData.likes_count || 0,
         comments_count: postData.comments_count || 0,
         is_liked: !!userLikeRes.data,
+        user_reaction: (userLikeRes.data?.reaction_type as ReactionType) ?? null,
       };
     },
     enabled: !!id,
