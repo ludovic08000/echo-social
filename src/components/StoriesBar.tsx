@@ -247,9 +247,13 @@ export function StoriesBar() {
               />
             )}
           </div>
-          {/* Plus button */}
-          <div className="absolute left-1/2 -translate-x-1/2 top-[118px] w-9 h-9 rounded-full bg-primary border-4 border-card flex items-center justify-center z-10">
-            <Plus className={cn("w-5 h-5 text-primary-foreground", isCreating && "animate-spin")} />
+          {/* Plus button with gradient */}
+          <div className="absolute left-1/2 -translate-x-1/2 top-[118px] w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 border-[3px] border-card flex items-center justify-center z-10 shadow-lg">
+            {isCreating ? (
+              <Loader2 className="w-5 h-5 text-white animate-spin" />
+            ) : (
+              <Plus className="w-5 h-5 text-white" />
+            )}
           </div>
           {/* Bottom label */}
           <div className="h-[60px] flex items-end justify-center pb-2">
