@@ -84,6 +84,16 @@ export function StoriesBar() {
     };
   }, []);
 
+  // Lock body scroll when story viewer is open
+  useEffect(() => {
+    if (selectedGroup) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [selectedGroup]);
+
   // Start timer when story changes
   useEffect(() => {
     if (selectedGroup) {
