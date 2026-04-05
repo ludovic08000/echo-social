@@ -324,7 +324,7 @@ export function StoriesBar() {
             }}
           >
             <div
-              className="relative w-full max-w-md h-full max-h-[100dvh] mx-auto"
+              className="relative w-full h-full max-h-[100dvh] mx-auto"
               onPointerDown={() => { if (!showViewers) pauseTimer(); }}
               onPointerUp={() => { if (!showViewers) resumeTimer(); }}
             >
