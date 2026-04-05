@@ -59,7 +59,7 @@ export default function PostDetail() {
         likes_count: postData.likes_count || 0,
         comments_count: postData.comments_count || 0,
         is_liked: !!userLikeRes.data,
-        user_reaction: userLikeRes.data?.reaction_type as string | null ?? null,
+        user_reaction: (userLikeRes.data?.reaction_type as ReactionType) ?? null,
       };
     },
     enabled: !!id,
