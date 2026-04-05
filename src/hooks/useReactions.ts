@@ -30,21 +30,14 @@ export function useAddReaction() {
     mutationFn: async ({ postId, reactionType }: { postId: string; reactionType: ReactionType }) => {
       if (!user) throw new Error('Not authenticated');
 
-      // Remove existing reaction first
-      await supabase
-        .from('likes')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('post_id', postId);
-
-      // Insert new reaction
+      // Upsert: use ON CONFLICT to prevent duplicates
       const { error } = await supabase
         .from('likes')
-        .insert({
+        .upsert({
           user_id: user.id,
           post_id: postId,
           reaction_type: reactionType,
-        });
+        }, { onConflict: 'user_id,post_id' });
 
       if (error) throw error;
 

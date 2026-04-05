@@ -1,10 +1,10 @@
 import { useState, useRef } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Trash2, Send, Smile, Camera, Image as ImageIcon, Languages, Loader2, ChevronDown, ThumbsUp, Sparkles, Wand2 } from 'lucide-react';
+import { Trash2, Send, Smile, Camera, Languages, Loader2, ChevronDown, ThumbsUp, Wand2, CornerDownRight } from 'lucide-react';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
 import { supabase } from '@/integrations/supabase/client';
-import { useComments, useCreateComment, useDeleteComment, Comment } from '@/hooks/useComments';
+import { useComments, useCreateComment, useDeleteComment, useLikeComment, Comment } from '@/hooks/useComments';
 import { useAuth } from '@/lib/auth';
 import { UserAvatar } from './UserAvatar';
 import { Button } from '@/components/ui/button';
@@ -36,12 +36,14 @@ export function CommentsList({ postId }: CommentsListProps) {
   const createComment = useCreateComment();
   const deleteComment = useDeleteComment();
   const [newComment, setNewComment] = useState('');
+  const [replyTo, setReplyTo] = useState<{ id: string; name: string } | null>(null);
   const [attachedMedia, setAttachedMedia] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'image' | 'gif' | 'video' | null>(null);
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [aiLoading, setAiLoading] = useState<'translate' | 'improve' | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const { upload } = useR2Upload({ folder: 'images', maxSizeMB: 20 });
 
   const handleAI = async (action: 'translate' | 'improve') => {
@@ -76,12 +78,13 @@ export function CommentsList({ postId }: CommentsListProps) {
     }
 
     createComment.mutate(
-      { postId, body },
+      { postId, body, parentId: replyTo?.id },
       {
         onSuccess: () => {
           setNewComment('');
           setAttachedMedia(null);
           setMediaType(null);
+          setReplyTo(null);
         },
       }
     );
@@ -90,31 +93,17 @@ export function CommentsList({ postId }: CommentsListProps) {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
     const isVideo = file.type.startsWith('video/');
     const isImage = file.type.startsWith('image/');
-    if (!isVideo && !isImage) {
-      toast.error('Format non supporté. Utilisez une image ou vidéo.');
-      return;
-    }
-    if (file.size > 20 * 1024 * 1024) {
-      toast.error('Fichier trop volumineux (max 20 Mo)');
-      return;
-    }
+    if (!isVideo && !isImage) { toast.error('Format non supporté.'); return; }
+    if (file.size > 20 * 1024 * 1024) { toast.error('Fichier trop volumineux (max 20 Mo)'); return; }
 
     setUploading(true);
     try {
       const url = await upload(file);
-      if (url) {
-        setAttachedMedia(url);
-        setMediaType(isVideo ? 'video' : 'image');
-      }
-    } catch {
-      toast.error("Erreur lors de l'upload");
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+      if (url) { setAttachedMedia(url); setMediaType(isVideo ? 'video' : 'image'); }
+    } catch { toast.error("Erreur lors de l'upload"); }
+    finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
   };
 
   const handleGifSelect = (gifUrl: string) => {
@@ -123,8 +112,9 @@ export function CommentsList({ postId }: CommentsListProps) {
     setShowGifPicker(false);
   };
 
-  const handleDelete = (commentId: string) => {
-    deleteComment.mutate({ commentId, postId });
+  const handleReply = (comment: Comment) => {
+    setReplyTo({ id: comment.id, name: comment.profile.name });
+    inputRef.current?.focus();
   };
 
   if (isLoading) {
@@ -145,13 +135,11 @@ export function CommentsList({ postId }: CommentsListProps) {
 
   return (
     <div className="flex flex-col">
-      {/* Sort header */}
       <button className="flex items-center gap-1 px-4 py-2.5 text-[14px] font-semibold text-foreground">
         Plus pertinents
         <ChevronDown className="w-4 h-4" />
       </button>
 
-      {/* Comments list */}
       <div className="px-4 pb-4 space-y-4 max-h-[60vh] overflow-y-auto">
         {comments?.length === 0 ? (
           <p className="text-muted-foreground text-center py-6 text-sm">
@@ -159,12 +147,32 @@ export function CommentsList({ postId }: CommentsListProps) {
           </p>
         ) : (
           comments?.map((comment) => (
-            <CommentItem
-              key={comment.id}
-              comment={comment}
-              isOwner={user?.id === comment.user_id}
-              onDelete={() => handleDelete(comment.id)}
-            />
+            <div key={comment.id}>
+              <CommentItem
+                comment={comment}
+                isOwner={user?.id === comment.user_id}
+                onDelete={() => deleteComment.mutate({ commentId: comment.id, postId })}
+                onReply={() => handleReply(comment)}
+                postId={postId}
+              />
+              {/* Replies */}
+              {comment.replies && comment.replies.length > 0 && (
+                <div className="ml-10 mt-2 space-y-3 border-l-2 border-border/20 pl-3">
+                  {comment.replies.map((reply) => (
+                    <CommentItem
+                      key={reply.id}
+                      comment={reply}
+                      isOwner={user?.id === reply.user_id}
+                      onDelete={() => deleteComment.mutate({ commentId: reply.id, postId })}
+                      onReply={() => handleReply(comment)}
+                      postId={postId}
+                      isReply
+                      parentName={comment.profile.name}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           ))
         )}
       </div>
@@ -181,57 +189,51 @@ export function CommentsList({ postId }: CommentsListProps) {
             <button
               onClick={() => { setAttachedMedia(null); setMediaType(null); }}
               className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center text-xs"
-            >
-              ×
-            </button>
+            >×</button>
           </div>
         </div>
       )}
 
-      {/* GIF Picker */}
       {showGifPicker && (
         <div className="px-4 pb-2">
           <GifPicker onSelect={handleGifSelect} onClose={() => setShowGifPicker(false)} />
         </div>
       )}
 
-      {/* Comment input bar — Facebook style */}
+      {/* Reply indicator */}
+      {replyTo && (
+        <div className="flex items-center gap-2 px-4 py-1.5 bg-secondary/30 border-t border-border/20">
+          <CornerDownRight className="w-3.5 h-3.5 text-primary" />
+          <span className="text-[12px] text-muted-foreground">
+            Réponse à <span className="font-semibold text-foreground">{replyTo.name}</span>
+          </span>
+          <button onClick={() => setReplyTo(null)} className="ml-auto text-muted-foreground hover:text-foreground text-xs">✕</button>
+        </div>
+      )}
+
+      {/* Comment input */}
       {user && (
         <div className="flex items-center gap-2 px-3 py-2.5 border-t border-border/30 bg-card">
           <UserAvatar size="sm" />
-          
           <form onSubmit={handleSubmit} className="flex-1 flex items-center gap-1.5">
             <div className="flex-1 relative">
               <input
+                ref={inputRef}
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Commentez..."
+                placeholder={replyTo ? `Répondre à ${replyTo.name}...` : "Commentez..."}
                 className="w-full bg-secondary/50 rounded-full px-4 py-2 pr-36 text-[13px] outline-none placeholder:text-muted-foreground focus:bg-secondary/70 transition-colors"
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
-                {/* AI: Translate */}
                 {newComment.trim() && (
-                  <button
-                    type="button"
-                    onClick={() => handleAI('translate')}
-                    disabled={!!aiLoading}
-                    className="p-1 rounded-full text-muted-foreground hover:text-primary transition-colors"
-                    title="Traduire"
-                  >
-                    {aiLoading === 'translate' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Languages className="w-3.5 h-3.5" />}
-                  </button>
-                )}
-                {/* AI: Improve */}
-                {newComment.trim() && (
-                  <button
-                    type="button"
-                    onClick={() => handleAI('improve')}
-                    disabled={!!aiLoading}
-                    className="p-1 rounded-full text-muted-foreground hover:text-primary transition-colors"
-                    title="Corriger & améliorer"
-                  >
-                    {aiLoading === 'improve' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-                  </button>
+                  <>
+                    <button type="button" onClick={() => handleAI('translate')} disabled={!!aiLoading} className="p-1 rounded-full text-muted-foreground hover:text-primary transition-colors" title="Traduire">
+                      {aiLoading === 'translate' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Languages className="w-3.5 h-3.5" />}
+                    </button>
+                    <button type="button" onClick={() => handleAI('improve')} disabled={!!aiLoading} className="p-1 rounded-full text-muted-foreground hover:text-primary transition-colors" title="Corriger & améliorer">
+                      {aiLoading === 'improve' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                    </button>
+                  </>
                 )}
                 <Popover>
                   <PopoverTrigger asChild>
@@ -242,53 +244,22 @@ export function CommentsList({ postId }: CommentsListProps) {
                   <PopoverContent side="top" align="end" className="w-64 p-2 rounded-xl" sideOffset={8}>
                     <div className="grid grid-cols-8 gap-1">
                       {COMMENT_EMOJIS.map((emoji) => (
-                        <button
-                          key={emoji}
-                          type="button"
-                          onClick={() => setNewComment(prev => prev + emoji)}
-                          className="w-7 h-7 flex items-center justify-center text-lg hover:bg-secondary rounded transition-colors"
-                        >
+                        <button key={emoji} type="button" onClick={() => setNewComment(prev => prev + emoji)} className="w-7 h-7 flex items-center justify-center text-lg hover:bg-secondary rounded transition-colors">
                           {emoji}
                         </button>
                       ))}
                     </div>
                   </PopoverContent>
                 </Popover>
-
-                <button
-                  type="button"
-                  onClick={() => setShowGifPicker(!showGifPicker)}
-                  className="p-1 rounded-full text-muted-foreground hover:text-foreground transition-colors text-[11px] font-bold"
-                >
-                  GIF
-                </button>
+                <button type="button" onClick={() => setShowGifPicker(!showGifPicker)} className="p-1 rounded-full text-muted-foreground hover:text-foreground transition-colors text-[11px] font-bold">GIF</button>
               </div>
             </div>
-
-            {/* Camera / media button */}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="p-2 rounded-full text-muted-foreground hover:text-foreground transition-colors"
-            >
+            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-2 rounded-full text-muted-foreground hover:text-foreground transition-colors">
               {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-5 h-5" />}
             </button>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,video/*"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-
+            <input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={handleFileSelect} className="hidden" />
             {(newComment.trim() || attachedMedia) && (
-              <button
-                type="submit"
-                disabled={createComment.isPending}
-                className="p-2 rounded-full text-primary hover:text-primary/80 transition-colors"
-              >
+              <button type="submit" disabled={createComment.isPending} className="p-2 rounded-full text-primary hover:text-primary/80 transition-colors">
                 <Send className="w-5 h-5" />
               </button>
             )}
@@ -303,13 +274,17 @@ interface CommentItemProps {
   comment: Comment;
   isOwner: boolean;
   onDelete: () => void;
+  onReply: () => void;
+  postId: string;
+  isReply?: boolean;
+  parentName?: string;
 }
 
-function CommentItem({ comment, isOwner, onDelete }: CommentItemProps) {
+function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, parentName }: CommentItemProps) {
   const [translated, setTranslated] = useState<string | null>(null);
   const [translating, setTranslating] = useState(false);
+  const likeComment = useLikeComment();
 
-  // Parse media from comment body
   const { text, mediaUrl, isGif, isVideo, isImage } = parseCommentMedia(comment.body);
 
   const handleTranslate = async () => {
@@ -319,42 +294,34 @@ function CommentItem({ comment, isOwner, onDelete }: CommentItemProps) {
     try {
       const { supabase } = await import('@/integrations/supabase/client');
       const { data } = await supabase.functions.invoke('zeus', {
-        body: { 
-          message: `Traduis ce texte en français (réponds UNIQUEMENT avec la traduction, rien d'autre) : "${text}"`,
-          context: 'translation'
-        }
+        body: { message: `Traduis ce texte en français (réponds UNIQUEMENT avec la traduction, rien d'autre) : "${text}"`, context: 'translation' }
       });
       if (data?.reply) setTranslated(data.reply);
-    } catch {
-      // silent fail
-    } finally {
-      setTranslating(false);
-    }
+    } catch {} finally { setTranslating(false); }
+  };
+
+  const handleLike = () => {
+    likeComment.mutate({ commentId: comment.id, postId, isLiked: comment.is_liked });
   };
 
   return (
-    <div className="flex gap-2.5 animate-slide-up">
+    <div className={cn("flex gap-2.5 animate-slide-up", isReply && "")}>
       <Link to={`/profile/${comment.user_id}`} className="flex-shrink-0 mt-0.5">
         <UserAvatar src={comment.profile.avatar_url} alt={comment.profile.name} size="sm" />
       </Link>
-      
       <div className="flex-1 min-w-0">
-        {/* Comment bubble */}
         <div className="inline-block bg-secondary/50 rounded-2xl px-3 py-2 max-w-full">
-          <Link 
-            to={`/profile/${comment.user_id}`}
-            className="font-semibold text-[13px] hover:underline block"
-          >
+          <Link to={`/profile/${comment.user_id}`} className="font-semibold text-[13px] hover:underline block">
             {comment.profile.name}
           </Link>
+          {isReply && parentName && (
+            <span className="text-[11px] text-primary font-medium">@{parentName} </span>
+          )}
           {text && (
-            <p className="text-[13px] text-foreground break-words leading-[1.4] mt-0.5">
-              {text}
-            </p>
+            <p className="text-[13px] text-foreground break-words leading-[1.4] mt-0.5">{text}</p>
           )}
         </div>
 
-        {/* Media attachment */}
         {mediaUrl && (
           <div className="mt-1.5 rounded-xl overflow-hidden inline-block max-w-[280px]">
             {isGif || isImage ? (
@@ -365,38 +332,35 @@ function CommentItem({ comment, isOwner, onDelete }: CommentItemProps) {
           </div>
         )}
 
-        {/* Translated text */}
         {translated && (
           <div className="mt-1 px-3 py-1.5 bg-primary/5 rounded-xl inline-block">
             <p className="text-[12px] text-foreground italic">{translated}</p>
           </div>
         )}
 
-        {/* Actions row */}
         <div className="flex items-center gap-3 mt-1 px-1">
           <span className="text-[11px] text-muted-foreground">
             {formatDistanceToNow(new Date(comment.created_at), { addSuffix: false, locale: fr })}
           </span>
-          <button className="text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors">
-            J'aime
+          <button
+            onClick={handleLike}
+            className={cn(
+              "text-[11px] font-semibold transition-colors",
+              comment.is_liked ? "text-primary" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            J'aime{comment.likes_count > 0 && ` · ${comment.likes_count}`}
           </button>
-          <button className="text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors">
+          <button onClick={onReply} className="text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors">
             Répondre
           </button>
           {text && (
-            <button 
-              onClick={handleTranslate}
-              disabled={translating}
-              className="text-[11px] font-medium text-primary/70 hover:text-primary transition-colors"
-            >
+            <button onClick={handleTranslate} disabled={translating} className="text-[11px] font-medium text-primary/70 hover:text-primary transition-colors">
               {translating ? <Loader2 className="w-3 h-3 animate-spin inline" /> : translated ? 'Original' : 'Voir la traduction'}
             </button>
           )}
           {isOwner && (
-            <button
-              onClick={onDelete}
-              className="text-muted-foreground hover:text-destructive transition-colors ml-auto"
-            >
+            <button onClick={onDelete} className="text-muted-foreground hover:text-destructive transition-colors ml-auto">
               <Trash2 className="w-3 h-3" />
             </button>
           )}
@@ -406,7 +370,6 @@ function CommentItem({ comment, isOwner, onDelete }: CommentItemProps) {
   );
 }
 
-/** Parse media URLs and GIF markers from comment body — sanitized */
 function parseCommentMedia(body: string) {
   let text = body;
   let mediaUrl: string | null = null;
@@ -414,18 +377,13 @@ function parseCommentMedia(body: string) {
   let isVideo = false;
   let isImage = false;
 
-  // GIF:url — only accept https
   const gifMatch = text.match(/GIF:(https:\/\/[^\s]+)/i);
   if (gifMatch) {
     const sanitized = sanitizeUrl(gifMatch[1]);
-    if (sanitized !== '#') {
-      mediaUrl = sanitized;
-      isGif = true;
-    }
+    if (sanitized !== '#') { mediaUrl = sanitized; isGif = true; }
     text = text.replace(gifMatch[0], '').trim();
   }
 
-  // Direct media URL on its own line — only https with known extensions
   if (!mediaUrl) {
     const urlMatch = text.match(/(https:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|mp4|webm|mov))(\?[^\s]*)?/i);
     if (urlMatch) {

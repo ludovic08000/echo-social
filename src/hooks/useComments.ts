@@ -8,30 +8,32 @@ export interface Comment {
   post_id: string;
   body: string;
   created_at: string;
+  parent_id: string | null;
   profile: {
     name: string;
     avatar_url: string | null;
   };
+  likes_count: number;
+  is_liked: boolean;
+  replies?: Comment[];
 }
 
 export function useComments(postId: string) {
+  const { user } = useAuth();
+
   return useQuery({
     queryKey: ['comments', postId],
     queryFn: async () => {
-      // Load only the most recent 30 comments (paginated)
       const { data, error } = await supabase
         .from('comments')
-        .select('id, user_id, post_id, body, created_at')
+        .select('id, user_id, post_id, body, created_at, parent_id')
         .eq('post_id', postId)
-        .order('created_at', { ascending: false })
-        .limit(30);
+        .order('created_at', { ascending: true })
+        .limit(100);
 
       if (error) throw error;
 
-      // Reverse to show chronologically
-      data.reverse();
-
-      // Get profile info for each comment (batched, not N+1)
+      // Get profile info
       const userIds = [...new Set(data.map(c => c.user_id))];
       const { data: profiles } = await supabase
         .from('profiles')
@@ -40,7 +42,21 @@ export function useComments(postId: string) {
 
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
 
-      return data.map(comment => {
+      // Get like counts for all comments
+      const commentIds = data.map(c => c.id);
+      const { data: allLikes } = await supabase
+        .from('comment_likes')
+        .select('comment_id, user_id')
+        .in('comment_id', commentIds);
+
+      const likesCountMap = new Map<string, number>();
+      const userLikedMap = new Set<string>();
+      allLikes?.forEach(l => {
+        likesCountMap.set(l.comment_id, (likesCountMap.get(l.comment_id) || 0) + 1);
+        if (user && l.user_id === user.id) userLikedMap.add(l.comment_id);
+      });
+
+      const enriched: Comment[] = data.map(comment => {
         const profile = profileMap.get(comment.user_id);
         return {
           id: comment.id,
@@ -48,15 +64,32 @@ export function useComments(postId: string) {
           post_id: comment.post_id,
           body: comment.body,
           created_at: comment.created_at,
+          parent_id: comment.parent_id,
           profile: {
             name: profile?.name || 'Unknown',
             avatar_url: profile?.avatar_url || null,
           },
+          likes_count: likesCountMap.get(comment.id) || 0,
+          is_liked: userLikedMap.has(comment.id),
         };
       });
+
+      // Build tree: top-level + replies
+      const topLevel = enriched.filter(c => !c.parent_id);
+      const repliesMap = new Map<string, Comment[]>();
+      enriched.filter(c => c.parent_id).forEach(c => {
+        const arr = repliesMap.get(c.parent_id!) || [];
+        arr.push(c);
+        repliesMap.set(c.parent_id!, arr);
+      });
+      topLevel.forEach(c => {
+        c.replies = repliesMap.get(c.id) || [];
+      });
+
+      return topLevel;
     },
     enabled: !!postId,
-    staleTime: 30_000, // Cache 30s to avoid re-fetching on toggle
+    staleTime: 30_000,
   });
 }
 
@@ -69,17 +102,15 @@ export function useCreateComment() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async ({ postId, body }: { postId: string; body: string }) => {
+    mutationFn: async ({ postId, body, parentId }: { postId: string; body: string; parentId?: string }) => {
       if (!user) throw new Error('Not authenticated');
 
-      // Rate limit: 1 comment per 3 seconds
       const now = Date.now();
       if (now - lastCommentTime < COMMENT_COOLDOWN_MS) {
         throw new Error('Attendez quelques secondes avant de commenter à nouveau.');
       }
       lastCommentTime = now;
 
-      // Sanitize: strip HTML tags, limit to 1000 chars
       const sanitizedBody = body.replace(/<[^>]*>/g, '').trim().slice(0, 1000);
       if (!sanitizedBody) throw new Error('Le commentaire ne peut pas être vide.');
 
@@ -89,13 +120,14 @@ export function useCreateComment() {
           user_id: user.id,
           post_id: postId,
           body: sanitizedBody,
-        })
+          parent_id: parentId || null,
+        } as any)
         .select()
         .single();
 
       if (error) throw error;
 
-      // Create notification for post owner
+      // Notification for post owner
       const { data: post } = await supabase
         .from('posts')
         .select('user_id')
@@ -136,6 +168,27 @@ export function useDeleteComment() {
     onSuccess: (postId) => {
       queryClient.invalidateQueries({ queryKey: ['comments', postId] });
       queryClient.invalidateQueries({ queryKey: ['posts'] });
+    },
+  });
+}
+
+export function useLikeComment() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async ({ commentId, postId, isLiked }: { commentId: string; postId: string; isLiked: boolean }) => {
+      if (!user) throw new Error('Not authenticated');
+
+      if (isLiked) {
+        await supabase.from('comment_likes').delete().eq('comment_id', commentId).eq('user_id', user.id);
+      } else {
+        await supabase.from('comment_likes').insert({ comment_id: commentId, user_id: user.id });
+      }
+      return postId;
+    },
+    onSuccess: (postId) => {
+      queryClient.invalidateQueries({ queryKey: ['comments', postId] });
     },
   });
 }
