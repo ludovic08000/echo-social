@@ -4,6 +4,7 @@ import { ArrowLeft, MoreHorizontal } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { ReactionType } from '@/hooks/useReactions';
 import { AppLayout } from '@/components/AppLayout';
 import { PostCard } from '@/components/PostCard';
 import { CommentsList } from '@/components/CommentsList';
