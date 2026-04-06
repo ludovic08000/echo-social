@@ -35,7 +35,7 @@ export function SEOPageLayout({ title, description, children, jsonLd }: SEOPageL
       <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border/40">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
-            <BrandLogo size={28} />
+            <BrandLogo className="w-7 h-7" />
             <span className="font-bold text-lg text-foreground">Forsure</span>
           </Link>
           <div className="hidden md:flex items-center gap-6 text-sm text-muted-foreground">
@@ -66,7 +66,7 @@ export function SEOPageLayout({ title, description, children, jsonLd }: SEOPageL
           <div className="grid md:grid-cols-3 gap-8">
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <BrandLogo size={24} />
+                <BrandLogo className="w-6 h-6" />
                 <span className="font-bold text-foreground">Forsure</span>
               </div>
               <p className="text-sm text-muted-foreground leading-relaxed">
