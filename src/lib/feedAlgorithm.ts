@@ -148,7 +148,100 @@ function getRecencyScore(ageHours: number): number {
   return Math.max(0, 3 * Math.exp(-(ageHours - 48) / 72));
 }
 
-// ── Main scoring function ──
+// ── Monte Carlo Feed Engine ──────────────────────────────
+// Hybrid algorithm combining:
+//   1. Thompson Sampling for exploration (discover new content)
+//   2. Monte Carlo simulation for engagement optimisation
+//   3. Diversity enforcement via category quotas
+// ─────────────────────────────────────────────────────────
+
+/** Seeded PRNG (xorshift32) for deterministic per-session randomness */
+let _mcSeed = (Date.now() ^ 0xDEADBEEF) >>> 0;
+function mcRandom(): number {
+  _mcSeed ^= _mcSeed << 13;
+  _mcSeed ^= _mcSeed >> 17;
+  _mcSeed ^= _mcSeed << 5;
+  return (_mcSeed >>> 0) / 0xFFFFFFFF;
+}
+
+/** Beta distribution sample (Thompson Sampling) via Jöhnk's method */
+function sampleBeta(alpha: number, beta: number): number {
+  // Simple gamma approximation for small alpha/beta
+  function gammaVariate(shape: number): number {
+    if (shape >= 1) {
+      const d = shape - 1 / 3;
+      const c = 1 / Math.sqrt(9 * d);
+      while (true) {
+        let x: number, v: number;
+        do {
+          x = gaussianRandom();
+          v = 1 + c * x;
+        } while (v <= 0);
+        v = v * v * v;
+        const u = mcRandom();
+        if (u < 1 - 0.0331 * x * x * x * x) return d * v;
+        if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+      }
+    }
+    // shape < 1: boost trick
+    return gammaVariate(shape + 1) * Math.pow(mcRandom(), 1 / shape);
+  }
+
+  const ga = gammaVariate(alpha);
+  const gb = gammaVariate(beta);
+  return ga / (ga + gb);
+}
+
+let _hasSpare = false;
+let _spare = 0;
+function gaussianRandom(): number {
+  if (_hasSpare) { _hasSpare = false; return _spare; }
+  let u: number, v: number, s: number;
+  do {
+    u = mcRandom() * 2 - 1;
+    v = mcRandom() * 2 - 1;
+    s = u * u + v * v;
+  } while (s >= 1 || s === 0);
+  s = Math.sqrt(-2 * Math.log(s) / s);
+  _spare = v * s;
+  _hasSpare = true;
+  return u * s;
+}
+
+/** Content category for diversity quotas */
+type ContentCategory = 'friend_text' | 'friend_media' | 'discovery_text' | 'discovery_media' | 'own';
+
+function classifyPost(post: { user_id: string; image_url: string | null }, isFriend: boolean, isOwn: boolean): ContentCategory {
+  if (isOwn) return 'own';
+  const hasMedia = !!post.image_url;
+  if (isFriend) return hasMedia ? 'friend_media' : 'friend_text';
+  return hasMedia ? 'discovery_media' : 'discovery_text';
+}
+
+/** Target category distribution (percentages) */
+const CATEGORY_TARGETS: Record<ContentCategory, number> = {
+  own: 0.05,
+  friend_media: 0.30,
+  friend_text: 0.25,
+  discovery_media: 0.25,
+  discovery_text: 0.15,
+};
+
+/** Compute diversity bonus/penalty based on category fill rates */
+function getDiversityAdjustment(
+  category: ContentCategory,
+  categoryCounts: Map<ContentCategory, number>,
+  totalPlaced: number,
+  diversityBoost: number
+): number {
+  if (totalPlaced < 2) return 0;
+  const actual = (categoryCounts.get(category) || 0) / totalPlaced;
+  const target = CATEGORY_TARGETS[category];
+  const deficit = target - actual; // positive = under-represented
+  return deficit * (diversityBoost / 100) * 40;
+}
+
+// ── Main scoring function (deterministic base) ──
 export function scorePost(
   post: {
     id: string;
@@ -169,14 +262,15 @@ export function scorePost(
 
   let score = 0;
   const isFriend = ctx.friendInteractionCounts.has(post.user_id) || post.user_id === ctx.userId;
+  const isOwn = post.user_id === ctx.userId;
   const postDate = new Date(post.created_at);
   const ageMs = Date.now() - postDate.getTime();
   const ageHours = ageMs / (1000 * 60 * 60);
 
-  // ── 1. RECENCY (tiered for dynamism) ──
+  // ── 1. RECENCY ──
   score += getRecencyScore(ageHours);
 
-  // ── 2. ENGAGEMENT VELOCITY (trending) ──
+  // ── 2. ENGAGEMENT VELOCITY ──
   score += getEngagementVelocity(post.likes_count, post.comments_count, ageHours);
 
   // ── 3. ENGAGEMENT (capped) ──
@@ -191,7 +285,7 @@ export function scorePost(
   } else {
     const interactionCount = ctx.friendInteractionCounts.get(post.user_id) || 0;
     score += Math.min(25, interactionCount * 4) * friendWeight;
-    if (isFriend) score += 8; // Base friend boost
+    if (isFriend) score += 8;
   }
 
   // ── 5. DISCOVERY BOOST ──
@@ -210,28 +304,129 @@ export function scorePost(
   // ── 7. TIME-OF-DAY BOOST ──
   score += (getTimeOfDayMultiplier(postDate) - 1) * 15;
 
-  // ── 8. OWN POSTS (always on top when fresh) ──
-  if (post.user_id === ctx.userId) {
-    if (ageHours < 0.5) score += 500;       // < 30 min: always first
-    else if (ageHours < 2) score += 100;     // < 2h: strong boost
-    else if (ageHours < 6) score += 30;      // < 6h: moderate boost
+  // ── 8. OWN POSTS ──
+  if (isOwn) {
+    if (ageHours < 0.5) score += 500;
+    else if (ageHours < 2) score += 100;
+    else if (ageHours < 6) score += 30;
     else score += 5;
   }
 
   // ── 9. ANTI-SPAM ──
   score -= getSpamScore(post.body) * 0.6;
 
-  // ── 10. DIVERSITY PENALTY (progressive) ──
+  // ── 10. DIVERSITY PENALTY (author repetition) ──
   const authorAppearances = ctx.seenAuthors.has(post.user_id) ? 1 : 0;
   if (authorAppearances > 0) {
     score -= (prefs.diversityBoost / 100) * (8 + 6 * authorAppearances);
   }
 
-  // ── 11. CONTROLLED RANDOMIZATION ──
-  // Disabled for feed stability on mobile (prevents reorder-induced scroll jumps)
-  // score += Math.random() * (ageHours < 6 ? 10 : 5);
-
   return score;
+}
+
+// ── Monte Carlo simulation: run N simulations of feed orderings ──
+interface MCSimResult {
+  postId: string;
+  finalScore: number;
+}
+
+/**
+ * Monte Carlo Feed Ranker
+ * Runs multiple simulated feed orderings to find the optimal arrangement
+ * that maximises predicted engagement while maintaining diversity.
+ *
+ * @param posts - candidate posts with base scores
+ * @param ctx   - scoring context
+ * @param simulations - number of Monte Carlo iterations (default 50)
+ */
+export function monteCarloRank<T extends {
+  id: string;
+  user_id: string;
+  body: string;
+  image_url: string | null;
+  created_at: string;
+  likes_count: number;
+  comments_count: number;
+}>(
+  posts: T[],
+  ctx: ScoringContext,
+  simulations: number = 50
+): T[] {
+  if (posts.length <= 1 || ctx.prefs.feedAlgorithm === 'chronological') return posts;
+
+  // Pre-compute base scores
+  const baseScores = new Map<string, number>();
+  posts.forEach(p => baseScores.set(p.id, scorePost(p, ctx)));
+
+  // Thompson Sampling parameters per post (alpha=successes+1, beta=failures+1)
+  // Use engagement as a proxy for success
+  const thompsonParams = new Map<string, { alpha: number; beta: number }>();
+  posts.forEach(p => {
+    const engagement = p.likes_count + p.comments_count * 2;
+    const ageHours = (Date.now() - new Date(p.created_at).getTime()) / 3_600_000;
+    const exposure = Math.max(1, Math.ceil(ageHours / 2)); // rough impressions estimate
+    const alpha = 1 + engagement;
+    const beta = 1 + Math.max(0, exposure - engagement);
+    thompsonParams.set(p.id, { alpha, beta });
+  });
+
+  // Accumulate scores across simulations
+  const totalScores = new Map<string, number>();
+  posts.forEach(p => totalScores.set(p.id, 0));
+
+  for (let sim = 0; sim < simulations; sim++) {
+    const categoryCounts = new Map<ContentCategory, number>();
+    let totalPlaced = 0;
+
+    // Sample each post's score with Thompson Sampling noise
+    const simScores: { id: string; score: number }[] = posts.map(p => {
+      const base = baseScores.get(p.id) || 0;
+      const params = thompsonParams.get(p.id)!;
+
+      // 1. Thompson Sampling: sample engagement probability
+      const sampledEngagement = sampleBeta(params.alpha, params.beta);
+      const explorationBonus = sampledEngagement * 25;
+
+      // 2. Gaussian noise for exploration variety
+      const noise = gaussianRandom() * 3;
+
+      return { id: p.id, score: base + explorationBonus + noise };
+    });
+
+    // Sort by simulated score
+    simScores.sort((a, b) => b.score - a.score);
+
+    // Apply diversity adjustment in placement order
+    simScores.forEach((item, idx) => {
+      const post = posts.find(p => p.id === item.id)!;
+      const isFriend = ctx.friendInteractionCounts.has(post.user_id) || post.user_id === ctx.userId;
+      const isOwn = post.user_id === ctx.userId;
+      const category = classifyPost(post, isFriend, isOwn);
+
+      const diversityAdj = getDiversityAdjustment(category, categoryCounts, totalPlaced, ctx.prefs.diversityBoost);
+
+      // Position decay: penalise being placed late
+      const positionPenalty = idx * 0.5;
+
+      const adjustedScore = item.score + diversityAdj - positionPenalty;
+
+      totalScores.set(item.id, (totalScores.get(item.id) || 0) + adjustedScore);
+
+      // Track category fill
+      categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1);
+      totalPlaced++;
+    });
+  }
+
+  // Average scores and sort
+  const ranked = posts
+    .map(p => ({
+      post: p,
+      avgScore: (totalScores.get(p.id) || 0) / simulations,
+    }))
+    .sort((a, b) => b.avgScore - a.avgScore);
+
+  return ranked.map(r => r.post);
 }
 
 // ── Fair marketplace rotation ──
