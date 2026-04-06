@@ -317,7 +317,7 @@ export function StoriesBar() {
         ))}
       </div>
 
-      {/* Story Viewer - Full Screen Overlay */}
+      {/* Story Viewer - Facebook Desktop Style */}
       {selectedGroup && currentStory && createPortal(
         <AnimatePresence>
           <motion.div
@@ -325,247 +325,351 @@ export function StoriesBar() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-[9999] bg-black flex items-center justify-center"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) closeViewer();
-            }}
+            className="fixed inset-0 z-[9999] bg-black/95 flex"
           >
-            <div
-              className="relative w-full h-full max-h-[100dvh] mx-auto"
-              onPointerDown={() => { if (!showViewers) pauseTimer(); }}
-              onPointerUp={() => { if (!showViewers) resumeTimer(); }}
-            >
-              {/* Progress bars */}
-              <div className="absolute top-3 left-3 right-3 flex gap-1 z-20">
-                {selectedGroup.stories.map((_, i) => (
-                  <div key={i} className="h-[3px] flex-1 rounded-full bg-white/25 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-white transition-none"
-                      style={{
-                        width: i < currentStoryIndex
-                          ? '100%'
-                          : i === currentStoryIndex
-                          ? `${progress * 100}%`
-                          : '0%',
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {/* Header */}
-              <div className="absolute top-8 left-3 right-3 flex items-center justify-between z-20">
-                <div className="flex items-center gap-2 backdrop-blur-md bg-black/30 rounded-xl px-2.5 py-1.5">
-                  <UserAvatar 
-                    src={currentStory.profile.avatar_url} 
-                    alt={currentStory.profile.name}
-                    size="sm"
-                  />
-                  <div>
-                    <p className="text-white text-sm font-semibold">{currentStory.profile.name}</p>
-                    <p className="text-white/50 text-[10px]">
-                      {formatDistanceToNow(new Date(currentStory.created_at), { addSuffix: true, locale: fr })}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {isOwner && (
-                    <>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); toggleViewers(); }}
-                        className="flex items-center gap-1 text-white/70 text-xs backdrop-blur-md bg-black/30 rounded-lg px-2 py-1 hover:bg-white/10 transition-colors"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        {currentStory.views_count}
-                      </button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        onClick={(e) => { e.stopPropagation(); handleDelete(); }}
-                        className="h-8 w-8 text-white/70 hover:text-red-400 hover:bg-white/10 rounded-xl backdrop-blur-md"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </>
-                  )}
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    onClick={(e) => { e.stopPropagation(); closeViewer(); }}
-                    className="h-8 w-8 text-white hover:bg-white/20 rounded-xl backdrop-blur-md"
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-
-              {/* Story Image/Video */}
-              <AnimatePresence mode="wait">
-                {currentStory.image_url.match(/\.(mp4|webm|mov|ogg)(\?|$)/i) ? (
-                  <motion.video
-                    key={currentStory.id}
-                    initial={{ scale: 1.05, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0.98, opacity: 0 }}
-                    transition={{ duration: 0.3 }}
-                    src={currentStory.image_url}
-                    className="w-full h-full object-cover"
-                    autoPlay
-                    muted
-                    playsInline
-                    loop
-                  />
-                ) : (
-                  <motion.img
-                    key={currentStory.id}
-                    initial={{ scale: 1.05, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0.98, opacity: 0 }}
-                    transition={{ duration: 0.3 }}
-                    src={currentStory.image_url}
-                    alt="Story"
-                    className="w-full h-full object-cover"
-                  />
-                )}
-              </AnimatePresence>
-
-              {/* Bottom bar: Like button + likes count */}
-              {!isOwner && (
-                <div className="absolute bottom-6 left-3 right-3 z-20 flex items-center justify-between">
-                  {currentStory.caption ? (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="flex-1 text-white text-center text-sm bg-black/40 backdrop-blur-xl rounded-xl p-3 border border-white/10 mr-3"
-                    >
-                      {currentStory.caption}
-                    </motion.div>
-                  ) : <div className="flex-1" />}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleLike(); }}
-                    className="flex flex-col items-center gap-0.5"
-                  >
-                    <Heart className={cn(
-                      "w-7 h-7 transition-all",
-                      currentStory.is_liked 
-                        ? "text-red-500 fill-red-500 scale-110" 
-                        : "text-white"
-                    )} />
-                    {currentStory.likes_count > 0 && (
-                      <span className="text-white text-[10px] font-medium">{currentStory.likes_count}</span>
-                    )}
-                  </button>
-                </div>
-              )}
-
-              {/* Owner: Caption without like */}
-              {isOwner && currentStory.caption && !showViewers && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="absolute bottom-6 left-3 right-3 z-20"
+            {/* LEFT SIDEBAR */}
+            <div className="hidden md:flex flex-col w-[320px] bg-card border-r border-border/20 h-full">
+              {/* Sidebar header */}
+              <div className="flex items-center gap-3 p-4 border-b border-border/20">
+                <button
+                  onClick={closeViewer}
+                  className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-colors"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 text-white text-center text-sm bg-black/40 backdrop-blur-xl rounded-xl p-3 border border-white/10 mr-3">
-                      {currentStory.caption}
-                    </div>
-                    {currentStory.likes_count > 0 && (
-                      <div className="flex items-center gap-1 text-white/70 text-xs backdrop-blur-md bg-black/30 rounded-lg px-2 py-1">
-                        <Heart className="w-3.5 h-3.5 text-red-400 fill-red-400" />
-                        {currentStory.likes_count}
-                      </div>
-                    )}
+                  <X className="w-5 h-5 text-foreground" />
+                </button>
+                <h2 className="text-xl font-bold text-foreground">Stories</h2>
+              </div>
+
+              {/* Create story */}
+              <div className="px-3 pt-3 pb-1">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Votre story</p>
+                <button
+                  onClick={() => { closeViewer(); fileInputRef.current?.click(); }}
+                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-secondary/50 transition-colors"
+                >
+                  <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center">
+                    <Plus className="w-5 h-5 text-primary" />
                   </div>
-                </motion.div>
-              )}
+                  <div className="text-left">
+                    <p className="text-sm font-semibold text-foreground">Créer une story</p>
+                    <p className="text-xs text-muted-foreground">Partagez une photo ou un message.</p>
+                  </div>
+                </button>
+              </div>
 
-              {/* Owner: Likes count when no caption */}
-              {isOwner && !currentStory.caption && !showViewers && currentStory.likes_count > 0 && (
-                <div className="absolute bottom-6 right-3 z-20 flex items-center gap-1 text-white/70 text-xs backdrop-blur-md bg-black/30 rounded-lg px-2 py-1">
-                  <Heart className="w-3.5 h-3.5 text-red-400 fill-red-400" />
-                  {currentStory.likes_count}
-                </div>
-              )}
-
-              {/* Viewers panel (owner only) */}
-              <AnimatePresence>
-                {showViewers && isOwner && (
-                  <motion.div
-                    initial={{ y: '100%' }}
-                    animate={{ y: 0 }}
-                    exit={{ y: '100%' }}
-                    transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                    className="absolute bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur-xl rounded-t-2xl border-t border-border/30 max-h-[60%] overflow-y-auto"
-                    onClick={e => e.stopPropagation()}
-                    onPointerDown={e => e.stopPropagation()}
-                  >
-                    <div className="sticky top-0 bg-background/95 backdrop-blur-xl px-4 py-3 border-b border-border/20 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Eye className="w-4 h-4 text-muted-foreground" />
-                        <span className="text-sm font-semibold">{currentStory.views_count} vue{currentStory.views_count > 1 ? 's' : ''}</span>
-                        {currentStory.likes_count > 0 && (
-                          <span className="text-xs text-muted-foreground flex items-center gap-1 ml-2">
-                            <Heart className="w-3 h-3 text-red-400 fill-red-400" /> {currentStory.likes_count}
-                          </span>
-                        )}
+              {/* All stories list */}
+              <div className="px-3 pt-2 pb-1">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Toutes les stories</p>
+              </div>
+              <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-0.5">
+                {groupedStories?.map((group) => {
+                  const isActive = group.user_id === selectedGroup.user_id;
+                  return (
+                    <button
+                      key={group.user_id}
+                      onClick={() => openStory(group)}
+                      className={cn(
+                        "flex items-center gap-3 w-full px-3 py-2.5 rounded-xl transition-colors text-left",
+                        isActive ? "bg-secondary" : "hover:bg-secondary/50"
+                      )}
+                    >
+                      <div className={cn(
+                        "p-[2px] rounded-full flex-shrink-0",
+                        group.has_unviewed ? "bg-primary" : "bg-border/40"
+                      )}>
+                        <div className="p-[1px] rounded-full bg-card">
+                          <div className="w-10 h-10 rounded-full overflow-hidden">
+                            {group.profile.avatar_url ? (
+                              <img src={group.profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <UserAvatar src={null} alt={group.profile.name} size="sm" />
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <button onClick={toggleViewers} className="text-muted-foreground hover:text-foreground p-1">
-                        <ChevronUp className="w-4 h-4 rotate-180" />
-                      </button>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-foreground truncate">
+                          {group.user_id === user?.id ? 'Ma story' : group.profile.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {group.stories.length > 1
+                            ? `${group.stories.filter(s => !s.is_viewed).length} nouvelle${group.stories.filter(s => !s.is_viewed).length > 1 ? 's' : ''} story${group.stories.filter(s => !s.is_viewed).length > 1 ? 's' : ''} · `
+                            : group.has_unviewed ? '1 nouvelle story · ' : ''}
+                          {formatDistanceToNow(new Date(group.stories[0].created_at), { locale: fr })}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* RIGHT: STORY VIEWER */}
+            <div className="flex-1 flex items-center justify-center relative">
+              {/* Mobile close button */}
+              <button
+                onClick={closeViewer}
+                className="md:hidden absolute top-4 left-4 z-30 w-9 h-9 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {/* Previous group arrow */}
+              {groupedStories && (groupedStories.findIndex(g => g.user_id === selectedGroup.user_id) > 0) && (
+                <button
+                  onClick={prevStory}
+                  className="hidden md:flex absolute left-4 z-30 w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm items-center justify-center text-white hover:bg-white/20 transition-colors"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+              )}
+
+              {/* Next group arrow */}
+              {groupedStories && (groupedStories.findIndex(g => g.user_id === selectedGroup.user_id) < groupedStories.length - 1 || currentStoryIndex < selectedGroup.stories.length - 1) && (
+                <button
+                  onClick={nextStory}
+                  className="hidden md:flex absolute right-4 z-30 w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm items-center justify-center text-white hover:bg-white/20 transition-colors"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              )}
+
+              {/* Story card (phone-shaped on desktop, fullscreen on mobile) */}
+              <div
+                className="relative w-full h-full md:w-[420px] md:h-[calc(100vh-60px)] md:max-h-[860px] md:rounded-2xl overflow-hidden"
+                onPointerDown={() => { if (!showViewers) pauseTimer(); }}
+                onPointerUp={() => { if (!showViewers) resumeTimer(); }}
+              >
+                {/* Progress bars */}
+                <div className="absolute top-3 left-3 right-3 flex gap-1 z-20">
+                  {selectedGroup.stories.map((_, i) => (
+                    <div key={i} className="h-[3px] flex-1 rounded-full bg-white/25 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-white transition-none"
+                        style={{
+                          width: i < currentStoryIndex
+                            ? '100%'
+                            : i === currentStoryIndex
+                            ? `${progress * 100}%`
+                            : '0%',
+                        }}
+                      />
                     </div>
-                    <div className="p-2">
-                      {!viewers || viewers.length === 0 ? (
-                        <p className="text-sm text-muted-foreground text-center py-6">Aucune vue pour le moment</p>
+                  ))}
+                </div>
+
+                {/* Header */}
+                <div className="absolute top-8 left-3 right-3 flex items-center justify-between z-20">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-white/30">
+                      {currentStory.profile.avatar_url ? (
+                        <img src={currentStory.profile.avatar_url} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        viewers.map(v => (
-                          <Link
-                            key={v.viewer_id}
-                            to={`/profile/${v.viewer_id}`}
-                            onClick={closeViewer}
-                            className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-secondary/50 transition-colors"
-                          >
-                            <UserAvatar src={v.avatar_url} alt={v.name} size="sm" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate">{v.name}</p>
-                              <p className="text-[10px] text-muted-foreground">
-                                {formatDistanceToNow(new Date(v.viewed_at), { addSuffix: true, locale: fr })}
-                              </p>
-                            </div>
-                          </Link>
-                        ))
+                        <UserAvatar src={null} alt={currentStory.profile.name} size="sm" />
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-white text-sm font-semibold drop-shadow-lg">{currentStory.profile.name}</span>
+                      <span className="text-white/60 text-xs ml-2 drop-shadow-lg">
+                        {formatDistanceToNow(new Date(currentStory.created_at), { addSuffix: false, locale: fr })}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {isOwner && (
+                      <>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleViewers(); }}
+                          className="flex items-center gap-1 text-white/80 text-xs backdrop-blur-md bg-black/30 rounded-lg px-2 py-1 hover:bg-white/10 transition-colors"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          {currentStory.views_count}
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDelete(); }}
+                          className="w-8 h-8 flex items-center justify-center text-white/70 hover:text-red-400 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); closeViewer(); }}
+                      className="md:hidden w-8 h-8 flex items-center justify-center text-white"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Story Image/Video */}
+                <AnimatePresence mode="wait">
+                  {currentStory.image_url.match(/\.(mp4|webm|mov|ogg)(\?|$)/i) ? (
+                    <motion.video
+                      key={currentStory.id}
+                      initial={{ scale: 1.05, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0.98, opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                      src={currentStory.image_url}
+                      className="w-full h-full object-cover"
+                      autoPlay
+                      muted
+                      playsInline
+                      loop
+                    />
+                  ) : (
+                    <motion.img
+                      key={currentStory.id}
+                      initial={{ scale: 1.05, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0.98, opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                      src={currentStory.image_url}
+                      alt="Story"
+                      className="w-full h-full object-cover"
+                    />
+                  )}
+                </AnimatePresence>
+
+                {/* Bottom bar: Like + caption */}
+                {!isOwner && (
+                  <div className="absolute bottom-6 left-3 right-3 z-20 flex items-center justify-between">
+                    {currentStory.caption ? (
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex-1 text-white text-center text-sm bg-black/40 backdrop-blur-xl rounded-xl p-3 border border-white/10 mr-3"
+                      >
+                        {currentStory.caption}
+                      </motion.div>
+                    ) : <div className="flex-1" />}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleLike(); }}
+                      className="flex flex-col items-center gap-0.5"
+                    >
+                      <Heart className={cn(
+                        "w-7 h-7 transition-all",
+                        currentStory.is_liked
+                          ? "text-red-500 fill-red-500 scale-110"
+                          : "text-white"
+                      )} />
+                      {currentStory.likes_count > 0 && (
+                        <span className="text-white text-[10px] font-medium">{currentStory.likes_count}</span>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {/* Owner: Caption */}
+                {isOwner && currentStory.caption && !showViewers && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="absolute bottom-6 left-3 right-3 z-20"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 text-white text-center text-sm bg-black/40 backdrop-blur-xl rounded-xl p-3 border border-white/10 mr-3">
+                        {currentStory.caption}
+                      </div>
+                      {currentStory.likes_count > 0 && (
+                        <div className="flex items-center gap-1 text-white/70 text-xs backdrop-blur-md bg-black/30 rounded-lg px-2 py-1">
+                          <Heart className="w-3.5 h-3.5 text-red-400 fill-red-400" />
+                          {currentStory.likes_count}
+                        </div>
                       )}
                     </div>
                   </motion.div>
                 )}
-              </AnimatePresence>
 
-              {/* Navigation touch zones */}
-              {!showViewers && (
-                <>
-                  <button 
-                    onClick={prevStory} 
-                    className="absolute left-0 top-16 bottom-16 w-1/3 z-10 focus:outline-none" 
-                    aria-label="Story précédente"
-                  />
-                  <button 
-                    onClick={nextStory} 
-                    className="absolute right-0 top-16 bottom-16 w-1/3 z-10 focus:outline-none" 
-                    aria-label="Story suivante"
-                  />
-                </>
-              )}
+                {/* Owner: Likes count when no caption */}
+                {isOwner && !currentStory.caption && !showViewers && currentStory.likes_count > 0 && (
+                  <div className="absolute bottom-6 right-3 z-20 flex items-center gap-1 text-white/70 text-xs backdrop-blur-md bg-black/30 rounded-lg px-2 py-1">
+                    <Heart className="w-3.5 h-3.5 text-red-400 fill-red-400" />
+                    {currentStory.likes_count}
+                  </div>
+                )}
 
-              {/* Paused indicator */}
-              {isPaused && !showViewers && (
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none">
-                  <div className="w-12 h-12 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
-                    <div className="flex gap-1">
-                      <div className="w-1.5 h-5 bg-white rounded-full" />
-                      <div className="w-1.5 h-5 bg-white rounded-full" />
+                {/* Viewers panel (owner only) */}
+                <AnimatePresence>
+                  {showViewers && isOwner && (
+                    <motion.div
+                      initial={{ y: '100%' }}
+                      animate={{ y: 0 }}
+                      exit={{ y: '100%' }}
+                      transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                      className="absolute bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur-xl rounded-t-2xl border-t border-border/30 max-h-[60%] overflow-y-auto"
+                      onClick={e => e.stopPropagation()}
+                      onPointerDown={e => e.stopPropagation()}
+                    >
+                      <div className="sticky top-0 bg-background/95 backdrop-blur-xl px-4 py-3 border-b border-border/20 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Eye className="w-4 h-4 text-muted-foreground" />
+                          <span className="text-sm font-semibold">{currentStory.views_count} vue{currentStory.views_count > 1 ? 's' : ''}</span>
+                          {currentStory.likes_count > 0 && (
+                            <span className="text-xs text-muted-foreground flex items-center gap-1 ml-2">
+                              <Heart className="w-3 h-3 text-red-400 fill-red-400" /> {currentStory.likes_count}
+                            </span>
+                          )}
+                        </div>
+                        <button onClick={toggleViewers} className="text-muted-foreground hover:text-foreground p-1">
+                          <ChevronUp className="w-4 h-4 rotate-180" />
+                        </button>
+                      </div>
+                      <div className="p-2">
+                        {!viewers || viewers.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-6">Aucune vue pour le moment</p>
+                        ) : (
+                          viewers.map(v => (
+                            <Link
+                              key={v.viewer_id}
+                              to={`/profile/${v.viewer_id}`}
+                              onClick={closeViewer}
+                              className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-secondary/50 transition-colors"
+                            >
+                              <UserAvatar src={v.avatar_url} alt={v.name} size="sm" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{v.name}</p>
+                                <p className="text-[10px] text-muted-foreground">
+                                  {formatDistanceToNow(new Date(v.viewed_at), { addSuffix: true, locale: fr })}
+                                </p>
+                              </div>
+                            </Link>
+                          ))
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Navigation touch zones */}
+                {!showViewers && (
+                  <>
+                    <button
+                      onClick={prevStory}
+                      className="absolute left-0 top-16 bottom-16 w-1/3 z-10 focus:outline-none"
+                      aria-label="Story précédente"
+                    />
+                    <button
+                      onClick={nextStory}
+                      className="absolute right-0 top-16 bottom-16 w-1/3 z-10 focus:outline-none"
+                      aria-label="Story suivante"
+                    />
+                  </>
+                )}
+
+                {/* Paused indicator */}
+                {isPaused && !showViewers && (
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none">
+                    <div className="w-12 h-12 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
+                      <div className="flex gap-1">
+                        <div className="w-1.5 h-5 bg-white rounded-full" />
+                        <div className="w-1.5 h-5 bg-white rounded-full" />
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </motion.div>
         </AnimatePresence>,
