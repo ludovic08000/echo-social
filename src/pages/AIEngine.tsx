@@ -29,7 +29,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useABTests, type ABTest } from '@/hooks/useABTests';
 import { useNeuralMetrics, useTrustScores, useFeedConfig } from '@/hooks/useNeuralMetrics';
 import { Input } from '@/components/ui/input';
-import { Input } from '@/components/ui/input';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   FileText, Languages, Sparkles, BellRing, ShoppingBag, Crown,
@@ -350,12 +349,12 @@ function SimpleMetricBars({
   tone,
   height,
 }: {
-  data: Array<Record<string, string | number>>;
+  data: Array<{ time: string; calls: number; latency: number; threats: number }>;
   dataKey: 'calls' | 'latency' | 'threats';
   tone: 'primary' | 'accent' | 'destructive';
   height: number;
 }) {
-  const max = Math.max(1, ...data.map((point) => Number(point[dataKey]) || 0));
+  const max = Math.max(1, ...data.map((point) => point[dataKey] || 0));
 
   const toneClass = {
     primary: 'bg-primary/80',
@@ -367,10 +366,10 @@ function SimpleMetricBars({
     <div className="space-y-3">
       <div className="flex items-end gap-1.5 rounded-xl border border-border/60 bg-muted/20 px-2 py-3" style={{ height }}>
         {data.map((point, index) => {
-          const value = Number(point[dataKey]) || 0;
+          const value = point[dataKey] || 0;
           const barHeight = `${Math.max(8, (value / max) * (height - 36))}px`;
           return (
-            <div key={`${String(point.time)}-${index}`} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
+            <div key={`${point.time}-${index}`} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
               <div className="text-[9px] text-muted-foreground">{value}</div>
               <div className={cn('w-full rounded-t-md transition-all', toneClass)} style={{ height: barHeight }} />
             </div>
@@ -379,7 +378,7 @@ function SimpleMetricBars({
       </div>
       <div className="grid grid-cols-6 gap-2 text-[9px] text-muted-foreground">
         {data.filter((_, index) => index % Math.max(1, Math.ceil(data.length / 6)) === 0).slice(0, 6).map((point, index) => (
-          <span key={`${String(point.time)}-${index}`} className="truncate">{String(point.time)}</span>
+          <span key={`${point.time}-${index}`} className="truncate">{point.time}</span>
         ))}
       </div>
     </div>
