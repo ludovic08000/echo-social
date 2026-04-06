@@ -1608,6 +1608,22 @@ function ZeusNeuralConsole() {
 
   const lastMetric = chartData[chartData.length - 1];
 
+  // Real security stats for Zeus Console
+  const { data: zeusSecStats = { attacksBlocked: 0, bannedIps: 0 } } = useQuery({
+    queryKey: ['zeus-console-sec-stats'],
+    queryFn: async () => {
+      const [blockedRes, bannedRes] = await Promise.all([
+        supabase.from('ddos_ip_tracker').select('id', { count: 'exact', head: true }).gte('penalty_level', 1),
+        supabase.from('banned_ips').select('id', { count: 'exact', head: true }).eq('is_active', true),
+      ]);
+      return {
+        attacksBlocked: blockedRes.error ? 0 : (blockedRes.count || 0),
+        bannedIps: bannedRes.error ? 0 : (bannedRes.count || 0),
+      };
+    },
+    refetchInterval: 15000,
+  });
+
   return (
     <div className="space-y-4">
       {/* Mini metrics bar */}
@@ -1622,7 +1638,7 @@ function ZeusNeuralConsole() {
         </div>
         <div className="rounded-xl p-2.5 border border-border bg-card/60 text-center">
           <p className="text-[10px] text-muted-foreground">Menaces</p>
-          <p className="text-lg font-bold text-red-400">{lastMetric?.threats || 0}</p>
+          <p className="text-lg font-bold text-red-400">{zeusSecStats.attacksBlocked}</p>
         </div>
         <div className="rounded-xl p-2.5 border border-border bg-card/60 text-center">
           <p className="text-[10px] text-muted-foreground">Config Feed</p>
