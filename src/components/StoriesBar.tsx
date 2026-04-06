@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X, Eye, Trash2, ChevronLeft, ChevronRight, Heart, ChevronUp, Layers, Loader2 } from 'lucide-react';
+import { Plus, X, Eye, Trash2, ChevronLeft, ChevronRight, Heart, ChevronUp, Layers, Loader2, Send } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useStories, useCreateStory, useViewStory, useDeleteStory, useLikeStory, useStoryViewers, GroupedStories } from '@/hooks/useStories';
@@ -12,6 +12,9 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { Link } from 'react-router-dom';
+
+const STORY_DURATION = 5000;
+const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡'];
 
 const STORY_DURATION = 5000; // 5 seconds per story
 
