@@ -8,7 +8,7 @@ import { toast } from '@/hooks/use-toast';
 import { AppLayout } from '@/components/AppLayout';
 import { SEOHead } from '@/components/SEOHead';
 import {
-  getAIModules, getAIEngineStats, getCategoryLabel, getCategoryColor,
+  getAIModules, getCategoryLabel, getCategoryColor,
   type AIModule, type AICategory,
 } from '@/lib/aiEngine';
 import { useAIEngine, type ModerationResult, type SentimentResult } from '@/hooks/useAIEngine';
@@ -49,7 +49,24 @@ export default function AIEngine() {
   const { data: isAdmin, isLoading: adminLoading } = useIsAdmin();
 
   const modules = useMemo(() => getAIModules(), []);
-  const stats = useMemo(() => getAIEngineStats(), []);
+
+  // Real stats from DB
+  const { data: realStats = { totalInteractions: 0, healthScore: 100 } } = useQuery({
+    queryKey: ['ai-engine-real-stats'],
+    queryFn: async () => {
+      const [metricsRes, feedbackRes, incidentsRes] = await Promise.all([
+        supabase.from('ai_metrics_log').select('id', { count: 'exact', head: true }),
+        supabase.from('ai_feedback').select('id', { count: 'exact', head: true }),
+        supabase.from('security_incidents').select('id', { count: 'exact', head: true }),
+      ]);
+      const totalInteractions = (metricsRes.count || 0) + (feedbackRes.count || 0);
+      const incidentCount = incidentsRes.count || 0;
+      // Health = 100 - (incidents * 2), min 0
+      const healthScore = Math.max(0, 100 - incidentCount * 2);
+      return { totalInteractions, healthScore };
+    },
+    refetchInterval: 30000,
+  });
 
   // Redirect non-admins
   useEffect(() => {
@@ -83,16 +100,16 @@ export default function AIEngine() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-foreground">ForSure Neural Engine</h1>
-                <p className="text-xs text-muted-foreground">IA auto-apprenante • Modération adaptative • {stats.totalModules} modules</p>
+                <p className="text-xs text-muted-foreground">IA auto-apprenante • Modération adaptative • {modules.length} modules</p>
               </div>
             </div>
           </div>
 
           <div className="relative z-10 grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
-            <StatCard icon={Cpu} label="Modules IA" value={stats.totalModules.toString()} />
-            <StatCard icon={Zap} label="Actifs" value={stats.activeModules.toString()} accent />
-            <StatCard icon={BarChart3} label="Interactions" value={formatNumber(stats.totalInteractions)} />
-            <StatCard icon={Activity} label="Santé" value={`${stats.healthScore}%`} />
+            <StatCard icon={Cpu} label="Modules IA" value={modules.length.toString()} />
+            <StatCard icon={Zap} label="Actifs" value={modules.filter(m => m.status === 'active').length.toString()} accent />
+            <StatCard icon={BarChart3} label="Interactions" value={formatNumber(realStats.totalInteractions)} />
+            <StatCard icon={Activity} label="Santé" value={`${realStats.healthScore}%`} />
           </div>
         </header>
 
@@ -258,27 +275,48 @@ export default function AIEngine() {
 function MetricsDashboard({ modules }: { modules: ReturnType<typeof getAIModules> }) {
   const { chartData } = useNeuralMetrics();
 
-  const avgLatency = modules.filter(m => m.metrics.totalCalls > 0).reduce((s, m) => s + m.metrics.avgResponseMs, 0) / Math.max(1, modules.filter(m => m.metrics.totalCalls > 0).length);
-  const avgSuccess = modules.filter(m => m.metrics.totalCalls > 0).reduce((s, m) => s + m.metrics.successRate, 0) / Math.max(1, modules.filter(m => m.metrics.totalCalls > 0).length);
+  // Real metrics from DB
+  const { data: metricsStats = { totalCalls: 0, avgLatency: 0, successRate: 100, threats: 0 } } = useQuery({
+    queryKey: ['metrics-dashboard-real'],
+    queryFn: async () => {
+      const [metricsRes, threatsRes] = await Promise.all([
+        supabase.from('ai_metrics_log').select('metric_type, value').order('created_at', { ascending: false }).limit(500),
+        supabase.from('ddos_ip_tracker').select('id', { count: 'exact', head: true }).gte('penalty_level', 1),
+      ]);
+      const rows = metricsRes.data || [];
+      const totalCalls = rows.length;
+      const latencies = rows.filter((r: any) => r.metric_type !== 'error' && r.metric_type !== 'threat').map((r: any) => Number(r.value) || 0);
+      const avgLatency = latencies.length > 0 ? latencies.reduce((a: number, b: number) => a + b, 0) / latencies.length : 0;
+      const errors = rows.filter((r: any) => r.metric_type === 'error').length;
+      const successRate = totalCalls > 0 ? Math.round(((totalCalls - errors) / totalCalls) * 100) : 100;
+      return {
+        totalCalls,
+        avgLatency: Math.round(avgLatency),
+        successRate,
+        threats: threatsRes.error ? 0 : (threatsRes.count || 0),
+      };
+    },
+    refetchInterval: 15000,
+  });
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="rounded-xl p-3 border border-primary/20 bg-primary/5">
-          <div className="flex items-center gap-2 mb-1"><Zap className="w-3.5 h-3.5 text-primary" /><span className="text-[11px] text-muted-foreground">Requêtes/h</span></div>
-          <p className="text-xl font-bold text-primary">{chartData[chartData.length - 1]?.calls || 0}</p>
+          <div className="flex items-center gap-2 mb-1"><Zap className="w-3.5 h-3.5 text-primary" /><span className="text-[11px] text-muted-foreground">Requêtes IA</span></div>
+          <p className="text-xl font-bold text-primary">{metricsStats.totalCalls}</p>
         </div>
         <div className="rounded-xl p-3 border border-border bg-card/60">
           <div className="flex items-center gap-2 mb-1"><Clock className="w-3.5 h-3.5 text-muted-foreground" /><span className="text-[11px] text-muted-foreground">Latence moy.</span></div>
-          <p className="text-xl font-bold text-foreground">{Math.round(avgLatency)}ms</p>
+          <p className="text-xl font-bold text-foreground">{metricsStats.avgLatency}ms</p>
         </div>
         <div className="rounded-xl p-3 border border-border bg-card/60">
           <div className="flex items-center gap-2 mb-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /><span className="text-[11px] text-muted-foreground">Taux succès</span></div>
-          <p className="text-xl font-bold text-foreground">{Math.round(avgSuccess || 100)}%</p>
+          <p className="text-xl font-bold text-foreground">{metricsStats.successRate}%</p>
         </div>
         <div className="rounded-xl p-3 border border-border bg-card/60">
           <div className="flex items-center gap-2 mb-1"><ShieldCheck className="w-3.5 h-3.5 text-red-400" /><span className="text-[11px] text-muted-foreground">Menaces détectées</span></div>
-          <p className="text-xl font-bold text-foreground">0</p>
+          <p className="text-xl font-bold text-foreground">{metricsStats.threats}</p>
         </div>
       </div>
 
