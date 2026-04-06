@@ -1,5 +1,7 @@
 User-agent: *
 Allow: /
+Allow: /a-propos
+Allow: /fonctionnalites/
 Disallow: /api/
 Disallow: /auth/
 Disallow: /admin
@@ -18,5 +20,6 @@ Disallow: /ads-manager
 Disallow: /creator-upgrade
 Disallow: /reset-password
 Disallow: /forgot-password
+Disallow: /dashboard
 
 Sitemap: https://forsure.fans/sitemap.xml
