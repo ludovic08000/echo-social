@@ -207,8 +207,6 @@ export function SecurityMonitoringSection() {
     });
   }, [allIps]);
 
-  const [lastScanResult, setLastScanResult] = useState<any>(null);
-
   const runScan = useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase.functions.invoke('security-monitor');
