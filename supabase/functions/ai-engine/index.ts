@@ -44,19 +44,30 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // ─── Auth check ───
+    // ─── Auth check with JWT TTL validation ───
     const authHeader = req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Non authentifié" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const token = authHeader.replace("Bearer ", "");
     const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
     });
-    const { data: { user: authUser }, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !authUser) {
-      return new Response(JSON.stringify({ error: "Non authentifié" }), {
+    const { data: claimsData, error: claimsErr } = await userClient.auth.getClaims(token);
+    if (claimsErr || !claimsData?.claims) {
+      return new Response(JSON.stringify({ error: "Token invalide ou expiré" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const authUser = { id: claimsData.claims.sub as string };
+
+    // Reject tokens older than 1 hour for sensitive AI endpoints
+    const MAX_JWT_AGE_S = 3600;
+    const iat = claimsData.claims.iat as number | undefined;
+    if (iat && (Date.now() / 1000 - iat) > MAX_JWT_AGE_S) {
+      return new Response(JSON.stringify({ error: "Session expirée, reconnecte-toi" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
