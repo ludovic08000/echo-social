@@ -60,6 +60,8 @@ export function SecurityMonitoringSection() {
   const [zeusAlerts, setZeusAlerts] = useState<ZeusAlert[]>([]);
   const [isRealtime, setIsRealtime] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [prevIncidentCount, setPrevIncidentCount] = useState(0);
+  const [lastScanResult, setLastScanResult] = useState<any>(null);
   const queryClient = useQueryClient();
 
   // ── Incidents (temps réel 5s) ──
