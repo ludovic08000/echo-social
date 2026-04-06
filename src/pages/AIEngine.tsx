@@ -1804,7 +1804,7 @@ function ZeusNeuralConsole() {
                 <div className="text-center text-muted-foreground text-xs py-8 space-y-2">
                   <Brain className="w-10 h-10 mx-auto opacity-20" />
                   <p>Console Zeus × Neural Engine</p>
-                  <p className="text-[10px]">Demande des stats, propose des ajustements, pilote l'algorithme…</p>
+                  <p className="text-[10px]">Nouvelle conversation prête. Choisis un sujet ou écris ton message.</p>
                   <div className="flex flex-wrap justify-center gap-1.5 mt-3">
                     {['Santé de la plateforme ?', 'Analyse les signalements', 'Optimise le feed', 'Stats Zeus'].map(q => (
                       <button key={q} onClick={() => { setInput(q); }} className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-600 hover:bg-amber-500/20 transition-colors">
