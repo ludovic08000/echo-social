@@ -1564,11 +1564,65 @@ function ZeusNeuralConsole() {
   const { config: feedConfig } = useFeedConfig();
   const { user } = useAuth();
 
+  // Conversations history
+  const { data: conversations = [], refetch: refetchConvs } = useQuery({
+    queryKey: ['zeus-ne-conversations', user?.id, agentId],
+    queryFn: async () => {
+      if (!user || !agentId) return [];
+      const { data } = await supabase
+        .from('ai_agent_conversations')
+        .select('id, title, updated_at')
+        .eq('user_id', user.id)
+        .eq('agent_id', agentId)
+        .order('updated_at', { ascending: false })
+        .limit(50);
+      return data || [];
+    },
+    enabled: !!user && !!agentId,
+  });
+
   // Init: find Zeus agent
   useEffect(() => {
     supabase.from('ai_agents').select('id').eq('slug', 'zeus-companion').eq('is_active', true).single()
       .then(({ data }) => { if (data) setAgentId(data.id); });
   }, []);
+
+  const loadConversation = useCallback(async (conv: { id: string; title: string | null }) => {
+    const { data: msgs } = await supabase
+      .from('ai_agent_messages')
+      .select('role, content')
+      .eq('conversation_id', conv.id)
+      .order('created_at', { ascending: true });
+    setConvId(conv.id);
+    setMessages((msgs || []).map((m: any) => ({ role: m.role as 'user' | 'assistant', content: m.content })));
+    setSidebarOpen(false);
+  }, []);
+
+  const newConversation = useCallback(() => {
+    setConvId(null);
+    setMessages([]);
+    setSidebarOpen(false);
+  }, []);
+
+  const deleteConversation = useCallback(async (id: string) => {
+    await supabase.from('ai_agent_messages').delete().eq('conversation_id', id);
+    await supabase.from('ai_agent_conversations').delete().eq('id', id);
+    if (convId === id) { setConvId(null); setMessages([]); }
+    refetchConvs();
+  }, [convId, refetchConvs]);
+
+  const deleteAllConversations = useCallback(async () => {
+    if (!user || !agentId) return;
+    const ids = conversations.map(c => c.id);
+    if (ids.length === 0) return;
+    for (const id of ids) {
+      await supabase.from('ai_agent_messages').delete().eq('conversation_id', id);
+    }
+    await supabase.from('ai_agent_conversations').delete().in('id', ids);
+    setConvId(null);
+    setMessages([]);
+    refetchConvs();
+  }, [user, agentId, conversations, refetchConvs]);
 
   const sendMessage = useCallback(async () => {
     if (!input.trim() || !agentId || loading) return;
