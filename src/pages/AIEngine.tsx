@@ -1582,8 +1582,9 @@ function ZeusNeuralConsole() {
     enabled: !!user && !!agentId,
   });
 
-  // Init: find Zeus agent
+  // Init: find Zeus agent + force sidebar open on mount/refresh
   useEffect(() => {
+    setSidebarOpen(true);
     supabase.from('ai_agents').select('id').eq('slug', 'zeus-companion').eq('is_active', true).single()
       .then(({ data }) => { if (data) setAgentId(data.id); });
   }, []);
@@ -1602,7 +1603,9 @@ function ZeusNeuralConsole() {
   const newConversation = useCallback(() => {
     setConvId(null);
     setMessages([]);
-    setSidebarOpen(false);
+    setInput('');
+    setSidebarOpen(true);
+    toast({ title: 'Nouvelle conversation', description: 'Session Zeus réinitialisée.' });
   }, []);
 
   const deleteConversation = useCallback(async (id: string) => {
@@ -1801,7 +1804,7 @@ function ZeusNeuralConsole() {
                 <div className="text-center text-muted-foreground text-xs py-8 space-y-2">
                   <Brain className="w-10 h-10 mx-auto opacity-20" />
                   <p>Console Zeus × Neural Engine</p>
-                  <p className="text-[10px]">Demande des stats, propose des ajustements, pilote l'algorithme…</p>
+                  <p className="text-[10px]">Nouvelle conversation prête. Choisis un sujet ou écris ton message.</p>
                   <div className="flex flex-wrap justify-center gap-1.5 mt-3">
                     {['Santé de la plateforme ?', 'Analyse les signalements', 'Optimise le feed', 'Stats Zeus'].map(q => (
                       <button key={q} onClick={() => { setInput(q); }} className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-600 hover:bg-amber-500/20 transition-colors">
