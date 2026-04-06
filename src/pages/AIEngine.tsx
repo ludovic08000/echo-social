@@ -100,16 +100,16 @@ export default function AIEngine() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-foreground">ForSure Neural Engine</h1>
-                <p className="text-xs text-muted-foreground">IA auto-apprenante • Modération adaptative • {stats.totalModules} modules</p>
+                <p className="text-xs text-muted-foreground">IA auto-apprenante • Modération adaptative • {modules.length} modules</p>
               </div>
             </div>
           </div>
 
           <div className="relative z-10 grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
-            <StatCard icon={Cpu} label="Modules IA" value={stats.totalModules.toString()} />
-            <StatCard icon={Zap} label="Actifs" value={stats.activeModules.toString()} accent />
-            <StatCard icon={BarChart3} label="Interactions" value={formatNumber(stats.totalInteractions)} />
-            <StatCard icon={Activity} label="Santé" value={`${stats.healthScore}%`} />
+            <StatCard icon={Cpu} label="Modules IA" value={modules.length.toString()} />
+            <StatCard icon={Zap} label="Actifs" value={modules.filter(m => m.status === 'active').length.toString()} accent />
+            <StatCard icon={BarChart3} label="Interactions" value={formatNumber(realStats.totalInteractions)} />
+            <StatCard icon={Activity} label="Santé" value={`${realStats.healthScore}%`} />
           </div>
         </header>
 
