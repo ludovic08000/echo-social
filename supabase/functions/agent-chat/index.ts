@@ -598,9 +598,11 @@ Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines :
     });
 
     if (!response.ok) {
-      if (response.status === 429) return new Response(JSON.stringify({ error: "Trop de requêtes, réessayez." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const errBody = await response.text();
+      console.error(`AI gateway ${response.status}:`, errBody);
+      if (response.status === 429) return new Response(JSON.stringify({ error: "Trop de requêtes, réessayez dans quelques secondes." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       if (response.status === 402) return new Response(JSON.stringify({ error: "Crédits IA insuffisants." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      throw new Error("AI gateway error");
+      return new Response(JSON.stringify({ error: "Erreur du service IA, réessayez." }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     let aiData = await response.json();
@@ -615,7 +617,8 @@ Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines :
 
       const toolResults = await Promise.all(
         toolCalls.map(async (tc: any) => {
-          const args = JSON.parse(tc.function.arguments || "{}");
+          let args: any = {};
+          try { args = JSON.parse(tc.function.arguments || "{}"); } catch { console.error("Bad tool args:", tc.function.arguments); }
 
           if (tc.function.name === "web_search") {
             const query = args.query || "";
@@ -755,7 +758,7 @@ Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines :
         }),
       });
 
-      if (!response.ok) throw new Error("AI gateway error in tool loop");
+      if (!response.ok) { const errT = await response.text(); console.error(`AI gateway tool-loop ${response.status}:`, errT); break; }
       aiData = await response.json();
       choice = aiData.choices?.[0];
       toolCalls = choice?.message?.tool_calls;
