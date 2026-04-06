@@ -47,7 +47,13 @@ export default function Dashboard() {
   const { data: postsData } = usePosts();
   const { data: friendships } = useFriendships();
 
-  const posts = useMemo(() => postsData?.pages.flat() || [], [postsData?.pages]);
+  const posts = useMemo(() => {
+    try {
+      return postsData?.pages?.flat() || [];
+    } catch {
+      return [];
+    }
+  }, [postsData]);
   const myPosts = useMemo(() => posts.filter(p => p.user_id === user?.id), [posts, user?.id]);
 
   const totalViews = myPosts.reduce((s, p) => s + (p.likes_count || 0) * 3, 0); // estimate views
