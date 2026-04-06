@@ -5,18 +5,28 @@ import { SEOPageLayout } from '@/components/seo/SEOPageLayout';
 
 const points = [
   { icon: Lock, title: 'Chiffrement de bout en bout', desc: 'Chaque message est verrouillé par une clé unique. Seuls vous et votre correspondant pouvez le lire. Personne d\'autre — pas même Forsure.' },
-  { icon: Key, title: 'Clés de sécurité personnelles', desc: 'Vos clés de chiffrement sont stockées sur votre appareil, jamais sur nos serveurs. Vous gardez le contrôle total de vos conversations.' },
-  { icon: RefreshCw, title: 'Renouvellement automatique', desc: 'Les clés de chiffrement se renouvellent à chaque message (protocole Double Ratchet). Même si une clé est compromise, les messages précédents restent protégés.' },
-  { icon: Fingerprint, title: 'Vérification d\'identité', desc: 'Vous pouvez vérifier l\'identité de vos contacts grâce aux empreintes de sécurité, garantissant que vous parlez bien à la bonne personne.' },
+  { icon: Key, title: 'Clés de sécurité personnelles', desc: 'Vos clés de chiffrement sont stockées sur votre appareil, jamais sur nos serveurs. Vous gardez le contrôle total de vos conversations privées.' },
+  { icon: RefreshCw, title: 'Renouvellement automatique', desc: 'Les clés de chiffrement se renouvellent à chaque message. Même si une clé est compromise, les messages précédents restent protégés.' },
+  { icon: Fingerprint, title: 'Vérification d\'identité', desc: 'Vérifiez l\'identité de vos contacts grâce aux empreintes de sécurité, garantissant que vous parlez bien à la bonne personne.' },
   { icon: Server, title: 'Aucun stockage en clair', desc: 'Nos serveurs ne voient jamais le contenu de vos messages. Ils transitent chiffrés et sont déchiffrés uniquement sur votre appareil.' },
-  { icon: ShieldCheck, title: 'Protocoles reconnus', desc: 'Forsure utilise les protocoles X3DH et Double Ratchet, les mêmes standards que Signal, la référence mondiale en matière de messagerie sécurisée.' },
+  { icon: ShieldCheck, title: 'Standards de référence', desc: 'Forsure utilise les mêmes protocoles que Signal, la référence mondiale en matière de messagerie sécurisée et confidentielle.' },
 ];
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebPage',
+  name: 'Messagerie chiffrée de bout en bout — Forsure',
+  description: 'La messagerie Forsure utilise le chiffrement de bout en bout pour protéger toutes vos conversations. Protocoles Signal, zéro accès serveur.',
+  url: 'https://forsure.fans/messagerie-chiffree',
+  isPartOf: { '@type': 'WebSite', name: 'Forsure', url: 'https://forsure.fans' },
+};
 
 export default function SEOMessaging() {
   return (
     <SEOPageLayout
       title="Messagerie chiffrée de bout en bout — Conversations 100% privées"
-      description="La messagerie Forsure utilise le chiffrement de bout en bout pour protéger toutes vos conversations. Protocoles Signal, zéro accès serveur. Vos messages restent privés."
+      description="La messagerie Forsure utilise le chiffrement de bout en bout pour protéger toutes vos conversations. Protocoles Signal, zéro accès serveur. Vos messages restent strictement privés."
+      jsonLd={jsonLd}
     >
       <section className="py-16 md:py-24">
         <div className="max-w-5xl mx-auto px-4">
@@ -40,15 +50,19 @@ export default function SEOMessaging() {
 
           <div className="max-w-3xl mx-auto space-y-6 text-muted-foreground leading-relaxed">
             <h2 className="text-2xl font-bold text-foreground">Comment fonctionne le chiffrement sur Forsure ?</h2>
-            <p>Quand vous envoyez un message sur Forsure, il est automatiquement chiffré sur votre appareil avant d'être envoyé. Le message voyage sur Internet sous forme de code illisible. Seul l'appareil de votre correspondant possède la clé pour le déchiffrer.</p>
-            <p>Ce processus est entièrement automatique et transparent. Vous n'avez rien à configurer : chaque conversation est protégée dès le premier message.</p>
+            <p>Quand vous envoyez un message sur Forsure, il est automatiquement chiffré sur votre appareil avant d'être envoyé. Le message voyage sur Internet sous forme de code illisible. Seul l'appareil de votre correspondant possède la clé pour le déchiffrer. Ce processus est entièrement automatique et transparent — vous n'avez rien à configurer.</p>
 
-            <h2 className="text-2xl font-bold text-foreground mt-10">Pourquoi c'est important ?</h2>
-            <p>Sur la plupart des réseaux sociaux et messageries classiques, vos messages sont stockés en clair sur les serveurs de l'entreprise. Cela signifie que l'entreprise, ses employés, et potentiellement des pirates ou des agences gouvernementales peuvent accéder à vos conversations.</p>
-            <p>Avec le chiffrement de bout en bout de Forsure, cette situation est techniquement impossible. Même en cas de piratage de nos serveurs, vos messages restent illisibles car les clés de déchiffrement n'y sont jamais stockées.</p>
+            <h2 className="text-2xl font-bold text-foreground mt-10">Pourquoi la messagerie chiffrée est essentielle ?</h2>
+            <p>Sur la plupart des réseaux sociaux et messageries classiques, vos messages sont stockés en clair sur les serveurs de l'entreprise. Cela signifie que l'entreprise, ses employés, et potentiellement des pirates ou des agences gouvernementales peuvent accéder à vos conversations. Avec le chiffrement de bout en bout de Forsure, cette situation est techniquement impossible.</p>
+            <p>Même en cas de piratage de nos serveurs, vos messages restent illisibles car les clés de déchiffrement n'y sont jamais stockées. C'est la différence fondamentale entre une messagerie vraiment privée et une messagerie qui prétend l'être.</p>
+
+            <h2 className="text-2xl font-bold text-foreground mt-10">Plus qu'une messagerie : une protection complète</h2>
+            <p>La messagerie de Forsure ne se limite pas aux textes. Photos, vidéos, messages vocaux, GIF, documents — tout est chiffré avec le même niveau de protection. Les appels vidéo et audio sont également protégés par un chiffrement de bout en bout, garantissant que vos communications restent confidentielles.</p>
 
             <h2 className="text-2xl font-bold text-foreground mt-10">Aussi simple que n'importe quelle messagerie</h2>
-            <p>Pas besoin d'être expert en informatique. Forsure fonctionne exactement comme les messageries que vous connaissez — texte, photos, vidéos, messages vocaux, GIF, appels vidéo — mais avec une couche de protection invisible qui garantit votre vie privée.</p>
+            <p>Pas besoin d'être expert en sécurité informatique. Forsure fonctionne exactement comme les messageries que vous connaissez — texte, photos, vidéos, messages vocaux, GIF, appels vidéo — mais avec une couche de protection invisible qui garantit votre vie privée à chaque instant.</p>
+
+            <p>Découvrez également comment Forsure <Link to="/reseau-social-securise" className="text-primary hover:underline">protège votre compte contre les cyberattaques</Link> et comment notre <Link to="/ia-moderation" className="text-primary hover:underline">IA de modération</Link> assure un environnement sain.</p>
 
             <div className="text-center pt-8">
               <Link to="/signup"><Button size="lg" className="px-8">Essayer la messagerie sécurisée</Button></Link>
