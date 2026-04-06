@@ -11,52 +11,41 @@ export function CookieConsentBanner() {
     <AnimatePresence>
       {showBanner && (
         <motion.div
-          initial={{ y: 100, opacity: 0 }}
+          initial={{ y: 80, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 100, opacity: 0 }}
-          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="fixed bottom-0 left-0 right-0 z-[9999] p-4 md:p-6"
+          exit={{ y: 80, opacity: 0 }}
+          transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+          className="fixed bottom-0 left-0 right-0 z-[9999] px-3 pb-[env(safe-area-inset-bottom,12px)] pt-2"
         >
-          <div className="max-w-2xl mx-auto bg-card border border-border rounded-2xl shadow-2xl p-5 md:p-6">
-            <div className="flex items-start gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                <Cookie className="w-5 h-5 text-primary" />
+          <div className="max-w-lg mx-auto bg-card/95 backdrop-blur-xl border border-border/60 rounded-2xl shadow-xl p-4">
+            <div className="flex items-center gap-2.5 mb-2.5">
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                <Cookie className="w-4 h-4 text-primary" />
               </div>
-              <div className="min-w-0">
-                <h3 className="font-semibold text-foreground text-base">Cookies & Confidentialité</h3>
-                <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                  Forsure utilise uniquement des <strong>cookies techniques</strong> essentiels au fonctionnement du site 
-                  (authentification, préférences). <strong>Aucun cookie publicitaire</strong> ni de traçage n'est utilisé. 
-                  Vos cookies sont protégés par les attributs <strong>Secure, HttpOnly, SameSite=Strict</strong>.
-                </p>
-                <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
-                  <Shield className="w-3.5 h-3.5 text-green-500" />
-                  <span>Conforme RGPD · CNIL · ePrivacy</span>
-                </div>
-              </div>
+              <h3 className="font-semibold text-foreground text-sm">Cookies & Confidentialité</h3>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
-              <Button
-                onClick={acceptCookies}
-                className="flex-1 sm:flex-none"
-                size="sm"
-              >
+            <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+              Forsure utilise uniquement des <strong>cookies techniques</strong> essentiels.{' '}
+              <strong>Aucun traçage publicitaire.</strong>{' '}
+              <span className="inline-flex items-center gap-1">
+                <Shield className="w-3 h-3 text-green-500 inline" />
+                Conforme RGPD · CNIL
+              </span>
+            </p>
+
+            <div className="flex items-center gap-2">
+              <Button onClick={acceptCookies} size="sm" className="flex-1 h-9 text-xs font-semibold rounded-xl">
                 Accepter
               </Button>
-              <Button
-                onClick={declineCookies}
-                variant="outline"
-                className="flex-1 sm:flex-none"
-                size="sm"
-              >
+              <Button onClick={declineCookies} variant="outline" size="sm" className="flex-1 h-9 text-xs rounded-xl">
                 Refuser
               </Button>
               <Link
                 to="/privacy"
-                className="text-xs text-muted-foreground hover:text-primary underline text-center sm:ml-auto"
+                className="text-[10px] text-muted-foreground hover:text-primary underline shrink-0 px-1"
               >
-                Politique de confidentialité
+                En savoir +
               </Link>
             </div>
           </div>
