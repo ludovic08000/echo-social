@@ -821,14 +821,14 @@ function SecurityDashboard() {
   }>(null);
 
   const [threatLog] = useState([
-    { time: '14:32:07', ip: '185.234.xx.xx', type: 'Brute-force SSH', severity: 'critical' as const, action: 'Bloqué', country: '🇷🇺 RU' },
-    { time: '14:28:43', ip: '103.45.xx.xx', type: 'SQL Injection', severity: 'high' as const, action: 'Bloqué', country: '🇨🇳 CN' },
-    { time: '14:25:11', ip: '45.33.xx.xx', type: 'XSS Attempt', severity: 'high' as const, action: 'Bloqué', country: '🇺🇸 US' },
-    { time: '14:21:55', ip: '91.189.xx.xx', type: 'Port Scan', severity: 'medium' as const, action: 'Surveillé', country: '🇩🇪 DE' },
-    { time: '14:18:02', ip: '198.51.xx.xx', type: 'DDoS Pattern', severity: 'critical' as const, action: 'Absorbé', country: '🇧🇷 BR' },
-    { time: '14:15:30', ip: '172.16.xx.xx', type: 'Session Hijack', severity: 'high' as const, action: 'Révoqué', country: '🇬🇧 GB' },
-    { time: '14:10:18', ip: '10.0.xx.xx', type: 'CSRF Token', severity: 'medium' as const, action: 'Bloqué', country: '🇫🇷 FR' },
-    { time: '14:05:44', ip: '203.0.xx.xx', type: 'Rate Limit', severity: 'low' as const, action: 'Limité', country: '🇮🇳 IN' },
+    { time: '14:32:07', ip: '185.234.72.19', type: 'Brute-force SSH', severity: 'critical' as const, action: 'Bloqué', country: '🇷🇺 RU' },
+    { time: '14:28:43', ip: '103.45.231.87', type: 'SQL Injection', severity: 'high' as const, action: 'Bloqué', country: '🇨🇳 CN' },
+    { time: '14:25:11', ip: '45.33.49.112', type: 'XSS Attempt', severity: 'high' as const, action: 'Bloqué', country: '🇺🇸 US' },
+    { time: '14:21:55', ip: '91.189.94.40', type: 'Port Scan', severity: 'medium' as const, action: 'Surveillé', country: '🇩🇪 DE' },
+    { time: '14:18:02', ip: '198.51.100.23', type: 'DDoS Pattern', severity: 'critical' as const, action: 'Absorbé', country: '🇧🇷 BR' },
+    { time: '14:15:30', ip: '172.16.254.1', type: 'Session Hijack', severity: 'high' as const, action: 'Révoqué', country: '🇬🇧 GB' },
+    { time: '14:10:18', ip: '10.0.85.203', type: 'CSRF Token', severity: 'medium' as const, action: 'Bloqué', country: '🇫🇷 FR' },
+    { time: '14:05:44', ip: '203.0.113.56', type: 'Rate Limit', severity: 'low' as const, action: 'Limité', country: '🇮🇳 IN' },
   ]);
 
   const runScan = useCallback(async () => {
