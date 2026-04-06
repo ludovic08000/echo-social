@@ -156,7 +156,7 @@ export function SecurityMonitoringSection() {
     const currentCount = incidents.length;
     
     if (prevIncidentCount > 0 && currentCount > prevIncidentCount) {
-      const newIncidents = incidents.slice(0, currentCount - prevCount);
+      const newIncidents = incidents.slice(0, currentCount - prevIncidentCount);
       const criticals = newIncidents.filter((i: any) => i.severity === 'critical' || i.severity === 'high');
       
       criticals.forEach((inc: any) => {
