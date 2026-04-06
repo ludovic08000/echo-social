@@ -195,7 +195,7 @@ export default function AIEngine() {
             </div>
           </TabsContent>
 
-          <TabsContent value="metrics" forceMount className="mt-4">
+          <TabsContent value="metrics" className="mt-4">
             <MetricsDashboard modules={modules} />
           </TabsContent>
 
