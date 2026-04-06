@@ -475,7 +475,7 @@ serve(async (req) => {
       }
 
       // ── Marketplace search ──
-      const { isSearch, query } = detectSearchIntent(message);
+      const { isSearch, query } = detectSearchIntent(sanitizedMessage);
       if (isSearch && query.length > 0) {
         const searchTerms = query.split(' ').filter(t => t.length > 2).slice(0, 5);
         let productQuery = supabase
@@ -774,7 +774,7 @@ Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines :
                 category: category || "general",
                 content: memContent,
                 importance: Math.min(10, Math.max(1, importance || 5)),
-                source_message: message.substring(0, 200),
+                source_message: sanitizedMessage.substring(0, 200),
               });
 
               return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ saved: true, message: "Mémorisé avec succès !" }) };
