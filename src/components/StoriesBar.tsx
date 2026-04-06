@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, Eye, Trash2, ChevronLeft, ChevronRight, Heart, ChevronUp, Layers, Loader2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
@@ -321,8 +322,8 @@ export function StoriesBar() {
       </div>
 
       {/* Story Viewer - Full Screen Overlay */}
-      <AnimatePresence>
-        {selectedGroup && currentStory && (
+      {selectedGroup && currentStory && createPortal(
+        <AnimatePresence>
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -571,8 +572,9 @@ export function StoriesBar() {
               )}
             </div>
           </motion.div>
-        )}
-      </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+      )}
     </>
   );
 }
