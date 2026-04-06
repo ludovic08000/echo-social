@@ -1,10 +1,11 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Trash2, Send, Smile, Camera, Languages, Loader2, ChevronDown, Wand2, CornerDownRight } from 'lucide-react';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
 import { supabase } from '@/integrations/supabase/client';
 import { useComments, useCreateComment, useDeleteComment, useLikeComment, Comment } from '@/hooks/useComments';
+import { REACTION_EMOJIS, REACTION_LABELS, ReactionType } from '@/hooks/useReactions';
 import { useAuth } from '@/lib/auth';
 import { UserAvatar } from './UserAvatar';
 import { Link } from 'react-router-dom';

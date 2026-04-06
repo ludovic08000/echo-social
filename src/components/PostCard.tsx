@@ -253,7 +253,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         </div>
       )}
 
-      {/* AI Actions — translate / summarize */}
+      {/* AI Actions — translate / summarize (auto-detect language) */}
       {post.body && (aiSummariesEnabled || autoTranslateEnabled) && (
         <div className="px-3 pb-2 flex flex-wrap gap-1.5">
           {aiSummariesEnabled && post.body.length >= 100 && (
@@ -271,7 +271,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
               {summary ? 'Masquer' : 'Résumer'}
             </button>
           )}
-          {autoTranslateEnabled && (
+          {autoTranslateEnabled && detectForeignLanguage(post.body) && (
             <button
               onClick={handleTranslate}
               disabled={translateLoading}
@@ -283,7 +283,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
               )}
             >
               {translateLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3 h-3" />}
-              {translation ? 'Original' : 'Traduire'}
+              {translation ? 'Original' : 'Voir la traduction'}
             </button>
           )}
         </div>
