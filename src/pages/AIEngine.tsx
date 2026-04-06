@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useZeusSettings } from '@/hooks/useZeusCompanion';
 import { useNavigate } from 'react-router-dom';
@@ -1179,10 +1180,57 @@ function LearningDashboard() {
   const [newPattern, setNewPattern] = useState('');
   const [addingRule, setAddingRule] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [learningRunning, setLearningRunning] = useState(false);
+  const [lastRunResult, setLastRunResult] = useState<any>(null);
+
+  // Fetch learning runs & insights
+  const { data: learningRuns, refetch: refetchRuns } = useQuery({
+    queryKey: ['feed-learning-runs'],
+    queryFn: async () => {
+      const { data } = await supabase.from('feed_learning_runs').select('*').order('created_at', { ascending: false }).limit(10);
+      return data || [];
+    },
+  });
+
+  const { data: learningInsights, refetch: refetchInsights } = useQuery({
+    queryKey: ['feed-learning-insights'],
+    queryFn: async () => {
+      const { data } = await supabase.from('feed_learning_insights').select('*').order('created_at', { ascending: false }).limit(30);
+      return data || [];
+    },
+  });
 
   useEffect(() => {
     loadFeedbackHistory();
   }, [loadFeedbackHistory]);
+
+  const handleRunLearning = useCallback(async () => {
+    setLearningRunning(true);
+    setLastRunResult(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/feed-learn`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erreur');
+      setLastRunResult(data);
+      refetchRuns();
+      refetchInsights();
+      loadFeedbackHistory();
+    } catch (e: any) {
+      console.error(e);
+      setLastRunResult({ error: e.message });
+    } finally {
+      setLearningRunning(false);
+    }
+  }, [refetchRuns, refetchInsights, loadFeedbackHistory]);
 
   const handleAddRule = useCallback(async () => {
     if (!newRule.trim()) return;
@@ -1213,8 +1261,160 @@ function LearningDashboard() {
     }
   }, [loadFeedbackHistory]);
 
+  const trends = (learningInsights || []).filter(i => i.insight_type === 'trend');
+  const modPatterns = (learningInsights || []).filter(i => i.insight_type === 'moderation_pattern');
+  const sentiments = (learningInsights || []).filter(i => i.insight_type === 'sentiment');
+  const recommendations = (learningInsights || []).filter(i => i.insight_type === 'recommendation');
+
   return (
     <div className="space-y-4">
+      {/* Auto-Learning Launch */}
+      <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent p-5">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white shadow-lg shadow-amber-500/30 shrink-0">
+            <Brain className="w-7 h-7" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-bold text-foreground">Auto-Apprentissage IA</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Analyse les publications du feed avec Gemini pour détecter les tendances, améliorer la modération et profiler les utilisateurs.
+            </p>
+          </div>
+          <button
+            onClick={handleRunLearning}
+            disabled={learningRunning}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 transition-all shadow-lg shadow-amber-500/30"
+          >
+            {learningRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+            {learningRunning ? 'Analyse en cours...' : 'Lancer l\'apprentissage'}
+          </button>
+        </div>
+
+        {/* Last run result */}
+        {lastRunResult && !lastRunResult.error && (
+          <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="rounded-xl p-2.5 bg-card/80 border border-border text-center">
+              <p className="text-[10px] text-muted-foreground">Posts analysés</p>
+              <p className="text-lg font-bold text-primary">{lastRunResult.posts_analyzed}</p>
+            </div>
+            <div className="rounded-xl p-2.5 bg-card/80 border border-border text-center">
+              <p className="text-[10px] text-muted-foreground">Utilisateurs profilés</p>
+              <p className="text-lg font-bold text-foreground">{lastRunResult.users_profiled}</p>
+            </div>
+            <div className="rounded-xl p-2.5 bg-card/80 border border-border text-center">
+              <p className="text-[10px] text-muted-foreground">Tendances détectées</p>
+              <p className="text-lg font-bold text-emerald-500">{lastRunResult.trends_detected}</p>
+            </div>
+            <div className="rounded-xl p-2.5 bg-card/80 border border-border text-center">
+              <p className="text-[10px] text-muted-foreground">Règles créées</p>
+              <p className="text-lg font-bold text-amber-500">{lastRunResult.moderation_rules_created}</p>
+            </div>
+          </div>
+        )}
+        {lastRunResult?.error && (
+          <div className="mt-3 p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-xs text-destructive">
+            ❌ {lastRunResult.error}
+          </div>
+        )}
+      </div>
+
+      {/* Learning History */}
+      {(learningRuns || []).length > 0 && (
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+            <Activity className="w-4 h-4 text-primary" /> Historique d'apprentissage
+          </h3>
+          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+            {(learningRuns || []).map((run: any) => (
+              <div key={run.id} className="flex items-center gap-3 text-xs p-2.5 rounded-lg bg-accent/20 border border-border">
+                <div className={cn('w-2 h-2 rounded-full shrink-0', run.status === 'completed' ? 'bg-emerald-400' : run.status === 'error' ? 'bg-red-400' : 'bg-amber-400 animate-pulse')} />
+                <span className="text-muted-foreground">{new Date(run.created_at).toLocaleString('fr-FR')}</span>
+                <span className="text-foreground font-medium">{run.posts_analyzed} posts</span>
+                <span className="text-muted-foreground">•</span>
+                <span className="text-foreground">{run.users_profiled} profils</span>
+                <span className="text-muted-foreground">•</span>
+                <span className="text-foreground">{run.trends_detected} tendances</span>
+                <span className="ml-auto text-muted-foreground">{run.duration_ms}ms</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Insights Grid */}
+      {(learningInsights || []).length > 0 && (
+        <div className="grid sm:grid-cols-2 gap-3">
+          {/* Trends */}
+          {trends.length > 0 && (
+            <div className="rounded-2xl border border-border bg-card p-4">
+              <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-emerald-500" /> Tendances ({trends.length})
+              </h3>
+              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                {trends.map(t => (
+                  <div key={t.id} className="flex items-center gap-2 text-xs p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                    <span className="font-medium text-foreground">{t.title}</span>
+                    <Badge variant="outline" className="text-[9px] ml-auto">{t.description?.split(',')[0]}</Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Community Sentiment */}
+          {sentiments.length > 0 && (
+            <div className="rounded-2xl border border-border bg-card p-4">
+              <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                <HeartPulse className="w-4 h-4 text-pink-500" /> Sentiment communautaire
+              </h3>
+              {sentiments.slice(0, 3).map(s => (
+                <div key={s.id} className="text-xs p-2.5 rounded-lg bg-pink-500/5 border border-pink-500/10 mb-1.5">
+                  <p className="font-medium text-foreground">{s.title}</p>
+                  <p className="text-muted-foreground mt-0.5">{s.description}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Moderation Patterns */}
+          {modPatterns.length > 0 && (
+            <div className="rounded-2xl border border-border bg-card p-4">
+              <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-red-500" /> Patterns de modération ({modPatterns.length})
+              </h3>
+              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                {modPatterns.map(p => (
+                  <div key={p.id} className="flex items-center gap-2 text-xs p-2 rounded-lg bg-red-500/5 border border-red-500/10">
+                    <AlertTriangle className="w-3 h-3 text-red-500 shrink-0" />
+                    <span className="text-foreground">{p.description}</span>
+                    <Badge variant="outline" className="text-[9px] ml-auto border-red-500/20 text-red-500">
+                      {Math.round((p.confidence as number) * 100)}%
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Recommendations */}
+          {recommendations.length > 0 && (
+            <div className="rounded-2xl border border-border bg-card p-4">
+              <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                <Compass className="w-4 h-4 text-blue-500" /> Recommandations ({recommendations.length})
+              </h3>
+              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                {recommendations.map(r => (
+                  <div key={r.id} className="text-xs p-2 rounded-lg bg-blue-500/5 border border-blue-500/10">
+                    <p className="font-medium text-foreground">{r.title}</p>
+                    <p className="text-muted-foreground mt-0.5">{r.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Learned rules */}
       <div className="rounded-2xl border border-border bg-card p-4">
         <div className="flex items-center justify-between mb-3">
@@ -1232,7 +1432,6 @@ function LearningDashboard() {
           </button>
         </div>
 
-        {/* Add rule form */}
         {showAddForm && (
           <div className="mb-4 p-3 rounded-xl border border-primary/20 bg-primary/5 space-y-3">
             <div>
@@ -1268,8 +1467,7 @@ function LearningDashboard() {
         {learnedRules.length === 0 ? (
           <div className="text-center py-6">
             <Brain className="w-10 h-10 mx-auto text-muted-foreground/30 mb-2" />
-            <p className="text-xs text-muted-foreground">Aucune règle définie pour le moment.</p>
-            <p className="text-[10px] text-muted-foreground mt-1">Ajoutez des règles ou utilisez le Playground pour entraîner l'IA.</p>
+            <p className="text-xs text-muted-foreground">Aucune règle définie. Lancez l'apprentissage pour en générer automatiquement.</p>
           </div>
         ) : (
           <div className="space-y-1.5 max-h-72 overflow-y-auto">
@@ -1306,7 +1504,6 @@ function LearningDashboard() {
           <div className="text-center py-6">
             <ThumbsUp className="w-10 h-10 mx-auto text-muted-foreground/30 mb-2" />
             <p className="text-xs text-muted-foreground">Aucun feedback enregistré.</p>
-            <p className="text-[10px] text-muted-foreground mt-1">Chaque correction humaine améliore la précision de l'IA.</p>
           </div>
         ) : (
           <div className="space-y-2 max-h-60 overflow-y-auto">
@@ -1334,7 +1531,7 @@ function LearningDashboard() {
           <div className="flex-1">
             <h4 className="text-sm font-semibold text-foreground">Boucle d'apprentissage active</h4>
             <p className="text-[11px] text-muted-foreground">
-              Chaque feedback est analysé par Gemini pour dériver de nouvelles règles de modération. Le modèle s'améliore à chaque correction.
+              Gemini analyse les publications pour détecter tendances, améliorer la modération et profiler les intérêts utilisateurs. Chaque exécution enrichit les règles IA.
             </p>
           </div>
           <div className="w-3 h-3 rounded-full bg-emerald-400 shadow-[0_0_8px] shadow-emerald-400/50 animate-pulse" />
