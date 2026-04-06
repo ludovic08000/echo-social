@@ -95,8 +95,23 @@ export function useNeuralMetrics() {
 
   useEffect(() => {
     fetchMetrics();
+    // Fallback polling every 30s
     const iv = setInterval(fetchMetrics, 30000);
-    return () => clearInterval(iv);
+
+    // Realtime subscription for instant updates
+    const channel = supabase
+      .channel('ai-metrics-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'ai_metrics_log' },
+        () => fetchMetrics()
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(iv);
+      supabase.removeChannel(channel);
+    };
   }, [fetchMetrics]);
 
   return { chartData, loading, refetch: fetchMetrics };
