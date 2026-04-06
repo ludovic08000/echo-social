@@ -77,24 +77,27 @@ export function CreatePost() {
     if (!body.trim()) return;
     setAiLoading(true);
     setAiResult(null);
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 25000);
-      const { data, error } = await supabase.functions.invoke('zeus', {
-        body: { domain: 'post', text: body, action },
-      });
-      clearTimeout(timeout);
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      setAiResult(data);
-    } catch (e: any) {
-      const msg = e.message?.includes('fetch') || e.message?.includes('Failed') || e.message?.includes('abort')
-        ? 'Le serveur met trop de temps. Réessayez.'
-        : e.message || 'Impossible d\'améliorer le texte';
-      toast({ title: 'Erreur IA', description: msg, variant: 'destructive' });
-    } finally {
-      setAiLoading(false);
+    const maxRetries = 2;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const { data, error } = await supabase.functions.invoke('zeus', {
+          body: { domain: 'post', text: body, action },
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        setAiResult(data);
+        setAiLoading(false);
+        return;
+      } catch (e: any) {
+        const isNetworkError = e.message?.includes('fetch') || e.message?.includes('Failed') || e.message?.includes('NetworkError');
+        if (isNetworkError && attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 1500));
+          continue;
+        }
+        toast({ title: 'Erreur IA', description: isNetworkError ? 'Erreur réseau. Réessayez.' : (e.message || 'Impossible d\'améliorer le texte'), variant: 'destructive' });
+      }
     }
+    setAiLoading(false);
   };
 
   const applyAiResult = () => {
