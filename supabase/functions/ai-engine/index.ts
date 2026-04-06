@@ -338,9 +338,12 @@ async function callAI(apiKey: string, systemPrompt: string, userPrompt: string, 
   });
 
   if (!response.ok) {
-    if (response.status === 429) throw new Error("Trop de requêtes IA");
-    if (response.status === 402) throw new Error("Crédits IA insuffisants");
-    throw new Error("Erreur du service IA");
+    const status = response.status;
+    const body = await response.text().catch(() => "");
+    console.error(`AI gateway ${status}:`, body);
+    if (status === 429) throw new Error("Trop de requêtes IA");
+    if (status === 402) throw new Error("Crédits IA insuffisants");
+    throw new Error(`Erreur du service IA (${status})`);
   }
 
   const data = await response.json();
@@ -349,7 +352,8 @@ async function callAI(apiKey: string, systemPrompt: string, userPrompt: string, 
   try {
     const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
     return JSON.parse(cleaned);
-  } catch {
+  } catch (parseErr) {
+    console.error("AI JSON parse error, raw:", raw.slice(0, 500));
     return { raw, parse_error: true };
   }
 }
