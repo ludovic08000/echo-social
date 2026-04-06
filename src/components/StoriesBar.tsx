@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X, Eye, Trash2, ChevronLeft, ChevronRight, Heart, ChevronUp, Layers, Loader2 } from 'lucide-react';
+import { Plus, X, Eye, Trash2, ChevronLeft, ChevronRight, Heart, ChevronUp, Layers, Loader2, Send } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useStories, useCreateStory, useViewStory, useDeleteStory, useLikeStory, useStoryViewers, GroupedStories } from '@/hooks/useStories';
@@ -13,7 +13,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { Link } from 'react-router-dom';
 
-const STORY_DURATION = 5000; // 5 seconds per story
+const STORY_DURATION = 5000;
+const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡'];
+
+
 
 export function StoriesBar() {
   const { data: groupedStories, isLoading } = useStories();
@@ -24,6 +27,8 @@ export function StoriesBar() {
   const [progress, setProgress] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [showViewers, setShowViewers] = useState(false);
+  const [replyText, setReplyText] = useState('');
+  const replyInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
@@ -530,32 +535,65 @@ export function StoriesBar() {
                   )}
                 </AnimatePresence>
 
-                {/* Bottom bar: Like + caption */}
-                {!isOwner && (
-                  <div className="absolute bottom-6 left-3 right-3 z-20 flex items-center justify-between">
-                    {currentStory.caption ? (
+                {/* Bottom bar: Message input + emojis (non-owner) */}
+                {!isOwner && !showViewers && (
+                  <div className="absolute bottom-0 left-0 right-0 z-20 p-3 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
+                    {currentStory.caption && (
                       <motion.div
-                        initial={{ opacity: 0, y: 20 }}
+                        initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="flex-1 text-white text-center text-sm bg-black/40 backdrop-blur-xl rounded-xl p-3 border border-white/10 mr-3"
+                        className="text-white text-center text-sm bg-black/30 backdrop-blur-md rounded-xl p-2.5 border border-white/10 mb-3"
                       >
                         {currentStory.caption}
                       </motion.div>
-                    ) : <div className="flex-1" />}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleLike(); }}
-                      className="flex flex-col items-center gap-0.5"
-                    >
-                      <Heart className={cn(
-                        "w-7 h-7 transition-all",
-                        currentStory.is_liked
-                          ? "text-red-500 fill-red-500 scale-110"
-                          : "text-white"
-                      )} />
-                      {currentStory.likes_count > 0 && (
-                        <span className="text-white text-[10px] font-medium">{currentStory.likes_count}</span>
-                      )}
-                    </button>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 relative">
+                        <input
+                          ref={replyInputRef}
+                          type="text"
+                          value={replyText}
+                          onChange={(e) => setReplyText(e.target.value)}
+                          onFocus={() => pauseTimer()}
+                          onBlur={() => { if (!replyText) resumeTimer(); }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && replyText.trim()) {
+                              toast({ title: `Message envoyé à ${currentStory.profile.name}` });
+                              setReplyText('');
+                              resumeTimer();
+                              replyInputRef.current?.blur();
+                            }
+                          }}
+                          placeholder="Envoyer un message..."
+                          className="w-full bg-white/10 backdrop-blur-md border border-white/20 rounded-full px-4 py-2.5 text-sm text-white placeholder:text-white/50 focus:outline-none focus:border-white/40 transition-colors"
+                        />
+                        {replyText.trim() && (
+                          <button
+                            onClick={() => {
+                              toast({ title: `Message envoyé à ${currentStory.profile.name}` });
+                              setReplyText('');
+                              resumeTimer();
+                            }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-primary flex items-center justify-center"
+                          >
+                            <Send className="w-3.5 h-3.5 text-primary-foreground" />
+                          </button>
+                        )}
+                      </div>
+                      {/* Quick emoji reactions */}
+                      {QUICK_EMOJIS.map((emoji) => (
+                        <button
+                          key={emoji}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toast({ title: `${emoji} envoyé à ${currentStory.profile.name}` });
+                          }}
+                          className="text-2xl hover:scale-125 transition-transform flex-shrink-0"
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 
