@@ -207,53 +207,42 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   if (variant === 'facebook') {
     return (
       <Popover open={isOpen} onOpenChange={setIsOpen}>
-        <div className="flex-1 flex relative">
+        <div className="flex-1 relative">
           <AnimatePresence>
             {showParticles && (
               <ReactionParticles emoji={showParticles} onDone={() => setShowParticles(null)} />
             )}
           </AnimatePresence>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn(
-              'flex-1 h-11 gap-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs transition-all select-none',
-              currentReaction && reactionColor
-            )}
-            onPointerDown={onPointerDown}
-            onPointerUp={onPointerUp}
-            onPointerLeave={onPointerLeave}
-            onContextMenu={(e) => e.preventDefault()}
-          >
-            {currentReaction ? (
-              <motion.span
-                key={currentReaction}
-                initial={{ scale: 0, rotate: -30 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ type: 'spring', stiffness: 500, damping: 12 }}
-                className="text-lg"
-              >
-                {REACTION_EMOJIS[currentReaction]}
-              </motion.span>
-            ) : (
-              <ThumbsUp className="w-[18px] h-[18px]" />
-            )}
-            <motion.span
-              key={currentReaction || 'none'}
-              initial={{ y: 5, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              className="font-semibold"
-            >
-              {currentReaction ? REACTION_LABELS[currentReaction] : "J'aime"}
-            </motion.span>
-          </Button>
           <PopoverTrigger asChild>
             <Button
               variant="ghost"
               size="sm"
-              className="h-11 w-9 px-0 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl"
+              className={cn(
+                'w-full h-11 gap-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs transition-all select-none',
+                currentReaction && reactionColor
+              )}
             >
-              <ChevronIcon />
+              {currentReaction ? (
+                <motion.span
+                  key={currentReaction}
+                  initial={{ scale: 0, rotate: -30 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 12 }}
+                  className="text-lg"
+                >
+                  {REACTION_EMOJIS[currentReaction]}
+                </motion.span>
+              ) : (
+                <ThumbsUp className="w-[18px] h-[18px]" />
+              )}
+              <motion.span
+                key={currentReaction || 'none'}
+                initial={{ y: 5, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                className="font-semibold"
+              >
+                {currentReaction ? REACTION_LABELS[currentReaction] : "Réagir"}
+              </motion.span>
             </Button>
           </PopoverTrigger>
         </div>

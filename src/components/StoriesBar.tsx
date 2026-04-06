@@ -1,29 +1,27 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X, Eye, Trash2, ChevronLeft, ChevronRight, Heart, ChevronUp, Layers, Loader2, Send } from 'lucide-react';
+import { Plus, X, Eye, Trash2, ChevronLeft, ChevronRight, Heart, ChevronUp, Loader2, Send } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { useStories, useCreateStory, useViewStory, useDeleteStory, useLikeStory, useStoryViewers, GroupedStories } from '@/hooks/useStories';
+import { useStories, useCreateStory, useViewStory, useDeleteStory, useStoryViewers, GroupedStories } from '@/hooks/useStories';
+import { useCreateConversation, useSendMessage } from '@/hooks/useMessages';
 import { useAuth } from '@/lib/auth';
 import { UserAvatar } from './UserAvatar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { Link } from 'react-router-dom';
 
 const STORY_DURATION = 5000;
 const QUICK_REACTIONS = [
-  { emoji: '👍', label: "J'aime", bg: 'from-blue-400 to-blue-600' },
-  { emoji: '❤️', label: 'Love', bg: 'from-red-400 to-pink-500' },
-  { emoji: '😆', label: 'Haha', bg: 'from-yellow-300 to-amber-400' },
-  { emoji: '😮', label: 'Wow', bg: 'from-yellow-300 to-orange-400' },
-  { emoji: '😢', label: 'Triste', bg: 'from-yellow-300 to-amber-400' },
-  { emoji: '😡', label: 'Grrr', bg: 'from-orange-400 to-red-500' },
+  { emoji: '👍', label: "J'aime" },
+  { emoji: '❤️', label: 'J’adore' },
+  { emoji: '😆', label: 'Haha' },
+  { emoji: '😮', label: 'Wow' },
+  { emoji: '😢', label: 'Triste' },
+  { emoji: '😡', label: 'Grrr' },
 ];
-
-
 
 export function StoriesBar() {
   const { data: groupedStories, isLoading } = useStories();
@@ -35,6 +33,7 @@ export function StoriesBar() {
   const [isPaused, setIsPaused] = useState(false);
   const [showViewers, setShowViewers] = useState(false);
   const [replyText, setReplyText] = useState('');
+  const [flyingReaction, setFlyingReaction] = useState<string | null>(null);
   const replyInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -43,7 +42,8 @@ export function StoriesBar() {
   const createStory = useCreateStory();
   const viewStory = useViewStory();
   const deleteStory = useDeleteStory();
-  const likeStory = useLikeStory();
+  const createConversation = useCreateConversation();
+  const sendMessage = useSendMessage();
 
   const currentStory = selectedGroup?.stories[currentStoryIndex];
   const isOwner = currentStory?.user_id === user?.id;
@@ -212,10 +212,22 @@ export function StoriesBar() {
     }
   };
 
-  const handleLike = () => {
-    if (!currentStory) return;
-    likeStory.mutate({ storyId: currentStory.id, isLiked: currentStory.is_liked });
-  };
+  const sendStoryReply = useCallback(async (message: string) => {
+    if (!currentStory || !user || currentStory.user_id === user.id || !message.trim()) return;
+
+    try {
+      const conversation = await createConversation.mutateAsync(currentStory.user_id);
+      await sendMessage.mutateAsync({
+        conversationId: conversation.id,
+        body: `Réponse à la story : ${message.trim()}`,
+      });
+      setReplyText('');
+      resumeTimer();
+      toast({ title: 'Message envoyé' });
+    } catch (error) {
+      toast({ title: 'Erreur', description: 'Impossible d’envoyer le message', variant: 'destructive' });
+    }
+  }, [currentStory, user, createConversation, sendMessage, resumeTimer]);
 
   const toggleViewers = () => {
     const next = !showViewers;
@@ -565,9 +577,7 @@ export function StoriesBar() {
                           onBlur={() => { if (!replyText) resumeTimer(); }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && replyText.trim()) {
-                              toast({ title: `Message envoyé à ${currentStory.profile.name}` });
-                              setReplyText('');
-                              resumeTimer();
+                              void sendStoryReply(replyText);
                               replyInputRef.current?.blur();
                             }
                           }}
@@ -576,41 +586,45 @@ export function StoriesBar() {
                         />
                         {replyText.trim() && (
                           <button
-                            onClick={() => {
-                              toast({ title: `Message envoyé à ${currentStory.profile.name}` });
-                              setReplyText('');
-                              resumeTimer();
-                            }}
+                            onClick={() => void sendStoryReply(replyText)}
                             className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-primary flex items-center justify-center"
                           >
                             <Send className="w-3.5 h-3.5 text-primary-foreground" />
                           </button>
                         )}
                       </div>
-                      {/* Facebook-style animated reactions */}
-                      {QUICK_REACTIONS.map((reaction) => (
+                      {QUICK_REACTIONS.map((reaction, index) => (
                         <motion.button
                           key={reaction.emoji}
-                          whileHover={{ scale: 1.5, y: -12 }}
-                          whileTap={{ scale: 0.8 }}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.04 }}
+                          whileHover={{ scale: 1.28, y: -10 }}
+                          whileTap={{ scale: 0.82 }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            toast({ title: `${reaction.emoji} ${reaction.label} envoyé à ${currentStory.profile.name}` });
+                            setFlyingReaction(reaction.emoji);
+                            window.setTimeout(() => setFlyingReaction(null), 700);
+                            void sendStoryReply(reaction.emoji);
                           }}
-                          className="relative flex-shrink-0 group/reaction"
+                          className="relative flex-shrink-0"
                         >
-                          <span className="text-[28px] drop-shadow-lg cursor-pointer block transition-all">
-                            {reaction.emoji}
-                          </span>
-                          <motion.span
-                            initial={{ opacity: 0, y: 5 }}
-                            whileHover={{ opacity: 1, y: -2 }}
-                            className="absolute -top-7 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-white bg-black/70 backdrop-blur-sm rounded-full px-2 py-0.5 whitespace-nowrap pointer-events-none"
-                          >
+                          <span className="text-[28px] drop-shadow-lg cursor-pointer block">{reaction.emoji}</span>
+                          <span className="absolute -top-7 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-white bg-black/70 backdrop-blur-sm rounded-full px-2 py-0.5 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100">
                             {reaction.label}
-                          </motion.span>
+                          </span>
                         </motion.button>
                       ))}
+                      {flyingReaction && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 0, scale: 0.8 }}
+                          animate={{ opacity: [0, 1, 0], y: -120, scale: [0.8, 1.2, 1] }}
+                          transition={{ duration: 0.7, ease: 'easeOut' }}
+                          className="absolute bottom-14 right-10 pointer-events-none text-4xl"
+                        >
+                          {flyingReaction}
+                        </motion.div>
+                      )}
                     </div>
                   </div>
                 )}
