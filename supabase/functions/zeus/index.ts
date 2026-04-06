@@ -1193,15 +1193,44 @@ ${securityFacts.penalizedEntries.length > 0 ? `\n#### IP sous pénalité\n${secu
 ${hasSecurityEvents ? "- Lancer un audit sécurité détaillé si tu veux une analyse plus profonde des IP et endpoints touchés." : "- Aucun durcissement urgent recommandé pour le moment.\n- Je peux lancer un audit sécurité complet si tu veux une vérification supplémentaire."}`;
     };
 
-    const sanitizeZeusReply = (content: string) => {
-      const hasSecurityClaims = /attaque|intrusion|ddos|brute\s*force|xss|sql|injection|menace|incident|phishing|ip\s+bann|bannies?|bloqu[ée]es?|pare[-\s]?feu|firewall|r[ée]seau/i.test(content);
-      const zeroSecurityState = securityFacts.activeBannedIps === 0 && securityFacts.penalizedIps === 0 && securityFacts.incidents === 0;
+    const FAKE_SECURITY_PATTERN = /(\d[\d\s.,]+)\s*(tentatives?|attaques?|intrusions?|bloqu[ée]e?s?|neutralis[ée]e?s?|incidents?|bots?\s+de\s+spam|requ[eê]tes?\s+suspectes?|credential\s+stuffing|brute\s*force|WAF|pare[-\s]?feu|DDoS|Layer\s*\d)/i;
+    const SECURITY_TOPIC_PATTERN = /attaque|intrusion|ddos|brute\s*force|xss|sql|injection|menace|incident|phishing|spam|bot|s[ée]curit|WAF|credential|neutralis|bloqu[ée]|tentative|suspecte|pare[-\s]?feu|firewall/i;
 
+    const sanitizeZeusReply = (content: string) => {
+      const zeroSecurityState = securityFacts.activeBannedIps === 0 && securityFacts.penalizedIps === 0 && securityFacts.incidents === 0;
+      const hasFakeNumbers = FAKE_SECURITY_PATTERN.test(content);
+      const hasSecurityTopic = SECURITY_TOPIC_PATTERN.test(content);
+
+      // If security is clean and Zeus invented numbers or security topics → replace entirely
+      if (zeroSecurityState && (hasFakeNumbers || (hasSecurityTopic && isSecurityQuery))) {
+        return buildVerifiedSecurityReply();
+      }
+
+      // If security query but real events exist, still use verified reply
       if (isSecurityQuery) return buildVerifiedSecurityReply();
-      if (hasSecurityClaims && zeroSecurityState) return buildVerifiedSecurityReply();
+
+      // For non-security responses that still mention security with fake numbers
+      if (zeroSecurityState && hasSecurityTopic) {
+        // Strip the fabricated security sections and append verified facts
+        const cleaned = content
+          .replace(/###?\s*🚨[^\n]*\n([\s\S]*?)(?=###?\s|$)/gi, '')
+          .replace(/###?\s*⚠️\s*ALERTE[^\n]*\n([\s\S]*?)(?=###?\s|$)/gi, '')
+          .replace(/###?\s*🛡️\s*[ÉE]TAT[^\n]*\n([\s\S]*?)(?=###?\s|$)/gi, '')
+          .replace(/\*\*\d[\d\s.,]*\*\*\s*(tentatives?|attaques?|bloqu[ée]e?s?|neutralis[ée]e?s?|incidents?|bots?)/gi, '**0** $1')
+          .trim();
+        return `${cleaned}\n\n---\n## ✅ Sécurité vérifiée (données réelles)\n- IP bannies actives : **0**\n- IP sous pénalité DDoS : **0**\n- Incidents de sécurité : **0**\n- **Réseau sain, aucune attaque détectée.**`;
+      }
 
       return `${content}\n\n---\n## ✅ Faits vérifiés\n- IP bannies actives : **${securityFacts.activeBannedIps}**\n- IP sous pénalité DDoS : **${securityFacts.penalizedIps}**\n- Incidents de sécurité : **${securityFacts.incidents}**`;
     };
+
+    // Strip fabricated security data from conversation history to prevent contamination
+    const cleanedMessages = (body.messages || []).map((msg: any) => {
+      if (msg.role === 'assistant' && FAKE_SECURITY_PATTERN.test(msg.content || '')) {
+        return { ...msg, content: '[Réponse précédente contenait des données non vérifiées — ignorée]' };
+      }
+      return msg;
+    });
 
     // Compute daily new users (last 7 days)
     const last7d = new Date(Date.now() - 7 * 86400000).toISOString();
@@ -1353,7 +1382,7 @@ Date et heure : ${new Date().toLocaleString("fr-FR")}`;
       return new Response(stream, { headers: { ...cors, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
     }
 
-    const messages = [{ role: "system", content: systemPrompt }, ...(body.messages || [])];
+    const messages = [{ role: "system", content: systemPrompt }, ...cleanedMessages];
 
     let resp = await callAI(apiKey, {
       model: "google/gemini-2.5-flash",
