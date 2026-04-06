@@ -186,21 +186,33 @@ export function useConversations() {
         profileMap.set(ZEUS_BOT_ID, { user_id: ZEUS_BOT_ID, name: companionName, avatar_url: null });
       }
 
+      // Count unread messages properly per conversation
+      const { data: unreadData } = await supabase
+        .from('messages')
+        .select('conversation_id, created_at, sender_id')
+        .in('conversation_id', conversationIds)
+        .neq('sender_id', user.id)
+        .eq('status', 'delivered');
+
+      const unreadCounts: Record<string, number> = {};
+      unreadData?.forEach(m => {
+        const lastRead = lastReadMap.get(m.conversation_id);
+        if (!lastRead || new Date(m.created_at) > new Date(lastRead)) {
+          unreadCounts[m.conversation_id] = (unreadCounts[m.conversation_id] || 0) + 1;
+        }
+      });
+
+      // Get last message per conversation
       const { data: recentMessages } = await supabase
         .from('messages')
         .select('conversation_id, body, created_at, sender_id')
         .in('conversation_id', conversationIds)
         .order('created_at', { ascending: false })
-        .limit(conversationIds.length * 3);
+        .limit(conversationIds.length);
 
       const lastMessageMap = new Map<string, { body: string; created_at: string; sender_id: string }>();
-      const unreadCounts: Record<string, number> = {};
       recentMessages?.forEach(m => {
         if (!lastMessageMap.has(m.conversation_id)) lastMessageMap.set(m.conversation_id, m);
-        const lastRead = lastReadMap.get(m.conversation_id);
-        if (m.sender_id !== user.id && (!lastRead || new Date(m.created_at) > new Date(lastRead))) {
-          unreadCounts[m.conversation_id] = (unreadCounts[m.conversation_id] || 0) + 1;
-        }
       });
 
       return conversations.map(conv => {
