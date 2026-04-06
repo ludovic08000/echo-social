@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Users, ShieldCheck, Baby, MessageCircleOff, AlertOctagon, Eye, ChevronDown } from 'lucide-react';
+import { Users, ShieldCheck, Baby, MessageCircleOff, AlertOctagon, Eye, ChevronDown, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SEOPageLayout } from '@/components/seo/SEOPageLayout';
 import { useState } from 'react';
@@ -18,28 +18,30 @@ function FAQItem({ q, a }: { q: string; a: string }) {
 }
 
 const measures = [
-  { icon: Baby, title: 'Protection renforcée des mineurs', desc: 'Les utilisateurs de moins de 16 ans bénéficient de protections supplémentaires pour la protection des données : messages d\'inconnus bloqués, détection de manipulation, seuils de modération abaissés.' },
-  { icon: MessageCircleOff, title: 'Messages d\'inconnus bloqués', desc: 'Par défaut, les mineurs ne reçoivent de messages que de leurs contacts approuvés. La protection des données personnelles des jeunes est une priorité absolue.' },
-  { icon: AlertOctagon, title: 'Détection de manipulation', desc: 'Notre IA analyse les conversations pour détecter les tentatives de manipulation et les comportements prédateurs. La protection des données et de la sécurité des mineurs est automatique.' },
-  { icon: ShieldCheck, title: 'Contrôle parental intégré', desc: 'Les parents disposent d\'un tableau de bord complet pour superviser l\'activité de leur enfant et renforcer la protection des données de toute la famille.' },
-  { icon: Eye, title: 'Zéro tracking publicitaire', desc: 'Aucune donnée personnelle n\'est collectée pour la publicité. La protection des données sur Forsure signifie que vos informations ne sont jamais vendues ni partagées.' },
-  { icon: Users, title: 'Vérification d\'âge automatique', desc: 'Forsure vérifie l\'âge des utilisateurs à l\'inscription et adapte la protection des données en fonction de la tranche d\'âge.' },
+  { icon: Baby, title: 'Protection des données des mineurs', desc: 'La protection des données des utilisateurs de moins de 16 ans est renforcée : messages d\'inconnus bloqués, détection de manipulation, seuils de modération abaissés.' },
+  { icon: MessageCircleOff, title: 'Messages d\'inconnus bloqués', desc: 'La protection des données des mineurs inclut le blocage par défaut des messages provenant d\'adultes inconnus. Seuls les contacts approuvés peuvent communiquer.' },
+  { icon: AlertOctagon, title: 'Détection de manipulation', desc: 'La protection des données est renforcée par une IA qui détecte les tentatives de manipulation et les comportements prédateurs en temps réel.' },
+  { icon: ShieldCheck, title: 'Contrôle parental intégré', desc: 'La protection des données de votre famille est entre vos mains grâce à un tableau de bord parental complet pour superviser l\'activité de vos enfants.' },
+  { icon: Eye, title: 'Zéro tracking publicitaire', desc: 'La protection des données sur Forsure signifie qu\'aucune donnée personnelle n\'est collectée pour la publicité. Vos informations ne sont jamais vendues.' },
+  { icon: Users, title: 'Vérification d\'âge automatique', desc: 'La protection des données est adaptée automatiquement en fonction de l\'âge vérifié de chaque utilisateur lors de l\'inscription.' },
 ];
 
 const faqs = [
-  { q: 'Comment Forsure assure-t-il la protection des données personnelles ?', a: 'Forsure ne collecte que les données strictement nécessaires au fonctionnement du service. Vos informations personnelles sont chiffrées et ne sont jamais vendues, partagées ou utilisées à des fins publicitaires. La protection des données est au cœur de notre architecture.' },
-  { q: 'Mes données sont-elles vendues à des annonceurs ?', a: 'Non, jamais. Contrairement à Facebook, Instagram ou TikTok, Forsure ne vend aucune donnée personnelle. La protection des données de nos utilisateurs est un engagement fondamental — nous ne monétisons pas vos informations.' },
-  { q: 'Comment fonctionne la protection des données pour les mineurs ?', a: 'Les utilisateurs de moins de 16 ans bénéficient de protections supplémentaires : messages d\'inconnus bloqués par défaut, détection automatique de manipulation, contrôle parental intégré. La protection des données des mineurs est renforcée à tous les niveaux.' },
-  { q: 'Que se passe-t-il avec mes données si je supprime mon compte ?', a: 'Quand vous supprimez votre compte Forsure, toutes vos données personnelles sont effacées de nos serveurs dans un délai de 30 jours. La protection des données inclut le droit à l\'oubli complet.' },
-  { q: 'Forsure est-il conforme au RGPD ?', a: 'Oui, Forsure est entièrement conforme au Règlement Général sur la Protection des Données (RGPD) européen. La protection des données personnelles est intégrée dès la conception de chaque fonctionnalité.' },
-  { q: 'Les parents peuvent-ils contrôler l\'activité de leur enfant ?', a: 'Oui, le contrôle parental de Forsure permet aux parents de superviser le temps d\'écran, les contacts autorisés et de recevoir des alertes de sécurité. La protection des données et la sécurité des enfants sont notre priorité.' },
+  { q: 'Comment Forsure assure-t-il la protection des données personnelles ?', a: 'La protection des données sur Forsure repose sur un principe simple : nous ne collectons que le strict minimum nécessaire au fonctionnement du service. Vos informations personnelles sont chiffrées et ne sont jamais vendues, partagées ou utilisées à des fins publicitaires.' },
+  { q: 'Mes données sont-elles vendues à des annonceurs ?', a: 'Non, jamais. La protection des données sur Forsure est un engagement fondamental. Contrairement à Facebook, Instagram ou TikTok, nous ne vendons aucune donnée personnelle et ne monétisons pas vos informations.' },
+  { q: 'Comment fonctionne la protection des données pour les mineurs ?', a: 'La protection des données des mineurs est renforcée à tous les niveaux : messages d\'inconnus bloqués par défaut, détection automatique de manipulation, contrôle parental intégré, et filtrage des contenus inappropriés.' },
+  { q: 'Que se passe-t-il avec mes données si je supprime mon compte ?', a: 'La protection des données inclut le droit à l\'oubli complet. Quand vous supprimez votre compte, toutes vos données personnelles sont effacées de nos serveurs dans un délai de 30 jours maximum.' },
+  { q: 'Forsure est-il conforme au RGPD pour la protection des données ?', a: 'Oui, la protection des données sur Forsure est entièrement conforme au Règlement Général sur la Protection des Données (RGPD) européen. La protection des données est intégrée dès la conception de chaque fonctionnalité.' },
+  { q: 'Les parents peuvent-ils renforcer la protection des données de leur enfant ?', a: 'Oui, le contrôle parental de Forsure permet de renforcer la protection des données et de la sécurité : supervision du temps d\'écran, gestion des contacts autorisés, et alertes de sécurité en temps réel.' },
+  { q: 'Quelles données Forsure collecte-t-il exactement ?', a: 'La protection des données sur Forsure se traduit par une collecte minimale : votre email, votre nom d\'utilisateur, et les contenus que vous publiez volontairement. Aucune donnée de navigation, aucun cookie de suivi, aucune information de localisation.' },
+  { q: 'La protection des données est-elle la même sur mobile et ordinateur ?', a: 'Oui, la protection des données sur Forsure est identique sur tous les appareils — smartphone, tablette, ordinateur. Que vous utilisiez l\'application ou le navigateur, vos données bénéficient du même niveau de protection.' },
 ];
 
 const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'WebPage',
-  name: 'Protection des données personnelles — Forsure',
-  description: 'Forsure assure la protection des données personnelles de tous ses utilisateurs. Zéro tracking, contrôle parental intégré, conformité RGPD.',
+  name: 'Protection des données personnelles — Réseau social respectueux de la vie privée — Forsure',
+  description: 'Forsure assure la protection des données personnelles de tous ses utilisateurs. Zéro tracking publicitaire, contrôle parental intégré, conformité RGPD.',
   url: 'https://forsure.fans/protection-donnees',
   isPartOf: { '@type': 'WebSite', name: 'Forsure', url: 'https://forsure.fans' },
 };
@@ -48,7 +50,7 @@ export default function SEOProtection() {
   return (
     <SEOPageLayout
       title="Protection des données personnelles — Réseau social respectueux de la vie privée"
-      description="Forsure assure la protection des données personnelles de tous ses utilisateurs. Zéro tracking publicitaire, contrôle parental intégré, conformité RGPD. Vos données restent les vôtres."
+      description="La protection des données personnelles sur Forsure est totale. Zéro tracking publicitaire, contrôle parental intégré, conformité RGPD. Vos données restent les vôtres, toujours."
       jsonLd={jsonLd}
     >
       <section className="py-16 md:py-24">
@@ -57,8 +59,8 @@ export default function SEOProtection() {
             <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-1.5 rounded-full text-sm font-medium mb-4">
               <Users className="w-4 h-4" /> Protection des données
             </div>
-            <h1 className="text-3xl md:text-5xl font-bold text-foreground mb-4">La protection des données personnelles que vous méritez</h1>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">Sur Forsure, la protection des données n'est pas une option payante. C'est un droit fondamental, garanti pour chaque utilisateur dès l'inscription.</p>
+            <h1 className="text-3xl md:text-5xl font-bold text-foreground mb-4">La protection des données personnelles que vous méritez vraiment</h1>
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">Sur Forsure, la protection des données n'est pas une option payante ou un argument marketing creux. C'est un droit fondamental, garanti pour chaque utilisateur.</p>
           </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
@@ -72,42 +74,77 @@ export default function SEOProtection() {
           </div>
 
           <div className="max-w-3xl mx-auto space-y-6 text-muted-foreground leading-relaxed">
-            <h2 className="text-2xl font-bold text-foreground">Pourquoi la protection des données est cruciale sur les réseaux sociaux</h2>
-            <p>Les réseaux sociaux traditionnels ont bâti leur empire sur l'exploitation de vos données personnelles. Facebook collecte plus de 98 catégories de données sur chaque utilisateur. Instagram analyse vos photos pour cibler la publicité. TikTok enregistre vos habitudes de visionnage dans les moindres détails. Toutes ces données sont revendues à des annonceurs qui vous ciblent avec une précision inquiétante.</p>
-            <p>La protection des données personnelles sur Forsure repose sur un principe simple : nous ne collectons que le strict minimum nécessaire au fonctionnement du service, et nous ne partageons rien avec personne. Pas d'annonceurs, pas de tiers, pas de partenaires commerciaux. Vos données restent les vôtres — point final.</p>
+            <h2 className="text-2xl font-bold text-foreground">Pourquoi la protection des données est cruciale sur les réseaux sociaux en 2025</h2>
+            <p>En 2025, la protection des données personnelles sur les réseaux sociaux est devenue un enjeu majeur de société. Les réseaux sociaux traditionnels ont bâti leur empire sur l'exploitation massive de vos données. Facebook collecte plus de 98 catégories de données sur chaque utilisateur. Instagram analyse vos photos, vos likes et vos habitudes de navigation pour cibler la publicité. TikTok enregistre vos comportements dans les moindres détails.</p>
+            <p>La protection des données sur Forsure repose sur un principe fondamentalement différent : nous ne collectons que le strict minimum nécessaire au fonctionnement du service, et nous ne partageons rien avec personne. Pas d'annonceurs, pas de tiers, pas de partenaires commerciaux. La protection des données est la base même de notre philosophie.</p>
 
-            <h2 className="text-2xl font-bold text-foreground mt-10">Ce que Forsure ne fait jamais avec vos données</h2>
-            <p>Pour bien comprendre ce que signifie la protection des données sur Forsure, voici ce que nous ne faisons jamais :</p>
+            <h3 className="text-xl font-bold text-foreground mt-8">Les chiffres alarmants de l'exploitation des données</h3>
+            <p>Pour comprendre pourquoi la protection des données est si importante, regardons comment les réseaux sociaux traditionnels exploitent vos informations :</p>
             <ul className="space-y-2">
-              <li>❌ <strong className="text-foreground">Pas de publicité ciblée</strong> — Aucune donnée n'est utilisée pour vous montrer des publicités</li>
-              <li>❌ <strong className="text-foreground">Pas de revente de données</strong> — Vos informations ne sont jamais vendues à des tiers</li>
-              <li>❌ <strong className="text-foreground">Pas de cookies de suivi</strong> — Aucun tracker ne suit votre activité en ligne</li>
-              <li>❌ <strong className="text-foreground">Pas d'analyse comportementale</strong> — Vos habitudes ne sont pas étudiées pour vous manipuler</li>
-              <li>❌ <strong className="text-foreground">Pas de partage avec des gouvernements</strong> — Sauf obligation légale stricte avec contrôle judiciaire</li>
+              <li><CheckCircle className="w-4 h-4 text-primary inline mr-2" /><strong className="text-foreground">Facebook</strong> tire 97 % de ses revenus de la vente de vos données aux annonceurs</li>
+              <li><CheckCircle className="w-4 h-4 text-primary inline mr-2" /><strong className="text-foreground">Instagram</strong> analyse vos photos pour identifier vos centres d'intérêt commerciaux</li>
+              <li><CheckCircle className="w-4 h-4 text-primary inline mr-2" /><strong className="text-foreground">TikTok</strong> collecte votre localisation, vos contacts, votre historique de navigation</li>
+              <li><CheckCircle className="w-4 h-4 text-primary inline mr-2" /><strong className="text-foreground">Google</strong> combine les données de tous ses services pour créer un profil publicitaire ultra-détaillé</li>
             </ul>
+            <p>La protection des données sur Forsure élimine ces pratiques à la source. Nous ne collectons aucune de ces informations.</p>
+
+            <h2 className="text-2xl font-bold text-foreground mt-10">Ce que la protection des données signifie concrètement sur Forsure</h2>
+
+            <h3 className="text-xl font-bold text-foreground mt-8">Zéro collecte de données inutiles</h3>
+            <p>La protection des données sur Forsure commence par la collecte minimale. Nous ne demandons que votre email et votre nom d'utilisateur. Nous ne collectons pas votre historique de navigation, votre localisation, vos contacts téléphoniques, vos habitudes d'achat ou votre empreinte numérique. La protection des données passe d'abord par ne pas collecter ce qui n'est pas nécessaire.</p>
+
+            <h3 className="text-xl font-bold text-foreground mt-8">Zéro publicité, zéro tracking</h3>
+            <p>La protection des données sur Forsure signifie l'absence totale de publicité et de tracking. Aucun cookie de suivi, aucun pixel espion, aucun script d'analyse comportementale. Quand vous naviguez sur Forsure, votre activité n'est pas enregistrée ni analysée à des fins commerciales. La protection des données est absolue.</p>
+
+            <h3 className="text-xl font-bold text-foreground mt-8">Zéro revente de données à des tiers</h3>
+            <p>La protection des données sur Forsure inclut l'engagement formel de ne jamais vendre, louer, échanger ou partager vos données personnelles avec des tiers. Aucun annonceur, aucun partenaire commercial, aucune agence n'a accès à vos informations. La protection des données est un engagement contractuel.</p>
 
             <h2 className="text-2xl font-bold text-foreground mt-10">Protection des données renforcée pour les enfants et adolescents</h2>
-            <p>La protection des données des mineurs est une responsabilité que Forsure prend très au sérieux. Les réseaux sociaux représentent un risque réel pour les jeunes utilisateurs : cyberharcèlement, prédateurs en ligne, exposition à des contenus inappropriés, collecte de données sans consentement éclairé.</p>
-            <p>Sur Forsure, les utilisateurs de moins de 16 ans bénéficient de mesures de protection des données supplémentaires :</p>
+            <p>La protection des données des mineurs est une responsabilité que Forsure prend particulièrement au sérieux. Les réseaux sociaux représentent un risque réel pour les jeunes : cyberharcèlement, prédateurs en ligne, exposition à des contenus inappropriés, collecte de données sans consentement éclairé.</p>
+            <p>La protection des données des mineurs sur Forsure inclut des mesures spécifiques :</p>
             <ul className="space-y-2">
-              <li>🛡️ <strong className="text-foreground">Messages d'inconnus bloqués</strong> — Seuls les contacts approuvés peuvent envoyer des messages</li>
+              <li>🛡️ <strong className="text-foreground">Messages d'inconnus bloqués</strong> — La protection des données des mineurs bloque par défaut les messages d'adultes non approuvés</li>
               <li>🤖 <strong className="text-foreground">Détection de manipulation</strong> — Notre <Link to="/ia-moderation" className="text-primary hover:underline">intelligence artificielle de modération</Link> détecte les tentatives de manipulation</li>
-              <li>👨‍👩‍👧 <strong className="text-foreground">Contrôle parental complet</strong> — Les parents supervisent le temps d'écran et les contacts</li>
-              <li>📊 <strong className="text-foreground">Alertes de sécurité</strong> — Notification immédiate en cas de comportement suspect</li>
+              <li>👨‍👩‍👧 <strong className="text-foreground">Contrôle parental complet</strong> — La protection des données familiales est entre les mains des parents</li>
+              <li>📊 <strong className="text-foreground">Alertes de sécurité</strong> — Notification immédiate aux parents en cas de comportement suspect</li>
+              <li>🔒 <strong className="text-foreground">Données minimales collectées</strong> — La protection des données des mineurs implique une collecte encore plus restreinte</li>
             </ul>
 
-            <h2 className="text-2xl font-bold text-foreground mt-10">Conformité RGPD et droit à l'oubli</h2>
-            <p>Forsure est entièrement conforme au Règlement Général sur la Protection des Données (RGPD) de l'Union Européenne. La protection des données est intégrée dès la conception de chaque fonctionnalité (privacy by design). Vous disposez de tous les droits prévus par la loi :</p>
+            <h2 className="text-2xl font-bold text-foreground mt-10">Conformité RGPD et droits des utilisateurs</h2>
+            <p>La protection des données sur Forsure est entièrement conforme au Règlement Général sur la Protection des Données (RGPD) de l'Union Européenne. La protection des données est intégrée dès la conception de chaque fonctionnalité (privacy by design et privacy by default). Vous disposez de tous les droits prévus par la loi :</p>
             <ul className="space-y-2">
-              <li>✅ <strong className="text-foreground">Droit d'accès</strong> — Consultez toutes les données que nous détenons sur vous</li>
-              <li>✅ <strong className="text-foreground">Droit de rectification</strong> — Corrigez vos informations à tout moment</li>
-              <li>✅ <strong className="text-foreground">Droit à l'effacement</strong> — Supprimez votre compte et toutes vos données définitivement</li>
-              <li>✅ <strong className="text-foreground">Droit à la portabilité</strong> — Exportez vos données dans un format standard</li>
+              <li>✅ <strong className="text-foreground">Droit d'accès</strong> — La protection des données vous donne le droit de consulter toutes les informations que nous détenons</li>
+              <li>✅ <strong className="text-foreground">Droit de rectification</strong> — La protection des données vous permet de corriger vos informations à tout moment</li>
+              <li>✅ <strong className="text-foreground">Droit à l'effacement</strong> — La protection des données inclut la suppression complète de votre compte et de toutes vos données</li>
+              <li>✅ <strong className="text-foreground">Droit à la portabilité</strong> — La protection des données vous permet d'exporter vos données dans un format standard</li>
+              <li>✅ <strong className="text-foreground">Droit d'opposition</strong> — La protection des données vous donne le droit de vous opposer au traitement de vos données</li>
             </ul>
 
-            <h2 className="text-2xl font-bold text-foreground mt-10">Le contrôle entre vos mains</h2>
-            <p>La protection des données sur Forsure ne se limite pas à des promesses. Chaque utilisateur dispose d'un panneau de contrôle complet pour gérer ses paramètres de confidentialité : visibilité du profil, qui peut vous contacter, quelles informations sont publiques. Vous gardez le contrôle total sur votre présence en ligne.</p>
-            <p>Découvrez également notre <Link to="/messagerie-chiffree" className="text-primary hover:underline">messagerie chiffrée de bout en bout</Link> et notre <Link to="/reseau-social-securise" className="text-primary hover:underline">réseau social sécurisé</Link> pour une protection complète de votre vie numérique.</p>
+            <h2 className="text-2xl font-bold text-foreground mt-10">Protection des données : Forsure vs Facebook, Instagram et TikTok</h2>
+            <p>La comparaison en matière de protection des données est sans appel :</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left py-3 pr-4 text-foreground">Protection des données</th>
+                    <th className="text-center py-3 px-2 text-foreground">Forsure</th>
+                    <th className="text-center py-3 px-2 text-foreground">Facebook</th>
+                    <th className="text-center py-3 px-2 text-foreground">TikTok</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-border/50"><td className="py-2 pr-4">Publicité ciblée</td><td className="text-center text-primary font-bold">Non ✅</td><td className="text-center">Oui ❌</td><td className="text-center">Oui ❌</td></tr>
+                  <tr className="border-b border-border/50"><td className="py-2 pr-4">Revente de données</td><td className="text-center text-primary font-bold">Jamais ✅</td><td className="text-center">Oui ❌</td><td className="text-center">Oui ❌</td></tr>
+                  <tr className="border-b border-border/50"><td className="py-2 pr-4">Tracking en ligne</td><td className="text-center text-primary font-bold">Aucun ✅</td><td className="text-center">Intensif ❌</td><td className="text-center">Intensif ❌</td></tr>
+                  <tr className="border-b border-border/50"><td className="py-2 pr-4">Chiffrement messages</td><td className="text-center text-primary font-bold">Par défaut ✅</td><td className="text-center">Optionnel ❌</td><td className="text-center">Non ❌</td></tr>
+                  <tr><td className="py-2 pr-4">Contrôle parental</td><td className="text-center text-primary font-bold">Intégré ✅</td><td className="text-center">Limité ⚠️</td><td className="text-center">Limité ⚠️</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h2 className="text-2xl font-bold text-foreground mt-10">La protection des données comme engagement fondamental</h2>
+            <p>La protection des données sur Forsure n'est pas un argument marketing ou une fonctionnalité secondaire. C'est le fondement même de notre existence. Nous avons créé Forsure parce que nous croyons que les utilisateurs méritent un réseau social qui respecte leur vie privée, protège leurs données personnelles et ne les traite pas comme des produits à vendre.</p>
+            <p>Découvrez comment la protection des données sur Forsure est complétée par notre <Link to="/messagerie-chiffree" className="text-primary hover:underline">messagerie chiffrée de bout en bout</Link>, notre <Link to="/reseau-social-securise" className="text-primary hover:underline">réseau social sécurisé</Link> et notre <Link to="/feed-intelligent" className="text-primary hover:underline">feed intelligent sans publicité</Link>.</p>
 
             <div className="text-center pt-8">
               <Link to="/signup"><Button size="lg" className="px-8">Protéger mes données — inscription gratuite</Button></Link>
@@ -116,7 +153,6 @@ export default function SEOProtection() {
         </div>
       </section>
 
-      {/* FAQ */}
       <section className="py-16 md:py-24 bg-muted/20" itemScope itemType="https://schema.org/FAQPage">
         <div className="max-w-3xl mx-auto px-4">
           <h2 className="text-2xl md:text-3xl font-bold text-foreground text-center mb-10">Questions fréquentes sur la protection des données</h2>
