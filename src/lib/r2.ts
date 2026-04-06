@@ -29,10 +29,6 @@ function getFunctionsBaseUrl(): string {
   throw new Error('Configuration backend manquante');
 }
 
-function isLovablePreview(): boolean {
-  if (typeof window === 'undefined') return false;
-  return window.location.hostname.includes('id-preview--') && window.location.hostname.endsWith('.lovable.app');
-}
 
 function getFunctionHeaders(token: string, contentType?: string): Record<string, string> {
   const headers: Record<string, string> = {
@@ -71,14 +67,8 @@ export async function uploadToR2(
   if (!session) throw new Error('Not authenticated');
 
   const fileName = customFileName || (file instanceof File ? file.name : `file-${Date.now()}.bin`);
-  const usePreviewSafeStoryUpload = category === 'stories' && isLovablePreview();
-  const shouldPreferPresignedUpload = !usePreviewSafeStoryUpload && (category === 'stories' || file.size >= PRESIGN_THRESHOLD);
+  const shouldPreferPresignedUpload = category === 'stories' || file.size >= PRESIGN_THRESHOLD;
 
-  if (usePreviewSafeStoryUpload) {
-    return uploadProxy(file, category, fileName, session.access_token, onProgress);
-  }
-
-  // Stories always try direct signed upload first to avoid multipart proxy issues.
   if (shouldPreferPresignedUpload) {
     try {
       return await uploadPresigned(file, category, fileName, session.access_token, onProgress);

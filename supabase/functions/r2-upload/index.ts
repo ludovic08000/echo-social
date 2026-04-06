@@ -38,17 +38,21 @@ import { checkRateLimit as checkRateLimitDB } from "../_shared/rate-limit.ts";
 const RATE_LIMIT = 30;
 const RATE_WINDOW_S = 60;
 
-// Allowed origins for CORS — restricted to actual app domains only
+// Allowed origins for CORS — app domains + Lovable preview
 const ALLOWED_ORIGINS_LIST = [
   'https://calm-connect-05.lovable.app',
-  'https://id-preview--14bf9f2a-b211-4bff-8f3c-1cd3d8a0a907.lovable.app',
   'https://forsure.fans',
   'https://www.forsure.fans',
 ];
+function isAllowedOriginUpload(origin: string): boolean {
+  if (ALLOWED_ORIGINS_LIST.includes(origin)) return true;
+  if (/^https:\/\/[a-z0-9-]+--[a-f0-9-]+\.lovable\.app$/.test(origin)) return true;
+  return false;
+}
 
 function getCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get('origin') || '';
-  const isAllowed = ALLOWED_ORIGINS_LIST.includes(origin);
+  const isAllowed = isAllowedOriginUpload(origin);
   return {
     "Access-Control-Allow-Origin": isAllowed ? origin : ALLOWED_ORIGINS_LIST[0],
     "Access-Control-Allow-Headers":
