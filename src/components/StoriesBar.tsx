@@ -258,11 +258,11 @@ export function StoriesBar() {
             )}
           </div>
           {/* Plus button with gradient */}
-          <div className="absolute left-1/2 -translate-x-1/2 top-[118px] w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 border-[3px] border-card flex items-center justify-center z-10 shadow-lg">
+          <div className="absolute left-1/2 -translate-x-1/2 top-[118px] w-10 h-10 rounded-full border-[3px] border-card flex items-center justify-center z-10 shadow-lg" style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899)' }}>
             {isCreating ? (
-              <Loader2 className="w-5 h-5 text-white animate-spin" />
+              <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#fff' }} />
             ) : (
-              <Plus className="w-5 h-5 text-white" />
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             )}
           </div>
           {/* Bottom label */}
