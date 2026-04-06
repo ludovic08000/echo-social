@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { motion, AnimatePresence, useAnimation } from 'framer-motion';
+import { useState, useCallback, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Heart, ThumbsUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -87,8 +87,6 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   const { user } = useAuth();
   const addReaction = useAddReaction();
   const removeReaction = useRemoveReaction();
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const didLongPress = useRef(false);
   const [cooldown, setCooldown] = useState(false);
   const isBusy = addReaction.isPending || removeReaction.isPending || cooldown;
 
@@ -167,7 +165,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   // ── Facebook variant ───────────────────────────────
   if (variant === 'facebook') {
     return (
-      <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <Popover open={isOpen} onOpenChange={(open) => { if (!currentReaction) setIsOpen(open); }}>
         <div className="flex-1 relative">
           <AnimatePresence>
             {showParticles && (
@@ -178,6 +176,12 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
             <Button
               variant="ghost"
               size="sm"
+              onClick={(e) => {
+                if (currentReaction) {
+                  e.preventDefault();
+                  handleRemoveReaction();
+                }
+              }}
               className={cn(
                 'w-full h-11 gap-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs transition-all select-none',
                 currentReaction && reactionColor
@@ -215,37 +219,36 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   // ── Instagram variant ──────────────────────────────
   if (variant === 'instagram') {
     return (
-      <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <Popover open={isOpen} onOpenChange={(open) => { if (!currentReaction) setIsOpen(open); }}>
         <div className="flex items-center relative">
           <AnimatePresence>
             {showParticles && (
               <ReactionParticles emoji={showParticles} onDone={() => setShowParticles(null)} />
             )}
           </AnimatePresence>
-          <button
-            onPointerDown={onPointerDown}
-            onPointerUp={onPointerUp}
-            onPointerLeave={onPointerLeave}
-            onContextMenu={(e) => e.preventDefault()}
-            className="h-10 w-10 flex items-center justify-center transition-transform active:scale-75 select-none"
-          >
-            {currentReaction ? (
-              <motion.span
-                key={currentReaction}
-                initial={{ scale: 0 }}
-                animate={{ scale: [0, 1.3, 1] }}
-                transition={{ type: 'spring', stiffness: 500, damping: 10 }}
-                className="text-[22px] block"
-              >
-                {REACTION_EMOJIS[currentReaction]}
-              </motion.span>
-            ) : (
-              <Heart className="w-[22px] h-[22px] text-foreground" />
-            )}
-          </button>
           <PopoverTrigger asChild>
-            <button className="h-8 w-5 flex items-center justify-center text-muted-foreground">
-              <ChevronIcon />
+            <button
+              onClick={(e) => {
+                if (currentReaction) {
+                  e.preventDefault();
+                  handleRemoveReaction();
+                }
+              }}
+              className="h-10 w-10 flex items-center justify-center transition-transform active:scale-75 select-none"
+            >
+              {currentReaction ? (
+                <motion.span
+                  key={currentReaction}
+                  initial={{ scale: 0 }}
+                  animate={{ scale: [0, 1.3, 1] }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 10 }}
+                  className="text-[22px] block"
+                >
+                  {REACTION_EMOJIS[currentReaction]}
+                </motion.span>
+              ) : (
+                <Heart className="w-[22px] h-[22px] text-foreground" />
+              )}
             </button>
           </PopoverTrigger>
         </div>
@@ -256,46 +259,45 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
 
   // ── Default variant ────────────────────────────────
   return (
-    <Popover open={isOpen} onOpenChange={setIsOpen}>
+    <Popover open={isOpen} onOpenChange={(open) => { if (!currentReaction) setIsOpen(open); }}>
       <div className="flex items-center relative">
         <AnimatePresence>
           {showParticles && (
             <ReactionParticles emoji={showParticles} onDone={() => setShowParticles(null)} />
           )}
         </AnimatePresence>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn(
-            'h-9 px-3 gap-2 text-muted-foreground hover:text-primary hover:bg-accent',
-            currentReaction && reactionColor
-          )}
-          onPointerDown={onPointerDown}
-          onPointerUp={onPointerUp}
-          onPointerLeave={onPointerLeave}
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          {currentReaction ? (
-            <AnimatePresence mode="wait">
-              <motion.span
-                key={currentReaction}
-                initial={{ scale: 0, rotate: -180 }}
-                animate={{ scale: 1, rotate: 0 }}
-                exit={{ scale: 0, rotate: 180 }}
-                transition={{ type: 'spring', stiffness: 400 }}
-                className="text-lg"
-              >
-                {REACTION_EMOJIS[currentReaction]}
-              </motion.span>
-            </AnimatePresence>
-          ) : (
-            <ThumbsUp className="w-4 h-4" />
-          )}
-          <span className="text-sm">{reactionsCount || ''}</span>
-        </Button>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="sm" className="h-9 w-7 px-0">
-            <ChevronIcon />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => {
+              if (currentReaction) {
+                e.preventDefault();
+                handleRemoveReaction();
+              }
+            }}
+            className={cn(
+              'h-9 px-3 gap-2 text-muted-foreground hover:text-primary hover:bg-accent',
+              currentReaction && reactionColor
+            )}
+          >
+            {currentReaction ? (
+              <AnimatePresence mode="wait">
+                <motion.span
+                  key={currentReaction}
+                  initial={{ scale: 0, rotate: -180 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  exit={{ scale: 0, rotate: 180 }}
+                  transition={{ type: 'spring', stiffness: 400 }}
+                  className="text-lg"
+                >
+                  {REACTION_EMOJIS[currentReaction]}
+                </motion.span>
+              </AnimatePresence>
+            ) : (
+              <ThumbsUp className="w-4 h-4" />
+            )}
+            <span className="text-sm">{reactionsCount || ''}</span>
           </Button>
         </PopoverTrigger>
       </div>
