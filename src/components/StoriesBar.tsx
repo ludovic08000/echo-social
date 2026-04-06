@@ -14,7 +14,14 @@ import { toast } from '@/hooks/use-toast';
 import { Link } from 'react-router-dom';
 
 const STORY_DURATION = 5000;
-const QUICK_EMOJIS = ['🔥', '😍', '🤩', '💀', '🥹', '👏'];
+const QUICK_REACTIONS = [
+  { emoji: '👍', label: "J'aime", bg: 'from-blue-400 to-blue-600' },
+  { emoji: '❤️', label: 'Love', bg: 'from-red-400 to-pink-500' },
+  { emoji: '😆', label: 'Haha', bg: 'from-yellow-300 to-amber-400' },
+  { emoji: '😮', label: 'Wow', bg: 'from-yellow-300 to-orange-400' },
+  { emoji: '😢', label: 'Triste', bg: 'from-yellow-300 to-amber-400' },
+  { emoji: '😡', label: 'Grrr', bg: 'from-orange-400 to-red-500' },
+];
 
 
 
