@@ -342,6 +342,8 @@ interface CommentItemProps {
 function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, parentName }: CommentItemProps) {
   const [translated, setTranslated] = useState<string | null>(null);
   const [translating, setTranslating] = useState(false);
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [reactionLock, setReactionLock] = useState(false);
   const likeComment = useLikeComment();
 
   const { text, mediaUrl, isGif, isVideo, isImage } = parseCommentMedia(comment.body);
@@ -359,9 +361,26 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
     } catch {} finally { setTranslating(false); }
   };
 
-  const handleLike = () => {
-    likeComment.mutate({ commentId: comment.id, postId, isLiked: comment.is_liked });
-  };
+  const handleLike = useCallback(() => {
+    if (reactionLock) return;
+    if (comment.is_liked) {
+      // Remove reaction
+      setReactionLock(true);
+      likeComment.mutate({ commentId: comment.id, postId, isLiked: true });
+      setTimeout(() => setReactionLock(false), 1000);
+    } else {
+      // Show picker
+      setShowReactionPicker(prev => !prev);
+    }
+  }, [comment.is_liked, comment.id, postId, reactionLock, likeComment]);
+
+  const handlePickReaction = useCallback((type: ReactionType) => {
+    if (reactionLock) return;
+    setReactionLock(true);
+    setShowReactionPicker(false);
+    likeComment.mutate({ commentId: comment.id, postId, isLiked: false });
+    setTimeout(() => setReactionLock(false), 1000);
+  }, [comment.id, postId, reactionLock, likeComment]);
 
   return (
     <div className={cn("flex gap-2.5 py-1.5 animate-slide-up")}>
@@ -402,18 +421,36 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
           </div>
         )}
 
+        {/* Reaction picker for comments — Facebook style */}
+        {showReactionPicker && !comment.is_liked && (
+          <div className="flex gap-0.5 mt-1 p-1 bg-card/95 backdrop-blur-xl rounded-full border border-border/30 shadow-lg inline-flex animate-slide-up">
+            {(Object.keys(REACTION_EMOJIS) as ReactionType[]).map((type) => (
+              <button
+                key={type}
+                onClick={() => handlePickReaction(type)}
+                className="w-8 h-8 flex items-center justify-center text-xl rounded-full hover:bg-secondary hover:scale-125 transition-all active:scale-90"
+                title={REACTION_LABELS[type]}
+              >
+                {REACTION_EMOJIS[type]}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="flex items-center gap-3 mt-1 px-1">
           <span className="text-[11px] text-muted-foreground">
             {formatDistanceToNow(new Date(comment.created_at), { addSuffix: false, locale: fr })}
           </span>
           <button
             onClick={handleLike}
+            disabled={reactionLock}
             className={cn(
               "text-[11px] font-semibold transition-colors",
-              comment.is_liked ? "text-primary" : "text-muted-foreground hover:text-foreground"
+              comment.is_liked ? "text-primary" : "text-muted-foreground hover:text-foreground",
+              reactionLock && "opacity-50 pointer-events-none"
             )}
           >
-            J'aime{comment.likes_count > 0 && ` · ${comment.likes_count}`}
+            {comment.is_liked ? '👍' : 'J\'aime'}{comment.likes_count > 0 && ` · ${comment.likes_count}`}
           </button>
           <button onClick={onReply} className="text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors">
             Répondre
