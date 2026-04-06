@@ -364,23 +364,26 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
   const handleLike = useCallback(() => {
     if (reactionLock) return;
     if (comment.is_liked) {
-      // Remove reaction
       setReactionLock(true);
-      likeComment.mutate({ commentId: comment.id, postId, isLiked: true });
-      setTimeout(() => setReactionLock(false), 1000);
+      likeComment.mutate(
+        { commentId: comment.id, postId, isLiked: true },
+        { onSettled: () => setTimeout(() => setReactionLock(false), 500) }
+      );
+      setShowReactionPicker(false);
     } else {
-      // Show picker
       setShowReactionPicker(prev => !prev);
     }
   }, [comment.is_liked, comment.id, postId, reactionLock, likeComment]);
 
   const handlePickReaction = useCallback((type: ReactionType) => {
-    if (reactionLock) return;
+    if (reactionLock || comment.is_liked) return;
     setReactionLock(true);
     setShowReactionPicker(false);
-    likeComment.mutate({ commentId: comment.id, postId, isLiked: false });
-    setTimeout(() => setReactionLock(false), 1000);
-  }, [comment.id, postId, reactionLock, likeComment]);
+    likeComment.mutate(
+      { commentId: comment.id, postId, isLiked: false },
+      { onSettled: () => setTimeout(() => setReactionLock(false), 500) }
+    );
+  }, [comment.id, comment.is_liked, postId, reactionLock, likeComment]);
 
   return (
     <div className={cn("flex gap-2.5 py-1.5 animate-slide-up")}>
