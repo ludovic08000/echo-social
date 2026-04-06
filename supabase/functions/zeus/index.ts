@@ -1300,10 +1300,11 @@ ${hasSecurityEvents ? "- Lancer un audit sécurité détaillé si tu veux une an
       return finalContent;
     };
 
-    // Strip fabricated security data from conversation history to prevent contamination
+    // Strip ALL fabricated data from conversation history to prevent contamination
+    const FABRICATION_PATTERN = /(\d[\d\s.,]+)\s*(tentatives?|attaques?|intrusions?|bloqu[ée]e?s?|neutralis[ée]e?s?|incidents?|bots?|requ[eê]tes?|ms\b|CPU|latence|taux|résolution|succ[eè]s|signalements?\s+en\s+attente|contenus?\s+bloqu)/i;
     const cleanedMessages = (body.messages || []).map((msg: any) => {
-      if (msg.role === 'assistant' && FAKE_SECURITY_PATTERN.test(msg.content || '')) {
-        return { ...msg, content: '[Réponse précédente contenait des données non vérifiées — ignorée]' };
+      if (msg.role === 'assistant' && FABRICATION_PATTERN.test(msg.content || '')) {
+        return { ...msg, content: '[Réponse précédente contenait des données non vérifiées — ignorée. Utilise uniquement le snapshot plateforme pour les chiffres.]' };
       }
       return msg;
     });
