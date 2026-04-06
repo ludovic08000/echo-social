@@ -192,13 +192,11 @@ export function StoriesBar() {
   const handleDelete = () => {
     if (!selectedGroup) return;
     const story = selectedGroup.stories[currentStoryIndex];
-    if (confirm('Supprimer cette story ?')) {
-      deleteStory.mutate(story.id);
-      if (selectedGroup.stories.length === 1) {
-        setSelectedGroup(null);
-      } else {
-        nextStory();
-      }
+    deleteStory.mutate(story.id);
+    if (selectedGroup.stories.length === 1) {
+      setSelectedGroup(null);
+    } else {
+      nextStory();
     }
   };
 
