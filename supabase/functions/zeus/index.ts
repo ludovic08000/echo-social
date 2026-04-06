@@ -1207,13 +1207,6 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
       penalizedEntries: ddosTrackerRes.data || [],
     };
 
-    const securityFacts = {
-      activeBannedIps: bannedIpsRes.count || 0,
-      penalizedIps: ddosTrackerRes.count || 0,
-      incidents: securityIncidentsRes.count || 0,
-      bannedIps: bannedIpsRes.data || [],
-      penalizedEntries: ddosTrackerRes.data || [],
-    };
 
     const buildVerifiedSecurityReply = () => {
       const hasSecurityEvents = securityFacts.activeBannedIps > 0 || securityFacts.penalizedIps > 0 || securityFacts.incidents > 0;
