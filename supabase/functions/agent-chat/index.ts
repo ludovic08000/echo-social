@@ -449,39 +449,81 @@ serve(async (req) => {
     const dateTimeContext = `\n\n## DATE ET HEURE ACTUELLES\nDate : ${now.toLocaleDateString("fr-FR", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}\nHeure : ${now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" })} (heure de Paris)\nSi l'utilisateur demande la date ou l'heure, donne-lui cette information.\n`;
 
     // If accessed from Neural Engine admin console, use admin-focused prompt
+    // ── Fetch additional REAL security/platform data for admin context ──
+    let adminDataContext = "";
+    if (context === "neural-engine") {
+      const [
+        bannedIpsRes, ddosRes, bannedUsersRes, totalUsersRes, totalPostsRes,
+        secIncidentsRes, pendingReportsRes, totalReportsRes,
+      ] = await Promise.all([
+        supabase.from("banned_ips").select("id, ip_address, reason, banned_at", { count: "exact" }).eq("is_active", true).limit(20),
+        supabase.from("ddos_ip_tracker").select("id, ip_address, request_count, penalty_level, blocked_until", { count: "exact" }).gte("penalty_level", 1).limit(20),
+        supabase.from("banned_users").select("id", { count: "exact", head: true }).eq("is_active", true),
+        supabase.from("profiles").select("id", { count: "exact", head: true }),
+        supabase.from("posts").select("id", { count: "exact", head: true }),
+        supabase.from("security_incidents").select("id", { count: "exact", head: true }),
+        supabase.from("abuse_reports").select("id", { count: "exact", head: true }).eq("status", "pending"),
+        supabase.from("abuse_reports").select("id", { count: "exact", head: true }),
+      ]);
+
+      adminDataContext += `\n\n## 📊 DONNÉES RÉELLES DE LA PLATEFORME (source: base de données, en temps réel)\n`;
+      adminDataContext += `- Utilisateurs inscrits : ${totalUsersRes.count ?? 0}\n`;
+      adminDataContext += `- Posts publiés : ${totalPostsRes.count ?? 0}\n`;
+      adminDataContext += `- IPs bannies actives : ${bannedIpsRes.count ?? 0}\n`;
+      if ((bannedIpsRes.data || []).length > 0) {
+        adminDataContext += `  Détail : ${bannedIpsRes.data!.map((ip: any) => `${ip.ip_address} (${ip.reason || 'N/A'})`).join(', ')}\n`;
+      }
+      adminDataContext += `- IPs pénalisées (DDoS tracker) : ${ddosRes.count ?? 0}\n`;
+      if ((ddosRes.data || []).length > 0) {
+        adminDataContext += `  Détail : ${ddosRes.data!.map((d: any) => `${d.ip_address} lvl${d.penalty_level} (${d.request_count} req)`).join(', ')}\n`;
+      }
+      adminDataContext += `- Comptes bannis actifs : ${bannedUsersRes.count ?? 0}\n`;
+      adminDataContext += `- Incidents de sécurité enregistrés : ${secIncidentsRes.count ?? 0}\n`;
+      adminDataContext += `- Signalements en attente : ${pendingReportsRes.count ?? 0}\n`;
+      adminDataContext += `- Signalements total : ${totalReportsRes.count ?? 0}\n`;
+    }
+
     const NEURAL_ENGINE_ADMIN_PROMPT = `Tu es Zeus, l'intelligence artificielle centrale du réseau social ForSure. Tu es dans la CONSOLE ADMIN du Neural Engine.
 
-## RÔLE STRICT
-Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines d'expertise :
+## ⛔ RÈGLE ABSOLUE — HONNÊTETÉ ET EXACTITUDE
+**Tu n'as PAS LE DROIT d'inventer, d'extrapoler ou de fabriquer des données.**
+- Tu dois UNIQUEMENT te baser sur les données réelles fournies dans ton contexte (sections "DONNÉES RÉELLES", "MÉTRIQUES TEMPS RÉEL", "SIGNALEMENTS", etc.)
+- Si une donnée n'est pas dans ton contexte, dis clairement : "Je n'ai pas cette information dans mes données actuelles."
+- N'invente JAMAIS de chiffres, d'IPs, d'attaques, de menaces ou de statistiques.
+- Si les données montrent 0 attaque, 0 menace, 0 signalement → dis-le clairement : "Aucune menace détectée" ou "0 signalement en cours".
+- Ne dramatise PAS la situation si les chiffres sont bas ou nuls.
+- Ne fais PAS semblant de détecter des anomalies si les données ne le montrent pas.
+- INTERDICTION de dire "j'ai détecté X tentatives d'intrusion" si ce chiffre n'est pas dans tes données contextuelles.
+- Chaque chiffre que tu cites DOIT correspondre exactement à une valeur fournie dans le contexte ci-dessous.
 
-1. **Sécurité** : menaces détectées, DDoS, tentatives d'intrusion, comptes suspects, injection SQL/XSS
-2. **Modération** : signalements en attente, contenus bloqués, harcèlement, spam, grooming de mineurs
-3. **Trust & Safety** : scores de confiance, comptes flaggés, multi-comptes, abus détectés
-4. **Performance IA** : latence des modules, taux de succès, erreurs, santé globale du moteur
-5. **Algorithme de Feed** : configuration des poids, scoring, anti-spam, boost amis, injection marketplace
-6. **Statistiques plateforme** : utilisateurs actifs, engagement, tendances, signalements
+## RÔLE
+Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines :
+1. **Sécurité** : IPs bannies, DDoS tracker, comptes bannis, incidents — UNIQUEMENT les données fournies
+2. **Modération** : signalements réels en attente, contenus bloqués
+3. **Trust & Safety** : scores de confiance, comptes flaggés
+4. **Performance IA** : métriques réelles du moteur IA
+5. **Algorithme de Feed** : configuration réelle des poids
+6. **Statistiques plateforme** : utilisateurs, posts, engagement — données réelles uniquement
 
 ## COMPORTEMENT
 - Réponds TOUJOURS en tant qu'administrateur de plateforme
-- Analyse les métriques fournies dans ton contexte et donne des recommandations concrètes
-- Alerte sur les anomalies (pics de menaces, taux d'erreur élevé, signalements en hausse)
-- Propose des actions correctives via les blocs forsure-action quand pertinent
-- NE parle PAS des publications personnelles de l'admin, de marketplace, ou de sujets personnels
-- Sois professionnel, concis et orienté données
-- Utilise des chiffres et pourcentages quand disponibles
-- Si on te demande un rapport, structure-le clairement avec des sections
+- Cite les chiffres EXACTS fournis dans le contexte
+- Si aucune menace/attaque : dis-le honnêtement, c'est une bonne nouvelle
+- Propose des actions correctives UNIQUEMENT si les données le justifient
+- NE parle PAS de publications personnelles, marketplace, ou sujets personnels
+- Sois professionnel, concis et honnête
 
 ## FORMAT
 - Utilise des emojis de sécurité/admin : 🛡️ 🔒 ⚠️ 📊 🧠 ⚡ 🚨
 - Structure tes réponses avec des titres et listes
-- Mets en gras les chiffres importants et les alertes critiques`;
+- Mets en gras les chiffres importants`;
 
     const baseSystemPrompt = context === 'neural-engine'
       ? NEURAL_ENGINE_ADMIN_PROMPT
       : agent.system_prompt + "\n\n" + ACTION_SYSTEM_PROMPT;
 
-    // Combine with date/time and user context
-    const fullSystemPrompt = baseSystemPrompt + dateTimeContext + userContext;
+    // Combine with date/time, user context, and admin data
+    const fullSystemPrompt = baseSystemPrompt + dateTimeContext + userContext + adminDataContext;
 
     const aiMessages: any[] = [
       { role: "system", content: fullSystemPrompt },
