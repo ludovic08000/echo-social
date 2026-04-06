@@ -1582,8 +1582,9 @@ function ZeusNeuralConsole() {
     enabled: !!user && !!agentId,
   });
 
-  // Init: find Zeus agent
+  // Init: find Zeus agent + force sidebar open on mount/refresh
   useEffect(() => {
+    setSidebarOpen(true);
     supabase.from('ai_agents').select('id').eq('slug', 'zeus-companion').eq('is_active', true).single()
       .then(({ data }) => { if (data) setAgentId(data.id); });
   }, []);
@@ -1602,7 +1603,9 @@ function ZeusNeuralConsole() {
   const newConversation = useCallback(() => {
     setConvId(null);
     setMessages([]);
-    setSidebarOpen(false);
+    setInput('');
+    setSidebarOpen(true);
+    toast({ title: 'Nouvelle conversation', description: 'Session Zeus réinitialisée.' });
   }, []);
 
   const deleteConversation = useCallback(async (id: string) => {
