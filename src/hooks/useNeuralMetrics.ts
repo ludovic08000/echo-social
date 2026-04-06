@@ -25,31 +25,26 @@ export interface FeedConfigEntry {
   updated_at: string;
 }
 
-// Stable seed data generated once per session
-let _seedCache: MetricPoint[] | null = null;
-function getStableSeedData(): MetricPoint[] {
-  if (_seedCache) return _seedCache;
+// Generate empty time slots for the last 24h (no fake data)
+function getEmptyTimeline(): MetricPoint[] {
   const now = new Date();
   const points: MetricPoint[] = [];
-  // Use hour-based seed for deterministic-ish values
   for (let i = 23; i >= 0; i--) {
     const h = new Date(now.getTime() - i * 3600000);
-    const seed = h.getHours() * 137 + h.getDate() * 31;
     points.push({
       time: h.toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' }),
-      calls: (seed % 400) + 150,
-      latency: (seed % 60) + 30,
-      errors: seed % 8,
+      calls: 0,
+      latency: 0,
+      errors: 0,
       threats: 0,
     });
   }
-  _seedCache = points;
   return points;
 }
 
 export function useNeuralMetrics() {
   const { user } = useAuth();
-  const [chartData, setChartData] = useState<MetricPoint[]>(getStableSeedData);
+  const [chartData, setChartData] = useState<MetricPoint[]>(getEmptyTimeline);
   const [loading, setLoading] = useState(true);
 
   const fetchMetrics = useCallback(async () => {
@@ -63,7 +58,7 @@ export function useNeuralMetrics() {
         .limit(500);
 
       if (!data || data.length === 0) {
-        setChartData(getStableSeedData());
+        setChartData(getEmptyTimeline());
         return;
       }
 
@@ -85,7 +80,7 @@ export function useNeuralMetrics() {
         errors: b.errors,
         threats: b.threats,
       }));
-      setChartData(points);
+      setChartData(points.length > 0 ? points : getEmptyTimeline());
     } catch (e) {
       console.error('Failed to fetch metrics:', e);
     } finally {
@@ -95,10 +90,8 @@ export function useNeuralMetrics() {
 
   useEffect(() => {
     fetchMetrics();
-    // Fallback polling every 30s
     const iv = setInterval(fetchMetrics, 30000);
 
-    // Realtime subscription for instant updates
     const channel = supabase
       .channel('ai-metrics-realtime')
       .on(
@@ -130,7 +123,6 @@ export function useTrustScores() {
         .limit(20);
 
       if (data && data.length > 0) {
-        // Enrich with profile names
         const userIds = (data as any[]).map((d: any) => d.user_id);
         const { data: profiles } = await supabase
           .from('profiles')
