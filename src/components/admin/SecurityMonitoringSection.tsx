@@ -180,7 +180,7 @@ export function SecurityMonitoringSection() {
         });
       });
     }
-    setPrevCount(currentCount);
+    setPrevIncidentCount(currentCount);
   }, [incidents]);
 
   // ── Détection anomalies IP en temps réel ──
