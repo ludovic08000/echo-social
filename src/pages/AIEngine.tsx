@@ -8,7 +8,7 @@ import { toast } from '@/hooks/use-toast';
 import { AppLayout } from '@/components/AppLayout';
 import { SEOHead } from '@/components/SEOHead';
 import {
-  getAIModules, getAIEngineStats, getCategoryLabel, getCategoryColor,
+  getAIModules, getCategoryLabel, getCategoryColor,
   type AIModule, type AICategory,
 } from '@/lib/aiEngine';
 import { useAIEngine, type ModerationResult, type SentimentResult } from '@/hooks/useAIEngine';
