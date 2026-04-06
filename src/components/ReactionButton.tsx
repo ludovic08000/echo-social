@@ -89,8 +89,10 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   const removeReaction = useRemoveReaction();
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPress = useRef(false);
+  const isBusy = addReaction.isPending || removeReaction.isPending;
 
   const handleReaction = useCallback((reactionType: ReactionType) => {
+    if (isBusy) return;
     if (!user) {
       toast({ title: 'Connexion requise', description: 'Connectez-vous pour réagir', variant: 'destructive' });
       return;
@@ -103,9 +105,10 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       addReaction.mutate({ postId, reactionType });
     }
     setIsOpen(false);
-  }, [user, currentReaction, postId, addReaction, removeReaction]);
+  }, [user, currentReaction, postId, addReaction, removeReaction, isBusy]);
 
   const handleQuickLike = useCallback(() => {
+    if (isBusy) return;
     if (!user) {
       toast({ title: 'Connexion requise', description: 'Connectez-vous pour réagir', variant: 'destructive' });
       return;
@@ -117,7 +120,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       setShowParticles('👍');
       addReaction.mutate({ postId, reactionType: 'like' });
     }
-  }, [user, currentReaction, postId, addReaction, removeReaction]);
+  }, [user, currentReaction, postId, addReaction, removeReaction, isBusy]);
 
   // Long press to open picker (mobile-friendly)
   const onPointerDown = useCallback(() => {
