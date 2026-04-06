@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useZeusSettings } from '@/hooks/useZeusCompanion';
 import { useNavigate } from 'react-router-dom';
