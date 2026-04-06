@@ -308,17 +308,47 @@ serve(async (req) => {
       });
     }
 
+    // ── ADMIN GATE: Only admins can use neural-engine context ──
+    let isAdmin = false;
+    if (context === "neural-engine") {
+      const { data: adminRole } = await supabase
+        .from("user_roles")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("role", "admin")
+        .maybeSingle();
+      isAdmin = !!adminRole;
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Accès refusé. Seuls les administrateurs peuvent accéder au Neural Engine." }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // ── Conversation ownership check ──
     let convId = conversation_id;
+    if (convId) {
+      const { data: convOwner } = await supabase
+        .from("ai_agent_conversations")
+        .select("user_id")
+        .eq("id", convId)
+        .single();
+      if (!convOwner || convOwner.user_id !== userId) {
+        return new Response(JSON.stringify({ error: "Conversation introuvable ou accès refusé" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
     if (!convId) {
       const { data: conv } = await supabase
         .from("ai_agent_conversations")
-        .insert({ user_id: userId, agent_id, title: message.substring(0, 60) })
+        .insert({ user_id: userId, agent_id, title: sanitizedMessage.substring(0, 60) })
         .select("id").single();
       convId = conv?.id;
     }
 
     await supabase.from("ai_agent_messages").insert({
-      conversation_id: convId, role: "user", content: message,
+      conversation_id: convId, role: "user", content: sanitizedMessage,
     });
 
     const { data: history } = await supabase
@@ -445,7 +475,7 @@ serve(async (req) => {
       }
 
       // ── Marketplace search ──
-      const { isSearch, query } = detectSearchIntent(message);
+      const { isSearch, query } = detectSearchIntent(sanitizedMessage);
       if (isSearch && query.length > 0) {
         const searchTerms = query.split(' ').filter(t => t.length > 2).slice(0, 5);
         let productQuery = supabase
@@ -744,7 +774,7 @@ Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines :
                 category: category || "general",
                 content: memContent,
                 importance: Math.min(10, Math.max(1, importance || 5)),
-                source_message: message.substring(0, 200),
+                source_message: sanitizedMessage.substring(0, 200),
               });
 
               return { role: "tool", tool_call_id: tc.id, content: JSON.stringify({ saved: true, message: "Mémorisé avec succès !" }) };
