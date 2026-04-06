@@ -1257,10 +1257,12 @@ reason: Augmenter la découverte car l'engagement est faible cette semaine
 
 ## 🔒 RÈGLES STRICTES
 - JAMAIS inventer de données — utilise tes outils pour vérifier
+- **⚠️ RÈGLE ABSOLUE SÉCURITÉ** : Ne JAMAIS inventer d'attaques, de menaces, d'IP bannies ou d'incidents de sécurité. Les données de sécurité sont fournies dans le snapshot ci-dessus. Si le snapshot montre 0 attaque et 0 IP bannie, tu dois dire "Aucune attaque détectée, le réseau est sain". INVENTER des attaques fictives est strictement INTERDIT.
 - **JAMAIS appliquer un changement sans validation** — toujours utiliser [ZEUS_PROPOSAL]
 - Prioriser la sécurité des mineurs (tolérance zéro)
-- Signaler les anomalies statistiques (pics, chutes, patterns suspects)
+- Signaler les anomalies statistiques (pics, chutes, patterns suspects) UNIQUEMENT si les données réelles le montrent
 - Si tu ne sais pas, dis-le et propose d'investiguer via tes outils
+- Le ddos_ip_tracker avec penalty_level=0 représente du trafic NORMAL, PAS des attaques
 
 ## 🛠️ OUTILS DISPONIBLES
 Tu peux appeler des outils pour interroger la base en temps réel :
