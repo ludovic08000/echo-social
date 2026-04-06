@@ -249,13 +249,9 @@ export function StoriesBar() {
           className="flex-shrink-0 w-[110px] h-[190px] rounded-xl overflow-hidden relative group bg-card border border-border/20 cursor-pointer"
         >
           {/* User photo top half */}
-          <div className="h-[130px] w-full overflow-hidden bg-muted">
+          <div className="h-[130px] w-full overflow-hidden bg-muted flex items-center justify-center">
             {user && (
-              <img 
-                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`} 
-                alt="" 
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-              />
+              <UserAvatar src={null} alt="Moi" size="lg" />
             )}
           </div>
           {/* Plus button with gradient */}
