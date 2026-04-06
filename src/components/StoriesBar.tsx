@@ -322,8 +322,8 @@ export function StoriesBar() {
       </div>
 
       {/* Story Viewer - Full Screen Overlay */}
-      <AnimatePresence>
-        {selectedGroup && currentStory && (
+      {selectedGroup && currentStory && createPortal(
+        <AnimatePresence>
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
