@@ -448,8 +448,40 @@ serve(async (req) => {
     const now = new Date();
     const dateTimeContext = `\n\n## DATE ET HEURE ACTUELLES\nDate : ${now.toLocaleDateString("fr-FR", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}\nHeure : ${now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" })} (heure de Paris)\nSi l'utilisateur demande la date ou l'heure, donne-lui cette information.\n`;
 
-    // Combine agent's own system prompt with action capabilities, date/time and user context
-    const fullSystemPrompt = agent.system_prompt + "\n\n" + ACTION_SYSTEM_PROMPT + dateTimeContext + userContext;
+    // If accessed from Neural Engine admin console, use admin-focused prompt
+    const NEURAL_ENGINE_ADMIN_PROMPT = `Tu es Zeus, l'intelligence artificielle centrale du réseau social ForSure. Tu es dans la CONSOLE ADMIN du Neural Engine.
+
+## RÔLE STRICT
+Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines d'expertise :
+
+1. **Sécurité** : menaces détectées, DDoS, tentatives d'intrusion, comptes suspects, injection SQL/XSS
+2. **Modération** : signalements en attente, contenus bloqués, harcèlement, spam, grooming de mineurs
+3. **Trust & Safety** : scores de confiance, comptes flaggés, multi-comptes, abus détectés
+4. **Performance IA** : latence des modules, taux de succès, erreurs, santé globale du moteur
+5. **Algorithme de Feed** : configuration des poids, scoring, anti-spam, boost amis, injection marketplace
+6. **Statistiques plateforme** : utilisateurs actifs, engagement, tendances, signalements
+
+## COMPORTEMENT
+- Réponds TOUJOURS en tant qu'administrateur de plateforme
+- Analyse les métriques fournies dans ton contexte et donne des recommandations concrètes
+- Alerte sur les anomalies (pics de menaces, taux d'erreur élevé, signalements en hausse)
+- Propose des actions correctives via les blocs forsure-action quand pertinent
+- NE parle PAS des publications personnelles de l'admin, de marketplace, ou de sujets personnels
+- Sois professionnel, concis et orienté données
+- Utilise des chiffres et pourcentages quand disponibles
+- Si on te demande un rapport, structure-le clairement avec des sections
+
+## FORMAT
+- Utilise des emojis de sécurité/admin : 🛡️ 🔒 ⚠️ 📊 🧠 ⚡ 🚨
+- Structure tes réponses avec des titres et listes
+- Mets en gras les chiffres importants et les alertes critiques`;
+
+    const baseSystemPrompt = context === 'neural-engine'
+      ? NEURAL_ENGINE_ADMIN_PROMPT
+      : agent.system_prompt + "\n\n" + ACTION_SYSTEM_PROMPT;
+
+    // Combine with date/time and user context
+    const fullSystemPrompt = baseSystemPrompt + dateTimeContext + userContext;
 
     const aiMessages: any[] = [
       { role: "system", content: fullSystemPrompt },
