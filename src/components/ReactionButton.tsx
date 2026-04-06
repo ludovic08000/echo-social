@@ -120,6 +120,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       toast({ title: 'Connexion requise', description: 'Connectez-vous pour réagir', variant: 'destructive' });
       return;
     }
+    startCooldown();
     haptic('light');
     if (currentReaction) {
       removeReaction.mutate(postId);
@@ -127,7 +128,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       setShowParticles('👍');
       addReaction.mutate({ postId, reactionType: 'like' });
     }
-  }, [user, currentReaction, postId, addReaction, removeReaction, isBusy]);
+  }, [user, currentReaction, postId, addReaction, removeReaction, isBusy, startCooldown]);
 
   // Long press to open picker (mobile-friendly)
   const onPointerDown = useCallback(() => {
