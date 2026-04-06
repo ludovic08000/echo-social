@@ -1,29 +1,27 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X, Eye, Trash2, ChevronLeft, ChevronRight, Heart, ChevronUp, Layers, Loader2, Send } from 'lucide-react';
+import { Plus, X, Eye, Trash2, ChevronLeft, ChevronRight, Heart, ChevronUp, Loader2, Send } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { useStories, useCreateStory, useViewStory, useDeleteStory, useLikeStory, useStoryViewers, GroupedStories } from '@/hooks/useStories';
+import { useStories, useCreateStory, useViewStory, useDeleteStory, useStoryViewers, GroupedStories } from '@/hooks/useStories';
+import { useCreateConversation, useSendMessage } from '@/hooks/useMessages';
 import { useAuth } from '@/lib/auth';
 import { UserAvatar } from './UserAvatar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { Link } from 'react-router-dom';
 
 const STORY_DURATION = 5000;
 const QUICK_REACTIONS = [
-  { emoji: '👍', label: "J'aime", bg: 'from-blue-400 to-blue-600' },
-  { emoji: '❤️', label: 'Love', bg: 'from-red-400 to-pink-500' },
-  { emoji: '😆', label: 'Haha', bg: 'from-yellow-300 to-amber-400' },
-  { emoji: '😮', label: 'Wow', bg: 'from-yellow-300 to-orange-400' },
-  { emoji: '😢', label: 'Triste', bg: 'from-yellow-300 to-amber-400' },
-  { emoji: '😡', label: 'Grrr', bg: 'from-orange-400 to-red-500' },
+  { emoji: '👍', label: "J'aime" },
+  { emoji: '❤️', label: 'J’adore' },
+  { emoji: '😆', label: 'Haha' },
+  { emoji: '😮', label: 'Wow' },
+  { emoji: '😢', label: 'Triste' },
+  { emoji: '😡', label: 'Grrr' },
 ];
-
-
 
 export function StoriesBar() {
   const { data: groupedStories, isLoading } = useStories();
@@ -35,6 +33,7 @@ export function StoriesBar() {
   const [isPaused, setIsPaused] = useState(false);
   const [showViewers, setShowViewers] = useState(false);
   const [replyText, setReplyText] = useState('');
+  const [flyingReaction, setFlyingReaction] = useState<string | null>(null);
   const replyInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -43,7 +42,8 @@ export function StoriesBar() {
   const createStory = useCreateStory();
   const viewStory = useViewStory();
   const deleteStory = useDeleteStory();
-  const likeStory = useLikeStory();
+  const createConversation = useCreateConversation();
+  const sendMessage = useSendMessage();
 
   const currentStory = selectedGroup?.stories[currentStoryIndex];
   const isOwner = currentStory?.user_id === user?.id;
