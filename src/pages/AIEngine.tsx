@@ -1741,73 +1741,111 @@ function ZeusNeuralConsole() {
         </div>
       </div>
 
-      {/* Chat */}
+      {/* Chat with sidebar */}
       <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-b from-amber-500/5 to-transparent overflow-hidden">
         <div className="px-4 py-3 border-b border-amber-500/10 flex items-center gap-2">
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="w-8 h-8 rounded-xl bg-accent/30 border border-border flex items-center justify-center hover:bg-accent/50 transition-colors" title="Historique">
+            <BookOpen className="w-4 h-4 text-muted-foreground" />
+          </button>
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white">
             <Zap className="w-4 h-4" />
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-foreground">Zeus Console</h3>
             <p className="text-[10px] text-muted-foreground">Connecté au Neural Engine • Pilotage IA</p>
           </div>
-          <span className="ml-auto flex items-center gap-1 text-[10px] text-emerald-500">
+          <button onClick={newConversation} className="px-2.5 py-1 rounded-lg text-[10px] font-medium bg-amber-500/10 text-amber-600 border border-amber-500/20 hover:bg-amber-500/20 transition-colors flex items-center gap-1">
+            <Plus className="w-3 h-3" /> Nouvelle
+          </button>
+          <span className="flex items-center gap-1 text-[10px] text-emerald-500">
             <Radio className="w-3 h-3 animate-pulse" /> Live
           </span>
         </div>
 
-        <div className="h-80 overflow-y-auto p-4 space-y-3">
-          {messages.length === 0 && (
-            <div className="text-center text-muted-foreground text-xs py-8 space-y-2">
-              <Brain className="w-10 h-10 mx-auto opacity-20" />
-              <p>Console Zeus × Neural Engine</p>
-              <p className="text-[10px]">Demande des stats, propose des ajustements, pilote l'algorithme…</p>
-              <div className="flex flex-wrap justify-center gap-1.5 mt-3">
-                {['Santé de la plateforme ?', 'Analyse les signalements', 'Optimise le feed', 'Stats Zeus'].map(q => (
-                  <button key={q} onClick={() => { setInput(q); }} className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-600 hover:bg-amber-500/20 transition-colors">
-                    {q}
-                  </button>
+        <div className="flex relative">
+          {/* Sidebar */}
+          {sidebarOpen && (
+            <div className="w-64 border-r border-border bg-card/80 flex flex-col absolute inset-y-0 left-0 z-10 h-[calc(80px+20rem+52px)] sm:relative sm:h-auto">
+              <div className="p-2 border-b border-border flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-foreground">Historique ({conversations.length})</span>
+                {conversations.length > 0 && (
+                  <button onClick={deleteAllConversations} className="text-[10px] text-destructive hover:underline">Tout effacer</button>
+                )}
+              </div>
+              <div className="flex-1 overflow-y-auto max-h-80">
+                {conversations.length === 0 ? (
+                  <p className="text-[10px] text-muted-foreground text-center py-6">Aucune conversation</p>
+                ) : conversations.map(conv => (
+                  <div key={conv.id} className={cn("group flex items-center gap-2 px-3 py-2 hover:bg-accent/30 cursor-pointer text-xs border-b border-border/50", convId === conv.id && "bg-primary/10")} onClick={() => loadConversation(conv)}>
+                    <div className="flex-1 min-w-0">
+                      <p className="truncate text-foreground font-medium">{conv.title || 'Sans titre'}</p>
+                      <p className="text-[9px] text-muted-foreground">{new Date(conv.updated_at).toLocaleDateString('fr')}</p>
+                    </div>
+                    <button onClick={e => { e.stopPropagation(); deleteConversation(conv.id); }} className="opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive/80 transition-opacity">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
           )}
-          {messages.map((msg, i) => (
-            <div key={i} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
-              <div className={cn(
-                'max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs whitespace-pre-wrap',
-                msg.role === 'user'
-                  ? 'bg-primary text-primary-foreground rounded-br-sm'
-                  : 'bg-card border border-border rounded-bl-sm'
-              )}>
-                {msg.content}
-              </div>
-            </div>
-          ))}
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-card border border-border rounded-2xl rounded-bl-sm px-3.5 py-2.5">
-                <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
-              </div>
-            </div>
-          )}
-        </div>
 
-        <div className="p-3 border-t border-border flex gap-2">
-          <Input
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-            placeholder="Pilote le Neural Engine…"
-            className="flex-1 text-xs h-9"
-            disabled={loading}
-          />
-          <button
-            onClick={sendMessage}
-            disabled={loading || !input.trim()}
-            className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white disabled:opacity-50 transition-opacity"
-          >
-            <Send className="w-4 h-4" />
-          </button>
+          {/* Chat area */}
+          <div className="flex-1 flex flex-col">
+            <div className="h-80 overflow-y-auto p-4 space-y-3">
+              {messages.length === 0 && (
+                <div className="text-center text-muted-foreground text-xs py-8 space-y-2">
+                  <Brain className="w-10 h-10 mx-auto opacity-20" />
+                  <p>Console Zeus × Neural Engine</p>
+                  <p className="text-[10px]">Demande des stats, propose des ajustements, pilote l'algorithme…</p>
+                  <div className="flex flex-wrap justify-center gap-1.5 mt-3">
+                    {['Santé de la plateforme ?', 'Analyse les signalements', 'Optimise le feed', 'Stats Zeus'].map(q => (
+                      <button key={q} onClick={() => { setInput(q); }} className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-600 hover:bg-amber-500/20 transition-colors">
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {messages.map((msg, i) => (
+                <div key={i} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+                  <div className={cn(
+                    'max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs whitespace-pre-wrap',
+                    msg.role === 'user'
+                      ? 'bg-primary text-primary-foreground rounded-br-sm'
+                      : 'bg-card border border-border rounded-bl-sm'
+                  )}>
+                    {msg.content}
+                  </div>
+                </div>
+              ))}
+              {loading && (
+                <div className="flex justify-start">
+                  <div className="bg-card border border-border rounded-2xl rounded-bl-sm px-3.5 py-2.5">
+                    <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 border-t border-border flex gap-2">
+              <Input
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+                placeholder="Pilote le Neural Engine…"
+                className="flex-1 text-xs h-9"
+                disabled={loading}
+              />
+              <button
+                onClick={sendMessage}
+                disabled={loading || !input.trim()}
+                className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white disabled:opacity-50 transition-opacity"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
