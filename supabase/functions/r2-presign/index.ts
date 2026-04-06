@@ -51,16 +51,20 @@ function checkRateLimit(userId: string): boolean {
   return true;
 }
 
-// CORS — restricted to actual app domains only
+// CORS — restricted to actual app domains + Lovable preview
 const ALLOWED_ORIGINS = [
   "https://calm-connect-05.lovable.app",
-  "https://id-preview--14bf9f2a-b211-4bff-8f3c-1cd3d8a0a907.lovable.app",
   "https://forsure.fans",
   "https://www.forsure.fans",
 ];
+function isAllowedOrigin(origin: string): boolean {
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  if (/^https:\/\/[a-z0-9-]+--[a-f0-9-]+\.lovable\.app$/.test(origin)) return true;
+  return false;
+}
 function cors(req: Request): Record<string, string> {
   const origin = req.headers.get("origin") || "";
-  const ok = ALLOWED_ORIGINS.includes(origin);
+  const ok = isAllowedOrigin(origin);
   return {
     "Access-Control-Allow-Origin": ok ? origin : ALLOWED_ORIGINS[0],
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
