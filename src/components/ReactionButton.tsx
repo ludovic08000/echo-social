@@ -89,7 +89,13 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   const removeReaction = useRemoveReaction();
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPress = useRef(false);
-  const isBusy = addReaction.isPending || removeReaction.isPending;
+  const cooldownRef = useRef(false);
+  const isBusy = addReaction.isPending || removeReaction.isPending || cooldownRef.current;
+
+  const startCooldown = useCallback(() => {
+    cooldownRef.current = true;
+    setTimeout(() => { cooldownRef.current = false; }, 800);
+  }, []);
 
   const handleReaction = useCallback((reactionType: ReactionType) => {
     if (isBusy) return;
