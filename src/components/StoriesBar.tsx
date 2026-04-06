@@ -16,7 +16,7 @@ import { Link } from 'react-router-dom';
 const STORY_DURATION = 5000;
 const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡'];
 
-const STORY_DURATION = 5000; // 5 seconds per story
+
 
 export function StoriesBar() {
   const { data: groupedStories, isLoading } = useStories();
