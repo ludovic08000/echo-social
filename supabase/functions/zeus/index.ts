@@ -1138,7 +1138,7 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
 
   if (action === "chat") {
     // Gather core platform snapshot (lightweight — details fetched via tools)
-    const [usersRes, postsRes, ordersRes, reportsRes, bansRes, trustRes, subsRes, verificationsRes, livesRes, productsRes] = await Promise.all([
+    const [usersRes, postsRes, ordersRes, reportsRes, bansRes, trustRes, subsRes, verificationsRes, livesRes, productsRes, bannedIpsRes, ddosTrackerRes, securityIncidentsRes] = await Promise.all([
       supabase.from("profiles").select("user_id, name, city, profile_type, created_at", { count: "exact" }).order("created_at", { ascending: false }).limit(10),
       supabase.from("posts").select("id", { count: "exact", head: true }),
       supabase.from("orders").select("id, total, status, created_at"),
@@ -1149,6 +1149,9 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
       supabase.from("identity_verifications").select("id, status, reason, created_at").eq("status", "pending").limit(10),
       supabase.from("live_streams").select("id", { count: "exact", head: true }).eq("is_active", true),
       supabase.from("products").select("id", { count: "exact", head: true }).eq("is_active", true),
+      supabase.from("banned_ips").select("id, ip_address, reason, banned_at", { count: "exact" }).eq("is_active", true),
+      supabase.from("ddos_ip_tracker").select("id, ip_address, penalty_level, request_count, blocked_until", { count: "exact" }).gte("penalty_level", 1),
+      supabase.from("security_incidents").select("id", { count: "exact", head: true }),
     ]);
 
     const orders = ordersRes.data || [];
@@ -1179,6 +1182,18 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
 | ⚠️ Profils flaggés | ${flaggedProfiles.length} |
 | 📡 Lives actifs | ${livesRes.count || 0} |
 | 📈 Nouveaux inscrits (7j) | ${newUsersWeek || 0} |
+| 🔒 IP bannies actives | ${bannedIpsRes.count || 0} |
+| 🛡️ IP sous pénalité DDoS | ${ddosTrackerRes.count || 0} |
+| 🚨 Incidents de sécurité | ${securityIncidentsRes.count || 0} |
+
+### 🔒 SÉCURITÉ RÉSEAU (DONNÉES RÉELLES — NE PAS INVENTER) :
+- **IP bannies actives** : ${bannedIpsRes.count || 0}
+- **IP sous pénalité DDoS (penalty ≥ 1)** : ${ddosTrackerRes.count || 0}
+- **Incidents de sécurité enregistrés** : ${securityIncidentsRes.count || 0}
+- **Attaques brute force** : ${bannedIpsRes.count || 0} IP bloquées
+- **Injections SQL/XSS détectées** : ${securityIncidentsRes.count || 0}
+${(bannedIpsRes.data || []).length > 0 ? `\n**IP bannies :**\n${(bannedIpsRes.data || []).slice(0, 10).map((ip: any) => `- ${ip.ip_address} — ${ip.reason || "Aucune raison"} (${new Date(ip.banned_at).toLocaleDateString("fr")})`).join("\n")}` : "✅ **Aucune attaque détectée, aucune IP bannie. Le réseau est sain.**"}
+${(ddosTrackerRes.data || []).length > 0 ? `\n**IP sous pénalité DDoS :**\n${(ddosTrackerRes.data || []).slice(0, 10).map((d: any) => `- ${d.ip_address} — penalty ${d.penalty_level}, ${d.request_count} req${d.blocked_until ? `, bloquée jusqu'à ${new Date(d.blocked_until).toLocaleString("fr")}` : ""}`).join("\n")}` : ""}
 
 ### 🚨 Signalements en attente (top 5) :
 ${pendingReports.slice(0, 5).map((r: any) => `- **[${r.report_type}]** ${r.description || "Sans description"} _(${new Date(r.created_at).toLocaleDateString("fr")})_`).join("\n") || "✅ Aucun signalement en attente"}
@@ -1242,10 +1257,12 @@ reason: Augmenter la découverte car l'engagement est faible cette semaine
 
 ## 🔒 RÈGLES STRICTES
 - JAMAIS inventer de données — utilise tes outils pour vérifier
+- **⚠️ RÈGLE ABSOLUE SÉCURITÉ** : Ne JAMAIS inventer d'attaques, de menaces, d'IP bannies ou d'incidents de sécurité. Les données de sécurité sont fournies dans le snapshot ci-dessus. Si le snapshot montre 0 attaque et 0 IP bannie, tu dois dire "Aucune attaque détectée, le réseau est sain". INVENTER des attaques fictives est strictement INTERDIT.
 - **JAMAIS appliquer un changement sans validation** — toujours utiliser [ZEUS_PROPOSAL]
 - Prioriser la sécurité des mineurs (tolérance zéro)
-- Signaler les anomalies statistiques (pics, chutes, patterns suspects)
+- Signaler les anomalies statistiques (pics, chutes, patterns suspects) UNIQUEMENT si les données réelles le montrent
 - Si tu ne sais pas, dis-le et propose d'investiguer via tes outils
+- Le ddos_ip_tracker avec penalty_level=0 représente du trafic NORMAL, PAS des attaques
 
 ## 🛠️ OUTILS DISPONIBLES
 Tu peux appeler des outils pour interroger la base en temps réel :
