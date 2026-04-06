@@ -1559,7 +1559,7 @@ function ZeusNeuralConsole() {
   const [loading, setLoading] = useState(false);
   const [agentId, setAgentId] = useState<string | null>(null);
   const [convId, setConvId] = useState<string | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const { chartData } = useNeuralMetrics();
   const { config: feedConfig } = useFeedConfig();
   const { user } = useAuth();
@@ -1569,13 +1569,14 @@ function ZeusNeuralConsole() {
     queryKey: ['zeus-ne-conversations', user?.id, agentId],
     queryFn: async () => {
       if (!user || !agentId) return [];
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('ai_agent_conversations')
         .select('id, title, updated_at')
         .eq('user_id', user.id)
         .eq('agent_id', agentId)
         .order('updated_at', { ascending: false })
         .limit(50);
+      console.log('[Zeus NE] conversations loaded:', data?.length, 'error:', error?.message);
       return data || [];
     },
     enabled: !!user && !!agentId,
@@ -1762,17 +1763,20 @@ function ZeusNeuralConsole() {
           </span>
         </div>
 
-        <div className="flex relative">
+        <div className="flex">
           {/* Sidebar */}
           {sidebarOpen && (
-            <div className="w-64 border-r border-border bg-card/80 flex flex-col absolute inset-y-0 left-0 z-10 h-[calc(80px+20rem+52px)] sm:relative sm:h-auto">
+            <div className="w-64 shrink-0 border-r border-border bg-card/80 flex flex-col">
               <div className="p-2 border-b border-border flex items-center justify-between">
                 <span className="text-[11px] font-semibold text-foreground">Historique ({conversations.length})</span>
-                {conversations.length > 0 && (
-                  <button onClick={deleteAllConversations} className="text-[10px] text-destructive hover:underline">Tout effacer</button>
-                )}
+                <div className="flex items-center gap-2">
+                  {conversations.length > 0 && (
+                    <button onClick={deleteAllConversations} className="text-[10px] text-destructive hover:underline">Tout effacer</button>
+                  )}
+                  <button onClick={() => setSidebarOpen(false)} className="text-muted-foreground hover:text-foreground">✕</button>
+                </div>
               </div>
-              <div className="flex-1 overflow-y-auto max-h-80">
+              <div className="overflow-y-auto" style={{ maxHeight: '24rem' }}>
                 {conversations.length === 0 ? (
                   <p className="text-[10px] text-muted-foreground text-center py-6">Aucune conversation</p>
                 ) : conversations.map(conv => (
