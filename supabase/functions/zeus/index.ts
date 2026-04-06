@@ -1195,11 +1195,14 @@ ${hasSecurityEvents ? "- Lancer un audit sécurité détaillé si tu veux une an
 
     const FAKE_SECURITY_PATTERN = /(\d[\d\s.,]+)\s*(tentatives?|attaques?|intrusions?|bloqu[ée]e?s?|neutralis[ée]e?s?|incidents?|bots?\s+de\s+spam|requ[eê]tes?\s+suspectes?|credential\s+stuffing|brute\s*force|WAF|pare[-\s]?feu|DDoS|Layer\s*\d)/i;
     const SECURITY_TOPIC_PATTERN = /attaque|intrusion|ddos|brute\s*force|xss|sql|injection|menace|incident|phishing|spam|bot|s[ée]curit|WAF|credential|neutralis|bloqu[ée]|tentative|suspecte|pare[-\s]?feu|firewall/i;
+    // Pattern for fabricated operational metrics (latency, CPU, success rate, message counts per day, etc.)
+    const FAKE_OPS_PATTERN = /(\d[\d\s.,]*)\s*(%|ms|req|requêtes?\s+trait[ée]e?s?|messages?\s*\/\s*jour|messages?\s+par\s+jour|CPU|charge|latence|taux\s+de\s+succ[eè]s)/i;
 
     const sanitizeZeusReply = (content: string) => {
       const zeroSecurityState = securityFacts.activeBannedIps === 0 && securityFacts.penalizedIps === 0 && securityFacts.incidents === 0;
       const hasFakeNumbers = FAKE_SECURITY_PATTERN.test(content);
       const hasSecurityTopic = SECURITY_TOPIC_PATTERN.test(content);
+      const hasFakeOps = FAKE_OPS_PATTERN.test(content);
 
       // If security is clean and Zeus invented numbers or security topics → replace entirely
       if (zeroSecurityState && (hasFakeNumbers || (hasSecurityTopic && isSecurityQuery))) {
@@ -1211,7 +1214,6 @@ ${hasSecurityEvents ? "- Lancer un audit sécurité détaillé si tu veux une an
 
       // For non-security responses that still mention security with fake numbers
       if (zeroSecurityState && hasSecurityTopic) {
-        // Strip the fabricated security sections and append verified facts
         const cleaned = content
           .replace(/###?\s*🚨[^\n]*\n([\s\S]*?)(?=###?\s|$)/gi, '')
           .replace(/###?\s*⚠️\s*ALERTE[^\n]*\n([\s\S]*?)(?=###?\s|$)/gi, '')
@@ -1221,7 +1223,23 @@ ${hasSecurityEvents ? "- Lancer un audit sécurité détaillé si tu veux une an
         return `${cleaned}\n\n---\n## ✅ Sécurité vérifiée (données réelles)\n- IP bannies actives : **0**\n- IP sous pénalité DDoS : **0**\n- Incidents de sécurité : **0**\n- **Réseau sain, aucune attaque détectée.**`;
       }
 
-      return `${content}\n\n---\n## ✅ Faits vérifiés\n- IP bannies actives : **${securityFacts.activeBannedIps}**\n- IP sous pénalité DDoS : **${securityFacts.penalizedIps}**\n- Incidents de sécurité : **${securityFacts.incidents}**`;
+      // Strip fabricated operational metrics (latency, CPU, success rates, etc.)
+      let finalContent = content;
+      if (hasFakeOps) {
+        // Remove lines with fabricated ops metrics
+        finalContent = finalContent
+          .replace(/\*\*?Latence[^*\n]*\*\*?[^\n]*/gi, '')
+          .replace(/\*\*?Charge\s+CPU[^*\n]*\*\*?[^\n]*/gi, '')
+          .replace(/\*\*?Taux\s+de\s+succ[eè]s[^*\n]*\*\*?[^\n]*/gi, '')
+          .replace(/\*\*?Total\s+des\s+messages?\s*\([^)]*\)[^*\n]*\*\*?[^\n]*/gi, '')
+          .replace(/\*\*?Moyenne\s+quotidienne[^*\n]*\*\*?[^\n]*/gi, '')
+          .replace(/~?\d+\.?\d*\s*messages?\s*\/\s*jour[^\n]*/gi, '')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+        finalContent += `\n\n---\n> ⚠️ *Certaines métriques opérationnelles (latence, CPU, messages/jour) ne sont pas disponibles en temps réel. Seules les données du snapshot ci-dessus sont vérifiées.*`;
+      }
+
+      return `${finalContent}\n\n---\n## ✅ Faits vérifiés\n- IP bannies actives : **${securityFacts.activeBannedIps}**\n- IP sous pénalité DDoS : **${securityFacts.penalizedIps}**\n- Incidents de sécurité : **${securityFacts.incidents}**`;
     };
 
     // Strip fabricated security data from conversation history to prevent contamination
