@@ -522,8 +522,8 @@ Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines :
       ? NEURAL_ENGINE_ADMIN_PROMPT
       : agent.system_prompt + "\n\n" + ACTION_SYSTEM_PROMPT;
 
-    // Combine with date/time and user context
-    const fullSystemPrompt = baseSystemPrompt + dateTimeContext + userContext;
+    // Combine with date/time, user context, and admin data
+    const fullSystemPrompt = baseSystemPrompt + dateTimeContext + userContext + adminDataContext;
 
     const aiMessages: any[] = [
       { role: "system", content: fullSystemPrompt },
