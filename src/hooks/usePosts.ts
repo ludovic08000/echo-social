@@ -33,9 +33,35 @@ export function usePosts() {
       if (!user) return [];
       
       const prefs = loadContentPrefs();
+      const weights = loadFeedWeights();
       const offset = pageParam || 0;
 
-      // ── Strategy 1: Single RPC call (posts + profiles + reactions in 1 query) ──
+      // Build Monte Carlo scoring context
+      const mcCtx: ScoringContext = {
+        friendInteractionCounts: new Map(),
+        userId: user.id,
+        prefs,
+        weights,
+        seenAuthors: new Set(),
+        postIndex: 0,
+      };
+
+      // Load friend interaction counts for social proximity scoring
+      try {
+        const { data: friendships } = await supabase
+          .from('friendships')
+          .select('requester_id, addressee_id')
+          .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
+          .eq('status', 'accepted');
+        if (friendships) {
+          friendships.forEach((f: any) => {
+            const friendId = f.requester_id === user.id ? f.addressee_id : f.requester_id;
+            mcCtx.friendInteractionCounts.set(friendId, (mcCtx.friendInteractionCounts.get(friendId) || 0) + 1);
+          });
+        }
+      } catch {}
+
+      // ── Strategy 1: Single RPC call ──
       try {
         const { data: rpcPosts, error: rpcError } = await supabase.rpc('get_feed_posts', {
           p_user_id: user.id,
@@ -44,10 +70,9 @@ export function usePosts() {
         });
 
         if (!rpcError && rpcPosts && rpcPosts.length > 0) {
-          // Filter muted keywords client-side
           const filtered = rpcPosts.filter((p: any) => !containsMutedKeyword(p.body, prefs.mutedKeywords));
 
-          return filtered.map((post: any) => ({
+          const mapped = filtered.map((post: any) => ({
             id: post.id,
             user_id: post.user_id,
             body: post.body,
@@ -64,6 +89,9 @@ export function usePosts() {
             is_liked: !!post.user_reaction,
             user_reaction: post.user_reaction || null,
           })) as Post[];
+
+          // Apply Monte Carlo ranking
+          return monteCarloRank(mapped, mcCtx, 50);
         }
       } catch {
         // Fall through to legacy fallback
@@ -83,7 +111,10 @@ export function usePosts() {
       if (!posts || posts.length === 0) return [];
 
       const filteredPosts = posts.filter(p => !containsMutedKeyword(p.body, prefs.mutedKeywords));
-      return await enrichPosts(filteredPosts.slice(0, PAGE_SIZE), user.id);
+      const enriched = await enrichPosts(filteredPosts.slice(0, PAGE_SIZE), user.id);
+      
+      // Apply Monte Carlo ranking
+      return monteCarloRank(enriched, mcCtx, 50);
     },
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.length < PAGE_SIZE) return undefined;
