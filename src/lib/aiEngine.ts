@@ -65,11 +65,11 @@ const AI_MODULE_REGISTRY: Omit<AIModule, 'metrics'>[] = [
   {
     id: 'ai-moderator',
     name: 'Modération Auto-Apprenante',
-    description: 'IA de modération qui apprend des décisions humaines pour s\'améliorer continuellement. Détecte toxicité, spam, harcèlement et désinformation.',
+    description: 'IA de modération qui apprend des décisions humaines pour s\'améliorer continuellement. Détecte toxicité, spam, harcèlement et désinformation. Intègre un moteur de feedback et de dérivation de règles automatique.',
     category: 'moderation',
     status: 'active',
     icon: 'ShieldCheck',
-    capabilities: ['Détection toxicité', 'Anti-harcèlement', 'Anti-désinformation', 'Auto-apprentissage', 'Feedback loop', 'Confiance culturelle'],
+    capabilities: ['Détection toxicité', 'Anti-harcèlement', 'Anti-désinformation', 'Auto-apprentissage', 'Feedback loop', 'Confiance culturelle', 'Dérivation de règles', 'Reconnaissance de patterns'],
   },
   {
     id: 'sentiment-analyzer',
@@ -88,15 +88,6 @@ const AI_MODULE_REGISTRY: Omit<AIModule, 'metrics'>[] = [
     status: 'active',
     icon: 'UserSearch',
     capabilities: ['Score de confiance', 'Détection bots', 'Patterns comportementaux', 'Actions automatiques'],
-  },
-  {
-    id: 'self-learning',
-    name: 'Auto-Apprentissage',
-    description: 'Moteur d\'apprentissage continu qui dérive de nouvelles règles à partir du feedback humain pour affiner la modération.',
-    category: 'moderation',
-    status: 'active',
-    icon: 'GraduationCap',
-    capabilities: ['Feedback loop', 'Dérivation de règles', 'Reconnaissance de patterns', 'Amélioration continue'],
   },
 
   // ── SOCIAL INTELLIGENCE ──
