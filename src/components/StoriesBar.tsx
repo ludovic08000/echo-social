@@ -280,13 +280,11 @@ export function StoriesBar() {
           </div>
           {/* iOS-style floating plus button */}
           <div className="absolute left-1/2 -translate-x-1/2 top-[112px] z-10">
-            <div className="w-9 h-9 rounded-full border-[3px] border-card shadow-lg flex items-center justify-center bg-primary">
+            <div className="w-9 h-9 rounded-full border-[3px] border-card shadow-lg flex items-center justify-center bg-blue-500">
               {isCreating ? (
-                <Loader2 className="w-4 h-4 animate-spin text-primary-foreground" />
+                <Loader2 className="w-4 h-4 animate-spin text-white" />
               ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-primary-foreground" />
-                </svg>
+                <Plus className="w-5 h-5 text-white" strokeWidth={3} />
               )}
             </div>
           </div>
