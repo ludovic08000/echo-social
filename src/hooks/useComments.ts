@@ -181,14 +181,22 @@ export function useLikeComment() {
       if (!user) throw new Error('Not authenticated');
 
       if (isLiked) {
-        await supabase.from('comment_likes').delete().eq('comment_id', commentId).eq('user_id', user.id);
+        const { error } = await supabase.from('comment_likes').delete().eq('comment_id', commentId).eq('user_id', user.id);
+        if (error) throw error;
       } else {
-        await supabase.from('comment_likes').insert({ comment_id: commentId, user_id: user.id });
+        const { error } = await supabase.from('comment_likes').upsert(
+          { comment_id: commentId, user_id: user.id },
+          { onConflict: 'comment_id,user_id' }
+        );
+        if (error) throw error;
       }
       return postId;
     },
     onSuccess: (postId) => {
       queryClient.invalidateQueries({ queryKey: ['comments', postId] });
+    },
+    onError: (err) => {
+      console.error('Comment like error:', err);
     },
   });
 }
