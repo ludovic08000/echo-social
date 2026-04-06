@@ -1138,7 +1138,7 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
 
   if (action === "chat") {
     // Gather core platform snapshot (lightweight — details fetched via tools)
-    const [usersRes, postsRes, ordersRes, reportsRes, bansRes, trustRes, subsRes, verificationsRes, livesRes, productsRes] = await Promise.all([
+    const [usersRes, postsRes, ordersRes, reportsRes, bansRes, trustRes, subsRes, verificationsRes, livesRes, productsRes, bannedIpsRes, ddosTrackerRes, securityIncidentsRes] = await Promise.all([
       supabase.from("profiles").select("user_id, name, city, profile_type, created_at", { count: "exact" }).order("created_at", { ascending: false }).limit(10),
       supabase.from("posts").select("id", { count: "exact", head: true }),
       supabase.from("orders").select("id, total, status, created_at"),
@@ -1149,6 +1149,9 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
       supabase.from("identity_verifications").select("id, status, reason, created_at").eq("status", "pending").limit(10),
       supabase.from("live_streams").select("id", { count: "exact", head: true }).eq("is_active", true),
       supabase.from("products").select("id", { count: "exact", head: true }).eq("is_active", true),
+      supabase.from("banned_ips").select("id, ip_address, reason, banned_at", { count: "exact" }).eq("is_active", true),
+      supabase.from("ddos_ip_tracker").select("id, ip_address, penalty_level, request_count, blocked_until", { count: "exact" }).gte("penalty_level", 1),
+      supabase.from("security_incidents").select("id", { count: "exact", head: true }),
     ]);
 
     const orders = ordersRes.data || [];
