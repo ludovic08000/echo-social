@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Heart, ThumbsUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -19,7 +19,6 @@ interface ReactionButtonProps {
   variant?: 'default' | 'facebook' | 'instagram';
 }
 
-// ── Particle burst effect ────────────────────────────
 function ReactionParticles({ emoji, onDone }: { emoji: string; onDone: () => void }) {
   const particles = Array.from({ length: 6 }, (_, i) => {
     const angle = (i / 6) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
@@ -62,7 +61,6 @@ function ReactionParticles({ emoji, onDone }: { emoji: string; onDone: () => voi
   );
 }
 
-// ── Haptic helper ────────────────────────────────────
 function haptic(style: 'light' | 'medium' | 'heavy' = 'light') {
   try {
     if ('vibrate' in navigator) {
@@ -71,7 +69,6 @@ function haptic(style: 'light' | 'medium' | 'heavy' = 'light') {
   } catch {}
 }
 
-// ── Color map for each reaction ──────────────────────
 const REACTION_COLORS: Record<ReactionType, string> = {
   like: 'text-blue-500',
   love: 'text-red-500',
@@ -84,37 +81,63 @@ const REACTION_COLORS: Record<ReactionType, string> = {
 export function ReactionButton({ postId, currentReaction, reactionsCount, variant = 'default' }: ReactionButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showParticles, setShowParticles] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(false);
   const { user } = useAuth();
   const addReaction = useAddReaction();
   const removeReaction = useRemoveReaction();
-  const [cooldown, setCooldown] = useState(false);
+  const interactionLockRef = useRef(false);
   const isBusy = addReaction.isPending || removeReaction.isPending || cooldown;
 
   const startCooldown = useCallback(() => {
     setCooldown(true);
-    setTimeout(() => setCooldown(false), 1200);
+    window.setTimeout(() => {
+      interactionLockRef.current = false;
+      setCooldown(false);
+    }, 1200);
   }, []);
 
+  const lockInteraction = useCallback(() => {
+    interactionLockRef.current = true;
+    setIsOpen(false);
+    startCooldown();
+  }, [startCooldown]);
+
   const handleReaction = useCallback((reactionType: ReactionType) => {
-    if (isBusy || currentReaction) return;
+    if (interactionLockRef.current || isBusy || currentReaction) return;
     if (!user) {
       toast({ title: 'Connexion requise', description: 'Connectez-vous pour réagir', variant: 'destructive' });
       return;
     }
-    startCooldown();
+
+    lockInteraction();
     haptic('medium');
     setShowParticles(REACTION_EMOJIS[reactionType]);
     addReaction.mutate({ postId, reactionType });
-    setIsOpen(false);
-  }, [user, currentReaction, postId, addReaction, isBusy, startCooldown]);
+  }, [user, currentReaction, postId, addReaction, isBusy, lockInteraction]);
 
   const handleRemoveReaction = useCallback(() => {
-    if (isBusy || !currentReaction) return;
+    if (interactionLockRef.current || isBusy || !currentReaction) return;
     if (!user) return;
-    startCooldown();
+
+    lockInteraction();
     haptic('light');
     removeReaction.mutate(postId);
-  }, [user, currentReaction, postId, removeReaction, isBusy, startCooldown]);
+  }, [user, currentReaction, postId, removeReaction, isBusy, lockInteraction]);
+
+  const handleTriggerClick = useCallback((e?: React.MouseEvent | React.PointerEvent) => {
+    if (interactionLockRef.current || isBusy) {
+      e?.preventDefault();
+      return;
+    }
+
+    if (currentReaction) {
+      e?.preventDefault();
+      handleRemoveReaction();
+      return;
+    }
+
+    setIsOpen(true);
+  }, [currentReaction, handleRemoveReaction, isBusy]);
 
   const emojiVariants = {
     hidden: { scale: 0, y: 10 },
@@ -127,9 +150,9 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   };
 
   const EmojiPicker = (
-    <PopoverContent 
-      side="top" 
-      className="w-auto p-1.5 bg-card/95 backdrop-blur-xl border-border/30 shadow-2xl rounded-full"
+    <PopoverContent
+      side="top"
+      className="w-auto rounded-full border-border/30 bg-card/95 p-1.5 shadow-2xl backdrop-blur-xl"
       sideOffset={8}
     >
       <div className="flex gap-0.5">
@@ -140,18 +163,19 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
             variants={emojiVariants}
             initial="hidden"
             animate="visible"
-            whileHover="hover"
-            whileTap={{ scale: 0.8 }}
+            whileHover={!currentReaction && !isBusy ? 'hover' : undefined}
+            whileTap={!currentReaction && !isBusy ? { scale: 0.8 } : undefined}
             onClick={() => handleReaction(type)}
+            disabled={!!currentReaction || isBusy}
             className={cn(
-              'p-1.5 rounded-full transition-colors relative group',
+              'relative rounded-full p-1.5 transition-colors group',
+              (currentReaction || isBusy) && 'pointer-events-none opacity-50',
               currentReaction === type && 'bg-accent ring-2 ring-primary/50'
             )}
             title={REACTION_LABELS[type]}
           >
-            <span className="text-[26px] block drop-shadow-sm">{REACTION_EMOJIS[type]}</span>
-            {/* Label tooltip */}
-            <span className="absolute -top-7 left-1/2 -translate-x-1/2 bg-foreground/90 text-background text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+            <span className="block text-[26px] drop-shadow-sm">{REACTION_EMOJIS[type]}</span>
+            <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-foreground/90 px-2 py-0.5 text-[10px] font-semibold text-background opacity-0 transition-opacity group-hover:opacity-100">
               {REACTION_LABELS[type]}
             </span>
           </motion.button>
@@ -162,11 +186,16 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
 
   const reactionColor = currentReaction ? REACTION_COLORS[currentReaction] : '';
 
-  // ── Facebook variant ───────────────────────────────
   if (variant === 'facebook') {
     return (
-      <Popover open={isOpen} onOpenChange={(open) => { if (!currentReaction) setIsOpen(open); }}>
-        <div className="flex-1 relative">
+      <Popover
+        open={isOpen}
+        onOpenChange={(open) => {
+          if (interactionLockRef.current || isBusy || currentReaction) return;
+          setIsOpen(open);
+        }}
+      >
+        <div className="relative flex-1">
           <AnimatePresence>
             {showParticles && (
               <ReactionParticles emoji={showParticles} onDone={() => setShowParticles(null)} />
@@ -176,15 +205,11 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
             <Button
               variant="ghost"
               size="sm"
-              onClick={(e) => {
-                if (currentReaction) {
-                  e.preventDefault();
-                  handleRemoveReaction();
-                }
-              }}
+              onClick={handleTriggerClick}
               className={cn(
-                'w-full h-11 gap-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs transition-all select-none',
-                currentReaction && reactionColor
+                'w-full h-11 gap-1.5 rounded-xl text-xs text-muted-foreground transition-all select-none hover:bg-secondary/50 hover:text-foreground',
+                currentReaction && reactionColor,
+                isBusy && 'pointer-events-none opacity-60'
               )}
             >
               {currentReaction ? (
@@ -198,7 +223,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
                   {REACTION_EMOJIS[currentReaction]}
                 </motion.span>
               ) : (
-                <ThumbsUp className="w-[18px] h-[18px]" />
+                <ThumbsUp className="h-[18px] w-[18px]" />
               )}
               <motion.span
                 key={currentReaction || 'none'}
@@ -206,7 +231,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
                 animate={{ y: 0, opacity: 1 }}
                 className="font-semibold"
               >
-                {currentReaction ? REACTION_LABELS[currentReaction] : "Réagir"}
+                {currentReaction ? REACTION_LABELS[currentReaction] : 'Réagir'}
               </motion.span>
             </Button>
           </PopoverTrigger>
@@ -216,11 +241,16 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     );
   }
 
-  // ── Instagram variant ──────────────────────────────
   if (variant === 'instagram') {
     return (
-      <Popover open={isOpen} onOpenChange={(open) => { if (!currentReaction) setIsOpen(open); }}>
-        <div className="flex items-center relative">
+      <Popover
+        open={isOpen}
+        onOpenChange={(open) => {
+          if (interactionLockRef.current || isBusy || currentReaction) return;
+          setIsOpen(open);
+        }}
+      >
+        <div className="relative flex items-center">
           <AnimatePresence>
             {showParticles && (
               <ReactionParticles emoji={showParticles} onDone={() => setShowParticles(null)} />
@@ -228,13 +258,11 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
           </AnimatePresence>
           <PopoverTrigger asChild>
             <button
-              onClick={(e) => {
-                if (currentReaction) {
-                  e.preventDefault();
-                  handleRemoveReaction();
-                }
-              }}
-              className="h-10 w-10 flex items-center justify-center transition-transform active:scale-75 select-none"
+              onClick={handleTriggerClick}
+              className={cn(
+                'flex h-10 w-10 items-center justify-center select-none transition-transform active:scale-75',
+                isBusy && 'pointer-events-none opacity-60'
+              )}
             >
               {currentReaction ? (
                 <motion.span
@@ -242,12 +270,12 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
                   initial={{ scale: 0 }}
                   animate={{ scale: [0, 1.3, 1] }}
                   transition={{ type: 'spring', stiffness: 500, damping: 10 }}
-                  className="text-[22px] block"
+                  className="block text-[22px]"
                 >
                   {REACTION_EMOJIS[currentReaction]}
                 </motion.span>
               ) : (
-                <Heart className="w-[22px] h-[22px] text-foreground" />
+                <Heart className="h-[22px] w-[22px] text-foreground" />
               )}
             </button>
           </PopoverTrigger>
@@ -257,10 +285,15 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     );
   }
 
-  // ── Default variant ────────────────────────────────
   return (
-    <Popover open={isOpen} onOpenChange={(open) => { if (!currentReaction) setIsOpen(open); }}>
-      <div className="flex items-center relative">
+    <Popover
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (interactionLockRef.current || isBusy || currentReaction) return;
+        setIsOpen(open);
+      }}
+    >
+      <div className="relative flex items-center">
         <AnimatePresence>
           {showParticles && (
             <ReactionParticles emoji={showParticles} onDone={() => setShowParticles(null)} />
@@ -270,15 +303,11 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
           <Button
             variant="ghost"
             size="sm"
-            onClick={(e) => {
-              if (currentReaction) {
-                e.preventDefault();
-                handleRemoveReaction();
-              }
-            }}
+            onClick={handleTriggerClick}
             className={cn(
-              'h-9 px-3 gap-2 text-muted-foreground hover:text-primary hover:bg-accent',
-              currentReaction && reactionColor
+              'h-9 gap-2 px-3 text-muted-foreground hover:bg-accent hover:text-primary',
+              currentReaction && reactionColor,
+              isBusy && 'pointer-events-none opacity-60'
             )}
           >
             {currentReaction ? (
@@ -295,7 +324,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
                 </motion.span>
               </AnimatePresence>
             ) : (
-              <ThumbsUp className="w-4 h-4" />
+              <ThumbsUp className="h-4 w-4" />
             )}
             <span className="text-sm">{reactionsCount || ''}</span>
           </Button>
