@@ -180,6 +180,12 @@ function AppContent() {
               <Route path="/legal/privacy" element={<PrivacyPolicy />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/a-propos" element={<SEOLanding />} />
+              <Route path="/reseau-social-securise" element={<SEOSecurity />} />
+              <Route path="/messagerie-chiffree" element={<SEOMessaging />} />
+              <Route path="/ia-moderation" element={<SEOModeration />} />
+              <Route path="/protection-donnees" element={<SEOProtection />} />
+              <Route path="/feed-intelligent" element={<SEOFeed />} />
+              {/* Legacy SEO redirects */}
               <Route path="/fonctionnalites/messagerie-chiffree" element={<SEOMessaging />} />
               <Route path="/fonctionnalites/securite" element={<SEOSecurity />} />
               <Route path="/fonctionnalites/moderation-ia" element={<SEOModeration />} />
