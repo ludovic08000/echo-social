@@ -1665,7 +1665,11 @@ function ZeusNeuralConsole() {
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+      if (!session) {
+        setMessages(prev => [...prev, { role: 'assistant', content: '🔒 Session expirée. Reconnecte-toi pour utiliser la console Zeus.' }]);
+        setLoading(false);
+        return;
+      }
 
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/agent-chat`, {
         method: 'POST',
