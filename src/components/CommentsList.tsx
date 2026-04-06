@@ -1,13 +1,12 @@
 import { useState, useRef } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Trash2, Send, Smile, Camera, Languages, Loader2, ChevronDown, ThumbsUp, Wand2, CornerDownRight } from 'lucide-react';
+import { Trash2, Send, Smile, Camera, Languages, Loader2, ChevronDown, Wand2, CornerDownRight } from 'lucide-react';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
 import { supabase } from '@/integrations/supabase/client';
 import { useComments, useCreateComment, useDeleteComment, useLikeComment, Comment } from '@/hooks/useComments';
 import { useAuth } from '@/lib/auth';
 import { UserAvatar } from './UserAvatar';
-import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { GifPicker } from '@/components/chat/GifPicker';
@@ -19,11 +18,35 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
-const COMMENT_EMOJIS = [
-  '😀','😂','🤣','😍','🥰','😘','🤩','😎','🥳','🤗',
-  '🔥','❤️','💯','👏','🙌','💪','✨','🎉','👍','👎',
-  '💀','😭','😱','🤯','😏','🥺','😡','🤬','🤝','💜',
-  '💙','💚','💛','🧡','⚡','🌟','💎','🏆','🎯','🫶',
+const EMOJI_CATEGORIES = [
+  {
+    label: '😊',
+    emojis: ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😊','😇','🥰','😍','🤩','😘','😗','😚','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🫡'],
+  },
+  {
+    label: '❤️',
+    emojis: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❤️‍🔥','❤️‍🩹','💕','💞','💓','💗','💖','💝','💘','🫶','💯','💢','💥','💫','💦','💨'],
+  },
+  {
+    label: '👋',
+    emojis: ['👍','👎','👏','🙌','🤝','✊','👊','🤛','🤜','🤞','✌️','🤟','🤘','👌','🤌','🤏','👈','👉','👆','👇','☝️','✋','🤚','🖐️','🖖','👋','🫱','🫲'],
+  },
+  {
+    label: '🐱',
+    emojis: ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐒','🦍','🦧','🐔','🐧','🐦','🦅','🦆'],
+  },
+  {
+    label: '🍔',
+    emojis: ['🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🥑','🍔','🍟','🍕','🌭','🥪','🌮','🌯'],
+  },
+  {
+    label: '⚽',
+    emojis: ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🥊','🥋','🎯','⛳','🎮','🕹️','🎲','🧩','♟️','🎭','🎨','🎬'],
+  },
+  {
+    label: '🚀',
+    emojis: ['🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜','🛵','🏍️','🛺','✈️','🚀','🛸','🚁','⛵','🚤','🛥️','🛳️','⚓'],
+  },
 ];
 
 interface CommentsListProps {
@@ -42,6 +65,7 @@ export function CommentsList({ postId }: CommentsListProps) {
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [aiLoading, setAiLoading] = useState<'translate' | 'improve' | null>(null);
+  const [emojiCategory, setEmojiCategory] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { upload } = useR2Upload({ folder: 'images', maxSizeMB: 20 });
@@ -140,7 +164,7 @@ export function CommentsList({ postId }: CommentsListProps) {
         <ChevronDown className="w-4 h-4" />
       </button>
 
-      <div className="px-4 pb-4 space-y-4 max-h-[60vh] overflow-y-auto">
+      <div className="px-4 pb-4 space-y-1 max-h-[60vh] overflow-y-auto">
         {comments?.length === 0 ? (
           <p className="text-muted-foreground text-center py-6 text-sm">
             Aucun commentaire pour le moment
@@ -155,21 +179,30 @@ export function CommentsList({ postId }: CommentsListProps) {
                 onReply={() => handleReply(comment)}
                 postId={postId}
               />
-              {/* Replies */}
+              {/* Threaded replies with visual connector lines */}
               {comment.replies && comment.replies.length > 0 && (
-                <div className="ml-10 mt-2 space-y-3 border-l-2 border-border/20 pl-3">
-                  {comment.replies.map((reply) => (
-                    <CommentItem
-                      key={reply.id}
-                      comment={reply}
-                      isOwner={user?.id === reply.user_id}
-                      onDelete={() => deleteComment.mutate({ commentId: reply.id, postId })}
-                      onReply={() => handleReply(comment)}
-                      postId={postId}
-                      isReply
-                      parentName={comment.profile.name}
-                    />
-                  ))}
+                <div className="ml-5 relative">
+                  {/* Vertical thread line */}
+                  <div className="absolute left-[15px] top-0 bottom-3 w-[2px] bg-border/40 rounded-full" />
+                  <div className="space-y-1">
+                    {comment.replies.map((reply, idx) => (
+                      <div key={reply.id} className="relative pl-8">
+                        {/* Horizontal branch line */}
+                        <div className="absolute left-[15px] top-[18px] w-[14px] h-[2px] bg-border/40 rounded-full" />
+                        {/* Dot at junction */}
+                        <div className="absolute left-[13px] top-[15px] w-[6px] h-[6px] rounded-full bg-border/60" />
+                        <CommentItem
+                          comment={reply}
+                          isOwner={user?.id === reply.user_id}
+                          onDelete={() => deleteComment.mutate({ commentId: reply.id, postId })}
+                          onReply={() => handleReply(comment)}
+                          postId={postId}
+                          isReply
+                          parentName={comment.profile.name}
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -235,19 +268,44 @@ export function CommentsList({ postId }: CommentsListProps) {
                     </button>
                   </>
                 )}
+                {/* Emoji picker with categories */}
                 <Popover>
                   <PopoverTrigger asChild>
                     <button type="button" className="p-1 rounded-full text-muted-foreground hover:text-foreground transition-colors">
                       <Smile className="w-4 h-4" />
                     </button>
                   </PopoverTrigger>
-                  <PopoverContent side="top" align="end" className="w-64 p-2 rounded-xl" sideOffset={8}>
-                    <div className="grid grid-cols-8 gap-1">
-                      {COMMENT_EMOJIS.map((emoji) => (
-                        <button key={emoji} type="button" onClick={() => setNewComment(prev => prev + emoji)} className="w-7 h-7 flex items-center justify-center text-lg hover:bg-secondary rounded transition-colors">
-                          {emoji}
+                  <PopoverContent side="top" align="end" className="w-72 p-0 rounded-xl overflow-hidden" sideOffset={8}>
+                    {/* Category tabs */}
+                    <div className="flex border-b border-border/30 bg-secondary/30 px-1 py-1 gap-0.5 overflow-x-auto scrollbar-hide">
+                      {EMOJI_CATEGORIES.map((cat, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setEmojiCategory(i)}
+                          className={cn(
+                            "w-8 h-8 flex items-center justify-center text-base rounded-lg transition-colors flex-shrink-0",
+                            emojiCategory === i ? "bg-primary/15 scale-110" : "hover:bg-secondary"
+                          )}
+                        >
+                          {cat.label}
                         </button>
                       ))}
+                    </div>
+                    {/* Emoji grid */}
+                    <div className="p-2 max-h-[200px] overflow-y-auto">
+                      <div className="grid grid-cols-8 gap-0.5">
+                        {EMOJI_CATEGORIES[emojiCategory].emojis.map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => setNewComment(prev => prev + emoji)}
+                            className="w-8 h-8 flex items-center justify-center text-xl hover:bg-secondary rounded-lg transition-all hover:scale-125 active:scale-95"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </PopoverContent>
                 </Popover>
@@ -305,18 +363,23 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
   };
 
   return (
-    <div className={cn("flex gap-2.5 animate-slide-up", isReply && "")}>
+    <div className={cn("flex gap-2.5 py-1.5 animate-slide-up")}>
       <Link to={`/profile/${comment.user_id}`} className="flex-shrink-0 mt-0.5">
         <UserAvatar src={comment.profile.avatar_url} alt={comment.profile.name} size="sm" />
       </Link>
       <div className="flex-1 min-w-0">
         <div className="inline-block bg-secondary/50 rounded-2xl px-3 py-2 max-w-full">
-          <Link to={`/profile/${comment.user_id}`} className="font-semibold text-[13px] hover:underline block">
-            {comment.profile.name}
-          </Link>
-          {isReply && parentName && (
-            <span className="text-[11px] text-primary font-medium">@{parentName} </span>
-          )}
+          <div className="flex items-center gap-1.5">
+            <Link to={`/profile/${comment.user_id}`} className="font-semibold text-[13px] hover:underline">
+              {comment.profile.name}
+            </Link>
+            {isReply && parentName && (
+              <>
+                <CornerDownRight className="w-3 h-3 text-muted-foreground" />
+                <span className="text-[11px] text-primary font-medium">@{parentName}</span>
+              </>
+            )}
+          </div>
           {text && (
             <p className="text-[13px] text-foreground break-words leading-[1.4] mt-0.5">{text}</p>
           )}
@@ -356,7 +419,7 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
           </button>
           {text && (
             <button onClick={handleTranslate} disabled={translating} className="text-[11px] font-medium text-primary/70 hover:text-primary transition-colors">
-              {translating ? <Loader2 className="w-3 h-3 animate-spin inline" /> : translated ? 'Original' : 'Voir la traduction'}
+              {translating ? <Loader2 className="w-3 h-3 animate-spin inline" /> : translated ? 'Original' : 'Traduire'}
             </button>
           )}
           {isOwner && (
