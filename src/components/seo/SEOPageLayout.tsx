@@ -13,11 +13,11 @@ interface SEOPageLayoutProps {
 }
 
 const footerLinks = [
-  { label: 'Messagerie chiffrée', href: '/fonctionnalites/messagerie-chiffree' },
-  { label: 'Sécurité', href: '/fonctionnalites/securite' },
-  { label: 'Modération IA', href: '/fonctionnalites/moderation-ia' },
-  { label: 'Protection', href: '/fonctionnalites/protection-utilisateurs' },
-  { label: 'Feed intelligent', href: '/fonctionnalites/feed-intelligent' },
+  { label: 'Réseau social sécurisé', href: '/reseau-social-securise' },
+  { label: 'Messagerie chiffrée', href: '/messagerie-chiffree' },
+  { label: 'Modération IA', href: '/ia-moderation' },
+  { label: 'Protection des données', href: '/protection-donnees' },
+  { label: 'Feed intelligent', href: '/feed-intelligent' },
 ];
 
 export function SEOPageLayout({ title, description, children, jsonLd }: SEOPageLayoutProps) {
@@ -39,10 +39,11 @@ export function SEOPageLayout({ title, description, children, jsonLd }: SEOPageL
             <span className="font-bold text-lg text-foreground">Forsure</span>
           </Link>
           <div className="hidden md:flex items-center gap-6 text-sm text-muted-foreground">
-            <Link to="/a-propos" className="hover:text-foreground transition-colors">Découvrir</Link>
-            <Link to="/fonctionnalites/messagerie-chiffree" className="hover:text-foreground transition-colors">Messagerie</Link>
-            <Link to="/fonctionnalites/securite" className="hover:text-foreground transition-colors">Sécurité</Link>
-            <Link to="/fonctionnalites/moderation-ia" className="hover:text-foreground transition-colors">Modération IA</Link>
+            <Link to="/reseau-social-securise" className="hover:text-foreground transition-colors">Sécurité</Link>
+            <Link to="/messagerie-chiffree" className="hover:text-foreground transition-colors">Messagerie</Link>
+            <Link to="/ia-moderation" className="hover:text-foreground transition-colors">Modération IA</Link>
+            <Link to="/protection-donnees" className="hover:text-foreground transition-colors">Protection</Link>
+            <Link to="/feed-intelligent" className="hover:text-foreground transition-colors">Feed</Link>
           </div>
           <div className="flex items-center gap-2">
             <Link to="/login">

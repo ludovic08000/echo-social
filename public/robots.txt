@@ -1,7 +1,13 @@
 User-agent: *
 Allow: /
 Allow: /a-propos
-Allow: /fonctionnalites/
+Allow: /reseau-social-securise
+Allow: /messagerie-chiffree
+Allow: /ia-moderation
+Allow: /protection-donnees
+Allow: /feed-intelligent
+Allow: /legal
+Allow: /privacy
 Disallow: /api/
 Disallow: /auth/
 Disallow: /admin
@@ -21,5 +27,15 @@ Disallow: /creator-upgrade
 Disallow: /reset-password
 Disallow: /forgot-password
 Disallow: /dashboard
+Disallow: /login
+Disallow: /signup
+Disallow: /feed
+Disallow: /lives
+Disallow: /marketplace
+Disallow: /games
+Disallow: /challenges
+Disallow: /groups
+Disallow: /channels
+Disallow: /videos
 
 Sitemap: https://forsure.fans/sitemap.xml
