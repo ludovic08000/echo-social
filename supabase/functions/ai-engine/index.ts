@@ -291,7 +291,7 @@ Only output valid JSON. Keep the same language and tone.`;
     }
 
     // Choose model based on task complexity
-    const cheapActions = ["moderate", "analyze_sentiment", "smart_reply"];
+    const cheapActions = ["moderate", "smart_reply"];
     const model = cheapActions.includes(action)
       ? "google/gemini-2.5-flash-lite"  // Fast & cheap for simple classification
       : "google/gemini-2.5-flash";       // Better for complex generation
@@ -338,9 +338,12 @@ async function callAI(apiKey: string, systemPrompt: string, userPrompt: string, 
   });
 
   if (!response.ok) {
-    if (response.status === 429) throw new Error("Trop de requêtes IA");
-    if (response.status === 402) throw new Error("Crédits IA insuffisants");
-    throw new Error("Erreur du service IA");
+    const status = response.status;
+    const body = await response.text().catch(() => "");
+    console.error(`AI gateway ${status}:`, body);
+    if (status === 429) throw new Error("Trop de requêtes IA");
+    if (status === 402) throw new Error("Crédits IA insuffisants");
+    throw new Error(`Erreur du service IA (${status})`);
   }
 
   const data = await response.json();
@@ -349,7 +352,8 @@ async function callAI(apiKey: string, systemPrompt: string, userPrompt: string, 
   try {
     const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
     return JSON.parse(cleaned);
-  } catch {
+  } catch (parseErr) {
+    console.error("AI JSON parse error, raw:", raw.slice(0, 500));
     return { raw, parse_error: true };
   }
 }
