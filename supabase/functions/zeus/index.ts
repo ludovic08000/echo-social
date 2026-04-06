@@ -1143,7 +1143,7 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
 
     const isSecurityQuery = /attaque|intrusion|ddos|brute\s*force|xss|sql|injection|menace|incident|pare[-\s]?feu|firewall|r[ée]seau|ip\s+bann|phishing|spam|bot|s[ée]curit/i.test(latestUserMessage);
 
-    const [usersRes, postsRes, ordersRes, reportsRes, bansRes, trustRes, subsRes, verificationsRes, livesRes, productsRes, bannedIpsRes, ddosTrackerRes, securityIncidentsRes] = await Promise.all([
+    const [usersRes, postsRes, ordersRes, reportsRes, bansRes, trustRes, subsRes, verificationsRes, livesRes, productsRes, bannedIpsRes, ddosTrackerRes, securityIncidentsRes, totalReportsRes, resolvedReportsRes, blockedMsgsRes, storiesRes, messagesRecentRes, contentStrikesRes] = await Promise.all([
       supabase.from("profiles").select("user_id, name, city, profile_type, created_at", { count: "exact" }).order("created_at", { ascending: false }).limit(10),
       supabase.from("posts").select("id", { count: "exact", head: true }),
       supabase.from("orders").select("id, total, status, created_at"),
@@ -1157,14 +1157,55 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
       supabase.from("banned_ips").select("id, ip_address, reason, banned_at", { count: "exact" }).eq("is_active", true).order("banned_at", { ascending: false }).limit(10),
       supabase.from("ddos_ip_tracker").select("id, ip_address, penalty_level, request_count, blocked_until, endpoint, updated_at", { count: "exact" }).gte("penalty_level", 1).order("updated_at", { ascending: false }).limit(10),
       supabase.from("security_incidents").select("id", { count: "exact", head: true }),
+      // Additional counts for comprehensive reporting
+      supabase.from("abuse_reports").select("id", { count: "exact", head: true }),
+      supabase.from("abuse_reports").select("id", { count: "exact", head: true }).eq("status", "resolved"),
+      supabase.from("messages").select("id", { count: "exact", head: true }).eq("status", "blocked"),
+      supabase.from("stories").select("id", { count: "exact", head: true }),
+      supabase.from("messages").select("id", { count: "exact", head: true }).gte("created_at", new Date(Date.now() - 86400000).toISOString()),
+      supabase.from("content_strikes").select("id", { count: "exact", head: true }),
     ]);
 
     const orders = ordersRes.data || [];
     const totalRevenue = orders.filter((o: any) => o.status !== "cancelled" && o.status !== "refunded").reduce((s: number, o: any) => s + (o.total || 0), 0);
     const pendingReports = (reportsRes.data || []).filter((r: any) => r.status === "pending");
+    const allReports = reportsRes.data || [];
     const activeSubs = (subsRes.data || []).filter((s: any) => s.status === "active");
     const monthlyMRR = activeSubs.reduce((s: number, sub: any) => s + (sub.price_cents || 0), 0) / 100;
     const flaggedProfiles = trustRes.data || [];
+
+    // Build comprehensive verified facts object
+    const verifiedFacts = {
+      users: usersRes.count || 0,
+      posts: postsRes.count || 0,
+      products: productsRes.count || 0,
+      orders: orders.length,
+      revenue: totalRevenue,
+      mrr: monthlyMRR,
+      activeSubs: activeSubs.length,
+      pendingReports: pendingReports.length,
+      totalReports: totalReportsRes.count || 0,
+      resolvedReports: resolvedReportsRes.count || 0,
+      blockedMessages: blockedMsgsRes.count || 0,
+      bannedUsers: bansRes.count || 0,
+      flaggedProfiles: flaggedProfiles.length,
+      activeLives: livesRes.count || 0,
+      pendingVerifications: (verificationsRes.data || []).length,
+      stories: storiesRes.count || 0,
+      messagesLast24h: messagesRecentRes.count || 0,
+      contentStrikes: contentStrikesRes.count || 0,
+      activeBannedIps: bannedIpsRes.count || 0,
+      penalizedIps: ddosTrackerRes.count || 0,
+      incidents: securityIncidentsRes.count || 0,
+    };
+
+    const securityFacts = {
+      activeBannedIps: verifiedFacts.activeBannedIps,
+      penalizedIps: verifiedFacts.penalizedIps,
+      incidents: verifiedFacts.incidents,
+      bannedIps: bannedIpsRes.data || [],
+      penalizedEntries: ddosTrackerRes.data || [],
+    };
 
     const securityFacts = {
       activeBannedIps: bannedIpsRes.count || 0,
@@ -1199,53 +1240,71 @@ ${hasSecurityEvents ? "- Lancer un audit sécurité détaillé si tu veux une an
     const FAKE_OPS_PATTERN = /(\d[\d\s.,]*)\s*(%|ms|req|requêtes?\s+trait[ée]e?s?|messages?\s*\/\s*jour|messages?\s+par\s+jour|CPU|charge|latence|taux\s+de\s+succ[eè]s)/i;
 
     const sanitizeZeusReply = (content: string) => {
+      // Build the ONLY numbers Zeus is allowed to use
+      const allowedNumbers = new Set(Object.values(verifiedFacts).map(v => String(v)));
+      // Also allow small numbers 0-10 (common in natural language)
+      for (let i = 0; i <= 10; i++) allowedNumbers.add(String(i));
+      // Allow percentages and known values
+      allowedNumbers.add(totalRevenue.toFixed(2));
+      allowedNumbers.add(monthlyMRR.toFixed(2));
+
       const zeroSecurityState = securityFacts.activeBannedIps === 0 && securityFacts.penalizedIps === 0 && securityFacts.incidents === 0;
       const hasFakeNumbers = FAKE_SECURITY_PATTERN.test(content);
       const hasSecurityTopic = SECURITY_TOPIC_PATTERN.test(content);
-      const hasFakeOps = FAKE_OPS_PATTERN.test(content);
 
-      // If security is clean and Zeus invented numbers or security topics → replace entirely
-      if (zeroSecurityState && (hasFakeNumbers || (hasSecurityTopic && isSecurityQuery))) {
-        return buildVerifiedSecurityReply();
-      }
-
-      // If security query but real events exist, still use verified reply
+      // Security query → always return verified data
       if (isSecurityQuery) return buildVerifiedSecurityReply();
-
-      // For non-security responses that still mention security with fake numbers
-      if (zeroSecurityState && hasSecurityTopic) {
-        const cleaned = content
+      if (zeroSecurityState && (hasFakeNumbers || hasSecurityTopic)) {
+        // Strip security fabrications
+        let cleaned = content
           .replace(/###?\s*🚨[^\n]*\n([\s\S]*?)(?=###?\s|$)/gi, '')
           .replace(/###?\s*⚠️\s*ALERTE[^\n]*\n([\s\S]*?)(?=###?\s|$)/gi, '')
           .replace(/###?\s*🛡️\s*[ÉE]TAT[^\n]*\n([\s\S]*?)(?=###?\s|$)/gi, '')
           .replace(/\*\*\d[\d\s.,]*\*\*\s*(tentatives?|attaques?|bloqu[ée]e?s?|neutralis[ée]e?s?|incidents?|bots?)/gi, '**0** $1')
           .trim();
-        return `${cleaned}\n\n---\n## ✅ Sécurité vérifiée (données réelles)\n- IP bannies actives : **0**\n- IP sous pénalité DDoS : **0**\n- Incidents de sécurité : **0**\n- **Réseau sain, aucune attaque détectée.**`;
+        if (!cleaned) cleaned = "Analyse terminée.";
+        content = cleaned;
       }
 
-      // Strip fabricated operational metrics (latency, CPU, success rates, etc.)
-      let finalContent = content;
-      if (hasFakeOps) {
-        // Remove lines with fabricated ops metrics
-        finalContent = finalContent
-          .replace(/\*\*?Latence[^*\n]*\*\*?[^\n]*/gi, '')
-          .replace(/\*\*?Charge\s+CPU[^*\n]*\*\*?[^\n]*/gi, '')
-          .replace(/\*\*?Taux\s+de\s+succ[eè]s[^*\n]*\*\*?[^\n]*/gi, '')
-          .replace(/\*\*?Total\s+des\s+messages?\s*\([^)]*\)[^*\n]*\*\*?[^\n]*/gi, '')
-          .replace(/\*\*?Moyenne\s+quotidienne[^*\n]*\*\*?[^\n]*/gi, '')
-          .replace(/~?\d+\.?\d*\s*messages?\s*\/\s*jour[^\n]*/gi, '')
-          .replace(/\n{3,}/g, '\n\n')
-          .trim();
-        finalContent += `\n\n---\n> ⚠️ *Certaines métriques opérationnelles (latence, CPU, messages/jour) ne sont pas disponibles en temps réel. Seules les données du snapshot ci-dessus sont vérifiées.*`;
-      }
+      // Strip ALL fabricated operational metrics
+      let finalContent = content
+        .replace(/\*\*?Latence[^*\n]*\*\*?[^\n]*/gi, '')
+        .replace(/\*\*?Charge\s+CPU[^*\n]*\*\*?[^\n]*/gi, '')
+        .replace(/\*\*?Taux\s+de\s+succ[eè]s[^*\n]*\*\*?[^\n]*/gi, '')
+        .replace(/\*\*?Total\s+des\s+messages?\s*\([^)]*\)[^*\n]*\*\*?[^\n]*/gi, '')
+        .replace(/\*\*?Moyenne\s+quotidienne[^*\n]*\*\*?[^\n]*/gi, '')
+        .replace(/~?\d+\.?\d*\s*messages?\s*\/\s*jour[^\n]*/gi, '')
+        // Remove fatigue/mood comments
+        .replace(/[^.]*fatigu[ée][^.]*\./gi, '')
+        .replace(/[^.]*repos(?:e[zr]?)[^.]*\./gi, '')
+        .replace(/[^.]*charge\s+(?:de\s+travail|mentale)[^.]*\./gi, '')
+        .replace(/😴|☕/g, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
 
-      return `${finalContent}\n\n---\n## ✅ Faits vérifiés\n- IP bannies actives : **${securityFacts.activeBannedIps}**\n- IP sous pénalité DDoS : **${securityFacts.penalizedIps}**\n- Incidents de sécurité : **${securityFacts.incidents}**`;
+      // Append verified facts footer
+      finalContent += `\n\n---\n## ✅ Données vérifiées (temps réel)
+| Métrique | Valeur |
+|---|---:|
+| Signalements en attente | **${verifiedFacts.pendingReports}** |
+| Signalements total | **${verifiedFacts.totalReports}** |
+| Signalements résolus | **${verifiedFacts.resolvedReports}** |
+| Messages bloqués | **${verifiedFacts.blockedMessages}** |
+| Profils flaggés | **${verifiedFacts.flaggedProfiles}** |
+| Utilisateurs bannis | **${verifiedFacts.bannedUsers}** |
+| Content strikes | **${verifiedFacts.contentStrikes}** |
+| IP bannies | **${verifiedFacts.activeBannedIps}** |
+| IP sous pénalité DDoS | **${verifiedFacts.penalizedIps}** |
+| Incidents sécurité | **${verifiedFacts.incidents}** |`;
+
+      return finalContent;
     };
 
-    // Strip fabricated security data from conversation history to prevent contamination
+    // Strip ALL fabricated data from conversation history to prevent contamination
+    const FABRICATION_PATTERN = /(\d[\d\s.,]+)\s*(tentatives?|attaques?|intrusions?|bloqu[ée]e?s?|neutralis[ée]e?s?|incidents?|bots?|requ[eê]tes?|ms\b|CPU|latence|taux|résolution|succ[eè]s|signalements?\s+en\s+attente|contenus?\s+bloqu)/i;
     const cleanedMessages = (body.messages || []).map((msg: any) => {
-      if (msg.role === 'assistant' && FAKE_SECURITY_PATTERN.test(msg.content || '')) {
-        return { ...msg, content: '[Réponse précédente contenait des données non vérifiées — ignorée]' };
+      if (msg.role === 'assistant' && FABRICATION_PATTERN.test(msg.content || '')) {
+        return { ...msg, content: '[Réponse précédente contenait des données non vérifiées — ignorée. Utilise uniquement le snapshot plateforme pour les chiffres.]' };
       }
       return msg;
     });
@@ -1255,35 +1314,49 @@ ${hasSecurityEvents ? "- Lancer un audit sécurité détaillé si tu veux une an
     const { count: newUsersWeek } = await supabase.from("profiles").select("id", { count: "exact", head: true }).gte("created_at", last7d);
 
     const platformContext = `
-## 📊 SNAPSHOT PLATEFORME (${new Date().toLocaleDateString("fr-FR", { weekday: "long", year: "numeric", month: "long", day: "numeric" })})
+## 📊 SNAPSHOT PLATEFORME — SEULE SOURCE DE VÉRITÉ (${new Date().toLocaleDateString("fr-FR", { weekday: "long", year: "numeric", month: "long", day: "numeric" })})
 
-| Métrique | Valeur |
-|---|---|
-| 👥 Utilisateurs | ${usersRes.count || 0} |
-| 📝 Publications | ${postsRes.count || 0} |
-| 🛍️ Produits actifs | ${productsRes.count || 0} |
-| 📦 Commandes | ${orders.length} |
-| 💰 Revenus total | ${totalRevenue.toFixed(2)}€ |
-| 💳 MRR abonnements | ${monthlyMRR.toFixed(2)}€ (${activeSubs.length} actifs) |
-| 🚨 Signalements en attente | ${pendingReports.length} |
-| 🛡️ Vérifications ID en attente | ${(verificationsRes.data || []).length} |
-| 🚫 Utilisateurs bannis | ${bansRes.count || 0} |
-| ⚠️ Profils flaggés | ${flaggedProfiles.length} |
-| 📡 Lives actifs | ${livesRes.count || 0} |
+⚠️ **INSTRUCTION CRITIQUE** : Les chiffres ci-dessous sont les SEULES valeurs vérifiées. Tu ne dois utiliser QUE ces chiffres dans ta réponse. Si un chiffre n'est pas listé ici, tu ne le connais pas et tu dois le dire.
+
+| Métrique | Valeur VÉRIFIÉE |
+|---|---:|
+| 👥 Utilisateurs | ${verifiedFacts.users} |
+| 📝 Publications | ${verifiedFacts.posts} |
+| 🛍️ Produits actifs | ${verifiedFacts.products} |
+| 📦 Commandes | ${verifiedFacts.orders} |
+| 💰 Revenus total | ${verifiedFacts.revenue.toFixed(2)}€ |
+| 💳 MRR abonnements | ${verifiedFacts.mrr.toFixed(2)}€ (${verifiedFacts.activeSubs} actifs) |
+| 🚨 Signalements en attente | ${verifiedFacts.pendingReports} |
+| 🚨 Signalements total | ${verifiedFacts.totalReports} |
+| ✅ Signalements résolus | ${verifiedFacts.resolvedReports} |
+| 🔇 Messages bloqués (modération) | ${verifiedFacts.blockedMessages} |
+| 🛡️ Vérifications ID en attente | ${verifiedFacts.pendingVerifications} |
+| 🚫 Utilisateurs bannis | ${verifiedFacts.bannedUsers} |
+| ⚠️ Profils flaggés | ${verifiedFacts.flaggedProfiles} |
+| 📡 Lives actifs | ${verifiedFacts.activeLives} |
 | 📈 Nouveaux inscrits (7j) | ${newUsersWeek || 0} |
-| 🔒 IP bannies actives | ${securityFacts.activeBannedIps} |
-| 🛡️ IP sous pénalité DDoS | ${securityFacts.penalizedIps} |
-| 🚨 Incidents de sécurité | ${securityFacts.incidents} |
+| 📖 Stories | ${verifiedFacts.stories} |
+| 💬 Messages (24h) | ${verifiedFacts.messagesLast24h} |
+| ⚡ Content strikes | ${verifiedFacts.contentStrikes} |
+| 🔒 IP bannies actives | ${verifiedFacts.activeBannedIps} |
+| 🛡️ IP sous pénalité DDoS | ${verifiedFacts.penalizedIps} |
+| 🚨 Incidents de sécurité | ${verifiedFacts.incidents} |
+
+### DONNÉES QUE TU NE CONNAIS PAS (ne les invente JAMAIS) :
+- Latence, CPU, charge serveur, temps de réponse
+- Nombre de requêtes IA traitées, messages/jour historiques
+- Taux de résolution en %, taux de succès en %
+- Détails sur des "pics d'activité" ou "tendances" que tu n'as pas calculés
+- Tout chiffre qui n'apparaît pas dans le tableau ci-dessus
 
 ### 🔒 SÉCURITÉ VÉRIFIÉE
-- IP bannies actives : **${securityFacts.activeBannedIps}**
-- IP sous pénalité DDoS : **${securityFacts.penalizedIps}**
-- Incidents de sécurité : **${securityFacts.incidents}**
-- Le tracker DDoS avec penalty_level = 0 correspond à du trafic normal, pas à une attaque.
-${securityFacts.activeBannedIps === 0 && securityFacts.penalizedIps === 0 && securityFacts.incidents === 0 ? "- **Conclusion : aucune attaque détectée, réseau sain.**" : "- **Conclusion : des événements sécurité existent, utilise uniquement les chiffres ci-dessus.**"}
+${securityFacts.activeBannedIps === 0 && securityFacts.penalizedIps === 0 && securityFacts.incidents === 0 ? "**Aucune attaque, aucune menace, réseau 100% sain.**" : `IP bannies: ${securityFacts.activeBannedIps}, Pénalités DDoS: ${securityFacts.penalizedIps}, Incidents: ${securityFacts.incidents}`}
 
-### 🚨 Signalements en attente (top 5) :
-${pendingReports.slice(0, 5).map((r: any) => `- **[${r.report_type}]** ${r.description || "Sans description"} _(${new Date(r.created_at).toLocaleDateString("fr")})_`).join("\n") || "✅ Aucun signalement en attente"}
+### 🚨 Signalements en attente (détails) :
+${pendingReports.slice(0, 10).map((r: any) => `- **[${r.report_type}]** ${r.description || "Sans description"} _(${new Date(r.created_at).toLocaleDateString("fr")})_`).join("\n") || "✅ Aucun signalement en attente"}
+
+### Tous signalements récents (max 20) :
+${allReports.slice(0, 20).map((r: any) => `- **[${r.report_type}]** Status: ${r.status} — ${r.description || "Sans description"} _(${new Date(r.created_at).toLocaleDateString("fr")})_`).join("\n") || "✅ Aucun signalement"}
 
 ### ⚠️ Profils à risque :
 ${flaggedProfiles.slice(0, 5).map((t: any) => `- \`${t.user_id.slice(0, 8)}…\` — Trust: **${t.trust_score}**/100 — ${t.flag_reason}`).join("\n") || "✅ Aucun profil flaggé"}
