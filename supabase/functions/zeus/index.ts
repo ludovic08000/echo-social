@@ -1143,7 +1143,7 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
 
     const isSecurityQuery = /attaque|intrusion|ddos|brute\s*force|xss|sql|injection|menace|incident|pare[-\s]?feu|firewall|r[ée]seau|ip\s+bann|phishing|spam|bot|s[ée]curit/i.test(latestUserMessage);
 
-    const [usersRes, postsRes, ordersRes, reportsRes, bansRes, trustRes, subsRes, verificationsRes, livesRes, productsRes, bannedIpsRes, ddosTrackerRes, securityIncidentsRes] = await Promise.all([
+    const [usersRes, postsRes, ordersRes, reportsRes, bansRes, trustRes, subsRes, verificationsRes, livesRes, productsRes, bannedIpsRes, ddosTrackerRes, securityIncidentsRes, totalReportsRes, resolvedReportsRes, blockedMsgsRes, storiesRes, messagesRecentRes, contentStrikesRes] = await Promise.all([
       supabase.from("profiles").select("user_id, name, city, profile_type, created_at", { count: "exact" }).order("created_at", { ascending: false }).limit(10),
       supabase.from("posts").select("id", { count: "exact", head: true }),
       supabase.from("orders").select("id, total, status, created_at"),
@@ -1157,14 +1157,55 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
       supabase.from("banned_ips").select("id, ip_address, reason, banned_at", { count: "exact" }).eq("is_active", true).order("banned_at", { ascending: false }).limit(10),
       supabase.from("ddos_ip_tracker").select("id, ip_address, penalty_level, request_count, blocked_until, endpoint, updated_at", { count: "exact" }).gte("penalty_level", 1).order("updated_at", { ascending: false }).limit(10),
       supabase.from("security_incidents").select("id", { count: "exact", head: true }),
+      // Additional counts for comprehensive reporting
+      supabase.from("abuse_reports").select("id", { count: "exact", head: true }),
+      supabase.from("abuse_reports").select("id", { count: "exact", head: true }).eq("status", "resolved"),
+      supabase.from("messages").select("id", { count: "exact", head: true }).eq("status", "blocked"),
+      supabase.from("stories").select("id", { count: "exact", head: true }),
+      supabase.from("messages").select("id", { count: "exact", head: true }).gte("created_at", new Date(Date.now() - 86400000).toISOString()),
+      supabase.from("content_strikes").select("id", { count: "exact", head: true }),
     ]);
 
     const orders = ordersRes.data || [];
     const totalRevenue = orders.filter((o: any) => o.status !== "cancelled" && o.status !== "refunded").reduce((s: number, o: any) => s + (o.total || 0), 0);
     const pendingReports = (reportsRes.data || []).filter((r: any) => r.status === "pending");
+    const allReports = reportsRes.data || [];
     const activeSubs = (subsRes.data || []).filter((s: any) => s.status === "active");
     const monthlyMRR = activeSubs.reduce((s: number, sub: any) => s + (sub.price_cents || 0), 0) / 100;
     const flaggedProfiles = trustRes.data || [];
+
+    // Build comprehensive verified facts object
+    const verifiedFacts = {
+      users: usersRes.count || 0,
+      posts: postsRes.count || 0,
+      products: productsRes.count || 0,
+      orders: orders.length,
+      revenue: totalRevenue,
+      mrr: monthlyMRR,
+      activeSubs: activeSubs.length,
+      pendingReports: pendingReports.length,
+      totalReports: totalReportsRes.count || 0,
+      resolvedReports: resolvedReportsRes.count || 0,
+      blockedMessages: blockedMsgsRes.count || 0,
+      bannedUsers: bansRes.count || 0,
+      flaggedProfiles: flaggedProfiles.length,
+      activeLives: livesRes.count || 0,
+      pendingVerifications: (verificationsRes.data || []).length,
+      stories: storiesRes.count || 0,
+      messagesLast24h: messagesRecentRes.count || 0,
+      contentStrikes: contentStrikesRes.count || 0,
+      activeBannedIps: bannedIpsRes.count || 0,
+      penalizedIps: ddosTrackerRes.count || 0,
+      incidents: securityIncidentsRes.count || 0,
+    };
+
+    const securityFacts = {
+      activeBannedIps: verifiedFacts.activeBannedIps,
+      penalizedIps: verifiedFacts.penalizedIps,
+      incidents: verifiedFacts.incidents,
+      bannedIps: bannedIpsRes.data || [],
+      penalizedEntries: ddosTrackerRes.data || [],
+    };
 
     const securityFacts = {
       activeBannedIps: bannedIpsRes.count || 0,
