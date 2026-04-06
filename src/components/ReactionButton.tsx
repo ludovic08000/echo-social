@@ -98,7 +98,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   }, []);
 
   const handleReaction = useCallback((reactionType: ReactionType) => {
-    if (isBusy) return;
+    if (isBusy || currentReaction) return;
     if (!user) {
       toast({ title: 'Connexion requise', description: 'Connectez-vous pour réagir', variant: 'destructive' });
       return;
@@ -106,56 +106,17 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     startCooldown();
     haptic('medium');
     setShowParticles(REACTION_EMOJIS[reactionType]);
-    if (currentReaction === reactionType) {
-      removeReaction.mutate(postId);
-    } else {
-      addReaction.mutate({ postId, reactionType });
-    }
+    addReaction.mutate({ postId, reactionType });
     setIsOpen(false);
-  }, [user, currentReaction, postId, addReaction, removeReaction, isBusy, startCooldown]);
+  }, [user, currentReaction, postId, addReaction, isBusy, startCooldown]);
 
-  const handleQuickLike = useCallback(() => {
-    if (isBusy) return;
-    if (!user) {
-      toast({ title: 'Connexion requise', description: 'Connectez-vous pour réagir', variant: 'destructive' });
-      return;
-    }
+  const handleRemoveReaction = useCallback(() => {
+    if (isBusy || !currentReaction) return;
+    if (!user) return;
     startCooldown();
     haptic('light');
-    if (currentReaction) {
-      removeReaction.mutate(postId);
-    } else {
-      setShowParticles('👍');
-      addReaction.mutate({ postId, reactionType: 'like' });
-    }
-  }, [user, currentReaction, postId, addReaction, removeReaction, isBusy, startCooldown]);
-
-  // Long press to open picker (mobile-friendly)
-  const onPointerDown = useCallback(() => {
-    didLongPress.current = false;
-    longPressTimer.current = setTimeout(() => {
-      didLongPress.current = true;
-      haptic('heavy');
-      setIsOpen(true);
-    }, 500);
-  }, []);
-
-  const onPointerUp = useCallback(() => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-    if (!didLongPress.current) {
-      handleQuickLike();
-    }
-  }, [handleQuickLike]);
-
-  const onPointerLeave = useCallback(() => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  }, []);
+    removeReaction.mutate(postId);
+  }, [user, currentReaction, postId, removeReaction, isBusy, startCooldown]);
 
   const emojiVariants = {
     hidden: { scale: 0, y: 10 },
