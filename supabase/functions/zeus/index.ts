@@ -128,34 +128,32 @@ async function handlePostAssistant(apiKey: string, body: any, cors: Record<strin
   if (!text?.trim() || text.length > 5000) return new Response(JSON.stringify({ error: "Texte invalide" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
   const safeAction = ["improve","formal","casual","shorter","longer"].includes(action) ? action : "improve";
 
-  const systemPrompt = `Tu es un assistant d'écriture pour un réseau social. Tu DOIS répondre en utilisant l'outil improve_text.
-- "improve" : Corrige et améliore le style. Garde la langue originale.
-- "formal" : Rends plus professionnel.
-- "casual" : Rends plus décontracté.
-- "shorter" : Raccourcis en gardant l'essentiel.
-- "longer" : Développe avec plus de détails.
-Détecte la langue et indique-la dans detected_language.`;
+  const systemPrompt = `Tu es un assistant d'écriture pour réseau social. Réponds UNIQUEMENT avec un JSON valide, sans markdown, sans backticks.
+Action "${safeAction}":
+- "improve": Corrige et améliore le style. Garde la langue originale.
+- "formal": Rends plus professionnel.
+- "casual": Rends plus décontracté.
+- "shorter": Raccourcis en gardant l'essentiel.
+- "longer": Développe avec plus de détails.
+
+Format JSON obligatoire:
+{"improved_text":"...","detected_language":"fr","corrections":["correction1"],"tone":"casual"}`;
 
   const resp = await callAI(apiKey, {
-    model: "google/gemini-2.5-flash",
-    messages: [{ role: "system", content: systemPrompt }, { role: "user", content: `Action: ${safeAction}\n\nTexte:\n${text}` }],
-    tools: [{
-      type: "function", function: {
-        name: "improve_text", description: "Retourne le texte amélioré",
-        parameters: { type: "object", properties: { improved_text: { type: "string" }, detected_language: { type: "string" }, corrections: { type: "array", items: { type: "string" } }, tone: { type: "string" } }, required: ["improved_text", "detected_language", "corrections", "tone"], additionalProperties: false },
-      },
-    }],
-    tool_choice: { type: "function", function: { name: "improve_text" } },
+    model: "google/gemini-2.5-flash-lite",
+    messages: [{ role: "system", content: systemPrompt }, { role: "user", content: text }],
   });
   const errResp = aiError(resp.status, cors);
   if (errResp) return errResp;
   if (!resp.ok) return new Response(JSON.stringify({ error: "Erreur IA" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
   const data = await resp.json();
-  const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-  if (toolCall?.function?.name === "improve_text") {
-    return new Response(JSON.stringify(JSON.parse(toolCall.function.arguments)), { headers: { ...cors, "Content-Type": "application/json" } });
-  }
-  return new Response(JSON.stringify({ improved_text: text, detected_language: "unknown", corrections: [], tone: "neutral" }), { headers: { ...cors, "Content-Type": "application/json" } });
+  const raw = data.choices?.[0]?.message?.content || "";
+  try {
+    const cleaned = raw.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+    const result = JSON.parse(cleaned);
+    if (result.improved_text) return new Response(JSON.stringify(result), { headers: { ...cors, "Content-Type": "application/json" } });
+  } catch {}
+  return new Response(JSON.stringify({ improved_text: raw.trim() || text, detected_language: "unknown", corrections: [], tone: "neutral" }), { headers: { ...cors, "Content-Type": "application/json" } });
 }
 
 // ── MODERATION: moderate_message, accept_request, reject_request ──
