@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, Eye, Trash2, ChevronLeft, ChevronRight, Heart, ChevronUp, Layers, Loader2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
