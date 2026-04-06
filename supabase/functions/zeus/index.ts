@@ -137,7 +137,7 @@ async function handlePostAssistant(apiKey: string, body: any, cors: Record<strin
 Détecte la langue et indique-la dans detected_language.`;
 
   const resp = await callAI(apiKey, {
-    model: "google/gemini-3-flash-preview",
+    model: "google/gemini-2.5-flash",
     messages: [{ role: "system", content: systemPrompt }, { role: "user", content: `Action: ${safeAction}\n\nTexte:\n${text}` }],
     tools: [{
       type: "function", function: {
