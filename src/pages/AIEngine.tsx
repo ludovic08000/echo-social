@@ -28,7 +28,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useABTests, type ABTest } from '@/hooks/useABTests';
 import { useNeuralMetrics, useTrustScores, useFeedConfig } from '@/hooks/useNeuralMetrics';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { Input } from '@/components/ui/input';
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -285,62 +284,23 @@ function MetricsDashboard({ modules }: { modules: ReturnType<typeof getAIModules
       <div className="rounded-2xl border border-border bg-card p-4">
         <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
           <Activity className="w-4 h-4 text-primary" /> Appels IA — dernières 24h
-          <span className="ml-auto text-[10px] text-muted-foreground flex items-center gap-1"><Radio className="w-3 h-3 text-emerald-400 animate-pulse" />Temps réel (30s)</span>
+          <span className="ml-auto text-[10px] text-muted-foreground flex items-center gap-1"><Radio className="w-3 h-3 text-primary animate-pulse" />Temps réel (30s)</span>
         </h3>
-        <div className="h-40">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="colorCalls" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="time" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" tickLine={false} interval={3} />
-              <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" tickLine={false} axisLine={false} width={35} />
-              <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 11 }} />
-              <Area type="monotone" dataKey="calls" stroke="hsl(var(--primary))" fill="url(#colorCalls)" strokeWidth={2} isAnimationActive={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+        <SimpleMetricBars data={chartData} dataKey="calls" tone="primary" height={160} />
       </div>
 
       <div className="grid sm:grid-cols-2 gap-3">
         <div className="rounded-2xl border border-border bg-card p-4">
           <h3 className="text-xs font-semibold text-foreground mb-2 flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-amber-400" /> Latence (ms)
+            <Clock className="w-3.5 h-3.5 text-primary" /> Latence (ms)
           </h3>
-          <div className="h-28">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
-                <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickLine={false} interval={5} />
-                <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickLine={false} axisLine={false} width={30} />
-                <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 11 }} />
-                <Line type="monotone" dataKey="latency" stroke="#f59e0b" strokeWidth={2} dot={false} isAnimationActive={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <SimpleMetricBars data={chartData} dataKey="latency" tone="accent" height={112} />
         </div>
         <div className="rounded-2xl border border-border bg-card p-4">
           <h3 className="text-xs font-semibold text-foreground mb-2 flex items-center gap-1.5">
-            <ShieldAlert className="w-3.5 h-3.5 text-red-400" /> Menaces bloquées
+            <ShieldAlert className="w-3.5 h-3.5 text-destructive" /> Menaces bloquées
           </h3>
-          <div className="h-28">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="colorThreats" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickLine={false} interval={5} />
-                <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickLine={false} axisLine={false} width={30} />
-                <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 11 }} />
-                <Area type="monotone" dataKey="threats" stroke="#ef4444" fill="url(#colorThreats)" strokeWidth={2} isAnimationActive={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          <SimpleMetricBars data={chartData} dataKey="threats" tone="destructive" height={112} />
         </div>
       </div>
 
@@ -378,6 +338,48 @@ function MetricsDashboard({ modules }: { modules: ReturnType<typeof getAIModules
             Ouvrir Zeus
           </a>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function SimpleMetricBars({
+  data,
+  dataKey,
+  tone,
+  height,
+}: {
+  data: Array<{ time: string; calls: number; latency: number; threats: number }>;
+  dataKey: 'calls' | 'latency' | 'threats';
+  tone: 'primary' | 'accent' | 'destructive';
+  height: number;
+}) {
+  const max = Math.max(1, ...data.map((point) => point[dataKey] || 0));
+
+  const toneClass = {
+    primary: 'bg-primary/80',
+    accent: 'bg-accent',
+    destructive: 'bg-destructive/80',
+  }[tone];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-end gap-1.5 rounded-xl border border-border/60 bg-muted/20 px-2 py-3" style={{ height }}>
+        {data.map((point, index) => {
+          const value = point[dataKey] || 0;
+          const barHeight = `${Math.max(8, (value / max) * (height - 36))}px`;
+          return (
+            <div key={`${point.time}-${index}`} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
+              <div className="text-[9px] text-muted-foreground">{value}</div>
+              <div className={cn('w-full rounded-t-md transition-all', toneClass)} style={{ height: barHeight }} />
+            </div>
+          );
+        })}
+      </div>
+      <div className="grid grid-cols-6 gap-2 text-[9px] text-muted-foreground">
+        {data.filter((_, index) => index % Math.max(1, Math.ceil(data.length / 6)) === 0).slice(0, 6).map((point, index) => (
+          <span key={`${point.time}-${index}`} className="truncate">{point.time}</span>
+        ))}
       </div>
     </div>
   );
