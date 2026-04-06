@@ -197,24 +197,6 @@ async function pushToMessenger(supabase: any, userId: string, zeusMessage: strin
   }
 }
 
-// Rate limiting per user (in-memory, per isolate)
-const agentRateLimiter = new Map<string, { count: number; resetAt: number }>();
-const AGENT_RATE_LIMIT = 20; // max 20 messages per minute
-const AGENT_RATE_WINDOW_MS = 60 * 1000;
-const MAX_JWT_AGE_MS = 60 * 60 * 1000; // 1 hour max
-
-function checkAgentRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const entry = agentRateLimiter.get(userId);
-  if (!entry || now > entry.resetAt) {
-    agentRateLimiter.set(userId, { count: 1, resetAt: now + AGENT_RATE_WINDOW_MS });
-    return true;
-  }
-  if (entry.count >= AGENT_RATE_LIMIT) return false;
-  entry.count++;
-  return true;
-}
-
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -224,42 +206,19 @@ serve(async (req) => {
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Non authentifié" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Validate JWT and check expiration
-    const token = authHeader.replace("Bearer ", "");
-    const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: claimsData, error: claimsErr } = await anonClient.auth.getClaims(token);
-    if (claimsErr || !claimsData?.claims) {
-      return new Response(JSON.stringify({ error: "Token invalide ou expiré" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    let userId: string | null = null;
+    if (authHeader) {
+      const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!);
+      const { data: { user } } = await anonClient.auth.getUser(authHeader.replace("Bearer ", ""));
+      userId = user?.id || null;
     }
-
-    const userId = claimsData.claims.sub as string;
-    
-    // Check JWT age — reject tokens issued more than 1 hour ago
-    const iat = claimsData.claims.iat as number | undefined;
-    if (iat && (Date.now() / 1000 - iat) > MAX_JWT_AGE_MS / 1000) {
-      return new Response(JSON.stringify({ error: "Session expirée, reconnecte-toi" }), {
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "Non authentifié" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Rate limit
-    if (!checkAgentRateLimit(userId)) {
-      return new Response(JSON.stringify({ error: "Trop de messages, réessaye dans un moment" }), {
-        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
