@@ -32,6 +32,24 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+/** Detect if text is likely NOT in the user's browser language */
+function detectForeignLanguage(text: string): boolean {
+  if (!text || text.length < 15) return false;
+  const userLang = (navigator.language || 'fr').slice(0, 2).toLowerCase();
+  const langPatterns: Record<string, RegExp> = {
+    fr: /\b(le|la|les|de|du|des|un|une|est|et|en|au|ce|qui|que|pour|dans|pas|sur|avec|je|tu|il|nous|vous|ils|son|mon|mais|ou|donc|car|très|bien|fait|cette|tout)\b/gi,
+    en: /\b(the|is|are|was|were|have|has|had|been|will|would|could|should|this|that|with|from|they|their|what|when|where|which|about|into|than|them|some|make|like|just|over|also|know|because|good|very|want|most|only)\b/gi,
+    es: /\b(el|los|las|una|unos|es|está|son|están|del|por|para|con|sin|como|pero|más|muy|bien|todo|esta|este|tiene|hace|puede|donde|cuando|porque|también|otro|otra)\b/gi,
+    de: /\b(der|die|das|ein|eine|ist|sind|war|hat|und|oder|aber|nicht|auch|auf|mit|von|für|wird|kann|ich|wir|sie|ihr|sein|haben|werden|diese|noch|nach|über|bei)\b/gi,
+  };
+  const userPattern = langPatterns[userLang];
+  if (!userPattern) return false;
+  const words = text.split(/\s+/).length;
+  if (words < 4) return false;
+  const userMatches = (text.match(userPattern) || []).length;
+  return (userMatches / words) < 0.10;
+}
+
 interface PostCardProps {
   post: Post & { user_reaction?: ReactionType | null };
   showActions?: boolean;
@@ -253,7 +271,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         </div>
       )}
 
-      {/* AI Actions — translate / summarize */}
+      {/* AI Actions — translate / summarize (auto-detect language) */}
       {post.body && (aiSummariesEnabled || autoTranslateEnabled) && (
         <div className="px-3 pb-2 flex flex-wrap gap-1.5">
           {aiSummariesEnabled && post.body.length >= 100 && (
@@ -271,7 +289,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
               {summary ? 'Masquer' : 'Résumer'}
             </button>
           )}
-          {autoTranslateEnabled && (
+          {autoTranslateEnabled && detectForeignLanguage(post.body) && (
             <button
               onClick={handleTranslate}
               disabled={translateLoading}
@@ -283,7 +301,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
               )}
             >
               {translateLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3 h-3" />}
-              {translation ? 'Original' : 'Traduire'}
+              {translation ? 'Original' : 'Voir la traduction'}
             </button>
           )}
         </div>
