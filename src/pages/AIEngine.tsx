@@ -277,8 +277,8 @@ function MetricsDashboard({ modules }: { modules: ReturnType<typeof getAIModules
           <p className="text-xl font-bold text-foreground">{Math.round(avgSuccess || 100)}%</p>
         </div>
         <div className="rounded-xl p-3 border border-border bg-card/60">
-          <div className="flex items-center gap-2 mb-1"><ShieldCheck className="w-3.5 h-3.5 text-red-400" /><span className="text-[11px] text-muted-foreground">Menaces/h</span></div>
-          <p className="text-xl font-bold text-foreground">{chartData[chartData.length - 1]?.threats || 0}</p>
+          <div className="flex items-center gap-2 mb-1"><ShieldCheck className="w-3.5 h-3.5 text-red-400" /><span className="text-[11px] text-muted-foreground">Menaces détectées</span></div>
+          <p className="text-xl font-bold text-foreground">0</p>
         </div>
       </div>
 
