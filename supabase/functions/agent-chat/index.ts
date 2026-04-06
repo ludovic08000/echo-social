@@ -308,11 +308,41 @@ serve(async (req) => {
       });
     }
 
+    // ── ADMIN GATE: Only admins can use neural-engine context ──
+    let isAdmin = false;
+    if (context === "neural-engine") {
+      const { data: adminRole } = await supabase
+        .from("user_roles")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("role", "admin")
+        .maybeSingle();
+      isAdmin = !!adminRole;
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Accès refusé. Seuls les administrateurs peuvent accéder au Neural Engine." }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // ── Conversation ownership check ──
     let convId = conversation_id;
+    if (convId) {
+      const { data: convOwner } = await supabase
+        .from("ai_agent_conversations")
+        .select("user_id")
+        .eq("id", convId)
+        .single();
+      if (!convOwner || convOwner.user_id !== userId) {
+        return new Response(JSON.stringify({ error: "Conversation introuvable ou accès refusé" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
     if (!convId) {
       const { data: conv } = await supabase
         .from("ai_agent_conversations")
-        .insert({ user_id: userId, agent_id, title: message.substring(0, 60) })
+        .insert({ user_id: userId, agent_id, title: sanitizedMessage.substring(0, 60) })
         .select("id").single();
       convId = conv?.id;
     }
