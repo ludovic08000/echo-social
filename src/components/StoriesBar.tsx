@@ -14,7 +14,7 @@ import { toast } from '@/hooks/use-toast';
 import { Link } from 'react-router-dom';
 
 const STORY_DURATION = 5000;
-const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡'];
+const QUICK_EMOJIS = ['🔥', '😍', '🤩', '💀', '🥹', '👏'];
 
 
 
