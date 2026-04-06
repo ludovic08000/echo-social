@@ -268,24 +268,30 @@ export function StoriesBar() {
           tabIndex={0}
           onClick={() => { if (!isCreating) fileInputRef.current?.click(); }}
           onKeyDown={(e) => { if (e.key === 'Enter') fileInputRef.current?.click(); }}
-          className="flex-shrink-0 w-[110px] h-[190px] rounded-xl overflow-hidden relative group bg-card border border-border/20 cursor-pointer"
+          className="flex-shrink-0 w-[110px] h-[190px] rounded-2xl overflow-hidden relative group cursor-pointer shadow-md hover:shadow-lg transition-shadow duration-200"
         >
-          {/* User photo top half */}
-          <div className="h-[130px] w-full overflow-hidden bg-muted flex items-center justify-center">
+          {/* Background gradient */}
+          <div className="absolute inset-0 bg-gradient-to-b from-muted/80 to-muted" />
+          {/* User photo top section */}
+          <div className="relative h-[130px] w-full flex items-center justify-center">
             {user && (
               <UserAvatar src={null} alt="Moi" size="lg" />
             )}
           </div>
-          {/* Plus button with gradient */}
-          <div className="absolute left-1/2 -translate-x-1/2 top-[118px] w-10 h-10 rounded-full border-[3px] border-card flex items-center justify-center z-10 shadow-lg" style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899)' }}>
-            {isCreating ? (
-              <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#fff' }} />
-            ) : (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            )}
+          {/* iOS-style floating plus button */}
+          <div className="absolute left-1/2 -translate-x-1/2 top-[112px] z-10">
+            <div className="w-9 h-9 rounded-full border-[3px] border-card shadow-lg flex items-center justify-center bg-primary">
+              {isCreating ? (
+                <Loader2 className="w-4 h-4 animate-spin text-primary-foreground" />
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-primary-foreground" />
+                </svg>
+              )}
+            </div>
           </div>
           {/* Bottom label */}
-          <div className="h-[60px] flex items-end justify-center pb-2">
+          <div className="relative h-[60px] flex items-end justify-center pb-2.5 bg-card rounded-b-2xl">
             <span className="text-[11px] font-semibold text-foreground text-center leading-tight">Créer une<br/>story</span>
           </div>
         </div>
