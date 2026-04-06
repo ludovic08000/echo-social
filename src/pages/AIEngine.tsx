@@ -822,7 +822,7 @@ function SecurityDashboard() {
   }>(null);
 
   // Real data from DB
-  const { data: secStats } = useQuery({
+  const { data: secStats = { attacksBlocked: 0, bannedIps: 0, packetsAnalyzed: 0, incidents24h: 0 } } = useQuery({
     queryKey: ['security-real-stats'],
     queryFn: async () => {
       const now = new Date();
@@ -838,29 +838,28 @@ function SecurityDashboard() {
       const totalRequests = (trackerRes.data || []).reduce((s: number, r: any) => s + (r.request_count || 0), 0);
 
       return {
-        attacksBlocked: blockedRes.count || 0,
-        bannedIps: bannedRes.count || 0,
-        packetsAnalyzed: totalRequests,
-        incidents24h: incidentsRes.count || 0,
+        attacksBlocked: blockedRes.error ? 0 : (blockedRes.count || 0),
+        bannedIps: bannedRes.error ? 0 : (bannedRes.count || 0),
+        packetsAnalyzed: trackerRes.error ? 0 : totalRequests,
+        incidents24h: incidentsRes.error ? 0 : (incidentsRes.count || 0),
       };
     },
     refetchInterval: 10000,
   });
 
   // Real threat log from security_incidents + ddos_ip_tracker
-  const { data: threatLog } = useQuery({
+  const { data: threatLog = [] } = useQuery({
     queryKey: ['security-threat-log'],
     queryFn: async () => {
       const threats: { time: string; ip: string; type: string; severity: 'critical' | 'high' | 'medium' | 'low'; action: string; country: string }[] = [];
 
-      // Get recent security incidents
-      const { data: incidents } = await supabase
+      const { data: incidents, error: incidentsError } = await supabase
         .from('security_incidents')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(20);
 
-      if (incidents?.length) {
+      if (!incidentsError && incidents?.length) {
         incidents.forEach((inc: any) => {
           threats.push({
             time: new Date(inc.created_at).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
@@ -873,15 +872,14 @@ function SecurityDashboard() {
         });
       }
 
-      // Get recent DDoS tracker entries with penalties
-      const { data: ddosEntries } = await supabase
+      const { data: ddosEntries, error: ddosError } = await supabase
         .from('ddos_ip_tracker')
         .select('*')
         .gte('penalty_level', 1)
         .order('updated_at', { ascending: false })
         .limit(20);
 
-      if (ddosEntries?.length) {
+      if (!ddosError && ddosEntries?.length) {
         ddosEntries.forEach((entry: any) => {
           threats.push({
             time: new Date(entry.updated_at).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
@@ -894,7 +892,6 @@ function SecurityDashboard() {
         });
       }
 
-      // Sort by time descending
       threats.sort((a, b) => b.time.localeCompare(a.time));
       return threats.slice(0, 30);
     },
