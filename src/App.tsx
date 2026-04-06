@@ -83,6 +83,12 @@ const ResetPassword = lazyWithOneRetry(() => import("./pages/ResetPassword"), 'r
 const Onboarding = lazyWithOneRetry(() => import("./pages/Onboarding"), 'r-onboard');
 const AuthConfirmPage = lazyWithOneRetry(() => import("./pages/AuthConfirm"), 'r-authconfirm');
 const Unsubscribe = lazyWithOneRetry(() => import("./pages/Unsubscribe"), 'r-unsub');
+const SEOLanding = lazyWithOneRetry(() => import("./pages/seo/SEOLanding"), 'r-seo');
+const SEOMessaging = lazyWithOneRetry(() => import("./pages/seo/SEOMessaging"), 'r-seo-msg');
+const SEOSecurity = lazyWithOneRetry(() => import("./pages/seo/SEOSecurity"), 'r-seo-sec');
+const SEOModeration = lazyWithOneRetry(() => import("./pages/seo/SEOModeration"), 'r-seo-mod');
+const SEOProtection = lazyWithOneRetry(() => import("./pages/seo/SEOProtection"), 'r-seo-prot');
+const SEOFeed = lazyWithOneRetry(() => import("./pages/seo/SEOFeed"), 'r-seo-feed');
 // Dashboard is now eagerly loaded above
 
 const queryClient = new QueryClient();
@@ -173,6 +179,12 @@ function AppContent() {
               <Route path="/legal/terms" element={<LegalTerms />} />
               <Route path="/legal/privacy" element={<PrivacyPolicy />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/a-propos" element={<SEOLanding />} />
+              <Route path="/fonctionnalites/messagerie-chiffree" element={<SEOMessaging />} />
+              <Route path="/fonctionnalites/securite" element={<SEOSecurity />} />
+              <Route path="/fonctionnalites/moderation-ia" element={<SEOModeration />} />
+              <Route path="/fonctionnalites/protection-utilisateurs" element={<SEOProtection />} />
+              <Route path="/fonctionnalites/feed-intelligent" element={<SEOFeed />} />
               <Route path="/forgot-password" element={<PublicOnlyRoute><ForgotPassword /></PublicOnlyRoute>} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/onboarding" element={<Onboarding />} />
