@@ -1182,6 +1182,18 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
 | ⚠️ Profils flaggés | ${flaggedProfiles.length} |
 | 📡 Lives actifs | ${livesRes.count || 0} |
 | 📈 Nouveaux inscrits (7j) | ${newUsersWeek || 0} |
+| 🔒 IP bannies actives | ${bannedIpsRes.count || 0} |
+| 🛡️ IP sous pénalité DDoS | ${ddosTrackerRes.count || 0} |
+| 🚨 Incidents de sécurité | ${securityIncidentsRes.count || 0} |
+
+### 🔒 SÉCURITÉ RÉSEAU (DONNÉES RÉELLES — NE PAS INVENTER) :
+- **IP bannies actives** : ${bannedIpsRes.count || 0}
+- **IP sous pénalité DDoS (penalty ≥ 1)** : ${ddosTrackerRes.count || 0}
+- **Incidents de sécurité enregistrés** : ${securityIncidentsRes.count || 0}
+- **Attaques brute force** : ${bannedIpsRes.count || 0} IP bloquées
+- **Injections SQL/XSS détectées** : ${securityIncidentsRes.count || 0}
+${(bannedIpsRes.data || []).length > 0 ? `\n**IP bannies :**\n${(bannedIpsRes.data || []).slice(0, 10).map((ip: any) => `- ${ip.ip_address} — ${ip.reason || "Aucune raison"} (${new Date(ip.banned_at).toLocaleDateString("fr")})`).join("\n")}` : "✅ **Aucune attaque détectée, aucune IP bannie. Le réseau est sain.**"}
+${(ddosTrackerRes.data || []).length > 0 ? `\n**IP sous pénalité DDoS :**\n${(ddosTrackerRes.data || []).slice(0, 10).map((d: any) => `- ${d.ip_address} — penalty ${d.penalty_level}, ${d.request_count} req${d.blocked_until ? `, bloquée jusqu'à ${new Date(d.blocked_until).toLocaleString("fr")}` : ""}`).join("\n")}` : ""}
 
 ### 🚨 Signalements en attente (top 5) :
 ${pendingReports.slice(0, 5).map((r: any) => `- **[${r.report_type}]** ${r.description || "Sans description"} _(${new Date(r.created_at).toLocaleDateString("fr")})_`).join("\n") || "✅ Aucun signalement en attente"}
