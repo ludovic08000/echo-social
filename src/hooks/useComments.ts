@@ -195,8 +195,8 @@ export function useLikeComment() {
     onSuccess: (postId) => {
       queryClient.invalidateQueries({ queryKey: ['comments', postId] });
     },
-    onError: (err) => {
-      console.error('Comment like error:', err);
+    onError: (err: any) => {
+      console.error('Comment like error:', err?.message || err);
     },
   });
 }
