@@ -1558,8 +1558,10 @@ function ZeusNeuralConsole() {
   const [loading, setLoading] = useState(false);
   const [agentId, setAgentId] = useState<string | null>(null);
   const [convId, setConvId] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const { chartData } = useNeuralMetrics();
   const { config: feedConfig } = useFeedConfig();
+  const { user } = useAuth();
 
   // Init: find Zeus agent
   useEffect(() => {
