@@ -1477,7 +1477,7 @@ function ZeusNeuralConsole() {
           'Authorization': `Bearer ${session.access_token}`,
           'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         },
-        body: JSON.stringify({ agent_id: agentId, conversation_id: convId, message: userMsg }),
+        body: JSON.stringify({ agent_id: agentId, conversation_id: convId, message: userMsg, context: 'neural-engine' }),
       });
 
       if (!res.ok) throw new Error('Erreur');

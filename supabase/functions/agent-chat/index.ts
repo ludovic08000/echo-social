@@ -222,7 +222,7 @@ serve(async (req) => {
       });
     }
 
-    const { agent_id, conversation_id, message } = await req.json();
+    const { agent_id, conversation_id, message, context } = await req.json();
     if (!agent_id || typeof agent_id !== "string" || !message || typeof message !== "string" || !message.trim()) {
       return new Response(JSON.stringify({ error: "agent_id et message requis" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
