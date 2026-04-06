@@ -22,6 +22,25 @@ export const REACTION_LABELS: Record<ReactionType, string> = {
   angry: 'Grrr',
 };
 
+function updatePostsCollection(old: any, postId: string, updater: (post: any) => any) {
+  if (!old) return old;
+
+  if (Array.isArray(old)) {
+    return old.map((post: any) => (post.id === postId ? updater(post) : post));
+  }
+
+  if (old?.pages) {
+    return {
+      ...old,
+      pages: old.pages.map((page: any[]) =>
+        page.map((post: any) => (post.id === postId ? updater(post) : post))
+      ),
+    };
+  }
+
+  return old;
+}
+
 export function useAddReaction() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -30,7 +49,6 @@ export function useAddReaction() {
     mutationFn: async ({ postId, reactionType }: { postId: string; reactionType: ReactionType }) => {
       if (!user) throw new Error('Not authenticated');
 
-      // Upsert: use ON CONFLICT to prevent duplicates
       const { error } = await supabase
         .from('likes')
         .upsert({
@@ -41,7 +59,6 @@ export function useAddReaction() {
 
       if (error) throw error;
 
-      // Notification in separate try/catch — NEVER blocks the reaction
       try {
         const { data: post } = await supabase
           .from('posts')
@@ -62,29 +79,31 @@ export function useAddReaction() {
       }
     },
     onMutate: async ({ postId, reactionType }) => {
-      await queryClient.cancelQueries({ queryKey: ['posts'] });
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ['posts'] }),
+        queryClient.cancelQueries({ queryKey: ['post-top-reactions', postId] }),
+      ]);
+
       const previousPosts = queryClient.getQueriesData({ queryKey: ['posts'] });
 
-      queryClient.setQueriesData({ queryKey: ['posts'] }, (old: any) => {
-        if (!old?.pages) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page: any[]) =>
-            page.map((post: any) => {
-              if (post.id !== postId) return post;
-              const hadReaction = !!post.user_reaction;
-              return {
-                ...post,
-                user_reaction: reactionType,
-                is_liked: true,
-                likes_count: hadReaction ? post.likes_count : (post.likes_count || 0) + 1,
-              };
-            })
-          ),
-        };
+      queryClient.setQueriesData({ queryKey: ['posts'] }, (old: any) =>
+        updatePostsCollection(old, postId, (post: any) => {
+          const hadReaction = !!post.user_reaction;
+          return {
+            ...post,
+            user_reaction: reactionType,
+            is_liked: true,
+            likes_count: hadReaction ? post.likes_count : (post.likes_count || 0) + 1,
+          };
+        })
+      );
+
+      queryClient.setQueryData<ReactionType[]>(['post-top-reactions', postId], (old = []) => {
+        const next = [reactionType, ...old.filter((type) => type !== reactionType)];
+        return Array.from(new Set(next)).slice(0, 2);
       });
 
-      return { previousPosts };
+      return { previousPosts, postId };
     },
     onError: (_err, _vars, context) => {
       if (context?.previousPosts) {
@@ -93,8 +112,9 @@ export function useAddReaction() {
         });
       }
     },
-    onSettled: () => {
+    onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: ['posts'] });
+      queryClient.invalidateQueries({ queryKey: ['post-top-reactions', variables.postId] });
     },
   });
 }
@@ -116,28 +136,25 @@ export function useRemoveReaction() {
       if (error) throw error;
     },
     onMutate: async (postId) => {
-      await queryClient.cancelQueries({ queryKey: ['posts'] });
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ['posts'] }),
+        queryClient.cancelQueries({ queryKey: ['post-top-reactions', postId] }),
+      ]);
+
       const previousPosts = queryClient.getQueriesData({ queryKey: ['posts'] });
 
-      queryClient.setQueriesData({ queryKey: ['posts'] }, (old: any) => {
-        if (!old?.pages) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page: any[]) =>
-            page.map((post: any) => {
-              if (post.id !== postId) return post;
-              return {
-                ...post,
-                user_reaction: null,
-                is_liked: false,
-                likes_count: Math.max(0, (post.likes_count || 0) - 1),
-              };
-            })
-          ),
-        };
-      });
+      queryClient.setQueriesData({ queryKey: ['posts'] }, (old: any) =>
+        updatePostsCollection(old, postId, (post: any) => ({
+          ...post,
+          user_reaction: null,
+          is_liked: false,
+          likes_count: Math.max(0, (post.likes_count || 0) - 1),
+        }))
+      );
 
-      return { previousPosts };
+      queryClient.invalidateQueries({ queryKey: ['post-top-reactions', postId] });
+
+      return { previousPosts, postId };
     },
     onError: (_err, _vars, context) => {
       if (context?.previousPosts) {
@@ -146,8 +163,9 @@ export function useRemoveReaction() {
         });
       }
     },
-    onSettled: () => {
+    onSettled: (_data, _error, postId) => {
       queryClient.invalidateQueries({ queryKey: ['posts'] });
+      queryClient.invalidateQueries({ queryKey: ['post-top-reactions', postId] });
     },
   });
 }
