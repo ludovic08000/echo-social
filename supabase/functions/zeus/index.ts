@@ -1137,7 +1137,12 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
   }
 
   if (action === "chat") {
-    // Gather core platform snapshot (lightweight — details fetched via tools)
+    const latestUserMessage = [...(body.messages || [])]
+      .reverse()
+      .find((message: any) => message?.role === "user")?.content?.toLowerCase?.() || "";
+
+    const isSecurityQuery = /attaque|intrusion|ddos|brute\s*force|xss|sql|injection|menace|incident|pare[-\s]?feu|firewall|r[ée]seau|ip\s+bann|phishing|spam|bot|s[ée]curit/i.test(latestUserMessage);
+
     const [usersRes, postsRes, ordersRes, reportsRes, bansRes, trustRes, subsRes, verificationsRes, livesRes, productsRes, bannedIpsRes, ddosTrackerRes, securityIncidentsRes] = await Promise.all([
       supabase.from("profiles").select("user_id, name, city, profile_type, created_at", { count: "exact" }).order("created_at", { ascending: false }).limit(10),
       supabase.from("posts").select("id", { count: "exact", head: true }),
@@ -1149,8 +1154,8 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
       supabase.from("identity_verifications").select("id, status, reason, created_at").eq("status", "pending").limit(10),
       supabase.from("live_streams").select("id", { count: "exact", head: true }).eq("is_active", true),
       supabase.from("products").select("id", { count: "exact", head: true }).eq("is_active", true),
-      supabase.from("banned_ips").select("id, ip_address, reason, banned_at", { count: "exact" }).eq("is_active", true),
-      supabase.from("ddos_ip_tracker").select("id, ip_address, penalty_level, request_count, blocked_until", { count: "exact" }).gte("penalty_level", 1),
+      supabase.from("banned_ips").select("id, ip_address, reason, banned_at", { count: "exact" }).eq("is_active", true).order("banned_at", { ascending: false }).limit(10),
+      supabase.from("ddos_ip_tracker").select("id, ip_address, penalty_level, request_count, blocked_until, endpoint, updated_at", { count: "exact" }).gte("penalty_level", 1).order("updated_at", { ascending: false }).limit(10),
       supabase.from("security_incidents").select("id", { count: "exact", head: true }),
     ]);
 
@@ -1160,6 +1165,43 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
     const activeSubs = (subsRes.data || []).filter((s: any) => s.status === "active");
     const monthlyMRR = activeSubs.reduce((s: number, sub: any) => s + (sub.price_cents || 0), 0) / 100;
     const flaggedProfiles = trustRes.data || [];
+
+    const securityFacts = {
+      activeBannedIps: bannedIpsRes.count || 0,
+      penalizedIps: ddosTrackerRes.count || 0,
+      incidents: securityIncidentsRes.count || 0,
+      bannedIps: bannedIpsRes.data || [],
+      penalizedEntries: ddosTrackerRes.data || [],
+    };
+
+    const buildVerifiedSecurityReply = () => {
+      const hasSecurityEvents = securityFacts.activeBannedIps > 0 || securityFacts.penalizedIps > 0 || securityFacts.incidents > 0;
+
+      return `## 🛡️ État sécurité vérifié
+
+| Indicateur | Valeur réelle |
+|---|---:|
+| IP bannies actives | ${securityFacts.activeBannedIps} |
+| IP sous pénalité DDoS | ${securityFacts.penalizedIps} |
+| Incidents de sécurité | ${securityFacts.incidents} |
+
+${hasSecurityEvents ? "### 🚨 Événements réels détectés" : "### ✅ Conclusion\n**Aucune attaque détectée, le réseau est sain.**"}
+${securityFacts.bannedIps.length > 0 ? `\n#### IP bannies\n${securityFacts.bannedIps.map((ip: any) => `- ${ip.ip_address} — ${ip.reason || "Sans raison"} (${new Date(ip.banned_at).toLocaleString("fr-FR")})`).join("\n")}` : ""}
+${securityFacts.penalizedEntries.length > 0 ? `\n#### IP sous pénalité\n${securityFacts.penalizedEntries.map((entry: any) => `- ${entry.ip_address} — endpoint **${entry.endpoint || "global"}**, penalty **${entry.penalty_level}**, ${entry.request_count} requêtes${entry.blocked_until ? `, bloquée jusqu'au ${new Date(entry.blocked_until).toLocaleString("fr-FR")}` : ""}`).join("\n")}` : ""}
+
+## 💡 Propositions Zeus
+${hasSecurityEvents ? "- Lancer un audit sécurité détaillé si tu veux une analyse plus profonde des IP et endpoints touchés." : "- Aucun durcissement urgent recommandé pour le moment.\n- Je peux lancer un audit sécurité complet si tu veux une vérification supplémentaire."}`;
+    };
+
+    const sanitizeZeusReply = (content: string) => {
+      const hasSecurityClaims = /attaque|intrusion|ddos|brute\s*force|xss|sql|injection|menace|incident|phishing|ip\s+bann|bannies?|bloqu[ée]es?|pare[-\s]?feu|firewall|r[ée]seau/i.test(content);
+      const zeroSecurityState = securityFacts.activeBannedIps === 0 && securityFacts.penalizedIps === 0 && securityFacts.incidents === 0;
+
+      if (isSecurityQuery) return buildVerifiedSecurityReply();
+      if (hasSecurityClaims && zeroSecurityState) return buildVerifiedSecurityReply();
+
+      return `${content}\n\n---\n## ✅ Faits vérifiés\n- IP bannies actives : **${securityFacts.activeBannedIps}**\n- IP sous pénalité DDoS : **${securityFacts.penalizedIps}**\n- Incidents de sécurité : **${securityFacts.incidents}**`;
+    };
 
     // Compute daily new users (last 7 days)
     const last7d = new Date(Date.now() - 7 * 86400000).toISOString();
@@ -1182,18 +1224,16 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
 | ⚠️ Profils flaggés | ${flaggedProfiles.length} |
 | 📡 Lives actifs | ${livesRes.count || 0} |
 | 📈 Nouveaux inscrits (7j) | ${newUsersWeek || 0} |
-| 🔒 IP bannies actives | ${bannedIpsRes.count || 0} |
-| 🛡️ IP sous pénalité DDoS | ${ddosTrackerRes.count || 0} |
-| 🚨 Incidents de sécurité | ${securityIncidentsRes.count || 0} |
+| 🔒 IP bannies actives | ${securityFacts.activeBannedIps} |
+| 🛡️ IP sous pénalité DDoS | ${securityFacts.penalizedIps} |
+| 🚨 Incidents de sécurité | ${securityFacts.incidents} |
 
-### 🔒 SÉCURITÉ RÉSEAU (DONNÉES RÉELLES — NE PAS INVENTER) :
-- **IP bannies actives** : ${bannedIpsRes.count || 0}
-- **IP sous pénalité DDoS (penalty ≥ 1)** : ${ddosTrackerRes.count || 0}
-- **Incidents de sécurité enregistrés** : ${securityIncidentsRes.count || 0}
-- **Attaques brute force** : ${bannedIpsRes.count || 0} IP bloquées
-- **Injections SQL/XSS détectées** : ${securityIncidentsRes.count || 0}
-${(bannedIpsRes.data || []).length > 0 ? `\n**IP bannies :**\n${(bannedIpsRes.data || []).slice(0, 10).map((ip: any) => `- ${ip.ip_address} — ${ip.reason || "Aucune raison"} (${new Date(ip.banned_at).toLocaleDateString("fr")})`).join("\n")}` : "✅ **Aucune attaque détectée, aucune IP bannie. Le réseau est sain.**"}
-${(ddosTrackerRes.data || []).length > 0 ? `\n**IP sous pénalité DDoS :**\n${(ddosTrackerRes.data || []).slice(0, 10).map((d: any) => `- ${d.ip_address} — penalty ${d.penalty_level}, ${d.request_count} req${d.blocked_until ? `, bloquée jusqu'à ${new Date(d.blocked_until).toLocaleString("fr")}` : ""}`).join("\n")}` : ""}
+### 🔒 SÉCURITÉ VÉRIFIÉE
+- IP bannies actives : **${securityFacts.activeBannedIps}**
+- IP sous pénalité DDoS : **${securityFacts.penalizedIps}**
+- Incidents de sécurité : **${securityFacts.incidents}**
+- Le tracker DDoS avec penalty_level = 0 correspond à du trafic normal, pas à une attaque.
+${securityFacts.activeBannedIps === 0 && securityFacts.penalizedIps === 0 && securityFacts.incidents === 0 ? "- **Conclusion : aucune attaque détectée, réseau sain.**" : "- **Conclusion : des événements sécurité existent, utilise uniquement les chiffres ci-dessus.**"}
 
 ### 🚨 Signalements en attente (top 5) :
 ${pendingReports.slice(0, 5).map((r: any) => `- **[${r.report_type}]** ${r.description || "Sans description"} _(${new Date(r.created_at).toLocaleDateString("fr")})_`).join("\n") || "✅ Aucun signalement en attente"}
@@ -1257,12 +1297,13 @@ reason: Augmenter la découverte car l'engagement est faible cette semaine
 
 ## 🔒 RÈGLES STRICTES
 - JAMAIS inventer de données — utilise tes outils pour vérifier
-- **⚠️ RÈGLE ABSOLUE SÉCURITÉ** : Ne JAMAIS inventer d'attaques, de menaces, d'IP bannies ou d'incidents de sécurité. Les données de sécurité sont fournies dans le snapshot ci-dessus. Si le snapshot montre 0 attaque et 0 IP bannie, tu dois dire "Aucune attaque détectée, le réseau est sain". INVENTER des attaques fictives est strictement INTERDIT.
+- **⚠️ RÈGLE ABSOLUE SÉCURITÉ** : Ne JAMAIS inventer d'attaques, de menaces, d'IP bannies ou d'incidents de sécurité. Si les chiffres vérifiés sont à 0, tu dois dire exactement qu'aucune attaque n'a été détectée et que le réseau est sain.
 - **JAMAIS appliquer un changement sans validation** — toujours utiliser [ZEUS_PROPOSAL]
 - Prioriser la sécurité des mineurs (tolérance zéro)
-- Signaler les anomalies statistiques (pics, chutes, patterns suspects) UNIQUEMENT si les données réelles le montrent
+- Signaler les anomalies statistiques UNIQUEMENT si les données réelles le montrent
 - Si tu ne sais pas, dis-le et propose d'investiguer via tes outils
 - Le ddos_ip_tracker avec penalty_level=0 représente du trafic NORMAL, PAS des attaques
+- Tu n'as pas le droit de donner un chiffre sécurité qui n'existe pas explicitement dans les données vérifiées ci-dessus ou dans un outil que tu viens d'exécuter
 
 ## 🛠️ OUTILS DISPONIBLES
 Tu peux appeler des outils pour interroger la base en temps réel :
@@ -1299,11 +1340,21 @@ ${platformContext}
 
 Date et heure : ${new Date().toLocaleString("fr-FR")}`;
 
+    if (isSecurityQuery) {
+      const verifiedSecurityContent = buildVerifiedSecurityReply();
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: verifiedSecurityContent } }] })}\n\n`));
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+      return new Response(stream, { headers: { ...cors, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
+    }
 
-    // Multi-turn tool-calling loop
     const messages = [{ role: "system", content: systemPrompt }, ...(body.messages || [])];
-    
-    // First call — may trigger tool use
+
     let resp = await callAI(apiKey, {
       model: "google/gemini-2.5-flash",
       messages,
@@ -1331,12 +1382,10 @@ Date et heure : ${new Date().toLocaleString("fr-FR")}`;
     let loopCount = 0;
     const maxLoops = 5;
 
-    // Tool-calling loop: execute tools and feed results back
     while (toolCalls?.length && loopCount < maxLoops) {
       loopCount++;
       messages.push(choice.message);
-      
-      // Execute all tool calls in parallel
+
       const toolResults = await Promise.all(
         toolCalls.map(async (tc: any) => {
           let args = {};
@@ -1347,7 +1396,6 @@ Date et heure : ${new Date().toLocaleString("fr-FR")}`;
       );
       messages.push(...toolResults);
 
-      // Call AI again with tool results
       resp = await callAI(apiKey, { model: "google/gemini-2.5-flash", messages, tools: ZEUS_TOOLS, stream: false });
       errResp = aiError(resp.status, cors);
       if (errResp) return errResp;
@@ -1362,23 +1410,17 @@ Date et heure : ${new Date().toLocaleString("fr-FR")}`;
       toolCalls = choice?.message?.tool_calls;
     }
 
-    // Final response — stream it if it's text
-    const finalContent = choice?.message?.content || "Je n'ai pas pu générer de réponse.";
-    
-    // Stream the final response for better UX
-    const streamResp = await callAI(apiKey, {
-      model: "google/gemini-2.5-flash",
-      messages: [
-        { role: "system", content: "Tu es ZEUS. Reproduis exactement le contenu suivant sans rien modifier, ajouter ou retrancher. Garde le formatage markdown identique." },
-        { role: "user", content: finalContent },
-      ],
-      stream: true,
+    const finalContent = sanitizeZeusReply(choice?.message?.content || "Je n'ai pas pu générer de réponse.");
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: finalContent } }] })}\n\n`));
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      },
     });
-    if (!streamResp.ok) {
-      // Fallback: return as JSON
-      return new Response(JSON.stringify({ result: finalContent }), { headers: { ...cors, "Content-Type": "application/json" } });
-    }
-    return new Response(streamResp.body, { headers: { ...cors, "Content-Type": "text/event-stream" } });
+
+    return new Response(stream, { headers: { ...cors, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
   }
 
   if (action === "stats") {
