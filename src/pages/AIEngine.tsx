@@ -1569,13 +1569,14 @@ function ZeusNeuralConsole() {
     queryKey: ['zeus-ne-conversations', user?.id, agentId],
     queryFn: async () => {
       if (!user || !agentId) return [];
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('ai_agent_conversations')
         .select('id, title, updated_at')
         .eq('user_id', user.id)
         .eq('agent_id', agentId)
         .order('updated_at', { ascending: false })
         .limit(50);
+      console.log('[Zeus NE] conversations loaded:', data?.length, 'error:', error?.message);
       return data || [];
     },
     enabled: !!user && !!agentId,
