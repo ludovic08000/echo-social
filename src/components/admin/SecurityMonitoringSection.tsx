@@ -151,15 +151,11 @@ export function SecurityMonitoringSection() {
     },
   });
 
-  // ── Zeus alertes temps réel — détection de nouvelles menaces ──
-  const prevIncidentCount = useState<number>(0);
-  
   useEffect(() => {
     if (!incidents) return;
     const currentCount = incidents.length;
-    const [prevCount, setPrevCount] = prevIncidentCount;
     
-    if (prevCount > 0 && currentCount > prevCount) {
+    if (prevIncidentCount > 0 && currentCount > prevIncidentCount) {
       const newIncidents = incidents.slice(0, currentCount - prevCount);
       const criticals = newIncidents.filter((i: any) => i.severity === 'critical' || i.severity === 'high');
       
