@@ -1382,7 +1382,7 @@ Date et heure : ${new Date().toLocaleString("fr-FR")}`;
       return new Response(stream, { headers: { ...cors, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
     }
 
-    const messages = [{ role: "system", content: systemPrompt }, ...(body.messages || [])];
+    const messages = [{ role: "system", content: systemPrompt }, ...cleanedMessages];
 
     let resp = await callAI(apiKey, {
       model: "google/gemini-2.5-flash",
