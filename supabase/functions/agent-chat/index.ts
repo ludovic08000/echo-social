@@ -348,7 +348,7 @@ serve(async (req) => {
     }
 
     await supabase.from("ai_agent_messages").insert({
-      conversation_id: convId, role: "user", content: message,
+      conversation_id: convId, role: "user", content: sanitizedMessage,
     });
 
     const { data: history } = await supabase
