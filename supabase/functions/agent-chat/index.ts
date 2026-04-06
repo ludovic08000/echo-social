@@ -206,25 +206,45 @@ serve(async (req) => {
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
     const authHeader = req.headers.get("Authorization");
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    let userId: string | null = null;
-    if (authHeader) {
-      const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!);
-      const { data: { user } } = await anonClient.auth.getUser(authHeader.replace("Bearer ", ""));
-      userId = user?.id || null;
-    }
-    if (!userId) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Non authentifié" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const { agent_id, conversation_id, message, context } = await req.json();
-    if (!agent_id || typeof agent_id !== "string" || !message || typeof message !== "string" || !message.trim()) {
-      return new Response(JSON.stringify({ error: "agent_id et message requis" }), {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Authenticate via getClaims (fast JWT verification)
+    const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!);
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsErr } = await anonClient.auth.getClaims(token);
+    if (claimsErr || !claimsData?.claims?.sub) {
+      return new Response(JSON.stringify({ error: "Non authentifié" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const userId: string = claimsData.claims.sub as string;
+
+    // Parse and validate input
+    let body: any;
+    try { body = await req.json(); } catch {
+      return new Response(JSON.stringify({ error: "Corps de requête invalide" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { agent_id, conversation_id, message, context } = body;
+
+    // Validate UUID format for agent_id
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!agent_id || typeof agent_id !== "string" || !uuidRegex.test(agent_id)) {
+      return new Response(JSON.stringify({ error: "agent_id invalide" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (!message || typeof message !== "string" || !message.trim()) {
+      return new Response(JSON.stringify({ error: "Message requis" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -233,6 +253,21 @@ serve(async (req) => {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    // Validate conversation_id if provided
+    if (conversation_id && (typeof conversation_id !== "string" || !uuidRegex.test(conversation_id))) {
+      return new Response(JSON.stringify({ error: "conversation_id invalide" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    // Validate context is a known value
+    if (context && !["neural-engine", "chat", "feed"].includes(context)) {
+      return new Response(JSON.stringify({ error: "Contexte invalide" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Sanitize message: strip control characters and null bytes
+    const sanitizedMessage = message.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim();
 
     const { data: agent, error: agentErr } = await supabase
       .from("ai_agents").select("*").eq("id", agent_id).eq("is_active", true).single();
