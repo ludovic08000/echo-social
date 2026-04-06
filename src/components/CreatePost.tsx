@@ -78,14 +78,20 @@ export function CreatePost() {
     setAiLoading(true);
     setAiResult(null);
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
       const { data, error } = await supabase.functions.invoke('zeus', {
         body: { domain: 'post', text: body, action },
       });
+      clearTimeout(timeout);
       if (error) throw error;
-      if (data.error) throw new Error(data.error);
+      if (data?.error) throw new Error(data.error);
       setAiResult(data);
     } catch (e: any) {
-      toast({ title: 'Erreur IA', description: e.message || 'Impossible d\'améliorer le texte', variant: 'destructive' });
+      const msg = e.message?.includes('fetch') || e.message?.includes('Failed') || e.message?.includes('abort')
+        ? 'Le serveur met trop de temps. Réessayez.'
+        : e.message || 'Impossible d\'améliorer le texte';
+      toast({ title: 'Erreur IA', description: msg, variant: 'destructive' });
     } finally {
       setAiLoading(false);
     }
