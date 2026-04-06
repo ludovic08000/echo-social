@@ -25,9 +25,31 @@ export interface FeedConfigEntry {
   updated_at: string;
 }
 
+// Stable seed data generated once per session
+let _seedCache: MetricPoint[] | null = null;
+function getStableSeedData(): MetricPoint[] {
+  if (_seedCache) return _seedCache;
+  const now = new Date();
+  const points: MetricPoint[] = [];
+  // Use hour-based seed for deterministic-ish values
+  for (let i = 23; i >= 0; i--) {
+    const h = new Date(now.getTime() - i * 3600000);
+    const seed = h.getHours() * 137 + h.getDate() * 31;
+    points.push({
+      time: h.toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' }),
+      calls: (seed % 400) + 150,
+      latency: (seed % 60) + 30,
+      errors: seed % 8,
+      threats: seed % 20,
+    });
+  }
+  _seedCache = points;
+  return points;
+}
+
 export function useNeuralMetrics() {
   const { user } = useAuth();
-  const [chartData, setChartData] = useState<MetricPoint[]>([]);
+  const [chartData, setChartData] = useState<MetricPoint[]>(getStableSeedData);
   const [loading, setLoading] = useState(true);
 
   const fetchMetrics = useCallback(async () => {
@@ -41,24 +63,10 @@ export function useNeuralMetrics() {
         .limit(500);
 
       if (!data || data.length === 0) {
-        // Generate realistic seed data when no real data exists
-        const now = new Date();
-        const points: MetricPoint[] = [];
-        for (let i = 23; i >= 0; i--) {
-          const h = new Date(now.getTime() - i * 3600000);
-          points.push({
-            time: h.toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' }),
-            calls: Math.floor(Math.random() * 400 + 150),
-            latency: Math.floor(Math.random() * 60 + 30),
-            errors: Math.floor(Math.random() * 8),
-            threats: Math.floor(Math.random() * 20),
-          });
-        }
-        setChartData(points);
+        setChartData(getStableSeedData());
         return;
       }
 
-      // Aggregate real data by hour
       const buckets: Record<string, { calls: number; latency: number[]; errors: number; threats: number }> = {};
       for (const row of data) {
         const d = new Date(row.created_at);
