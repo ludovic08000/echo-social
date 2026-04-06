@@ -14,7 +14,14 @@ import { toast } from '@/hooks/use-toast';
 import { Link } from 'react-router-dom';
 
 const STORY_DURATION = 5000;
-const QUICK_EMOJIS = ['🔥', '😍', '🤩', '💀', '🥹', '👏'];
+const QUICK_REACTIONS = [
+  { emoji: '👍', label: "J'aime", bg: 'from-blue-400 to-blue-600' },
+  { emoji: '❤️', label: 'Love', bg: 'from-red-400 to-pink-500' },
+  { emoji: '😆', label: 'Haha', bg: 'from-yellow-300 to-amber-400' },
+  { emoji: '😮', label: 'Wow', bg: 'from-yellow-300 to-orange-400' },
+  { emoji: '😢', label: 'Triste', bg: 'from-yellow-300 to-amber-400' },
+  { emoji: '😡', label: 'Grrr', bg: 'from-orange-400 to-red-500' },
+];
 
 
 
@@ -580,18 +587,29 @@ export function StoriesBar() {
                           </button>
                         )}
                       </div>
-                      {/* Quick emoji reactions */}
-                      {QUICK_EMOJIS.map((emoji) => (
-                        <button
-                          key={emoji}
+                      {/* Facebook-style animated reactions */}
+                      {QUICK_REACTIONS.map((reaction) => (
+                        <motion.button
+                          key={reaction.emoji}
+                          whileHover={{ scale: 1.5, y: -12 }}
+                          whileTap={{ scale: 0.8 }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            toast({ title: `${emoji} envoyé à ${currentStory.profile.name}` });
+                            toast({ title: `${reaction.emoji} ${reaction.label} envoyé à ${currentStory.profile.name}` });
                           }}
-                          className="text-2xl hover:scale-125 transition-transform flex-shrink-0"
+                          className="relative flex-shrink-0 group/reaction"
                         >
-                          {emoji}
-                        </button>
+                          <span className="text-[28px] drop-shadow-lg cursor-pointer block transition-all">
+                            {reaction.emoji}
+                          </span>
+                          <motion.span
+                            initial={{ opacity: 0, y: 5 }}
+                            whileHover={{ opacity: 1, y: -2 }}
+                            className="absolute -top-7 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-white bg-black/70 backdrop-blur-sm rounded-full px-2 py-0.5 whitespace-nowrap pointer-events-none"
+                          >
+                            {reaction.label}
+                          </motion.span>
+                        </motion.button>
                       ))}
                     </div>
                   </div>
