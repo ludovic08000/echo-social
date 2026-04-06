@@ -1195,11 +1195,14 @@ ${hasSecurityEvents ? "- Lancer un audit sécurité détaillé si tu veux une an
 
     const FAKE_SECURITY_PATTERN = /(\d[\d\s.,]+)\s*(tentatives?|attaques?|intrusions?|bloqu[ée]e?s?|neutralis[ée]e?s?|incidents?|bots?\s+de\s+spam|requ[eê]tes?\s+suspectes?|credential\s+stuffing|brute\s*force|WAF|pare[-\s]?feu|DDoS|Layer\s*\d)/i;
     const SECURITY_TOPIC_PATTERN = /attaque|intrusion|ddos|brute\s*force|xss|sql|injection|menace|incident|phishing|spam|bot|s[ée]curit|WAF|credential|neutralis|bloqu[ée]|tentative|suspecte|pare[-\s]?feu|firewall/i;
+    // Pattern for fabricated operational metrics (latency, CPU, success rate, message counts per day, etc.)
+    const FAKE_OPS_PATTERN = /(\d[\d\s.,]*)\s*(%|ms|req|requêtes?\s+trait[ée]e?s?|messages?\s*\/\s*jour|messages?\s+par\s+jour|CPU|charge|latence|taux\s+de\s+succ[eè]s)/i;
 
     const sanitizeZeusReply = (content: string) => {
       const zeroSecurityState = securityFacts.activeBannedIps === 0 && securityFacts.penalizedIps === 0 && securityFacts.incidents === 0;
       const hasFakeNumbers = FAKE_SECURITY_PATTERN.test(content);
       const hasSecurityTopic = SECURITY_TOPIC_PATTERN.test(content);
+      const hasFakeOps = FAKE_OPS_PATTERN.test(content);
 
       // If security is clean and Zeus invented numbers or security topics → replace entirely
       if (zeroSecurityState && (hasFakeNumbers || (hasSecurityTopic && isSecurityQuery))) {
@@ -1211,7 +1214,6 @@ ${hasSecurityEvents ? "- Lancer un audit sécurité détaillé si tu veux une an
 
       // For non-security responses that still mention security with fake numbers
       if (zeroSecurityState && hasSecurityTopic) {
-        // Strip the fabricated security sections and append verified facts
         const cleaned = content
           .replace(/###?\s*🚨[^\n]*\n([\s\S]*?)(?=###?\s|$)/gi, '')
           .replace(/###?\s*⚠️\s*ALERTE[^\n]*\n([\s\S]*?)(?=###?\s|$)/gi, '')
@@ -1221,7 +1223,23 @@ ${hasSecurityEvents ? "- Lancer un audit sécurité détaillé si tu veux une an
         return `${cleaned}\n\n---\n## ✅ Sécurité vérifiée (données réelles)\n- IP bannies actives : **0**\n- IP sous pénalité DDoS : **0**\n- Incidents de sécurité : **0**\n- **Réseau sain, aucune attaque détectée.**`;
       }
 
-      return `${content}\n\n---\n## ✅ Faits vérifiés\n- IP bannies actives : **${securityFacts.activeBannedIps}**\n- IP sous pénalité DDoS : **${securityFacts.penalizedIps}**\n- Incidents de sécurité : **${securityFacts.incidents}**`;
+      // Strip fabricated operational metrics (latency, CPU, success rates, etc.)
+      let finalContent = content;
+      if (hasFakeOps) {
+        // Remove lines with fabricated ops metrics
+        finalContent = finalContent
+          .replace(/\*\*?Latence[^*\n]*\*\*?[^\n]*/gi, '')
+          .replace(/\*\*?Charge\s+CPU[^*\n]*\*\*?[^\n]*/gi, '')
+          .replace(/\*\*?Taux\s+de\s+succ[eè]s[^*\n]*\*\*?[^\n]*/gi, '')
+          .replace(/\*\*?Total\s+des\s+messages?\s*\([^)]*\)[^*\n]*\*\*?[^\n]*/gi, '')
+          .replace(/\*\*?Moyenne\s+quotidienne[^*\n]*\*\*?[^\n]*/gi, '')
+          .replace(/~?\d+\.?\d*\s*messages?\s*\/\s*jour[^\n]*/gi, '')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+        finalContent += `\n\n---\n> ⚠️ *Certaines métriques opérationnelles (latence, CPU, messages/jour) ne sont pas disponibles en temps réel. Seules les données du snapshot ci-dessus sont vérifiées.*`;
+      }
+
+      return `${finalContent}\n\n---\n## ✅ Faits vérifiés\n- IP bannies actives : **${securityFacts.activeBannedIps}**\n- IP sous pénalité DDoS : **${securityFacts.penalizedIps}**\n- Incidents de sécurité : **${securityFacts.incidents}**`;
     };
 
     // Strip fabricated security data from conversation history to prevent contamination
@@ -1324,15 +1342,19 @@ reason: Augmenter la découverte car l'engagement est faible cette semaine
 - Sois **concis mais complet** — max 400 mots sauf analyse détaillée demandée
 - Sois **proactif** : ne te contente pas de répondre, propose !
 
-## 🔒 RÈGLES STRICTES
-- JAMAIS inventer de données — utilise tes outils pour vérifier
-- **⚠️ RÈGLE ABSOLUE SÉCURITÉ** : Ne JAMAIS inventer d'attaques, de menaces, d'IP bannies ou d'incidents de sécurité. Si les chiffres vérifiés sont à 0, tu dois dire exactement qu'aucune attaque n'a été détectée et que le réseau est sain.
-- **JAMAIS appliquer un changement sans validation** — toujours utiliser [ZEUS_PROPOSAL]
+## 🔒 RÈGLES STRICTES — ABSOLUMENT CRITIQUES
+- **⛔ RÈGLE #1 — ZÉRO INVENTION** : Tu n'as le droit de citer un chiffre, une statistique, une métrique, un pourcentage ou une valeur QUE si :
+  1. Il apparaît dans le SNAPSHOT PLATEFORME ci-dessus, OU
+  2. Il a été retourné par un outil que tu as appelé dans CETTE conversation
+  Si une donnée n'existe dans aucune de ces deux sources, tu dois dire : "Je n'ai pas cette donnée, voulez-vous que j'investigue ?"
+- **⛔ RÈGLE #2 — PAS DE MÉTRIQUES INVENTÉES** : Tu ne connais PAS la latence, le CPU, le taux de succès, le nombre de requêtes IA traitées, la charge serveur, les temps de réponse, les tendances de messages. Ne les invente JAMAIS. Si on te demande, dis que tu n'as pas accès à ces métriques en temps réel.
+- **⛔ RÈGLE #3 — SÉCURITÉ** : Ne JAMAIS inventer d'attaques, de menaces, d'IP bannies ou d'incidents. Si les chiffres sont à 0, dis "Aucune attaque détectée, réseau sain."
+- **⛔ RÈGLE #4 — PAS DE PSYCHOLOGIE INVENTÉE** : Ne fais PAS de commentaires sur la fatigue, l'humeur ou l'état mental de l'utilisateur. Reste factuel et professionnel.
+- JAMAIS appliquer un changement sans validation — toujours utiliser [ZEUS_PROPOSAL]
 - Prioriser la sécurité des mineurs (tolérance zéro)
-- Signaler les anomalies statistiques UNIQUEMENT si les données réelles le montrent
-- Si tu ne sais pas, dis-le et propose d'investiguer via tes outils
-- Le ddos_ip_tracker avec penalty_level=0 représente du trafic NORMAL, PAS des attaques
-- Tu n'as pas le droit de donner un chiffre sécurité qui n'existe pas explicitement dans les données vérifiées ci-dessus ou dans un outil que tu viens d'exécuter
+- Si tu ne sais pas, DIS-LE et propose d'investiguer
+- Le ddos_ip_tracker avec penalty_level=0 = trafic NORMAL, PAS des attaques
+- **Tu es INTERDIT de donner des chiffres "impressionnants" pour paraître utile. La confiance de l'admin dépend de ta FIABILITÉ, pas de ta créativité.**
 
 ## 🛠️ OUTILS DISPONIBLES
 Tu peux appeler des outils pour interroger la base en temps réel :
