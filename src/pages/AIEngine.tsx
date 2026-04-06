@@ -820,21 +820,91 @@ function SecurityDashboard() {
     lastScan: string;
   }>(null);
 
-  const [threatLog] = useState([
-    { time: '14:32:07', ip: '185.234.72.19', type: 'Brute-force SSH', severity: 'critical' as const, action: 'Bloqué', country: '🇷🇺 RU' },
-    { time: '14:28:43', ip: '103.45.231.87', type: 'SQL Injection', severity: 'high' as const, action: 'Bloqué', country: '🇨🇳 CN' },
-    { time: '14:25:11', ip: '45.33.49.112', type: 'XSS Attempt', severity: 'high' as const, action: 'Bloqué', country: '🇺🇸 US' },
-    { time: '14:21:55', ip: '91.189.94.40', type: 'Port Scan', severity: 'medium' as const, action: 'Surveillé', country: '🇩🇪 DE' },
-    { time: '14:18:02', ip: '198.51.100.23', type: 'DDoS Pattern', severity: 'critical' as const, action: 'Absorbé', country: '🇧🇷 BR' },
-    { time: '14:15:30', ip: '172.16.254.1', type: 'Session Hijack', severity: 'high' as const, action: 'Révoqué', country: '🇬🇧 GB' },
-    { time: '14:10:18', ip: '10.0.85.203', type: 'CSRF Token', severity: 'medium' as const, action: 'Bloqué', country: '🇫🇷 FR' },
-    { time: '14:05:44', ip: '203.0.113.56', type: 'Rate Limit', severity: 'low' as const, action: 'Limité', country: '🇮🇳 IN' },
-  ]);
+  // Real data from DB
+  const { data: secStats } = useQuery({
+    queryKey: ['security-real-stats'],
+    queryFn: async () => {
+      const now = new Date();
+      const h24 = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+
+      const [blockedRes, bannedRes, trackerRes, incidentsRes] = await Promise.all([
+        supabase.from('ddos_ip_tracker').select('id', { count: 'exact', head: true }).gte('penalty_level', 1),
+        supabase.from('banned_ips').select('id', { count: 'exact', head: true }).eq('is_active', true),
+        supabase.from('ddos_ip_tracker').select('id, request_count'),
+        supabase.from('security_incidents').select('id', { count: 'exact', head: true }).gte('created_at', h24),
+      ]);
+
+      const totalRequests = (trackerRes.data || []).reduce((s: number, r: any) => s + (r.request_count || 0), 0);
+
+      return {
+        attacksBlocked: blockedRes.count || 0,
+        bannedIps: bannedRes.count || 0,
+        packetsAnalyzed: totalRequests,
+        incidents24h: incidentsRes.count || 0,
+      };
+    },
+    refetchInterval: 10000,
+  });
+
+  // Real threat log from security_incidents + ddos_ip_tracker
+  const { data: threatLog } = useQuery({
+    queryKey: ['security-threat-log'],
+    queryFn: async () => {
+      const threats: { time: string; ip: string; type: string; severity: 'critical' | 'high' | 'medium' | 'low'; action: string; country: string }[] = [];
+
+      // Get recent security incidents
+      const { data: incidents } = await supabase
+        .from('security_incidents')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (incidents?.length) {
+        incidents.forEach((inc: any) => {
+          threats.push({
+            time: new Date(inc.created_at).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            ip: inc.source_ip || inc.ip_address || 'N/A',
+            type: inc.threat_type || inc.event_type || 'Incident',
+            severity: inc.severity || 'medium',
+            action: inc.action_taken || inc.status || 'Détecté',
+            country: inc.country_code ? `${inc.country_code}` : '🌐',
+          });
+        });
+      }
+
+      // Get recent DDoS tracker entries with penalties
+      const { data: ddosEntries } = await supabase
+        .from('ddos_ip_tracker')
+        .select('*')
+        .gte('penalty_level', 1)
+        .order('updated_at', { ascending: false })
+        .limit(20);
+
+      if (ddosEntries?.length) {
+        ddosEntries.forEach((entry: any) => {
+          threats.push({
+            time: new Date(entry.updated_at).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            ip: entry.ip_address,
+            type: `DDoS — ${entry.endpoint}`,
+            severity: entry.penalty_level >= 4 ? 'critical' : entry.penalty_level >= 2 ? 'high' : 'medium',
+            action: entry.blocked_until && new Date(entry.blocked_until) > new Date() ? 'Bloqué' : 'Surveillé',
+            country: '🌐',
+          });
+        });
+      }
+
+      // Sort by time descending
+      threats.sort((a, b) => b.time.localeCompare(a.time));
+      return threats.slice(0, 30);
+    },
+    refetchInterval: 10000,
+  });
+
+  const formatNum = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
   const runScan = useCallback(async () => {
     setScanning(true);
     setScanResult(null);
-    // Simulate AI vulnerability scan
     await new Promise(r => setTimeout(r, 3000));
     setScanResult({
       score: 94,
@@ -876,23 +946,23 @@ function SecurityDashboard() {
           </div>
         </div>
 
-        {/* Stats row */}
+        {/* Stats row — real data */}
         <div className="grid grid-cols-4 gap-2 mb-4">
           <div className="rounded-xl p-2.5 bg-red-500/5 border border-red-500/20 text-center">
-            <p className="text-lg font-bold text-red-400">847</p>
+            <p className="text-lg font-bold text-red-400">{formatNum(secStats?.attacksBlocked ?? 0)}</p>
             <p className="text-[10px] text-muted-foreground">Attaques bloquées</p>
           </div>
           <div className="rounded-xl p-2.5 bg-orange-500/5 border border-orange-500/20 text-center">
-            <p className="text-lg font-bold text-orange-400">12</p>
-            <p className="text-[10px] text-muted-foreground">IPs bannies (24h)</p>
+            <p className="text-lg font-bold text-orange-400">{secStats?.bannedIps ?? 0}</p>
+            <p className="text-[10px] text-muted-foreground">IPs bannies</p>
           </div>
           <div className="rounded-xl p-2.5 bg-cyan-500/5 border border-cyan-500/20 text-center">
-            <p className="text-lg font-bold text-cyan-400">2.4k</p>
-            <p className="text-[10px] text-muted-foreground">Paquets analysés/min</p>
+            <p className="text-lg font-bold text-cyan-400">{formatNum(secStats?.packetsAnalyzed ?? 0)}</p>
+            <p className="text-[10px] text-muted-foreground">Requêtes analysées</p>
           </div>
-          <div className="rounded-xl p-2.5 bg-emerald-500/5 border border-emerald-500/20 text-center">
-            <p className="text-lg font-bold text-emerald-400">99.7%</p>
-            <p className="text-[10px] text-muted-foreground">Uptime sécurisé</p>
+          <div className="rounded-xl p-2.5 bg-amber-500/5 border border-amber-500/20 text-center">
+            <p className="text-lg font-bold text-amber-400">{secStats?.incidents24h ?? 0}</p>
+            <p className="text-[10px] text-muted-foreground">Incidents (24h)</p>
           </div>
         </div>
 
