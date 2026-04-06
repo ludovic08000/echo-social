@@ -103,6 +103,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       toast({ title: 'Connexion requise', description: 'Connectez-vous pour réagir', variant: 'destructive' });
       return;
     }
+    startCooldown();
     haptic('medium');
     setShowParticles(REACTION_EMOJIS[reactionType]);
     if (currentReaction === reactionType) {
@@ -111,7 +112,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       addReaction.mutate({ postId, reactionType });
     }
     setIsOpen(false);
-  }, [user, currentReaction, postId, addReaction, removeReaction, isBusy]);
+  }, [user, currentReaction, postId, addReaction, removeReaction, isBusy, startCooldown]);
 
   const handleQuickLike = useCallback(() => {
     if (isBusy) return;
