@@ -40,7 +40,7 @@ function getStableSeedData(): MetricPoint[] {
       calls: (seed % 400) + 150,
       latency: (seed % 60) + 30,
       errors: seed % 8,
-      threats: seed % 20,
+      threats: 0,
     });
   }
   _seedCache = points;
