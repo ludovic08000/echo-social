@@ -168,12 +168,30 @@ export function CreatePost() {
         if (mediaType === 'video') {
           setUploadStep('Envoi de la vidéo…');
           setUploadPercent(0);
-          const [videoResult, thumbBlob] = await Promise.all([
-            uploadToR2(media, 'videos', undefined, (p) => {
+
+          // Throttle progress updates to max 4/sec to avoid feed re-renders
+          let lastProgressUpdate = 0;
+          const throttledProgress = (p: { percent: number }) => {
+            const now = Date.now();
+            if (now - lastProgressUpdate > 250 || p.percent === 100) {
+              lastProgressUpdate = now;
               setUploadPercent(p.percent);
               setUploadStep(`Envoi de la vidéo… ${p.percent}%`);
+            }
+          };
+
+          // Run upload and thumbnail generation concurrently
+          // Thumbnail uses requestIdleCallback to avoid blocking
+          const [videoResult, thumbBlob] = await Promise.all([
+            uploadToR2(media, 'videos', undefined, throttledProgress),
+            new Promise<Blob | null>((resolve) => {
+              const doThumb = () => generateVideoThumbnail(media).catch(() => null).then(resolve);
+              if ('requestIdleCallback' in window) {
+                requestIdleCallback(() => doThumb());
+              } else {
+                setTimeout(doThumb, 0);
+              }
             }),
-            generateVideoThumbnail(media).catch(() => null),
           ]);
           imageUrl = videoResult.url;
 
@@ -189,8 +207,13 @@ export function CreatePost() {
           }
         } else {
           setUploadStep('Envoi de l\'image…');
+          let lastImgProgress = 0;
           const { url } = await uploadToR2(media, 'post-images', undefined, (p) => {
-            setUploadPercent(p.percent);
+            const now = Date.now();
+            if (now - lastImgProgress > 250 || p.percent === 100) {
+              lastImgProgress = now;
+              setUploadPercent(p.percent);
+            }
           });
           imageUrl = url;
 
