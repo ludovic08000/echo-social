@@ -70,7 +70,7 @@ function freezeNetworkAPIs() {
       const wsUrl = args[0] as string;
       try {
         const parsed = new URL(wsUrl);
-        const allowed = ALLOWED_ORIGINS.some(o => {
+        const allowed = isLiveKitDomain(parsed.hostname) || ALLOWED_ORIGINS.some(o => {
           const orig = new URL(o);
           return parsed.hostname === orig.hostname;
         });
