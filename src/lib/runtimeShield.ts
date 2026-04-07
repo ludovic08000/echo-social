@@ -24,6 +24,10 @@ function freezeNetworkAPIs() {
     'https://tenor.googleapis.com',
   ];
 
+  // LiveKit domains — needed for live streaming & calls (WebSocket + HTTP)
+  const isLiveKitDomain = (hostname: string): boolean =>
+    hostname.endsWith('.livekit.cloud') || hostname.endsWith('.livekit.io');
+
   const isAllowedURL = (url: string | URL | Request): boolean => {
     try {
       const href = typeof url === 'string' ? url : url instanceof Request ? url.url : url.toString();
@@ -31,6 +35,7 @@ function freezeNetworkAPIs() {
       if (href.startsWith('/') && !href.startsWith('//')) return true;
       const parsed = new URL(href, window.location.origin);
       if (parsed.hostname.endsWith('.r2.cloudflarestorage.com')) return true;
+      if (isLiveKitDomain(parsed.hostname)) return true;
       return ALLOWED_ORIGINS.some(o => parsed.origin === o || parsed.origin === new URL(o).origin);
     } catch {
       return false;
@@ -65,7 +70,7 @@ function freezeNetworkAPIs() {
       const wsUrl = args[0] as string;
       try {
         const parsed = new URL(wsUrl);
-        const allowed = ALLOWED_ORIGINS.some(o => {
+        const allowed = isLiveKitDomain(parsed.hostname) || ALLOWED_ORIGINS.some(o => {
           const orig = new URL(o);
           return parsed.hostname === orig.hostname;
         });
