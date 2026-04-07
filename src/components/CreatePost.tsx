@@ -207,8 +207,13 @@ export function CreatePost() {
           }
         } else {
           setUploadStep('Envoi de l\'image…');
+          let lastImgProgress = 0;
           const { url } = await uploadToR2(media, 'post-images', undefined, (p) => {
-            setUploadPercent(p.percent);
+            const now = Date.now();
+            if (now - lastImgProgress > 250 || p.percent === 100) {
+              lastImgProgress = now;
+              setUploadPercent(p.percent);
+            }
           });
           imageUrl = url;
 
