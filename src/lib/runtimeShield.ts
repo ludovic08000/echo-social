@@ -24,6 +24,10 @@ function freezeNetworkAPIs() {
     'https://tenor.googleapis.com',
   ];
 
+  // LiveKit domains — needed for live streaming & calls (WebSocket + HTTP)
+  const isLiveKitDomain = (hostname: string): boolean =>
+    hostname.endsWith('.livekit.cloud') || hostname.endsWith('.livekit.io');
+
   const isAllowedURL = (url: string | URL | Request): boolean => {
     try {
       const href = typeof url === 'string' ? url : url instanceof Request ? url.url : url.toString();
