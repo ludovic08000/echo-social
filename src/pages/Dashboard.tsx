@@ -86,6 +86,7 @@ export default function Dashboard() {
 
   return (
     <AppLayout>
+      <ErrorBoundary>
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         {/* Header */}
         <motion.div
@@ -207,6 +208,6 @@ export default function Dashboard() {
           </Card>
         </motion.div>
       </div>
+      </ErrorBoundary>
     </AppLayout>
   );
-}
