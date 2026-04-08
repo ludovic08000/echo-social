@@ -31,9 +31,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const isResetRoute = typeof window !== 'undefined' && window.location.pathname === '/reset-password';
+
     // Get session first for fastest possible auth resolution
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (initialRecovery || detectRecoveryFromHash() || isRecoveryPending()) {
+      if (isResetRoute || initialRecovery || detectRecoveryFromHash() || isRecoveryPending()) {
         stopSessionGuard();
         setSession(null);
         setUser(null);
@@ -65,7 +67,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        if (detectRecoveryFromHash() || isRecoveryPending()) {
+        // Block session hydration on reset route or during recovery
+        const onResetRoute = typeof window !== 'undefined' && window.location.pathname === '/reset-password';
+        if (onResetRoute || detectRecoveryFromHash() || isRecoveryPending()) {
           stopSessionGuard();
           setSession(null);
           setUser(null);
