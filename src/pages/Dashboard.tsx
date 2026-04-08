@@ -6,12 +6,11 @@ import { usePosts } from '@/hooks/usePosts';
 import { UserAvatar } from '@/components/UserAvatar';
 import { useFriendships } from '@/hooks/useFriendships';
 import { Card } from '@/components/ui/card';
-import { Eye, MessageCircle, Users, TrendingUp, TrendingDown, BarChart3, Heart, Share2 } from 'lucide-react';
+import { Eye, Users, TrendingUp, TrendingDown, BarChart3, Heart, Share2 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { motion } from 'framer-motion';
-import { formatDistanceToNow } from 'date-fns';
-import { fr } from 'date-fns/locale';
 import { Link } from 'react-router-dom';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 function StatCard({ icon: Icon, label, value, change, changeLabel }: {
   icon: React.ElementType;
