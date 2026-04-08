@@ -118,7 +118,8 @@ export default function ResetPassword() {
 
     await supabase.auth.signOut();
     clearRecoveryFlag();
-    window.history.replaceState(null, document.title, `${window.location.pathname}${window.location.search}`);
+    // Clean URL completely: remove hash (tokens) and search params
+    window.history.replaceState(null, document.title, '/reset-password');
 
     setTimeout(() => {
       navigate('/login', { replace: true });

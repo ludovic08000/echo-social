@@ -52,11 +52,6 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     );
   }
 
-  // Never redirect away from reset-password
-  if (location.pathname === '/reset-password') {
-    return <>{children}</>;
-  }
-
   // If not authenticated and trying to access protected route
   if (!user) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;

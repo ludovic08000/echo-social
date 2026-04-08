@@ -5,7 +5,8 @@ function getLocationHash() {
 }
 
 export function hasRecoveryHash(hash = getLocationHash()): boolean {
-  return hash.includes('type=recovery') || hash.includes('access_token=') || hash.includes('refresh_token=');
+  // Only detect actual recovery flows — NOT generic token URLs (email confirm, magic link, etc.)
+  return hash.includes('type=recovery');
 }
 
 export function setRecoveryFlag() {
