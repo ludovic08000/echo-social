@@ -48,17 +48,21 @@ export default function Dashboard() {
 
   const posts = useMemo(() => {
     try {
-      return postsData?.pages?.flat() || [];
+      if (!postsData?.pages) return [];
+      return postsData.pages.flat() ?? [];
     } catch {
       return [];
     }
   }, [postsData]);
-  const myPosts = useMemo(() => posts.filter(p => p.user_id === user?.id), [posts, user?.id]);
+  const myPosts = useMemo(() => {
+    if (!posts || !Array.isArray(posts)) return [];
+    return posts.filter(p => p?.user_id === user?.id);
+  }, [posts, user?.id]);
 
-  const totalViews = myPosts.reduce((s, p) => s + (p.likes_count || 0) * 3, 0); // estimate views
-  const totalLikes = myPosts.reduce((s, p) => s + (p.likes_count || 0), 0);
-  const totalComments = myPosts.reduce((s, p) => s + (p.comments_count || 0), 0);
-  const friendCount = friendships?.friends.length || 0;
+  const totalViews = myPosts.reduce((s, p) => s + ((p?.likes_count || 0) * 3), 0);
+  const totalLikes = myPosts.reduce((s, p) => s + (p?.likes_count || 0), 0);
+  const totalComments = myPosts.reduce((s, p) => s + (p?.comments_count || 0), 0);
+  const friendCount = friendships?.friends?.length ?? 0;
 
   // Mock chart data based on last 28 days
   const chartData = useMemo(() => {
