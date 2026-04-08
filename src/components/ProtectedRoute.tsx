@@ -52,6 +52,11 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     );
   }
 
+  // Never redirect away from reset-password
+  if (location.pathname === '/reset-password') {
+    return <>{children}</>;
+  }
+
   // If not authenticated and trying to access protected route
   if (!user) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
@@ -84,8 +89,8 @@ export function PublicOnlyRoute({ children }: ProtectedRouteProps) {
     );
   }
 
-  // If already authenticated, redirect to feed
-  if (user) {
+  // If already authenticated, redirect to feed — but NOT during recovery
+  if (user && !isRecoveryPending()) {
     const from = (location.state as { from?: string })?.from || '/feed';
     return <Navigate to={from} replace />;
   }
