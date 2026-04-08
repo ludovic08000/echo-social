@@ -6,12 +6,11 @@ import { usePosts } from '@/hooks/usePosts';
 import { UserAvatar } from '@/components/UserAvatar';
 import { useFriendships } from '@/hooks/useFriendships';
 import { Card } from '@/components/ui/card';
-import { Eye, MessageCircle, Users, TrendingUp, TrendingDown, BarChart3, Heart, Share2 } from 'lucide-react';
+import { Eye, Users, TrendingUp, TrendingDown, BarChart3, Heart, Share2 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { motion } from 'framer-motion';
-import { formatDistanceToNow } from 'date-fns';
-import { fr } from 'date-fns/locale';
 import { Link } from 'react-router-dom';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 function StatCard({ icon: Icon, label, value, change, changeLabel }: {
   icon: React.ElementType;
@@ -49,17 +48,21 @@ export default function Dashboard() {
 
   const posts = useMemo(() => {
     try {
-      return postsData?.pages?.flat() || [];
+      if (!postsData?.pages) return [];
+      return postsData.pages.flat() ?? [];
     } catch {
       return [];
     }
   }, [postsData]);
-  const myPosts = useMemo(() => posts.filter(p => p.user_id === user?.id), [posts, user?.id]);
+  const myPosts = useMemo(() => {
+    if (!posts || !Array.isArray(posts)) return [];
+    return posts.filter(p => p?.user_id === user?.id);
+  }, [posts, user?.id]);
 
-  const totalViews = myPosts.reduce((s, p) => s + (p.likes_count || 0) * 3, 0); // estimate views
-  const totalLikes = myPosts.reduce((s, p) => s + (p.likes_count || 0), 0);
-  const totalComments = myPosts.reduce((s, p) => s + (p.comments_count || 0), 0);
-  const friendCount = friendships?.friends.length || 0;
+  const totalViews = myPosts.reduce((s, p) => s + ((p?.likes_count || 0) * 3), 0);
+  const totalLikes = myPosts.reduce((s, p) => s + (p?.likes_count || 0), 0);
+  const totalComments = myPosts.reduce((s, p) => s + (p?.comments_count || 0), 0);
+  const friendCount = friendships?.friends?.length ?? 0;
 
   // Mock chart data based on last 28 days
   const chartData = useMemo(() => {
@@ -83,6 +86,7 @@ export default function Dashboard() {
 
   return (
     <AppLayout>
+      <ErrorBoundary>
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         {/* Header */}
         <motion.div
@@ -204,6 +208,7 @@ export default function Dashboard() {
           </Card>
         </motion.div>
       </div>
+      </ErrorBoundary>
     </AppLayout>
   );
 }
