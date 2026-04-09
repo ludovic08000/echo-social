@@ -14,6 +14,8 @@ const CATEGORY_LABELS: Record<string, string> = {
   content: '✍️ Contenu',
   assistant: '🧠 Assistant',
   general: '🤖 Général',
+  wellbeing: '🌿 Bien-être',
+  productivity: '⚡ Productivité',
 };
 
 export default function AIAgents() {

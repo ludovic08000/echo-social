@@ -404,8 +404,12 @@ async function handleAgentChat(apiKey: string, body: any, userId: string, supaba
   if (!agent) return new Response(JSON.stringify({ error: "Agent introuvable" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
 
   const today = new Date().toISOString().split("T")[0];
-  const { data: usage } = await supabase.from("ai_agent_usage").select("*").eq("user_id", userId).eq("agent_id", agent_id).eq("usage_date", today).maybeSingle();
-  if ((usage?.message_count || 0) >= agent.free_messages_per_day) {
+  const [{ data: usage }, { data: subscription }] = await Promise.all([
+    supabase.from("ai_agent_usage").select("*").eq("user_id", userId).eq("agent_id", agent_id).eq("usage_date", today).maybeSingle(),
+    supabase.from("creator_subscriptions").select("status").eq("user_id", userId).eq("status", "active").maybeSingle(),
+  ]);
+  const isSubscribed = !!subscription;
+  if (!isSubscribed && (usage?.message_count || 0) >= agent.free_messages_per_day) {
     return new Response(JSON.stringify({ error: "limit_reached", message: `Limite de ${agent.free_messages_per_day} messages/jour atteinte.`, is_premium: agent.is_premium }), { status: 429, headers: { ...cors, "Content-Type": "application/json" } });
   }
 

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth';
 
 export interface AIAgent {
   id: string;
@@ -81,19 +82,21 @@ export function useAIAgentMessages(conversationId: string | undefined) {
 }
 
 export function useAIAgentUsage(agentId: string | undefined) {
+  const { user } = useAuth();
   return useQuery({
-    queryKey: ['ai-agent-usage', agentId],
+    queryKey: ['ai-agent-usage', agentId, user?.id],
     queryFn: async () => {
-      if (!agentId) return null;
+      if (!agentId || !user) return null;
       const today = new Date().toISOString().split('T')[0];
       const { data } = await supabase
         .from('ai_agent_usage')
         .select('*')
         .eq('agent_id', agentId)
+        .eq('user_id', user.id)
         .eq('usage_date', today)
         .maybeSingle();
       return data;
     },
-    enabled: !!agentId,
+    enabled: !!agentId && !!user,
   });
 }
