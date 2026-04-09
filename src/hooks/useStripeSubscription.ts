@@ -33,14 +33,43 @@ export function useStripeSubscription() {
     }
 
     try {
+      // Check Stripe first
       const { data, error } = await supabase.functions.invoke('check-subscription');
-      if (error) throw error;
+      if (!error && data?.subscribed) {
+        setState({
+          subscribed: true,
+          productId: data.product_id || null,
+          priceId: data.price_id || null,
+          subscriptionEnd: data.subscription_end || null,
+          loading: false,
+        });
+        return;
+      }
+
+      // Fallback: check creator_subscriptions table in DB
+      const { data: dbSub } = await supabase
+        .from('creator_subscriptions')
+        .select('status, plan, current_period_end')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .maybeSingle();
+
+      if (dbSub) {
+        setState({
+          subscribed: true,
+          productId: CREATOR_PLAN.product_id,
+          priceId: CREATOR_PLAN.price_id,
+          subscriptionEnd: dbSub.current_period_end || null,
+          loading: false,
+        });
+        return;
+      }
 
       setState({
-        subscribed: data.subscribed || false,
-        productId: data.product_id || null,
-        priceId: data.price_id || null,
-        subscriptionEnd: data.subscription_end || null,
+        subscribed: false,
+        productId: null,
+        priceId: null,
+        subscriptionEnd: null,
         loading: false,
       });
     } catch {
