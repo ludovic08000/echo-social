@@ -279,7 +279,8 @@ export async function signalOutgoingCall(
   conversationId: string,
   callerId: string,
   calleeId: string,
-  callType: 'audio' | 'video'
+  callType: 'audio' | 'video',
+  e2eeKey?: string,
 ): Promise<string | null> {
   const { data, error } = await supabase
     .from('active_calls')
@@ -289,7 +290,8 @@ export async function signalOutgoingCall(
       callee_id: calleeId,
       call_type: callType,
       status: 'ringing',
-    })
+      ...(e2eeKey ? { e2ee_key: e2eeKey } : {}),
+    } as any)
     .select('id')
     .single();
 
