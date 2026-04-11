@@ -926,7 +926,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         participantAvatar={conversation?.participant.avatar_url}
         localVideoRef={localVideoRef}
         remoteVideoRef={remoteVideoRef}
-        onEndCall={endCall}
+        onEndCall={handleEndCall}
         onToggleMute={toggleMute}
         onToggleCamera={toggleCamera}
         onSwitchToVideo={switchToVideo}
