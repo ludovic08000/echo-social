@@ -14,7 +14,7 @@ import { useFriendships } from '@/hooks/useFriendships';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
-import { useCall, CallType } from '@/hooks/useCall';
+import { useCall, CallType, generateCallE2EEKey } from '@/hooks/useCall';
 import { signalOutgoingCall, endActiveCall } from '@/hooks/useIncomingCall';
 import { CallOverlay } from '@/components/CallOverlay';
 import { useImageUpload } from '@/hooks/useImageUpload';
