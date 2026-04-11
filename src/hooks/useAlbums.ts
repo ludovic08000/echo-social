@@ -155,8 +155,27 @@ export function useDeleteMedia() {
 
   return useMutation({
     mutationFn: async ({ mediaId, albumId }: { mediaId: string; albumId: string }) => {
+      // Fetch media URL before deleting from DB
+      const { data: media } = await supabase
+        .from('album_media')
+        .select('media_url')
+        .eq('id', mediaId)
+        .single();
+
       const { error } = await supabase.from('album_media').delete().eq('id', mediaId);
       if (error) throw error;
+
+      // Delete file from R2
+      if (media?.media_url) {
+        try {
+          const { deleteFromR2 } = await import('@/lib/r2');
+          const path = extractR2PathFromUrl(media.media_url);
+          if (path) await deleteFromR2(path);
+        } catch (e) {
+          console.error('R2 media cleanup error:', e);
+        }
+      }
+
       return albumId;
     },
     onSuccess: (albumId) => {
@@ -167,6 +186,15 @@ export function useDeleteMedia() {
       toast.error('Erreur lors de la suppression');
     },
   });
+}
+
+function extractR2PathFromUrl(url: string): string | null {
+  try {
+    const u = new URL(url);
+    return u.pathname.replace(/^\//, '');
+  } catch {
+    return null;
+  }
 }
 
 export function useAlbumMediaCount(albumId?: string) {

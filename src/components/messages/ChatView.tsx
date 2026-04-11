@@ -303,10 +303,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
           )}
 
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => startCall(conversationId, 'audio')} disabled={callState !== 'idle'}>
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => handleStartCall('audio')} disabled={callState !== 'idle'}>
               <Phone className="w-5 h-5" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => startCall(conversationId, 'video')} disabled={callState !== 'idle'}>
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => handleStartCall('video')} disabled={callState !== 'idle'}>
               <Video className="w-5 h-5" />
             </Button>
             <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => setShowGroupPanel(!showGroupPanel)}>
