@@ -98,11 +98,16 @@ export function CallOverlay({
 
         {/* Connected video call - show duration on top */}
         {isVideo && !isConnecting && (
-          <div className="absolute top-safe-area-top pt-12 left-0 right-0 flex items-center justify-center">
+          <div className="absolute top-safe-area-top pt-12 left-0 right-0 flex items-center justify-center gap-2">
             <div className="bg-black/40 backdrop-blur-sm rounded-full px-4 py-1.5 flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
               <span className="text-white text-sm font-medium">{formatCallDuration(duration)}</span>
             </div>
+            {isE2eeActive && (
+              <div className="bg-green-500/20 backdrop-blur-sm rounded-full px-3 py-1.5 flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-green-400" />
+              </div>
+            )}
           </div>
         )}
       </div>
