@@ -726,20 +726,22 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           <button onClick={async () => {
             const participantId = conversation?.participant?.user_id;
             if (participantId && user?.id) {
-              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'audio');
+              const e2eeKey = generateCallE2EEKey();
+              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'audio', e2eeKey);
               if (callId) activeCallIdRef.current = callId;
+              call.startCall(conversationId, 'audio', e2eeKey);
             }
-            call.startCall(conversationId, 'audio');
           }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
             <Phone className="w-3.5 h-3.5" />
           </button>
           <button onClick={async () => {
             const participantId = conversation?.participant?.user_id;
             if (participantId && user?.id) {
-              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'video');
+              const e2eeKey = generateCallE2EEKey();
+              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'video', e2eeKey);
               if (callId) activeCallIdRef.current = callId;
+              call.startCall(conversationId, 'video', e2eeKey);
             }
-            call.startCall(conversationId, 'video');
           }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
             <Video className="w-3.5 h-3.5" />
           </button>
