@@ -109,7 +109,7 @@ export function useCall(options?: UseCallOptions) {
           e2eeKeyProvider = new ExternalE2EEKeyProvider();
           e2eeWorker = new Worker(new URL('livekit-client/e2ee-worker', import.meta.url));
           const keyBytes = decodeE2EEKey(e2eeKeyB64);
-          await e2eeKeyProvider.setKey(keyBytes);
+          await e2eeKeyProvider.setKey(keyBytes.buffer as ArrayBuffer);
         } catch (e) {
           console.warn('E2EE setup failed, continuing without encryption:', e);
           e2eeKeyProvider = undefined;
