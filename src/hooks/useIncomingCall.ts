@@ -47,6 +47,7 @@ export interface IncomingCall {
   status: string;
   caller_name?: string;
   caller_avatar?: string;
+  e2ee_key?: string;
 }
 
 /** Ring tone — plays a looping tone until stopped */
@@ -227,6 +228,7 @@ export function useIncomingCall() {
       status: call.status,
       caller_name: profile?.name || 'Utilisateur',
       caller_avatar: profile?.avatar_url,
+      e2ee_key: call.e2ee_key,
     };
 
     setIncomingCall(incoming);
@@ -279,7 +281,8 @@ export async function signalOutgoingCall(
   conversationId: string,
   callerId: string,
   calleeId: string,
-  callType: 'audio' | 'video'
+  callType: 'audio' | 'video',
+  e2eeKey?: string,
 ): Promise<string | null> {
   const { data, error } = await supabase
     .from('active_calls')
@@ -289,7 +292,8 @@ export async function signalOutgoingCall(
       callee_id: calleeId,
       call_type: callType,
       status: 'ringing',
-    })
+      ...(e2eeKey ? { e2ee_key: e2eeKey } : {}),
+    } as any)
     .select('id')
     .single();
 

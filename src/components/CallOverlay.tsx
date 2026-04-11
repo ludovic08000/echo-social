@@ -1,4 +1,4 @@
-import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X, RotateCcw } from 'lucide-react';
+import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X, RotateCcw, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/UserAvatar';
 import { cn } from '@/lib/utils';
@@ -14,6 +14,7 @@ interface CallOverlayProps {
   duration: number;
   participantName: string;
   participantAvatar?: string | null;
+  isE2eeActive?: boolean;
   localVideoRef: RefObject<HTMLDivElement>;
   remoteVideoRef: RefObject<HTMLDivElement>;
   onEndCall: () => void;
@@ -31,6 +32,7 @@ export function CallOverlay({
   duration,
   participantName,
   participantAvatar,
+  isE2eeActive,
   localVideoRef,
   remoteVideoRef,
   onEndCall,
@@ -85,16 +87,27 @@ export function CallOverlay({
                 : formatCallDuration(duration)
               }
             </p>
+            {isE2eeActive && (
+              <div className="flex items-center gap-1.5 mt-2 bg-green-500/20 rounded-full px-3 py-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-green-400" />
+                <span className="text-green-400 text-xs font-medium">Chiffré de bout en bout</span>
+              </div>
+            )}
           </>
         )}
 
         {/* Connected video call - show duration on top */}
         {isVideo && !isConnecting && (
-          <div className="absolute top-safe-area-top pt-12 left-0 right-0 flex items-center justify-center">
+          <div className="absolute top-safe-area-top pt-12 left-0 right-0 flex items-center justify-center gap-2">
             <div className="bg-black/40 backdrop-blur-sm rounded-full px-4 py-1.5 flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
               <span className="text-white text-sm font-medium">{formatCallDuration(duration)}</span>
             </div>
+            {isE2eeActive && (
+              <div className="bg-green-500/20 backdrop-blur-sm rounded-full px-3 py-1.5 flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-green-400" />
+              </div>
+            )}
           </div>
         )}
       </div>

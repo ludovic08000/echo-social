@@ -1,0 +1,1 @@
+ALTER TABLE public.active_calls ADD COLUMN IF NOT EXISTS e2ee_key text;

@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Room, RoomEvent, Track, RemoteTrackPublication } from 'livekit-client';
+import { Room, RoomEvent, Track, ExternalE2EEKeyProvider, isE2EESupported } from 'livekit-client';
 import { getLiveKitToken } from '@/lib/livekit';
 import { requestMediaPermissions, acquireWakeLock, releaseWakeLock } from '@/lib/platformPermissions';
 import { toast } from 'sonner';
@@ -10,11 +10,25 @@ export type CallState = 'idle' | 'connecting' | 'connected' | 'ended';
 export interface CallEndInfo {
   type: CallType;
   duration: number;
-  wasMissed: boolean; // true if nobody ever connected
+  wasMissed: boolean;
 }
 
 interface UseCallOptions {
   onCallEnded?: (info: CallEndInfo) => void;
+}
+
+/** Generate a random 32-byte key and return as base64 */
+export function generateCallE2EEKey(): string {
+  const key = crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...key));
+}
+
+/** Decode a base64 key back to Uint8Array */
+function decodeE2EEKey(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
 }
 
 export function useCall(options?: UseCallOptions) {
@@ -23,6 +37,7 @@ export function useCall(options?: UseCallOptions) {
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [isE2eeActive, setIsE2eeActive] = useState(false);
   const roomRef = useRef<Room | null>(null);
   const localVideoRef = useRef<HTMLDivElement | null>(null);
   const remoteVideoRef = useRef<HTMLDivElement | null>(null);
@@ -56,7 +71,7 @@ export function useCall(options?: UseCallOptions) {
     };
   }, [callState]);
 
-  const startCall = useCallback(async (conversationId: string, type: CallType) => {
+  const startCall = useCallback(async (conversationId: string, type: CallType, e2eeKeyB64?: string) => {
     // Request permissions before connecting
     const perms = await requestMediaPermissions({
       audio: true,
@@ -73,6 +88,7 @@ export function useCall(options?: UseCallOptions) {
     setDuration(0);
     setIsMuted(false);
     setIsCameraOff(false);
+    setIsE2eeActive(false);
     manualEndRef.current = false;
     hadRemoteParticipantRef.current = false;
 
@@ -83,9 +99,33 @@ export function useCall(options?: UseCallOptions) {
       const roomName = `call-${conversationId}`;
       const { token, url } = await getLiveKitToken(roomName, true);
 
+      // Setup E2EE if key provided and browser supports it
+      let e2eeKeyProvider: ExternalE2EEKeyProvider | undefined;
+      let e2eeWorker: Worker | undefined;
+      const canE2EE = e2eeKeyB64 && isE2EESupported();
+
+      if (canE2EE) {
+        try {
+          e2eeKeyProvider = new ExternalE2EEKeyProvider();
+          e2eeWorker = new Worker(new URL('livekit-client/e2ee-worker', import.meta.url));
+          const keyBytes = decodeE2EEKey(e2eeKeyB64);
+          await e2eeKeyProvider.setKey(keyBytes.buffer as ArrayBuffer);
+        } catch (e) {
+          console.warn('E2EE setup failed, continuing without encryption:', e);
+          e2eeKeyProvider = undefined;
+          e2eeWorker = undefined;
+        }
+      }
+
       const room = new Room({
         adaptiveStream: true,
         dynacast: true,
+        ...(e2eeKeyProvider && e2eeWorker ? {
+          e2ee: {
+            keyProvider: e2eeKeyProvider,
+            worker: e2eeWorker,
+          },
+        } : {}),
       });
 
       roomRef.current = room;
@@ -109,13 +149,13 @@ export function useCall(options?: UseCallOptions) {
       });
 
       room.on(RoomEvent.Disconnected, () => {
-        // Skip if endCall was already called manually
         if (manualEndRef.current) return;
         const wasMissed = callStateRef.current !== 'connected';
         const endDuration = durationRef.current;
         const endType = callTypeRef.current;
         setCallState('idle');
         setDuration(0);
+        setIsE2eeActive(false);
         releaseWakeLock();
         options?.onCallEnded?.({ type: endType, duration: endDuration, wasMissed });
       });
@@ -123,7 +163,6 @@ export function useCall(options?: UseCallOptions) {
       room.on(RoomEvent.ParticipantConnected, () => {
         hadRemoteParticipantRef.current = true;
         setCallState('connected');
-        // Clear the no-answer timeout
         if (noAnswerTimeoutRef.current) {
           clearTimeout(noAnswerTimeoutRef.current);
           noAnswerTimeoutRef.current = null;
@@ -131,13 +170,23 @@ export function useCall(options?: UseCallOptions) {
       });
 
       room.on(RoomEvent.ParticipantDisconnected, () => {
-        // If the remote party left, terminate locally to avoid being stuck in "connected"
         if (!manualEndRef.current && hadRemoteParticipantRef.current && room.remoteParticipants.size === 0) {
           room.disconnect();
         }
       });
 
       await room.connect(url, token);
+
+      // Enable E2EE after connection
+      if (e2eeKeyProvider) {
+        try {
+          await room.setE2EEEnabled(true);
+          setIsE2eeActive(true);
+          console.log('🔒 E2EE enabled for call');
+        } catch (e) {
+          console.warn('Failed to enable E2EE after connect:', e);
+        }
+      }
 
       // Enable mic always
       await room.localParticipant.setMicrophoneEnabled(true);
@@ -146,7 +195,6 @@ export function useCall(options?: UseCallOptions) {
       if (type === 'video') {
         await room.localParticipant.setCameraEnabled(true);
 
-        // Attach local video
         const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
         if (camPub?.track && localVideoRef.current) {
           const el = camPub.track.attach();
@@ -165,10 +213,8 @@ export function useCall(options?: UseCallOptions) {
         setCallState('connected');
       } else {
         setCallState('connecting');
-        // Auto-end after 30s if no one joins
         noAnswerTimeoutRef.current = setTimeout(() => {
           toast.error("Pas de réponse");
-          // Disconnect room directly since endCall may not be stable yet
           if (roomRef.current) {
             roomRef.current.disconnect();
             roomRef.current = null;
@@ -177,6 +223,7 @@ export function useCall(options?: UseCallOptions) {
           if (remoteVideoRef.current) remoteVideoRef.current.innerHTML = '';
           setCallState('idle');
           setDuration(0);
+          setIsE2eeActive(false);
           releaseWakeLock();
           options?.onCallEnded?.({ type: callTypeRef.current, duration: 0, wasMissed: true });
         }, 30000);
@@ -185,6 +232,7 @@ export function useCall(options?: UseCallOptions) {
       console.error('Call error:', err);
       toast.error("Impossible de lancer l'appel. Vérifiez votre connexion.");
       setCallState('ended');
+      setIsE2eeActive(false);
       releaseWakeLock();
     }
   }, [options]);
@@ -208,6 +256,7 @@ export function useCall(options?: UseCallOptions) {
     if (remoteVideoRef.current) remoteVideoRef.current.innerHTML = '';
     setCallState('idle');
     setDuration(0);
+    setIsE2eeActive(false);
     releaseWakeLock();
     options?.onCallEnded?.({ type: endType, duration: endDuration, wasMissed });
   }, [options]);
@@ -289,6 +338,7 @@ export function useCall(options?: UseCallOptions) {
     isMuted,
     isCameraOff,
     duration,
+    isE2eeActive,
     localVideoRef,
     remoteVideoRef,
     startCall,

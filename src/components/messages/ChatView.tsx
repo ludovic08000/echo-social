@@ -14,7 +14,7 @@ import { useFriendships } from '@/hooks/useFriendships';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
-import { useCall, CallType } from '@/hooks/useCall';
+import { useCall, CallType, generateCallE2EEKey } from '@/hooks/useCall';
 import { signalOutgoingCall, endActiveCall } from '@/hooks/useIncomingCall';
 import { CallOverlay } from '@/components/CallOverlay';
 import { useImageUpload } from '@/hooks/useImageUpload';
@@ -121,7 +121,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   });
 
   const {
-    callState, callType, isMuted, isCameraOff, duration,
+    callState, callType, isMuted, isCameraOff, duration, isE2eeActive,
     localVideoRef, remoteVideoRef,
     startCall, endCall, toggleMute, toggleCamera, switchToVideo, switchCamera,
   } = useCall();
@@ -131,9 +131,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   const handleStartCall = useCallback(async (type: CallType) => {
     if (!user || !peerUserId) return;
-    const callId = await signalOutgoingCall(conversationId, user.id, peerUserId, type);
+    const e2eeKey = generateCallE2EEKey();
+    const callId = await signalOutgoingCall(conversationId, user.id, peerUserId, type, e2eeKey);
     activeCallIdRef.current = callId;
-    startCall(conversationId, type);
+    startCall(conversationId, type, e2eeKey);
   }, [user, peerUserId, conversationId, startCall]);
 
   const handleEndCall = useCallback(() => {
@@ -924,6 +925,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         duration={duration}
         participantName={conversation?.participant.name || ''}
         participantAvatar={conversation?.participant.avatar_url}
+        isE2eeActive={isE2eeActive}
         localVideoRef={localVideoRef}
         remoteVideoRef={remoteVideoRef}
         onEndCall={handleEndCall}
