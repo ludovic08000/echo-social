@@ -87,6 +87,12 @@ export function CallOverlay({
                 : formatCallDuration(duration)
               }
             </p>
+            {isE2eeActive && (
+              <div className="flex items-center gap-1.5 mt-2 bg-green-500/20 rounded-full px-3 py-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-green-400" />
+                <span className="text-green-400 text-xs font-medium">Chiffré de bout en bout</span>
+              </div>
+            )}
           </>
         )}
 
