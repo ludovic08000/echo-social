@@ -121,7 +121,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   });
 
   const {
-    callState, callType, isMuted, isCameraOff, duration,
+    callState, callType, isMuted, isCameraOff, duration, isE2eeActive,
     localVideoRef, remoteVideoRef,
     startCall, endCall, toggleMute, toggleCamera, switchToVideo, switchCamera,
   } = useCall();
@@ -131,9 +131,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   const handleStartCall = useCallback(async (type: CallType) => {
     if (!user || !peerUserId) return;
-    const callId = await signalOutgoingCall(conversationId, user.id, peerUserId, type);
+    const e2eeKey = generateCallE2EEKey();
+    const callId = await signalOutgoingCall(conversationId, user.id, peerUserId, type, e2eeKey);
     activeCallIdRef.current = callId;
-    startCall(conversationId, type);
+    startCall(conversationId, type, e2eeKey);
   }, [user, peerUserId, conversationId, startCall]);
 
   const handleEndCall = useCallback(() => {
