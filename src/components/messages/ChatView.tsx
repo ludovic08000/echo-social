@@ -14,7 +14,8 @@ import { useFriendships } from '@/hooks/useFriendships';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
-import { useCall } from '@/hooks/useCall';
+import { useCall, CallType } from '@/hooks/useCall';
+import { signalOutgoingCall, endActiveCall } from '@/hooks/useIncomingCall';
 import { CallOverlay } from '@/components/CallOverlay';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { toast } from 'sonner';
@@ -125,6 +126,23 @@ export function ChatView({ conversationId }: ChatViewProps) {
     startCall, endCall, toggleMute, toggleCamera, switchToVideo, switchCamera,
   } = useCall();
 
+
+  const activeCallIdRef = useRef<string | null>(null);
+
+  const handleStartCall = useCallback(async (type: CallType) => {
+    if (!user || !peerUserId) return;
+    const callId = await signalOutgoingCall(conversationId, user.id, peerUserId, type);
+    activeCallIdRef.current = callId;
+    startCall(conversationId, type);
+  }, [user, peerUserId, conversationId, startCall]);
+
+  const handleEndCall = useCallback(() => {
+    if (activeCallIdRef.current) {
+      endActiveCall(activeCallIdRef.current);
+      activeCallIdRef.current = null;
+    }
+    endCall();
+  }, [endCall]);
   useEffect(() => {
     if (newMessage.length > 0) {
       const t = setTimeout(() => setIsTyping(true), 500);
@@ -303,10 +321,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
           )}
 
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => startCall(conversationId, 'audio')} disabled={callState !== 'idle'}>
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => handleStartCall('audio')} disabled={callState !== 'idle'}>
               <Phone className="w-5 h-5" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => startCall(conversationId, 'video')} disabled={callState !== 'idle'}>
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => handleStartCall('video')} disabled={callState !== 'idle'}>
               <Video className="w-5 h-5" />
             </Button>
             <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => setShowGroupPanel(!showGroupPanel)}>
@@ -908,7 +926,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         participantAvatar={conversation?.participant.avatar_url}
         localVideoRef={localVideoRef}
         remoteVideoRef={remoteVideoRef}
-        onEndCall={endCall}
+        onEndCall={handleEndCall}
         onToggleMute={toggleMute}
         onToggleCamera={toggleCamera}
         onSwitchToVideo={switchToVideo}
