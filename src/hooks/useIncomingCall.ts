@@ -228,6 +228,7 @@ export function useIncomingCall() {
       status: call.status,
       caller_name: profile?.name || 'Utilisateur',
       caller_avatar: profile?.avatar_url,
+      e2ee_key: call.e2ee_key,
     };
 
     setIncomingCall(incoming);
