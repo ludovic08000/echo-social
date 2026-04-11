@@ -143,6 +143,7 @@ function IncomingCallHandler() {
           duration={call.duration}
           participantName={incomingCall?.caller_name || 'Appelant'}
           participantAvatar={incomingCall?.caller_avatar}
+          isE2eeActive={call.isE2eeActive}
           localVideoRef={call.localVideoRef}
           remoteVideoRef={call.remoteVideoRef}
           onEndCall={call.endCall}
