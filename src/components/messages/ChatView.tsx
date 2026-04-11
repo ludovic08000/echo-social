@@ -126,6 +126,23 @@ export function ChatView({ conversationId }: ChatViewProps) {
     startCall, endCall, toggleMute, toggleCamera, switchToVideo, switchCamera,
   } = useCall();
 
+
+  const activeCallIdRef = useRef<string | null>(null);
+
+  const handleStartCall = useCallback(async (type: CallType) => {
+    if (!user || !peerUserId) return;
+    const callId = await signalOutgoingCall(conversationId, user.id, peerUserId, type);
+    activeCallIdRef.current = callId;
+    startCall(conversationId, type);
+  }, [user, peerUserId, conversationId, startCall]);
+
+  const handleEndCall = useCallback(() => {
+    if (activeCallIdRef.current) {
+      endActiveCall(activeCallIdRef.current);
+      activeCallIdRef.current = null;
+    }
+    endCall();
+  }, [endCall]);
   useEffect(() => {
     if (newMessage.length > 0) {
       const t = setTimeout(() => setIsTyping(true), 500);
