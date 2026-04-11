@@ -119,8 +119,8 @@ function IncomingCallHandler() {
 
     activeIncomingCallIdRef.current = accepted.id;
 
-    // Start the call (join the LiveKit room)
-    call.startCall(accepted.conversation_id, accepted.call_type);
+    // Start the call (join the LiveKit room) with E2EE key if available
+    call.startCall(accepted.conversation_id, accepted.call_type, accepted.e2ee_key);
   }, [acceptCall, openChat, call]);
 
   if (!user) return null;
