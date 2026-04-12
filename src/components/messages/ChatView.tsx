@@ -21,6 +21,7 @@ import { useImageUpload } from '@/hooks/useImageUpload';
 import { toast } from 'sonner';
 import { useMessageTranslation } from '@/hooks/useMessageTranslation';
 import { useE2EE } from '@/hooks/useE2EE';
+import { generateMediaKey, encryptMedia, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
 import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { EncryptionBadge, EncryptionStatusBar } from './EncryptionBadge';
 import { DecryptedMessageBody } from './DecryptedMessageBody';
@@ -107,18 +108,44 @@ export function ChatView({ conversationId }: ChatViewProps) {
     !isZeusConversation && e2ee.encrypted,
   );
 
-  const { upload, isUploading } = useImageUpload({
+  const { upload: rawUpload, isUploading } = useImageUpload({
     bucket: 'post-images',
-    onSuccess: (url) => {
-      const isVideo = /\.(mp4|mov|webm|avi|mkv)/i.test(url);
-      const body = isVideo ? '🎬 Vidéo' : '📷 Photo';
-      if (isZeusConversation) {
-        legacySendMessage.mutate({ conversationId, body, imageUrl: url });
-      } else {
+  });
+
+  // Wrap upload: encrypt media before upload when E2EE is active
+  const handleMediaFile = useCallback(async (file: File) => {
+    const isVideo = /\.(mp4|mov|webm|avi|mkv)/i.test(file.name);
+    const label = isVideo ? '🎬 Vidéo' : '📷 Photo';
+
+    if (isZeusConversation || !e2ee.encrypted) {
+      // No encryption — upload plaintext, send normally
+      const url = await rawUpload(file);
+      if (url) {
+        if (isZeusConversation) {
+          legacySendMessage.mutate({ conversationId, body: label, imageUrl: url });
+        } else {
+          queue.sendMessage(label, url).catch(() => toast.error('Erreur envoi média'));
+        }
+      }
+      return;
+    }
+
+    // E2EE active → encrypt file before upload
+    try {
+      const { key, keyB64 } = await generateMediaKey();
+      const encryptedBlob = await encryptMedia(file, key);
+      const encFile = new File([encryptedBlob], `${file.name}.enc`, { type: 'application/octet-stream' });
+      const url = await rawUpload(encFile);
+      if (url) {
+        // Embed the per-file key in the message body — the body itself gets E2EE encrypted
+        const body = buildMediaMessageBody(label, keyB64);
         queue.sendMessage(body, url).catch(() => toast.error('Erreur envoi média'));
       }
-    },
-  });
+    } catch (err) {
+      console.error('Media encryption failed:', err);
+      toast.error('Erreur de chiffrement du média');
+    }
+  }, [isZeusConversation, e2ee.encrypted, rawUpload, conversationId, legacySendMessage, queue]);
 
   const {
     callState, callType, isMuted, isCameraOff, duration, isE2eeActive,
@@ -230,7 +257,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) upload(file);
+    if (file) handleMediaFile(file);
     e.target.value = '';
   };
 
