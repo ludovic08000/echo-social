@@ -7,6 +7,7 @@ import { MobileNav, DesktopSidebar } from './Navigation';
 import { UserAvatar } from './UserAvatar';
 import { useProfile } from '@/hooks/useProfile';
 import { Bell, MessageCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import BrandLogo from '@/components/BrandLogo';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
