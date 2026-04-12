@@ -198,13 +198,13 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
             variants={emojiVariants}
             initial="hidden"
             animate="visible"
-            whileHover={!activeReaction && !isBusy ? 'hover' : undefined}
-            whileTap={!activeReaction && !isBusy ? { scale: 0.8 } : undefined}
+            whileHover={!isBusy ? 'hover' : undefined}
+            whileTap={!isBusy ? { scale: 0.8 } : undefined}
             onClick={() => handleReaction(type)}
-            disabled={!!activeReaction || isBusy}
+            disabled={isBusy}
             className={cn(
               'group relative rounded-full p-1.5 transition-colors',
-              (activeReaction || isBusy) && 'pointer-events-none opacity-50',
+              isBusy && 'pointer-events-none opacity-50',
               activeReaction === type && 'bg-accent ring-2 ring-primary/50'
             )}
             title={REACTION_LABELS[type]}
