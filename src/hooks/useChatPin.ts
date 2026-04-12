@@ -497,11 +497,19 @@ export function useChatPin() {
     }
   }, [user, fetchPinMode]);
 
-  /** Lock messaging */
+  /** Lock messaging — wipe all key material from IndexedDB */
   const lock = useCallback(async () => {
     sessionStorage.removeItem(SESSION_KEY);
     if (user) {
+      // Delete raw identity keys
       await deleteRawIdentityBlob(user.id).catch(() => {});
+      // Also wipe session keys and ratchet states (JWKs at rest)
+      try {
+        const { wipeSessionKeys } = await import('@/lib/crypto/keyManager');
+        await wipeSessionKeys();
+      } catch (e) {
+        console.warn('[PIN] Session key wipe failed:', e);
+      }
     }
     setState(s => ({ ...s, unlocked: false }));
   }, [user]);
