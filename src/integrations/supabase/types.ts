@@ -4980,6 +4980,7 @@ export type Database = {
           user_id: string
         }[]
       }
+      get_my_stream_key: { Args: { stream_id: string }; Returns: string }
       get_onboarding_state: { Args: { _user_id: string }; Returns: Json }
       get_parental_controls: {
         Args: { p_user_id: string }
@@ -4990,6 +4991,22 @@ export type Database = {
           is_active: boolean
           is_minor: boolean
           updated_at: string
+          user_id: string
+        }[]
+      }
+      get_public_profile: {
+        Args: { profile_user_id: string }
+        Returns: {
+          avatar_url: string
+          bio: string
+          city: string
+          country: string
+          cover_url: string
+          creator_tier: string
+          id: string
+          is_creator: boolean
+          mood_emoji: string
+          name: string
           user_id: string
         }[]
       }
