@@ -48,7 +48,7 @@ export interface IncomingCall {
   status: string;
   caller_name?: string;
   caller_avatar?: string;
-  encrypted_call_key?: string;
+  e2ee_key?: string;
 }
 
 /** Ring tone — plays a looping tone until stopped */
