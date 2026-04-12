@@ -21,7 +21,8 @@ import { trackAICall } from '@/lib/aiEngine';
 import { cn } from '@/lib/utils';
 import { useChatWidget } from './ChatWidgetContext';
 import { useImageUpload } from '@/hooks/useImageUpload';
-import { generateMediaKey, encryptMedia, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
+import { generateMediaKey, encryptMedia, buildMediaMessageBody, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
+import { EncryptedMedia } from '@/components/messages/EncryptedMedia';
 import { useCall, formatCallDuration, type CallEndInfo, generateCallE2EEKey } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
 import { signalOutgoingCall, endActiveCall } from '@/hooks/useIncomingCall';
@@ -1003,11 +1004,29 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                           </>
                         )}
 
-                        {msg.image_url && (
-                          <div className="rounded-xl overflow-hidden mb-0.5 shadow-sm">
-                            <img src={msg.image_url} alt="Photo" className="max-w-full max-h-[150px] object-cover" />
-                          </div>
-                        )}
+                        {msg.image_url && (() => {
+                          const decryptedText = decryptedCacheRef.current.get(msg.id);
+                          const mediaMeta = decryptedText ? parseMediaMessage(decryptedText) : null;
+                          const isVideoFile = /\.(mp4|mov|webm|avi|mkv)/i.test(msg.image_url!) || decryptedText?.startsWith('🎬');
+
+                          if (mediaMeta) {
+                            return (
+                              <div className="rounded-xl overflow-hidden mb-0.5 shadow-sm">
+                                <EncryptedMedia
+                                  encryptedUrl={msg.image_url!}
+                                  mediaKeyB64={mediaMeta.keyB64}
+                                  isVideo={isVideoFile}
+                                />
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="rounded-xl overflow-hidden mb-0.5 shadow-sm">
+                              <img src={msg.image_url} alt="Photo" className="max-w-full max-h-[150px] object-cover" />
+                            </div>
+                          );
+                        })()}
 
                         {/* Call event message */}
                         {isCallMessage(msg.body) ? (() => {
