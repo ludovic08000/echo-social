@@ -10,7 +10,7 @@ import {
   Megaphone, Plus, Sparkles, Loader2, Eye, MousePointerClick, 
   DollarSign, Calendar, Target, Zap, BarChart3, CheckCircle2, ArrowRight,
   Users, Clock, Crown, Shield, ShieldCheck, ShieldX, TrendingUp,
-  UserCheck, Send, Bot, User, ImagePlus, Video, Film, X, CreditCard
+  UserCheck, Send, Bot, User, ImagePlus, Video, Film, X, CreditCard, Languages
 } from 'lucide-react';
 import { useAdCampaigns, useCreateAdCampaign, useActivateAdCampaign, useAdAIAssistant, useAdDailyStats, getAdPricing, DurationType, AdCampaign } from '@/hooks/useAdCampaigns';
 import { cn } from '@/lib/utils';
@@ -77,6 +77,17 @@ interface ChatMessage {
   adData?: any;
 }
 
+const AD_LANGUAGES = [
+  { value: 'fr', label: '🇫🇷 Français' },
+  { value: 'en', label: '🇬🇧 English' },
+  { value: 'es', label: '🇪🇸 Español' },
+  { value: 'de', label: '🇩🇪 Deutsch' },
+  { value: 'pt', label: '🇵🇹 Português' },
+  { value: 'it', label: '🇮🇹 Italiano' },
+  { value: 'ar', label: '🇸🇦 العربية' },
+  { value: 'nl', label: '🇳🇱 Nederlands' },
+];
+
 function AdChatCreator() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', content: "👋 Bonjour ! Je suis votre assistant publicitaire IA. Décrivez-moi ce que vous voulez promouvoir et je m'occupe de tout !\n\nExemple : *\"Je vends des sneakers personnalisées pour les 18-30 ans\"*" }
@@ -90,6 +101,8 @@ function AdChatCreator() {
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
   const [generatingImage, setGeneratingImage] = useState(false);
   const [location, setLocation] = useState<TargetLocation>(getDefaultLocation());
+  const [adLang, setAdLang] = useState('fr');
+  const [translating, setTranslating] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const createCampaign = useCreateAdCampaign();
   const { upload, isUploading } = useImageUpload({ bucket: 'post-images' });
@@ -112,6 +125,7 @@ function AdChatCreator() {
         body: {
           domain: 'ads',
           action: 'chat',
+          targetLang: adLang,
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
         },
       });
@@ -122,6 +136,7 @@ function AdChatCreator() {
         setGeneratedAd(data.ad);
         if (data.ad.recommended_duration) setSelectedDuration(data.ad.recommended_duration);
         if (data.ad.generated_image_url) setImageUrl(data.ad.generated_image_url);
+        const langLabel = AD_LANGUAGES.find(l => l.value === adLang)?.label || adLang;
         setMessages(prev => [...prev, {
           role: 'assistant',
           content: data.message + "\n\n✅ **Votre publicité est prête !** " + (data.ad.generated_image_url ? "L'image a été générée par l'IA. " : "") + "Vérifiez l'aperçu ci-dessous et lancez votre campagne.",
@@ -185,7 +200,18 @@ function AdChatCreator() {
             <p className="text-sm font-semibold text-foreground">Assistant Pub IA</p>
             <p className="text-[10px] text-muted-foreground">Décrivez votre pub, je la crée pour vous</p>
           </div>
-          {isLoading && <Loader2 className="w-4 h-4 animate-spin text-primary ml-auto" />}
+          <div className="ml-auto flex items-center gap-2">
+            <select
+              value={adLang}
+              onChange={(e) => setAdLang(e.target.value)}
+              className="text-[11px] bg-secondary/50 border border-border/30 rounded-lg px-2 py-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              {AD_LANGUAGES.map(l => (
+                <option key={l.value} value={l.value}>{l.label}</option>
+              ))}
+            </select>
+            {isLoading && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
+          </div>
         </div>
 
         <div ref={scrollRef} className="overflow-y-auto p-4 space-y-3" style={{ height: 'calc(100% - 110px)' }}>
@@ -348,9 +374,47 @@ function AdChatCreator() {
                   </div>
                 )}
 
-                <div className="mt-3 pt-3 border-t border-border/20">
+                <div className="mt-3 pt-3 border-t border-border/20 space-y-2">
                   <Button className="w-full rounded-xl gap-2" size="sm" variant="outline">
                     <ArrowRight className="w-4 h-4" />{generatedAd.cta_text}
+                  </Button>
+                  {/* Translate button */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full rounded-xl gap-2 text-xs"
+                    disabled={translating}
+                    onClick={async () => {
+                      setTranslating(true);
+                      try {
+                        const { data, error } = await supabase.functions.invoke('zeus', {
+                          body: {
+                            domain: 'ads',
+                            action: 'translate_ad',
+                            title: generatedAd.title,
+                            adBody: generatedAd.body,
+                            cta_text: generatedAd.cta_text,
+                            targetLang: adLang,
+                          },
+                        });
+                        if (error) throw error;
+                        if (data?.translated) {
+                          setGeneratedAd((prev: any) => ({
+                            ...prev,
+                            title: data.translated.title,
+                            body: data.translated.body,
+                            cta_text: data.translated.cta_text,
+                          }));
+                          toast.success('Publicité traduite !');
+                        } else {
+                          toast.error('Traduction échouée');
+                        }
+                      } catch { toast.error('Erreur de traduction'); }
+                      finally { setTranslating(false); }
+                    }}
+                  >
+                    {translating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Languages className="w-3.5 h-3.5" />}
+                    Traduire en {AD_LANGUAGES.find(l => l.value === adLang)?.label || adLang}
                   </Button>
                 </div>
               </div>

@@ -264,7 +264,7 @@ Catégories dangereuses : spam, harassment, scam, explicit, threats, hate_speech
   return new Response(JSON.stringify({ error: "Unknown moderation action" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
 }
 
-// ── ADS: chat, generate_ad, moderate_ad, generate_image ──
+// ── ADS: chat, generate_ad, moderate_ad, generate_image, translate ──
 async function handleAds(apiKey: string, body: any, cors: Record<string, string>) {
   const { action } = body;
 
@@ -274,11 +274,43 @@ async function handleAds(apiKey: string, body: any, cors: Record<string, string>
     return new Response(JSON.stringify({ error: "Image generation failed" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
   }
 
+  // Translate ad content to a target language
+  if (action === "translate_ad") {
+    const { title, adBody, cta_text, targetLang } = body;
+    if (!title || !adBody || !targetLang) return new Response(JSON.stringify({ error: "title, adBody et targetLang requis" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    const langNames: Record<string, string> = { fr: "French", en: "English", es: "Spanish", de: "German", pt: "Portuguese", it: "Italian", ar: "Arabic", nl: "Dutch", ja: "Japanese", zh: "Chinese" };
+    const langLabel = langNames[targetLang] || targetLang;
+    const resp = await callAI(apiKey, {
+      model: "google/gemini-3-flash-preview",
+      tools: [{ type: "function", function: { name: "translated_ad", description: "Returns the translated ad content", parameters: { type: "object", properties: { title: { type: "string" }, body: { type: "string" }, cta_text: { type: "string" } }, required: ["title", "body", "cta_text"], additionalProperties: false } } }],
+      tool_choice: { type: "function", function: { name: "translated_ad" } },
+      messages: [
+        { role: "system", content: `You are a professional marketing translator. Translate ad copy to ${langLabel}. Keep the same tone, persuasion and marketing impact. Adapt idioms naturally.` },
+        { role: "user", content: `Translate this ad:\nTitle: ${title}\nBody: ${adBody}\nCTA: ${cta_text || "En savoir plus"}` },
+      ],
+    });
+    const errResp = aiError(resp.status, cors);
+    if (errResp) return errResp;
+    if (!resp.ok) throw new Error("AI error");
+    const data = await resp.json();
+    const tc = data.choices?.[0]?.message?.tool_calls?.[0];
+    if (tc?.function?.name === "translated_ad") {
+      const translated = JSON.parse(tc.function.arguments);
+      return new Response(JSON.stringify({ success: true, translated }), { headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ error: "Translation failed" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+  }
+
   if (action === "chat") {
+    const targetLang = body.targetLang || "fr";
+    const langNames: Record<string, string> = { fr: "français", en: "anglais", es: "espagnol", de: "allemand", pt: "portugais", it: "italien", ar: "arabe", nl: "néerlandais", ja: "japonais", zh: "chinois" };
+    const langInstruction = targetLang !== "fr"
+      ? `\nIMPORTANT: L'utilisateur veut créer sa pub en ${langNames[targetLang] || targetLang}. Génère le titre, le body et le CTA dans cette langue. Tes réponses conversationnelles restent en français.`
+      : "";
     const resp = await callAI(apiKey, {
       model: "google/gemini-3-flash-preview",
       messages: [
-        { role: "system", content: "Tu es l'assistant publicitaire IA de ForSure Ads. Aide à créer des pubs performantes. Concis, pro, en français." },
+        { role: "system", content: `Tu es l'assistant publicitaire IA de ForSure Ads. Aide à créer des pubs performantes. Concis, pro, en français.${langInstruction}` },
         ...body.messages,
       ],
       tools: [{ type: "function", function: { name: "generate_ad_campaign", description: "Génère une campagne pub complète", parameters: { type: "object", properties: { title: { type: "string" }, body: { type: "string" }, cta_text: { type: "string" }, target_age_min: { type: "number" }, target_age_max: { type: "number" }, target_gender: { type: "string", enum: ["all","male","female"] }, target_interests: { type: "array", items: { type: "string" } }, recommended_duration: { type: "string" }, image_prompt: { type: "string" }, summary: { type: "string" } }, required: ["title","body","cta_text","target_age_min","target_age_max","target_gender","recommended_duration","image_prompt","summary"], additionalProperties: false } } }],
