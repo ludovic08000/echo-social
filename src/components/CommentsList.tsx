@@ -434,7 +434,7 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
         )}
 
         {/* Reaction picker for comments — Facebook style */}
-        {showReactionPicker && !comment.is_liked && (
+        {showReactionPicker && (
           <div className="flex gap-0.5 mt-1 p-1 bg-card/95 backdrop-blur-xl rounded-full border border-border/30 shadow-lg inline-flex animate-slide-up">
             {(Object.keys(REACTION_EMOJIS) as ReactionType[]).map((type) => (
               <button
