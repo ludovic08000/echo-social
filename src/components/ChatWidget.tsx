@@ -571,16 +571,41 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     prevMsgCountRef.current = messages.length;
   }, [messages?.length]);
 
-  const { upload, isUploading } = useImageUpload({
+  const { upload: rawUpload, isUploading } = useImageUpload({
     bucket: 'post-images',
-    onSuccess: (url) => {
-      if (isZeusConversation) {
-        sendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
-      } else {
-        queue.sendMessage('📷 Photo', url).catch(() => toast.error('Erreur envoi photo'));
-      }
-    },
   });
+
+  // Wrap upload: encrypt media before upload when E2EE is active
+  const handleMediaFile = useCallback(async (file: File) => {
+    const label = '📷 Photo';
+
+    if (isZeusConversation || !e2ee.encrypted) {
+      const url = await rawUpload(file);
+      if (url) {
+        if (isZeusConversation) {
+          sendMessage.mutate({ conversationId, body: label, imageUrl: url });
+        } else {
+          queue.sendMessage(label, url).catch(() => toast.error('Erreur envoi photo'));
+        }
+      }
+      return;
+    }
+
+    // E2EE active → encrypt file before upload
+    try {
+      const { key, keyB64 } = await generateMediaKey();
+      const encryptedBlob = await encryptMedia(file, key);
+      const encFile = new File([encryptedBlob], `${file.name}.enc`, { type: 'application/octet-stream' });
+      const url = await rawUpload(encFile);
+      if (url) {
+        const body = buildMediaMessageBody(label, keyB64);
+        queue.sendMessage(body, url).catch(() => toast.error('Erreur envoi photo'));
+      }
+    } catch (err) {
+      console.error('Media encryption failed:', err);
+      toast.error('Erreur de chiffrement du média');
+    }
+  }, [isZeusConversation, e2ee.encrypted, rawUpload, conversationId, sendMessage, queue]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
