@@ -19,7 +19,6 @@ import { type TargetLocation, getDefaultLocation } from '@/lib/geoData';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { format, subDays, eachDayOfInterval } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -37,17 +36,48 @@ const INTEREST_OPTIONS = [
 ];
 
 
+/** Lightweight native bar chart — no Recharts dependency */
+function NativeBarChart({ data, color, suffix = '' }: { data: { label: string; value: number }[]; color: string; suffix?: string }) {
+  const max = Math.max(...data.map(d => d.value), 1);
+  const [hovered, setHovered] = useState<number | null>(null);
+  return (
+    <div>
+      {hovered !== null && (
+        <p className="text-[11px] text-foreground font-medium mb-1">{data[hovered].label} — {data[hovered].value}{suffix}</p>
+      )}
+      <div className="flex items-end gap-[2px] h-24">
+        {data.map((d, i) => (
+          <div
+            key={i}
+            className="flex-1 min-w-0 rounded-t transition-all cursor-pointer"
+            style={{ height: `${Math.max((d.value / max) * 100, 2)}%`, backgroundColor: hovered === i ? color : `color-mix(in srgb, ${color} 40%, transparent)` }}
+            onMouseEnter={() => setHovered(i)}
+            onMouseLeave={() => setHovered(null)}
+          />
+        ))}
+      </div>
+      <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
+        <span>{data[0]?.label}</span>
+        <span>{data[data.length - 1]?.label}</span>
+      </div>
+    </div>
+  );
+}
+
 function generateChartData(campaigns: AdCampaign[]) {
   const days = eachDayOfInterval({ start: subDays(new Date(), 13), end: new Date() });
+  // Use seeded random for stable renders
+  let seed = 42;
+  const srand = () => { seed = (seed * 16807) % 2147483647; return (seed & 0x7fffffff) / 0x7fffffff; };
   return days.map(day => {
     const dayStr = format(day, 'dd/MM');
-    const factor = Math.random();
+    const factor = srand();
     const totalBudget = campaigns.reduce((s, c) => s + (Number(c.budget) || 0), 0) || 50;
     return {
       date: dayStr,
-      impressions: Math.floor(factor * totalBudget * 8 + Math.random() * 200),
-      clicks: Math.floor(factor * totalBudget * 0.4 + Math.random() * 15),
-      spent: +(factor * totalBudget * 0.08 + Math.random() * 2).toFixed(2),
+      impressions: Math.floor(factor * totalBudget * 8 + srand() * 200),
+      clicks: Math.floor(factor * totalBudget * 0.4 + srand() * 15),
+      spent: +(factor * totalBudget * 0.08 + srand() * 2).toFixed(2),
     };
   });
 }
@@ -567,96 +597,71 @@ export default function AdsManager() {
           {/* ====== ANALYTICS TAB ====== */}
           {tab === 'analytics' && (
             <motion.div key="analytics" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-6">
+              {/* Impressions & Clicks */}
               <div className="p-5 rounded-2xl bg-card border border-border/30">
                 <h3 className="font-semibold text-foreground mb-1 flex items-center gap-2">
                   <Eye className="w-4 h-4 text-primary" /> Impressions & Clics
                 </h3>
                 <p className="text-xs text-muted-foreground mb-4">14 derniers jours</p>
-                <div className="h-[280px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData}>
-                      <defs>
-                        <linearGradient id="impressionGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
-                        </linearGradient>
-                        <linearGradient id="clickGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="hsl(280, 70%, 60%)" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="hsl(280, 70%, 60%)" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
-                      <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                      <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                      <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '12px', fontSize: '12px' }} />
-                      <Area type="monotone" dataKey="impressions" stroke="hsl(var(--primary))" fill="url(#impressionGrad)" strokeWidth={2.5} name="Impressions" />
-                      <Area type="monotone" dataKey="clicks" stroke="hsl(280, 70%, 60%)" fill="url(#clickGrad)" strokeWidth={2.5} name="Clics" />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                <NativeBarChart data={chartData.map(d => ({ label: d.date, value: d.impressions }))} color="hsl(var(--primary))" />
+                <div className="mt-3">
+                  <p className="text-[10px] text-muted-foreground mb-1">Clics</p>
+                  <NativeBarChart data={chartData.map(d => ({ label: d.date, value: d.clicks }))} color="hsl(280, 70%, 60%)" />
                 </div>
               </div>
 
+              {/* Spending */}
               <div className="p-5 rounded-2xl bg-card border border-border/30">
                 <h3 className="font-semibold text-foreground mb-1 flex items-center gap-2">
                   <DollarSign className="w-4 h-4 text-amber-500" /> Dépenses quotidiennes
                 </h3>
                 <p className="text-xs text-muted-foreground mb-4">Budget consommé par jour</p>
-                <div className="h-[220px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
-                      <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                      <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                      <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '12px', fontSize: '12px' }} formatter={(v: any) => [`${v}€`, 'Dépensé']} />
-                      <Bar dataKey="spent" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                <NativeBarChart data={chartData.map(d => ({ label: d.date, value: d.spent }))} color="hsl(var(--primary))" suffix="€" />
               </div>
 
-              {pieData.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Performance + Pie replacement */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {pieData.length > 0 && (
                   <div className="p-5 rounded-2xl bg-card border border-border/30">
                     <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
                       <Target className="w-4 h-4 text-primary" /> Répartition
                     </h3>
-                    <div className="h-[200px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={4}>
-                            {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                          </Pie>
-                          <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '12px', fontSize: '12px' }} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="flex justify-center gap-4 mt-2">
-                      {pieData.map(d => (
-                        <div key={d.name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.color }} />
-                          {d.name} ({d.value})
-                        </div>
-                      ))}
+                    <div className="flex items-center gap-4">
+                      {pieData.map(d => {
+                        const total = pieData.reduce((s, p) => s + p.value, 0);
+                        const pct = total > 0 ? Math.round((d.value / total) * 100) : 0;
+                        return (
+                          <div key={d.name} className="flex-1">
+                            <div className="h-3 rounded-full bg-secondary overflow-hidden">
+                              <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: d.color }} />
+                            </div>
+                            <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: d.color }} />
+                              {d.name} ({d.value}) — {pct}%
+                            </p>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                  <div className="p-5 rounded-2xl bg-card border border-border/30 space-y-4">
-                    <h3 className="font-semibold text-foreground flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-primary" /> Performances
-                    </h3>
-                    {[
-                      { label: 'Taux de clics (CTR)', value: `${ctr}%`, desc: 'Moyenne industrie: 1.91%' },
-                      { label: 'Coût par clic (CPC)', value: totalClicks > 0 ? `${(totalSpent / totalClicks).toFixed(2)}€` : '—', desc: 'Plus bas = meilleur' },
-                      { label: 'Coût pour 1000 impressions', value: totalImpressions > 0 ? `${((totalSpent / totalImpressions) * 1000).toFixed(2)}€` : '—', desc: 'CPM moyen' },
-                    ].map(m => (
-                      <div key={m.label} className="p-3 rounded-xl bg-secondary/30">
-                        <p className="text-xs text-muted-foreground">{m.label}</p>
-                        <p className="text-lg font-bold text-foreground">{m.value}</p>
-                        <p className="text-[10px] text-muted-foreground">{m.desc}</p>
-                      </div>
-                    ))}
-                  </div>
+                )}
+                <div className="p-5 rounded-2xl bg-card border border-border/30 space-y-4">
+                  <h3 className="font-semibold text-foreground flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-primary" /> Performances
+                  </h3>
+                  {[
+                    { label: 'Taux de clics (CTR)', value: `${ctr}%`, desc: 'Moyenne industrie: 1.91%' },
+                    { label: 'Coût par clic (CPC)', value: totalClicks > 0 ? `${(totalSpent / totalClicks).toFixed(2)}€` : '—', desc: 'Plus bas = meilleur' },
+                    { label: 'Coût pour 1000 impressions', value: totalImpressions > 0 ? `${((totalSpent / totalImpressions) * 1000).toFixed(2)}€` : '—', desc: 'CPM moyen' },
+                  ].map(m => (
+                    <div key={m.label} className="p-3 rounded-xl bg-secondary/30">
+                      <p className="text-xs text-muted-foreground">{m.label}</p>
+                      <p className="text-lg font-bold text-foreground">{m.value}</p>
+                      <p className="text-[10px] text-muted-foreground">{m.desc}</p>
+                    </div>
+                  ))}
                 </div>
-              )}
+              </div>
             </motion.div>
           )}
 
