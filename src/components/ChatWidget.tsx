@@ -792,8 +792,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           peerFingerprint={e2ee.peerFingerprint}
           ratchetActive={e2ee.ratchetActive}
           fingerprintChanged={e2ee.fingerprintChanged}
-          peerName={peerName || 'Contact'}
-          conversationId={activeConversation || ''}
+          peerName={conversation?.participant?.name || 'Contact'}
+          conversationId={conversationId || ''}
         />
       )}
 
