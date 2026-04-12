@@ -28,13 +28,55 @@ export function usePosts() {
   const { user } = useAuth();
 
   return useInfiniteQuery({
-    queryKey: ['posts', 'friends-feed', user?.id],
+    queryKey: ['posts', 'friends-feed', user?.id ?? 'guest'],
     queryFn: async ({ pageParam }: { pageParam: number | null }) => {
-      if (!user) return [];
-      
+      const offset = pageParam || 0;
+
+      // ── Guest mode: simple chronological feed (no personalization) ──
+      if (!user) {
+        const now = new Date().toISOString();
+        const { data: posts, error } = await supabase
+          .from('posts')
+          .select('id, user_id, body, image_url, created_at, expires_at, likes_count, comments_count')
+          .or(`expires_at.is.null,expires_at.gt.${now}`)
+          .order('created_at', { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1);
+        if (error) throw error;
+        if (!posts || posts.length === 0) return [];
+
+        // Enrich with profiles (anon can read profiles)
+        const userIds = [...new Set(posts.map(p => p.user_id))];
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('user_id, name, avatar_url, mood_emoji')
+          .in('user_id', userIds);
+        const profileMap = new Map((profiles || []).map(p => [p.user_id, p]));
+
+        return posts.map((post: any) => {
+          const prof = profileMap.get(post.user_id);
+          return {
+            id: post.id,
+            user_id: post.user_id,
+            body: post.body,
+            image_url: post.image_url,
+            created_at: post.created_at,
+            expires_at: post.expires_at || null,
+            profile: {
+              name: prof?.name || 'Utilisateur',
+              avatar_url: prof?.avatar_url || null,
+              mood_emoji: prof?.mood_emoji || null,
+            },
+            likes_count: post.likes_count || 0,
+            comments_count: post.comments_count || 0,
+            is_liked: false,
+            user_reaction: null,
+          } as Post;
+        });
+      }
+
+      // ── Authenticated feed with personalization ──
       const prefs = loadContentPrefs();
       const weights = loadFeedWeights();
-      const offset = pageParam || 0;
 
       // Build Monte Carlo scoring context
       const mcCtx: ScoringContext = {
@@ -122,7 +164,7 @@ export function usePosts() {
       return allPages.reduce((total, page) => total + page.length, 0);
     },
     initialPageParam: null as number | null,
-    enabled: !!user,
+    enabled: true,
     staleTime: 60_000,
     gcTime: 10 * 60_000,
     refetchInterval: 2 * 60_000,
