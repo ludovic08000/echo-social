@@ -2,6 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 
+import { ReactionType } from '@/hooks/useReactions';
+
 export interface Comment {
   id: string;
   user_id: string;
@@ -15,6 +17,7 @@ export interface Comment {
   };
   likes_count: number;
   is_liked: boolean;
+  user_reaction: ReactionType | null;
   replies?: Comment[];
 }
 
