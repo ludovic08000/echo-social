@@ -21,6 +21,8 @@ import { trackAICall } from '@/lib/aiEngine';
 import { cn } from '@/lib/utils';
 import { useChatWidget } from './ChatWidgetContext';
 import { useImageUpload } from '@/hooks/useImageUpload';
+import { generateMediaKey, encryptMedia, buildMediaMessageBody, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
+import { EncryptedMedia } from '@/components/messages/EncryptedMedia';
 import { useCall, formatCallDuration, type CallEndInfo, generateCallE2EEKey } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
 import { signalOutgoingCall, endActiveCall } from '@/hooks/useIncomingCall';
@@ -570,16 +572,41 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     prevMsgCountRef.current = messages.length;
   }, [messages?.length]);
 
-  const { upload, isUploading } = useImageUpload({
+  const { upload: rawUpload, isUploading } = useImageUpload({
     bucket: 'post-images',
-    onSuccess: (url) => {
-      if (isZeusConversation) {
-        sendMessage.mutate({ conversationId, body: '📷 Photo', imageUrl: url });
-      } else {
-        queue.sendMessage('📷 Photo', url).catch(() => toast.error('Erreur envoi photo'));
-      }
-    },
   });
+
+  // Wrap upload: encrypt media before upload when E2EE is active
+  const handleMediaFile = useCallback(async (file: File) => {
+    const label = '📷 Photo';
+
+    if (isZeusConversation || !e2ee.encrypted) {
+      const url = await rawUpload(file);
+      if (url) {
+        if (isZeusConversation) {
+          sendMessage.mutate({ conversationId, body: label, imageUrl: url });
+        } else {
+          queue.sendMessage(label, url).catch(() => toast.error('Erreur envoi photo'));
+        }
+      }
+      return;
+    }
+
+    // E2EE active → encrypt file before upload
+    try {
+      const { key, keyB64 } = await generateMediaKey();
+      const encryptedBlob = await encryptMedia(file, key);
+      const encFile = new File([encryptedBlob], `${file.name}.enc`, { type: 'application/octet-stream' });
+      const url = await rawUpload(encFile);
+      if (url) {
+        const body = buildMediaMessageBody(label, keyB64);
+        queue.sendMessage(body, url).catch(() => toast.error('Erreur envoi photo'));
+      }
+    } catch (err) {
+      console.error('Media encryption failed:', err);
+      toast.error('Erreur de chiffrement du média');
+    }
+  }, [isZeusConversation, e2ee.encrypted, rawUpload, conversationId, sendMessage, queue]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -687,7 +714,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       />
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
         const file = e.target.files?.[0];
-        if (file) upload(file);
+        if (file) handleMediaFile(file);
         e.target.value = '';
       }} />
 
@@ -977,11 +1004,29 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                           </>
                         )}
 
-                        {msg.image_url && (
-                          <div className="rounded-xl overflow-hidden mb-0.5 shadow-sm">
-                            <img src={msg.image_url} alt="Photo" className="max-w-full max-h-[150px] object-cover" />
-                          </div>
-                        )}
+                        {msg.image_url && (() => {
+                          const decryptedText = decryptedCacheRef.current.get(msg.id);
+                          const mediaMeta = decryptedText ? parseMediaMessage(decryptedText) : null;
+                          const isVideoFile = /\.(mp4|mov|webm|avi|mkv)/i.test(msg.image_url!) || decryptedText?.startsWith('🎬');
+
+                          if (mediaMeta) {
+                            return (
+                              <div className="rounded-xl overflow-hidden mb-0.5 shadow-sm">
+                                <EncryptedMedia
+                                  encryptedUrl={msg.image_url!}
+                                  mediaKeyB64={mediaMeta.keyB64}
+                                  isVideo={isVideoFile}
+                                />
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="rounded-xl overflow-hidden mb-0.5 shadow-sm">
+                              <img src={msg.image_url} alt="Photo" className="max-w-full max-h-[150px] object-cover" />
+                            </div>
+                          );
+                        })()}
 
                         {/* Call event message */}
                         {isCallMessage(msg.body) ? (() => {
