@@ -783,6 +783,37 @@ export default function AdsManager() {
               ) : (
                 safeCampaigns.map((campaign, i) => {
                   const interests = toSafeStringArray((campaign as any).target_interests);
+                  const isExpired = new Date(campaign.ends_at) < new Date();
+                  const isPendingPayment = campaign.status === 'pending_payment';
+                  const isActive = campaign.status === 'active' && !isExpired;
+                  const displayStatus = isPendingPayment
+                    ? (isExpired ? 'Expiré' : 'En attente de paiement')
+                    : isActive ? 'Active'
+                    : campaign.status === 'draft' ? 'Brouillon'
+                    : 'Terminée';
+                  const statusColor = isPendingPayment
+                    ? (isExpired ? 'bg-destructive/15 text-destructive' : 'bg-amber-500/15 text-amber-600')
+                    : isActive ? 'bg-emerald-500/15 text-emerald-600'
+                    : campaign.status === 'draft' ? 'bg-amber-500/15 text-amber-600'
+                    : 'bg-muted text-muted-foreground';
+
+                  const handleRetryPayment = async () => {
+                    try {
+                      const { data, error } = await supabase.functions.invoke('ad-checkout', {
+                        body: {
+                          campaign_id: campaign.id,
+                          amount: Number(campaign.budget),
+                          campaign_title: campaign.title,
+                        },
+                      });
+                      if (error) throw error;
+                      if (data?.url) window.location.href = data.url;
+                      else toast.error("Erreur lors de la création du paiement");
+                    } catch (e: any) {
+                      toast.error(e.message || "Erreur de paiement");
+                    }
+                  };
+
                   return (
                     <motion.div key={campaign.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
                       className="p-4 rounded-2xl bg-card border border-border/30">
@@ -795,11 +826,8 @@ export default function AdsManager() {
                           </div>
                           <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{campaign.body}</p>
                         </div>
-                        <span className={cn("px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase shrink-0 ml-2",
-                          campaign.status === 'active' ? 'bg-emerald-500/15 text-emerald-600' :
-                          campaign.status === 'draft' ? 'bg-amber-500/15 text-amber-600' : 'bg-muted text-muted-foreground'
-                        )}>
-                          {campaign.status === 'active' ? 'Active' : campaign.status === 'draft' ? 'Brouillon' : 'Terminée'}
+                        <span className={cn("px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase shrink-0 ml-2", statusColor)}>
+                          {displayStatus}
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-2 mb-3 text-[10px]">
@@ -819,7 +847,16 @@ export default function AdsManager() {
                         <span className="flex items-center gap-1"><DollarSign className="w-3.5 h-3.5" />{Number(campaign.budget) || 0}€</span>
                         <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{formatSafeCampaignDate(campaign.ends_at)}</span>
                       </div>
-                      {campaign.status === 'active' && (
+                      {/* Retry payment button for pending campaigns */}
+                      {isPendingPayment && !isExpired && (
+                        <Button onClick={handleRetryPayment} size="sm" className="w-full mt-3 rounded-xl gap-2 bg-gradient-to-r from-primary to-primary/80">
+                          <CreditCard className="w-4 h-4" /> Payer — {Number(campaign.budget)}€
+                        </Button>
+                      )}
+                      {isPendingPayment && isExpired && (
+                        <p className="text-xs text-destructive mt-3 text-center">⚠️ Campagne expirée — créez-en une nouvelle</p>
+                      )}
+                      {isActive && (
                         <div className="mt-3">
                           <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
                             <motion.div initial={{ width: 0 }} animate={{ width: `${getCampaignProgress(campaign.starts_at, campaign.ends_at)}%` }}

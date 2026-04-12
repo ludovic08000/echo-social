@@ -218,11 +218,30 @@ export function useActivateAdCampaign() {
 
   return useMutation({
     mutationFn: async (campaignId: string) => {
+      // Get campaign to recalculate dates from now
+      const { data: campaign } = await supabase
+        .from('ad_campaigns')
+        .select('duration_type')
+        .eq('id', campaignId)
+        .eq('status', 'pending_payment')
+        .single();
+
+      if (!campaign) throw new Error('Campaign not found or already activated');
+
+      const durationType = (campaign.duration_type || '1_week') as DurationType;
+      const now = new Date();
+      const endsAt = getEndDate(durationType, now);
+
       const { error } = await supabase
         .from('ad_campaigns')
-        .update({ status: 'active' })
+        .update({
+          status: 'active',
+          starts_at: now.toISOString(),
+          ends_at: endsAt.toISOString(),
+        })
         .eq('id', campaignId)
         .eq('status', 'pending_payment');
+
       if (error) throw error;
     },
     onSuccess: () => {
