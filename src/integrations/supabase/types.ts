@@ -157,7 +157,7 @@ export type Database = {
           caller_id: string
           conversation_id: string
           created_at: string
-          e2ee_key: string | null
+          encrypted_call_key: string | null
           ended_at: string | null
           id: string
           status: string
@@ -169,7 +169,7 @@ export type Database = {
           caller_id: string
           conversation_id: string
           created_at?: string
-          e2ee_key?: string | null
+          encrypted_call_key?: string | null
           ended_at?: string | null
           id?: string
           status?: string
@@ -181,7 +181,7 @@ export type Database = {
           caller_id?: string
           conversation_id?: string
           created_at?: string
-          e2ee_key?: string | null
+          encrypted_call_key?: string | null
           ended_at?: string | null
           id?: string
           status?: string
