@@ -320,24 +320,57 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe, mediaKeyB64 }: Vo
   const audioRef = useRef<HTMLAudioElement>(null);
   const triedBlobRef = useRef(false);
 
+  // ─── E2EE: Decrypt encrypted voice on mount ───
+  useEffect(() => {
+    if (!mediaKeyB64) return; // Not encrypted, use URL directly
+    let cancelled = false;
+    setDecrypting(true);
+
+    (async () => {
+      try {
+        const { importMediaKey, decryptMedia } = await import('@/lib/crypto/mediaEncrypt');
+        const key = await importMediaKey(mediaKeyB64);
+        const res = await fetch(audioUrl);
+        if (!res.ok) throw new Error('fetch failed');
+        const encryptedData = await res.arrayBuffer();
+        const plainAudio = await decryptMedia(encryptedData, key);
+
+        if (cancelled) return;
+        // Guess mime from URL extension
+        let mime = 'audio/mp4';
+        if (audioUrl.includes('.webm')) mime = 'audio/webm';
+        else if (audioUrl.includes('.ogg')) mime = 'audio/ogg';
+        else if (audioUrl.includes('.wav')) mime = 'audio/wav';
+
+        const blob = new Blob([plainAudio], { type: mime });
+        setBlobSrc(URL.createObjectURL(blob));
+      } catch (err) {
+        if (!cancelled) setError(true);
+      } finally {
+        if (!cancelled) setDecrypting(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [audioUrl, mediaKeyB64]);
+
   // On iOS Safari, webm URLs won't play via <audio src>.
   // Fallback: fetch as blob and create an object URL, which sometimes works
   // for formats the browser can partially decode.
   const tryBlobFallback = useCallback(async () => {
-    if (triedBlobRef.current) return;
+    if (triedBlobRef.current || mediaKeyB64) return; // Skip if encrypted (already handled)
     triedBlobRef.current = true;
     try {
       const res = await fetch(audioUrl);
       if (!res.ok) throw new Error('fetch failed');
       const blob = await res.blob();
-      // Try to re-tag as audio/mp4 if it's webm (won't fix codec but helps some browsers)
       const url = URL.createObjectURL(blob);
       setBlobSrc(url);
       setError(false);
     } catch {
       setError(true);
     }
-  }, [audioUrl]);
+  }, [audioUrl, mediaKeyB64]);
 
   const togglePlay = (e?: React.MouseEvent) => {
     e?.stopPropagation();
