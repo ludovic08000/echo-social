@@ -129,10 +129,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   const handleReaction = useCallback((reactionType: ReactionType) => {
     if (interactionLockRef.current || isBusy || activeReaction) return;
     if (!user) {
-      // Guest mode: redirect to signup
-      const { useRequireAuth } = require('@/hooks/useRequireAuth');
-      toast({ title: 'Connexion requise', description: 'Inscrivez-vous pour réagir aux publications', variant: 'destructive' });
-      window.location.href = '/signup';
+      toast({ title: 'Inscription requise', description: 'Créez un compte gratuit pour réagir aux publications' });
       return;
     }
 
