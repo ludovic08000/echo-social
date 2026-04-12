@@ -306,15 +306,17 @@ interface VoiceMessagePlayerProps {
   audioUrl: string;
   duration?: number;
   isMe?: boolean;
+  mediaKeyB64?: string;
 }
 
-export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePlayerProps) {
+export function VoiceMessagePlayer({ audioUrl, duration, isMe, mediaKeyB64 }: VoiceMessagePlayerProps) {
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(duration || 0);
   const [blobSrc, setBlobSrc] = useState<string | null>(null);
+  const [decrypting, setDecrypting] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const triedBlobRef = useRef(false);
 
