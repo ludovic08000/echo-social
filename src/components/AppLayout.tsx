@@ -35,7 +35,25 @@ function MobileHeader() {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
 
-  if (!user) return null;
+  if (!user) {
+    return (
+      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-xl border-b border-border/10 safe-area-pt">
+        <div className="flex items-center justify-between h-12 px-3">
+          <Link to="/feed" className="flex items-center">
+            <BrandLogo className="h-6 w-auto" />
+          </Link>
+          <div className="flex items-center gap-2">
+            <Link to="/login">
+              <Button variant="ghost" size="sm" className="text-xs">Connexion</Button>
+            </Link>
+            <Link to="/signup">
+              <Button size="sm" className="text-xs">S'inscrire</Button>
+            </Link>
+          </div>
+        </div>
+      </header>
+    );
+  }
 
   return (
     <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-xl border-b border-border/10 safe-area-pt">
