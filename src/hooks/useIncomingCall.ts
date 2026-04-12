@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { encryptCallKey, decryptCallKey } from '@/lib/crypto/callKeyEncrypt';
 
 let sharedAudioContext: AudioContext | null = null;
 let audioPrimed = false;
@@ -228,7 +229,9 @@ export function useIncomingCall() {
       status: call.status,
       caller_name: profile?.name || 'Utilisateur',
       caller_avatar: profile?.avatar_url,
-      e2ee_key: call.e2ee_key,
+      e2ee_key: call.e2ee_key
+        ? await decryptCallKey(call.e2ee_key, call.conversation_id).catch(() => call.e2ee_key)
+        : undefined,
     };
 
     setIncomingCall(incoming);
@@ -284,6 +287,11 @@ export async function signalOutgoingCall(
   callType: 'audio' | 'video',
   e2eeKey?: string,
 ): Promise<string | null> {
+  // Encrypt the call key using the conversation's E2EE session key
+  const encryptedKey = e2eeKey
+    ? await encryptCallKey(e2eeKey, conversationId).catch(() => e2eeKey)
+    : undefined;
+
   const { data, error } = await supabase
     .from('active_calls')
     .insert({
@@ -292,7 +300,7 @@ export async function signalOutgoingCall(
       callee_id: calleeId,
       call_type: callType,
       status: 'ringing',
-      ...(e2eeKey ? { e2ee_key: e2eeKey } : {}),
+      ...(encryptedKey ? { e2ee_key: encryptedKey } : {}),
     } as any)
     .select('id')
     .single();
