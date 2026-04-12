@@ -77,6 +77,17 @@ interface ChatMessage {
   adData?: any;
 }
 
+const AD_LANGUAGES = [
+  { value: 'fr', label: '🇫🇷 Français' },
+  { value: 'en', label: '🇬🇧 English' },
+  { value: 'es', label: '🇪🇸 Español' },
+  { value: 'de', label: '🇩🇪 Deutsch' },
+  { value: 'pt', label: '🇵🇹 Português' },
+  { value: 'it', label: '🇮🇹 Italiano' },
+  { value: 'ar', label: '🇸🇦 العربية' },
+  { value: 'nl', label: '🇳🇱 Nederlands' },
+];
+
 function AdChatCreator() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', content: "👋 Bonjour ! Je suis votre assistant publicitaire IA. Décrivez-moi ce que vous voulez promouvoir et je m'occupe de tout !\n\nExemple : *\"Je vends des sneakers personnalisées pour les 18-30 ans\"*" }
@@ -90,6 +101,8 @@ function AdChatCreator() {
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
   const [generatingImage, setGeneratingImage] = useState(false);
   const [location, setLocation] = useState<TargetLocation>(getDefaultLocation());
+  const [adLang, setAdLang] = useState('fr');
+  const [translating, setTranslating] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const createCampaign = useCreateAdCampaign();
   const { upload, isUploading } = useImageUpload({ bucket: 'post-images' });
