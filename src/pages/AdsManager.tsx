@@ -19,7 +19,6 @@ import { type TargetLocation, getDefaultLocation } from '@/lib/geoData';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { format, subDays, eachDayOfInterval } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
