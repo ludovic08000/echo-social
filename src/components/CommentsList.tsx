@@ -365,32 +365,32 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
     } catch {} finally { setTranslating(false); }
   };
 
-  // Tap on like button: if already reacted → remove, else show picker
+  // Tap on like button: always open picker (to choose or change)
   const handleLike = useCallback(() => {
     if (reactionLock || likeComment.isPending) return;
-    if (comment.is_liked) {
-      // Remove reaction
-      setReactionLock(true);
+    setShowReactionPicker(prev => !prev);
+  }, [reactionLock, likeComment.isPending]);
+
+  // Pick a specific reaction emoji: same emoji = remove, different = change
+  const handlePickReaction = useCallback((type: ReactionType) => {
+    if (reactionLock || likeComment.isPending) return;
+    setReactionLock(true);
+    setShowReactionPicker(false);
+
+    if (comment.user_reaction === type) {
+      // Same emoji → remove
       likeComment.mutate(
         { commentId: comment.id, postId, action: 'remove' },
         { onSettled: () => setTimeout(() => setReactionLock(false), 1000) }
       );
-      setShowReactionPicker(false);
     } else {
-      setShowReactionPicker(prev => !prev);
+      // New or different emoji → add/change
+      likeComment.mutate(
+        { commentId: comment.id, postId, action: 'add', reactionType: type },
+        { onSettled: () => setTimeout(() => setReactionLock(false), 1000) }
+      );
     }
-  }, [comment.is_liked, comment.id, postId, reactionLock, likeComment]);
-
-  // Pick a specific reaction emoji
-  const handlePickReaction = useCallback((type: ReactionType) => {
-    if (reactionLock || likeComment.isPending || comment.is_liked) return;
-    setReactionLock(true);
-    setShowReactionPicker(false);
-    likeComment.mutate(
-      { commentId: comment.id, postId, action: 'add', reactionType: type },
-      { onSettled: () => setTimeout(() => setReactionLock(false), 1000) }
-    );
-  }, [comment.id, comment.is_liked, postId, reactionLock, likeComment]);
+  }, [comment.id, comment.user_reaction, postId, reactionLock, likeComment]);
 
   const reactionEmoji = comment.user_reaction ? REACTION_EMOJIS[comment.user_reaction] : null;
 
