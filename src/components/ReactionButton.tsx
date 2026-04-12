@@ -119,7 +119,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     window.setTimeout(() => {
       interactionLockRef.current = false;
       setCooldown(false);
-    }, 1200);
+    }, 600);
   }, []);
 
   const lockInteraction = useCallback(() => {

@@ -378,16 +378,14 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
     setShowReactionPicker(false);
 
     if (comment.user_reaction === type) {
-      // Same emoji → remove
       likeComment.mutate(
         { commentId: comment.id, postId, action: 'remove' },
-        { onSettled: () => setTimeout(() => setReactionLock(false), 1000) }
+        { onSettled: () => setReactionLock(false) }
       );
     } else {
-      // New or different emoji → add/change
       likeComment.mutate(
         { commentId: comment.id, postId, action: 'add', reactionType: type },
-        { onSettled: () => setTimeout(() => setReactionLock(false), 1000) }
+        { onSettled: () => setReactionLock(false) }
       );
     }
   }, [comment.id, comment.user_reaction, postId, reactionLock, likeComment]);
