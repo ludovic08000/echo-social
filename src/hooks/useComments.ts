@@ -2,6 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 
+import { ReactionType } from '@/hooks/useReactions';
+
 export interface Comment {
   id: string;
   user_id: string;
@@ -15,6 +17,7 @@ export interface Comment {
   };
   likes_count: number;
   is_liked: boolean;
+  user_reaction: ReactionType | null;
   replies?: Comment[];
 }
 
@@ -46,18 +49,21 @@ export function useComments(postId: string) {
       const commentIds = data.map(c => c.id);
       const { data: allLikes } = await supabase
         .from('comment_likes')
-        .select('comment_id, user_id')
+        .select('comment_id, user_id, reaction_type')
         .in('comment_id', commentIds);
 
       const likesCountMap = new Map<string, number>();
-      const userLikedMap = new Set<string>();
+      const userReactionMap = new Map<string, ReactionType>();
       allLikes?.forEach(l => {
         likesCountMap.set(l.comment_id, (likesCountMap.get(l.comment_id) || 0) + 1);
-        if (user && l.user_id === user.id) userLikedMap.add(l.comment_id);
+        if (user && l.user_id === user.id) {
+          userReactionMap.set(l.comment_id, (l.reaction_type as ReactionType) || 'like');
+        }
       });
 
       const enriched: Comment[] = data.map(comment => {
         const profile = profileMap.get(comment.user_id);
+        const userReaction = userReactionMap.get(comment.id) || null;
         return {
           id: comment.id,
           user_id: comment.user_id,
@@ -70,7 +76,8 @@ export function useComments(postId: string) {
             avatar_url: profile?.avatar_url || null,
           },
           likes_count: likesCountMap.get(comment.id) || 0,
-          is_liked: userLikedMap.has(comment.id),
+          is_liked: !!userReaction,
+          user_reaction: userReaction,
         };
       });
 
@@ -177,15 +184,15 @@ export function useLikeComment() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async ({ commentId, postId, isLiked }: { commentId: string; postId: string; isLiked: boolean }) => {
+    mutationFn: async ({ commentId, postId, action, reactionType }: { commentId: string; postId: string; action: 'add' | 'remove'; reactionType?: ReactionType }) => {
       if (!user) throw new Error('Not authenticated');
 
-      if (isLiked) {
+      if (action === 'remove') {
         const { error } = await supabase.from('comment_likes').delete().eq('comment_id', commentId).eq('user_id', user.id);
         if (error) throw error;
       } else {
         const { error } = await supabase.from('comment_likes').upsert(
-          { comment_id: commentId, user_id: user.id },
+          { comment_id: commentId, user_id: user.id, reaction_type: reactionType || 'like' } as any,
           { onConflict: 'comment_id,user_id' }
         );
         if (error) throw error;

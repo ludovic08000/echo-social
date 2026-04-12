@@ -365,13 +365,15 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
     } catch {} finally { setTranslating(false); }
   };
 
+  // Tap on like button: if already reacted → remove, else show picker
   const handleLike = useCallback(() => {
-    if (reactionLock) return;
+    if (reactionLock || likeComment.isPending) return;
     if (comment.is_liked) {
+      // Remove reaction
       setReactionLock(true);
       likeComment.mutate(
-        { commentId: comment.id, postId, isLiked: true },
-        { onSettled: () => setTimeout(() => setReactionLock(false), 500) }
+        { commentId: comment.id, postId, action: 'remove' },
+        { onSettled: () => setTimeout(() => setReactionLock(false), 1000) }
       );
       setShowReactionPicker(false);
     } else {
@@ -379,15 +381,18 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
     }
   }, [comment.is_liked, comment.id, postId, reactionLock, likeComment]);
 
+  // Pick a specific reaction emoji
   const handlePickReaction = useCallback((type: ReactionType) => {
-    if (reactionLock || comment.is_liked) return;
+    if (reactionLock || likeComment.isPending || comment.is_liked) return;
     setReactionLock(true);
     setShowReactionPicker(false);
     likeComment.mutate(
-      { commentId: comment.id, postId, isLiked: false },
-      { onSettled: () => setTimeout(() => setReactionLock(false), 500) }
+      { commentId: comment.id, postId, action: 'add', reactionType: type },
+      { onSettled: () => setTimeout(() => setReactionLock(false), 1000) }
     );
   }, [comment.id, comment.is_liked, postId, reactionLock, likeComment]);
+
+  const reactionEmoji = comment.user_reaction ? REACTION_EMOJIS[comment.user_reaction] : null;
 
   return (
     <div className={cn("flex gap-2.5 py-1.5 animate-slide-up")}>
@@ -435,7 +440,8 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
               <button
                 key={type}
                 onClick={() => handlePickReaction(type)}
-                className="w-8 h-8 flex items-center justify-center text-xl rounded-full hover:bg-secondary hover:scale-125 transition-all active:scale-90"
+                disabled={reactionLock || likeComment.isPending}
+                className="w-8 h-8 flex items-center justify-center text-xl rounded-full hover:bg-secondary hover:scale-125 transition-all active:scale-90 disabled:opacity-50 disabled:pointer-events-none"
                 title={REACTION_LABELS[type]}
               >
                 {REACTION_EMOJIS[type]}
@@ -450,14 +456,14 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
           </span>
           <button
             onClick={handleLike}
-            disabled={reactionLock}
+            disabled={reactionLock || likeComment.isPending}
             className={cn(
               "text-[11px] font-semibold transition-colors",
               comment.is_liked ? "text-primary" : "text-muted-foreground hover:text-foreground",
-              reactionLock && "opacity-50 pointer-events-none"
+              (reactionLock || likeComment.isPending) && "opacity-50 pointer-events-none"
             )}
           >
-            {comment.is_liked ? '👍' : 'J\'aime'}{comment.likes_count > 0 && ` · ${comment.likes_count}`}
+            {reactionEmoji ? reactionEmoji : "J'aime"}{comment.likes_count > 0 && ` · ${comment.likes_count}`}
           </button>
           <button onClick={onReply} className="text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors">
             Répondre
