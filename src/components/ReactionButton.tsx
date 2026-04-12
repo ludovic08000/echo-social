@@ -226,7 +226,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       <Popover
         open={isOpen}
         onOpenChange={(open) => {
-          if (interactionLockRef.current || isBusy || activeReaction) return;
+          if (interactionLockRef.current || isBusy) return;
           setIsOpen(open);
         }}
       >
@@ -281,7 +281,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       <Popover
         open={isOpen}
         onOpenChange={(open) => {
-          if (interactionLockRef.current || isBusy || activeReaction) return;
+          if (interactionLockRef.current || isBusy) return;
           setIsOpen(open);
         }}
       >
@@ -324,7 +324,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     <Popover
       open={isOpen}
       onOpenChange={(open) => {
-        if (interactionLockRef.current || isBusy || activeReaction) return;
+        if (interactionLockRef.current || isBusy) return;
         setIsOpen(open);
       }}
     >
