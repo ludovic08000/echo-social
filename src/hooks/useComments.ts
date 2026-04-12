@@ -184,15 +184,15 @@ export function useLikeComment() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async ({ commentId, postId, isLiked }: { commentId: string; postId: string; isLiked: boolean }) => {
+    mutationFn: async ({ commentId, postId, action, reactionType }: { commentId: string; postId: string; action: 'add' | 'remove'; reactionType?: ReactionType }) => {
       if (!user) throw new Error('Not authenticated');
 
-      if (isLiked) {
+      if (action === 'remove') {
         const { error } = await supabase.from('comment_likes').delete().eq('comment_id', commentId).eq('user_id', user.id);
         if (error) throw error;
       } else {
         const { error } = await supabase.from('comment_likes').upsert(
-          { comment_id: commentId, user_id: user.id },
+          { comment_id: commentId, user_id: user.id, reaction_type: reactionType || 'like' } as any,
           { onConflict: 'comment_id,user_id' }
         );
         if (error) throw error;
