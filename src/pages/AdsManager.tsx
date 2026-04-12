@@ -200,7 +200,18 @@ function AdChatCreator() {
             <p className="text-sm font-semibold text-foreground">Assistant Pub IA</p>
             <p className="text-[10px] text-muted-foreground">Décrivez votre pub, je la crée pour vous</p>
           </div>
-          {isLoading && <Loader2 className="w-4 h-4 animate-spin text-primary ml-auto" />}
+          <div className="ml-auto flex items-center gap-2">
+            <select
+              value={adLang}
+              onChange={(e) => setAdLang(e.target.value)}
+              className="text-[11px] bg-secondary/50 border border-border/30 rounded-lg px-2 py-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              {AD_LANGUAGES.map(l => (
+                <option key={l.value} value={l.value}>{l.label}</option>
+              ))}
+            </select>
+            {isLoading && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
+          </div>
         </div>
 
         <div ref={scrollRef} className="overflow-y-auto p-4 space-y-3" style={{ height: 'calc(100% - 110px)' }}>
