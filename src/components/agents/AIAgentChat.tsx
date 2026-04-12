@@ -9,7 +9,7 @@ import { useAIAgentUsage, type AIAgent } from '@/hooks/useAIAgents';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
-import ReactMarkdown from 'react-markdown';
+import { SafeMarkdown } from '@/components/SafeMarkdown';
 
 interface Props {
   agent: AIAgent;
@@ -299,7 +299,7 @@ export function AIAgentChat({ agent, onBack }: Props) {
       <div>
         {text && (
           <div className="prose prose-sm dark:prose-invert max-w-none [&>p]:m-0 [&>ul]:mt-1 [&>ol]:mt-1">
-            <ReactMarkdown>{text}</ReactMarkdown>
+            <SafeMarkdown>{text}</SafeMarkdown>
           </div>
         )}
         {msg.action && (

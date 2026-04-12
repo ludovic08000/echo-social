@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Sparkles, Loader2, Copy, Check } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import ReactMarkdown from 'react-markdown';
+import { SafeMarkdown } from '@/components/SafeMarkdown';
 
 interface AIProductHelperProps {
   productTitle?: string;
@@ -119,7 +119,7 @@ export function AIProductHelper({ productTitle, productCategory, productPrice }:
         {result && (
           <div className="space-y-2">
             <div className="rounded-lg bg-background border border-border p-3 text-xs prose prose-sm max-w-none">
-              <ReactMarkdown>{result}</ReactMarkdown>
+              <SafeMarkdown>{result}</SafeMarkdown>
             </div>
             <Button size="sm" variant="outline" className="w-full text-xs" onClick={handleCopy}>
               {copied ? <Check className="w-3 h-3 mr-1" /> : <Copy className="w-3 h-3 mr-1" />}

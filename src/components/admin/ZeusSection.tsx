@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Zap, ChevronRight, RefreshCw, Users, MessageSquare, Plus, Trash2, ChevronLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import ReactMarkdown from 'react-markdown';
+import { SafeMarkdown } from '@/components/SafeMarkdown';
 
 type ZMsg = { role: 'user' | 'assistant' | 'system'; content: string };
 type ZConv = { id: string; title: string; updated_at: string; messages: ZMsg[] };
@@ -205,7 +205,7 @@ export function ZeusSection() {
           </div>
         );
       }
-      return <ReactMarkdown key={i}>{part}</ReactMarkdown>;
+      return <SafeMarkdown key={i}>{part}</SafeMarkdown>;
     });
   }, [pendingProposals, appliedProposals, rejectedProposals, applyProposal, rejectProposal]);
 
@@ -311,7 +311,7 @@ export function ZeusSection() {
               {msg.role !== 'user' && <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500/20 to-primary/20 border border-amber-500/30 flex items-center justify-center shrink-0 mt-1"><Zap className="w-3.5 h-3.5 text-amber-400" /></div>}
               <div className={cn('max-w-[85%] rounded-2xl px-3 py-2.5 text-sm', msg.role === 'user' ? 'bg-primary text-primary-foreground rounded-br-md' : msg.role === 'system' ? 'bg-amber-500/5 border border-amber-500/20 rounded-bl-md' : 'bg-card border border-border rounded-bl-md')}>
                 <div className="prose prose-sm max-w-none dark:prose-invert text-inherit">
-                  {msg.role === 'assistant' ? renderContent(msg.content) : <ReactMarkdown>{msg.content}</ReactMarkdown>}
+                  {msg.role === 'assistant' ? renderContent(msg.content) : <SafeMarkdown>{msg.content}</SafeMarkdown>}
                 </div>
               </div>
               {msg.role === 'user' && <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0 mt-1"><Users className="w-3.5 h-3.5 text-primary" /></div>}

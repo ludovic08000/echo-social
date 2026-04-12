@@ -12,7 +12,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { COUNTRIES, GEO_DATA } from '@/lib/geoData';
 import { MARKETPLACE_CATEGORIES } from '@/lib/marketplaceCategories';
 import { toast } from 'sonner';
-import ReactMarkdown from 'react-markdown';
+import { SafeMarkdown } from '@/components/SafeMarkdown';
 
 const CATEGORIES = MARKETPLACE_CATEGORIES;
 
@@ -279,7 +279,7 @@ export function CreateProductDialog({ sellerId, trigger }: CreateProductDialogPr
                     <Sparkles className="w-3 h-3" /> Suggestion IA — vérifiez puis validez
                   </p>
                   <div className="text-xs prose prose-sm max-w-none">
-                    <ReactMarkdown>{aiResult}</ReactMarkdown>
+                    <SafeMarkdown>{aiResult}</SafeMarkdown>
                   </div>
                   <div className="flex gap-2">
                     <Button size="sm" className="flex-1 h-7 text-xs" onClick={applyAIDescription}>
