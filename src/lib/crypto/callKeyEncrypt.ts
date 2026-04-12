@@ -2,9 +2,10 @@
  * Call key encryption — wraps the LiveKit E2EE session key
  * using the conversation's existing AES-256-GCM session key.
  *
- * This ensures the key stored in `active_calls.e2ee_key` is
- * never readable by the server; only the two conversation
- * participants who share the session key can decrypt it.
+ * The encrypted payload is stored in `active_calls.encrypted_call_key`.
+ * The server NEVER sees the plaintext call key.
+ * Only the two conversation participants (who share the session key)
+ * can decrypt it locally at call-accept time.
  */
 
 import { hardCrypto } from './cryptoIntegrity';
@@ -12,11 +13,12 @@ import { randomBytes, bufferToBase64, base64ToBuffer } from './utils';
 import { loadSessionKey } from './keyManager';
 
 const IV_LEN = 12;
+const ENCRYPTED_SEPARATOR = '.';
 
 /**
  * Encrypt a call E2EE key using the conversation's shared session key.
  * Returns a compact string: `iv.ciphertext` (both base64).
- * Falls back to plaintext if no session key exists (unencrypted conversations).
+ * Throws if no session key exists — caller must handle gracefully.
  */
 export async function encryptCallKey(
   callKeyB64: string,
@@ -24,8 +26,7 @@ export async function encryptCallKey(
 ): Promise<string> {
   const session = await loadSessionKey(conversationId);
   if (!session?.sharedSecret) {
-    // No E2EE session for this conversation — send as-is (graceful fallback)
-    return callKeyB64;
+    throw new Error('No E2EE session for this conversation');
   }
 
   const iv = randomBytes(IV_LEN);
@@ -37,30 +38,27 @@ export async function encryptCallKey(
     plaintext,
   );
 
-  return `${bufferToBase64(iv.buffer as ArrayBuffer)}.${bufferToBase64(ciphertext as ArrayBuffer)}`;
+  return `${bufferToBase64(iv.buffer as ArrayBuffer)}${ENCRYPTED_SEPARATOR}${bufferToBase64(ciphertext as ArrayBuffer)}`;
 }
 
 /**
  * Decrypt a call E2EE key received via signaling.
- * If the value doesn't contain a dot separator, treat it as plain (legacy/fallback).
+ * Throws on failure — caller decides the fallback behaviour.
  */
 export async function decryptCallKey(
   encryptedPayload: string,
   conversationId: string,
 ): Promise<string> {
-  if (!encryptedPayload.includes('.')) {
-    // Legacy plaintext key
-    return encryptedPayload;
+  if (!encryptedPayload.includes(ENCRYPTED_SEPARATOR)) {
+    throw new Error('Payload is not encrypted (legacy format)');
   }
 
   const session = await loadSessionKey(conversationId);
   if (!session?.sharedSecret) {
-    console.warn('[CallKeyEncrypt] No session key to decrypt call key');
-    // Return raw — useCall will try to use it anyway
-    return encryptedPayload;
+    throw new Error('No E2EE session key to decrypt call key');
   }
 
-  const [ivB64, ctB64] = encryptedPayload.split('.');
+  const [ivB64, ctB64] = encryptedPayload.split(ENCRYPTED_SEPARATOR);
   const iv = new Uint8Array(base64ToBuffer(ivB64));
   const ciphertext = base64ToBuffer(ctB64);
 
