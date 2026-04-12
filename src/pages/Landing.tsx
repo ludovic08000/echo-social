@@ -112,12 +112,14 @@ export default function Landing() {
                 Créer mon compte gratuit
               </Button>
             </Link>
-            <Link to="/login">
+            <Link to="/feed">
               <Button size="lg" variant="outline" className="w-full sm:w-auto border-border/50 bg-background/30 backdrop-blur-sm hover:bg-background/50 text-base px-8">
-                Se connecter
+                <Globe className="w-4 h-4 mr-2" />
+                Explorer sans compte
               </Button>
             </Link>
           </div>
+          <p className="text-xs text-muted-foreground/60 mt-3">Déjà inscrit ? <Link to="/login" className="underline hover:text-foreground transition-colors">Se connecter</Link></p>
         </div>
       </section>
 
