@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { BarChart3, TrendingUp, DollarSign, ShoppingBag } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 
 type Period = '7d' | '30d' | '90d';
 
@@ -10,6 +9,33 @@ interface SalesAnalyticsProps {
   orders: any[];
   totalRevenue: number;
   totalSales: number;
+}
+
+function NativeBarChart({ data, color, suffix = '' }: { data: { label: string; value: number }[]; color: string; suffix?: string }) {
+  const max = Math.max(...data.map(d => d.value), 1);
+  const [hovered, setHovered] = useState<number | null>(null);
+  return (
+    <div>
+      {hovered !== null && (
+        <p className="text-[10px] text-foreground font-medium mb-1">{data[hovered].label} — {data[hovered].value}{suffix}</p>
+      )}
+      <div className="flex items-end gap-[2px] h-24">
+        {data.map((d, i) => (
+          <div
+            key={i}
+            className="flex-1 min-w-0 rounded-t transition-all cursor-pointer"
+            style={{ height: `${Math.max((d.value / max) * 100, 2)}%`, backgroundColor: hovered === i ? color : `color-mix(in srgb, ${color} 40%, transparent)` }}
+            onMouseEnter={() => setHovered(i)}
+            onMouseLeave={() => setHovered(null)}
+          />
+        ))}
+      </div>
+      <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
+        <span>{data[0]?.label}</span>
+        <span>{data[data.length - 1]?.label}</span>
+      </div>
+    </div>
+  );
 }
 
 export function SalesAnalytics({ orders, totalRevenue, totalSales }: SalesAnalyticsProps) {
@@ -53,20 +79,13 @@ export function SalesAnalytics({ orders, totalRevenue, totalSales }: SalesAnalyt
         </h3>
         <div className="flex gap-1">
           {(['7d', '30d', '90d'] as Period[]).map((p) => (
-            <Button
-              key={p}
-              size="sm"
-              variant={period === p ? 'default' : 'ghost'}
-              className="h-7 text-xs px-2"
-              onClick={() => setPeriod(p)}
-            >
+            <Button key={p} size="sm" variant={period === p ? 'default' : 'ghost'} className="h-7 text-xs px-2" onClick={() => setPeriod(p)}>
               {p === '7d' ? '7j' : p === '30d' ? '30j' : '90j'}
             </Button>
           ))}
         </div>
       </div>
 
-      {/* KPI cards */}
       <div className="grid grid-cols-3 gap-2">
         <Card className="bg-primary/5 border-primary/20">
           <CardContent className="p-3 text-center">
@@ -91,42 +110,17 @@ export function SalesAnalytics({ orders, totalRevenue, totalSales }: SalesAnalyt
         </Card>
       </div>
 
-      {/* Revenue chart */}
       <Card>
         <CardContent className="p-3">
           <p className="text-xs font-medium mb-2 text-muted-foreground">Chiffre d'affaires (€)</p>
-          <div className="h-40">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="date" tick={{ fontSize: 9 }} interval="preserveStartEnd" stroke="hsl(var(--muted-foreground))" />
-                <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
-                <Tooltip
-                  contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid hsl(var(--border))' }}
-                  formatter={(value: number) => [`${value.toFixed(2)}€`, 'CA']}
-                />
-                <Area type="monotone" dataKey="revenue" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.15)" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          <NativeBarChart data={chartData.map(d => ({ label: d.date, value: d.revenue }))} color="hsl(var(--primary))" suffix="€" />
         </CardContent>
       </Card>
 
-      {/* Orders chart */}
       <Card>
         <CardContent className="p-3">
           <p className="text-xs font-medium mb-2 text-muted-foreground">Nombre de commandes</p>
-          <div className="h-32">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="date" tick={{ fontSize: 9 }} interval="preserveStartEnd" stroke="hsl(var(--muted-foreground))" />
-                <YAxis tick={{ fontSize: 9 }} allowDecimals={false} stroke="hsl(var(--muted-foreground))" />
-                <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid hsl(var(--border))' }} />
-                <Bar dataKey="orders" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} name="Commandes" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <NativeBarChart data={chartData.map(d => ({ label: d.date, value: d.orders }))} color="hsl(var(--primary))" />
         </CardContent>
       </Card>
     </div>

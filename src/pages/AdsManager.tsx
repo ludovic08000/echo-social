@@ -36,7 +36,34 @@ const INTEREST_OPTIONS = [
 ];
 
 
-function generateChartData(campaigns: AdCampaign[]) {
+/** Lightweight native bar chart — no Recharts dependency */
+function NativeBarChart({ data, color, suffix = '' }: { data: { label: string; value: number }[]; color: string; suffix?: string }) {
+  const max = Math.max(...data.map(d => d.value), 1);
+  const [hovered, setHovered] = useState<number | null>(null);
+  return (
+    <div>
+      {hovered !== null && (
+        <p className="text-[11px] text-foreground font-medium mb-1">{data[hovered].label} — {data[hovered].value}{suffix}</p>
+      )}
+      <div className="flex items-end gap-[2px] h-24">
+        {data.map((d, i) => (
+          <div
+            key={i}
+            className="flex-1 min-w-0 rounded-t transition-all cursor-pointer"
+            style={{ height: `${Math.max((d.value / max) * 100, 2)}%`, backgroundColor: hovered === i ? color : `color-mix(in srgb, ${color} 40%, transparent)` }}
+            onMouseEnter={() => setHovered(i)}
+            onMouseLeave={() => setHovered(null)}
+          />
+        ))}
+      </div>
+      <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
+        <span>{data[0]?.label}</span>
+        <span>{data[data.length - 1]?.label}</span>
+      </div>
+    </div>
+  );
+}
+
   const days = eachDayOfInterval({ start: subDays(new Date(), 13), end: new Date() });
   return days.map(day => {
     const dayStr = format(day, 'dd/MM');
