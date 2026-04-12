@@ -131,10 +131,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   const handleStartCall = useCallback(async (type: CallType) => {
     if (!user || !peerUserId) return;
-    const e2eeKey = generateCallE2EEKey();
-    const callId = await signalOutgoingCall(conversationId, user.id, peerUserId, type, e2eeKey);
+    const callKey = generateCallE2EEKey();
+    // signalOutgoingCall encrypts the key before DB storage
+    const callId = await signalOutgoingCall(conversationId, user.id, peerUserId, type, callKey);
     activeCallIdRef.current = callId;
-    startCall(conversationId, type, e2eeKey);
+    // Pass raw key directly to LiveKit — never persisted in state
+    startCall(conversationId, type, callKey);
   }, [user, peerUserId, conversationId, startCall]);
 
   const handleEndCall = useCallback(() => {
