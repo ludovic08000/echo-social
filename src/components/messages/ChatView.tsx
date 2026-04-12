@@ -21,8 +21,8 @@ import { useImageUpload } from '@/hooks/useImageUpload';
 import { toast } from 'sonner';
 import { useMessageTranslation } from '@/hooks/useMessageTranslation';
 import { useE2EE } from '@/hooks/useE2EE';
-import { generateMediaKey, encryptMedia, buildMediaMessageBody, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
-import { EncryptedMedia } from './EncryptedMedia';
+import { generateMediaKey, encryptMedia, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
+import { MessageMedia } from './MessageMedia';
 import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { EncryptionBadge, EncryptionStatusBar } from './EncryptionBadge';
 import { DecryptedMessageBody } from './DecryptedMessageBody';
@@ -644,41 +644,16 @@ export function ChatView({ conversationId }: ChatViewProps) {
                             </div>
                           )}
 
-                          {isImage && (() => {
-                            const decryptedText = decryptedCache.get(msg.id);
-                            const mediaMeta = decryptedText ? parseMediaMessage(decryptedText) : null;
-                            const isVideoFile = /\.(mp4|mov|webm|avi|mkv)/i.test(msg.image_url!) || decryptedText?.startsWith('🎬');
-
-                            if (mediaMeta) {
-                              // Encrypted media — decrypt and display
-                              return (
-                                <div className="overflow-hidden mb-0.5 rounded-[18px] rounded-bl-sm">
-                                  <EncryptedMedia
-                                    encryptedUrl={msg.image_url!}
-                                    mediaKeyB64={mediaMeta.keyB64}
-                                    isVideo={isVideoFile}
-                                  />
-                                </div>
-                              );
-                            }
-
-                            // Plain media (legacy / non-encrypted conversations)
-                            return (
-                              <div className="overflow-hidden mb-0.5 rounded-[18px] rounded-bl-sm">
-                                {isVideoFile ? (
-                                  <video
-                                    src={msg.image_url!}
-                                    controls
-                                    playsInline
-                                    preload="metadata"
-                                    className="max-w-full max-h-[300px] rounded-[18px]"
-                                  />
-                                ) : (
-                                  <img src={msg.image_url!} alt="Photo" className="max-w-full max-h-[300px] object-cover" />
-                                )}
-                              </div>
-                            );
-                          })()}
+                          {isImage && (
+                            <div className="overflow-hidden mb-0.5 rounded-[18px] rounded-bl-sm">
+                              <MessageMedia
+                                imageUrl={msg.image_url!}
+                                body={msg.body}
+                                decrypt={e2ee.decrypt}
+                                isEncryptionActive={e2ee.encrypted && !isZeusConversation}
+                              />
+                            </div>
+                          )}
 
                           <div
                             onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
