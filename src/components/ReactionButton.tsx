@@ -129,18 +129,27 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   }, [startCooldown]);
 
   const handleReaction = useCallback((reactionType: ReactionType) => {
-    if (interactionLockRef.current || isBusy || activeReaction) return;
+    if (interactionLockRef.current || isBusy) return;
     if (!user) {
       navigate('/signup', { state: { from: window.location.pathname } });
       return;
     }
 
-    setOptimisticReaction(reactionType);
-    lockInteraction();
-    haptic('medium');
-    setShowParticles(REACTION_EMOJIS[reactionType]);
-    addReaction.mutate({ postId, reactionType });
-  }, [user, activeReaction, postId, addReaction, isBusy, lockInteraction]);
+    if (activeReaction === reactionType) {
+      // Same emoji → remove
+      setOptimisticReaction(null);
+      lockInteraction();
+      haptic('light');
+      removeReaction.mutate(postId);
+    } else {
+      // New or different emoji → add/change
+      setOptimisticReaction(reactionType);
+      lockInteraction();
+      haptic('medium');
+      setShowParticles(REACTION_EMOJIS[reactionType]);
+      addReaction.mutate({ postId, reactionType });
+    }
+  }, [user, activeReaction, postId, addReaction, removeReaction, isBusy, lockInteraction]);
 
   const handleRemoveReaction = useCallback(() => {
     if (interactionLockRef.current || isBusy || !activeReaction) return;
@@ -152,20 +161,18 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     removeReaction.mutate(postId);
   }, [user, activeReaction, postId, removeReaction, isBusy, lockInteraction]);
 
+  // Tap always opens picker (to choose or change reaction)
   const handleTriggerClick = useCallback((e?: React.MouseEvent | React.PointerEvent) => {
     if (interactionLockRef.current || isBusy) {
       e?.preventDefault();
       return;
     }
-
-    if (activeReaction) {
-      e?.preventDefault();
-      handleRemoveReaction();
+    if (!user) {
+      navigate('/signup', { state: { from: window.location.pathname } });
       return;
     }
-
     setIsOpen(true);
-  }, [activeReaction, handleRemoveReaction, isBusy]);
+  }, [isBusy, user, navigate]);
 
   const emojiVariants = {
     hidden: { scale: 0, y: 10 },
@@ -191,13 +198,13 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
             variants={emojiVariants}
             initial="hidden"
             animate="visible"
-            whileHover={!activeReaction && !isBusy ? 'hover' : undefined}
-            whileTap={!activeReaction && !isBusy ? { scale: 0.8 } : undefined}
+            whileHover={!isBusy ? 'hover' : undefined}
+            whileTap={!isBusy ? { scale: 0.8 } : undefined}
             onClick={() => handleReaction(type)}
-            disabled={!!activeReaction || isBusy}
+            disabled={isBusy}
             className={cn(
               'group relative rounded-full p-1.5 transition-colors',
-              (activeReaction || isBusy) && 'pointer-events-none opacity-50',
+              isBusy && 'pointer-events-none opacity-50',
               activeReaction === type && 'bg-accent ring-2 ring-primary/50'
             )}
             title={REACTION_LABELS[type]}
@@ -219,7 +226,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       <Popover
         open={isOpen}
         onOpenChange={(open) => {
-          if (interactionLockRef.current || isBusy || activeReaction) return;
+          if (interactionLockRef.current || isBusy) return;
           setIsOpen(open);
         }}
       >
@@ -274,7 +281,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       <Popover
         open={isOpen}
         onOpenChange={(open) => {
-          if (interactionLockRef.current || isBusy || activeReaction) return;
+          if (interactionLockRef.current || isBusy) return;
           setIsOpen(open);
         }}
       >
@@ -317,7 +324,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     <Popover
       open={isOpen}
       onOpenChange={(open) => {
-        if (interactionLockRef.current || isBusy || activeReaction) return;
+        if (interactionLockRef.current || isBusy) return;
         setIsOpen(open);
       }}
     >
