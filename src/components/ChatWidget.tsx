@@ -726,10 +726,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           <button onClick={async () => {
             const participantId = conversation?.participant?.user_id;
             if (participantId && user?.id) {
-              const e2eeKey = generateCallE2EEKey();
-              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'audio', e2eeKey);
+              const callKey = generateCallE2EEKey();
+              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'audio', callKey);
               if (callId) activeCallIdRef.current = callId;
-              call.startCall(conversationId, 'audio', e2eeKey);
+              call.startCall(conversationId, 'audio', callKey);
             }
           }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
             <Phone className="w-3.5 h-3.5" />
@@ -737,10 +737,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           <button onClick={async () => {
             const participantId = conversation?.participant?.user_id;
             if (participantId && user?.id) {
-              const e2eeKey = generateCallE2EEKey();
-              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'video', e2eeKey);
+              const callKey = generateCallE2EEKey();
+              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'video', callKey);
               if (callId) activeCallIdRef.current = callId;
-              call.startCall(conversationId, 'video', e2eeKey);
+              call.startCall(conversationId, 'video', callKey);
             }
           }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
             <Video className="w-3.5 h-3.5" />

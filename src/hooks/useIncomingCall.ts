@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
-import { encryptCallKey, decryptCallKey } from '@/lib/crypto/callKeyEncrypt';
+import { decryptCallKey, encryptCallKey } from '@/lib/crypto/callKeyEncrypt';
 
 let sharedAudioContext: AudioContext | null = null;
 let audioPrimed = false;
@@ -18,7 +18,6 @@ function primeAudioForIOS() {
         await sharedAudioContext.resume();
       }
 
-      // Play a silent frame once to unlock playback on iOS Safari
       const buffer = sharedAudioContext.createBuffer(1, 1, 22050);
       const source = sharedAudioContext.createBufferSource();
       source.buffer = buffer;
@@ -39,6 +38,11 @@ function primeAudioForIOS() {
   window.addEventListener('keydown', unlock);
 }
 
+/**
+ * Public-facing incoming call data.
+ * SECURITY: NO decrypted key here — the key is decrypted only at accept time
+ * and returned directly, never stored in React state.
+ */
 export interface IncomingCall {
   id: string;
   conversation_id: string;
@@ -48,7 +52,11 @@ export interface IncomingCall {
   status: string;
   caller_name?: string;
   caller_avatar?: string;
-  e2ee_key?: string;
+}
+
+/** Returned only by acceptCall — includes the decrypted key for immediate use */
+export interface AcceptedCall extends IncomingCall {
+  decryptedCallKey?: string;
 }
 
 /** Ring tone — plays a looping tone until stopped */
@@ -70,7 +78,6 @@ function createRingtone(): { play: () => void; stop: () => void } {
       gainNode.connect(audioCtx.destination);
       gainNode.gain.value = 0;
 
-      // iOS-friendly double ring pattern
       const ring = () => {
         if (!audioCtx || !gainNode) return;
 
@@ -109,18 +116,9 @@ function createRingtone(): { play: () => void; stop: () => void } {
 
   const stop = () => {
     if (intervalId) clearInterval(intervalId);
-    try {
-      oscillatorA?.stop();
-      oscillatorA?.disconnect();
-    } catch {}
-    try {
-      oscillatorB?.stop();
-      oscillatorB?.disconnect();
-    } catch {}
-    try {
-      gainNode?.disconnect();
-    } catch {}
-
+    try { oscillatorA?.stop(); oscillatorA?.disconnect(); } catch {}
+    try { oscillatorB?.stop(); oscillatorB?.disconnect(); } catch {}
+    try { gainNode?.disconnect(); } catch {}
     oscillatorA = null;
     oscillatorB = null;
     gainNode = null;
@@ -136,19 +134,23 @@ export function useIncomingCall() {
   const ringtoneRef = useRef(createRingtone());
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Listen for incoming calls via realtime
+  /**
+   * SECURITY: The encrypted call key is stored in a volatile ref,
+   * never in React state, and wiped after accept/decline.
+   */
+  const encryptedCallKeyRef = useRef<string | null>(null);
+  const callConversationIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!user?.id) return;
 
-    // Required on iOS: unlock audio context after first user interaction
     primeAudioForIOS();
 
-    // Check for existing ringing calls on mount (only recent ones, < 30s old)
     const checkExisting = async () => {
       const thirtySecondsAgo = new Date(Date.now() - 30000).toISOString();
       const { data } = await supabase
         .from('active_calls')
-        .select('*')
+        .select('id, conversation_id, caller_id, callee_id, call_type, status, encrypted_call_key, created_at')
         .eq('callee_id', user.id)
         .eq('status', 'ringing')
         .gte('created_at', thirtySecondsAgo)
@@ -159,7 +161,6 @@ export function useIncomingCall() {
         handleIncomingCall(data[0]);
       }
 
-      // Clean up stale ringing calls (older than 30s)
       await supabase
         .from('active_calls')
         .update({ status: 'cancelled', ended_at: new Date().toISOString() })
@@ -195,10 +196,11 @@ export function useIncomingCall() {
         },
         (payload) => {
           const updated = payload.new as any;
-          // If caller cancelled
           if (updated.status === 'cancelled' || updated.status === 'ended') {
             ringtoneRef.current.stop();
             setIncomingCall(null);
+            encryptedCallKeyRef.current = null;
+            callConversationIdRef.current = null;
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
           }
         }
@@ -208,17 +210,22 @@ export function useIncomingCall() {
     return () => {
       supabase.removeChannel(channel);
       ringtoneRef.current.stop();
+      encryptedCallKeyRef.current = null;
+      callConversationIdRef.current = null;
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, [user?.id]);
 
   const handleIncomingCall = async (call: any) => {
-    // Fetch caller profile
     const { data: profile } = await supabase
       .from('profiles')
       .select('name, avatar_url')
       .eq('user_id', call.caller_id)
       .single();
+
+    // Store encrypted key in volatile ref — NEVER in React state
+    encryptedCallKeyRef.current = call.encrypted_call_key || null;
+    callConversationIdRef.current = call.conversation_id;
 
     const incoming: IncomingCall = {
       id: call.id,
@@ -229,22 +236,23 @@ export function useIncomingCall() {
       status: call.status,
       caller_name: profile?.name || 'Utilisateur',
       caller_avatar: profile?.avatar_url,
-      e2ee_key: call.e2ee_key
-        ? await decryptCallKey(call.e2ee_key, call.conversation_id).catch(() => call.e2ee_key)
-        : undefined,
+      // NO key here — zero-access design
     };
 
     setIncomingCall(incoming);
     ringtoneRef.current.play();
 
-    // Auto-timeout after 30 seconds
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       declineCall();
     }, 30000);
   };
 
-  const acceptCall = useCallback(async () => {
+  /**
+   * Accept the call and decrypt the key at this exact moment.
+   * The decrypted key is returned once and never persisted.
+   */
+  const acceptCall = useCallback(async (): Promise<AcceptedCall | undefined> => {
     if (!incomingCall) return;
     ringtoneRef.current.stop();
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -254,7 +262,24 @@ export function useIncomingCall() {
       .update({ status: 'answered', answered_at: new Date().toISOString() })
       .eq('id', incomingCall.id);
 
-    const accepted = { ...incomingCall };
+    // Decrypt call key now — one-shot, then wipe
+    let decryptedCallKey: string | undefined;
+    const encKey = encryptedCallKeyRef.current;
+    const convId = callConversationIdRef.current;
+    if (encKey && convId) {
+      try {
+        decryptedCallKey = await decryptCallKey(encKey, convId);
+      } catch (err) {
+        console.warn('[IncomingCall] Failed to decrypt call key:', err);
+        // Call will proceed without E2EE media encryption
+      }
+    }
+
+    // Wipe refs immediately
+    encryptedCallKeyRef.current = null;
+    callConversationIdRef.current = null;
+
+    const accepted: AcceptedCall = { ...incomingCall, decryptedCallKey };
     setIncomingCall(null);
     return accepted;
   }, [incomingCall]);
@@ -269,6 +294,9 @@ export function useIncomingCall() {
       .update({ status: 'declined', ended_at: new Date().toISOString() })
       .eq('id', incomingCall.id);
 
+    // Wipe refs
+    encryptedCallKeyRef.current = null;
+    callConversationIdRef.current = null;
     setIncomingCall(null);
   }, [incomingCall]);
 
@@ -279,18 +307,28 @@ export function useIncomingCall() {
   };
 }
 
-/** Called by the caller to signal an outgoing call */
+/**
+ * Signal an outgoing call.
+ * The callKey is encrypted BEFORE being sent to the database.
+ * Only `encrypted_call_key` is stored — the server never sees the raw key.
+ */
 export async function signalOutgoingCall(
   conversationId: string,
   callerId: string,
   calleeId: string,
   callType: 'audio' | 'video',
-  e2eeKey?: string,
+  callKeyB64?: string,
 ): Promise<string | null> {
-  // Encrypt the call key using the conversation's E2EE session key
-  const encryptedKey = e2eeKey
-    ? await encryptCallKey(e2eeKey, conversationId).catch(() => e2eeKey)
-    : undefined;
+  let encryptedKey: string | undefined;
+
+  if (callKeyB64) {
+    try {
+      encryptedKey = await encryptCallKey(callKeyB64, conversationId);
+    } catch {
+      // No E2EE session — call proceeds without encrypted key transport
+      console.warn('[SignalCall] Could not encrypt call key — no E2EE session');
+    }
+  }
 
   const { data, error } = await supabase
     .from('active_calls')
@@ -300,7 +338,7 @@ export async function signalOutgoingCall(
       callee_id: calleeId,
       call_type: callType,
       status: 'ringing',
-      ...(encryptedKey ? { e2ee_key: encryptedKey } : {}),
+      ...(encryptedKey ? { encrypted_call_key: encryptedKey } : {}),
     } as any)
     .select('id')
     .single();

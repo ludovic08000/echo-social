@@ -119,8 +119,8 @@ function IncomingCallHandler() {
 
     activeIncomingCallIdRef.current = accepted.id;
 
-    // Start the call (join the LiveKit room) with E2EE key if available
-    call.startCall(accepted.conversation_id, accepted.call_type, accepted.e2ee_key);
+    // Start the call with the decrypted key (never stored in state)
+    call.startCall(accepted.conversation_id, accepted.call_type, accepted.decryptedCallKey);
   }, [acceptCall, openChat, call]);
 
   if (!user) return null;
