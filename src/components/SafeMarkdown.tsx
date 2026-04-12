@@ -23,23 +23,24 @@ interface SafeMarkdownProps {
 export function SafeMarkdown({ children, className }: SafeMarkdownProps) {
   return (
     <div className={className}>
-    <ReactMarkdown
-      allowedElements={ALLOWED_ELEMENTS}
-      skipHtml
-      components={{
-        a: ({ href, children: kids }) => (
-          <a
-            href={sanitizeUrl(href)}
-            target="_blank"
-            rel="noopener noreferrer nofollow"
-            className="text-primary underline"
-          >
-            {kids}
-          </a>
-        ),
-      }}
-    >
-      {children}
-    </ReactMarkdown>
+      <ReactMarkdown
+        allowedElements={ALLOWED_ELEMENTS}
+        skipHtml
+        components={{
+          a: ({ href, children: kids }) => (
+            <a
+              href={sanitizeUrl(href)}
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              className="text-primary underline"
+            >
+              {kids}
+            </a>
+          ),
+        }}
+      >
+        {children}
+      </ReactMarkdown>
+    </div>
   );
 }
