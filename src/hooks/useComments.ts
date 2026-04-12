@@ -49,18 +49,21 @@ export function useComments(postId: string) {
       const commentIds = data.map(c => c.id);
       const { data: allLikes } = await supabase
         .from('comment_likes')
-        .select('comment_id, user_id')
+        .select('comment_id, user_id, reaction_type')
         .in('comment_id', commentIds);
 
       const likesCountMap = new Map<string, number>();
-      const userLikedMap = new Set<string>();
+      const userReactionMap = new Map<string, ReactionType>();
       allLikes?.forEach(l => {
         likesCountMap.set(l.comment_id, (likesCountMap.get(l.comment_id) || 0) + 1);
-        if (user && l.user_id === user.id) userLikedMap.add(l.comment_id);
+        if (user && l.user_id === user.id) {
+          userReactionMap.set(l.comment_id, (l.reaction_type as ReactionType) || 'like');
+        }
       });
 
       const enriched: Comment[] = data.map(comment => {
         const profile = profileMap.get(comment.user_id);
+        const userReaction = userReactionMap.get(comment.id) || null;
         return {
           id: comment.id,
           user_id: comment.user_id,
@@ -73,7 +76,8 @@ export function useComments(postId: string) {
             avatar_url: profile?.avatar_url || null,
           },
           likes_count: likesCountMap.get(comment.id) || 0,
-          is_liked: userLikedMap.has(comment.id),
+          is_liked: !!userReaction,
+          user_reaction: userReaction,
         };
       });
 
