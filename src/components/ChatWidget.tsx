@@ -713,7 +713,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       />
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
         const file = e.target.files?.[0];
-        if (file) upload(file);
+        if (file) handleMediaFile(file);
         e.target.value = '';
       }} />
 
