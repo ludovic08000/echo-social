@@ -1,6 +1,7 @@
 import { useState, useEffect, memo } from 'react';
 import { Lock } from 'lucide-react';
 import { VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
+import { hasMediaKey, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 
 /** Detect voice message pattern — supports multiple formats:
  *  🎙️ vocal:URL|duration
@@ -86,14 +87,23 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     );
   }
 
+  // Strip embedded media key from display text
+  const visibleText = (() => {
+    if (hasMediaKey(displayText)) {
+      const parsed = parseMediaMessage(displayText);
+      return parsed ? parsed.label : displayText;
+    }
+    return displayText;
+  })();
+
   // Check if it's a voice message
-  const voice = parseVoiceMessage(displayText);
+  const voice = parseVoiceMessage(visibleText);
   if (voice) {
     return <VoiceMessagePlayer audioUrl={voice.url} duration={voice.duration} isMe={isMe} />;
   }
 
   // Check if it's a GIF message
-  const gifUrl = parseGifMessage(displayText);
+  const gifUrl = parseGifMessage(visibleText);
   if (gifUrl) {
     return (
       <img
@@ -105,5 +115,5 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     );
   }
 
-  return <>{displayText}</>;
+  return <>{visibleText}</>;
 });
