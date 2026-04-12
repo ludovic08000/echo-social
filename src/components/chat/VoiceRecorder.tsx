@@ -36,7 +36,7 @@ function getSupportedMimeType(): { mimeType: string; ext: string } {
 }
 
 interface VoiceRecorderProps {
-  onSend: (audioUrl: string, duration: number) => void;
+  onSend: (audioUrl: string, duration: number, encryptedBody?: string) => void;
   onCancel: () => void;
 }
 
@@ -161,9 +161,18 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
       else if (blobType.includes('aac')) ext = 'aac';
       else if (blobType.includes('mp4') || blobType.includes('m4a')) ext = 'mp4';
 
+      // ─── E2EE: encrypt voice blob before upload ───
+      const { generateMediaKey, encryptMedia, buildMediaMessageBody } = await import('@/lib/crypto/mediaEncrypt');
+      const { key, keyB64 } = await generateMediaKey();
+      const encryptedBlob = await encryptMedia(audioBlob, key);
+
       const { uploadToR2 } = await import('@/lib/r2');
-      const { url } = await uploadToR2(audioBlob, 'voice', `voice-${Date.now()}.${ext}`);
-      onSend(url, duration);
+      const { url } = await uploadToR2(encryptedBlob, 'voice', `voice-${Date.now()}.enc.${ext}`);
+
+      // Build message body with embedded media key (will be E2EE-encrypted by the message queue)
+      const label = `🎙️ vocal:${url}|${duration}`;
+      const body = buildMediaMessageBody(label, keyB64);
+      onSend(url, duration, body);
     } catch (err: any) {
       console.error('Voice upload error:', err?.message || err);
       toast.error(`Erreur lors de l'envoi du vocal: ${err?.message || 'Réessayez'}`);
