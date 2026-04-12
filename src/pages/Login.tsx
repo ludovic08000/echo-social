@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
+import { checkLoginAllowed, recordFailedLogin, resetLoginAttempts } from '@/lib/loginRateLimit';
 import loginBg from '@/assets/login-bg.png';
 
 export default function Login() {
@@ -19,6 +20,18 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [lockoutSeconds, setLockoutSeconds] = useState(() => checkLoginAllowed());
+
+  // Countdown timer for lockout
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const timer = setInterval(() => {
+      const remaining = checkLoginAllowed();
+      setLockoutSeconds(remaining);
+      if (remaining <= 0) clearInterval(timer);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockoutSeconds]);
 
   if (user) {
     const from = (location.state as { from?: string })?.from || '/feed';
@@ -29,24 +42,38 @@ export default function Login() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
 
+    // Rate limit check
+    const blocked = checkLoginAllowed();
+    if (blocked > 0) {
+      setLockoutSeconds(blocked);
+      toast({
+        title: 'Trop de tentatives',
+        description: `Réessayez dans ${blocked} secondes.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsLoading(true);
     const { error } = await signIn(email, password);
 
     if (error) {
+      const lockout = recordFailedLogin();
       toast({
         title: t('login.error'),
-        description: t('login.errorDesc'),
+        description: lockout > 0
+          ? `Compte temporairement verrouillé. Réessayez dans ${lockout}s.`
+          : t('login.errorDesc'),
         variant: 'destructive',
       });
+      if (lockout > 0) setLockoutSeconds(lockout);
       setIsLoading(false);
       return;
     }
 
-    // Clear any stale/errored feed cache so /feed always fetches fresh data after login
+    resetLoginAttempts();
     queryClient.removeQueries({ queryKey: ['posts', 'friends-feed'] });
-
-    // Don't navigate manually — auth state change will redirect to /feed
     setIsLoading(false);
   };
 
@@ -104,10 +131,12 @@ export default function Login() {
 
             <Button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || lockoutSeconds > 0}
               className="w-full"
             >
-              {isLoading ? t('login.submitting') : t('login.submit')}
+              {lockoutSeconds > 0
+                ? `Verrouillé (${lockoutSeconds}s)`
+                : isLoading ? t('login.submitting') : t('login.submit')}
             </Button>
           </form>
 
