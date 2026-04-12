@@ -41,21 +41,20 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   isMe,
 }: DecryptedMessageBodyProps) {
   const [displayText, setDisplayText] = useState<string | null>(null);
+  const [mediaKeyB64, setMediaKeyB64] = useState<string | null>(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
 
   useEffect(() => {
     if (!isEncryptionActive) {
       setDisplayText(body);
+      setMediaKeyB64(null);
       return;
     }
 
     const looksEncrypted = body.startsWith('{') && (body.includes('"ct"') || body.includes('"hdr"'));
     if (!looksEncrypted) {
-      // In an encrypted conversation, plaintext messages are either:
-      // - Legacy messages sent before E2EE was activated
-      // - System messages (emoji, media labels)
-      // Display them but let the UI show they're unencrypted via the badge
       setDisplayText(body);
+      setMediaKeyB64(null);
       return;
     }
 
@@ -64,7 +63,19 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
     decrypt(body).then(result => {
       if (!cancelled) {
-        setDisplayText(result.text);
+        // Extract media key before stripping it from display
+        if (hasMediaKey(result.text)) {
+          const parsed = parseMediaMessage(result.text);
+          if (parsed) {
+            setMediaKeyB64(parsed.keyB64);
+            setDisplayText(parsed.label);
+          } else {
+            setDisplayText(result.text);
+          }
+        } else {
+          setDisplayText(result.text);
+          setMediaKeyB64(null);
+        }
         setIsDecrypting(false);
         onDecrypted?.(result.text);
       }
@@ -87,23 +98,21 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     );
   }
 
-  // Strip embedded media key from display text
-  const visibleText = (() => {
-    if (hasMediaKey(displayText)) {
-      const parsed = parseMediaMessage(displayText);
-      return parsed ? parsed.label : displayText;
-    }
-    return displayText;
-  })();
-
   // Check if it's a voice message
-  const voice = parseVoiceMessage(visibleText);
+  const voice = parseVoiceMessage(displayText);
   if (voice) {
-    return <VoiceMessagePlayer audioUrl={voice.url} duration={voice.duration} isMe={isMe} />;
+    return (
+      <VoiceMessagePlayer
+        audioUrl={voice.url}
+        duration={voice.duration}
+        isMe={isMe}
+        mediaKeyB64={mediaKeyB64 ?? undefined}
+      />
+    );
   }
 
   // Check if it's a GIF message
-  const gifUrl = parseGifMessage(visibleText);
+  const gifUrl = parseGifMessage(displayText);
   if (gifUrl) {
     return (
       <img
@@ -115,5 +124,5 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     );
   }
 
-  return <>{visibleText}</>;
+  return <>{displayText}</>;
 });
