@@ -374,9 +374,47 @@ function AdChatCreator() {
                   </div>
                 )}
 
-                <div className="mt-3 pt-3 border-t border-border/20">
+                <div className="mt-3 pt-3 border-t border-border/20 space-y-2">
                   <Button className="w-full rounded-xl gap-2" size="sm" variant="outline">
                     <ArrowRight className="w-4 h-4" />{generatedAd.cta_text}
+                  </Button>
+                  {/* Translate button */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full rounded-xl gap-2 text-xs"
+                    disabled={translating}
+                    onClick={async () => {
+                      setTranslating(true);
+                      try {
+                        const { data, error } = await supabase.functions.invoke('zeus', {
+                          body: {
+                            domain: 'ads',
+                            action: 'translate_ad',
+                            title: generatedAd.title,
+                            adBody: generatedAd.body,
+                            cta_text: generatedAd.cta_text,
+                            targetLang: adLang,
+                          },
+                        });
+                        if (error) throw error;
+                        if (data?.translated) {
+                          setGeneratedAd((prev: any) => ({
+                            ...prev,
+                            title: data.translated.title,
+                            body: data.translated.body,
+                            cta_text: data.translated.cta_text,
+                          }));
+                          toast.success('Publicité traduite !');
+                        } else {
+                          toast.error('Traduction échouée');
+                        }
+                      } catch { toast.error('Erreur de traduction'); }
+                      finally { setTranslating(false); }
+                    }}
+                  >
+                    {translating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Languages className="w-3.5 h-3.5" />}
+                    Traduire en {AD_LANGUAGES.find(l => l.value === adLang)?.label || adLang}
                   </Button>
                 </div>
               </div>
