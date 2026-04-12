@@ -64,16 +64,20 @@ function NativeBarChart({ data, color, suffix = '' }: { data: { label: string; v
   );
 }
 
+function generateChartData(campaigns: AdCampaign[]) {
   const days = eachDayOfInterval({ start: subDays(new Date(), 13), end: new Date() });
+  // Use seeded random for stable renders
+  let seed = 42;
+  const srand = () => { seed = (seed * 16807) % 2147483647; return (seed & 0x7fffffff) / 0x7fffffff; };
   return days.map(day => {
     const dayStr = format(day, 'dd/MM');
-    const factor = Math.random();
+    const factor = srand();
     const totalBudget = campaigns.reduce((s, c) => s + (Number(c.budget) || 0), 0) || 50;
     return {
       date: dayStr,
-      impressions: Math.floor(factor * totalBudget * 8 + Math.random() * 200),
-      clicks: Math.floor(factor * totalBudget * 0.4 + Math.random() * 15),
-      spent: +(factor * totalBudget * 0.08 + Math.random() * 2).toFixed(2),
+      impressions: Math.floor(factor * totalBudget * 8 + srand() * 200),
+      clicks: Math.floor(factor * totalBudget * 0.4 + srand() * 15),
+      spent: +(factor * totalBudget * 0.08 + srand() * 2).toFixed(2),
     };
   });
 }
