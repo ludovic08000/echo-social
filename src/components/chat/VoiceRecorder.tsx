@@ -458,7 +458,20 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe, mediaKeyB64 }: Vo
   };
 
   const displayTime = playing ? formatTime(currentTime) : formatTime(audioDuration);
-  const effectiveSrc = blobSrc || audioUrl;
+  // For encrypted audio, only use blobSrc (decrypted); for plain audio, use URL directly or blobSrc fallback
+  const effectiveSrc = mediaKeyB64 ? (blobSrc || '') : (blobSrc || audioUrl);
+
+  if (decrypting) {
+    return (
+      <div className={cn(
+        "flex items-center gap-2 px-3 py-2 rounded-2xl min-w-[160px]",
+        isMe ? "bg-primary text-primary-foreground" : "bg-secondary"
+      )}>
+        <Loader2 className="w-4 h-4 animate-spin" />
+        <span className="text-xs">Déchiffrement...</span>
+      </div>
+    );
+  }
 
   return (
     <div className={cn(
