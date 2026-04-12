@@ -287,10 +287,13 @@ export function useChatPin() {
   useEffect(() => {
     if (!user || !state.hasPin) return;
     
-    const handleVisibility = () => {
+    const handleVisibility = async () => {
       if (document.hidden && pinModeRef.current === 'on_return' && state.unlocked) {
         sessionStorage.removeItem(SESSION_KEY);
-        if (user) deleteRawIdentityBlob(user.id).catch(() => {});
+        if (user) {
+          deleteRawIdentityBlob(user.id).catch(() => {});
+          import('@/lib/crypto/keyManager').then(m => m.wipeSessionKeys()).catch(() => {});
+        }
         setState(s => ({ ...s, unlocked: false }));
       }
     };
@@ -305,9 +308,12 @@ export function useChatPin() {
 
     const resetTimer = () => {
       if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
-      inactivityTimer.current = setTimeout(() => {
+      inactivityTimer.current = setTimeout(async () => {
         sessionStorage.removeItem(SESSION_KEY);
-        if (user) deleteRawIdentityBlob(user.id).catch(() => {});
+        if (user) {
+          deleteRawIdentityBlob(user.id).catch(() => {});
+          import('@/lib/crypto/keyManager').then(m => m.wipeSessionKeys()).catch(() => {});
+        }
         setState(s => ({ ...s, unlocked: false }));
       }, INACTIVITY_TIMEOUT);
     };
@@ -497,11 +503,19 @@ export function useChatPin() {
     }
   }, [user, fetchPinMode]);
 
-  /** Lock messaging */
+  /** Lock messaging — wipe all key material from IndexedDB */
   const lock = useCallback(async () => {
     sessionStorage.removeItem(SESSION_KEY);
     if (user) {
+      // Delete raw identity keys
       await deleteRawIdentityBlob(user.id).catch(() => {});
+      // Also wipe session keys and ratchet states (JWKs at rest)
+      try {
+        const { wipeSessionKeys } = await import('@/lib/crypto/keyManager');
+        await wipeSessionKeys();
+      } catch (e) {
+        console.warn('[PIN] Session key wipe failed:', e);
+      }
     }
     setState(s => ({ ...s, unlocked: false }));
   }, [user]);

@@ -323,3 +323,50 @@ export async function wipeAllKeys(): Promise<void> {
     tx.onerror = () => reject(tx.error);
   });
 }
+
+/**
+ * Wipe session keys and ratchet states from IndexedDB.
+ * Called on PIN lock to ensure raw JWKs don't persist at rest.
+ * Identity keys are handled separately (PIN-wrapped).
+ */
+export async function wipeSessionKeys(): Promise<void> {
+  // 1. Clear session keys from main E2EE DB
+  try {
+    const db = await openDB();
+    const tx = db.transaction([STORE_SESSION], 'readwrite');
+    tx.objectStore(STORE_SESSION).clear();
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.warn('[KEY_MGR] Failed to clear session keys:', e);
+  }
+
+  // 2. Clear ratchet states (separate DB)
+  try {
+    const ratchetReq = hardGlobals.idbOpen('forsure-ratchet', 1);
+    const ratchetDB = await new Promise<IDBDatabase>((resolve, reject) => {
+      ratchetReq.onerror = () => reject(ratchetReq.error);
+      ratchetReq.onsuccess = () => resolve(ratchetReq.result);
+      ratchetReq.onupgradeneeded = () => {
+        const db = ratchetReq.result;
+        if (!db.objectStoreNames.contains('ratchet-states')) {
+          db.createObjectStore('ratchet-states', { keyPath: 'convId' });
+        }
+      };
+    });
+    if (ratchetDB.objectStoreNames.contains('ratchet-states')) {
+      const tx = ratchetDB.transaction('ratchet-states', 'readwrite');
+      tx.objectStore('ratchet-states').clear();
+      await new Promise<void>((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+  } catch (e) {
+    console.warn('[KEY_MGR] Failed to clear ratchet states:', e);
+  }
+
+  console.log('[KEY_MGR] Session keys and ratchet states wiped');
+}

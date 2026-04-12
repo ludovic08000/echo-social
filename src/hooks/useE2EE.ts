@@ -292,6 +292,20 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         console.warn('[E2EE] Prekey/SPK refill failed:', e)
       );
 
+      // Auto-scrub: once keys are loaded into memory as non-extractable CryptoKeys,
+      // delete raw JWKs from IndexedDB if PIN wrap is active (keys already protected)
+      import('@/lib/crypto/pinWrap').then(async ({ hasWrappedKeys }) => {
+        const hasWrap = await hasWrappedKeys(user.id);
+        if (hasWrap) {
+          const { deleteRawIdentityKeys } = await import('@/lib/crypto/keyManager');
+          const { hasRawIdentityKeys } = await import('@/lib/crypto/keyManager');
+          if (await hasRawIdentityKeys(user.id)) {
+            await deleteRawIdentityKeys(user.id);
+            console.log('[E2EE] Auto-scrubbed raw JWKs (PIN wrap active)');
+          }
+        }
+      }).catch(() => {});
+
       setState(s => ({
         ...s,
         fingerprint: bundle.fingerprint,

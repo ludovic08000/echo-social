@@ -40,6 +40,7 @@ export {
   deleteSessionKey,
   incrementSessionMessageCount,
   wipeAllKeys,
+  wipeSessionKeys,
   type IdentityKeyPair,
   type SessionKey,
 } from './keyManager';
