@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Bot, Send, Loader2, TrendingUp, Camera, PenLine, Search, AlertTriangle, Zap } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
+import { SafeMarkdown } from '@/components/SafeMarkdown';
 
 type Message = { role: 'user' | 'assistant'; content: string };
 
@@ -223,7 +223,7 @@ export function AISalesCoach({
                   }`}>
                     {msg.role === 'assistant' ? (
                       <div className="prose prose-sm max-w-none text-xs [&_table]:text-[10px] [&_th]:px-1.5 [&_td]:px-1.5">
-                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        <SafeMarkdown>{msg.content}</SafeMarkdown>
                       </div>
                     ) : (
                       msg.content

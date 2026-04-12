@@ -1,5 +1,7 @@
-import { Shield, ShieldCheck, Lock, Zap, AlertTriangle } from 'lucide-react';
+import { useState } from 'react';
+import { ShieldCheck, Lock, Zap, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { SafetyNumberDialog } from './SafetyNumberDialog';
 
 interface EncryptionBadgeProps {
   encrypted: boolean;
@@ -52,14 +54,17 @@ interface EncryptionStatusBarProps {
   peerFingerprint: string | null;
   ratchetActive?: boolean;
   fingerprintChanged?: boolean;
+  peerName?: string;
+  conversationId?: string;
 }
 
-export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, ratchetActive, fingerprintChanged = false }: EncryptionStatusBarProps) {
+export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, ratchetActive, fingerprintChanged = false, peerName = 'Contact', conversationId = '' }: EncryptionStatusBarProps) {
+  const [showSafety, setShowSafety] = useState(false);
+
   if (!encrypted && !fingerprintChanged) return null;
 
   const hasKeys = !!fingerprint && !!peerFingerprint;
 
-  // Determine status — never show "initialisation" loading state, just show encrypted
   let statusText: string;
   let StatusIcon = ShieldCheck;
 
@@ -75,33 +80,43 @@ export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, r
   }
 
   return (
-    <div className={cn(
-      'flex items-center gap-1.5 px-4 py-1.5 border-b',
-      fingerprintChanged
-        ? 'bg-amber-500/10 border-amber-500/20'
-        : 'bg-emerald-500/5 border-emerald-500/10'
-    )}>
-      <StatusIcon className={cn(
-        'w-3.5 h-3.5 flex-shrink-0',
-        fingerprintChanged ? 'text-amber-600' : 'text-emerald-500'
-      )} />
-      <span className={cn(
-        'text-[10px] font-medium',
-        fingerprintChanged ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400'
+    <>
+      <div className={cn(
+        'flex items-center gap-1.5 px-4 py-1.5 border-b',
+        fingerprintChanged
+          ? 'bg-amber-500/10 border-amber-500/20'
+          : 'bg-emerald-500/5 border-emerald-500/10'
       )}>
-        {statusText}
-      </span>
-      {hasKeys && !fingerprintChanged && (
-        <button
-          onClick={() => {
-            const msg = `🔐 Numéros de sécurité\n\nVotre clé:\n${fingerprint}\n\nClé du contact:\n${peerFingerprint}\n\nComparez ces numéros en personne pour vérifier l'identité.`;
-            alert(msg);
-          }}
-          className="ml-auto text-[9px] text-emerald-600 dark:text-emerald-400 underline underline-offset-2"
-        >
-          Vérifier
-        </button>
+        <StatusIcon className={cn(
+          'w-3.5 h-3.5 flex-shrink-0',
+          fingerprintChanged ? 'text-amber-600' : 'text-emerald-500'
+        )} />
+        <span className={cn(
+          'text-[10px] font-medium',
+          fingerprintChanged ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400'
+        )}>
+          {statusText}
+        </span>
+        {hasKeys && !fingerprintChanged && (
+          <button
+            onClick={() => setShowSafety(true)}
+            className="ml-auto text-[9px] text-emerald-600 dark:text-emerald-400 underline underline-offset-2"
+          >
+            Vérifier
+          </button>
+        )}
+      </div>
+
+      {hasKeys && (
+        <SafetyNumberDialog
+          open={showSafety}
+          onOpenChange={setShowSafety}
+          myFingerprint={fingerprint!}
+          peerFingerprint={peerFingerprint!}
+          peerName={peerName}
+          conversationId={conversationId}
+        />
       )}
-    </div>
+    </>
   );
 }

@@ -16,7 +16,7 @@ import { useZeusSettings, useZeusAgentId, useContentStrikes } from '@/hooks/useZ
 import { useZeusConversations, useZeusMessages } from '@/hooks/useZeusConversations';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
-import ReactMarkdown from 'react-markdown';
+import { SafeMarkdown } from '@/components/SafeMarkdown';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { loadFeedWeights, type FeedWeights } from '@/lib/feedAlgorithm';
@@ -850,7 +850,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
                         )}>
                           {msg.role === 'assistant' ? (
                             <div className="prose prose-sm dark:prose-invert max-w-none [&>p]:m-0 [&>ul]:mt-1 [&_a]:text-primary [&_code]:text-primary [&_code]:bg-primary/10 [&_code]:rounded [&_code]:px-1">
-                              <ReactMarkdown>{displayText}</ReactMarkdown>
+                              <SafeMarkdown>{displayText}</SafeMarkdown>
                             </div>
                           ) : (
                             <p className="whitespace-pre-wrap">{displayText}</p>
