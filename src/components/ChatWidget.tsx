@@ -1458,8 +1458,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       {/* Voice recorder */}
       {showVoiceRecorder && (
         <VoiceRecorder
-          onSend={async (audioUrl, duration) => {
-            const body = `🎙️ voice:${audioUrl}|dur:${duration}`;
+          onSend={async (audioUrl, duration, encryptedBody) => {
+            const body = encryptedBody || `🎙️ voice:${audioUrl}|dur:${duration}`;
             if (isZeusConversation) {
               sendMessage.mutate({ conversationId, body });
             } else {

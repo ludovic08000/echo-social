@@ -36,7 +36,7 @@ function getSupportedMimeType(): { mimeType: string; ext: string } {
 }
 
 interface VoiceRecorderProps {
-  onSend: (audioUrl: string, duration: number) => void;
+  onSend: (audioUrl: string, duration: number, encryptedBody?: string) => void;
   onCancel: () => void;
 }
 
@@ -161,9 +161,18 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
       else if (blobType.includes('aac')) ext = 'aac';
       else if (blobType.includes('mp4') || blobType.includes('m4a')) ext = 'mp4';
 
+      // ─── E2EE: encrypt voice blob before upload ───
+      const { generateMediaKey, encryptMedia, buildMediaMessageBody } = await import('@/lib/crypto/mediaEncrypt');
+      const { key, keyB64 } = await generateMediaKey();
+      const encryptedBlob = await encryptMedia(audioBlob, key);
+
       const { uploadToR2 } = await import('@/lib/r2');
-      const { url } = await uploadToR2(audioBlob, 'voice', `voice-${Date.now()}.${ext}`);
-      onSend(url, duration);
+      const { url } = await uploadToR2(encryptedBlob, 'voice', `voice-${Date.now()}.enc.${ext}`);
+
+      // Build message body with embedded media key (will be E2EE-encrypted by the message queue)
+      const label = `🎙️ vocal:${url}|${duration}`;
+      const body = buildMediaMessageBody(label, keyB64);
+      onSend(url, duration, body);
     } catch (err: any) {
       console.error('Voice upload error:', err?.message || err);
       toast.error(`Erreur lors de l'envoi du vocal: ${err?.message || 'Réessayez'}`);
@@ -297,36 +306,71 @@ interface VoiceMessagePlayerProps {
   audioUrl: string;
   duration?: number;
   isMe?: boolean;
+  mediaKeyB64?: string;
 }
 
-export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePlayerProps) {
+export function VoiceMessagePlayer({ audioUrl, duration, isMe, mediaKeyB64 }: VoiceMessagePlayerProps) {
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(duration || 0);
   const [blobSrc, setBlobSrc] = useState<string | null>(null);
+  const [decrypting, setDecrypting] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const triedBlobRef = useRef(false);
+
+  // ─── E2EE: Decrypt encrypted voice on mount ───
+  useEffect(() => {
+    if (!mediaKeyB64) return; // Not encrypted, use URL directly
+    let cancelled = false;
+    setDecrypting(true);
+
+    (async () => {
+      try {
+        const { importMediaKey, decryptMedia } = await import('@/lib/crypto/mediaEncrypt');
+        const key = await importMediaKey(mediaKeyB64);
+        const res = await fetch(audioUrl);
+        if (!res.ok) throw new Error('fetch failed');
+        const encryptedData = await res.arrayBuffer();
+        const plainAudio = await decryptMedia(encryptedData, key);
+
+        if (cancelled) return;
+        // Guess mime from URL extension
+        let mime = 'audio/mp4';
+        if (audioUrl.includes('.webm')) mime = 'audio/webm';
+        else if (audioUrl.includes('.ogg')) mime = 'audio/ogg';
+        else if (audioUrl.includes('.wav')) mime = 'audio/wav';
+
+        const blob = new Blob([plainAudio], { type: mime });
+        setBlobSrc(URL.createObjectURL(blob));
+      } catch (err) {
+        if (!cancelled) setError(true);
+      } finally {
+        if (!cancelled) setDecrypting(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [audioUrl, mediaKeyB64]);
 
   // On iOS Safari, webm URLs won't play via <audio src>.
   // Fallback: fetch as blob and create an object URL, which sometimes works
   // for formats the browser can partially decode.
   const tryBlobFallback = useCallback(async () => {
-    if (triedBlobRef.current) return;
+    if (triedBlobRef.current || mediaKeyB64) return; // Skip if encrypted (already handled)
     triedBlobRef.current = true;
     try {
       const res = await fetch(audioUrl);
       if (!res.ok) throw new Error('fetch failed');
       const blob = await res.blob();
-      // Try to re-tag as audio/mp4 if it's webm (won't fix codec but helps some browsers)
       const url = URL.createObjectURL(blob);
       setBlobSrc(url);
       setError(false);
     } catch {
       setError(true);
     }
-  }, [audioUrl]);
+  }, [audioUrl, mediaKeyB64]);
 
   const togglePlay = (e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -414,7 +458,20 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe }: VoiceMessagePla
   };
 
   const displayTime = playing ? formatTime(currentTime) : formatTime(audioDuration);
-  const effectiveSrc = blobSrc || audioUrl;
+  // For encrypted audio, only use blobSrc (decrypted); for plain audio, use URL directly or blobSrc fallback
+  const effectiveSrc = mediaKeyB64 ? (blobSrc || '') : (blobSrc || audioUrl);
+
+  if (decrypting) {
+    return (
+      <div className={cn(
+        "flex items-center gap-2 px-3 py-2 rounded-2xl min-w-[160px]",
+        isMe ? "bg-primary text-primary-foreground" : "bg-secondary"
+      )}>
+        <Loader2 className="w-4 h-4 animate-spin" />
+        <span className="text-xs">Déchiffrement...</span>
+      </div>
+    );
+  }
 
   return (
     <div className={cn(
