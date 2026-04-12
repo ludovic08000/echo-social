@@ -30,7 +30,14 @@ export function FriendshipButton({ userId, showMessage = true, size = 'sm' }: Fr
   const createConversation = useCreateConversation();
   const [justSent, setJustSent] = useState(false);
 
-  if (!user || user.id === userId) return null;
+  if (!user) {
+    return (
+      <Button size={size} variant="default" onClick={() => navigate('/signup', { state: { from: window.location.pathname } })}>
+        <UserPlus className="w-4 h-4 mr-1" /> Ajouter
+      </Button>
+    );
+  }
+  if (user.id === userId) return null;
 
   const handleSendRequest = () => {
     sendRequest.mutate(userId, {

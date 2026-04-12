@@ -91,6 +91,10 @@ export function CommentsList({ postId }: CommentsListProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) {
+      window.location.href = '/signup';
+      return;
+    }
     if ((!newComment.trim() && !attachedMedia) || !user) return;
 
     let body = newComment.trim();

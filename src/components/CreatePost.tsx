@@ -65,6 +65,9 @@ export function CreatePost() {
   const videoInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Guest mode: don't render the create post form
+  if (!user) return null;
+
   const AI_ACTIONS = [
     { action: 'improve', label: 'Améliorer', icon: Sparkles, desc: 'Corrige & améliore' },
     { action: 'formal', label: 'Formel', icon: Briefcase, desc: 'Plus professionnel' },

@@ -197,13 +197,23 @@ function AppContent() {
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/auth/confirm" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}><AuthConfirmPage /></Suspense>} />
               
-              {/* Protected routes */}
-              <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
-              <Route path="/post/:id" element={<ProtectedRoute><PostDetail /></ProtectedRoute>} />
+              {/* Browsable routes (guest-friendly) */}
+              <Route path="/feed" element={<Feed />} />
+              <Route path="/post/:id" element={<PostDetail />} />
+              <Route path="/profile/:id" element={<Profile />} />
+              <Route path="/search" element={<Search />} />
+              <Route path="/videos" element={<Videos />} />
+              <Route path="/lives" element={<Lives />} />
+              <Route path="/live/:id" element={<LiveWatch />} />
+              <Route path="/marketplace" element={<Marketplace />} />
+              <Route path="/marketplace/product/:id" element={<ProductDetailPage />} />
+              <Route path="/challenges" element={<Challenges />} />
+              <Route path="/channels" element={<Channels />} />
+              <Route path="/games" element={<Games />} />
+
+              {/* Protected routes (require auth) */}
               <Route path="/create" element={<ProtectedRoute><CreatePostPage /></ProtectedRoute>} />
-              <Route path="/profile/:id" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-              <Route path="/search" element={<ProtectedRoute><Search /></ProtectedRoute>} />
               <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
@@ -213,17 +223,9 @@ function AppContent() {
               <Route path="/groups/:id" element={<ProtectedRoute><GroupDetail /></ProtectedRoute>} />
               <Route path="/pages" element={<ProtectedRoute><Pages /></ProtectedRoute>} />
               <Route path="/pages/:id" element={<ProtectedRoute><PageDetail /></ProtectedRoute>} />
-              <Route path="/videos" element={<ProtectedRoute><Videos /></ProtectedRoute>} />
-              <Route path="/lives" element={<ProtectedRoute><Lives /></ProtectedRoute>} />
-              <Route path="/live/:id" element={<ProtectedRoute><LiveWatch /></ProtectedRoute>} />
               <Route path="/live" element={<ProtectedRoute><LiveScreen /></ProtectedRoute>} />
               <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
-              <Route path="/challenges" element={<ProtectedRoute><Challenges /></ProtectedRoute>} />
-              <Route path="/games" element={<ProtectedRoute><Games /></ProtectedRoute>} />
               <Route path="/friend-match" element={<ProtectedRoute><FriendMatch /></ProtectedRoute>} />
-              <Route path="/channels" element={<ProtectedRoute><Channels /></ProtectedRoute>} />
-              <Route path="/marketplace" element={<ProtectedRoute><Marketplace /></ProtectedRoute>} />
-              <Route path="/marketplace/product/:id" element={<ProtectedRoute><ProductDetailPage /></ProtectedRoute>} />
               <Route path="/ai-engine" element={<ProtectedRoute><AIEngine /></ProtectedRoute>} />
               <Route path="/ads" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
               <Route path="/publicites" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />

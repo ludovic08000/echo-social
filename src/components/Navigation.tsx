@@ -25,7 +25,31 @@ export function MobileNav() {
   const { openChat } = useChatWidget();
   const [showMore, setShowMore] = React.useState(false);
 
-  if (!user) return null;
+  // Guest mode: show simplified nav
+  if (!user) {
+    return (
+      <nav className="fixed bottom-0 left-0 right-0 z-50 safe-area-pb bg-background/95 backdrop-blur-xl border-t border-border/10">
+        <div className="flex items-stretch h-[50px]">
+          <Link to="/feed" className={cn('flex flex-col items-center justify-center gap-0.5 flex-1 min-w-0 py-2', location.pathname === '/feed' ? 'text-primary' : 'text-muted-foreground')}>
+            <Home className="w-5 h-5" strokeWidth={1.7} />
+            <span className="text-[10px] font-medium">Explorer</span>
+          </Link>
+          <Link to="/search" className={cn('flex flex-col items-center justify-center gap-0.5 flex-1 min-w-0 py-2', location.pathname === '/search' ? 'text-primary' : 'text-muted-foreground')}>
+            <Search className="w-5 h-5" strokeWidth={1.7} />
+            <span className="text-[10px] font-medium">Chercher</span>
+          </Link>
+          <Link to="/videos" className={cn('flex flex-col items-center justify-center gap-0.5 flex-1 min-w-0 py-2', location.pathname === '/videos' ? 'text-primary' : 'text-muted-foreground')}>
+            <Video className="w-5 h-5" strokeWidth={1.7} />
+            <span className="text-[10px] font-medium">Vidéos</span>
+          </Link>
+          <Link to="/signup" className="flex flex-col items-center justify-center gap-0.5 flex-1 min-w-0 py-2 text-primary">
+            <User className="w-5 h-5" strokeWidth={1.7} />
+            <span className="text-[10px] font-bold">S'inscrire</span>
+          </Link>
+        </div>
+      </nav>
+    );
+  }
 
   const active = (path: string) => {
     if (path === '/feed') return location.pathname === '/feed' || location.pathname === '/';

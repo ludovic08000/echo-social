@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Heart, ThumbsUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -84,6 +85,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   const [cooldown, setCooldown] = useState(false);
   const [optimisticReaction, setOptimisticReaction] = useState<ReactionType | null>(null);
   const { user } = useAuth();
+  const navigate = useNavigate();
   const addReaction = useAddReaction();
   const removeReaction = useRemoveReaction();
   const interactionLockRef = useRef(false);
@@ -129,7 +131,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   const handleReaction = useCallback((reactionType: ReactionType) => {
     if (interactionLockRef.current || isBusy || activeReaction) return;
     if (!user) {
-      toast({ title: 'Connexion requise', description: 'Connectez-vous pour réagir', variant: 'destructive' });
+      navigate('/signup', { state: { from: window.location.pathname } });
       return;
     }
 
