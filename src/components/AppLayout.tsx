@@ -17,6 +17,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { UXModeSwitchCompact } from '@/components/UXModeSwitch';
 import { useUXMode } from '@/hooks/useUXMode';
 import { FlowRadialMenu } from '@/components/flow/FlowRadialMenu';
+import { GuestBanner } from '@/components/GuestBanner';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -103,6 +104,7 @@ export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
 
   return (
     <div className="min-h-screen bg-background">
+      {!user && <GuestBanner />}
       <MobileHeader />
 
       <main className="pb-16">
