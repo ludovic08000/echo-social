@@ -42,6 +42,10 @@ const CAPSULE_OPTIONS = [
 
 export function CreatePost() {
   const { user } = useAuth();
+  
+  // Guest mode: don't render the create post form
+  if (!user) return null;
+  
   const navigate = useNavigate();
   const { data: profile } = useProfile();
   const { verifyAge } = useAgeVerification();
