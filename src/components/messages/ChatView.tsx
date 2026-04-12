@@ -934,9 +934,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
         {/* Voice recorder overlay */}
         {showVoiceRecorder && (
           <VoiceRecorder
-            onSend={(audioUrl, dur) => {
+            onSend={(audioUrl, dur, encryptedBody) => {
               setShowVoiceRecorder(false);
-              queue.sendMessage(`🎙️ vocal:${audioUrl}|${dur}`).catch(() => toast.error('Erreur envoi vocal'));
+              const body = encryptedBody || `🎙️ vocal:${audioUrl}|${dur}`;
+              queue.sendMessage(body).catch(() => toast.error('Erreur envoi vocal'));
             }}
             onCancel={() => setShowVoiceRecorder(false)}
           />
