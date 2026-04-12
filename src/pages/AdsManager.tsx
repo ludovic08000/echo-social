@@ -10,7 +10,7 @@ import {
   Megaphone, Plus, Sparkles, Loader2, Eye, MousePointerClick, 
   DollarSign, Calendar, Target, Zap, BarChart3, CheckCircle2, ArrowRight,
   Users, Clock, Crown, Shield, ShieldCheck, ShieldX, TrendingUp,
-  UserCheck, Send, Bot, User, ImagePlus, Video, Film, X, CreditCard
+  UserCheck, Send, Bot, User, ImagePlus, Video, Film, X, CreditCard, Languages
 } from 'lucide-react';
 import { useAdCampaigns, useCreateAdCampaign, useActivateAdCampaign, useAdAIAssistant, useAdDailyStats, getAdPricing, DurationType, AdCampaign } from '@/hooks/useAdCampaigns';
 import { cn } from '@/lib/utils';
