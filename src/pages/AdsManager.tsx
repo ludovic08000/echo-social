@@ -125,6 +125,7 @@ function AdChatCreator() {
         body: {
           domain: 'ads',
           action: 'chat',
+          targetLang: adLang,
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
         },
       });
@@ -135,6 +136,7 @@ function AdChatCreator() {
         setGeneratedAd(data.ad);
         if (data.ad.recommended_duration) setSelectedDuration(data.ad.recommended_duration);
         if (data.ad.generated_image_url) setImageUrl(data.ad.generated_image_url);
+        const langLabel = AD_LANGUAGES.find(l => l.value === adLang)?.label || adLang;
         setMessages(prev => [...prev, {
           role: 'assistant',
           content: data.message + "\n\n✅ **Votre publicité est prête !** " + (data.ad.generated_image_url ? "L'image a été générée par l'IA. " : "") + "Vérifiez l'aperçu ci-dessous et lancez votre campagne.",
