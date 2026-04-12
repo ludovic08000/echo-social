@@ -22,8 +22,8 @@ interface SafeMarkdownProps {
 
 export function SafeMarkdown({ children, className }: SafeMarkdownProps) {
   return (
+    <div className={className}>
     <ReactMarkdown
-      className={className}
       allowedElements={ALLOWED_ELEMENTS}
       skipHtml
       components={{
