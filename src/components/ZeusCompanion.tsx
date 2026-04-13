@@ -930,16 +930,25 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
 
                 {/* Input */}
                 <div className="px-3 py-3 border-t border-border bg-card">
-                  <form onSubmit={e => { e.preventDefault(); sendMessage(); }} className="flex gap-2">
-                    <Input ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
-                      placeholder={`Message ${zeusName}...`}
-                      className="flex-1 rounded-xl h-10 text-sm"
-                      disabled={loading || !zeusAgentId} />
-                    <Button type="submit" size="icon" disabled={!input.trim() || loading || !zeusAgentId}
-                      className="h-10 w-10 rounded-xl">
-                      <Send className="w-4 h-4" />
-                    </Button>
-                  </form>
+                  {guestLimitReached ? (
+                    <div className="flex flex-col items-center gap-2 py-1">
+                      <p className="text-xs text-muted-foreground text-center">Vous avez utilisé vos 3 questions d'essai</p>
+                      <Button size="sm" className="rounded-xl w-full" onClick={() => navigate('/signup')}>
+                        S'inscrire pour continuer
+                      </Button>
+                    </div>
+                  ) : (
+                    <form onSubmit={e => { e.preventDefault(); sendMessage(); }} className="flex gap-2">
+                      <Input ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
+                        placeholder={!user ? `Essayez Zeus (${Math.max(0, 3 - guestCount)} restantes)...` : `Message ${zeusName}...`}
+                        className="flex-1 rounded-xl h-10 text-sm"
+                        disabled={loading || !zeusAgentId} />
+                      <Button type="submit" size="icon" disabled={!input.trim() || loading || !zeusAgentId}
+                        className="h-10 w-10 rounded-xl">
+                        <Send className="w-4 h-4" />
+                      </Button>
+                    </form>
+                  )}
                 </div>
               </>
             )}
