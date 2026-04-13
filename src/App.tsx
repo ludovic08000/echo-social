@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { ParentalGateProvider } from "@/components/ParentalGate";
 import { I18nProvider } from "@/lib/i18n";
@@ -173,7 +173,8 @@ function AppContent() {
             <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
             <Routes>
               {/* Public routes */}
-              <Route path="/" element={<PublicOnlyRoute><Landing /></PublicOnlyRoute>} />
+              <Route path="/" element={<Navigate to="/feed" replace />} />
+              <Route path="/landing" element={<Landing />} />
               <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
               <Route path="/signup" element={<PublicOnlyRoute><Signup /></PublicOnlyRoute>} />
               <Route path="/legal" element={<LegalTerms />} />

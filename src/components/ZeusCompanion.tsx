@@ -561,32 +561,62 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
 
   const sendMessage = useCallback(async (overrideText?: string) => {
     const text = overrideText || input.trim();
-    if (!text || !zeusAgentId || loading) return;
+    if (!text || loading) return;
+
+    // Guest mode: check 3-question limit
+    if (!user) {
+      const guestCount = parseInt(localStorage.getItem('forsure-zeus-guest-count') || '0', 10);
+      if (guestCount >= 3) {
+        toast.info('Inscrivez-vous pour continuer à utiliser Zeus', {
+          description: '3 questions d\'essai utilisées. Créez un compte gratuit !',
+          action: { label: "S'inscrire", onClick: () => navigate('/signup') },
+        });
+        return;
+      }
+    }
+
+    if (!zeusAgentId) return;
+
     const userMsg: Msg = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not authenticated');
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      let headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      };
+
+      if (user) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error('Not authenticated');
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      } else {
+        headers['Authorization'] = `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`;
+      }
+
       const resp = await fetch(`${supabaseUrl}/functions/v1/agent-chat`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        },
-        body: JSON.stringify({ agent_id: zeusAgentId, conversation_id: conversationId, message: userMsg.content }),
+        headers,
+        body: JSON.stringify({ agent_id: zeusAgentId, conversation_id: user ? conversationId : null, message: userMsg.content }),
       });
 
-      const convId = resp.headers.get('X-Conversation-Id');
-      if (convId && convId !== conversationId) { setConversationId(convId); setIsNewConversation(false); refetchConversations(); }
+      if (user) {
+        const convId = resp.headers.get('X-Conversation-Id');
+        if (convId && convId !== conversationId) { setConversationId(convId); setIsNewConversation(false); refetchConversations(); }
+      }
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: 'Erreur' }));
         throw new Error(err.message || err.error || 'Erreur');
+      }
+
+      // Increment guest counter
+      if (!user) {
+        const prev = parseInt(localStorage.getItem('forsure-zeus-guest-count') || '0', 10);
+        localStorage.setItem('forsure-zeus-guest-count', String(prev + 1));
       }
 
       const reader = resp.body?.getReader();
@@ -632,12 +662,26 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
           });
         } catch {}
       }
+
+      // After guest response, show remaining count
+      if (!user) {
+        const remaining = 3 - parseInt(localStorage.getItem('forsure-zeus-guest-count') || '0', 10);
+        if (remaining > 0) {
+          toast.info(`${remaining} question${remaining > 1 ? 's' : ''} d'essai restante${remaining > 1 ? 's' : ''}`, { duration: 3000 });
+        } else {
+          toast.info('Vous avez utilisé vos 3 questions d\'essai !', {
+            description: 'Inscrivez-vous pour discuter sans limite avec Zeus.',
+            action: { label: "S'inscrire", onClick: () => navigate('/signup') },
+            duration: 6000,
+          });
+        }
+      }
     } catch (err: any) {
       setMessages(prev => [...prev, { role: 'assistant', content: `❌ ${err.message}` }]);
     } finally {
       setLoading(false);
     }
-  }, [input, zeusAgentId, conversationId, loading, refetchConversations]);
+  }, [input, zeusAgentId, conversationId, loading, refetchConversations, user, navigate]);
 
   // Auto-send pending translate/rewrite messages
   useEffect(() => {
@@ -653,12 +697,15 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     setEditingName(false);
   };
 
-  if (!user) return null;
+  const guestCount = parseInt(localStorage.getItem('forsure-zeus-guest-count') || '0', 10);
+  const guestLimitReached = !user && guestCount >= 3;
 
   const tabs = [
     { id: 'chat' as ActiveTab, icon: <MessageSquare className="w-3.5 h-3.5" />, label: 'Chat' },
-    { id: 'algo' as ActiveTab, icon: <Sliders className="w-3.5 h-3.5" />, label: 'Algo' },
-    { id: 'history' as ActiveTab, icon: <History className="w-3.5 h-3.5" />, label: 'Historique' },
+    ...(user ? [
+      { id: 'algo' as ActiveTab, icon: <Sliders className="w-3.5 h-3.5" />, label: 'Algo' },
+      { id: 'history' as ActiveTab, icon: <History className="w-3.5 h-3.5" />, label: 'Historique' },
+    ] : []),
   ];
 
   return (
@@ -883,16 +930,25 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
 
                 {/* Input */}
                 <div className="px-3 py-3 border-t border-border bg-card">
-                  <form onSubmit={e => { e.preventDefault(); sendMessage(); }} className="flex gap-2">
-                    <Input ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
-                      placeholder={`Message ${zeusName}...`}
-                      className="flex-1 rounded-xl h-10 text-sm"
-                      disabled={loading || !zeusAgentId} />
-                    <Button type="submit" size="icon" disabled={!input.trim() || loading || !zeusAgentId}
-                      className="h-10 w-10 rounded-xl">
-                      <Send className="w-4 h-4" />
-                    </Button>
-                  </form>
+                  {guestLimitReached ? (
+                    <div className="flex flex-col items-center gap-2 py-1">
+                      <p className="text-xs text-muted-foreground text-center">Vous avez utilisé vos 3 questions d'essai</p>
+                      <Button size="sm" className="rounded-xl w-full" onClick={() => navigate('/signup')}>
+                        S'inscrire pour continuer
+                      </Button>
+                    </div>
+                  ) : (
+                    <form onSubmit={e => { e.preventDefault(); sendMessage(); }} className="flex gap-2">
+                      <Input ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
+                        placeholder={!user ? `Essayez Zeus (${Math.max(0, 3 - guestCount)} restantes)...` : `Message ${zeusName}...`}
+                        className="flex-1 rounded-xl h-10 text-sm"
+                        disabled={loading || !zeusAgentId} />
+                      <Button type="submit" size="icon" disabled={!input.trim() || loading || !zeusAgentId}
+                        className="h-10 w-10 rounded-xl">
+                        <Send className="w-4 h-4" />
+                      </Button>
+                    </form>
+                  )}
                 </div>
               </>
             )}
