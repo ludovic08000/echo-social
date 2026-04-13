@@ -14,7 +14,8 @@ export function FeedZeusCard() {
   const { user } = useAuth();
   const { zeusName } = useZeusSettings();
 
-  if (!user) return null;
+  const guestQuestions = parseInt(localStorage.getItem('forsure-zeus-guest-count') || '0', 10);
+  const guestLimitReached = !user && guestQuestions >= 3;
 
   const openZeus = (action?: string) => {
     window.dispatchEvent(new CustomEvent('open-zeus', { detail: action ? { action } : undefined }));

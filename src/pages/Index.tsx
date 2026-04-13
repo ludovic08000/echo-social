@@ -1,6 +1,5 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
-import Landing from './Landing';
 
 const Index = () => {
   const { user, loading } = useAuth();
@@ -16,11 +15,8 @@ const Index = () => {
     );
   }
 
-  if (user) {
-    return <Navigate to="/feed" replace />;
-  }
-
-  return <Landing />;
+  // Both guests and logged-in users go to the feed
+  return <Navigate to="/feed" replace />;
 };
 
 export default Index;
