@@ -697,12 +697,15 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     setEditingName(false);
   };
 
-  if (!user) return null;
+  const guestCount = parseInt(localStorage.getItem('forsure-zeus-guest-count') || '0', 10);
+  const guestLimitReached = !user && guestCount >= 3;
 
   const tabs = [
     { id: 'chat' as ActiveTab, icon: <MessageSquare className="w-3.5 h-3.5" />, label: 'Chat' },
-    { id: 'algo' as ActiveTab, icon: <Sliders className="w-3.5 h-3.5" />, label: 'Algo' },
-    { id: 'history' as ActiveTab, icon: <History className="w-3.5 h-3.5" />, label: 'Historique' },
+    ...(user ? [
+      { id: 'algo' as ActiveTab, icon: <Sliders className="w-3.5 h-3.5" />, label: 'Algo' },
+      { id: 'history' as ActiveTab, icon: <History className="w-3.5 h-3.5" />, label: 'Historique' },
+    ] : []),
   ];
 
   return (
