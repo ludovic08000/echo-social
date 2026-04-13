@@ -1,7 +1,8 @@
-import { Zap, MessageSquare, Sparkles, PenLine, Search, Globe } from 'lucide-react';
+import { Zap, MessageSquare, Sparkles, PenLine, Search, Globe, Lock } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useZeusSettings } from '@/hooks/useZeusCompanion';
 import { useAuth } from '@/lib/auth';
+import { Link } from 'react-router-dom';
 
 const ZEUS_ACTIONS = [
   { icon: PenLine, label: 'Créer un post', action: 'create-post' },
@@ -14,8 +15,8 @@ export function FeedZeusCard() {
   const { user } = useAuth();
   const { zeusName } = useZeusSettings();
 
-  const guestQuestions = parseInt(localStorage.getItem('forsure-zeus-guest-count') || '0', 10);
-  const guestLimitReached = !user && guestQuestions >= 3;
+  const guestCount = parseInt(localStorage.getItem('forsure-zeus-guest-count') || '0', 10);
+  const guestLimitReached = !user && guestCount >= 3;
 
   const openZeus = (action?: string) => {
     window.dispatchEvent(new CustomEvent('open-zeus', { detail: action ? { action } : undefined }));
@@ -65,12 +66,24 @@ export function FeedZeusCard() {
                 <span className="text-muted-foreground font-normal text-xs ml-1.5">— IA Copilote</span>
               </p>
               <p className="text-[12px] text-muted-foreground mt-0.5 leading-snug">
-                Demande-moi n'importe quoi : créer, traduire, explorer…
+                {!user
+                  ? `Essayez Zeus gratuitement — ${Math.max(0, 3 - guestCount)} question${3 - guestCount !== 1 ? 's' : ''} restante${3 - guestCount !== 1 ? 's' : ''}`
+                  : 'Demande-moi n\'importe quoi : créer, traduire, explorer…'}
               </p>
             </div>
             <MessageSquare className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
           </div>
         </button>
+
+        {/* Guest limit reached banner */}
+        {guestLimitReached && (
+          <div className="px-4 pb-3">
+            <Link to="/signup" className="flex items-center gap-2 p-2.5 rounded-xl bg-primary/10 border border-primary/20 text-center">
+              <Lock className="w-4 h-4 text-primary shrink-0" />
+              <span className="text-[11px] font-medium text-primary">Inscrivez-vous pour continuer à discuter avec Zeus</span>
+            </Link>
+          </div>
+        )}
 
         {/* Quick actions */}
         <div className="flex gap-1.5 px-4 pb-3.5">
@@ -78,7 +91,8 @@ export function FeedZeusCard() {
             <button
               key={a.action}
               onClick={() => openZeus(a.action)}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-secondary/60 hover:bg-primary/10 hover:text-primary text-muted-foreground text-[11px] font-medium transition-all duration-200 active:scale-95"
+              disabled={guestLimitReached}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-secondary/60 hover:bg-primary/10 hover:text-primary text-muted-foreground text-[11px] font-medium transition-all duration-200 active:scale-95 disabled:opacity-40 disabled:pointer-events-none"
             >
               <a.icon className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">{a.label}</span>
