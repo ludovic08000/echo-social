@@ -42,6 +42,10 @@ export function MobileNav() {
             <Video className="w-5 h-5" strokeWidth={1.7} />
             <span className="text-[10px] font-medium">Vidéos</span>
           </Link>
+          <Link to="/settings" className={cn('flex flex-col items-center justify-center gap-0.5 flex-1 min-w-0 py-2', location.pathname === '/settings' ? 'text-primary' : 'text-muted-foreground')}>
+            <Settings className="w-5 h-5" strokeWidth={1.7} />
+            <span className="text-[10px] font-medium">Réglages</span>
+          </Link>
           <Link to="/signup" className="flex flex-col items-center justify-center gap-0.5 flex-1 min-w-0 py-2 text-primary">
             <User className="w-5 h-5" strokeWidth={1.7} />
             <span className="text-[10px] font-bold">S'inscrire</span>
