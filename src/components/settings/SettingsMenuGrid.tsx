@@ -63,14 +63,14 @@ export function SettingsMenuGrid({ activeTab, onTabChange }: SettingsMenuGridPro
   const allTabs = [
     { id: 'profile', label: t('settings.profile'), desc: t('settings.profileDesc'), icon: User, guestAllowed: false },
     { id: 'appearance', label: t('settings.appearance'), desc: t('settings.appearanceDesc'), icon: Palette, guestAllowed: true },
-    { id: 'wellbeing', label: t('settings.wellbeing'), desc: t('settings.wellbeingDesc'), icon: Heart, guestAllowed: false },
-    { id: 'content', label: t('settings.content'), desc: t('settings.contentDesc'), icon: Brain, guestAllowed: false },
+    { id: 'wellbeing', label: t('settings.wellbeing'), desc: t('settings.wellbeingDesc'), icon: Heart, guestAllowed: true },
+    { id: 'content', label: t('settings.content'), desc: t('settings.contentDesc'), icon: Brain, guestAllowed: true },
     { id: 'accessibility', label: t('settings.accessibility'), desc: t('settings.accessibilityDesc'), icon: Accessibility, guestAllowed: true },
     { id: 'groups', label: t('settings.groups'), desc: t('settings.groupsDesc'), icon: Users, guestAllowed: false },
     { id: 'pages', label: t('settings.pages'), desc: t('settings.pagesDesc'), icon: FileText, guestAllowed: false },
     { id: 'privacy', label: t('settings.privacy'), desc: t('settings.privacyDesc'), icon: Shield, guestAllowed: false },
     { id: 'notifications', label: t('settings.notifications'), desc: t('settings.notificationsDesc'), icon: Bell, guestAllowed: false },
-    { id: 'parental', label: 'Contrôle parental', desc: 'Code PIN et filtrage de contenu', icon: Baby, guestAllowed: false },
+    { id: 'parental', label: 'Contrôle parental', desc: 'Code PIN et filtrage de contenu', icon: Baby, guestAllowed: true },
   ];
 
   const tabs = user ? allTabs : allTabs.filter(tab => tab.guestAllowed);
