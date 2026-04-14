@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Image, Video, X, Send, Timer, Rocket, ShoppingBag, Sparkles, Loader2, Check, Globe, Type, ArrowDownRight, ArrowUpRight, Briefcase, SmilePlus, Radio } from 'lucide-react';
+import { Image, Video, X, Send, Timer, Rocket, ShoppingBag, Sparkles, Loader2, Check, Globe, Type, ArrowDownRight, ArrowUpRight, Briefcase, SmilePlus, Radio, User } from 'lucide-react';
 import { useCreatePost } from '@/hooks/usePosts';
 import { usePostModeration } from '@/hooks/useZeusCompanion';
 import { useProfile } from '@/hooks/useProfile';
@@ -65,8 +65,23 @@ export function CreatePost() {
   const videoInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Guest mode: don't render the create post form
-  if (!user) return null;
+  // Guest mode: show a teaser that redirects to signup
+  if (!user) {
+    return (
+      <div
+        onClick={() => navigate('/signup')}
+        className="mx-4 p-4 rounded-2xl border border-border/40 bg-card/80 backdrop-blur-sm cursor-pointer hover:border-primary/30 hover:shadow-md transition-all duration-200 active:scale-[0.98]"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+            <User className="w-5 h-5 text-muted-foreground" />
+          </div>
+          <p className="text-sm text-muted-foreground flex-1">Quoi de neuf ? Inscrivez-vous pour publier…</p>
+          <Send className="w-4 h-4 text-primary" />
+        </div>
+      </div>
+    );
+  }
 
   const AI_ACTIONS = [
     { action: 'improve', label: 'Améliorer', icon: Sparkles, desc: 'Corrige & améliore' },

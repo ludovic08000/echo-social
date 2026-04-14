@@ -138,7 +138,7 @@ export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
         )}
       </main>
       
-      {user && <ZeusCompanion />}
+      <ZeusCompanion />
       {user && <OnboardingBubbles />}
       {user && isFlow && <FlowRadialMenu />}
       <MobileNav />
