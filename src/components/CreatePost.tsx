@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Image, Video, X, Send, Timer, Rocket, ShoppingBag, Sparkles, Loader2, Check, Globe, Type, ArrowDownRight, ArrowUpRight, Briefcase, SmilePlus, Radio } from 'lucide-react';
+import { Image, Video, X, Send, Timer, Rocket, ShoppingBag, Sparkles, Loader2, Check, Globe, Type, ArrowDownRight, ArrowUpRight, Briefcase, SmilePlus, Radio, User } from 'lucide-react';
 import { useCreatePost } from '@/hooks/usePosts';
 import { usePostModeration } from '@/hooks/useZeusCompanion';
 import { useProfile } from '@/hooks/useProfile';
