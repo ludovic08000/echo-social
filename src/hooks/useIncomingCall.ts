@@ -290,22 +290,23 @@ export function useIncomingCall() {
         console.log('[IncomingCall] Realtime status:', status);
       });
 
-    // Also listen on the notifications table for call notifications as a backup
-    const notifChannel = supabase
-      .channel(`call-notif-${user.id}`)
+    // Secondary Realtime channel: listen for direct active_calls changes without filter
+    // (backup in case UUID filter doesn't match)
+    const backupChannel = supabase
+      .channel(`call-backup-${user.id}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
+          table: 'active_calls',
         },
         (payload) => {
-          const notif = payload.new as any;
-          if (notif?.type === 'incoming_call') {
-            console.log('[IncomingCall] 🔔 Notification backup triggered, forcing poll');
-            pollForCalls();
+          const callData = payload.new as any;
+          if (callData?.callee_id === user.id && callData?.status === 'ringing' && !handledCallIdsRef.current.has(callData.id)) {
+            console.log('[IncomingCall] 🔔 Backup channel caught call:', callData.id);
+            handledCallIdsRef.current.add(callData.id);
+            handleIncomingCall(callData);
           }
         }
       )
@@ -313,7 +314,7 @@ export function useIncomingCall() {
 
     return () => {
       supabase.removeChannel(channel);
-      supabase.removeChannel(notifChannel);
+      supabase.removeChannel(backupChannel);
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       ringtoneRef.current.stop();
       encryptedCallKeyRef.current = null;
