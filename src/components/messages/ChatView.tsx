@@ -761,11 +761,13 @@ export function ChatView({ conversationId }: ChatViewProps) {
               </div>
             ))}
 
-            {/* Pending outbound messages from queue */}
-            {queue.pendingMessages.map(pm => (
-              <div key={pm.localId} className="flex items-end gap-1.5 mt-2">
+            {/* Pending outbound messages from queue (exclude already-sent) */}
+            {queue.pendingMessages
+              .filter(pm => pm.status !== 'sent')
+              .map(pm => (
+              <div key={pm.localId} className="flex items-end gap-1.5 mt-2 flex-row-reverse">
                 <div className="w-7 flex-shrink-0 mb-0.5" />
-                <div className="max-w-[70%] flex flex-col items-start">
+                <div className="max-w-[70%] flex flex-col items-end">
                   <div className={cn(
                     'px-3 py-1.5 text-[15px] break-words leading-relaxed rounded-[18px]',
                     'bg-primary/70 text-primary-foreground',
