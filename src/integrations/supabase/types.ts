@@ -4801,6 +4801,51 @@ export type Database = {
           },
         ]
       }
+      wellbeing_scores: {
+        Row: {
+          break_frequency_score: number
+          computed_at: string
+          content_diversity_score: number
+          created_at: string
+          factors: Json | null
+          id: string
+          positivity_score: number
+          score: number
+          screen_time_score: number
+          social_balance_score: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          break_frequency_score?: number
+          computed_at?: string
+          content_diversity_score?: number
+          created_at?: string
+          factors?: Json | null
+          id?: string
+          positivity_score?: number
+          score?: number
+          screen_time_score?: number
+          social_balance_score?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          break_frequency_score?: number
+          computed_at?: string
+          content_diversity_score?: number
+          created_at?: string
+          factors?: Json | null
+          id?: string
+          positivity_score?: number
+          score?: number
+          screen_time_score?: number
+          social_balance_score?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       zeus_conversations: {
         Row: {
           created_at: string
@@ -5242,6 +5287,10 @@ export type Database = {
         }[]
       }
       get_public_trust_score: { Args: { p_user_id: string }; Returns: number }
+      get_public_wellbeing_score: {
+        Args: { p_user_id: string }
+        Returns: number
+      }
       get_safe_live_stream: {
         Args: { p_live_id: string }
         Returns: {
