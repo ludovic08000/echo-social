@@ -10,6 +10,7 @@ import { useCallback, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
+import { openE2EEDB } from '@/lib/crypto/indexedDb';
 
 const PBKDF2_ITERATIONS = 600_000;
 
@@ -42,11 +43,7 @@ async function collectLocalKeys(): Promise<string> {
   const data: Record<string, any> = {};
 
   try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-e2ee', 3);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result);
-    });
+    const db = await openE2EEDB();
     for (const storeName of Array.from(db.objectStoreNames)) {
       const tx = db.transaction(storeName, 'readonly');
       const all = await new Promise<any[]>((resolve, reject) => {
@@ -93,16 +90,7 @@ async function restoreLocalKeys(json: string): Promise<void> {
     if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
     const storeName = key.replace('e2ee:', '');
     try {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const req = indexedDB.open('forsure-e2ee', 3);
-        req.onerror = () => reject(req.error);
-        req.onsuccess = () => resolve(req.result);
-        req.onupgradeneeded = () => {
-          if (!req.result.objectStoreNames.contains(storeName)) {
-            req.result.createObjectStore(storeName, { keyPath: 'id' });
-          }
-        };
-      });
+      const db = await openE2EEDB();
       if (db.objectStoreNames.contains(storeName)) {
         const tx = db.transaction(storeName, 'readwrite');
         for (const record of records) tx.objectStore(storeName).put(record);

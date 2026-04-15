@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useSecureBackup } from '@/hooks/useSecureBackup';
+import { openE2EEDB } from '@/lib/crypto/indexedDb';
 
 const BACKUP_CHECK_KEY = 'forsure-backup-active';
 const DEBOUNCE_MS = 5_000;
@@ -76,11 +77,7 @@ export function useAutoBackup() {
 
     const checkForChanges = async () => {
       try {
-        const db = await new Promise<IDBDatabase>((resolve, reject) => {
-          const req = indexedDB.open('forsure-e2ee', 3);
-          req.onerror = () => reject(req.error);
-          req.onsuccess = () => resolve(req.result);
-        });
+        const db = await openE2EEDB();
 
         let keyCount = 0;
         for (const storeName of Array.from(db.objectStoreNames)) {

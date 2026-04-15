@@ -37,9 +37,9 @@ export const HKDF_SALT_LENGTH = 32;
 export const KEY_ROTATION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
 export const MAX_MESSAGES_PER_KEY = 500;
 
-// IndexedDB — bump version to force re-keying on upgrade
+// IndexedDB — schema repair version to restore missing stores without deleting identity keys
 export const DB_NAME = 'forsure-e2ee';
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 export const STORE_KEYS = 'identity-keys';
 export const STORE_SESSION = 'session-keys';
 export const STORE_PREKEYS = 'pre-keys';

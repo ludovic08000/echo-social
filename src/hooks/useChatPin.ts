@@ -19,6 +19,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
+import { openE2EEDB } from '@/lib/crypto/indexedDb';
 
 export type PinMode = 'every_open' | 'once_per_session' | 'on_inactivity' | 'on_return';
 
@@ -172,12 +173,7 @@ async function hashPinLegacy(pin: string, salt: Uint8Array): Promise<string> {
 
 async function readRawIdentityBlob(userId: string): Promise<string | null> {
   try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-e2ee', 3);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result);
-      req.onupgradeneeded = () => {};
-    });
+    const db = await openE2EEDB();
     if (!db.objectStoreNames.contains('identity-keys')) return null;
     const tx = db.transaction('identity-keys', 'readonly');
     const req = tx.objectStore('identity-keys').get(userId);
@@ -296,23 +292,7 @@ async function restoreAllCryptoBlob(userId: string, blob: string): Promise<void>
 
 async function writeRawIdentityBlob(userId: string, blob: string): Promise<void> {
   const parsed = JSON.parse(blob);
-  const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open('forsure-e2ee', 3);
-    req.onerror = () => reject(req.error);
-    req.onsuccess = () => resolve(req.result);
-    req.onupgradeneeded = () => {
-      const d = req.result;
-      if (!d.objectStoreNames.contains('identity-keys')) {
-        d.createObjectStore('identity-keys', { keyPath: 'id' });
-      }
-      if (!d.objectStoreNames.contains('session-keys')) {
-        d.createObjectStore('session-keys', { keyPath: 'conversationId' });
-      }
-      if (!d.objectStoreNames.contains('pre-keys')) {
-        d.createObjectStore('pre-keys', { keyPath: 'id' });
-      }
-    };
-  });
+  const db = await openE2EEDB();
   const tx = db.transaction('identity-keys', 'readwrite');
   tx.objectStore('identity-keys').put(parsed);
   return new Promise<void>((resolve, reject) => {
@@ -324,11 +304,7 @@ async function writeRawIdentityBlob(userId: string, blob: string): Promise<void>
 /** Delete raw identity keys from IndexedDB (after PIN wrap) */
 async function deleteRawIdentityBlob(userId: string): Promise<void> {
   try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-e2ee', 3);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result);
-    });
+    const db = await openE2EEDB();
     if (!db.objectStoreNames.contains('identity-keys')) return;
     const tx = db.transaction('identity-keys', 'readwrite');
     tx.objectStore('identity-keys').delete(userId);

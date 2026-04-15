@@ -56,7 +56,8 @@ import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
 import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
 import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
 import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/lib/crypto/cryptoIntegrity';
-import { DB_NAME, DB_VERSION, KX_KEY_PARAMS } from '@/lib/crypto/constants';
+import { DB_NAME, DB_VERSION, KX_KEY_PARAMS, STORE_PREKEYS, STORE_SESSION } from '@/lib/crypto/constants';
+import { openE2EEDB } from '@/lib/crypto/indexedDb';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
 const RATCHET_DB_NAME = 'forsure-ratchet';
@@ -82,50 +83,28 @@ function openRatchetDB(): Promise<IDBDatabase> {
 
 function recreateLegacyE2EEDatabase(): Promise<void> {
   return new Promise((resolve) => {
-    try {
-      // Instead of nuking the entire DB (which destroys identity keys),
-      // only clear the problematic stores while preserving identity-keys.
-      const openReq = hardGlobals.idbOpen(DB_NAME, DB_VERSION);
-      openReq.onsuccess = () => {
-        const db = openReq.result;
-        try {
-          // Only clear session-keys and pre-keys stores, PRESERVE identity-keys
-          const storesToClear = ['session-keys', 'pre-keys'];
-          const existingStores = Array.from(db.objectStoreNames);
-          const toClear = storesToClear.filter(s => existingStores.includes(s));
-          if (toClear.length > 0) {
-            const tx = db.transaction(toClear, 'readwrite');
-            toClear.forEach(s => tx.objectStore(s).clear());
-            tx.oncomplete = () => {
-              db.close();
-              console.log('[E2EE] Cleared session/prekey stores (identity keys preserved)');
-              resolve();
-            };
-            tx.onerror = () => { db.close(); resolve(); };
-          } else {
-            db.close();
-            resolve();
-          }
-        } catch {
-          db.close();
-          resolve();
+    void (async () => {
+      try {
+        const db = await openE2EEDB();
+        const storesToClear = [STORE_SESSION, STORE_PREKEYS].filter((store) => db.objectStoreNames.contains(store));
+
+        if (storesToClear.length > 0) {
+          const tx = db.transaction(storesToClear, 'readwrite');
+          storesToClear.forEach((store) => tx.objectStore(store).clear());
+          await new Promise<void>((txResolve, txReject) => {
+            tx.oncomplete = () => txResolve();
+            tx.onerror = () => txReject(tx.error);
+          });
+          console.log('[E2EE] Repaired IndexedDB schema and cleared transient crypto stores');
         }
-      };
-      openReq.onerror = () => {
-        // DB truly broken — but do NOT delete it (would destroy identity keys).
-        // Instead, log and resolve — identity keys may survive a version upgrade.
-        console.error('[E2EE] IndexedDB open failed — identity keys may be lost');
+
+        db.close();
+      } catch (error) {
+        console.error('[E2EE] Failed to repair E2EE database — identity keys preserved', error);
+      } finally {
         resolve();
-      };
-      openReq.onupgradeneeded = () => {
-        // Schema upgrade needed — let it proceed normally (openDB handles this)
-        // Don't abort — the stores will be recreated by the onupgradeneeded handler
-      };
-    } catch {
-      // Do NOT delete the database — just log the error
-      console.error('[E2EE] Failed to repair E2EE database — identity keys preserved');
-      resolve();
-    }
+      }
+    })();
   });
 }
 

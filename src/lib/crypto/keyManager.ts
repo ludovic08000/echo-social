@@ -10,9 +10,10 @@
  */
 
 import {
-  DB_NAME, DB_VERSION, STORE_KEYS, STORE_SESSION, STORE_PREKEYS,
+  STORE_KEYS, STORE_SESSION, STORE_PREKEYS,
   KX_KEY_PARAMS, SIG_KEY_PARAMS,
 } from './constants';
+import { openE2EEDB } from './indexedDb';
 import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, randomBytes } from './utils';
 import { hardCrypto, hardGlobals, scrubBuffer } from './cryptoIntegrity';
 
@@ -53,22 +54,7 @@ interface StoredSessionKey {
 // ─── IndexedDB helpers ───
 
 function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = hardGlobals.idbOpen(DB_NAME, DB_VERSION);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      for (const name of [STORE_KEYS, STORE_SESSION, STORE_PREKEYS]) {
-        if (db.objectStoreNames.contains(name)) {
-          db.deleteObjectStore(name);
-        }
-      }
-      db.createObjectStore(STORE_KEYS, { keyPath: 'id' });
-      db.createObjectStore(STORE_SESSION, { keyPath: 'conversationId' });
-      db.createObjectStore(STORE_PREKEYS, { keyPath: 'id' });
-    };
-  });
+  return openE2EEDB();
 }
 
 function dbGet<T>(storeName: string, key: string): Promise<T | undefined> {
