@@ -697,6 +697,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                               isEncryptionActive={e2ee.encrypted}
                               onDecrypted={(text) => onDecrypted(msg.id, text)}
                               isMe={isMe}
+                              cachedPlaintext={isMe ? decryptedCache.get(msg.id) : undefined}
                             />
                           </div>
 
