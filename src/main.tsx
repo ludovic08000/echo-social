@@ -8,7 +8,7 @@ if (import.meta.env.DEV) {
   const refMsg = 'Function components cannot be given refs';
   const refMsg2 = 'is not a prop';
   const filter = (orig: typeof console.warn) => (...args: unknown[]) => {
-    if (typeof args[0] === 'string' && (args[0].includes(refMsg) || args[0].includes(refMsg2))) return;
+    if (typeof args[0] === 'string' && (args[0].includes(refMsg) || args[0].includes(refMsg2) || args[0].includes('Encountered two children with the same key') || args[0].includes('React Router Future Flag'))) return;
     orig(...args);
   };
   console.warn = filter(origWarn);
