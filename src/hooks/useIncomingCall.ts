@@ -128,6 +128,13 @@ function createRingtone(): { play: () => void; stop: () => void } {
   return { play, stop };
 }
 
+/**
+ * Call detection state machine:
+ *   idle → ringing → (accepted | declined | timed_out)
+ * 
+ * A call ID is processed ONCE — any duplicate detection (Realtime, backup, poll)
+ * for the same ID is silently ignored.
+ */
 export function useIncomingCall() {
   const { user } = useAuth();
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
@@ -142,9 +149,14 @@ export function useIncomingCall() {
   const encryptedCallKeyRef = useRef<string | null>(null);
   const callConversationIdRef = useRef<string | null>(null);
 
-  // Track which call IDs we've already handled to avoid duplicate rings
+  // Track which call IDs we've already handled to avoid duplicate rings.
+  // This is the SINGLE source of truth — shared across Realtime + polling.
   const handledCallIdsRef = useRef<Set<string>>(new Set());
+  // Currently active call ID (for idempotent state management)
+  const activeCallIdRef = useRef<string | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Guard: is handleIncomingCall currently executing?
+  const handlingRef = useRef(false);
 
   // Keep ref in sync with state
   useEffect(() => { incomingCallRef.current = incomingCall; }, [incomingCall]);
@@ -155,37 +167,56 @@ export function useIncomingCall() {
     primeAudioForIOS();
     console.log('[IncomingCall] 🔔 Hook initialized for user', user.id);
 
+    /**
+     * Core handler — idempotent per callId.
+     * Returns immediately if this callId was already processed.
+     */
     const handleIncomingCall = async (call: any) => {
-      console.log('[IncomingCall] 📞 Incoming call detected:', call.id, 'type:', call.call_type);
+      const callId = call.id;
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('name, avatar_url')
-        .eq('user_id', call.caller_id)
-        .single();
+      // ── Idempotency guard ──
+      if (handledCallIdsRef.current.has(callId)) return;
+      if (activeCallIdRef.current === callId) return;
+      if (handlingRef.current) return;
 
-      // Store encrypted key in volatile ref — NEVER in React state
-      encryptedCallKeyRef.current = call.encrypted_call_key || null;
-      callConversationIdRef.current = call.conversation_id;
+      handlingRef.current = true;
+      handledCallIdsRef.current.add(callId);
+      activeCallIdRef.current = callId;
 
-      const incoming: IncomingCall = {
-        id: call.id,
-        conversation_id: call.conversation_id,
-        caller_id: call.caller_id,
-        callee_id: call.callee_id,
-        call_type: call.call_type || 'audio',
-        status: call.status,
-        caller_name: profile?.name || 'Utilisateur',
-        caller_avatar: profile?.avatar_url,
-      };
+      console.log('[IncomingCall] 📞 Processing call:', callId, 'type:', call.call_type);
 
-      setIncomingCall(incoming);
-      ringtoneRef.current.play();
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('name, avatar_url')
+          .eq('user_id', call.caller_id)
+          .single();
 
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      timeoutRef.current = setTimeout(() => {
-        declineCallDirect(incoming.id);
-      }, 30000);
+        // Store encrypted key in volatile ref — NEVER in React state
+        encryptedCallKeyRef.current = call.encrypted_call_key || null;
+        callConversationIdRef.current = call.conversation_id;
+
+        const incoming: IncomingCall = {
+          id: callId,
+          conversation_id: call.conversation_id,
+          caller_id: call.caller_id,
+          callee_id: call.callee_id,
+          call_type: call.call_type || 'audio',
+          status: call.status,
+          caller_name: profile?.name || 'Utilisateur',
+          caller_avatar: profile?.avatar_url,
+        };
+
+        setIncomingCall(incoming);
+        ringtoneRef.current.play();
+
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        timeoutRef.current = setTimeout(() => {
+          declineCallDirect(callId);
+        }, 30000);
+      } finally {
+        handlingRef.current = false;
+      }
     };
 
     const declineCallDirect = async (callId: string) => {
@@ -198,7 +229,17 @@ export function useIncomingCall() {
       });
       encryptedCallKeyRef.current = null;
       callConversationIdRef.current = null;
+      activeCallIdRef.current = null;
       setIncomingCall(null);
+    };
+
+    const clearCallState = () => {
+      ringtoneRef.current.stop();
+      setIncomingCall(null);
+      encryptedCallKeyRef.current = null;
+      callConversationIdRef.current = null;
+      activeCallIdRef.current = null;
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
 
     const pollForCalls = async () => {
@@ -211,10 +252,8 @@ export function useIncomingCall() {
         });
 
         if (error) {
-          console.warn('[IncomingCall] ⚠️ Poll error:', error.message);
-          // If auth expired, try to refresh
+          // Only log non-routine errors
           if (error.message?.includes('Not authenticated') || error.code === 'PGRST301') {
-            console.log('[IncomingCall] 🔄 Refreshing session...');
             await supabase.auth.refreshSession();
           }
           return;
@@ -222,9 +261,8 @@ export function useIncomingCall() {
 
         if (data && (data as any).id) {
           const callData = data as any;
-          console.log('[IncomingCall] 📡 Poll found call:', callData.id, 'status:', callData.status);
-          if (callData.status === 'ringing' && !handledCallIdsRef.current.has(callData.id)) {
-            handledCallIdsRef.current.add(callData.id);
+          if (callData.status === 'ringing') {
+            // handleIncomingCall is idempotent — safe to call even if already handled
             handleIncomingCall(callData);
           }
         }
@@ -244,8 +282,8 @@ export function useIncomingCall() {
     // Expire old calls once
     Promise.resolve(supabase.rpc('call_signal', { p_action: 'expire_old_for_callee' })).catch(() => {});
 
-    // Fallback polling every 2 seconds — catches calls even if Realtime fails
-    pollIntervalRef.current = setInterval(pollForCalls, 2000);
+    // Fallback polling every 3 seconds (increased from 2s to reduce noise)
+    pollIntervalRef.current = setInterval(pollForCalls, 3000);
 
     // Realtime channel for instant notification (primary path)
     const channel = supabase
@@ -260,9 +298,7 @@ export function useIncomingCall() {
         },
         (payload) => {
           const callData = payload.new as any;
-          console.log('[IncomingCall] ⚡ Realtime INSERT:', callData?.id, 'status:', callData?.status);
-          if (callData?.status === 'ringing' && !handledCallIdsRef.current.has(callData.id)) {
-            handledCallIdsRef.current.add(callData.id);
+          if (callData?.status === 'ringing') {
             handleIncomingCall(callData);
           }
         }
@@ -278,11 +314,7 @@ export function useIncomingCall() {
         (payload) => {
           const updated = payload.new as any;
           if (updated.status === 'cancelled' || updated.status === 'ended' || updated.status === 'declined') {
-            ringtoneRef.current.stop();
-            setIncomingCall(null);
-            encryptedCallKeyRef.current = null;
-            callConversationIdRef.current = null;
-            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            clearCallState();
           }
         }
       )
@@ -290,35 +322,16 @@ export function useIncomingCall() {
         console.log('[IncomingCall] Realtime status:', status);
       });
 
-    // Secondary Realtime channel: listen for direct active_calls changes without filter
-    // (backup in case UUID filter doesn't match)
-    const backupChannel = supabase
-      .channel(`call-backup-${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'active_calls',
-        },
-        (payload) => {
-          const callData = payload.new as any;
-          if (callData?.callee_id === user.id && callData?.status === 'ringing' && !handledCallIdsRef.current.has(callData.id)) {
-            console.log('[IncomingCall] 🔔 Backup channel caught call:', callData.id);
-            handledCallIdsRef.current.add(callData.id);
-            handleIncomingCall(callData);
-          }
-        }
-      )
-      .subscribe();
+    // REMOVED: backup channel was causing duplicate detections.
+    // The primary Realtime channel + polling is sufficient.
 
     return () => {
       supabase.removeChannel(channel);
-      supabase.removeChannel(backupChannel);
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       ringtoneRef.current.stop();
       encryptedCallKeyRef.current = null;
       callConversationIdRef.current = null;
+      activeCallIdRef.current = null;
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, [user?.id]);
@@ -353,6 +366,7 @@ export function useIncomingCall() {
     // Wipe refs immediately
     encryptedCallKeyRef.current = null;
     callConversationIdRef.current = null;
+    activeCallIdRef.current = null;
 
     const accepted: AcceptedCall = { ...incomingCall, decryptedCallKey };
     setIncomingCall(null);
@@ -373,6 +387,7 @@ export function useIncomingCall() {
     // Wipe refs
     encryptedCallKeyRef.current = null;
     callConversationIdRef.current = null;
+    activeCallIdRef.current = null;
     setIncomingCall(null);
   }, [incomingCall]);
 
