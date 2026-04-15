@@ -545,6 +545,51 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     return () => { cancelled = true; };
   }, [peerUserId, user, conversationId, isZeus]);
 
+  // Retry peer key fetch when peerKeyMissing — contact may have come online
+  useEffect(() => {
+    if (!state.peerKeyMissing || !peerUserId || isZeus) return;
+    const interval = setInterval(async () => {
+      try {
+        const { data } = await supabase
+          .from('user_public_keys')
+          .select('identity_key, signing_key, fingerprint')
+          .eq('user_id', peerUserId)
+          .eq('is_active', true)
+          .maybeSingle();
+        if (data) {
+          console.log('[PEER_KEY] ✅ Peer keys now available — upgrading to encrypted mode');
+          peerKeyRef.current = {
+            identityKey: data.identity_key,
+            signingKey: data.signing_key,
+            fingerprint: data.fingerprint,
+          };
+          saveKnownFingerprint(peerUserId, data.fingerprint);
+          saveKnownFingerprintServer(peerUserId, data.fingerprint);
+          
+          // Pre-establish legacy session
+          if (keysRef.current && conversationId) {
+            try {
+              let session = await loadSessionKey(conversationId);
+              if (!session) {
+                session = await establishSession(keysRef.current, data.identity_key, conversationId, data.fingerprint);
+              }
+              legacySessionReadyRef.current = true;
+            } catch {}
+          }
+          
+          setState(s => ({
+            ...s,
+            peerFingerprint: data.fingerprint,
+            encrypted: true,
+            ready: true,
+            peerKeyMissing: false,
+          }));
+        }
+      } catch {}
+    }, 10_000); // retry every 10s
+    return () => clearInterval(interval);
+  }, [state.peerKeyMissing, peerUserId, isZeus, conversationId]);
+
   // Legacy session — load existing or establish new (NEVER rotates — rotation is encrypt-only)
   const ensureLegacySession = useCallback(async () => {
     if (!conversationId || !keysRef.current || !peerKeyRef.current) return null;
