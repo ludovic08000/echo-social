@@ -74,19 +74,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const { translations, translating, translate: translateMsg, autoTranslateMessages } = useMessageTranslation();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-translate non-French messages — use decrypted text, never raw encrypted body
-  useEffect(() => {
-    if (messages?.length) {
-      autoTranslateMessages(
-        messages.map(m => ({
-          id: m.id,
-          body: decryptedCache.get(m.id) || m.body,
-          sender_id: m.sender_id,
-        })),
-        user?.id
-      );
-    }
-  }, [messages, user?.id, autoTranslateMessages]);
+  // Auto-translate disabled
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -705,37 +693,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
                             />
                           </div>
 
-                          {/* Translate button — only show with a safe translated value */}
-                          {(() => {
-                            const sourceText = decryptedCache.get(msg.id);
-                            const translatedText = translations[msg.id];
-                            const hasUnsafeTranslation = !!translatedText && translatedText.startsWith('{') && (translatedText.includes('"ct"') || translatedText.includes('"hdr"') || translatedText.includes('"kem"'));
-                            const safeTranslation = !hasUnsafeTranslation && translatedText && translatedText !== sourceText ? translatedText : null;
-
-                            if (isMe || isBigEmoji || looksEncrypted || !sourceText) return null;
-
-                            return (
-                              <div className="mt-0.5">
-                                <button
-                                  onClick={() => translateMsg(msg.id, sourceText)}
-                                  disabled={translating === msg.id}
-                                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all disabled:pointer-events-none disabled:opacity-40"
-                                >
-                                  {translating === msg.id ? (
-                                    <div className="w-3 h-3 rounded-full border border-primary border-t-transparent animate-spin" />
-                                  ) : (
-                                    <Languages className="w-3 h-3" />
-                                  )}
-                                  {safeTranslation ? 'Original' : 'Traduire'}
-                                </button>
-                                {safeTranslation && (
-                                  <div className="mt-0.5 px-3 py-1.5 text-[14px] rounded-[18px] bg-primary/10 border border-primary/20 text-foreground break-words leading-relaxed">
-                                    {safeTranslation}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
 
                           {reactions.length > 0 && (
                             <div className="flex items-center gap-0.5 -mt-1 px-1 relative z-10">
