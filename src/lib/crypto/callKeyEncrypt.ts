@@ -86,6 +86,8 @@ export async function encryptCallKey(
 export async function decryptCallKey(
   encryptedPayload: string,
   conversationId: string,
+  localUserId?: string,
+  peerUserId?: string,
 ): Promise<string> {
   if (encryptedPayload.startsWith('raw:')) {
     throw new Error('[CALL_E2EE] Insecure raw call key payload rejected');
@@ -95,7 +97,10 @@ export async function decryptCallKey(
     throw new Error('[CALL_E2EE] Payload is not encrypted');
   }
 
-  const session = await loadSessionKey(conversationId);
+  // Always force fresh session derivation to ensure key sync
+  const session = localUserId && peerUserId
+    ? await ensureFreshCallSession(conversationId, localUserId, peerUserId)
+    : await loadSessionKey(conversationId);
   if (!session?.sharedSecret) {
     throw new Error('No E2EE session key to decrypt call key');
   }
