@@ -1116,7 +1116,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         {/* Translate button — only when decrypted text available and body isn't raw ciphertext */}
                         {!isMe && !isCallMessage(msg.body) && !isGifMessage(msg.body) && !isVoiceMessage(msg.body) &&
                          decryptedCacheRef.current.has(msg.id) &&
-                         !(msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"'))) && (
+                         !(msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"'))) &&
+                         !(translations[msg.id]?.startsWith('{') && (translations[msg.id]?.includes('"ct"') || translations[msg.id]?.includes('"hdr"') || translations[msg.id]?.includes('"kem"'))) && (
                           <div className="mt-0.5">
                             <button
                               onClick={() => {
