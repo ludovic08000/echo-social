@@ -368,7 +368,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   useEffect(() => {
     if (messages?.length) {
       autoTranslateMessages(
-        messages.map((m: any) => ({ id: m.id, body: m.body, sender_id: m.sender_id })),
+        messages.map((m: any) => ({
+          id: m.id,
+          body: decryptedCacheRef.current.get(m.id) || m.body,
+          sender_id: m.sender_id,
+        })),
         user?.id
       );
     }
