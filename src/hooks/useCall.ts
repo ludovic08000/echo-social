@@ -390,8 +390,8 @@ export function useCall(options?: UseCallOptions) {
       console.info('[CALL] publishing local tracks...');
       await room.localParticipant.setMicrophoneEnabled(true, {
         echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
+        noiseSuppression: false,
+        autoGainControl: false,
         channelCount: 1,
         sampleRate: 48000,
       });
