@@ -121,14 +121,9 @@ function recreateLegacyE2EEDatabase(): Promise<void> {
         // Don't abort — the stores will be recreated by the onupgradeneeded handler
       };
     } catch {
-      try {
-        const deletion = indexedDB.deleteDatabase(DB_NAME);
-        deletion.onsuccess = () => resolve();
-        deletion.onerror = () => resolve();
-        deletion.onblocked = () => resolve();
-      } catch {
-        resolve();
-      }
+      // Do NOT delete the database — just log the error
+      console.error('[E2EE] Failed to repair E2EE database — identity keys preserved');
+      resolve();
     }
   });
 }
