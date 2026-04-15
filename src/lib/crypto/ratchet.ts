@@ -64,6 +64,50 @@ export interface RatchetEnvelope {
 
 const MAX_SKIP = 100; // Max messages to skip (DoS protection)
 
+export interface RatchetReadiness {
+  canEncrypt: boolean;
+  canDecrypt: boolean;
+  reason: 'missing_state' | 'missing_root_key' | 'missing_sending_chain' | 'missing_sending_pair' | 'missing_peer_dh' | 'ready';
+}
+
+/**
+ * Central low-level readiness guard for Double Ratchet.
+ *
+ * IMPORTANT:
+ * - A responder ratchet MAY legitimately exist without a sending chain yet.
+ * - That state is valid for decrypt, but NOT for encrypt.
+ */
+export function getRatchetReadiness(state: RatchetState | null | undefined): RatchetReadiness {
+  if (!state) {
+    return { canEncrypt: false, canDecrypt: false, reason: 'missing_state' };
+  }
+  if (!state.rootKey) {
+    return { canEncrypt: false, canDecrypt: false, reason: 'missing_root_key' };
+  }
+  if (!state.dhSendingPair?.publicKey || !state.dhSendingPair?.privateKey) {
+    return { canEncrypt: false, canDecrypt: false, reason: 'missing_sending_pair' };
+  }
+
+  const canDecrypt = !!state.receivingChainKey || !!state.dhReceivingKey;
+
+  if (!state.dhReceivingKey) {
+    return { canEncrypt: false, canDecrypt, reason: 'missing_peer_dh' };
+  }
+  if (!state.sendingChainKey) {
+    return { canEncrypt: false, canDecrypt, reason: 'missing_sending_chain' };
+  }
+
+  return { canEncrypt: true, canDecrypt: true, reason: 'ready' };
+}
+
+export function isRatchetReadyForEncrypt(state: RatchetState | null | undefined): boolean {
+  return getRatchetReadiness(state).canEncrypt;
+}
+
+export function isRatchetReadyForDecrypt(state: RatchetState | null | undefined): boolean {
+  return getRatchetReadiness(state).canDecrypt;
+}
+
 // ─── Initialize ───
 
 /** Initialize ratchet as the initiator (Alice) */

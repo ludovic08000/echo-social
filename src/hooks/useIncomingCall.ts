@@ -135,6 +135,8 @@ function createRingtone(): { play: () => void; stop: () => void } {
  * A call ID is processed ONCE — any duplicate detection (Realtime, backup, poll)
  * for the same ID is silently ignored.
  */
+type IncomingCallPhase = 'idle' | 'ringing' | 'connecting' | 'active' | 'ended';
+
 export function useIncomingCall() {
   const { user } = useAuth();
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);

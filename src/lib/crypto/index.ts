@@ -24,8 +24,12 @@ export {
   ratchetDecrypt,
   serializeRatchetState,
   deserializeRatchetState,
+  getRatchetReadiness,
+  isRatchetReadyForEncrypt,
+  isRatchetReadyForDecrypt,
   type RatchetState,
   type RatchetEnvelope,
+  type RatchetReadiness,
 } from './ratchet';
 
 // KDF chains
