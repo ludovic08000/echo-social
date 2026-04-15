@@ -32,6 +32,8 @@ interface DecryptedMessageBodyProps {
   isEncryptionActive: boolean;
   onDecrypted?: (text: string) => void;
   isMe?: boolean;
+  /** Pre-cached plaintext for own sent messages (ratchet can't self-decrypt) */
+  cachedPlaintext?: string;
 }
 
 export const DecryptedMessageBody = memo(function DecryptedMessageBody({
@@ -40,12 +42,21 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   isEncryptionActive,
   onDecrypted,
   isMe,
+  cachedPlaintext,
 }: DecryptedMessageBodyProps) {
   const [displayText, setDisplayText] = useState<string | null>(null);
   const [mediaKeyB64, setMediaKeyB64] = useState<string | null>(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
 
   useEffect(() => {
+    // If we have cached plaintext (own sent message), use it directly
+    if (cachedPlaintext) {
+      setDisplayText(cachedPlaintext);
+      setMediaKeyB64(null);
+      onDecrypted?.(cachedPlaintext);
+      return;
+    }
+
     const shouldAttemptDecrypt = isEncryptionActive || looksEncryptedMessage(body);
 
     if (!shouldAttemptDecrypt) {
