@@ -344,7 +344,12 @@ class MessageQueueManager {
 
         try {
           console.log('[E2EE] encrypt start', msg.localId);
-          const encrypted = await handlers.encrypt(plaintext, msg.conversationId, msg.localId);
+          // Timeout: if encryption takes more than 15s, abort
+          const encryptPromise = handlers.encrypt(plaintext, msg.conversationId, msg.localId);
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout chiffrement (15s)')), 15_000)
+          );
+          const encrypted = await Promise.race([encryptPromise, timeoutPromise]);
           const withLocalId = this.attachLocalId(encrypted, msg.localId);
 
           // CRITICAL: Verify encryption actually produced ciphertext
