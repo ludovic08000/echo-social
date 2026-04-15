@@ -1107,6 +1107,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                               decrypt={e2ee.decrypt}
                               isEncryptionActive={e2ee.encrypted && !isZeusConversation}
                               onDecrypted={(text) => onDecrypted(msg.id, text)}
+                              isMe={isMe}
                             />
                           </div>
                         )}
