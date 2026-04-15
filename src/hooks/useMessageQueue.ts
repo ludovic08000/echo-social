@@ -209,6 +209,7 @@ export function useMessageQueue(
           }
           console.log('[MSG] ✅ Message delivered!');
           if (!isSpecial) recordSentMessage(sanitized);
+          onMessageSent?.();
           queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
           queryClient.invalidateQueries({ queryKey: ['conversations'] });
           return;
