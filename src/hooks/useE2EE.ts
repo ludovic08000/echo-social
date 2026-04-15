@@ -7,12 +7,12 @@
  * - Fingerprint changes are detected and BLOCK communication until acknowledged
  * - verified=true ONLY when signature is cryptographically verified
  * 
- * ARCHITECTURE (v6 — Mode-Tagged Payloads):
+ * ARCHITECTURE (v7 — Ratchet-Only Outbound, Mode-Tagged Payloads):
  * - Every encrypted payload carries an explicit `encryptionMode` field:
  *   "ratchet" or "legacy"
  * - Decrypt dispatches to the correct decryption path — NO blind fallback
  * - Primary: Double Ratchet (X25519 DH ratchet + symmetric KDF chain)
- * - Fallback: Legacy session (X25519 ECDH → HKDF → AES-256-GCM)
+ * - Legacy session ONLY used for inbound decrypt of old messages (never outbound)
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -27,9 +27,6 @@ import {
   establishSession,
   loadSessionKey,
   saveSessionKey,
-  incrementSessionMessageCount,
-  needsKeyRotation,
-  rotateSessionKey,
   initRatchetAsInitiator,
   initRatchetAsResponder,
   ratchetEncrypt,
@@ -672,12 +669,11 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     await saveRatchetLocal(conversationId, ratchet);
     console.info('[RATCHET] ✅ init with X3DH (initiator) — ready for encrypt');
     return ratchet;
-  }, [conversationId, ensureLegacySession, peerUserId]);
+  }, [conversationId, peerUserId]);
 
   /**
    * Encrypt — NEVER returns plaintext.
-   * PRIMARY: Double Ratchet (per-message forward secrecy) — only when ratchet is FULLY READY.
-   * FALLBACK: Legacy session (deterministic AES-GCM).
+   * Uses Double Ratchet exclusively (per-message forward secrecy).
    * Throws EncryptionError if all paths fail.
    * 
    * CRITICAL: Every payload now carries `encryptionMode` for deterministic decryption routing.
@@ -744,9 +740,17 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
       const serializedPayload = hardGlobals.jsonStringify(taggedEnvelope);
       if (localId) {
-        pendingRatchetStateRef.current.set(localId, newState);
         pendingPayloadRef.current.set(localId, serializedPayload);
       }
+
+      // COMMIT ratchet state IMMEDIATELY after encryption.
+      // The encrypted payload is persisted in the message queue's IndexedDB,
+      // so retries will reuse the same ciphertext — no nonce reuse risk.
+      // This prevents the page-refresh race where ratchet state would revert
+      // to pre-encrypt while the encrypted body is already queued.
+      ratchetRef.current = newState;
+      await saveRatchetLocal(conversationId!, newState);
+
       setState(s => ({ ...s, ratchetActive: true }));
       return serializedPayload;
     } catch (err) {
@@ -930,8 +934,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     if (isZeus) return true;
     // Block if fingerprint changed
     if (state.fingerprintChanged) return false;
-    // Ready if we have identity-based or prekey-based encryption
-    return state.encrypted && !!keysRef.current && (!!peerKeyRef.current || legacySessionReadyRef.current);
+    // Ready if we have peer keys and our own keys (ratchet will be established on first encrypt)
+    return state.encrypted && !!keysRef.current && !!peerKeyRef.current;
   }, [state.encrypted, state.fingerprintChanged, isZeus]);
 
   /** Acknowledge fingerprint change — user explicitly trusts new key */
@@ -955,20 +959,13 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   }, [peerUserId, conversationId]);
 
   const acknowledgeSentPayload = useCallback(async (localId: string) => {
-    const pendingRatchetState = pendingRatchetStateRef.current.get(localId);
-    if (pendingRatchetState && conversationId) {
-      ratchetRef.current = pendingRatchetState;
-      await saveRatchetLocal(conversationId, pendingRatchetState);
-      pendingRatchetStateRef.current.delete(localId);
-      console.info(`[RATCHET] ✅ sender state committed after confirmed send (${localId})`);
-    }
-
     pendingPayloadRef.current.delete(localId);
 
     if (x3dhInfoRef.current) {
       console.info('[E2EE] X3DH header cleared after confirmed send');
       x3dhInfoRef.current = null;
     }
+    console.info(`[E2EE] ✅ Payload acknowledged (${localId})`);
   }, [conversationId]);
 
   return {
