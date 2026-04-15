@@ -513,16 +513,21 @@ export async function x3dhRespond(
   myUserId: string,
   initialMessage: X3DHInitialMessage,
 ): Promise<{ sharedSecret: ArrayBuffer; spkKeyPair: CryptoKeyPair }> {
+  console.info(`[X3DH] init responder — SPK #${initialMessage.spkId}, OPK ${initialMessage.opkId ?? 'none'}, peer IK ${initialMessage.ik.slice(0, 8)}…`);
+
   // 1. Import Alice's keys
   const aliceIK = await importX25519Public(initialMessage.ik);
   const aliceEK = await importX25519Public(initialMessage.ek);
 
-  // 2. Load our signed prekey record (private + public)
+  // 2. Load our signed prekey record (private + public) — MUST exist
   const spkRecord = await loadSPKRecord(myUserId, initialMessage.spkId);
   if (!spkRecord) {
-    console.error(`[X3DH] ⛔ SPK #${initialMessage.spkId} NOT FOUND locally for user ${myUserId} — cannot respond to X3DH`);
-    throw new Error(`X3DH: Signed prekey #${initialMessage.spkId} not found locally`);
+    const errMsg = `[X3DH] ⛔ SPK #${initialMessage.spkId} NOT FOUND locally for user ${myUserId} — cannot complete X3DH handshake. The signed prekey may have been rotated or the local store was cleared.`;
+    console.error(errMsg);
+    throw new Error(errMsg);
   }
+
+  console.info(`[X3DH] SPK #${initialMessage.spkId} loaded — public=${spkRecord.publicKeyBase64.slice(0, 12)}…`);
 
   const spkPrivate = await hardCrypto.importKey(
     'jwk', spkRecord.privateKeyJWK,
@@ -571,9 +576,9 @@ export async function x3dhRespond(
         opkPrivate,
         256,
       );
-      console.log(`[X3DH] OPK #${initialMessage.opkId} used for 4-DH respond`);
+      console.info(`[X3DH] OPK #${initialMessage.opkId} used for 4-DH respond`);
     } else {
-      console.warn(`[X3DH] ⚠️ OPK #${initialMessage.opkId} consumed on server but NOT FOUND locally — session may have been partially established before. Using 3-DH.`);
+      console.warn(`[X3DH] ⚠️ OPK #${initialMessage.opkId} consumed on server but NOT FOUND locally — OPK session not finalized. Falling back to 3-DH (still secure but no OPK forward secrecy).`);
     }
   }
 
@@ -584,10 +589,10 @@ export async function x3dhRespond(
 
   const sharedSecret = await x3dhKDF(dhConcat);
 
-  console.log(`[X3DH] ✅ Responded with ${dh4 ? '4' : '3'} DH operations (SPK #${initialMessage.spkId})`);
+  console.info(`[X3DH] ✅ Responded with ${dh4 ? '4' : '3'} DH operations (SPK #${initialMessage.spkId})`);
 
   // Return the SPK key pair so the responder can use it as initial ratchet DH pair
-  // (per Signal spec: Bob's SPK serves as his initial ratchet key)
+  // Per Signal spec: Bob's SPK serves as his initial ratchet key — NO new random DH pair here
   return {
     sharedSecret,
     spkKeyPair: { publicKey: spkPublic, privateKey: spkPrivate },
