@@ -45,6 +45,10 @@ export {
   incrementSessionMessageCount,
   wipeAllKeys,
   wipeSessionKeys,
+  exportAllSessionKeys,
+  importAllSessionKeys,
+  exportAllRatchetStates,
+  importAllRatchetStates,
   type IdentityKeyPair,
   type SessionKey,
 } from './keyManager';
