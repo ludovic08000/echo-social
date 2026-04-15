@@ -147,26 +147,17 @@ export function useIncomingCall() {
     primeAudioForIOS();
 
     const checkExisting = async () => {
-      const thirtySecondsAgo = new Date(Date.now() - 30000).toISOString();
-      const { data } = await supabase
-        .from('active_calls')
-        .select('id, conversation_id, caller_id, callee_id, call_type, status, encrypted_call_key, created_at')
-        .eq('callee_id', user.id)
-        .eq('status', 'ringing')
-        .gte('created_at', thirtySecondsAgo)
-        .order('created_at', { ascending: false })
-        .limit(1);
+      const { data, error } = await supabase.rpc('call_signal', {
+        p_action: 'latest_for_callee',
+      });
 
-      if (data?.[0]) {
-        handleIncomingCall(data[0]);
+      if (!error && data) {
+        handleIncomingCall(data);
       }
 
-      await supabase
-        .from('active_calls')
-        .update({ status: 'cancelled', ended_at: new Date().toISOString() })
-        .eq('callee_id', user.id)
-        .eq('status', 'ringing')
-        .lt('created_at', thirtySecondsAgo);
+      await supabase.rpc('call_signal', {
+        p_action: 'expire_old_for_callee',
+      });
     };
     checkExisting();
 
@@ -257,10 +248,11 @@ export function useIncomingCall() {
     ringtoneRef.current.stop();
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
-    await supabase
-      .from('active_calls')
-      .update({ status: 'answered', answered_at: new Date().toISOString() })
-      .eq('id', incomingCall.id);
+    await supabase.rpc('call_signal', {
+      p_action: 'update_status',
+      p_call_id: incomingCall.id,
+      p_status: 'answered',
+    });
 
     // Decrypt call key now — one-shot, then wipe
     let decryptedCallKey: string | undefined;
@@ -289,10 +281,11 @@ export function useIncomingCall() {
     ringtoneRef.current.stop();
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
-    await supabase
-      .from('active_calls')
-      .update({ status: 'declined', ended_at: new Date().toISOString() })
-      .eq('id', incomingCall.id);
+    await supabase.rpc('call_signal', {
+      p_action: 'update_status',
+      p_call_id: incomingCall.id,
+      p_status: 'declined',
+    });
 
     // Wipe refs
     encryptedCallKeyRef.current = null;
@@ -330,30 +323,27 @@ export async function signalOutgoingCall(
     }
   }
 
-  const { data, error } = await supabase
-    .from('active_calls')
-    .insert({
-      conversation_id: conversationId,
-      caller_id: callerId,
-      callee_id: calleeId,
-      call_type: callType,
-      status: 'ringing',
-      ...(encryptedKey ? { encrypted_call_key: encryptedKey } : {}),
-    } as any)
-    .select('id')
-    .single();
+  const { data, error } = await supabase.rpc('call_signal', {
+    p_action: 'create',
+    p_conversation_id: conversationId,
+    p_caller_id: callerId,
+    p_callee_id: calleeId,
+    p_call_type: callType,
+    p_encrypted_call_key: encryptedKey ?? null,
+  });
 
   if (error) {
     console.error('Signal call error:', error);
     return null;
   }
-  return data?.id || null;
+  return (data as { id?: string } | null)?.id || null;
 }
 
 /** Called when call ends to update the record */
 export async function endActiveCall(callId: string) {
-  await supabase
-    .from('active_calls')
-    .update({ status: 'ended', ended_at: new Date().toISOString() })
-    .eq('id', callId);
+  await supabase.rpc('call_signal', {
+    p_action: 'update_status',
+    p_call_id: callId,
+    p_status: 'ended',
+  });
 }
