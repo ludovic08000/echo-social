@@ -77,7 +77,7 @@ export function useAutoBackup() {
     const checkForChanges = async () => {
       try {
         const db = await new Promise<IDBDatabase>((resolve, reject) => {
-          const req = indexedDB.open('forsure-e2ee', 2);
+          const req = indexedDB.open('forsure-e2ee', 3);
           req.onerror = () => reject(req.error);
           req.onsuccess = () => resolve(req.result);
         });

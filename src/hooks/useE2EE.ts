@@ -56,7 +56,7 @@ import {
 import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
 import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
 import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/lib/crypto/cryptoIntegrity';
-import { KX_KEY_PARAMS } from '@/lib/crypto/constants';
+import { DB_NAME, DB_VERSION, KX_KEY_PARAMS } from '@/lib/crypto/constants';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
 const RATCHET_DB_NAME = 'forsure-ratchet';
@@ -83,12 +83,12 @@ function openRatchetDB(): Promise<IDBDatabase> {
 function recreateLegacyE2EEDatabase(): Promise<void> {
   return new Promise((resolve) => {
     try {
-      const deleteRequest = hardGlobals.idbOpen('forsure-e2ee', 3);
+      const deleteRequest = hardGlobals.idbOpen(DB_NAME, DB_VERSION);
       deleteRequest.onsuccess = () => {
         try {
           deleteRequest.result.close();
         } catch {}
-        const deletion = indexedDB.deleteDatabase('forsure-e2ee');
+        const deletion = indexedDB.deleteDatabase(DB_NAME);
         deletion.onsuccess = () => resolve();
         deletion.onerror = () => resolve();
         deletion.onblocked = () => resolve();
@@ -98,14 +98,14 @@ function recreateLegacyE2EEDatabase(): Promise<void> {
         try {
           deleteRequest.transaction?.abort();
         } catch {}
-        const deletion = indexedDB.deleteDatabase('forsure-e2ee');
+        const deletion = indexedDB.deleteDatabase(DB_NAME);
         deletion.onsuccess = () => resolve();
         deletion.onerror = () => resolve();
         deletion.onblocked = () => resolve();
       };
     } catch {
       try {
-        const deletion = indexedDB.deleteDatabase('forsure-e2ee');
+        const deletion = indexedDB.deleteDatabase(DB_NAME);
         deletion.onsuccess = () => resolve();
         deletion.onerror = () => resolve();
         deletion.onblocked = () => resolve();
@@ -246,7 +246,7 @@ function cleanupLegacyStorage() {
         } catch {}
       };
       // Also clear legacy session keys to re-derive
-      const req2 = hardGlobals.idbOpen('forsure-e2ee', 2);
+      const req2 = hardGlobals.idbOpen(DB_NAME, DB_VERSION);
       req2.onsuccess = () => {
         try {
           const db = req2.result;
