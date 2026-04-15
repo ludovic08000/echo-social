@@ -453,7 +453,7 @@ export async function x3dhRespond(
   myKeys: IdentityKeyPair,
   myUserId: string,
   initialMessage: X3DHInitialMessage,
-): Promise<ArrayBuffer> {
+): Promise<{ sharedSecret: ArrayBuffer; responderDhKey: CryptoKey }> {
   // 1. Import Alice's keys
   const aliceIK = await importX25519Public(initialMessage.ik);
   const aliceEK = await importX25519Public(initialMessage.ek);
@@ -464,32 +464,45 @@ export async function x3dhRespond(
     throw new Error(`X3DH: Signed prekey #${initialMessage.spkId} not found locally`);
   }
 
+  // Also expose the matching public SPK as the responder's initial DH receiving key.
+  const spkPublic = await hardCrypto.importKey(
+    'raw', base64ToBuffer(initialMessage.ek ? (await (async () => {
+      const db = await openSPKDB();
+      const tx = db.transaction(SPK_STORE, 'readonly');
+      const req = tx.objectStore(SPK_STORE).get(`${myUserId}:${initialMessage.spkId}`);
+      const result = await new Promise<StoredSPK | undefined>((resolve, reject) => {
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      if (!result) throw new Error(`X3DH: Signed prekey #${initialMessage.spkId} public half not found locally`);
+      return result.publicKeyBase64;
+    })()) : ''),
+    KX_KEY_PARAMS as any,
+    true,
+    [],
+  );
+
   // 3. Compute DH operations (Bob's perspective, reversed)
-  // DH1 = DH(SPKb_priv, IKa_pub)
   const dh1 = await hardCrypto.deriveBits(
     { name: 'X25519', public: aliceIK } as any,
     spkPrivate,
     256,
   );
 
-  // DH2 = DH(IKb_priv, EKa_pub)
   const dh2 = await hardCrypto.deriveBits(
     { name: 'X25519', public: aliceEK } as any,
     myKeys.privateKey,
     256,
   );
 
-  // DH3 = DH(SPKb_priv, EKa_pub)
   const dh3 = await hardCrypto.deriveBits(
     { name: 'X25519', public: aliceEK } as any,
     spkPrivate,
     256,
   );
 
-  // DH4 = DH(OPKb_priv, EKa_pub) — optional
   let dh4: ArrayBuffer | null = null;
   if (initialMessage.opkId !== undefined) {
-    // Load our one-time prekey private half
     const { loadPrivatePrekey } = await import('./prekeys');
     const opkPrivate = await loadPrivatePrekey(myUserId, initialMessage.opkId);
     if (opkPrivate) {
@@ -503,7 +516,6 @@ export async function x3dhRespond(
     }
   }
 
-  // 4. Combine & derive
   const filler = new Uint8Array(32).fill(0xFF);
   const dhConcat = dh4
     ? concatBuffers(filler.buffer as ArrayBuffer, dh1, dh2, dh3, dh4)
@@ -513,7 +525,7 @@ export async function x3dhRespond(
 
   console.log(`[X3DH] ✅ Responded with ${dh4 ? '4' : '3'} DH operations`);
 
-  return sharedSecret;
+  return { sharedSecret, responderDhKey: spkPublic };
 }
 
 // ─── PQXDH Structure (Future-Ready) ───
