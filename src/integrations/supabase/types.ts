@@ -2336,6 +2336,190 @@ export type Database = {
         }
         Relationships: []
       }
+      ml_fraud_signals: {
+        Row: {
+          created_at: string
+          details: Json | null
+          id: string
+          resolved: boolean | null
+          resolved_at: string | null
+          resolved_by: string | null
+          risk_score: number
+          signal_type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          details?: Json | null
+          id?: string
+          resolved?: boolean | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          risk_score?: number
+          signal_type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          details?: Json | null
+          id?: string
+          resolved?: boolean | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          risk_score?: number
+          signal_type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      ml_models: {
+        Row: {
+          accuracy: number | null
+          config: Json | null
+          created_at: string
+          description: string | null
+          domain: string
+          f1_score: number | null
+          id: string
+          is_active: boolean | null
+          name: string
+          precision_score: number | null
+          recall_score: number | null
+          total_correct: number | null
+          total_predictions: number | null
+          updated_at: string
+          version: string
+        }
+        Insert: {
+          accuracy?: number | null
+          config?: Json | null
+          created_at?: string
+          description?: string | null
+          domain: string
+          f1_score?: number | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          precision_score?: number | null
+          recall_score?: number | null
+          total_correct?: number | null
+          total_predictions?: number | null
+          updated_at?: string
+          version?: string
+        }
+        Update: {
+          accuracy?: number | null
+          config?: Json | null
+          created_at?: string
+          description?: string | null
+          domain?: string
+          f1_score?: number | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          precision_score?: number | null
+          recall_score?: number | null
+          total_correct?: number | null
+          total_predictions?: number | null
+          updated_at?: string
+          version?: string
+        }
+        Relationships: []
+      }
+      ml_predictions: {
+        Row: {
+          confidence: number
+          created_at: string
+          domain: string
+          id: string
+          is_correct: boolean | null
+          latency_ms: number | null
+          model_id: string | null
+          prediction: Json
+          target_id: string | null
+          target_type: string | null
+          user_id: string | null
+        }
+        Insert: {
+          confidence?: number
+          created_at?: string
+          domain: string
+          id?: string
+          is_correct?: boolean | null
+          latency_ms?: number | null
+          model_id?: string | null
+          prediction: Json
+          target_id?: string | null
+          target_type?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          domain?: string
+          id?: string
+          is_correct?: boolean | null
+          latency_ms?: number | null
+          model_id?: string | null
+          prediction?: Json
+          target_id?: string | null
+          target_type?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_predictions_model_id_fkey"
+            columns: ["model_id"]
+            isOneToOne: false
+            referencedRelation: "ml_models"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ml_training_feedback: {
+        Row: {
+          corrected_label: string
+          created_at: string
+          domain: string
+          feedback_source: string | null
+          id: string
+          original_label: string | null
+          prediction_id: string | null
+          reason: string | null
+          reviewer_id: string | null
+        }
+        Insert: {
+          corrected_label: string
+          created_at?: string
+          domain: string
+          feedback_source?: string | null
+          id?: string
+          original_label?: string | null
+          prediction_id?: string | null
+          reason?: string | null
+          reviewer_id?: string | null
+        }
+        Update: {
+          corrected_label?: string
+          created_at?: string
+          domain?: string
+          feedback_source?: string | null
+          id?: string
+          original_label?: string | null
+          prediction_id?: string | null
+          reason?: string | null
+          reviewer_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_training_feedback_prediction_id_fkey"
+            columns: ["prediction_id"]
+            isOneToOne: false
+            referencedRelation: "ml_predictions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       negotiations: {
         Row: {
           buyer_id: string
