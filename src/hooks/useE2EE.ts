@@ -668,11 +668,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       hasRatchet: !!ratchetRef.current,
     });
 
-    // Log tamper warning but do NOT block — hardCrypto uses snapshotted
-    // native references that are safe even if LiveKit E2EE replaced crypto.subtle
-    if (isTampered()) {
-      console.warn('[E2EE] crypto.subtle tampered (likely LiveKit E2EE) — using hardCrypto snapshots');
-    }
+    // hardCrypto snapshots are always safe — no tamper check needed
 
     // BLOCK if fingerprint changed and not yet acknowledged
     if (state.fingerprintChanged) {
