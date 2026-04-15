@@ -38,10 +38,13 @@ export interface GroupedStories {
 
 export function useStories() {
   const { user, loading } = useAuth();
+  const isGuest = !loading && !user;
 
   return useQuery({
     queryKey: ['stories', loading ? 'loading' : user?.id ?? 'guest'],
     queryFn: async () => {
+      if (isGuest) return [];
+
       const now = new Date().toISOString();
 
       const { data: stories, error } = await supabase

@@ -80,6 +80,42 @@ function openRatchetDB(): Promise<IDBDatabase> {
   });
 }
 
+function recreateLegacyE2EEDatabase(): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      const deleteRequest = hardGlobals.idbOpen('forsure-e2ee', 3);
+      deleteRequest.onsuccess = () => {
+        try {
+          deleteRequest.result.close();
+        } catch {}
+        const deletion = indexedDB.deleteDatabase('forsure-e2ee');
+        deletion.onsuccess = () => resolve();
+        deletion.onerror = () => resolve();
+        deletion.onblocked = () => resolve();
+      };
+      deleteRequest.onerror = () => resolve();
+      deleteRequest.onupgradeneeded = () => {
+        try {
+          deleteRequest.transaction?.abort();
+        } catch {}
+        const deletion = indexedDB.deleteDatabase('forsure-e2ee');
+        deletion.onsuccess = () => resolve();
+        deletion.onerror = () => resolve();
+        deletion.onblocked = () => resolve();
+      };
+    } catch {
+      try {
+        const deletion = indexedDB.deleteDatabase('forsure-e2ee');
+        deletion.onsuccess = () => resolve();
+        deletion.onerror = () => resolve();
+        deletion.onblocked = () => resolve();
+      } catch {
+        resolve();
+      }
+    }
+  });
+}
+
 async function saveRatchetLocal(convId: string, state: RatchetState) {
   try {
     const json = await serializeRatchetState(state);
@@ -309,11 +345,42 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       setState(s => ({
         ...s,
         fingerprint: bundle.fingerprint,
+        initError: null,
         ready: s.ready || s.encrypted,
       }));
       console.log('[E2EE] Keys initialized & published (with prekeys)');
     } catch (err) {
       console.error('[E2EE] Init failed:', err);
+      const isMissingStoreError = err instanceof DOMException && err.name === 'NotFoundError';
+      if (isMissingStoreError) {
+        console.warn('[E2EE] Legacy IndexedDB schema detected, recreating local E2EE stores');
+        await recreateLegacyE2EEDatabase();
+        initRef.current = false;
+        keysRef.current = null;
+        peerKeyRef.current = null;
+        ratchetRef.current = null;
+        prekeyInfoRef.current = null;
+        x3dhInfoRef.current = null;
+        legacySessionReadyRef.current = false;
+        setState(s => ({
+          ...s,
+          ready: false,
+          encrypted: false,
+          ratchetActive: false,
+          fingerprint: null,
+          peerFingerprint: null,
+          fingerprintChanged: false,
+          peerKeyMissing: false,
+          initError: null,
+        }));
+        queueMicrotask(() => {
+          if (!initRef.current) {
+            initRef.current = true;
+            void initKeys();
+          }
+        });
+        return;
+      }
       setState(s => ({ ...s, initError: 'Key initialization failed' }));
     }
   }, [user]);
