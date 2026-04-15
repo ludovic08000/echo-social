@@ -741,10 +741,11 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           taggedEnvelope.encryptionMode = 'ratchet';
 
           // Attach X3DH header to the FIRST message so responder can derive the same SK
+          // IMPORTANT: We keep x3dhInfoRef intact so retries can re-attach the header.
+          // The caller (ChatView) will call clearX3DHHeader() after confirmed send.
           if (x3dhInfoRef.current) {
             taggedEnvelope.x3dh = x3dhInfoRef.current;
-            x3dhInfoRef.current = null; // Only attach once
-            console.log('[E2EE] ✅ encrypt via X3DH + Double Ratchet (initial message)');
+            console.log('[E2EE] ✅ encrypt via X3DH + Double Ratchet (initial message with X3DH header)');
           } else {
             console.log('[E2EE] ✅ encrypt via Double Ratchet (forward secrecy)');
           }
