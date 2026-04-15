@@ -21,6 +21,7 @@ export function useMessageQueue(
   isEncryptionReady: boolean,
   isEncryptionActive: boolean,
   onMessageSent?: (localId: string) => void | Promise<void>,
+  allowPlaintext = false,
 ) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -172,8 +173,12 @@ export function useMessageQueue(
       conversationId,
     });
 
-    // Case 1: Not an encrypted conversation (Zeus) → plaintext direct
+    // Case 1: Plaintext explicitly allowed (Zeus only)
     if (!isEncryptionActive) {
+      if (!allowPlaintext) {
+        throw new Error('🔒 Envoi bloqué — chiffrement requis pour cette conversation');
+      }
+
       console.log('[MSG] Non-encrypted conversation, sending plaintext');
       const { error } = await supabase
         .from('messages')
@@ -202,7 +207,7 @@ export function useMessageQueue(
 
     if (!isSpecial) recordSentMessage(sanitized);
     return queued;
-  }, [user, conversationId, isEncryptionActive]);
+  }, [user, conversationId, isEncryptionActive, allowPlaintext]);
 
   /** Retry a failed message */
   const retryMessage = useCallback(async (localId: string) => {

@@ -106,8 +106,9 @@ export function ChatView({ conversationId }: ChatViewProps) {
     conversationId,
     e2ee.encrypt,
     e2ee.isReady(),
-    !isZeusConversation && e2ee.encrypted,
+    !isZeusConversation,
     e2ee.acknowledgeSentPayload,
+    isZeusConversation,
   );
 
   const { upload: rawUpload, isUploading } = useImageUpload({
@@ -119,7 +120,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
     const isVideo = /\.(mp4|mov|webm|avi|mkv)/i.test(file.name);
     const label = isVideo ? '🎬 Vidéo' : '📷 Photo';
 
-    if (isZeusConversation || !e2ee.encrypted) {
+    if (isZeusConversation) {
       // No encryption — upload plaintext, send normally
       const url = await rawUpload(file);
       if (url) {
@@ -147,7 +148,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
       console.error('Media encryption failed:', err);
       toast.error('Erreur de chiffrement du média');
     }
-  }, [isZeusConversation, e2ee.encrypted, rawUpload, conversationId, legacySendMessage, queue]);
+  }, [isZeusConversation, rawUpload, conversationId, legacySendMessage, queue]);
 
   const {
     callState, callType, isMuted, isCameraOff, duration, isE2eeActive,
@@ -228,13 +229,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
     if (!isZeusConversation && e2ee.fingerprintChanged) {
       toast.error('Clé de sécurité modifiée : valide d\'abord le contact (bouton OK en haut).');
       return;
-    }
-
-    // If peer has no keys, allow sending as plaintext (they'll see it when they connect)
-    // Don't block existing contacts from communicating
-    if (!isZeusConversation && e2ee.peerKeyMissing) {
-      console.warn('[MSG] Peer has no encryption keys — sending plaintext via queue');
-      // Send as non-encrypted (the queue handles this when isEncryptionActive is false)
     }
 
     const body = replyTo
