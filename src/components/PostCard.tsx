@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo } from 'react';
+import { useEffect, useRef, useState, memo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -25,6 +25,7 @@ import { toast } from 'sonner';
 import { FeedAutoplayVideo } from './FeedAutoplayVideo';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { imagePresets } from '@/lib/imageOptimize';
+import { useMLTracking } from '@/hooks/useMLFeed';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,6 +73,28 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const { data: isMinorUser } = useCurrentUserIsMinor();
   const reportUser = useReportUser();
   const isMobile = useIsMobile();
+  const { trackView, startDwell, endDwell, trackInteraction } = useMLTracking();
+  const cardRef = useRef<HTMLElement>(null);
+
+  // ML tracking: IntersectionObserver for view + dwell
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || !user) return;
+    const contentType = isVideoPost ? 'video' : post.image_url ? 'image' : 'text';
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          trackView(post.id, { content_type: contentType });
+          startDwell(post.id);
+        } else {
+          endDwell(post.id, { content_type: contentType });
+        }
+      },
+      { threshold: 0.5 }
+    );
+    observer.observe(el);
+    return () => { observer.disconnect(); endDwell(post.id, { content_type: contentType }); };
+  }, [post.id, user?.id]);
 
   const postUrl = generatePostUrl(post.id);
   const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
@@ -168,7 +191,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const isOwner = user?.id === post.user_id;
 
   return (
-    <article className="group relative bg-card border-y border-border/20 sm:border sm:border-border/20 sm:rounded-[26px] transition-all duration-300 shadow-[0_10px_34px_-22px_hsl(var(--foreground)/0.2)] hover:shadow-[0_18px_44px_-24px_hsl(var(--foreground)/0.24)]">
+    <article ref={cardRef} className="group relative bg-card border-y border-border/20 sm:border sm:border-border/20 sm:rounded-[26px] transition-all duration-300 shadow-[0_10px_34px_-22px_hsl(var(--foreground)/0.2)] hover:shadow-[0_18px_44px_-24px_hsl(var(--foreground)/0.24)]">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5">
         <div className="flex items-center gap-2.5 min-w-0">

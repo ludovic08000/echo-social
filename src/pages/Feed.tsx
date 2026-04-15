@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useCallback, useState, useMemo, lazy, Suspense } from 'react';
+import { useMLScoring, useMLRecommendations, blendScores } from '@/hooks/useMLFeed';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePosts } from '@/hooks/usePosts';
 import { AppLayout } from '@/components/AppLayout';
@@ -62,7 +63,7 @@ export default function Feed() {
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   // Deduplicate posts across pages to prevent React key warnings
-  const posts = useMemo(() => {
+  const rawPosts = useMemo(() => {
     const all = data?.pages.flat() || [];
     const seen = new Set<string>();
     return all.filter((p) => {
@@ -71,6 +72,23 @@ export default function Feed() {
       return true;
     });
   }, [data?.pages]);
+
+  // ML scoring — request AI scores for current posts
+  const postIds = useMemo(() => rawPosts.map(p => p.id), [rawPosts]);
+  const { data: mlData } = useMLScoring(postIds);
+  const { data: mlRecos } = useMLRecommendations();
+
+  // Blend ML scores with chronological order for smart ranking
+  const posts = useMemo(() => {
+    const mlScores = mlData?.scores || {};
+    if (Object.keys(mlScores).length === 0) return rawPosts;
+    
+    return [...rawPosts].sort((a, b) => {
+      const scoreA = blendScores(rawPosts.indexOf(a) * -1, mlScores[a.id], 0.3);
+      const scoreB = blendScores(rawPosts.indexOf(b) * -1, mlScores[b.id], 0.3);
+      return scoreB - scoreA;
+    });
+  }, [rawPosts, mlData?.scores]);
 
   // Track feed load performance
   useEffect(() => {
