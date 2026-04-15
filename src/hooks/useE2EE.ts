@@ -114,12 +114,17 @@ function recreateLegacyE2EEDatabase(): Promise<void> {
   });
 }
 
-async function saveRatchetLocal(convId: string, state: RatchetState) {
+async function saveRatchetLocal(convId: string, state: RatchetState, x3dhHeader?: X3DHInitialMessage | null) {
   try {
     const json = await serializeRatchetState(state);
     const db = await openRatchetDB();
     const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
-    tx.objectStore(RATCHET_STORE_NAME).put({ convId, data: json });
+    const record: any = { convId, data: json };
+    // Persist X3DH header alongside ratchet state (Signal: attach PreKey header until first peer response)
+    if (x3dhHeader !== undefined) {
+      record.x3dhHeader = x3dhHeader ? hardGlobals.jsonStringify(x3dhHeader) : null;
+    }
+    tx.objectStore(RATCHET_STORE_NAME).put(record);
     await new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
@@ -129,7 +134,7 @@ async function saveRatchetLocal(convId: string, state: RatchetState) {
   }
 }
 
-async function loadRatchetLocal(convId: string): Promise<RatchetState | null> {
+async function loadRatchetLocal(convId: string): Promise<{ state: RatchetState; x3dhHeader: X3DHInitialMessage | null } | null> {
   try {
     const db = await openRatchetDB();
     const tx = db.transaction(RATCHET_STORE_NAME, 'readonly');
@@ -139,7 +144,9 @@ async function loadRatchetLocal(convId: string): Promise<RatchetState | null> {
       req.onerror = () => reject(req.error);
     });
     if (!result?.data) return null;
-    return deserializeRatchetState(result.data);
+    const state = await deserializeRatchetState(result.data);
+    const x3dhHeader = result.x3dhHeader ? hardGlobals.jsonParse(result.x3dhHeader) as X3DHInitialMessage : null;
+    return { state, x3dhHeader };
   } catch {
     return null;
   }
@@ -297,7 +304,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const keysRef = useRef<IdentityKeyPair | null>(null);
   const peerKeyRef = useRef<{ identityKey: string; signingKey: string; fingerprint: string } | null>(null);
   const ratchetRef = useRef<RatchetState | null>(null);
-  const pendingRatchetStateRef = useRef<Map<string, RatchetState>>(new Map());
   const pendingPayloadRef = useRef<Map<string, string>>(new Map());
   const prekeyInfoRef = useRef<{ prekeyId: number; senderPublicKey: string } | null>(null);
   const x3dhInfoRef = useRef<X3DHInitialMessage | null>(null);
@@ -419,7 +425,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       prekeyInfoRef.current = null;
       x3dhInfoRef.current = null;
       legacySessionReadyRef.current = false;
-      pendingRatchetStateRef.current.clear();
       peerHasRespondedRef.current = false;
       pendingPayloadRef.current.clear();
       setState(s => ({
@@ -636,13 +641,19 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       throw new EncryptionError('🔒 Session Double Ratchet incomplète — message en attente chiffrée');
     }
 
-    // Try loading persisted ratchet
+    // Try loading persisted ratchet + X3DH header
     const persisted = await loadRatchetLocal(conversationId);
     if (persisted) {
-      if (isRatchetFullyReady(persisted)) {
-        ratchetRef.current = persisted;
+      if (isRatchetFullyReady(persisted.state)) {
+        ratchetRef.current = persisted.state;
+        // Restore X3DH header for Signal-style PreKey persistence across refresh
+        if (persisted.x3dhHeader) {
+          x3dhInfoRef.current = persisted.x3dhHeader;
+          peerHasRespondedRef.current = false;
+          console.info('[E2EE] Restored X3DH header from persistence (PreKey header will be re-attached)');
+        }
         console.info('[E2EE] Loaded persisted ratchet — ready for encrypt');
-        return persisted;
+        return persisted.state;
       }
       throw new EncryptionError('🔒 Session Double Ratchet persistée incomplète — message en attente chiffrée');
     }
@@ -689,7 +700,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     }
 
     ratchetRef.current = ratchet;
-    await saveRatchetLocal(conversationId, ratchet);
+    await saveRatchetLocal(conversationId, ratchet, x3dhInfoRef.current);
     console.info('[RATCHET] ✅ init with X3DH (initiator) — ready for encrypt');
     return ratchet;
   }, [conversationId, peerUserId]);
@@ -772,7 +783,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       // This prevents the page-refresh race where ratchet state would revert
       // to pre-encrypt while the encrypted body is already queued.
       ratchetRef.current = newState;
-      await saveRatchetLocal(conversationId!, newState);
+      await saveRatchetLocal(conversationId!, newState, x3dhInfoRef.current);
 
       setState(s => ({ ...s, ratchetActive: true }));
       return serializedPayload;
@@ -844,7 +855,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       try {
         const persisted = await loadRatchetLocal(conversationId);
         if (persisted) {
-          ratchet = persisted;
+          ratchet = persisted.state;
           ratchetRef.current = ratchet;
           console.info('[RATCHET] Loaded persisted ratchet state for decrypt');
         } else if (x3dhHeader) {
@@ -895,14 +906,15 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           ratchet, envelope, peerKeyRef.current?.signingKey,
         );
         ratchetRef.current = newState;
-        await saveRatchetLocal(conversationId!, newState);
         if (!peerHasRespondedRef.current) {
           peerHasRespondedRef.current = true;
           if (x3dhInfoRef.current) {
-            console.info('[E2EE] Peer decrypted — X3DH header cleared (Signal-style)');
+            console.info('[E2EE] Peer responded — X3DH header cleared (Signal-style promotion)');
             x3dhInfoRef.current = null;
           }
         }
+        // Persist ratchet with X3DH header cleared (null if peer responded)
+        await saveRatchetLocal(conversationId!, newState, x3dhInfoRef.current);
         setState(s => ({ ...s, ratchetActive: true }));
         console.debug(`[RATCHET] ✅ decrypt OK — verified=${verified}`);
         return { text: plaintext, encrypted: true, verified };
@@ -983,7 +995,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       }).catch(() => {});
       ratchetRef.current = null;
       peerHasRespondedRef.current = false;
-      pendingRatchetStateRef.current.clear();
+      
       pendingPayloadRef.current.clear();
     }
     setState(s => ({ ...s, fingerprintChanged: false, ready: true, ratchetActive: false }));
