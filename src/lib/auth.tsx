@@ -33,37 +33,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const isResetRoute = typeof window !== 'undefined' && window.location.pathname === '/reset-password';
 
+    const applySessionState = (nextSession: Session | null) => {
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+      setLoading(false);
+    };
+
+    const clearSessionState = () => {
+      stopSessionGuard();
+      setSession(null);
+      setUser(null);
+      setLoading(false);
+    };
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         if (event === 'PASSWORD_RECOVERY') {
           setRecoveryFlag();
-          stopSessionGuard();
-          setSession(null);
-          setUser(null);
-          setLoading(false);
+          clearSessionState();
           return;
         }
 
         if (event === 'SIGNED_OUT') {
-          stopSessionGuard();
-          setSession(null);
-          setUser(null);
-          setLoading(false);
+          clearSessionState();
           return;
         }
 
         const onResetRoute = typeof window !== 'undefined' && window.location.pathname === '/reset-password';
         if (onResetRoute || detectRecoveryFromHash() || isRecoveryPending()) {
-          stopSessionGuard();
-          setSession(null);
-          setUser(null);
-          setLoading(false);
+          clearSessionState();
           return;
         }
 
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
+        applySessionState(session);
 
         if (event === 'SIGNED_IN' && session?.user) {
           if (isRecoveryPending()) return;
@@ -90,19 +92,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (isResetRoute || initialRecovery || detectRecoveryFromHash() || isRecoveryPending()) {
-        stopSessionGuard();
-        setSession(null);
-        setUser(null);
-        setLoading(false);
-        return;
-      }
+    const initAuth = async () => {
+      try {
+        const shouldBlockSession = isResetRoute || initialRecovery || detectRecoveryFromHash() || isRecoveryPending();
+        if (shouldBlockSession) {
+          clearSessionState();
+          return;
+        }
 
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+        if (!refreshError && refreshed.session) {
+          applySessionState(refreshed.session);
+          return;
+        }
+
+        const { data: current } = await supabase.auth.getSession();
+        applySessionState(current.session);
+      } catch {
+        const { data: current } = await supabase.auth.getSession();
+        applySessionState(current.session);
+      }
+    };
+
+    void initAuth();
 
     return () => subscription.unsubscribe();
   }, []);
