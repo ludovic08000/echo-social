@@ -237,6 +237,16 @@ export function useCall(options?: UseCallOptions) {
       const room = new Room({
         adaptiveStream: true,
         dynacast: true,
+        audioCaptureDefaults: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+          sampleRate: 48000,
+        },
+        audioOutput: {
+          deviceId: 'default',
+        },
         ...(e2eeKeyProvider && e2eeWorker
           ? { e2ee: { keyProvider: e2eeKeyProvider, worker: e2eeWorker } }
           : {}),
@@ -378,7 +388,13 @@ export function useCall(options?: UseCallOptions) {
       }
 
       console.info('[CALL] publishing local tracks...');
-      await room.localParticipant.setMicrophoneEnabled(true);
+      await room.localParticipant.setMicrophoneEnabled(true, {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+        sampleRate: 48000,
+      });
 
       if (type === 'video') {
         await room.localParticipant.setCameraEnabled(true);
