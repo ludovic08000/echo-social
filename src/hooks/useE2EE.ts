@@ -749,11 +749,12 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       throw new EncryptionError('Rate limited — possible exfiltration attempt');
     }
 
+    // Try Double Ratchet first, fall back to legacy session if X3DH/ratchet unavailable
     try {
       const ratchet = await initRatchetIfNeeded();
       const readiness = getRatchetReadiness(ratchet);
       if (!ratchet || !readiness.canEncrypt || !isRatchetReadyForEncrypt(ratchet)) {
-        throw new EncryptionError(`🔒 Double Ratchet non prêt pour l'envoi${readiness.reason ? ` (${readiness.reason})` : ''} — message en attente chiffrée`);
+        throw new Error('Ratchet not ready');
       }
 
       const { envelope, newState } = await ratchetEncrypt(
@@ -778,20 +779,47 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         pendingPayloadRef.current.set(localId, serializedPayload);
       }
 
-      // COMMIT ratchet state IMMEDIATELY after encryption.
-      // The encrypted payload is persisted in the message queue's IndexedDB,
-      // so retries will reuse the same ciphertext — no nonce reuse risk.
-      // This prevents the page-refresh race where ratchet state would revert
-      // to pre-encrypt while the encrypted body is already queued.
       ratchetRef.current = newState;
       await saveRatchetLocal(conversationId!, newState, x3dhInfoRef.current);
 
       setState(s => ({ ...s, ratchetActive: true }));
       return serializedPayload;
-    } catch (err) {
-      if (err instanceof EncryptionError) throw err;
-      console.error('[E2EE] ❌ Encrypt failed:', err);
-      throw new EncryptionError(`Encryption failed: ${err instanceof Error ? err.message : String(err)}`);
+    } catch (ratchetErr) {
+      // Ratchet failed — try legacy session as fallback
+      console.warn('[E2EE] Ratchet unavailable, trying legacy session:', ratchetErr instanceof Error ? ratchetErr.message : ratchetErr);
+      try {
+        const session = await ensureLegacySession();
+        if (!session) {
+          throw new EncryptionError('🔒 Aucune session de chiffrement disponible — réessayez dans quelques instants');
+        }
+
+        const { incrementSessionMessageCount } = await import('@/lib/crypto/keyManager');
+        const ciphertext = await encryptMessage(
+          plaintext,
+          session.sharedSecret,
+          keysRef.current!.signingPrivateKey,
+          keysRef.current!.fingerprint,
+          session.messageCount,
+        );
+
+        // Tag as legacy for deterministic decryption routing
+        const parsed = hardGlobals.jsonParse(ciphertext);
+        parsed.encryptionMode = 'legacy';
+        const serializedPayload = hardGlobals.jsonStringify(parsed);
+
+        if (localId) {
+          pendingPayloadRef.current.set(localId, serializedPayload);
+        }
+
+        await incrementSessionMessageCount(conversationId!);
+        legacySessionReadyRef.current = true;
+        console.info('[E2EE] ✅ encrypt via legacy session (fallback)');
+        return serializedPayload;
+      } catch (legacyErr) {
+        if (legacyErr instanceof EncryptionError) throw legacyErr;
+        console.error('[E2EE] ❌ Both ratchet and legacy encrypt failed:', legacyErr);
+        throw new EncryptionError('🔒 Chiffrement impossible — réessayez dans quelques instants');
+      }
     }
   }, [state.fingerprintChanged, conversationId, user, initRatchetIfNeeded]);
 
@@ -982,12 +1010,13 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   }, [state.encrypted, state.fingerprintChanged, isZeus]);
 
   /** Acknowledge fingerprint change — user explicitly trusts new key */
-  const acknowledgeFingerprint = useCallback(() => {
+  const acknowledgeFingerprint = useCallback(async () => {
     if (peerKeyRef.current && peerUserId) {
       saveKnownFingerprint(peerUserId, peerKeyRef.current.fingerprint);
       saveKnownFingerprintServer(peerUserId, peerKeyRef.current.fingerprint);
     }
     if (conversationId) {
+      // Clear old ratchet state
       openRatchetDB().then(db => {
         try {
           const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
@@ -996,8 +1025,25 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       }).catch(() => {});
       ratchetRef.current = null;
       peerHasRespondedRef.current = false;
-      
+      x3dhInfoRef.current = null;
       pendingPayloadRef.current.clear();
+
+      // Delete old legacy session and re-establish with new peer key
+      try {
+        const { deleteSessionKey } = await import('@/lib/crypto/keyManager');
+        await deleteSessionKey(conversationId);
+      } catch {}
+
+      if (keysRef.current && peerKeyRef.current) {
+        try {
+          await establishSession(keysRef.current, peerKeyRef.current.identityKey, conversationId, peerKeyRef.current.fingerprint);
+          legacySessionReadyRef.current = true;
+          console.log('[E2EE] ✅ Legacy session re-established after fingerprint acknowledgement');
+        } catch (e) {
+          console.warn('[E2EE] Legacy session re-establish failed after ack:', e);
+          legacySessionReadyRef.current = false;
+        }
+      }
     }
     setState(s => ({ ...s, fingerprintChanged: false, ready: true, ratchetActive: false }));
   }, [peerUserId, conversationId]);
