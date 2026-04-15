@@ -372,8 +372,7 @@ export function useIncomingCall() {
         // try re-establishing session and retrying
         console.warn('[CALL] First decrypt attempt failed, re-deriving session:', firstErr);
         try {
-          const { getOrCreateIdentityKeys, exportPublicKeyBundle, establishSession, deleteSessionKey } = await import('@/lib/crypto');
-          const { supabase } = await import('@/integrations/supabase/client');
+          const { getOrCreateIdentityKeys, establishSession, deleteSessionKey } = await import('@/lib/crypto');
           const { data: { user: currentUser } } = await supabase.auth.getUser();
           if (currentUser && incomingCall) {
             const peerId = incomingCall.caller_id;
