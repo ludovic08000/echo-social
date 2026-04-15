@@ -3,8 +3,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 
 export function useIsCreator(userId?: string) {
+  const { loading } = useAuth();
+
   return useQuery({
-    queryKey: ['is-creator', userId],
+    queryKey: ['is-creator', userId, loading ? 'loading' : 'ready'],
     queryFn: async () => {
       if (!userId) return false;
       const { data } = await supabase
@@ -14,7 +16,7 @@ export function useIsCreator(userId?: string) {
         .maybeSingle();
       return data?.is_creator ?? false;
     },
-    enabled: !!userId,
+    enabled: !!userId && !loading,
   });
 }
 
