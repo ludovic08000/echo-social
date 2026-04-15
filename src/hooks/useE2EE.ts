@@ -727,6 +727,108 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     return session;
   }, [conversationId]);
 
+  const ensureKeysAndPeerSync = useCallback(async (forceSessionRefresh = false): Promise<boolean> => {
+    if (!user || !peerUserId || isZeus) return false;
+
+    if (!keysRef.current) {
+      try {
+        const keys = await getOrCreateIdentityKeys(user.id);
+        keysRef.current = keys;
+        setState(s => ({ ...s, fingerprint: s.fingerprint ?? keys.fingerprint }));
+      } catch (error) {
+        console.warn('[E2EE] Failed to recover local identity keys:', error);
+        return false;
+      }
+    }
+
+    if (peerKeyRef.current && !forceSessionRefresh) {
+      return true;
+    }
+
+    try {
+      const { data: freshPeerKey } = await supabase
+        .from('user_public_keys')
+        .select('identity_key, signing_key, fingerprint')
+        .eq('user_id', peerUserId)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (!freshPeerKey) {
+        setState(s => ({
+          ...s,
+          encrypted: false,
+          ready: false,
+          peerKeyMissing: true,
+        }));
+        return false;
+      }
+
+      const { changed: fingerprintChanged } = await checkFingerprintChangeWithServer(
+        user.id,
+        peerUserId,
+        freshPeerKey.fingerprint,
+      );
+
+      peerKeyRef.current = {
+        identityKey: freshPeerKey.identity_key,
+        signingKey: freshPeerKey.signing_key,
+        fingerprint: freshPeerKey.fingerprint,
+      };
+
+      saveKnownFingerprint(peerUserId, freshPeerKey.fingerprint);
+      void saveKnownFingerprintServer(peerUserId, freshPeerKey.fingerprint);
+
+      if (conversationId && (forceSessionRefresh || fingerprintChanged)) {
+        try {
+          const db = await openRatchetDB();
+          const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
+          tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
+          await new Promise<void>((resolve, reject) => {
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+          db.close();
+        } catch {}
+
+        ratchetRef.current = null;
+        peerHasRespondedRef.current = false;
+        x3dhInfoRef.current = null;
+        pendingPayloadRef.current.clear();
+
+        try {
+          const { deleteSessionKey } = await import('@/lib/crypto/keyManager');
+          await deleteSessionKey(conversationId);
+        } catch {}
+      }
+
+      if (conversationId && keysRef.current) {
+        try {
+          await ensureLegacySession();
+          legacySessionReadyRef.current = true;
+        } catch (sessionError) {
+          legacySessionReadyRef.current = false;
+          console.warn('[E2EE] Session auto-repair failed:', sessionError);
+        }
+      }
+
+      setState(s => ({
+        ...s,
+        peerFingerprint: freshPeerKey.fingerprint,
+        encrypted: true,
+        ready: true,
+        ratchetActive: fingerprintChanged ? false : s.ratchetActive,
+        fingerprintChanged,
+        peerKeyMissing: false,
+        initError: null,
+      }));
+
+      return true;
+    } catch (error) {
+      console.warn('[E2EE] Peer key sync failed:', error);
+      return false;
+    }
+  }, [conversationId, ensureLegacySession, isZeus, peerUserId, user]);
+
   /**
    * Initialize Double Ratchet as initiator (sender of first ratchet message).
    * Uses X3DH for key agreement (3 or 4 DH operations) then seeds Double Ratchet.
@@ -935,6 +1037,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       return { text: body, encrypted: false, verified: false };
     }
 
+    if (!isZeus) {
+      await ensureKeysAndPeerSync(false);
+    }
+
     if (!cryptoRateCheck('decrypt')) {
       return { text: '🔒 Opération limitée (sécurité)', encrypted: true, verified: false };
     }
@@ -970,7 +1076,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       console.error('[E2EE] decrypt failed:', err);
       return { text: '🔒 Message chiffré', encrypted: true, verified: false };
     }
-  }, [conversationId, user]);
+  }, [conversationId, ensureKeysAndPeerSync, isZeus, user]);
 
   /** Decrypt a ratchet-mode message */
   const decryptRatchetMessage = useCallback(async (
@@ -1099,41 +1205,19 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       return { text: result.plaintext, encrypted: true, verified: result.verified };
     } catch {
       // First decrypt failed — session may be desynchronized.
-      // Re-fetch peer key from server, re-derive session, and retry once.
+      // Auto-correct local/remote key state, rebuild the session, and retry once.
       if (user && conversationId && peerUserId) {
         try {
           console.warn('[E2EE] Legacy decrypt failed — attempting session re-derivation');
-          const { data: freshPeerKey } = await supabase
-            .from('user_public_keys')
-            .select('identity_key, signing_key, fingerprint')
-            .eq('user_id', peerUserId)
-            .eq('is_active', true)
-            .maybeSingle();
+          const repaired = await ensureKeysAndPeerSync(true);
 
-          if (freshPeerKey && keysRef.current) {
-            // Update peer key ref
-            peerKeyRef.current = {
-              identityKey: freshPeerKey.identity_key,
-              signingKey: freshPeerKey.signing_key,
-              fingerprint: freshPeerKey.fingerprint,
-            };
+          if (repaired && peerKeyRef.current) {
+            const newSession = await loadSessionKey(conversationId);
+            if (!newSession) {
+              return { text: '🔒 Clé de session manquante', encrypted: true, verified: false };
+            }
 
-            // Delete old session and re-derive
-            const { deleteSessionKey: delSession } = await import('@/lib/crypto/keyManager');
-            await delSession(conversationId);
-            const newSession = await establishSession(
-              keysRef.current,
-              freshPeerKey.identity_key,
-              conversationId,
-              freshPeerKey.fingerprint,
-            );
-            legacySessionReadyRef.current = true;
-
-            // Save updated fingerprint
-            saveKnownFingerprint(peerUserId, freshPeerKey.fingerprint);
-
-            // Retry decrypt with fresh session
-            const retryResult = await decryptMessage(rawBody, newSession.sharedSecret, freshPeerKey.signing_key);
+            const retryResult = await decryptMessage(rawBody, newSession.sharedSecret, peerKeyRef.current.signingKey);
             console.info('[E2EE] ✅ Decrypt succeeded after session re-derivation');
             return { text: retryResult.plaintext, encrypted: true, verified: retryResult.verified };
           }
@@ -1143,7 +1227,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       }
       return { text: '🔒 Message chiffré (clé expirée)', encrypted: true, verified: false };
     }
-  }, [conversationId, user, ensureLegacySession]);
+  }, [conversationId, user, ensureKeysAndPeerSync, ensureLegacySession, peerUserId]);
 
   /** Check if encryption is ready for this conversation */
   const isReady = useCallback((): boolean => {

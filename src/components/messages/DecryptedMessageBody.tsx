@@ -34,6 +34,8 @@ interface DecryptedMessageBodyProps {
   isMe?: boolean;
   /** Pre-cached plaintext for own sent messages (ratchet can't self-decrypt) */
   cachedPlaintext?: string;
+  /** Changes when E2EE state self-heals so decryption retries automatically */
+  refreshKey?: string | number;
 }
 
 export const DecryptedMessageBody = memo(function DecryptedMessageBody({
@@ -43,6 +45,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   onDecrypted,
   isMe,
   cachedPlaintext,
+  refreshKey,
 }: DecryptedMessageBodyProps) {
   const [displayText, setDisplayText] = useState<string | null>(null);
   const [mediaKeyB64, setMediaKeyB64] = useState<string | null>(null);
@@ -101,7 +104,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     });
 
     return () => { cancelled = true; };
-  }, [body, decrypt, isEncryptionActive, onDecrypted, isMe, cachedPlaintext]);
+  }, [body, decrypt, isEncryptionActive, onDecrypted, isMe, cachedPlaintext, refreshKey]);
 
   if (isDecrypting || displayText === null) {
     return (
