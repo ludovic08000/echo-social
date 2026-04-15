@@ -723,7 +723,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       try {
         const ratchet = await initRatchetIfNeeded();
         const readiness = getRatchetReadiness(ratchet);
-        if (ratchet && readiness.canEncrypt) {
+        if (ratchet && readiness.canEncrypt && isRatchetReadyForEncrypt(ratchet)) {
           const { envelope, newState } = await ratchetEncrypt(
             ratchet,
             plaintext,
@@ -751,7 +751,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         }
 
         if (ratchet) {
-          console.debug('[E2EE] Ratchet not ready for encrypt, falling back to legacy:', readiness.reason);
+          console.warn(`[RATCHET] encrypt blocked — ratchet not ready (${readiness.reason ?? 'unknown'})`);
         }
       } catch (ratchetErr) {
         console.warn('[E2EE] Ratchet encrypt failed, falling back to legacy:', 
@@ -951,6 +951,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           const result = await decryptMessage(rawBody, prekeySecret, peerKeyRef.current?.signingKey);
           return { text: result.plaintext, encrypted: true, verified: result.verified };
         }
+        console.error(`[X3DH] OPK mismatch — resync needed (prekey #${parsed.prekey.id} introuvable localement)`);
+        generateAndUploadPrekeys(user.id).catch(err => {
+          console.error('[X3DH] Failed to re-upload prekeys after OPK mismatch:', err);
+        });
       } catch (prekeyErr) {
         console.warn('[E2EE] Prekey decrypt failed:', prekeyErr);
       }

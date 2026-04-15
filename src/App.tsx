@@ -111,16 +111,16 @@ function IncomingCallHandler() {
   });
 
   const handleAccept = useCallback(async () => {
-    const accepted = await acceptCall();
-    if (!accepted) return;
+    try {
+      const accepted = await acceptCall();
+      if (!accepted?.decryptedCallKey) return;
 
-    // Open the chat with the caller
-    openChat(accepted.conversation_id);
-
-    activeIncomingCallIdRef.current = accepted.id;
-
-    // Start the call with the decrypted key (never stored in state)
-    call.startCall(accepted.conversation_id, accepted.call_type, accepted.decryptedCallKey);
+      openChat(accepted.conversation_id);
+      activeIncomingCallIdRef.current = accepted.id;
+      call.startCall(accepted.conversation_id, accepted.call_type, accepted.decryptedCallKey);
+    } catch (err) {
+      console.error('[CALL] Refused incoming call without valid E2EE key:', err);
+    }
   }, [acceptCall, openChat, call]);
 
   if (!user) return null;

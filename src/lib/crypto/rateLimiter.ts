@@ -108,10 +108,9 @@ export function cryptoRateCheck(operation: string): boolean {
       `[${recentCount}/${WIPE_THRESHOLD} lockdowns, ${distinctOps} distinct ops]`
     );
 
-    // AUTO-WIPE: Only if sustained multi-operation abuse (not a single React re-render loop)
+    // AUTO-WIPE DISABLED: never destroy crypto state automatically on heuristics.
     if (recentCount >= WIPE_THRESHOLD && distinctOps >= WIPE_MIN_DISTINCT_OPS) {
-      console.error('[SECURITY] 🚨 AUTO-WIPE — multi-operation exfiltration pattern detected');
-      triggerAutoWipe();
+      console.error('[SECURITY] 🚨 Sustained multi-operation crypto anomaly detected — auto-wipe disabled, preserving state for investigation');
     }
 
     for (const cb of violationCallbacks) {
@@ -142,30 +141,11 @@ export function resetCryptoRateLimits() {
   securityJournal.length = 0;
 }
 
-// ─── Auto-wipe on sustained attack ───
+// ─── Auto-wipe callbacks kept for backward compatibility, but never triggered ───
 
 const wipeCallbacks: Array<() => void> = [];
 
-/** Register callback for auto-wipe event (e.g. wipeAllKeys + logout) */
+/** Register callback for auto-wipe event (legacy compatibility only) */
 export function onAutoWipe(cb: () => void) {
   wipeCallbacks.push(cb);
-}
-
-function triggerAutoWipe() {
-  try { indexedDB.deleteDatabase('forsure-e2ee'); } catch {}
-  try { indexedDB.deleteDatabase('forsure-ratchet'); } catch {}
-  try { indexedDB.deleteDatabase('forsure-pin-wrap'); } catch {}
-  
-  try {
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith('forsure-')) keysToRemove.push(key);
-    }
-    keysToRemove.forEach(k => localStorage.removeItem(k));
-  } catch {}
-
-  for (const cb of wipeCallbacks) {
-    try { cb(); } catch {}
-  }
 }
