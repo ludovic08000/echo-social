@@ -506,15 +506,15 @@ export function useChatPin() {
         }
       } else if (verifyResult.salt) {
         try {
-          const rawBlob = await readRawIdentityBlob(user.id);
-          if (rawBlob) {
+          const fullBlob = await collectAllCryptoBlob(user.id);
+          if (fullBlob) {
             const salt = base64ToBytes(verifyResult.salt);
             const wrapKey = await derivePinKey(pin, salt);
             const iv = hardCrypto.getRandomValues(new Uint8Array(12));
             const ciphertext = await hardCrypto.encrypt(
               { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
               wrapKey,
-              new TextEncoder().encode(rawBlob) as Uint8Array<ArrayBuffer>,
+              new TextEncoder().encode(fullBlob) as Uint8Array<ArrayBuffer>,
             );
             await saveWrappedKeys(user.id, {
               wrappedBlob: bytesToBase64(new Uint8Array(ciphertext)),
@@ -522,7 +522,7 @@ export function useChatPin() {
               salt: verifyResult.salt,
             });
             await deleteRawIdentityBlob(user.id);
-            console.log('[PIN] Existing keys wrapped and raw deleted');
+            console.log('[PIN] Full crypto blob wrapped on first verify (v2)');
           }
         } catch {}
       }
