@@ -44,7 +44,7 @@ async function buildUserProfile(supabase: any, userId: string): Promise<UserProf
       .limit(500),
     supabase
       .from("user_interests")
-      .select("interest")
+      .select("interest_value")
       .eq("user_id", userId)
       .limit(20),
     supabase
@@ -57,7 +57,7 @@ async function buildUserProfile(supabase: any, userId: string): Promise<UserProf
   ]);
 
   const signals = signalsRes.data || [];
-  const interests = (interestsRes.data || []).map((i: any) => i.interest);
+  const interests = (interestsRes.data || []).map((i: any) => i.interest_value);
   const likes = likesRes.data || [];
 
   // Compute dwell time stats
