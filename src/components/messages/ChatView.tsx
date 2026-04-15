@@ -74,11 +74,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const { translations, translating, translate: translateMsg, autoTranslateMessages } = useMessageTranslation();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-translate non-French messages
+  // Auto-translate non-French messages — use decrypted text, never raw encrypted body
   useEffect(() => {
     if (messages?.length) {
       autoTranslateMessages(
-        messages.map(m => ({ id: m.id, body: m.body, sender_id: m.sender_id })),
+        messages.map(m => ({
+          id: m.id,
+          body: decryptedCache.get(m.id) || m.body,
+          sender_id: m.sender_id,
+        })),
         user?.id
       );
     }
