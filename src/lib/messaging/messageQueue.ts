@@ -467,8 +467,11 @@ class MessageQueueManager {
       }
 
       latest.updatedAt = Date.now();
-      // Reset encrypted body to force re-encryption (key may have changed)
-      latest.encryptedBody = null;
+      // Preserve already-encrypted payload on normal retry.
+      // This is CRITICAL for first X3DH/ratchet messages: retry must resend the exact same payload/header.
+      if (mode === 'secure_wait') {
+        latest.encryptedBody = null;
+      }
       await this.dbPut(latest);
       this.processMessage(latest);
     }, delay);
