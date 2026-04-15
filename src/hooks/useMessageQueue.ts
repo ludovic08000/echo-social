@@ -20,6 +20,7 @@ export function useMessageQueue(
   encrypt: ((plaintext: string) => Promise<string>) | null,
   isEncryptionReady: boolean,
   isEncryptionActive: boolean,
+  onMessageSent?: () => void,
 ) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -208,6 +209,7 @@ export function useMessageQueue(
           }
           console.log('[MSG] ✅ Message delivered!');
           if (!isSpecial) recordSentMessage(sanitized);
+          onMessageSent?.();
           queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
           queryClient.invalidateQueries({ queryKey: ['conversations'] });
           return;
