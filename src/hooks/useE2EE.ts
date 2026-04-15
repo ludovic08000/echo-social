@@ -38,6 +38,7 @@ import {
   isRatchetReadyForDecrypt,
   generateAndUploadPrekeys,
   refillPrekeysIfNeeded,
+  reconcilePrekeysWithServer,
   consumePeerPrekey,
   deriveFromOwnPrekey,
   // X3DH

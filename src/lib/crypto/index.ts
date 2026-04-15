@@ -88,10 +88,15 @@ export {
 export {
   generateAndUploadPrekeys,
   refillPrekeysIfNeeded,
+  reconcilePrekeysWithServer,
   consumePeerPrekey,
   deriveFromOwnPrekey,
   getPeerPrekeyCount,
   loadPrivatePrekey,
+  exportAllPrivatePrekeys,
+  importAllPrivatePrekeys,
+  wipePrivatePrekeys,
+  type StoredPrivatePrekey,
 } from './prekeys';
 
 // X3DH key agreement (Signal spec)
