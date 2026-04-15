@@ -239,7 +239,7 @@ export async function refreshSignedPrekeyIfNeeded(
   try {
     const { data } = await supabase
       .from('user_signed_prekeys')
-      .select('created_at')
+      .select('created_at, public_key, signature')
       .eq('user_id', userId)
       .eq('is_active', true)
       .order('created_at', { ascending: false })
@@ -248,6 +248,43 @@ export async function refreshSignedPrekeyIfNeeded(
 
     if (!data) {
       // No SPK at all — generate one
+      await generateAndUploadSignedPrekey(userId, signingPrivateKey);
+      return;
+    }
+
+    // Verify that the existing SPK signature matches the CURRENT signing key.
+    // If identity keys were regenerated, the old SPK signature won't verify
+    // against the new signing key → must regenerate SPK.
+    let signatureValid = false;
+    try {
+      // Get the public signing key from the private key
+      // We sign the SPK public key and check if the stored signature matches
+      const spkRaw = base64ToBuffer(data.public_key);
+      const sigRaw = base64ToBuffer(data.signature);
+      // Derive public key by re-signing and comparing is expensive;
+      // instead, import the signing public key from user_public_keys
+      const { data: pubKeyData } = await supabase
+        .from('user_public_keys')
+        .select('signing_key')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (pubKeyData) {
+        const signingPubKey = await hardCrypto.importKey(
+          'raw', base64ToBuffer(pubKeyData.signing_key),
+          { name: 'Ed25519' } as any, true, ['verify'],
+        );
+        signatureValid = await hardCrypto.verify(
+          'Ed25519' as any, signingPubKey, sigRaw, spkRaw,
+        );
+      }
+    } catch {
+      signatureValid = false;
+    }
+
+    if (!signatureValid) {
+      console.warn('[X3DH] SPK signature invalid with current signing key — regenerating');
       await generateAndUploadSignedPrekey(userId, signingPrivateKey);
       return;
     }
