@@ -517,52 +517,11 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             initError: null,
           }));
         } else {
-          console.log('[PEER_KEY] No identity key found for', peerUserId, '— trying prekey exchange');
+          console.log('[PEER_KEY] No identity key found for', peerUserId, '— peer may not have published keys yet');
 
-          // Try prekey-based key exchange (Signal-style)
-          if (keysRef.current && conversationId) {
-            try {
-              const result = await consumePeerPrekey(
-                keysRef.current.privateKey,
-                peerUserId,
-                conversationId,
-              );
-              if (result && !cancelled) {
-                // Store as a session key for this conversation
-                const { saveSessionKey } = await import('@/lib/crypto/keyManager');
-                await saveSessionKey({
-                  conversationId,
-                  sharedSecret: result.sharedSecret,
-                  messageCount: 0,
-                  createdAt: Date.now(),
-                  peerFingerprint: `prekey:${result.prekeyId}`,
-                });
-                legacySessionReadyRef.current = true;
-
-                // Export our public key so peer can derive the same secret
-                const ourPublicRaw = await hardCrypto.exportKey('raw', keysRef.current.publicKey);
-                prekeyInfoRef.current = {
-                  prekeyId: result.prekeyId,
-                  senderPublicKey: bufferToBase64(ourPublicRaw),
-                };
-
-                setState(s => ({
-                  ...s,
-                  encrypted: true,
-                  ready: true,
-                  peerKeyMissing: false,
-                  initError: null,
-                }));
-                console.log('[PEER_KEY] ✅ Prekey exchange successful — encrypted mode');
-                return;
-              }
-            } catch (prekeyErr) {
-              console.warn('[PEER_KEY] Prekey exchange failed:', prekeyErr);
-            }
-          }
-
-          // No identity key AND no prekeys — encryption impossible, BLOCK sending
-          console.warn('[PEER_KEY] ⛔ No encryption possible for', peerUserId);
+          // No identity key found — mark as temporarily unavailable but allow retry
+          // The peer may come online and publish their keys later
+          console.warn('[PEER_KEY] ⚠️ No public keys for', peerUserId, '— will retry on next open');
           setState(s => ({
             ...s,
             encrypted: false,
