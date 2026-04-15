@@ -10,8 +10,7 @@
 
 import { hardCrypto } from './cryptoIntegrity';
 import { randomBytes, bufferToBase64, base64ToBuffer } from './utils';
-import { loadSessionKey, deleteSessionKey, getOrCreateIdentityKeys } from './keyManager';
-import { establishSession } from './e2ee';
+import { loadSessionKey, getOrCreateIdentityKeys } from './keyManager';
 import { supabase } from '@/integrations/supabase/client';
 
 const IV_LEN = 12;
@@ -75,14 +74,6 @@ async function ensureFreshCallSession(
     createdAt: Date.now(),
     peerFingerprint: peerKey.fingerprint,
   };
-}
-
-/**
- * Utility to convert base64 to ArrayBuffer.
- * Re-exported locally to avoid import of keyManager internals.
- */
-function base64ToBufferLocal(b64: string): ArrayBuffer {
-  return base64ToBuffer(b64);
 }
 
 /**
