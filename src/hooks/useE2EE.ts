@@ -1088,6 +1088,49 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       const result = await decryptMessage(rawBody, session.sharedSecret, peerKeyRef.current?.signingKey);
       return { text: result.plaintext, encrypted: true, verified: result.verified };
     } catch {
+      // First decrypt failed — session may be desynchronized.
+      // Re-fetch peer key from server, re-derive session, and retry once.
+      if (user && conversationId && peerUserId) {
+        try {
+          console.warn('[E2EE] Legacy decrypt failed — attempting session re-derivation');
+          const { data: freshPeerKey } = await supabase
+            .from('user_public_keys')
+            .select('identity_key, signing_key, fingerprint')
+            .eq('user_id', peerUserId)
+            .eq('is_active', true)
+            .maybeSingle();
+
+          if (freshPeerKey && keysRef.current) {
+            // Update peer key ref
+            peerKeyRef.current = {
+              identityKey: freshPeerKey.identity_key,
+              signingKey: freshPeerKey.signing_key,
+              fingerprint: freshPeerKey.fingerprint,
+            };
+
+            // Delete old session and re-derive
+            const { deleteSessionKey: delSession } = await import('@/lib/crypto/keyManager');
+            await delSession(conversationId);
+            const newSession = await establishSession(
+              keysRef.current,
+              freshPeerKey.identity_key,
+              conversationId,
+              freshPeerKey.fingerprint,
+            );
+            legacySessionReadyRef.current = true;
+
+            // Save updated fingerprint
+            saveKnownFingerprint(peerUserId, freshPeerKey.fingerprint);
+
+            // Retry decrypt with fresh session
+            const retryResult = await decryptMessage(rawBody, newSession.sharedSecret, freshPeerKey.signing_key);
+            console.info('[E2EE] ✅ Decrypt succeeded after session re-derivation');
+            return { text: retryResult.plaintext, encrypted: true, verified: retryResult.verified };
+          }
+        } catch (retryErr) {
+          console.error('[E2EE] Session re-derivation decrypt also failed:', retryErr);
+        }
+      }
       return { text: '🔒 Message chiffré (clé expirée)', encrypted: true, verified: false };
     }
   }, [conversationId, user, ensureLegacySession]);
