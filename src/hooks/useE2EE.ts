@@ -608,8 +608,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         return ratchetRef.current;
       }
       // Ratchet exists but not fully ready (e.g. responder waiting for first msg)
-      // Don't use it for encryption — let legacy handle it
-      console.debug('[E2EE] Ratchet exists but not fully ready for encryption — using legacy');
+      console.debug('[E2EE] Ratchet exists but not encrypt-ready — cannot encrypt yet');
       return null;
     }
 
@@ -618,69 +617,58 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     if (persisted) {
       if (isRatchetFullyReady(persisted)) {
         ratchetRef.current = persisted;
+        console.info('[E2EE] Loaded persisted ratchet — ready for encrypt');
         return persisted;
       }
-      // Persisted ratchet is incomplete — skip
-      console.debug('[E2EE] Persisted ratchet incomplete — using legacy');
+      console.debug('[E2EE] Persisted ratchet incomplete — cannot encrypt yet');
     }
 
-    const initFromBundle = async (bundle: Awaited<ReturnType<typeof fetchPrekeyBundle>>) => {
-      if (!bundle || !keysRef.current) return null;
+    // X3DH key agreement (Signal spec) — NO legacy fallback
+    console.info(`[X3DH] init initiator — fetching bundle for peer ${peerUserId}`);
 
-      const x3dhResult = await x3dhInitiate(keysRef.current, bundle);
+    const bundle = await fetchPrekeyBundle(peerUserId);
+    if (!bundle) {
+      console.warn('[E2EE] ⚠️ No valid X3DH bundle for peer — ratchet init impossible. Will use legacy session.');
+      return null;
+    }
 
-      // Store X3DH metadata for the initial message header
-      // IMPORTANT: Do NOT null this until the first message is confirmed sent
-      const myPubRaw = await hardCrypto.exportKey('raw', keysRef.current.publicKey);
-      x3dhInfoRef.current = {
-        ik: bufferToBase64(myPubRaw),
-        ek: x3dhResult.ephemeralKey,
-        spkId: x3dhResult.usedSPKId,
-        opkId: x3dhResult.usedOTPKId,
-        kemCt: x3dhResult.kemCiphertext,
-      };
+    const x3dhResult = await x3dhInitiate(keysRef.current, bundle);
 
-      // Import peer SPK as DH ratchet key for Double Ratchet init
-      // Per Signal spec: Alice uses Bob's SPK as the initial remote ratchet key
-      const peerSPKKey = await hardCrypto.importKey(
-        'raw', base64ToBuffer(bundle.signedPrekey),
-        KX_KEY_PARAMS as any, true, [],
-      );
-
-      const ratchet = await initRatchetAsInitiator(
-        conversationId,
-        x3dhResult.sharedSecret,
-        peerSPKKey,
-      );
-
-      const readiness = getRatchetReadiness(ratchet);
-      if (!readiness.canEncrypt) {
-        console.debug('[E2EE] Ratchet initialized but not encrypt-ready:', readiness.reason);
-        return null;
-      }
-
-      ratchetRef.current = ratchet;
-      await saveRatchetLocal(conversationId, ratchet);
-      console.log('[E2EE] 🔄 Double Ratchet initialized via X3DH (initiator)');
-      return ratchet;
+    // Store X3DH metadata for the initial message header
+    // IMPORTANT: Do NOT null this until the first message is confirmed sent
+    const myPubRaw = await hardCrypto.exportKey('raw', keysRef.current.publicKey);
+    x3dhInfoRef.current = {
+      ik: bufferToBase64(myPubRaw),
+      ek: x3dhResult.ephemeralKey,
+      spkId: x3dhResult.usedSPKId,
+      opkId: x3dhResult.usedOTPKId,
+      kemCt: x3dhResult.kemCiphertext,
     };
+    console.info(`[X3DH] init initiator — X3DH header stored (SPK #${x3dhResult.usedSPKId}, OPK ${x3dhResult.usedOTPKId ?? 'none'})`);
 
-    // X3DH key agreement (Signal spec)
-    try {
-      // fetchPrekeyBundle now validates SPK signature BEFORE consuming OPK
-      const bundle = await fetchPrekeyBundle(peerUserId);
-      if (bundle) {
-        return await initFromBundle(bundle);
-      } else {
-        console.info('[E2EE] No valid X3DH bundle available for peer — using legacy');
-      }
-    } catch (x3dhErr) {
-      console.warn('[E2EE] X3DH init failed:', 
-        x3dhErr instanceof Error ? x3dhErr.message : String(x3dhErr));
+    // Import peer SPK as DH ratchet key for Double Ratchet init
+    // Per Signal spec: Alice uses Bob's SPK as the initial remote ratchet key
+    const peerSPKKey = await hardCrypto.importKey(
+      'raw', base64ToBuffer(bundle.signedPrekey),
+      KX_KEY_PARAMS as any, true, [],
+    );
+
+    const ratchet = await initRatchetAsInitiator(
+      conversationId,
+      x3dhResult.sharedSecret,
+      peerSPKKey,
+    );
+
+    const readiness = getRatchetReadiness(ratchet);
+    if (!readiness.canEncrypt) {
+      console.warn('[E2EE] Ratchet initialized but not encrypt-ready:', readiness.reason);
+      return null;
     }
 
-    // Legacy fallback — session keys are non-extractable, skip ratchet
-    return null;
+    ratchetRef.current = ratchet;
+    await saveRatchetLocal(conversationId, ratchet);
+    console.info('[RATCHET] ✅ init with X3DH (initiator) — ready for encrypt');
+    return ratchet;
   }, [conversationId, ensureLegacySession, peerUserId]);
 
   /**
@@ -876,60 +864,60 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         if (persisted) {
           ratchet = persisted;
           ratchetRef.current = ratchet;
+          console.info('[RATCHET] Loaded persisted ratchet state for decrypt');
         } else if (x3dhHeader) {
           // X3DH responder: derive shared secret from the X3DH header
-          console.info(`[E2EE] X3DH responder init — SPK #${x3dhHeader.spkId}, OPK ${x3dhHeader.opkId ?? 'none'}`);
+          console.info(`[X3DH] init responder — SPK #${x3dhHeader.spkId}, OPK ${x3dhHeader.opkId ?? 'none'}`);
           const { sharedSecret, spkKeyPair } = await x3dhRespond(
             keysRef.current,
             user.id,
             x3dhHeader,
           );
           // Per Signal spec: Bob uses his SPK key pair as initial ratchet DH pair
-          // dhReceivingKey is null — it will be set when processing Alice's first ratchet header
+          // dhReceivingKey starts as null — it will be set from Alice's ratchet header below
           ratchet = await initRatchetAsResponder(
             conversationId, sharedSecret, spkKeyPair,
           );
           ratchetRef.current = ratchet;
-          console.log('[E2EE] 🔄 Double Ratchet initialized via X3DH (responder)');
+          console.info('[RATCHET] ✅ init with SPK (responder) — dhReceivingKey=null, will be set from header');
         } else {
-          // No X3DH header on this message — try legacy shared secret as seed
-          console.debug('[E2EE] No X3DH header on ratchet message — attempting legacy seed');
-          const session = await ensureLegacySession();
-          if (session) {
-            const sharedSecretRaw = await hardCrypto.exportKey('raw', session.sharedSecret);
-            const ourDhPair = await hardCrypto.generateKey(
-              KX_KEY_PARAMS as any, true, ['deriveBits']
-            ) as CryptoKeyPair;
-            ratchet = await initRatchetAsResponder(
-              conversationId, sharedSecretRaw, ourDhPair,
-            );
-            ratchetRef.current = ratchet;
-            console.log('[E2EE] 🔄 Double Ratchet initialized as responder (legacy fallback)');
-          }
+          // ⛔ No X3DH header on first ratchet message and no persisted state
+          // This is a protocol error — do NOT fallback with random keys
+          console.error('[E2EE] ⛔ X3DH header MISSING on first ratchet message — cannot init responder ratchet. This message cannot be decrypted without proper X3DH handshake.');
+          return { text: '🔒 Message illisible (en-tête X3DH manquant)', encrypted: true, verified: false };
         }
       } catch (initErr) {
-        console.warn('[E2EE] Ratchet responder init failed:', initErr);
+        const errMsg = initErr instanceof Error ? initErr.message : String(initErr);
+        console.error('[E2EE] ⛔ Ratchet responder init FAILED:', errMsg);
+        // Distinguish specific errors
+        if (errMsg.includes('SPK') && errMsg.includes('NOT FOUND')) {
+          return { text: '🔒 Message illisible (clé signée introuvable)', encrypted: true, verified: false };
+        }
+        return { text: '🔒 Message illisible (erreur d\'initialisation)', encrypted: true, verified: false };
       }
     }
 
     if (ratchet) {
       const readiness = getRatchetReadiness(ratchet);
       if (!readiness.canDecrypt) {
-        console.debug('[E2EE] Ratchet state not decrypt-ready:', readiness.reason);
+        console.warn('[E2EE] Ratchet state not decrypt-ready:', readiness.reason);
         return { text: '🔒 Message illisible (session expirée)', encrypted: true, verified: false };
       }
 
       try {
+        console.debug(`[RATCHET] decrypt — msg #${envelope.hdr.n}, dh=${envelope.hdr.dh.slice(0, 12)}…`);
         const { plaintext, verified, newState } = await ratchetDecrypt(
           ratchet, envelope, peerKeyRef.current?.signingKey,
         );
         ratchetRef.current = newState;
         await saveRatchetLocal(conversationId!, newState);
         setState(s => ({ ...s, ratchetActive: true }));
+        console.debug(`[RATCHET] ✅ decrypt OK — verified=${verified}, receiving key set from header`);
         return { text: plaintext, encrypted: true, verified };
       } catch (ratchetErr) {
-        console.debug('[E2EE] Ratchet decrypt failed:', 
-          ratchetErr instanceof Error ? ratchetErr.message : String(ratchetErr));
+        const errMsg = ratchetErr instanceof Error ? ratchetErr.message : String(ratchetErr);
+        console.error('[E2EE] ❌ Ratchet decrypt failed:', errMsg);
+        // Do NOT fallback to legacy — this is a ratchet-tagged message
       }
     }
 
