@@ -149,6 +149,25 @@ async function loadSPKPrivate(userId: string, spkId: number): Promise<CryptoKey 
   }
 }
 
+/**
+ * Load a stored SPK record (both private key + public base64).
+ * Returns null if not found.
+ */
+async function loadSPKRecord(userId: string, spkId: number): Promise<StoredSPK | null> {
+  try {
+    const db = await openSPKDB();
+    const tx = db.transaction(SPK_STORE, 'readonly');
+    const req = tx.objectStore(SPK_STORE).get(`${userId}:${spkId}`);
+    const result = await new Promise<StoredSPK | undefined>((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return result ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function getNextSPKId(userId: string): Promise<number> {
   try {
     const db = await openSPKDB();
@@ -218,7 +237,8 @@ export async function generateAndUploadSignedPrekey(
     throw new Error('Failed to upload signed prekey');
   }
 
-  // Deactivate previous SPKs
+  // Deactivate previous SPKs on server but keep local private keys
+  // (old SPKs may still be referenced by in-flight X3DH messages)
   await supabase
     .from('user_signed_prekeys')
     .update({ is_active: false })
@@ -239,7 +259,7 @@ export async function refreshSignedPrekeyIfNeeded(
   try {
     const { data } = await supabase
       .from('user_signed_prekeys')
-      .select('created_at, public_key, signature')
+      .select('created_at, public_key, signature, spk_id')
       .eq('user_id', userId)
       .eq('is_active', true)
       .order('created_at', { ascending: false })
@@ -247,7 +267,7 @@ export async function refreshSignedPrekeyIfNeeded(
       .maybeSingle();
 
     if (!data) {
-      // No SPK at all — generate one
+      console.info('[X3DH] No active SPK found — generating first one');
       await generateAndUploadSignedPrekey(userId, signingPrivateKey);
       return;
     }
@@ -257,12 +277,9 @@ export async function refreshSignedPrekeyIfNeeded(
     // against the new signing key → must regenerate SPK.
     let signatureValid = false;
     try {
-      // Get the public signing key from the private key
-      // We sign the SPK public key and check if the stored signature matches
       const spkRaw = base64ToBuffer(data.public_key);
       const sigRaw = base64ToBuffer(data.signature);
-      // Derive public key by re-signing and comparing is expensive;
-      // instead, import the signing public key from user_public_keys
+
       const { data: pubKeyData } = await supabase
         .from('user_public_keys')
         .select('signing_key')
@@ -279,12 +296,25 @@ export async function refreshSignedPrekeyIfNeeded(
           'Ed25519' as any, signingPubKey, sigRaw, spkRaw,
         );
       }
-    } catch {
+
+      if (!signatureValid) {
+        console.warn('[X3DH] ⚠️ SPK signature verification FAILED against current signing key — SPK out of sync');
+      }
+    } catch (verifyErr) {
+      console.warn('[X3DH] ⚠️ SPK signature verification error:', verifyErr);
       signatureValid = false;
     }
 
     if (!signatureValid) {
       console.info('[X3DH] Active signed prekey out of sync with current signing key — regenerating');
+      await generateAndUploadSignedPrekey(userId, signingPrivateKey);
+      return;
+    }
+
+    // Verify local private half exists for this SPK
+    const localRecord = await loadSPKRecord(userId, data.spk_id);
+    if (!localRecord) {
+      console.warn(`[X3DH] ⚠️ SPK #${data.spk_id} active on server but private key MISSING locally — regenerating`);
       await generateAndUploadSignedPrekey(userId, signingPrivateKey);
       return;
     }
@@ -303,6 +333,7 @@ export async function refreshSignedPrekeyIfNeeded(
 
 /**
  * Fetch Bob's prekey bundle from the server.
+ * Validates bundle coherence before returning.
  */
 export async function fetchPrekeyBundle(peerUserId: string): Promise<X3DHPrekeyBundle | null> {
   // 1. Get identity key + signing key
@@ -313,20 +344,43 @@ export async function fetchPrekeyBundle(peerUserId: string): Promise<X3DHPrekeyB
     .eq('is_active', true)
     .maybeSingle();
 
-  if (!pubKeys) return null;
+  if (!pubKeys) {
+    console.warn('[X3DH] fetchPrekeyBundle: peer has no public keys:', peerUserId);
+    return null;
+  }
 
   // 2. Get active signed prekey
   const { data: spkData } = await supabase
     .rpc('get_signed_prekey', { p_user_id: peerUserId });
 
   if (!spkData || spkData.length === 0) {
-    console.warn('[X3DH] Peer has no signed prekey:', peerUserId);
+    console.warn('[X3DH] fetchPrekeyBundle: peer has no signed prekey:', peerUserId);
     return null;
   }
 
   const spk = spkData[0];
 
-  // 3. Try to get a one-time prekey (atomically consumed)
+  // 3. Verify SPK signature BEFORE consuming any OPK
+  // This prevents wasting a one-time prekey on a stale/invalid bundle
+  let sigValid = false;
+  try {
+    const spkRaw = base64ToBuffer(spk.public_key);
+    const sigRaw = base64ToBuffer(spk.signature);
+    const peerSigningKey = await hardCrypto.importKey(
+      'raw', base64ToBuffer(pubKeys.signing_key),
+      { name: 'Ed25519' } as any, true, ['verify'],
+    );
+    sigValid = await hardCrypto.verify('Ed25519' as any, peerSigningKey, sigRaw, spkRaw);
+  } catch (verifyErr) {
+    console.error('[X3DH] ⚠️ SPK signature verification error in fetchPrekeyBundle:', verifyErr);
+  }
+
+  if (!sigValid) {
+    console.error(`[X3DH] ⛔ SPK #${spk.spk_id} signature INVALID for peer ${peerUserId} — bundle REJECTED (possible stale SPK or signing key mismatch)`);
+    return null;
+  }
+
+  // 4. Try to get a one-time prekey (atomically consumed)
   let oneTimePrekey: string | undefined;
   let oneTimePrekeyId: number | undefined;
   try {
@@ -335,9 +389,13 @@ export async function fetchPrekeyBundle(peerUserId: string): Promise<X3DHPrekeyB
     if (opkData && opkData.length > 0) {
       oneTimePrekey = opkData[0].public_key;
       oneTimePrekeyId = opkData[0].prekey_id;
+      console.log(`[X3DH] OPK #${oneTimePrekeyId} consumed for peer ${peerUserId}`);
+    } else {
+      console.info('[X3DH] No OPK available for peer — X3DH will use 3-DH (still secure)');
     }
-  } catch {
-    // No OPK available — X3DH still works with 3 DH operations
+  } catch (opkErr) {
+    console.warn('[X3DH] OPK consumption failed (non-fatal):', opkErr);
+    // X3DH still works with 3 DH operations
   }
 
   return {
@@ -361,7 +419,7 @@ export async function x3dhInitiate(
   myKeys: IdentityKeyPair,
   bundle: X3DHPrekeyBundle,
 ): Promise<X3DHResult> {
-  // 1. Verify the signed prekey signature (Ed25519)
+  // 1. Signature already verified in fetchPrekeyBundle, but double-check
   const spkRaw = base64ToBuffer(bundle.signedPrekey);
   const sigRaw = base64ToBuffer(bundle.signedPrekeySignature);
   const peerSigningKey = await hardCrypto.importKey(
@@ -448,59 +506,61 @@ export async function x3dhInitiate(
  * Perform X3DH as the responder (Bob).
  * 
  * Bob receives Alice's initial message header and computes the same shared secret.
+ * Returns the shared secret AND Bob's SPK key pair for Double Ratchet init.
  */
 export async function x3dhRespond(
   myKeys: IdentityKeyPair,
   myUserId: string,
   initialMessage: X3DHInitialMessage,
-): Promise<{ sharedSecret: ArrayBuffer; responderDhKey: CryptoKey }> {
+): Promise<{ sharedSecret: ArrayBuffer; spkKeyPair: CryptoKeyPair }> {
   // 1. Import Alice's keys
   const aliceIK = await importX25519Public(initialMessage.ik);
   const aliceEK = await importX25519Public(initialMessage.ek);
 
-  // 2. Load our signed prekey private half
-  const spkPrivate = await loadSPKPrivate(myUserId, initialMessage.spkId);
-  if (!spkPrivate) {
+  // 2. Load our signed prekey record (private + public)
+  const spkRecord = await loadSPKRecord(myUserId, initialMessage.spkId);
+  if (!spkRecord) {
+    console.error(`[X3DH] ⛔ SPK #${initialMessage.spkId} NOT FOUND locally for user ${myUserId} — cannot respond to X3DH`);
     throw new Error(`X3DH: Signed prekey #${initialMessage.spkId} not found locally`);
   }
 
-  // Also expose the matching public SPK as the responder's initial DH receiving key.
+  const spkPrivate = await hardCrypto.importKey(
+    'jwk', spkRecord.privateKeyJWK,
+    KX_KEY_PARAMS as any,
+    true, // extractable: needed for CryptoKeyPair usage in ratchet
+    ['deriveBits'],
+  );
+
   const spkPublic = await hardCrypto.importKey(
-    'raw', base64ToBuffer(initialMessage.ek ? (await (async () => {
-      const db = await openSPKDB();
-      const tx = db.transaction(SPK_STORE, 'readonly');
-      const req = tx.objectStore(SPK_STORE).get(`${myUserId}:${initialMessage.spkId}`);
-      const result = await new Promise<StoredSPK | undefined>((resolve, reject) => {
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-      if (!result) throw new Error(`X3DH: Signed prekey #${initialMessage.spkId} public half not found locally`);
-      return result.publicKeyBase64;
-    })()) : ''),
+    'raw', base64ToBuffer(spkRecord.publicKeyBase64),
     KX_KEY_PARAMS as any,
     true,
     [],
   );
 
   // 3. Compute DH operations (Bob's perspective, reversed)
+  // DH1 = DH(SPKb_priv, IKa_pub)
   const dh1 = await hardCrypto.deriveBits(
     { name: 'X25519', public: aliceIK } as any,
     spkPrivate,
     256,
   );
 
+  // DH2 = DH(IKb_priv, EKa_pub)
   const dh2 = await hardCrypto.deriveBits(
     { name: 'X25519', public: aliceEK } as any,
     myKeys.privateKey,
     256,
   );
 
+  // DH3 = DH(SPKb_priv, EKa_pub)
   const dh3 = await hardCrypto.deriveBits(
     { name: 'X25519', public: aliceEK } as any,
     spkPrivate,
     256,
   );
 
+  // DH4 = DH(OPKb_priv, EKa_pub) — optional
   let dh4: ArrayBuffer | null = null;
   if (initialMessage.opkId !== undefined) {
     const { loadPrivatePrekey } = await import('./prekeys');
@@ -511,8 +571,9 @@ export async function x3dhRespond(
         opkPrivate,
         256,
       );
+      console.log(`[X3DH] OPK #${initialMessage.opkId} used for 4-DH respond`);
     } else {
-      console.warn(`[X3DH] OPK #${initialMessage.opkId} not found locally — using 3-DH`);
+      console.warn(`[X3DH] ⚠️ OPK #${initialMessage.opkId} consumed on server but NOT FOUND locally — session may have been partially established before. Using 3-DH.`);
     }
   }
 
@@ -523,9 +584,14 @@ export async function x3dhRespond(
 
   const sharedSecret = await x3dhKDF(dhConcat);
 
-  console.log(`[X3DH] ✅ Responded with ${dh4 ? '4' : '3'} DH operations`);
+  console.log(`[X3DH] ✅ Responded with ${dh4 ? '4' : '3'} DH operations (SPK #${initialMessage.spkId})`);
 
-  return { sharedSecret, responderDhKey: spkPublic };
+  // Return the SPK key pair so the responder can use it as initial ratchet DH pair
+  // (per Signal spec: Bob's SPK serves as his initial ratchet key)
+  return {
+    sharedSecret,
+    spkKeyPair: { publicKey: spkPublic, privateKey: spkPrivate },
+  };
 }
 
 // ─── PQXDH Structure (Future-Ready) ───
@@ -548,11 +614,7 @@ export async function x3dhRespond(
  * Status: Structurally ready. Activate when browsers ship ML-KEM.
  */
 export function isPQXDHAvailable(): boolean {
-  // Check if the browser supports ML-KEM
-  // This will return true when browsers implement the Post-Quantum KEM API
   try {
-    // Future: check for ML-KEM-768 support
-    // return 'ML-KEM-768' in crypto.subtle.supportedAlgorithms;
     return false;
   } catch {
     return false;
