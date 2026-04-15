@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useCallback, useState, useMemo, lazy, Suspense } from 'react';
+import { useMLScoring, useMLRecommendations, blendScores } from '@/hooks/useMLFeed';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePosts } from '@/hooks/usePosts';
 import { AppLayout } from '@/components/AppLayout';
