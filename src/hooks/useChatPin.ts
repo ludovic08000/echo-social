@@ -194,42 +194,90 @@ async function readRawIdentityBlob(userId: string): Promise<string | null> {
 
 /** Collect ALL crypto material (identity + session + ratchet) for PIN wrapping */
 async function collectAllCryptoBlob(userId: string): Promise<string | null> {
-  try {
-    const { exportAllSessionKeys, exportAllRatchetStates } = await import('@/lib/crypto/keyManager');
-    const [identityBlob, sessionKeys, ratchetStates] = await Promise.all([
-      readRawIdentityBlob(userId),
-      exportAllSessionKeys(),
-      exportAllRatchetStates(),
-    ]);
-    if (!identityBlob && sessionKeys.length === 0) return null;
-    return JSON.stringify({
-      identity: identityBlob ? JSON.parse(identityBlob) : null,
-      sessionKeys,
-      ratchetStates,
-      _v: 2,
-    });
-  } catch (e) {
-    console.warn('[PIN] collectAllCryptoBlob failed:', e);
-    return readRawIdentityBlob(userId);
+  const { exportAllSessionKeys, exportAllRatchetStates } = await import('@/lib/crypto/keyManager');
+  const [identityBlob, sessionKeys, ratchetStates] = await Promise.all([
+    readRawIdentityBlob(userId),
+    exportAllSessionKeys(),
+    exportAllRatchetStates(),
+  ]);
+
+  if (!identityBlob && sessionKeys.length === 0 && ratchetStates.length === 0) {
+    return null;
   }
+
+  if (!identityBlob && (sessionKeys.length > 0 || ratchetStates.length > 0)) {
+    throw new Error('Snapshot crypto incomplet: identity absente alors que des sessions/ratchets existent');
+  }
+
+  return JSON.stringify({
+    identity: identityBlob ? JSON.parse(identityBlob) : null,
+    sessionKeys,
+    ratchetStates,
+    manifest: {
+      hasIdentity: !!identityBlob,
+      sessionCount: sessionKeys.length,
+      ratchetCount: ratchetStates.length,
+    },
+    _v: 3,
+  });
 }
 
 /** Restore ALL crypto material from unwrapped blob */
 async function restoreAllCryptoBlob(userId: string, blob: string): Promise<void> {
   const parsed = JSON.parse(blob);
-  if (parsed._v === 2) {
-    if (parsed.identity) {
-      await writeRawIdentityBlob(userId, JSON.stringify(parsed.identity));
+  if (parsed._v === 3 || parsed._v === 2) {
+    const sessionKeys = Array.isArray(parsed.sessionKeys) ? parsed.sessionKeys : [];
+    const ratchetStates = Array.isArray(parsed.ratchetStates) ? parsed.ratchetStates : [];
+    const hasIdentity = !!parsed.identity;
+    const expectedSessionCount = parsed.manifest?.sessionCount ?? sessionKeys.length;
+    const expectedRatchetCount = parsed.manifest?.ratchetCount ?? ratchetStates.length;
+    const expectedHasIdentity = parsed.manifest?.hasIdentity ?? hasIdentity;
+
+    if ((sessionKeys.length > 0 || ratchetStates.length > 0) && !hasIdentity) {
+      throw new Error('Blob crypto invalide: sessions/ratchets sans identité');
     }
-    if (parsed.sessionKeys?.length) {
-      const { importAllSessionKeys } = await import('@/lib/crypto/keyManager');
-      await importAllSessionKeys(parsed.sessionKeys);
+
+    const {
+      importAllSessionKeys,
+      importAllRatchetStates,
+      exportAllSessionKeys,
+      exportAllRatchetStates,
+      wipeSessionKeys,
+    } = await import('@/lib/crypto/keyManager');
+
+    try {
+      await wipeSessionKeys();
+
+      if (parsed.identity) {
+        await writeRawIdentityBlob(userId, JSON.stringify(parsed.identity));
+      } else {
+        await deleteRawIdentityBlob(userId);
+      }
+
+      await importAllSessionKeys(sessionKeys);
+      await importAllRatchetStates(ratchetStates);
+
+      const [restoredIdentity, restoredSessionKeys, restoredRatchetStates] = await Promise.all([
+        readRawIdentityBlob(userId),
+        exportAllSessionKeys(),
+        exportAllRatchetStates(),
+      ]);
+
+      const identityRestored = !!restoredIdentity;
+      if (
+        identityRestored !== expectedHasIdentity ||
+        restoredSessionKeys.length !== expectedSessionCount ||
+        restoredRatchetStates.length !== expectedRatchetCount
+      ) {
+        throw new Error('Restauration crypto partielle détectée');
+      }
+
+      console.log('[PIN] All crypto material restored atomically');
+    } catch (error) {
+      await deleteRawIdentityBlob(userId).catch(() => undefined);
+      await wipeSessionKeys().catch(() => undefined);
+      throw error;
     }
-    if (parsed.ratchetStates?.length) {
-      const { importAllRatchetStates } = await import('@/lib/crypto/keyManager');
-      await importAllRatchetStates(parsed.ratchetStates);
-    }
-    console.log('[PIN] All crypto material restored (v2 blob)');
   } else {
     // Legacy v1: identity-only blob
     await writeRawIdentityBlob(userId, blob);
@@ -354,6 +402,8 @@ export function useChatPin() {
 
     if (user) {
       try {
+        const { wipeSessionKeys } = await import('@/lib/crypto/keyManager');
+
         if (runtimeWrapKeyRef.current && runtimeWrapSaltRef.current) {
           const fullBlob = await collectAllCryptoBlob(user.id);
           if (fullBlob) {
@@ -368,7 +418,9 @@ export function useChatPin() {
         }
 
         await deleteRawIdentityBlob(user.id);
-        console.log('[PIN] Locked without wiping sessions or ratchet state');
+        await wipeSessionKeys();
+        window.dispatchEvent(new CustomEvent('forsure-keys-locked'));
+        console.log('[PIN] Locked with full local crypto wipe');
       } catch (err) {
         console.warn('[PIN] lockWithoutWiping(): failed to preserve crypto before lock:', err);
       }
@@ -537,6 +589,12 @@ export function useChatPin() {
           window.dispatchEvent(new CustomEvent('forsure-keys-unlocked'));
         } catch (unwrapErr) {
           console.warn('[PIN] Key unwrap failed:', unwrapErr);
+          setState(s => ({
+            ...s,
+            processing: false,
+            error: 'Restauration crypto incomplète — veuillez réessayer',
+          }));
+          return false;
         }
       } else if (verifyResult.salt) {
         try {
