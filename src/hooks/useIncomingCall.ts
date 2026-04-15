@@ -56,7 +56,7 @@ export interface IncomingCall {
 
 /** Returned only by acceptCall — includes the decrypted key for immediate use */
 export interface AcceptedCall extends IncomingCall {
-  decryptedCallKey?: string;
+  decryptedCallKey: string;
 }
 
 /** Ring tone — plays a looping tone until stopped */
@@ -355,57 +355,59 @@ export function useIncomingCall() {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     callPhaseRef.current = 'connecting';
 
+    let decryptedCallKey: string | undefined;
+    const encKey = encryptedCallKeyRef.current;
+    const convId = callConversationIdRef.current;
+    if (!encKey || !convId) {
+      clearCallState();
+      throw new Error('[CALL_E2EE] Missing encrypted call key payload');
+    }
+
+    try {
+      decryptedCallKey = await decryptCallKey(encKey, convId);
+    } catch (firstErr) {
+      console.warn('[CALL] First decrypt attempt failed, re-deriving session:', firstErr);
+      try {
+        const { getOrCreateIdentityKeys, establishSession, deleteSessionKey } = await import('@/lib/crypto');
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (currentUser && incomingCall) {
+          const peerId = incomingCall.caller_id;
+          const { data: peerKey } = await supabase
+            .from('user_public_keys')
+            .select('identity_key, fingerprint')
+            .eq('user_id', peerId)
+            .eq('is_active', true)
+            .maybeSingle();
+          if (!peerKey?.identity_key || !peerKey.fingerprint) {
+            throw new Error('[CALL_E2EE] Active peer key unavailable');
+          }
+
+          await deleteSessionKey(convId);
+          const keys = await getOrCreateIdentityKeys(currentUser.id);
+          await establishSession(keys, peerKey.identity_key, convId, peerKey.fingerprint);
+          decryptedCallKey = await decryptCallKey(encKey, convId);
+          console.log('[CALL] ✅ Decrypt succeeded after session re-derivation');
+        }
+      } catch (retryErr) {
+        console.error('[CALL] Retry decrypt failed:', retryErr);
+      }
+    }
+
+    if (!decryptedCallKey) {
+      await supabase.rpc('call_signal', {
+        p_action: 'update_status',
+        p_call_id: incomingCall.id,
+        p_status: 'declined',
+      });
+      clearCallState();
+      throw new Error('[CALL_E2EE] Unable to decrypt incoming call key');
+    }
+
     await supabase.rpc('call_signal', {
       p_action: 'update_status',
       p_call_id: incomingCall.id,
       p_status: 'answered',
     });
-
-    let decryptedCallKey: string | undefined;
-    const encKey = encryptedCallKeyRef.current;
-    const convId = callConversationIdRef.current;
-    if (encKey && convId) {
-      try {
-        decryptedCallKey = await decryptCallKey(encKey, convId);
-      } catch (firstErr) {
-        // Session key mismatch (e.g. after fingerprint change) — 
-        // try re-establishing session and retrying
-        console.warn('[CALL] First decrypt attempt failed, re-deriving session:', firstErr);
-        try {
-          const { getOrCreateIdentityKeys, establishSession, deleteSessionKey } = await import('@/lib/crypto');
-          const { data: { user: currentUser } } = await supabase.auth.getUser();
-          if (currentUser && incomingCall) {
-            const peerId = incomingCall.caller_id;
-            const { data: peerKey } = await supabase
-              .from('user_public_keys')
-              .select('identity_key, fingerprint')
-              .eq('user_id', peerId)
-              .eq('is_active', true)
-              .maybeSingle();
-            if (peerKey) {
-              await deleteSessionKey(convId);
-              const keys = await getOrCreateIdentityKeys(currentUser.id);
-              await establishSession(keys, peerKey.identity_key, convId, peerKey.fingerprint);
-              decryptedCallKey = await decryptCallKey(encKey, convId);
-              console.log('[CALL] ✅ Decrypt succeeded after session re-derivation');
-            }
-          }
-        } catch (retryErr) {
-          console.error('[CALL] Retry decrypt also failed:', retryErr);
-        }
-      }
-    }
-
-    if (!decryptedCallKey) {
-      // Last resort: accept without E2EE rather than refusing the call entirely
-      console.warn('[CALL] ⚠️ Accepting call without E2EE key — voice will not be end-to-end encrypted');
-      encryptedCallKeyRef.current = null;
-      callConversationIdRef.current = null;
-      const accepted: AcceptedCall = { ...incomingCall, decryptedCallKey: undefined };
-      setIncomingCall(null);
-      callPhaseRef.current = 'active';
-      return accepted;
-    }
 
     encryptedCallKeyRef.current = null;
     callConversationIdRef.current = null;
@@ -459,7 +461,7 @@ export async function signalOutgoingCall(
   let encryptedKey: string | undefined;
 
   if (callKeyB64) {
-    encryptedKey = await encryptCallKey(callKeyB64, conversationId);
+    encryptedKey = await encryptCallKey(callKeyB64, conversationId, callerId, calleeId);
   }
 
   const { data, error } = await supabase.rpc('call_signal', {

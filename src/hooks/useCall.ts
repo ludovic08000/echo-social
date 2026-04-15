@@ -164,7 +164,7 @@ export function useCall(options?: UseCallOptions) {
     });
   }, [cleanupDom, clearCallTimers]);
 
-  const startCall = useCallback(async (conversationId: string, type: CallType, e2eeKeyB64?: string) => {
+  const startCall = useCallback(async (conversationId: string, type: CallType, e2eeKeyB64: string) => {
     if (connectingRef.current) {
       console.warn('[CALL] startCall ignored — already connecting');
       return;
@@ -194,6 +194,14 @@ export function useCall(options?: UseCallOptions) {
     console.info(`[CALL] starting ${type} call for conversation ${conversationId}`);
 
     try {
+      if (!e2eeKeyB64) {
+        throw new Error('Missing E2EE call key');
+      }
+
+      if (!isE2EESupported()) {
+        throw new Error('LiveKit E2EE is not supported on this device');
+      }
+
       const perms = await requestMediaPermissions({
         audio: true,
         video: type === 'video',
@@ -214,17 +222,14 @@ export function useCall(options?: UseCallOptions) {
       let e2eeKeyProvider: ExternalE2EEKeyProvider | undefined;
       let e2eeWorker: Worker | undefined;
 
-      if (e2eeKeyB64 && isE2EESupported()) {
-        try {
-          e2eeKeyProvider = new ExternalE2EEKeyProvider();
-          e2eeWorker = new Worker(new URL('livekit-client/e2ee-worker', import.meta.url));
-          const keyBytes = decodeE2EEKey(e2eeKeyB64);
-          await e2eeKeyProvider.setKey(keyBytes.buffer as ArrayBuffer);
-        } catch (err) {
-          console.warn('[CALL] E2EE init failed, continuing without LiveKit E2EE:', err);
-          e2eeKeyProvider = undefined;
-          e2eeWorker = undefined;
-        }
+      try {
+        e2eeKeyProvider = new ExternalE2EEKeyProvider();
+        e2eeWorker = new Worker(new URL('livekit-client/e2ee-worker', import.meta.url));
+        const keyBytes = decodeE2EEKey(e2eeKeyB64);
+        await e2eeKeyProvider.setKey(keyBytes.buffer as ArrayBuffer);
+      } catch (err) {
+        console.error('[CALL] E2EE init failed:', err);
+        throw new Error('Unable to initialize call E2EE');
       }
 
       if (endingRef.current || phaseRef.current === 'idle') {
@@ -368,14 +373,13 @@ export function useCall(options?: UseCallOptions) {
 
       console.info('[CALL] room connected');
 
-      if (e2eeKeyProvider) {
-        try {
-          await room.setE2EEEnabled(true);
-          setIsE2eeActive(true);
-          console.info('[CALL] LiveKit E2EE enabled');
-        } catch (err) {
-          console.warn('[CALL] LiveKit E2EE enable failed:', err);
-        }
+      try {
+        await room.setE2EEEnabled(true);
+        setIsE2eeActive(true);
+        console.info('[CALL] LiveKit E2EE enabled');
+      } catch (err) {
+        console.error('[CALL] LiveKit E2EE enable failed:', err);
+        throw new Error('Unable to enable call E2EE');
       }
 
       if (endingRef.current || roomRef.current !== room) {
@@ -430,7 +434,7 @@ export function useCall(options?: UseCallOptions) {
       connectingRef.current = false;
     } catch (err) {
       console.error('[CALL] startCall error:', err);
-      toast.error("Impossible de lancer l'appel. Vérifiez votre connexion.");
+      toast.error("Impossible de lancer l'appel chiffré.");
       safeDisconnect('start_call_error');
     }
   }, [safeDisconnect]);
