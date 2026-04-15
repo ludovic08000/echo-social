@@ -230,10 +230,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
       return;
     }
 
-    // BLOCK plaintext: if peer has no keys AND no prekey session, refuse to send
+    // If peer has no keys, allow sending as plaintext (they'll see it when they connect)
+    // Don't block existing contacts from communicating
     if (!isZeusConversation && e2ee.peerKeyMissing) {
-      toast.error('🔒 Envoi impossible : le contact n\'a pas encore de clés de chiffrement. Il doit se connecter au moins une fois.');
-      return;
+      console.warn('[MSG] Peer has no encryption keys — sending plaintext via queue');
+      // Send as non-encrypted (the queue handles this when isEncryptionActive is false)
     }
 
     const body = replyTo

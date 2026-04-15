@@ -517,52 +517,11 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             initError: null,
           }));
         } else {
-          console.log('[PEER_KEY] No identity key found for', peerUserId, '— trying prekey exchange');
+          console.log('[PEER_KEY] No identity key found for', peerUserId, '— peer may not have published keys yet');
 
-          // Try prekey-based key exchange (Signal-style)
-          if (keysRef.current && conversationId) {
-            try {
-              const result = await consumePeerPrekey(
-                keysRef.current.privateKey,
-                peerUserId,
-                conversationId,
-              );
-              if (result && !cancelled) {
-                // Store as a session key for this conversation
-                const { saveSessionKey } = await import('@/lib/crypto/keyManager');
-                await saveSessionKey({
-                  conversationId,
-                  sharedSecret: result.sharedSecret,
-                  messageCount: 0,
-                  createdAt: Date.now(),
-                  peerFingerprint: `prekey:${result.prekeyId}`,
-                });
-                legacySessionReadyRef.current = true;
-
-                // Export our public key so peer can derive the same secret
-                const ourPublicRaw = await hardCrypto.exportKey('raw', keysRef.current.publicKey);
-                prekeyInfoRef.current = {
-                  prekeyId: result.prekeyId,
-                  senderPublicKey: bufferToBase64(ourPublicRaw),
-                };
-
-                setState(s => ({
-                  ...s,
-                  encrypted: true,
-                  ready: true,
-                  peerKeyMissing: false,
-                  initError: null,
-                }));
-                console.log('[PEER_KEY] ✅ Prekey exchange successful — encrypted mode');
-                return;
-              }
-            } catch (prekeyErr) {
-              console.warn('[PEER_KEY] Prekey exchange failed:', prekeyErr);
-            }
-          }
-
-          // No identity key AND no prekeys — encryption impossible, BLOCK sending
-          console.warn('[PEER_KEY] ⛔ No encryption possible for', peerUserId);
+          // No identity key found — mark as temporarily unavailable but allow retry
+          // The peer may come online and publish their keys later
+          console.warn('[PEER_KEY] ⚠️ No public keys for', peerUserId, '— will retry on next open');
           setState(s => ({
             ...s,
             encrypted: false,
@@ -585,6 +544,51 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     return () => { cancelled = true; };
   }, [peerUserId, user, conversationId, isZeus]);
+
+  // Retry peer key fetch when peerKeyMissing — contact may have come online
+  useEffect(() => {
+    if (!state.peerKeyMissing || !peerUserId || isZeus) return;
+    const interval = setInterval(async () => {
+      try {
+        const { data } = await supabase
+          .from('user_public_keys')
+          .select('identity_key, signing_key, fingerprint')
+          .eq('user_id', peerUserId)
+          .eq('is_active', true)
+          .maybeSingle();
+        if (data) {
+          console.log('[PEER_KEY] ✅ Peer keys now available — upgrading to encrypted mode');
+          peerKeyRef.current = {
+            identityKey: data.identity_key,
+            signingKey: data.signing_key,
+            fingerprint: data.fingerprint,
+          };
+          saveKnownFingerprint(peerUserId, data.fingerprint);
+          saveKnownFingerprintServer(peerUserId, data.fingerprint);
+          
+          // Pre-establish legacy session
+          if (keysRef.current && conversationId) {
+            try {
+              let session = await loadSessionKey(conversationId);
+              if (!session) {
+                session = await establishSession(keysRef.current, data.identity_key, conversationId, data.fingerprint);
+              }
+              legacySessionReadyRef.current = true;
+            } catch {}
+          }
+          
+          setState(s => ({
+            ...s,
+            peerFingerprint: data.fingerprint,
+            encrypted: true,
+            ready: true,
+            peerKeyMissing: false,
+          }));
+        }
+      } catch {}
+    }, 10_000); // retry every 10s
+    return () => clearInterval(interval);
+  }, [state.peerKeyMissing, peerUserId, isZeus, conversationId]);
 
   // Legacy session — load existing or establish new (NEVER rotates — rotation is encrypt-only)
   const ensureLegacySession = useCallback(async () => {
@@ -901,6 +905,16 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         // Distinguish specific errors
         if (errMsg.includes('SPK') && errMsg.includes('NOT FOUND')) {
           return { text: '🔒 Message illisible (clé signée introuvable)', encrypted: true, verified: false };
+        }
+        if (errMsg.includes('OPK') && errMsg.includes('NOT FOUND')) {
+          // OPK was consumed on server but missing locally — shared secret would differ
+          // Try legacy fallback for this message
+          console.warn('[E2EE] OPK missing — attempting legacy session fallback for this message');
+          try {
+            return await decryptLegacyMessage(parsed, rawBody);
+          } catch {
+            return { text: '🔒 Message illisible (OPK introuvable)', encrypted: true, verified: false };
+          }
         }
         return { text: '🔒 Message illisible (erreur d\'initialisation)', encrypted: true, verified: false };
       }

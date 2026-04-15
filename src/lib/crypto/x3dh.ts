@@ -565,7 +565,7 @@ export async function x3dhRespond(
     256,
   );
 
-  // DH4 = DH(OPKb_priv, EKa_pub) — optional
+  // DH4 = DH(OPKb_priv, EKa_pub) — optional but MUST match initiator
   let dh4: ArrayBuffer | null = null;
   if (initialMessage.opkId !== undefined) {
     const { loadPrivatePrekey } = await import('./prekeys');
@@ -578,7 +578,11 @@ export async function x3dhRespond(
       );
       console.info(`[X3DH] OPK #${initialMessage.opkId} used for 4-DH respond`);
     } else {
-      console.error(`[X3DH] OPK mismatch — resync needed (OPK #${initialMessage.opkId} consommée côté serveur mais introuvable localement)`);
+      // CRITICAL: Alice used 4-DH with this OPK. If we skip DH4, we get a DIFFERENT
+      // shared secret → all messages will be unreadable. We MUST fail here.
+      const errMsg = `[X3DH] ⛔ OPK #${initialMessage.opkId} consumed on server but NOT FOUND locally — shared secret would mismatch. Cannot complete X3DH.`;
+      console.error(errMsg);
+      throw new Error(errMsg);
     }
   }
 
