@@ -334,8 +334,8 @@ export function useChatPin() {
       if (document.hidden && pinModeRef.current === 'on_return' && state.unlocked) {
         sessionStorage.removeItem(SESSION_KEY);
         if (user) {
+          // Only remove identity keys (already PIN-wrapped). Do NOT wipe session keys.
           deleteRawIdentityBlob(user.id).catch(() => {});
-          import('@/lib/crypto/keyManager').then(m => m.wipeSessionKeys()).catch(() => {});
         }
         setState(s => ({ ...s, unlocked: false }));
       }
@@ -354,8 +354,8 @@ export function useChatPin() {
       inactivityTimer.current = setTimeout(async () => {
         sessionStorage.removeItem(SESSION_KEY);
         if (user) {
+          // Only remove identity keys (already PIN-wrapped). Do NOT wipe session keys.
           deleteRawIdentityBlob(user.id).catch(() => {});
-          import('@/lib/crypto/keyManager').then(m => m.wipeSessionKeys()).catch(() => {});
         }
         setState(s => ({ ...s, unlocked: false }));
       }, INACTIVITY_TIMEOUT);
