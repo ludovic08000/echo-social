@@ -668,11 +668,7 @@ class MessageQueueManager {
         msg.updatedAt = Date.now();
         msg.plaintext = '';
         this.volatilePlaintext.delete(msg.localId);
-        await this.dbPut(msg);
-
-        setTimeout(() => {
-          this.dbDelete(msg.localId).catch(() => {});
-        }, 5000);
+        await this.dbDelete(msg.localId);
 
         changed = true;
       }
