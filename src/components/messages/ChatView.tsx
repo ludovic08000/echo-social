@@ -705,8 +705,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
                             />
                           </div>
 
-                          {/* Translate button */}
-                          {!isMe && !isBigEmoji && (
+                          {/* Translate button — only show when we have actual decrypted text */}
+                          {!isMe && !isBigEmoji && decryptedCache.has(msg.id) && !looksEncrypted && (
                             <div className="mt-0.5">
                               <button
                                 onClick={() => {
@@ -714,7 +714,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                                   if (!text) return;
                                   translateMsg(msg.id, text);
                                 }}
-                                disabled={translating === msg.id || (!translations[msg.id] && !decryptedCache.get(msg.id))}
+                                disabled={translating === msg.id}
                                 className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all disabled:pointer-events-none disabled:opacity-40"
                               >
                                 {translating === msg.id ? (
