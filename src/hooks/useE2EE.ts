@@ -36,6 +36,9 @@ import {
   ratchetDecrypt,
   serializeRatchetState,
   deserializeRatchetState,
+  getRatchetReadiness,
+  isRatchetReadyForEncrypt,
+  isRatchetReadyForDecrypt,
   generateAndUploadPrekeys,
   refillPrekeysIfNeeded,
   consumePeerPrekey,
@@ -263,12 +266,7 @@ function cleanupLegacyStorage() {
 
 /** Returns true only if the ratchet state is fully ready for encryption */
 function isRatchetFullyReady(state: RatchetState | null): boolean {
-  if (!state) return false;
-  if (!state.rootKey) return false;
-  if (!state.sendingChainKey) return false;
-  if (!state.dhSendingPair?.publicKey || !state.dhSendingPair?.privateKey) return false;
-  if (!state.dhReceivingKey) return false;
-  return true;
+  return isRatchetReadyForEncrypt(state);
 }
 
 // ─── Hook ───
@@ -653,9 +651,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         peerSPKKey,
       );
 
-      // Verify the ratchet is fully ready before using it
-      if (!isRatchetFullyReady(ratchet)) {
-        console.warn('[E2EE] Ratchet initialized but not fully ready — skipping');
+      const readiness = getRatchetReadiness(ratchet);
+      if (!readiness.canEncrypt) {
+        console.debug('[E2EE] Ratchet initialized but not encrypt-ready:', readiness.reason);
         return null;
       }
 
@@ -735,7 +733,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     if (peerKeyRef.current) {
       try {
         const ratchet = await initRatchetIfNeeded();
-        if (ratchet && isRatchetFullyReady(ratchet)) {
+        const readiness = getRatchetReadiness(ratchet);
+        if (ratchet && readiness.canEncrypt) {
           const { envelope, newState } = await ratchetEncrypt(
             ratchet,
             plaintext,
@@ -759,6 +758,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             console.log('[E2EE] ✅ encrypt via Double Ratchet (forward secrecy)');
           }
           return hardGlobals.jsonStringify(taggedEnvelope);
+        }
+
+        if (ratchet) {
+          console.debug('[E2EE] Ratchet not ready for encrypt, using legacy:', readiness.reason);
         }
       } catch (ratchetErr) {
         // Ratchet not ready or failed — fall through to legacy silently
@@ -918,6 +921,12 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     }
 
     if (ratchet) {
+      const readiness = getRatchetReadiness(ratchet);
+      if (!readiness.canDecrypt) {
+        console.debug('[E2EE] Ratchet state not decrypt-ready:', readiness.reason);
+        return { text: '🔒 Message illisible (session expirée)', encrypted: true, verified: false };
+      }
+
       try {
         const { plaintext, verified, newState } = await ratchetDecrypt(
           ratchet, envelope, peerKeyRef.current?.signingKey,

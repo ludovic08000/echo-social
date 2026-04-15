@@ -151,13 +151,10 @@ export function useIncomingCall() {
   const encryptedCallKeyRef = useRef<string | null>(null);
   const callConversationIdRef = useRef<string | null>(null);
 
-  // Track which call IDs we've already handled to avoid duplicate rings.
-  // This is the SINGLE source of truth — shared across Realtime + polling.
   const handledCallIdsRef = useRef<Set<string>>(new Set());
-  // Currently active call ID (for idempotent state management)
   const activeCallIdRef = useRef<string | null>(null);
+  const callPhaseRef = useRef<IncomingCallPhase>('idle');
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Guard: is handleIncomingCall currently executing?
   const handlingRef = useRef(false);
 
   // Keep ref in sync with state
@@ -176,16 +173,17 @@ export function useIncomingCall() {
     const handleIncomingCall = async (call: any) => {
       const callId = call.id;
 
-      // ── Idempotency guard ──
       if (handledCallIdsRef.current.has(callId)) return;
       if (activeCallIdRef.current === callId) return;
       if (handlingRef.current) return;
+      if (callPhaseRef.current !== 'idle') return;
 
       handlingRef.current = true;
       handledCallIdsRef.current.add(callId);
       activeCallIdRef.current = callId;
+      callPhaseRef.current = 'ringing';
 
-      console.log('[IncomingCall] 📞 Processing call:', callId, 'type:', call.call_type);
+      console.info('[IncomingCall] New incoming call:', callId, 'type:', call.call_type);
 
       try {
         const { data: profile } = await supabase
@@ -232,7 +230,11 @@ export function useIncomingCall() {
       encryptedCallKeyRef.current = null;
       callConversationIdRef.current = null;
       activeCallIdRef.current = null;
+      callPhaseRef.current = 'ended';
       setIncomingCall(null);
+      queueMicrotask(() => {
+        callPhaseRef.current = 'idle';
+      });
     };
 
     const clearCallState = () => {
@@ -241,7 +243,11 @@ export function useIncomingCall() {
       encryptedCallKeyRef.current = null;
       callConversationIdRef.current = null;
       activeCallIdRef.current = null;
+      callPhaseRef.current = 'ended';
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      queueMicrotask(() => {
+        callPhaseRef.current = 'idle';
+      });
     };
 
     const pollForCalls = async () => {
