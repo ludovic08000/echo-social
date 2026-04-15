@@ -304,7 +304,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const keysRef = useRef<IdentityKeyPair | null>(null);
   const peerKeyRef = useRef<{ identityKey: string; signingKey: string; fingerprint: string } | null>(null);
   const ratchetRef = useRef<RatchetState | null>(null);
-  const pendingRatchetStateRef = useRef<Map<string, RatchetState>>(new Map());
   const pendingPayloadRef = useRef<Map<string, string>>(new Map());
   const prekeyInfoRef = useRef<{ prekeyId: number; senderPublicKey: string } | null>(null);
   const x3dhInfoRef = useRef<X3DHInitialMessage | null>(null);
@@ -643,13 +642,19 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       throw new EncryptionError('🔒 Session Double Ratchet incomplète — message en attente chiffrée');
     }
 
-    // Try loading persisted ratchet
+    // Try loading persisted ratchet + X3DH header
     const persisted = await loadRatchetLocal(conversationId);
     if (persisted) {
-      if (isRatchetFullyReady(persisted)) {
-        ratchetRef.current = persisted;
+      if (isRatchetFullyReady(persisted.state)) {
+        ratchetRef.current = persisted.state;
+        // Restore X3DH header for Signal-style PreKey persistence across refresh
+        if (persisted.x3dhHeader) {
+          x3dhInfoRef.current = persisted.x3dhHeader;
+          peerHasRespondedRef.current = false;
+          console.info('[E2EE] Restored X3DH header from persistence (PreKey header will be re-attached)');
+        }
         console.info('[E2EE] Loaded persisted ratchet — ready for encrypt');
-        return persisted;
+        return persisted.state;
       }
       throw new EncryptionError('🔒 Session Double Ratchet persistée incomplète — message en attente chiffrée');
     }
