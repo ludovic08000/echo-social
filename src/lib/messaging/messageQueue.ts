@@ -439,10 +439,8 @@ class MessageQueueManager {
           return;
         }
 
-        // Remove from queue after short delay (keep for UI display)
-        setTimeout(() => {
-          this.dbDelete(msg.localId).catch(() => {});
-        }, 5000);
+        // Remove from queue immediately — realtime subscription handles display
+        this.dbDelete(msg.localId).catch(() => {});
 
         this.notifyListeners(msg.conversationId);
       } catch (err) {
