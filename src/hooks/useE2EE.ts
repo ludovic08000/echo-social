@@ -182,20 +182,21 @@ async function saveKnownFingerprintServer(peerUserId: string, fp: string) {
 
 /** Check fingerprint against both local AND server records */
 async function checkFingerprintChangeWithServer(
-  peerUserId: string, currentFp: string
+  currentUserId: string,
+  peerUserId: string,
+  currentFp: string
 ): Promise<{ changed: boolean; previousFp: string | null }> {
-  // Check local first (fast)
   const known = getKnownFingerprints();
   const localPrevious = known[peerUserId];
   if (localPrevious && localPrevious !== currentFp) {
     return { changed: true, previousFp: localPrevious };
   }
 
-  // Check server (authoritative, survives device changes)
   try {
     const { data } = await supabase
       .from('user_known_fingerprints')
       .select('fingerprint')
+      .eq('user_id', currentUserId)
       .eq('peer_user_id', peerUserId)
       .maybeSingle();
 
@@ -204,7 +205,6 @@ async function checkFingerprintChangeWithServer(
       return { changed: true, previousFp: data.fingerprint };
     }
   } catch {
-    // Fallback to local-only check
   }
 
   return { changed: false, previousFp: null };
@@ -455,7 +455,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           console.log('[PEER_KEY] loaded', peerUserId);
 
           // Check for fingerprint change — server-backed + local
-          const { changed: fpChanged } = await checkFingerprintChangeWithServer(peerUserId, data.fingerprint);
+          const { changed: fpChanged } = await checkFingerprintChangeWithServer(user.id, peerUserId, data.fingerprint);
 
           peerKeyRef.current = {
             identityKey: data.identity_key,

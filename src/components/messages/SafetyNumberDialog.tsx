@@ -26,14 +26,39 @@ function formatFingerprint(fp: string): string {
   return clean.match(/.{1,5}/g)?.join(' ') ?? clean;
 }
 
+function toHexBytes(input: string): Uint8Array {
+  const clean = input.replace(/\s/g, '').toLowerCase();
+  const out = new Uint8Array(Math.floor(clean.length / 2));
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
+function buildSharedSafetyNumber(myFp: string, peerFp: string): string {
+  const ordered = [myFp.replace(/\s/g, ''), peerFp.replace(/\s/g, '')].sort();
+  const merged = `${ordered[0]}:${ordered[1]}`;
+  const bytes = new TextEncoder().encode(merged);
+  let hash = 2166136261;
+  for (const byte of bytes) {
+    hash ^= byte;
+    hash = Math.imul(hash, 16777619);
+  }
+  const hex = (hash >>> 0).toString(16).padStart(8, '0').toUpperCase();
+  const repeated = `${hex}${ordered[0].slice(0, 16).toUpperCase()}${ordered[1].slice(0, 16).toUpperCase()}`;
+  return repeated.match(/.{1,5}/g)?.join(' ') ?? repeated;
+}
+
 /** Build a verification payload for QR scanning */
 function buildQRPayload(conversationId: string, myFp: string, peerFp: string): string {
+  const ordered = [myFp.replace(/\s/g, ''), peerFp.replace(/\s/g, '')].sort();
   return JSON.stringify({
-    v: 1,
+    v: 2,
     type: 'forsure-safety-number',
     conv: conversationId,
-    fp1: myFp,
-    fp2: peerFp,
+    fpA: ordered[0],
+    fpB: ordered[1],
+    safetyNumber: buildSharedSafetyNumber(myFp, peerFp),
   });
 }
 
@@ -49,7 +74,8 @@ export function SafetyNumberDialog({
   const [copied, setCopied] = useState(false);
   const [verified, setVerified] = useState(false);
 
-  const combinedFingerprint = `${myFingerprint}\n${peerFingerprint}`;
+  const sharedSafetyNumber = buildSharedSafetyNumber(myFingerprint, peerFingerprint);
+  const combinedFingerprint = `Numéro de sécurité partagé\n${sharedSafetyNumber}\n\nVotre clé\n${myFingerprint}\n\nClé de ${peerName}\n${peerFingerprint}`;
   const qrPayload = buildQRPayload(conversationId, myFingerprint, peerFingerprint);
 
   const handleCopy = async () => {
@@ -71,7 +97,7 @@ export function SafetyNumberDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-emerald-500" />
+            <ShieldCheck className="w-5 h-5 text-primary" />
             Numéro de sécurité
           </DialogTitle>
           <DialogDescription>
@@ -100,6 +126,12 @@ export function SafetyNumberDialog({
 
           {/* Safety numbers display */}
           <div className="space-y-2">
+            <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+              <p className="text-[10px] text-muted-foreground mb-1 font-medium">Numéro de sécurité partagé</p>
+              <p className="font-mono text-xs tracking-wider break-all leading-relaxed text-primary">
+                {sharedSafetyNumber}
+              </p>
+            </div>
             <div className="p-3 rounded-lg bg-muted/50 border">
               <p className="text-[10px] text-muted-foreground mb-1 font-medium">Votre clé</p>
               <p className="font-mono text-xs tracking-wider break-all leading-relaxed">
