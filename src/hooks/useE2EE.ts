@@ -244,18 +244,17 @@ function cleanupLegacyStorage() {
           console.log('[E2EE] Cleared stale ratchet states (migration v4)');
         } catch {}
       };
-      // Also clear legacy session keys to re-derive
-      const req2 = hardGlobals.idbOpen(DB_NAME, DB_VERSION);
-      req2.onsuccess = () => {
+      // Also clear legacy session keys to re-derive — use openE2EEDB to ensure stores exist
+      openE2EEDB().then(db => {
         try {
-          const db = req2.result;
-          if (db.objectStoreNames.contains('session-keys')) {
-            const tx = db.transaction('session-keys', 'readwrite');
-            tx.objectStore('session-keys').clear();
+          if (db.objectStoreNames.contains(STORE_SESSION)) {
+            const tx = db.transaction(STORE_SESSION, 'readwrite');
+            tx.objectStore(STORE_SESSION).clear();
             console.log('[E2EE] Cleared stale session keys (migration v4)');
           }
+          db.close();
         } catch {}
-      };
+      }).catch(() => {});
     }
   } catch {}
 }
