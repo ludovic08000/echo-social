@@ -365,11 +365,12 @@ export function useIncomingCall() {
     const encKey = encryptedCallKeyRef.current;
     const convId = callConversationIdRef.current;
     if (encKey && convId) {
-      try {
-        decryptedCallKey = await decryptCallKey(encKey, convId);
-      } catch (err) {
-        console.warn('[IncomingCall] Failed to decrypt call key:', err);
-      }
+      decryptedCallKey = await decryptCallKey(encKey, convId);
+    }
+
+    if (!decryptedCallKey) {
+      callPhaseRef.current = 'ringing';
+      throw new Error('[IncomingCall] Missing decrypted call key — refusing non-E2EE call accept');
     }
 
     encryptedCallKeyRef.current = null;
@@ -424,14 +425,7 @@ export async function signalOutgoingCall(
   let encryptedKey: string | undefined;
 
   if (callKeyB64) {
-    try {
-      encryptedKey = await encryptCallKey(callKeyB64, conversationId);
-    } catch {
-      // E2EE messaging session unavailable — fall back to raw key
-      // Still protected by RLS: only caller/callee can read via call_signal RPC
-      console.warn('[SignalCall] No E2EE session — using raw call key (RLS-protected)');
-      encryptedKey = `raw:${callKeyB64}`;
-    }
+    encryptedKey = await encryptCallKey(callKeyB64, conversationId);
   }
 
   const { data, error } = await supabase.rpc('call_signal', {

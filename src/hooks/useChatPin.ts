@@ -349,24 +349,47 @@ export function useChatPin() {
     })();
   }, [user, fetchPinMode]);
 
+  const lockWithoutWiping = useCallback(async () => {
+    sessionStorage.removeItem(SESSION_KEY);
+
+    if (user) {
+      try {
+        if (runtimeWrapKeyRef.current && runtimeWrapSaltRef.current) {
+          const fullBlob = await collectAllCryptoBlob(user.id);
+          if (fullBlob) {
+            await encryptAndSaveWrappedCrypto(
+              user.id,
+              runtimeWrapKeyRef.current,
+              runtimeWrapSaltRef.current,
+              fullBlob,
+            );
+            console.log('[PIN] Latest crypto snapshot wrapped before lock');
+          }
+        }
+
+        await deleteRawIdentityBlob(user.id);
+        console.log('[PIN] Locked without wiping sessions or ratchet state');
+      } catch (err) {
+        console.warn('[PIN] lockWithoutWiping(): failed to preserve crypto before lock:', err);
+      }
+    }
+
+    setState(s => ({ ...s, unlocked: false }));
+  }, [user]);
+
   // Handle 'on_return' mode: re-lock when tab loses visibility
   useEffect(() => {
     if (!user || !state.hasPin) return;
     
     const handleVisibility = async () => {
       if (document.hidden && pinModeRef.current === 'on_return' && state.unlocked) {
-        sessionStorage.removeItem(SESSION_KEY);
-        if (user) {
-          // Only remove identity keys (already PIN-wrapped). Do NOT wipe session keys.
-          deleteRawIdentityBlob(user.id).catch(() => {});
-        }
-        setState(s => ({ ...s, unlocked: false }));
+        await lockWithoutWiping();
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [user, state.hasPin, state.unlocked]);
+  }, [user, state.hasPin, state.unlocked, lockWithoutWiping]);
 
   // Handle 'on_inactivity' mode: re-lock after 5 min idle
   useEffect(() => {
@@ -374,13 +397,8 @@ export function useChatPin() {
 
     const resetTimer = () => {
       if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
-      inactivityTimer.current = setTimeout(async () => {
-        sessionStorage.removeItem(SESSION_KEY);
-        if (user) {
-          // Only remove identity keys (already PIN-wrapped). Do NOT wipe session keys.
-          deleteRawIdentityBlob(user.id).catch(() => {});
-        }
-        setState(s => ({ ...s, unlocked: false }));
+      inactivityTimer.current = setTimeout(() => {
+        void lockWithoutWiping();
       }, INACTIVITY_TIMEOUT);
     };
 
@@ -556,34 +574,10 @@ export function useChatPin() {
     }
   }, [user, fetchPinMode]);
 
-  /** Lock messaging — refresh wrapped crypto snapshot, preserve session keys locally. */
+  /** Lock messaging — non-destructive lock preserving session keys and ratchet state. */
   const lock = useCallback(async () => {
-    sessionStorage.removeItem(SESSION_KEY);
-
-    if (user) {
-      try {
-        if (runtimeWrapKeyRef.current && runtimeWrapSaltRef.current) {
-          const fullBlob = await collectAllCryptoBlob(user.id);
-          if (fullBlob) {
-            await encryptAndSaveWrappedCrypto(
-              user.id,
-              runtimeWrapKeyRef.current,
-              runtimeWrapSaltRef.current,
-              fullBlob,
-            );
-            console.log('[PIN] Latest crypto snapshot wrapped before lock');
-          }
-        }
-
-        await deleteRawIdentityBlob(user.id);
-        console.log('[PIN] Locked: raw identity blob removed, session crypto preserved');
-      } catch (err) {
-        console.warn('[PIN] lock(): failed to preserve crypto before lock:', err);
-      }
-    }
-
-    setState(s => ({ ...s, unlocked: false }));
-  }, [user]);
+    await lockWithoutWiping();
+  }, [lockWithoutWiping]);
 
   /** Request PIN reset via email OTP */
   const requestReset = useCallback(async (): Promise<boolean> => {

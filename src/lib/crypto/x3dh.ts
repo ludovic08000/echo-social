@@ -578,7 +578,7 @@ export async function x3dhRespond(
       );
       console.info(`[X3DH] OPK #${initialMessage.opkId} used for 4-DH respond`);
     } else {
-      console.warn(`[X3DH] ⚠️ OPK #${initialMessage.opkId} consumed on server but NOT FOUND locally — OPK session not finalized. Falling back to 3-DH (still secure but no OPK forward secrecy).`);
+      console.error(`[X3DH] OPK mismatch — resync needed (OPK #${initialMessage.opkId} consommée côté serveur mais introuvable localement)`);
     }
   }
 
