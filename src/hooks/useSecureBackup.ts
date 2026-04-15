@@ -56,7 +56,7 @@ async function decryptBlob(encrypted: string, salt: string, iv: string, password
   return new TextDecoder().decode(plainBuf);
 }
 
-/** Collect all local E2EE keys for backup */
+/** Collect all local E2EE keys for backup — COMPLETE snapshot */
 async function collectKeys(): Promise<string> {
   const data: Record<string, any> = {};
 
@@ -101,14 +101,57 @@ async function collectKeys(): Promise<string> {
     db.close();
   } catch {}
 
+  // PIN-wrapped keys
+  try {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open('forsure-pin-wrap', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => resolve(req.result);
+    });
+    if (db.objectStoreNames.contains('pin-wrapped-keys')) {
+      const tx = db.transaction('pin-wrapped-keys', 'readonly');
+      const all = await new Promise<any[]>((resolve, reject) => {
+        const req = tx.objectStore('pin-wrapped-keys').getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      data['pinwrap:keys'] = all;
+    }
+    db.close();
+  } catch {}
+
+  // Private prekeys
+  try {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open('forsure-prekeys', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => resolve(req.result);
+    });
+    if (db.objectStoreNames.contains('private-prekeys')) {
+      const tx = db.transaction('private-prekeys', 'readonly');
+      const all = await new Promise<any[]>((resolve, reject) => {
+        const req = tx.objectStore('private-prekeys').getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      data['prekeys:private'] = all;
+    }
+    db.close();
+  } catch {}
+
   // Known fingerprints
   try {
     const fps = localStorage.getItem('forsure-known-fps');
     if (fps) data['fingerprints'] = fps;
   } catch {}
 
+  // Integrity check: backup MUST contain identity keys
+  const hasIdentity = data['e2ee:identity-keys']?.length > 0 || data['pinwrap:keys']?.length > 0;
+  if (!hasIdentity) {
+    throw new Error('Cannot create backup: no identity keys found locally');
+  }
+
   return JSON.stringify(data);
-}
 
 /** Restore all local E2EE keys from backup */
 async function restoreKeys(json: string): Promise<void> {
