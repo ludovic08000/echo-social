@@ -98,14 +98,18 @@ export function ChatView({ conversationId }: ChatViewProps) {
   }, []);
 
   // Message queue for encrypted sending
-  // Always pass encrypt handler so it's available when E2EE becomes ready
+  // isEncryptionActive must reflect actual E2EE state, not just "not Zeus"
+  // When peer has no keys or E2EE init fails, allow plaintext fallback
+  const isEncryptionActive = !isZeusConversation && e2ee.encrypted;
+  const allowPlaintextFallback = isZeusConversation || (!e2ee.encrypted && !isZeusConversation);
+
   const queue = useMessageQueue(
     conversationId,
     e2ee.encrypt,
     e2ee.isReady(),
-    !isZeusConversation,
+    isEncryptionActive,
     e2ee.acknowledgeSentPayload,
-    isZeusConversation,
+    allowPlaintextFallback,
     handlePlaintextCached,
   );
 
