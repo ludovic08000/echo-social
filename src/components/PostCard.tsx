@@ -191,7 +191,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const isOwner = user?.id === post.user_id;
 
   return (
-    <article className="group relative bg-card border-y border-border/20 sm:border sm:border-border/20 sm:rounded-[26px] transition-all duration-300 shadow-[0_10px_34px_-22px_hsl(var(--foreground)/0.2)] hover:shadow-[0_18px_44px_-24px_hsl(var(--foreground)/0.24)]">
+    <article ref={cardRef} className="group relative bg-card border-y border-border/20 sm:border sm:border-border/20 sm:rounded-[26px] transition-all duration-300 shadow-[0_10px_34px_-22px_hsl(var(--foreground)/0.2)] hover:shadow-[0_18px_44px_-24px_hsl(var(--foreground)/0.24)]">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5">
         <div className="flex items-center gap-2.5 min-w-0">
