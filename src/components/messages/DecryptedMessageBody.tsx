@@ -3,22 +3,23 @@ import { Lock } from 'lucide-react';
 import { VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { hasMediaKey, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 
+function looksEncryptedMessage(body: string): boolean {
+  return body.startsWith('{') && body.includes('"ct"');
+}
+
 /** Detect voice message pattern — supports multiple formats:
  *  🎙️ vocal:URL|duration
  *  🎙️ voice:URL|dur:duration
  *  🎙️ voice:URL|duration
  */
 function parseVoiceMessage(text: string): { url: string; duration: number } | null {
-  // Format: 🎙️ vocal:URL|123  or  🎙️ voice:URL|123
   const m1 = text.match(/^🎙️\s*(?:vocal|voice):(.+)\|(\d+)$/);
   if (m1) return { url: m1[1], duration: parseInt(m1[2], 10) };
-  // Format: 🎙️ voice:URL|dur:123
   const m2 = text.match(/^🎙️\s*(?:vocal|voice):(.+)\|dur:(\d+)$/);
   if (m2) return { url: m2[1], duration: parseInt(m2[2], 10) };
   return null;
 }
 
-/** Detect GIF message pattern: GIF:URL */
 function parseGifMessage(text: string): string | null {
   const match = text.match(/^GIF:(https?:\/\/.+)$/i);
   if (match) return match[1];
@@ -45,14 +46,15 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   const [isDecrypting, setIsDecrypting] = useState(false);
 
   useEffect(() => {
-    if (!isEncryptionActive) {
+    const shouldAttemptDecrypt = isEncryptionActive || looksEncryptedMessage(body);
+
+    if (!shouldAttemptDecrypt) {
       setDisplayText(body);
       setMediaKeyB64(null);
       return;
     }
 
-    const looksEncrypted = body.startsWith('{') && (body.includes('"ct"') || body.includes('"hdr"'));
-    if (!looksEncrypted) {
+    if (!looksEncryptedMessage(body)) {
       setDisplayText(body);
       setMediaKeyB64(null);
       return;
@@ -63,7 +65,6 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
     decrypt(body).then(result => {
       if (!cancelled) {
-        // Extract media key before stripping it from display
         if (hasMediaKey(result.text)) {
           const parsed = parseMediaMessage(result.text);
           if (parsed) {
@@ -71,6 +72,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
             setDisplayText(parsed.label);
           } else {
             setDisplayText(result.text);
+            setMediaKeyB64(null);
           }
         } else {
           setDisplayText(result.text);
@@ -82,6 +84,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     }).catch(() => {
       if (!cancelled) {
         setDisplayText('🔒 Message chiffré');
+        setMediaKeyB64(null);
         setIsDecrypting(false);
       }
     });
@@ -98,7 +101,6 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     );
   }
 
-  // Check if it's a voice message
   const voice = parseVoiceMessage(displayText);
   if (voice) {
     return (
@@ -111,7 +113,6 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     );
   }
 
-  // Check if it's a GIF message
   const gifUrl = parseGifMessage(displayText);
   if (gifUrl) {
     return (

@@ -11,6 +11,11 @@ import { EncryptedMedia } from './EncryptedMedia';
 import { parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 import { isEncryptedMessage } from '@/lib/crypto/e2ee';
 
+function looksEncryptedMessage(body: string): boolean {
+  if (isEncryptedMessage(body)) return true;
+  return body.startsWith('{') && body.includes('"ct"');
+}
+
 interface MessageMediaProps {
   imageUrl: string;
   body: string;
@@ -29,13 +34,14 @@ export const MessageMedia = memo(function MessageMedia({
   const [resolved, setResolved] = useState(!isEncryptionActive);
 
   useEffect(() => {
-    if (!isEncryptionActive) {
+    const shouldAttemptDecrypt = isEncryptionActive || looksEncryptedMessage(body);
+
+    if (!shouldAttemptDecrypt) {
       setResolved(true);
       return;
     }
 
-    const looksEncrypted = isEncryptedMessage(body);
-    if (!looksEncrypted) {
+    if (!looksEncryptedMessage(body)) {
       setResolved(true);
       return;
     }
@@ -56,10 +62,8 @@ export const MessageMedia = memo(function MessageMedia({
     return () => { cancelled = true; };
   }, [body, decrypt, isEncryptionActive]);
 
-  // Still resolving — show nothing (DecryptedMessageBody handles the spinner)
   if (!resolved) return null;
 
-  // Encrypted media with key
   if (mediaKey) {
     return (
       <EncryptedMedia
@@ -70,7 +74,6 @@ export const MessageMedia = memo(function MessageMedia({
     );
   }
 
-  // Plain media (legacy or non-encrypted conversation)
   const isVideoFile = /\.(mp4|mov|webm|avi|mkv)/i.test(imageUrl);
   if (isVideoFile) {
     return (
