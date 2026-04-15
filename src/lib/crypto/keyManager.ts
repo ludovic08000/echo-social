@@ -211,14 +211,49 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
   };
 }
 
-/** Get or create identity keys */
-export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityKeyPair> {
+/**
+ * Get or create identity keys.
+ * 
+ * Signal model — recovery order:
+ * 1. Try IndexedDB raw keys
+ * 2. Try PIN-wrapped keys (forsure-pin-wrap DB)
+ * 3. Generate NEW keys (true new identity)
+ * 
+ * NEVER silently regenerate — if keys existed before, the caller
+ * must handle the identity change explicitly.
+ */
+export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityKeyPair & { isNewIdentity?: boolean }> {
+  // 1. Try raw keys from IndexedDB
   const existing = await loadIdentityKeys(userId);
   if (existing) return existing;
 
+  // 2. Try PIN-wrapped keys
+  try {
+    const { hasWrappedKeys, unwrapKeysWithPin } = await import('./pinWrap');
+    const hasWrap = await hasWrappedKeys(userId);
+    if (hasWrap) {
+      console.log('[KEY_MGR] Raw keys missing but PIN-wrapped keys exist — awaiting PIN unlock');
+      // Signal to caller that PIN unlock is needed — don't generate new keys
+      throw new PinUnlockRequiredError('PIN unlock required to recover identity keys');
+    }
+  } catch (e) {
+    if (e instanceof PinUnlockRequiredError) throw e;
+    // PIN wrap module error — continue to generation
+  }
+
+  // 3. No local keys at all — generate new identity
+  console.log('[KEY_MGR] No local keys found — generating new identity');
   const newKeys = await generateIdentityKeys();
   await saveIdentityKeys(userId, newKeys);
-  return newKeys;
+  return { ...newKeys, isNewIdentity: true };
+}
+
+/** Error thrown when PIN unlock is needed to recover keys */
+export class PinUnlockRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PinUnlockRequiredError';
+  }
 }
 
 /** Export public key bundle for server publication */
