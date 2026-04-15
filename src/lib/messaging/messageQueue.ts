@@ -323,6 +323,12 @@ class MessageQueueManager {
 
         const handlers = this.getReadyAwareHandlers(msg.conversationId);
         if (!handlers?.encrypt) {
+          // Fail fast: if no handler is registered after 30s, mark as failed
+          const age = Date.now() - msg.createdAt;
+          if (age > 30_000) {
+            await this.updateStatus(msg, 'failed_visible', 'Canal sécurisé indisponible — réessayez plus tard');
+            return;
+          }
           await this.updateStatus(msg, 'waiting_secure_channel', 'Canal sécurisé indisponible');
           this.scheduleRetry(msg, 'secure_wait');
           return;
@@ -338,7 +344,12 @@ class MessageQueueManager {
 
         try {
           console.log('[E2EE] encrypt start', msg.localId);
-          const encrypted = await handlers.encrypt(plaintext, msg.conversationId, msg.localId);
+          // Timeout: if encryption takes more than 15s, abort
+          const encryptPromise = handlers.encrypt(plaintext, msg.conversationId, msg.localId);
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout chiffrement (15s)')), 15_000)
+          );
+          const encrypted = await Promise.race([encryptPromise, timeoutPromise]);
           const withLocalId = this.attachLocalId(encrypted, msg.localId);
 
           // CRITICAL: Verify encryption actually produced ciphertext
@@ -371,12 +382,24 @@ class MessageQueueManager {
 
           console.error('[E2EE] encrypt failed', msg.localId, errMsg);
 
+          // Fail fast after 30s total elapsed time for key-waiting errors
+          const age = Date.now() - msg.createdAt;
+          if (waitingForKeys && age > 30_000) {
+            await this.updateStatus(msg, 'failed_visible', 'Chiffrement impossible — clés du contact indisponibles. Réessayez.');
+            return;
+          }
+
           if (waitingForKeys) {
             await this.updateStatus(msg, 'waiting_secure_channel', errMsg);
             this.scheduleRetry(msg, 'secure_wait');
           } else {
-            await this.updateStatus(msg, 'retry_pending', errMsg);
-            this.scheduleRetry(msg);
+            // Non-key errors: fail after 3 retries instead of 10
+            if (msg.retryCount >= 3) {
+              await this.updateStatus(msg, 'failed_visible', `Échec chiffrement: ${errMsg}`);
+            } else {
+              await this.updateStatus(msg, 'retry_pending', errMsg);
+              this.scheduleRetry(msg);
+            }
           }
           return;
         }
@@ -460,7 +483,7 @@ class MessageQueueManager {
   private scheduleRetry(msg: OutboundMessage, mode: 'retry' | 'secure_wait' = 'retry') {
     this.clearRetryTimer(msg.localId);
 
-    const SECURE_WAIT_RETRY_MS = 10_000;
+    const SECURE_WAIT_RETRY_MS = 3_000;
 
     const delay = mode === 'secure_wait'
       ? SECURE_WAIT_RETRY_MS
