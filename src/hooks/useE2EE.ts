@@ -303,6 +303,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const x3dhInfoRef = useRef<X3DHInitialMessage | null>(null);
   const initRef = useRef(false);
   const legacySessionReadyRef = useRef(false);
+  const peerHasRespondedRef = useRef(false);
 
   const isZeus = peerUserId === ZEUS_ID;
 
@@ -752,11 +753,11 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       const taggedEnvelope = envelope as any;
       taggedEnvelope.encryptionMode = 'ratchet';
 
-      if (x3dhInfoRef.current) {
+      if (x3dhInfoRef.current && !peerHasRespondedRef.current) {
         taggedEnvelope.x3dh = x3dhInfoRef.current;
-        console.info('[E2EE] ✅ encrypt via X3DH + Double Ratchet (initial message with X3DH header attached)');
+        console.info('[E2EE] ✅ encrypt with PreKey header (awaiting peer response)');
       } else {
-        console.info('[E2EE] ✅ encrypt via Double Ratchet (payload prepared, awaiting ACK)');
+        console.info('[E2EE] ✅ encrypt via Double Ratchet');
       }
 
       const serializedPayload = hardGlobals.jsonStringify(taggedEnvelope);
@@ -894,8 +895,15 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         );
         ratchetRef.current = newState;
         await saveRatchetLocal(conversationId!, newState);
+        if (!peerHasRespondedRef.current) {
+          peerHasRespondedRef.current = true;
+          if (x3dhInfoRef.current) {
+            console.info('[E2EE] Peer decrypted — X3DH header cleared (Signal-style)');
+            x3dhInfoRef.current = null;
+          }
+        }
         setState(s => ({ ...s, ratchetActive: true }));
-        console.debug(`[RATCHET] ✅ decrypt OK — verified=${verified}, receiving key set from header`);
+        console.debug(`[RATCHET] ✅ decrypt OK — verified=${verified}`);
         return { text: plaintext, encrypted: true, verified };
       } catch (ratchetErr) {
         const errMsg = ratchetErr instanceof Error ? ratchetErr.message : String(ratchetErr);
@@ -981,11 +989,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
   const acknowledgeSentPayload = useCallback(async (localId: string) => {
     pendingPayloadRef.current.delete(localId);
-
-    if (x3dhInfoRef.current) {
-      console.info('[E2EE] X3DH header cleared after confirmed send');
-      x3dhInfoRef.current = null;
-    }
     console.info(`[E2EE] ✅ Payload acknowledged (${localId})`);
   }, [conversationId]);
 
