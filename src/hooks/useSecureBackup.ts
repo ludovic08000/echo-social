@@ -10,6 +10,7 @@ import { useCallback, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
+import { openE2EEDB } from '@/lib/crypto/indexedDb';
 
 const PBKDF2_ITERATIONS = 600_000; // OWASP 2023 recommendation
 const SALT_LENGTH = 32;
@@ -62,11 +63,7 @@ async function collectKeys(): Promise<string> {
 
   // Identity keys from IndexedDB
   try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-e2ee', 3);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result);
-    });
+    const db = await openE2EEDB();
 
     for (const storeName of Array.from(db.objectStoreNames)) {
       const tx = db.transaction(storeName, 'readonly');
@@ -173,18 +170,8 @@ async function restoreKeys(json: string): Promise<void> {
   for (const [key, records] of Object.entries(data)) {
     if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
     const storeName = key.replace('e2ee:', '');
-    try {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const req = indexedDB.open('forsure-e2ee', 3);
-        req.onerror = () => reject(req.error);
-        req.onsuccess = () => resolve(req.result);
-        req.onupgradeneeded = () => {
-          const db = req.result;
-          if (!db.objectStoreNames.contains(storeName)) {
-            db.createObjectStore(storeName, { keyPath: 'id' });
-          }
-        };
-      });
+      try {
+        const db = await openE2EEDB();
 
       if (db.objectStoreNames.contains(storeName)) {
         const tx = db.transaction(storeName, 'readwrite');
