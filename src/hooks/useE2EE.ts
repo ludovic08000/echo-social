@@ -592,7 +592,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
    * Falls back to legacy DH if X3DH bundle is unavailable.
    */
   const initRatchetIfNeeded = useCallback(async (): Promise<RatchetState | null> => {
-    if (!conversationId || !keysRef.current || !peerKeyRef.current) return null;
+    if (!conversationId || !keysRef.current || !peerKeyRef.current || !peerUserId) return null;
 
     // Already have a ratchet? Use it.
     if (ratchetRef.current) return ratchetRef.current;
@@ -604,38 +604,58 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       return persisted;
     }
 
+    const initFromBundle = async (bundle: Awaited<ReturnType<typeof fetchPrekeyBundle>>) => {
+      if (!bundle || !keysRef.current) return null;
+
+      const x3dhResult = await x3dhInitiate(keysRef.current, bundle);
+
+      // Store X3DH metadata for the initial message header
+      const myPubRaw = await hardCrypto.exportKey('raw', keysRef.current.publicKey);
+      x3dhInfoRef.current = {
+        ik: bufferToBase64(myPubRaw),
+        ek: x3dhResult.ephemeralKey,
+        spkId: x3dhResult.usedSPKId,
+        opkId: x3dhResult.usedOTPKId,
+        kemCt: x3dhResult.kemCiphertext,
+      };
+
+      // Import peer SPK as DH ratchet key for Double Ratchet init
+      const peerSPKKey = await hardCrypto.importKey(
+        'raw', base64ToBuffer(bundle.signedPrekey),
+        KX_KEY_PARAMS as any, true, [],
+      );
+
+      const ratchet = await initRatchetAsInitiator(
+        conversationId,
+        x3dhResult.sharedSecret,
+        peerSPKKey,
+      );
+
+      ratchetRef.current = ratchet;
+      await saveRatchetLocal(conversationId, ratchet);
+      console.log('[E2EE] 🔄 Double Ratchet initialized via X3DH (initiator)');
+      return ratchet;
+    };
+
     // X3DH key agreement (Signal spec)
     try {
-      const bundle = await fetchPrekeyBundle(peerUserId!);
+      const bundle = await fetchPrekeyBundle(peerUserId);
       if (bundle) {
-        const x3dhResult = await x3dhInitiate(keysRef.current, bundle);
+        try {
+          return await initFromBundle(bundle);
+        } catch (firstErr) {
+          const isSignatureMismatch = firstErr instanceof Error
+            && firstErr.message.includes('Signed prekey signature verification FAILED');
 
-        // Store X3DH metadata for the initial message header
-        const myPubRaw = await hardCrypto.exportKey('raw', keysRef.current.publicKey);
-        x3dhInfoRef.current = {
-          ik: bufferToBase64(myPubRaw),
-          ek: x3dhResult.ephemeralKey,
-          spkId: x3dhResult.usedSPKId,
-          opkId: x3dhResult.usedOTPKId,
-          kemCt: x3dhResult.kemCiphertext,
-        };
+          if (!isSignatureMismatch) throw firstErr;
 
-        // Import peer SPK as DH ratchet key for Double Ratchet init
-        const peerSPKKey = await hardCrypto.importKey(
-          'raw', base64ToBuffer(bundle.signedPrekey),
-          KX_KEY_PARAMS as any, true, [],
-        );
-
-        const ratchet = await initRatchetAsInitiator(
-          conversationId,
-          x3dhResult.sharedSecret,
-          peerSPKKey,
-        );
-
-        ratchetRef.current = ratchet;
-        await saveRatchetLocal(conversationId, ratchet);
-        console.log('[E2EE] 🔄 Double Ratchet initialized via X3DH (initiator)');
-        return ratchet;
+          console.warn('[E2EE] X3DH bundle stale during SPK rotation — refetching once');
+          const refreshedBundle = await fetchPrekeyBundle(peerUserId);
+          if (refreshedBundle) {
+            return await initFromBundle(refreshedBundle);
+          }
+          throw firstErr;
+        }
       }
     } catch (x3dhErr) {
       console.warn('[E2EE] X3DH init failed, using legacy:', x3dhErr);
@@ -643,7 +663,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     // Legacy fallback — session keys are non-extractable, skip ratchet
     return null;
-  }, [conversationId, ensureLegacySession]);
+  }, [conversationId, ensureLegacySession, peerUserId]);
 
   /**
    * Encrypt — NEVER returns plaintext.

@@ -139,7 +139,15 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
     supabase.from('post_views').upsert({
       post_id: post.id,
       user_id: user.id,
-    }, { onConflict: 'post_id,user_id' }).then(() => {});
+    }, {
+      onConflict: 'post_id,user_id',
+      ignoreDuplicates: true,
+    }).then(({ error }) => {
+      if (error) {
+        setViewTracked(false);
+        console.warn('[PostCard] post view tracking failed:', error.message);
+      }
+    });
   };
 
   useEffect(() => {

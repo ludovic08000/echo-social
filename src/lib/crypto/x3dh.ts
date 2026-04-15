@@ -284,7 +284,7 @@ export async function refreshSignedPrekeyIfNeeded(
     }
 
     if (!signatureValid) {
-      console.warn('[X3DH] SPK signature invalid with current signing key — regenerating');
+      console.info('[X3DH] Active signed prekey out of sync with current signing key — regenerating');
       await generateAndUploadSignedPrekey(userId, signingPrivateKey);
       return;
     }
