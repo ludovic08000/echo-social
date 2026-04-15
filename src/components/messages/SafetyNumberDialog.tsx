@@ -238,6 +238,19 @@ export function SafetyNumberDialog({
     }
   }, [myFingerprint, peerFingerprint, conversationId]);
 
+  const [repairing, setRepairing] = useState(false);
+  const repairFingerprints = useCallback(async () => {
+    setRepairing(true);
+    try {
+      await supabase.rpc('push_my_fingerprint_to_peers');
+      // Re-run diagnostic to confirm fix
+      await runDiagnostic();
+    } catch {
+    } finally {
+      setRepairing(false);
+    }
+  }, [runDiagnostic]);
+
   const statusIcon = (status: SyncCheck['status']) => {
     switch (status) {
       case 'ok': return <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />;
@@ -348,6 +361,20 @@ export function SafetyNumberDialog({
                 ))}
               </div>
             )}
+          {diagResults && !allOk && (
+            <div className="px-3 py-2 border-t">
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full text-xs"
+                onClick={repairFingerprints}
+                disabled={repairing}
+              >
+                {repairing ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
+                Réparer la synchronisation
+              </Button>
+            </div>
+          )}
           </div>
 
           {/* Actions */}

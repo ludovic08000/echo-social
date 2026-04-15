@@ -373,6 +373,11 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id,is_active' });
 
+      // Push updated fingerprint to peers who cached a stale one
+      supabase.rpc('push_my_fingerprint_to_peers').then(({ data: updated }) => {
+        if (updated && (updated as number) > 0) console.log('[E2EE] Pushed fingerprint to', updated, 'peer(s)');
+      });
+
       // Generate prekeys + signed prekeys if needed (Signal/X3DH-style)
       Promise.all([
         reconcilePrekeysWithServer(user.id),
@@ -523,6 +528,11 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
               is_active: true,
               updated_at: new Date().toISOString(),
             }, { onConflict: 'user_id,is_active' });
+          
+          // Push updated fingerprint to all peers who have a stale copy
+          supabase.rpc('push_my_fingerprint_to_peers').then(({ data: updated }) => {
+            if (updated && (updated as number) > 0) console.log('[E2EE] Pushed fingerprint to', updated, 'peer(s)');
+          });
           
           setState(s => ({ ...s, fingerprint: bundle.fingerprint }));
           console.log('[E2EE] Own keys loaded on-demand');

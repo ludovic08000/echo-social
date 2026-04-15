@@ -5374,6 +5374,7 @@ export type Database = {
         Returns: number
       }
       purge_old_audit_logs: { Args: never; Returns: undefined }
+      push_my_fingerprint_to_peers: { Args: never; Returns: number }
       read_email_batch: {
         Args: { batch_size: number; queue_name: string; vt: number }
         Returns: {
