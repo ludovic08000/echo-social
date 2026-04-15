@@ -478,7 +478,7 @@ class MessageQueueManager {
   private scheduleRetry(msg: OutboundMessage, mode: 'retry' | 'secure_wait' = 'retry') {
     this.clearRetryTimer(msg.localId);
 
-    const SECURE_WAIT_RETRY_MS = 10_000;
+    const SECURE_WAIT_RETRY_MS = 3_000;
 
     const delay = mode === 'secure_wait'
       ? SECURE_WAIT_RETRY_MS
