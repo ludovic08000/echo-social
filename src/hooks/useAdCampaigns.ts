@@ -71,9 +71,9 @@ function getEndDate(durationType: DurationType, startDate: Date = new Date()): D
 }
 
 export function useAdCampaigns() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   return useQuery({
-    queryKey: ['ad-campaigns', user?.id],
+    queryKey: ['ad-campaigns', loading ? 'loading' : user?.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('ad_campaigns')
@@ -83,7 +83,7 @@ export function useAdCampaigns() {
       if (error) throw error;
       return data as AdCampaign[];
     },
-    enabled: !!user,
+    enabled: !loading && !!user,
   });
 }
 
@@ -102,8 +102,10 @@ export function useAdDailyStats(campaignId?: string) {
 }
 
 export function useActiveAds() {
+  const { loading } = useAuth();
+
   return useQuery({
-    queryKey: ['active-ads'],
+    queryKey: ['active-ads', loading ? 'loading' : 'ready'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('ad_campaigns')
@@ -117,6 +119,7 @@ export function useActiveAds() {
       if (error) throw error;
       return data as AdCampaign[];
     },
+    enabled: !loading,
   });
 }
 

@@ -25,10 +25,10 @@ export interface Post {
 const PAGE_SIZE = 25;
 
 export function usePosts() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
 
   return useInfiniteQuery({
-    queryKey: ['posts', 'friends-feed', user?.id ?? 'guest'],
+    queryKey: ['posts', 'friends-feed', loading ? 'loading' : user?.id ?? 'guest'],
     queryFn: async ({ pageParam }: { pageParam: number | null }) => {
       const offset = pageParam || 0;
 
@@ -233,7 +233,7 @@ export function usePosts() {
       return allPages.reduce((total, page) => total + page.length, 0);
     },
     initialPageParam: null as number | null,
-    enabled: true,
+    enabled: !loading,
     staleTime: 60_000,
     gcTime: 10 * 60_000,
     refetchInterval: 2 * 60_000,
