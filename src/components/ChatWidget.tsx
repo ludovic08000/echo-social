@@ -1113,8 +1113,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                           </div>
                         )}
 
-                        {/* Translate button + translation */}
-                        {!isMe && !isCallMessage(msg.body) && !isGifMessage(msg.body) && !isVoiceMessage(msg.body) && (
+                        {/* Translate button — only when decrypted text available and body isn't raw ciphertext */}
+                        {!isMe && !isCallMessage(msg.body) && !isGifMessage(msg.body) && !isVoiceMessage(msg.body) &&
+                         decryptedCacheRef.current.has(msg.id) &&
+                         !(msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"'))) && (
                           <div className="mt-0.5">
                             <button
                               onClick={() => {
@@ -1122,7 +1124,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                                 if (!text) return;
                                 translateMsg(msg.id, text);
                               }}
-                              disabled={translating === msg.id || (!translations[msg.id] && !decryptedCacheRef.current.get(msg.id))}
+                              disabled={translating === msg.id}
                               className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all disabled:pointer-events-none disabled:opacity-40"
                             >
                               {translating === msg.id ? (
