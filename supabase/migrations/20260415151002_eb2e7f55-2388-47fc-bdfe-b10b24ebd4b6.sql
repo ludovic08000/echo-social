@@ -1,0 +1,1 @@
+ALTER TABLE public.active_calls REPLICA IDENTITY FULL;
