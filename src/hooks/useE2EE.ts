@@ -82,25 +82,44 @@ function openRatchetDB(): Promise<IDBDatabase> {
 function recreateLegacyE2EEDatabase(): Promise<void> {
   return new Promise((resolve) => {
     try {
-      const deleteRequest = hardGlobals.idbOpen(DB_NAME, DB_VERSION);
-      deleteRequest.onsuccess = () => {
+      // Instead of nuking the entire DB (which destroys identity keys),
+      // only clear the problematic stores while preserving identity-keys.
+      const openReq = hardGlobals.idbOpen(DB_NAME, DB_VERSION);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
         try {
-          deleteRequest.result.close();
-        } catch {}
+          // Only clear session-keys and pre-keys stores, PRESERVE identity-keys
+          const storesToClear = ['session-keys', 'pre-keys'];
+          const existingStores = Array.from(db.objectStoreNames);
+          const toClear = storesToClear.filter(s => existingStores.includes(s));
+          if (toClear.length > 0) {
+            const tx = db.transaction(toClear, 'readwrite');
+            toClear.forEach(s => tx.objectStore(s).clear());
+            tx.oncomplete = () => {
+              db.close();
+              console.log('[E2EE] Cleared session/prekey stores (identity keys preserved)');
+              resolve();
+            };
+            tx.onerror = () => { db.close(); resolve(); };
+          } else {
+            db.close();
+            resolve();
+          }
+        } catch {
+          db.close();
+          resolve();
+        }
+      };
+      openReq.onerror = () => {
+        // DB truly broken — delete and recreate (keys will be regenerated)
         const deletion = indexedDB.deleteDatabase(DB_NAME);
         deletion.onsuccess = () => resolve();
         deletion.onerror = () => resolve();
         deletion.onblocked = () => resolve();
       };
-      deleteRequest.onerror = () => resolve();
-      deleteRequest.onupgradeneeded = () => {
-        try {
-          deleteRequest.transaction?.abort();
-        } catch {}
-        const deletion = indexedDB.deleteDatabase(DB_NAME);
-        deletion.onsuccess = () => resolve();
-        deletion.onerror = () => resolve();
-        deletion.onblocked = () => resolve();
+      openReq.onupgradeneeded = () => {
+        // Schema upgrade needed — let it proceed normally (openDB handles this)
+        // Don't abort — the stores will be recreated by the onupgradeneeded handler
       };
     } catch {
       try {
@@ -499,15 +518,56 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             fingerprint: data.fingerprint,
           };
 
-          // If fingerprint changed, block until user acknowledges
+          // If fingerprint changed: auto-acknowledge with warning banner
+          // Signal only hard-blocks when safety numbers were EXPLICITLY verified.
+          // Since we don't have explicit verification, auto-accept + warn.
           if (fpChanged) {
+            console.warn('[PEER_KEY] ⚠️ Fingerprint changed for', peerUserId, '— auto-acknowledging (no explicit verification)');
+            
+            // Auto-save the new fingerprint
+            saveKnownFingerprint(peerUserId, data.fingerprint);
+            saveKnownFingerprintServer(peerUserId, data.fingerprint);
+            
+            // Clear old crypto state for this conversation
+            if (conversationId) {
+              openRatchetDB().then(db => {
+                try {
+                  const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
+                  tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
+                } catch {}
+              }).catch(() => {});
+              ratchetRef.current = null;
+              peerHasRespondedRef.current = false;
+              x3dhInfoRef.current = null;
+              pendingPayloadRef.current.clear();
+              
+              try {
+                const { deleteSessionKey: delSession } = await import('@/lib/crypto/keyManager');
+                await delSession(conversationId);
+              } catch {}
+              
+              // Re-establish legacy session with new key
+              if (keysRef.current) {
+                try {
+                  await establishSession(keysRef.current, data.identity_key, conversationId, data.fingerprint);
+                  legacySessionReadyRef.current = true;
+                  console.log('[E2EE] ✅ Session re-established after auto-acknowledge');
+                } catch (e) {
+                  console.warn('[E2EE] Session re-establish failed:', e);
+                }
+              }
+            }
+            
+            // Set fingerprintChanged=true for UI warning banner, but keep ready=true
             setState(s => ({
               ...s,
               peerFingerprint: data.fingerprint,
               encrypted: true,
-              ready: false,
+              ready: true,
               fingerprintChanged: true,
               peerKeyMissing: false,
+              ratchetActive: false,
+              initError: null,
             }));
             return;
           }
