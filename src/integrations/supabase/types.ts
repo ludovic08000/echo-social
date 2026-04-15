@@ -4897,6 +4897,19 @@ export type Database = {
         Args: { _expected_step: number; _user_id: string }
         Returns: number
       }
+      call_signal: {
+        Args: {
+          p_action: string
+          p_call_id?: string
+          p_call_type?: string
+          p_callee_id?: string
+          p_caller_id?: string
+          p_conversation_id?: string
+          p_encrypted_call_key?: string
+          p_status?: string
+        }
+        Returns: Json
+      }
       can_view_order: {
         Args: { _buyer_id: string; _order_id: string }
         Returns: boolean
