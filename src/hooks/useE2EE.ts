@@ -861,6 +861,16 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         if (errMsg.includes('SPK') && errMsg.includes('NOT FOUND')) {
           return { text: '🔒 Message illisible (clé signée introuvable)', encrypted: true, verified: false };
         }
+        if (errMsg.includes('OPK') && errMsg.includes('NOT FOUND')) {
+          // OPK was consumed on server but missing locally — shared secret would differ
+          // Try legacy fallback for this message
+          console.warn('[E2EE] OPK missing — attempting legacy session fallback for this message');
+          try {
+            return await decryptLegacyMessage(parsed, rawBody);
+          } catch {
+            return { text: '🔒 Message illisible (OPK introuvable)', encrypted: true, verified: false };
+          }
+        }
         return { text: '🔒 Message illisible (erreur d\'initialisation)', encrypted: true, verified: false };
       }
     }
