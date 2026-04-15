@@ -33,21 +33,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const isResetRoute = typeof window !== 'undefined' && window.location.pathname === '/reset-password';
 
-    // Get session first for fastest possible auth resolution
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (isResetRoute || initialRecovery || detectRecoveryFromHash() || isRecoveryPending()) {
-        stopSessionGuard();
-        setSession(null);
-        setUser(null);
-        setLoading(false);
-        return;
-      }
-
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         if (event === 'PASSWORD_RECOVERY') {
@@ -67,7 +52,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        // Block session hydration on reset route or during recovery
         const onResetRoute = typeof window !== 'undefined' && window.location.pathname === '/reset-password';
         if (onResetRoute || detectRecoveryFromHash() || isRecoveryPending()) {
           stopSessionGuard();
@@ -81,7 +65,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
         setLoading(false);
 
-        // Session guard: start on sign in, stop on sign out
         if (event === 'SIGNED_IN' && session?.user) {
           if (isRecoveryPending()) return;
 
@@ -106,6 +89,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     );
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (isResetRoute || initialRecovery || detectRecoveryFromHash() || isRecoveryPending()) {
+        stopSessionGuard();
+        setSession(null);
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
 
     return () => subscription.unsubscribe();
   }, []);

@@ -37,10 +37,10 @@ export interface GroupedStories {
 }
 
 export function useStories() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
 
   return useQuery({
-    queryKey: ['stories'],
+    queryKey: ['stories', loading ? 'loading' : user?.id ?? 'guest'],
     queryFn: async () => {
       const now = new Date().toISOString();
 
@@ -139,6 +139,7 @@ export function useStories() {
     staleTime: 60_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
+    enabled: !loading,
   });
 }
 
