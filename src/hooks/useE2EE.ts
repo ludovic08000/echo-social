@@ -342,6 +342,27 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
       const bundle = await exportPublicKeyBundle(keys);
 
+      // CRITICAL: Check if server already has keys for this user
+      // If server fingerprint differs from local, it means local keys were regenerated
+      // (IndexedDB was cleared). Only upload if NO server keys exist.
+      const { data: existingServerKey } = await supabase
+        .from('user_public_keys')
+        .select('fingerprint, identity_key')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (existingServerKey && existingServerKey.fingerprint !== bundle.fingerprint) {
+        // Server has different keys — local keys were regenerated after data loss.
+        // DO NOT overwrite server keys blindly. Log the event.
+        console.warn(
+          '[E2EE] ⚠️ Local identity key mismatch with server!',
+          `Local: ${bundle.fingerprint}`,
+          `Server: ${existingServerKey.fingerprint}`,
+          '— Uploading new keys (previous sessions will need re-establishment)'
+        );
+      }
+
       await supabase
         .from('user_public_keys')
         .upsert({
