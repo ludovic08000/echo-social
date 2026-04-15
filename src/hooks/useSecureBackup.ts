@@ -1,9 +1,12 @@
 /**
- * useSecureBackup — Secure key backup system (WhatsApp-style)
+ * useSecureBackup — Secure E2EE key backup with recovery key (Element/Matrix model)
  * 
- * - Keys are encrypted locally with PBKDF2 + AES-256-GCM before upload
- * - Server NEVER sees the plaintext keys or password
- * - Restore requires the same password used during backup
+ * Architecture:
+ * - A random 32-byte recovery key is generated client-side
+ * - The recovery key derives an AES-256-GCM key via PBKDF2 (600k iterations)
+ * - All E2EE key material is collected, encrypted, and uploaded as an opaque blob
+ * - Server NEVER sees plaintext keys or recovery key
+ * - Restore requires the same recovery key — full restore or explicit failure
  */
 
 import { useCallback, useState } from 'react';
@@ -11,17 +14,21 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
+import { generateRecoveryKey, normalizeRecoveryKey, isValidRecoveryKey } from '@/lib/crypto/recoveryKey';
 
 const PBKDF2_ITERATIONS = 600_000; // OWASP 2023 recommendation
 const SALT_LENGTH = 32;
 const IV_LENGTH = 12;
-const BACKUP_VERSION = 1;
+const BACKUP_VERSION = 2; // v2 = recovery key model
 
-async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+// Re-export for external use
+export { generateRecoveryKey, normalizeRecoveryKey, isValidRecoveryKey };
+
+async function deriveKey(recoveryKey: string, salt: Uint8Array): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
-    encoder.encode(password),
+    encoder.encode(recoveryKey),
     'PBKDF2',
     false,
     ['deriveKey'],
@@ -35,10 +42,10 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
   );
 }
 
-async function encryptBlob(data: string, password: string): Promise<{ encrypted: string; salt: string; iv: string }> {
+async function encryptBlob(data: string, recoveryKey: string): Promise<{ encrypted: string; salt: string; iv: string }> {
   const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
-  const key = await deriveKey(password, salt);
+  const key = await deriveKey(recoveryKey, salt);
   const encoded = new TextEncoder().encode(data);
   const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
   return {
@@ -48,10 +55,10 @@ async function encryptBlob(data: string, password: string): Promise<{ encrypted:
   };
 }
 
-async function decryptBlob(encrypted: string, salt: string, iv: string, password: string): Promise<string> {
+async function decryptBlob(encrypted: string, salt: string, iv: string, recoveryKey: string): Promise<string> {
   const saltBuf = new Uint8Array(base64ToBuffer(salt));
   const ivBuf = new Uint8Array(base64ToBuffer(iv));
-  const key = await deriveKey(password, saltBuf);
+  const key = await deriveKey(recoveryKey, saltBuf);
   const ciphertext = base64ToBuffer(encrypted);
   const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivBuf }, key, ciphertext);
   return new TextDecoder().decode(plainBuf);
@@ -148,6 +155,13 @@ async function collectKeys(): Promise<string> {
     throw new Error('Cannot create backup: no identity keys found locally');
   }
 
+  // Add metadata
+  data['_meta'] = {
+    version: BACKUP_VERSION,
+    createdAt: new Date().toISOString(),
+    stores: Object.keys(data).filter(k => k !== '_meta'),
+  };
+
   return JSON.stringify(data);
 }
 
@@ -186,7 +200,6 @@ async function restoreKeys(json: string): Promise<void> {
       }
       db.close();
     } catch (e) {
-      // If identity-keys fails, abort entirely
       if (storeName === 'identity-keys') {
         throw new Error(`Critical restore failure: ${storeName} — ${e}`);
       }
@@ -297,14 +310,14 @@ export function useSecureBackup() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const createBackup = useCallback(async (password: string): Promise<boolean> => {
+  /**
+   * Create a new backup with a freshly generated recovery key.
+   * Returns the recovery key that the user MUST save — it's the only way to restore.
+   */
+  const createBackup = useCallback(async (): Promise<string | null> => {
     if (!user) {
       setError('Non authentifié');
-      return false;
-    }
-    if (password.length < 8) {
-      setError('Le mot de passe doit faire au moins 8 caractères');
-      return false;
+      return null;
     }
 
     setIsLoading(true);
@@ -312,7 +325,9 @@ export function useSecureBackup() {
 
     try {
       const keysJson = await collectKeys();
-      const { encrypted, salt, iv } = await encryptBlob(keysJson, password);
+      const recoveryKey = generateRecoveryKey();
+      const normalized = normalizeRecoveryKey(recoveryKey);
+      const { encrypted, salt, iv } = await encryptBlob(keysJson, normalized);
 
       const { error: dbError } = await supabase
         .from('user_backups' as any)
@@ -327,20 +342,70 @@ export function useSecureBackup() {
 
       if (dbError) throw dbError;
 
-      console.log('[SecureBackup] Backup created successfully');
-      return true;
+      console.log('[SecureBackup] Backup created with recovery key');
+      return recoveryKey; // Formatted with dashes for readability
     } catch (err: any) {
       console.error('[SecureBackup] Backup failed:', err);
       setError(err.message || 'Échec de la sauvegarde');
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user]);
+
+  /**
+   * Update an existing backup using the same recovery key.
+   * Used by auto-backup to refresh the blob without generating a new key.
+   */
+  const updateBackup = useCallback(async (recoveryKey: string): Promise<boolean> => {
+    if (!user) {
+      setError('Non authentifié');
+      return false;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const keysJson = await collectKeys();
+      const normalized = normalizeRecoveryKey(recoveryKey);
+      const { encrypted, salt, iv } = await encryptBlob(keysJson, normalized);
+
+      const { error: dbError } = await supabase
+        .from('user_backups' as any)
+        .upsert({
+          user_id: user.id,
+          encrypted_blob: encrypted,
+          salt,
+          iv,
+          version: BACKUP_VERSION,
+          created_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' });
+
+      if (dbError) throw dbError;
+
+      console.log('[SecureBackup] Backup updated');
+      return true;
+    } catch (err: any) {
+      console.error('[SecureBackup] Update failed:', err);
+      setError(err.message || 'Échec de la mise à jour');
       return false;
     } finally {
       setIsLoading(false);
     }
   }, [user]);
 
-  const restoreBackup = useCallback(async (password: string): Promise<boolean> => {
+  /**
+   * Restore backup using recovery key.
+   * Full restore or explicit failure — no partial state.
+   */
+  const restoreBackup = useCallback(async (recoveryKey: string): Promise<boolean> => {
     if (!user) {
       setError('Non authentifié');
+      return false;
+    }
+    if (!isValidRecoveryKey(recoveryKey)) {
+      setError('Clé de récupération invalide');
       return false;
     }
 
@@ -360,15 +425,16 @@ export function useSecureBackup() {
       }
 
       const backup = data as unknown as { encrypted_blob: string; salt: string; iv: string; version: number };
-      const keysJson = await decryptBlob(backup.encrypted_blob, backup.salt, backup.iv, password);
+      const normalized = normalizeRecoveryKey(recoveryKey);
+      const keysJson = await decryptBlob(backup.encrypted_blob, backup.salt, backup.iv, normalized);
       await restoreKeys(keysJson);
 
-      console.log('[SecureBackup] Restore completed successfully');
+      console.log('[SecureBackup] Full restore completed successfully');
       return true;
     } catch (err: any) {
       console.error('[SecureBackup] Restore failed:', err);
       if (err.name === 'OperationError') {
-        setError('Mot de passe incorrect');
+        setError('Clé de récupération incorrecte');
       } else {
         setError(err.message || 'Échec de la restauration');
       }
@@ -394,6 +460,7 @@ export function useSecureBackup() {
 
   return {
     createBackup,
+    updateBackup,
     restoreBackup,
     hasBackup,
     isLoading,
