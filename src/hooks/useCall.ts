@@ -239,8 +239,8 @@ export function useCall(options?: UseCallOptions) {
         dynacast: true,
         audioCaptureDefaults: {
           echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+          noiseSuppression: false,
+          autoGainControl: false,
           channelCount: 1,
           sampleRate: 48000,
         },
@@ -358,11 +358,11 @@ export function useCall(options?: UseCallOptions) {
       await room.connect(url, token);
 
       if (endingRef.current || roomRef.current !== room) {
-        console.info('[CALL] call ended during connect — disconnecting fresh room');
-        try {
-          room.disconnect();
-        } catch {}
+        console.info('[CALL] call ended during connect — cleaning up');
+        try { room.disconnect(); } catch {}
+        roomRef.current = null;
         connectingRef.current = false;
+        releaseWakeLock();
         return;
       }
 
@@ -379,19 +379,19 @@ export function useCall(options?: UseCallOptions) {
       }
 
       if (endingRef.current || roomRef.current !== room) {
-        console.info('[CALL] call ended before local track publication');
-        try {
-          room.disconnect();
-        } catch {}
+        console.info('[CALL] call ended before local track publication — cleaning up');
+        try { room.disconnect(); } catch {}
+        roomRef.current = null;
         connectingRef.current = false;
+        releaseWakeLock();
         return;
       }
 
       console.info('[CALL] publishing local tracks...');
       await room.localParticipant.setMicrophoneEnabled(true, {
         echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
+        noiseSuppression: false,
+        autoGainControl: false,
         channelCount: 1,
         sampleRate: 48000,
       });
