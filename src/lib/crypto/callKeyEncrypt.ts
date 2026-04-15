@@ -49,6 +49,11 @@ export async function decryptCallKey(
   encryptedPayload: string,
   conversationId: string,
 ): Promise<string> {
+  // Handle raw (unencrypted) key fallback — used when E2EE messaging session is unavailable
+  if (encryptedPayload.startsWith('raw:')) {
+    return encryptedPayload.slice(4);
+  }
+
   if (!encryptedPayload.includes(ENCRYPTED_SEPARATOR)) {
     throw new Error('Payload is not encrypted (legacy format)');
   }

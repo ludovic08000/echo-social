@@ -401,7 +401,10 @@ export async function signalOutgoingCall(
     try {
       encryptedKey = await encryptCallKey(callKeyB64, conversationId);
     } catch {
-      console.warn('[SignalCall] Could not encrypt call key — no E2EE session');
+      // E2EE messaging session unavailable — fall back to raw key
+      // Still protected by RLS: only caller/callee can read via call_signal RPC
+      console.warn('[SignalCall] No E2EE session — using raw call key (RLS-protected)');
+      encryptedKey = `raw:${callKeyB64}`;
     }
   }
 
