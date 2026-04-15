@@ -388,7 +388,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
               <div className="flex -space-x-1">
                 {(topReactions || ['like']).map((type, i) => (
                   <span 
-                    key={type} 
+                    key={`${type}-${i}`}
                     className="w-[18px] h-[18px] rounded-full bg-primary/10 flex items-center justify-center text-[11px] ring-2 ring-card"
                     style={{ zIndex: 2 - i }}
                   >
