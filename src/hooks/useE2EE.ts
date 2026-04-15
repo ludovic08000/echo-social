@@ -111,11 +111,10 @@ function recreateLegacyE2EEDatabase(): Promise<void> {
         }
       };
       openReq.onerror = () => {
-        // DB truly broken — delete and recreate (keys will be regenerated)
-        const deletion = indexedDB.deleteDatabase(DB_NAME);
-        deletion.onsuccess = () => resolve();
-        deletion.onerror = () => resolve();
-        deletion.onblocked = () => resolve();
+        // DB truly broken — but do NOT delete it (would destroy identity keys).
+        // Instead, log and resolve — identity keys may survive a version upgrade.
+        console.error('[E2EE] IndexedDB open failed — identity keys may be lost');
+        resolve();
       };
       openReq.onupgradeneeded = () => {
         // Schema upgrade needed — let it proceed normally (openDB handles this)
