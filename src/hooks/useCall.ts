@@ -16,6 +16,7 @@ export interface CallEndInfo {
 
 interface UseCallOptions {
   onCallEnded?: (info: CallEndInfo) => void;
+  onCallConnected?: () => void;
 }
 
 export function generateCallE2EEKey(): string {
@@ -55,9 +56,14 @@ export function useCall(options?: UseCallOptions) {
   const endingRef = useRef(false);
 
   const onCallEndedRef = useRef(options?.onCallEnded);
+  const onCallConnectedRef = useRef(options?.onCallConnected);
   useEffect(() => {
     onCallEndedRef.current = options?.onCallEnded;
   }, [options?.onCallEnded]);
+
+  useEffect(() => {
+    onCallConnectedRef.current = options?.onCallConnected;
+  }, [options?.onCallConnected]);
 
   useEffect(() => {
     phaseRef.current = callState;
@@ -164,6 +170,13 @@ export function useCall(options?: UseCallOptions) {
     });
   }, [cleanupDom, clearCallTimers]);
 
+  const markConnected = useCallback(() => {
+    if (phaseRef.current === 'connected') return;
+    phaseRef.current = 'connected';
+    setCallState('connected');
+    onCallConnectedRef.current?.();
+  }, []);
+
   const startCall = useCallback(async (conversationId: string, type: CallType, e2eeKeyB64: string) => {
     if (connectingRef.current) {
       console.warn('[CALL] startCall ignored — already connecting');
@@ -186,6 +199,7 @@ export function useCall(options?: UseCallOptions) {
 
     setCallType(type);
     setCallState('connecting');
+    phaseRef.current = 'connecting';
     setDuration(0);
     setIsMuted(false);
     setIsCameraOff(false);
@@ -329,7 +343,7 @@ export function useCall(options?: UseCallOptions) {
         }
 
         if (phaseRef.current === 'connecting') {
-          setCallState('connected');
+          markConnected();
         }
       });
 
@@ -419,7 +433,7 @@ export function useCall(options?: UseCallOptions) {
 
       if (room.remoteParticipants.size > 0) {
         hadRemoteRef.current = true;
-        setCallState('connected');
+        markConnected();
         console.info('[CALL] remote participant already present → connected');
       } else {
         noAnswerTimeoutRef.current = setTimeout(() => {
@@ -437,7 +451,7 @@ export function useCall(options?: UseCallOptions) {
       toast.error("Impossible de lancer l'appel chiffré.");
       safeDisconnect('start_call_error');
     }
-  }, [safeDisconnect]);
+  }, [markConnected, safeDisconnect]);
 
   const endCall = useCallback(() => {
     safeDisconnect('manual_end');
