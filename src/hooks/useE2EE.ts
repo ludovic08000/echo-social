@@ -300,7 +300,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const keysRef = useRef<IdentityKeyPair | null>(null);
   const peerKeyRef = useRef<{ identityKey: string; signingKey: string; fingerprint: string } | null>(null);
   const ratchetRef = useRef<RatchetState | null>(null);
-  const pendingRatchetStateRef = useRef<RatchetState | null>(null);
+  const pendingRatchetStateRef = useRef<Map<string, RatchetState>>(new Map());
+  const pendingPayloadRef = useRef<Map<string, string>>(new Map());
   const prekeyInfoRef = useRef<{ prekeyId: number; senderPublicKey: string } | null>(null);
   const x3dhInfoRef = useRef<X3DHInitialMessage | null>(null);
   const initRef = useRef(false);
@@ -680,7 +681,15 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
    * 
    * CRITICAL: Every payload now carries `encryptionMode` for deterministic decryption routing.
    */
-  const encrypt = useCallback(async (plaintext: string): Promise<string> => {
+  const encrypt = useCallback(async (plaintext: string, localId?: string): Promise<string> => {
+    if (localId) {
+      const cachedPayload = pendingPayloadRef.current.get(localId);
+      if (cachedPayload) {
+        console.info(`[E2EE] Reusing cached encrypted payload for retry (${localId})`);
+        return cachedPayload;
+      }
+    }
+
     // BLOCK if fingerprint changed and not yet acknowledged
     if (state.fingerprintChanged) {
       throw new EncryptionError('La clé de sécurité du contact a changé — vérification requise');
@@ -722,31 +731,29 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             keysRef.current.fingerprint,
           );
 
-          // IMPORTANT: do NOT commit sender ratchet state before real send ACK.
-          // If DB/network send fails, retry must reuse the exact same first payload/X3DH header.
-          pendingRatchetStateRef.current = newState;
-          setState(s => ({ ...s, ratchetActive: true }));
-
-          // Tag with encryption mode
           const taggedEnvelope = envelope as any;
           taggedEnvelope.encryptionMode = 'ratchet';
 
-          // Attach X3DH header to the FIRST message so responder can derive the same SK
-          // IMPORTANT: We keep x3dhInfoRef intact so retries can re-attach the header.
           if (x3dhInfoRef.current) {
             taggedEnvelope.x3dh = x3dhInfoRef.current;
             console.info('[E2EE] ✅ encrypt via X3DH + Double Ratchet (initial message with X3DH header attached)');
           } else {
             console.info('[E2EE] ✅ encrypt via Double Ratchet (payload prepared, awaiting ACK)');
           }
-          return hardGlobals.jsonStringify(taggedEnvelope);
+
+          const serializedPayload = hardGlobals.jsonStringify(taggedEnvelope);
+          if (localId) {
+            pendingRatchetStateRef.current.set(localId, newState);
+            pendingPayloadRef.current.set(localId, serializedPayload);
+          }
+          setState(s => ({ ...s, ratchetActive: true }));
+          return serializedPayload;
         }
 
         if (ratchet) {
           console.debug('[E2EE] Ratchet not ready for encrypt, falling back to legacy:', readiness.reason);
         }
       } catch (ratchetErr) {
-        // Log but fall through to legacy
         console.warn('[E2EE] Ratchet encrypt failed, falling back to legacy:', 
           ratchetErr instanceof Error ? ratchetErr.message : String(ratchetErr));
       }
@@ -975,11 +982,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   /** Acknowledge fingerprint change — user explicitly trusts new key */
   const acknowledgeFingerprint = useCallback(() => {
     if (peerKeyRef.current && peerUserId) {
-      // Save new fingerprint locally AND server-side
       saveKnownFingerprint(peerUserId, peerKeyRef.current.fingerprint);
       saveKnownFingerprintServer(peerUserId, peerKeyRef.current.fingerprint);
     }
-    // Clear ratchet state since keys changed
     if (conversationId) {
       openRatchetDB().then(db => {
         try {
@@ -988,18 +993,22 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         } catch {}
       }).catch(() => {});
       ratchetRef.current = null;
-      pendingRatchetStateRef.current = null;
+      pendingRatchetStateRef.current.clear();
+      pendingPayloadRef.current.clear();
     }
     setState(s => ({ ...s, fingerprintChanged: false, ready: true, ratchetActive: false }));
   }, [peerUserId, conversationId]);
 
-  const acknowledgeSentPayload = useCallback(async () => {
-    if (pendingRatchetStateRef.current && conversationId) {
-      ratchetRef.current = pendingRatchetStateRef.current;
-      await saveRatchetLocal(conversationId, pendingRatchetStateRef.current);
-      pendingRatchetStateRef.current = null;
-      console.info('[RATCHET] ✅ sender state committed after confirmed send');
+  const acknowledgeSentPayload = useCallback(async (localId: string) => {
+    const pendingRatchetState = pendingRatchetStateRef.current.get(localId);
+    if (pendingRatchetState && conversationId) {
+      ratchetRef.current = pendingRatchetState;
+      await saveRatchetLocal(conversationId, pendingRatchetState);
+      pendingRatchetStateRef.current.delete(localId);
+      console.info(`[RATCHET] ✅ sender state committed after confirmed send (${localId})`);
     }
+
+    pendingPayloadRef.current.delete(localId);
 
     if (x3dhInfoRef.current) {
       console.info('[E2EE] X3DH header cleared after confirmed send');

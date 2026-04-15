@@ -311,8 +311,9 @@ class MessageQueueManager {
 
   /** Process a single message through the state machine */
   private async processMessage(msg: OutboundMessage): Promise<void> {
-    if (this.processing.has(msg.localId)) return;
+    if (this.processing.has(msg.localId) || this.processingConversations.has(msg.conversationId)) return;
     this.processing.add(msg.localId);
+    this.processingConversations.add(msg.conversationId);
     this.clearRetryTimer(msg.localId);
 
     try {
@@ -337,7 +338,7 @@ class MessageQueueManager {
 
         try {
           console.log('[E2EE] encrypt start', msg.localId);
-          const encrypted = await handlers.encrypt(plaintext, msg.conversationId);
+          const encrypted = await handlers.encrypt(plaintext, msg.conversationId, msg.localId);
           const withLocalId = this.attachLocalId(encrypted, msg.localId);
 
           // CRITICAL: Verify encryption actually produced ciphertext
@@ -428,6 +429,19 @@ class MessageQueueManager {
       }
     } finally {
       this.processing.delete(msg.localId);
+      this.processingConversations.delete(msg.conversationId);
+      queueMicrotask(async () => {
+        try {
+          const queued = await this.dbGetByConversation(msg.conversationId);
+          const next = queued
+            .filter(m => m.status !== 'sent' && m.status !== 'draft' && m.status !== 'failed_visible')
+            .sort((a, b) => a.createdAt - b.createdAt)
+            .find(m => !this.processing.has(m.localId));
+          if (next) {
+            void this.processMessage(next);
+          }
+        } catch {}
+      });
     }
   }
 

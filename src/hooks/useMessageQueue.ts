@@ -69,7 +69,10 @@ export function useMessageQueue(
             image_url: msg.imageUrl,
           });
 
-        if (error?.code === '23505') return outboundId;
+        if (error?.code === '23505') {
+          await onMessageSent?.(msg.localId);
+          return outboundId;
+        }
         if (error) throw error;
 
         await supabase
@@ -77,6 +80,7 @@ export function useMessageQueue(
           .update({ updated_at: new Date().toISOString() })
           .eq('id', msg.conversationId);
 
+        await onMessageSent?.(msg.localId);
         queryClient.invalidateQueries({ queryKey: ['messages', msg.conversationId] });
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
 
