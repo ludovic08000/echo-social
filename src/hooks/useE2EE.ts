@@ -648,34 +648,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     }
 
     // FALLBACK: Legacy single-DH session
-    try {
-      const session = await ensureLegacySession();
-      if (!session) return null;
-
-      const peerDhKey = await hardCrypto.importKey(
-        'raw',
-        base64ToBuffer(peerKeyRef.current.identityKey),
-        KX_KEY_PARAMS as any,
-        true,
-        [],
-      );
-
-      const sharedSecretRaw = await hardCrypto.exportKey('raw', session.sharedSecret);
-
-      const ratchet = await initRatchetAsInitiator(
-        conversationId,
-        sharedSecretRaw,
-        peerDhKey,
-      );
-
-      ratchetRef.current = ratchet;
-      await saveRatchetLocal(conversationId, ratchet);
-      console.log('[E2EE] 🔄 Double Ratchet initialized via legacy DH (fallback)');
-      return ratchet;
-    } catch (e) {
-      console.warn('[E2EE] Ratchet init failed, will use legacy:', e);
-      return null;
-    }
+    // Skip ratchet init from legacy — session keys are non-extractable at runtime.
+    // The legacy encrypt/decrypt path works directly with the CryptoKey.
+    console.log('[E2EE] Skipping ratchet from legacy session (non-extractable keys) — will use legacy encrypt');
+    return null;
   }, [conversationId, ensureLegacySession]);
 
   /**
@@ -904,8 +880,33 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       if (!session) {
         return { text: '🔒 Clé de session manquante', encrypted: true, verified: false };
       }
-      const result = await decryptMessage(body, session.sharedSecret, peerKeyRef.current?.signingKey);
-      return { text: result.plaintext, encrypted: true, verified: result.verified };
+
+      try {
+        const result = await decryptMessage(body, session.sharedSecret, peerKeyRef.current?.signingKey);
+        return { text: result.plaintext, encrypted: true, verified: result.verified };
+      } catch (firstErr) {
+        // Decrypt failed — session may be stale. Re-derive from current peer keys and retry.
+        if (peerKeyRef.current && keysRef.current && conversationId) {
+          console.warn('[E2EE] Legacy decrypt failed, re-deriving session key and retrying...');
+          try {
+            const { deleteSessionKey } = await import('@/lib/crypto/keyManager');
+            await deleteSessionKey(conversationId);
+            const freshSession = await establishSession(
+              keysRef.current,
+              peerKeyRef.current.identityKey,
+              conversationId,
+              peerKeyRef.current.fingerprint,
+            );
+            legacySessionReadyRef.current = true;
+            const result = await decryptMessage(body, freshSession.sharedSecret, peerKeyRef.current?.signingKey);
+            console.log('[E2EE] ✅ decrypt succeeded after session re-derivation');
+            return { text: result.plaintext, encrypted: true, verified: result.verified };
+          } catch (retryErr) {
+            console.error('[E2EE] decrypt retry also failed:', retryErr);
+          }
+        }
+        throw firstErr;
+      }
     } catch (err) {
       console.error('[E2EE] decrypt failed:', err);
       return { text: '🔒 Message illisible', encrypted: true, verified: false };
