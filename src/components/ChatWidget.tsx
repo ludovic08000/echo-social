@@ -755,7 +755,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             if (participantId && user?.id) {
               const callKey = generateCallE2EEKey();
               const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'audio', callKey);
-              if (callId) activeCallIdRef.current = callId;
+              if (!callId) {
+                toast.error("Impossible de signaler l'appel. Réessayez.");
+                return;
+              }
+              activeCallIdRef.current = callId;
               call.startCall(conversationId, 'audio', callKey);
             }
           }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
@@ -766,7 +770,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             if (participantId && user?.id) {
               const callKey = generateCallE2EEKey();
               const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'video', callKey);
-              if (callId) activeCallIdRef.current = callId;
+              if (!callId) {
+                toast.error("Impossible de signaler l'appel. Réessayez.");
+                return;
+              }
+              activeCallIdRef.current = callId;
               call.startCall(conversationId, 'video', callKey);
             }
           }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
