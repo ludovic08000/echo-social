@@ -114,12 +114,17 @@ function recreateLegacyE2EEDatabase(): Promise<void> {
   });
 }
 
-async function saveRatchetLocal(convId: string, state: RatchetState) {
+async function saveRatchetLocal(convId: string, state: RatchetState, x3dhHeader?: X3DHInitialMessage | null) {
   try {
     const json = await serializeRatchetState(state);
     const db = await openRatchetDB();
     const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
-    tx.objectStore(RATCHET_STORE_NAME).put({ convId, data: json });
+    const record: any = { convId, data: json };
+    // Persist X3DH header alongside ratchet state (Signal: attach PreKey header until first peer response)
+    if (x3dhHeader !== undefined) {
+      record.x3dhHeader = x3dhHeader ? hardGlobals.jsonStringify(x3dhHeader) : null;
+    }
+    tx.objectStore(RATCHET_STORE_NAME).put(record);
     await new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
@@ -129,7 +134,7 @@ async function saveRatchetLocal(convId: string, state: RatchetState) {
   }
 }
 
-async function loadRatchetLocal(convId: string): Promise<RatchetState | null> {
+async function loadRatchetLocal(convId: string): Promise<{ state: RatchetState; x3dhHeader: X3DHInitialMessage | null } | null> {
   try {
     const db = await openRatchetDB();
     const tx = db.transaction(RATCHET_STORE_NAME, 'readonly');
@@ -139,7 +144,9 @@ async function loadRatchetLocal(convId: string): Promise<RatchetState | null> {
       req.onerror = () => reject(req.error);
     });
     if (!result?.data) return null;
-    return deserializeRatchetState(result.data);
+    const state = await deserializeRatchetState(result.data);
+    const x3dhHeader = result.x3dhHeader ? hardGlobals.jsonParse(result.x3dhHeader) as X3DHInitialMessage : null;
+    return { state, x3dhHeader };
   } catch {
     return null;
   }
