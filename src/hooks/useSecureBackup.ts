@@ -152,6 +152,7 @@ async function collectKeys(): Promise<string> {
   }
 
   return JSON.stringify(data);
+}
 
 /**
  * Restore all local E2EE keys from backup — ATOMIC.
