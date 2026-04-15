@@ -66,20 +66,25 @@ function createRingtone(): { play: () => void; stop: () => void } {
   let oscillatorB: OscillatorNode | null = null;
   let gainNode: GainNode | null = null;
   let intervalId: ReturnType<typeof setInterval> | null = null;
+  let stopped = true; // Guards against play/stop race condition
 
   const play = async () => {
+    stopped = false;
     try {
       audioCtx = sharedAudioContext ?? new (window.AudioContext || (window as any).webkitAudioContext)();
       if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
       }
 
+      // If stop() was called while we were awaiting resume, bail out
+      if (stopped) return;
+
       gainNode = audioCtx.createGain();
       gainNode.connect(audioCtx.destination);
       gainNode.gain.value = 0;
 
       const ring = () => {
-        if (!audioCtx || !gainNode) return;
+        if (stopped || !audioCtx || !gainNode) return;
 
         oscillatorA = audioCtx.createOscillator();
         oscillatorB = audioCtx.createOscillator();
@@ -115,14 +120,18 @@ function createRingtone(): { play: () => void; stop: () => void } {
   };
 
   const stop = () => {
+    stopped = true;
     if (intervalId) clearInterval(intervalId);
+    intervalId = null;
     try { oscillatorA?.stop(); oscillatorA?.disconnect(); } catch {}
     try { oscillatorB?.stop(); oscillatorB?.disconnect(); } catch {}
     try { gainNode?.disconnect(); } catch {}
+    // Suspend the audio context to guarantee silence immediately
+    try { if (audioCtx && audioCtx !== sharedAudioContext) audioCtx.close(); } catch {}
     oscillatorA = null;
     oscillatorB = null;
     gainNode = null;
-    intervalId = null;
+    audioCtx = null;
   };
 
   return { play, stop };
