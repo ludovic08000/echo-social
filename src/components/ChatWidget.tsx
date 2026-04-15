@@ -1113,35 +1113,38 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                           </div>
                         )}
 
-                        {/* Translate button — only when decrypted text available and body isn't raw ciphertext */}
-                        {!isMe && !isCallMessage(msg.body) && !isGifMessage(msg.body) && !isVoiceMessage(msg.body) &&
-                         decryptedCacheRef.current.has(msg.id) &&
-                         !(msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"'))) &&
-                         !(translations[msg.id]?.startsWith('{') && (translations[msg.id]?.includes('"ct"') || translations[msg.id]?.includes('"hdr"') || translations[msg.id]?.includes('"kem"'))) && (
-                          <div className="mt-0.5">
-                            <button
-                              onClick={() => {
-                                const text = decryptedCacheRef.current.get(msg.id);
-                                if (!text) return;
-                                translateMsg(msg.id, text);
-                              }}
-                              disabled={translating === msg.id}
-                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all disabled:pointer-events-none disabled:opacity-40"
-                            >
-                              {translating === msg.id ? (
-                                <div className="w-2.5 h-2.5 rounded-full border border-primary border-t-transparent animate-spin" />
-                              ) : (
-                                <Languages className="w-2.5 h-2.5" />
+                        {/* Translate button — only show with a safe translated value */}
+                        {(() => {
+                          const sourceText = decryptedCacheRef.current.get(msg.id);
+                          const translatedText = translations[msg.id];
+                          const hasUnsafeTranslation = !!translatedText && translatedText.startsWith('{') && (translatedText.includes('"ct"') || translatedText.includes('"hdr"') || translatedText.includes('"kem"'));
+                          const safeTranslation = !hasUnsafeTranslation && translatedText && translatedText !== sourceText ? translatedText : null;
+
+                          if (isMe || isCallMessage(msg.body) || isGifMessage(msg.body) || isVoiceMessage(msg.body) || !sourceText) return null;
+                          if (msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"'))) return null;
+
+                          return (
+                            <div className="mt-0.5">
+                              <button
+                                onClick={() => translateMsg(msg.id, sourceText)}
+                                disabled={translating === msg.id}
+                                className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all disabled:pointer-events-none disabled:opacity-40"
+                              >
+                                {translating === msg.id ? (
+                                  <div className="w-2.5 h-2.5 rounded-full border border-primary border-t-transparent animate-spin" />
+                                ) : (
+                                  <Languages className="w-2.5 h-2.5" />
+                                )}
+                                {safeTranslation ? 'Original' : 'Traduire'}
+                              </button>
+                              {safeTranslation && (
+                                <div className="mt-0.5 px-3 py-1.5 text-xs rounded-2xl bg-primary/10 border border-primary/20 text-foreground break-words leading-relaxed">
+                                  {safeTranslation}
+                                </div>
                               )}
-                              {translations[msg.id] ? 'Original' : 'Traduire'}
-                            </button>
-                            {translations[msg.id] && (
-                              <div className="mt-0.5 px-3 py-1.5 text-xs rounded-2xl bg-primary/10 border border-primary/20 text-foreground break-words leading-relaxed">
-                                {translations[msg.id]}
-                              </div>
-                            )}
-                          </div>
-                        )}
+                            </div>
+                          );
+                        })()}
 
                         {reactions.length > 0 && (
                           <div className="flex items-center -mt-1 px-0.5">
