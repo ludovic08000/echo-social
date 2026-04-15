@@ -97,7 +97,7 @@ export function SafetyNumberDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-emerald-500" />
+            <ShieldCheck className="w-5 h-5 text-primary" />
             Numéro de sécurité
           </DialogTitle>
           <DialogDescription>
@@ -126,9 +126,9 @@ export function SafetyNumberDialog({
 
           {/* Safety numbers display */}
           <div className="space-y-2">
-            <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+            <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
               <p className="text-[10px] text-muted-foreground mb-1 font-medium">Numéro de sécurité partagé</p>
-              <p className="font-mono text-xs tracking-wider break-all leading-relaxed text-emerald-700 dark:text-emerald-400">
+              <p className="font-mono text-xs tracking-wider break-all leading-relaxed text-primary">
                 {sharedSafetyNumber}
               </p>
             </div>

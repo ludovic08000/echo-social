@@ -455,7 +455,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           console.log('[PEER_KEY] loaded', peerUserId);
 
           // Check for fingerprint change — server-backed + local
-          const { changed: fpChanged } = await checkFingerprintChangeWithServer(peerUserId, data.fingerprint);
+          const { changed: fpChanged } = await checkFingerprintChangeWithServer(user.id, peerUserId, data.fingerprint);
 
           peerKeyRef.current = {
             identityKey: data.identity_key,
