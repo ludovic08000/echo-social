@@ -20,6 +20,7 @@ export function useMessageQueue(
   encrypt: ((plaintext: string) => Promise<string>) | null,
   isEncryptionReady: boolean,
   isEncryptionActive: boolean,
+  onMessageSent?: () => void,
 ) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
