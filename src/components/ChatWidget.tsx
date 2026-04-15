@@ -389,6 +389,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     e2ee.encrypt,
     e2ee.isReady(),
     !isZeusConversation && e2ee.encrypted,
+    e2ee.acknowledgeSentPayload,
   );
 
   // Decrypted text cache for widget

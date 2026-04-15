@@ -46,7 +46,7 @@ export interface OutboundMessage {
 type QueueListener = (messages: OutboundMessage[]) => void;
 
 interface QueueHandlers {
-  encrypt: (plaintext: string, conversationId: string) => Promise<string>;
+  encrypt: (plaintext: string, conversationId: string, localId: string) => Promise<string>;
   send: (msg: OutboundMessage) => Promise<string>;
   isReady: (conversationId: string) => boolean;
 }
@@ -70,6 +70,7 @@ class MessageQueueManager {
   private listeners = new Set<QueueListener>();
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private processing = new Set<string>();
+  private processingConversations = new Set<string>();
   private dbPromise: Promise<IDBDatabase> | null = null;
   private handlersByConversation = new Map<string, Map<string, HandlerEntry>>();
   /** SECURITY: Plaintext stored ONLY in volatile memory, never in IndexedDB */
@@ -310,8 +311,9 @@ class MessageQueueManager {
 
   /** Process a single message through the state machine */
   private async processMessage(msg: OutboundMessage): Promise<void> {
-    if (this.processing.has(msg.localId)) return;
+    if (this.processing.has(msg.localId) || this.processingConversations.has(msg.conversationId)) return;
     this.processing.add(msg.localId);
+    this.processingConversations.add(msg.conversationId);
     this.clearRetryTimer(msg.localId);
 
     try {
@@ -336,7 +338,7 @@ class MessageQueueManager {
 
         try {
           console.log('[E2EE] encrypt start', msg.localId);
-          const encrypted = await handlers.encrypt(plaintext, msg.conversationId);
+          const encrypted = await handlers.encrypt(plaintext, msg.conversationId, msg.localId);
           const withLocalId = this.attachLocalId(encrypted, msg.localId);
 
           // CRITICAL: Verify encryption actually produced ciphertext
@@ -427,6 +429,19 @@ class MessageQueueManager {
       }
     } finally {
       this.processing.delete(msg.localId);
+      this.processingConversations.delete(msg.conversationId);
+      queueMicrotask(async () => {
+        try {
+          const queued = await this.dbGetByConversation(msg.conversationId);
+          const next = queued
+            .filter(m => m.status !== 'sent' && m.status !== 'draft' && m.status !== 'failed_visible')
+            .sort((a, b) => a.createdAt - b.createdAt)
+            .find(m => !this.processing.has(m.localId));
+          if (next) {
+            void this.processMessage(next);
+          }
+        } catch {}
+      });
     }
   }
 
@@ -467,8 +482,11 @@ class MessageQueueManager {
       }
 
       latest.updatedAt = Date.now();
-      // Reset encrypted body to force re-encryption (key may have changed)
-      latest.encryptedBody = null;
+      // Preserve already-encrypted payload on normal retry.
+      // This is CRITICAL for first X3DH/ratchet messages: retry must resend the exact same payload/header.
+      if (mode === 'secure_wait') {
+        latest.encryptedBody = null;
+      }
       await this.dbPut(latest);
       this.processMessage(latest);
     }, delay);
