@@ -135,6 +135,8 @@ function createRingtone(): { play: () => void; stop: () => void } {
  * A call ID is processed ONCE — any duplicate detection (Realtime, backup, poll)
  * for the same ID is silently ignored.
  */
+type IncomingCallPhase = 'idle' | 'ringing' | 'connecting' | 'active' | 'ended';
+
 export function useIncomingCall() {
   const { user } = useAuth();
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
@@ -149,13 +151,10 @@ export function useIncomingCall() {
   const encryptedCallKeyRef = useRef<string | null>(null);
   const callConversationIdRef = useRef<string | null>(null);
 
-  // Track which call IDs we've already handled to avoid duplicate rings.
-  // This is the SINGLE source of truth — shared across Realtime + polling.
   const handledCallIdsRef = useRef<Set<string>>(new Set());
-  // Currently active call ID (for idempotent state management)
   const activeCallIdRef = useRef<string | null>(null);
+  const callPhaseRef = useRef<IncomingCallPhase>('idle');
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Guard: is handleIncomingCall currently executing?
   const handlingRef = useRef(false);
 
   // Keep ref in sync with state
@@ -174,16 +173,17 @@ export function useIncomingCall() {
     const handleIncomingCall = async (call: any) => {
       const callId = call.id;
 
-      // ── Idempotency guard ──
       if (handledCallIdsRef.current.has(callId)) return;
       if (activeCallIdRef.current === callId) return;
       if (handlingRef.current) return;
+      if (callPhaseRef.current !== 'idle') return;
 
       handlingRef.current = true;
       handledCallIdsRef.current.add(callId);
       activeCallIdRef.current = callId;
+      callPhaseRef.current = 'ringing';
 
-      console.log('[IncomingCall] 📞 Processing call:', callId, 'type:', call.call_type);
+      console.info('[IncomingCall] New incoming call:', callId, 'type:', call.call_type);
 
       try {
         const { data: profile } = await supabase
@@ -230,7 +230,11 @@ export function useIncomingCall() {
       encryptedCallKeyRef.current = null;
       callConversationIdRef.current = null;
       activeCallIdRef.current = null;
+      callPhaseRef.current = 'ended';
       setIncomingCall(null);
+      queueMicrotask(() => {
+        callPhaseRef.current = 'idle';
+      });
     };
 
     const clearCallState = () => {
@@ -239,7 +243,11 @@ export function useIncomingCall() {
       encryptedCallKeyRef.current = null;
       callConversationIdRef.current = null;
       activeCallIdRef.current = null;
+      callPhaseRef.current = 'ended';
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      queueMicrotask(() => {
+        callPhaseRef.current = 'idle';
+      });
     };
 
     const pollForCalls = async () => {
@@ -332,6 +340,7 @@ export function useIncomingCall() {
       encryptedCallKeyRef.current = null;
       callConversationIdRef.current = null;
       activeCallIdRef.current = null;
+      callPhaseRef.current = 'idle';
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, [user?.id]);
@@ -344,6 +353,7 @@ export function useIncomingCall() {
     if (!incomingCall) return;
     ringtoneRef.current.stop();
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    callPhaseRef.current = 'connecting';
 
     await supabase.rpc('call_signal', {
       p_action: 'update_status',
@@ -351,7 +361,6 @@ export function useIncomingCall() {
       p_status: 'answered',
     });
 
-    // Decrypt call key now — one-shot, then wipe
     let decryptedCallKey: string | undefined;
     const encKey = encryptedCallKeyRef.current;
     const convId = callConversationIdRef.current;
@@ -363,13 +372,12 @@ export function useIncomingCall() {
       }
     }
 
-    // Wipe refs immediately
     encryptedCallKeyRef.current = null;
     callConversationIdRef.current = null;
-    activeCallIdRef.current = null;
 
     const accepted: AcceptedCall = { ...incomingCall, decryptedCallKey };
     setIncomingCall(null);
+    callPhaseRef.current = 'active';
     return accepted;
   }, [incomingCall]);
 
@@ -377,6 +385,7 @@ export function useIncomingCall() {
     if (!incomingCall) return;
     ringtoneRef.current.stop();
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    callPhaseRef.current = 'ended';
 
     await supabase.rpc('call_signal', {
       p_action: 'update_status',
@@ -384,11 +393,13 @@ export function useIncomingCall() {
       p_status: 'declined',
     });
 
-    // Wipe refs
     encryptedCallKeyRef.current = null;
     callConversationIdRef.current = null;
     activeCallIdRef.current = null;
     setIncomingCall(null);
+    queueMicrotask(() => {
+      callPhaseRef.current = 'idle';
+    });
   }, [incomingCall]);
 
   return {
