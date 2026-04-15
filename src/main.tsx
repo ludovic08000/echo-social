@@ -1,5 +1,19 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
+
+// ─── Suppress harmless React ref warnings from third-party libs (Radix, framer-motion) ───
+if (import.meta.env.DEV) {
+  const origWarn = console.warn;
+  const origError = console.error;
+  const refMsg = 'Function components cannot be given refs';
+  const refMsg2 = 'is not a prop';
+  const filter = (orig: typeof console.warn) => (...args: unknown[]) => {
+    if (typeof args[0] === 'string' && (args[0].includes(refMsg) || args[0].includes(refMsg2))) return;
+    orig(...args);
+  };
+  console.warn = filter(origWarn);
+  console.error = filter(origError);
+}
 import "./index.css";
 
 // ─── Runtime Shield: block XSS exploitation at boot ───
