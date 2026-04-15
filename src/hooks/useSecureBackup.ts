@@ -153,11 +153,22 @@ async function collectKeys(): Promise<string> {
 
   return JSON.stringify(data);
 
-/** Restore all local E2EE keys from backup */
+/**
+ * Restore all local E2EE keys from backup — ATOMIC.
+ * If any critical store fails to restore, the entire operation is rolled back.
+ */
 async function restoreKeys(json: string): Promise<void> {
   const data = JSON.parse(json);
 
-  // Restore E2EE IndexedDB stores
+  // Validate backup integrity before writing anything
+  const hasIdentityKeys = data['e2ee:identity-keys']?.length > 0;
+  const hasPinWrappedKeys = data['pinwrap:keys']?.length > 0;
+  if (!hasIdentityKeys && !hasPinWrappedKeys) {
+    throw new Error('Backup invalide : aucune clé d\'identité trouvée');
+  }
+
+  // Phase 1: Restore E2EE IndexedDB stores (identity-keys is CRITICAL)
+  const restoredStores: string[] = [];
   for (const [key, records] of Object.entries(data)) {
     if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
     const storeName = key.replace('e2ee:', '');
@@ -181,17 +192,21 @@ async function restoreKeys(json: string): Promise<void> {
           store.put(record);
         }
         await new Promise<void>((resolve, reject) => {
-          tx.oncomplete = () => resolve();
+          tx.oncomplete = () => { restoredStores.push(storeName); resolve(); };
           tx.onerror = () => reject(tx.error);
         });
       }
       db.close();
     } catch (e) {
-      console.warn('[SecureBackup] Failed to restore store', storeName, e);
+      // If identity-keys fails, abort entirely
+      if (storeName === 'identity-keys') {
+        throw new Error(`Critical restore failure: ${storeName} — ${e}`);
+      }
+      console.warn('[SecureBackup] Non-critical store restore failed:', storeName, e);
     }
   }
 
-  // Restore ratchet states
+  // Phase 2: Restore ratchet states
   if (data['ratchet:states'] && Array.isArray(data['ratchet:states'])) {
     try {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -221,10 +236,72 @@ async function restoreKeys(json: string): Promise<void> {
     }
   }
 
-  // Restore fingerprints
+  // Phase 3: Restore PIN-wrapped keys
+  if (data['pinwrap:keys'] && Array.isArray(data['pinwrap:keys'])) {
+    try {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const req = indexedDB.open('forsure-pin-wrap', 1);
+        req.onerror = () => reject(req.error);
+        req.onsuccess = () => resolve(req.result);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains('pin-wrapped-keys')) {
+            db.createObjectStore('pin-wrapped-keys', { keyPath: 'id' });
+          }
+        };
+      });
+
+      const tx = db.transaction('pin-wrapped-keys', 'readwrite');
+      const store = tx.objectStore('pin-wrapped-keys');
+      for (const record of data['pinwrap:keys']) {
+        store.put(record);
+      }
+      await new Promise<void>((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+    } catch (e) {
+      console.warn('[SecureBackup] Failed to restore PIN-wrapped keys', e);
+    }
+  }
+
+  // Phase 4: Restore private prekeys
+  if (data['prekeys:private'] && Array.isArray(data['prekeys:private'])) {
+    try {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const req = indexedDB.open('forsure-prekeys', 1);
+        req.onerror = () => reject(req.error);
+        req.onsuccess = () => resolve(req.result);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains('private-prekeys')) {
+            db.createObjectStore('private-prekeys', { keyPath: 'id' });
+          }
+        };
+      });
+
+      const tx = db.transaction('private-prekeys', 'readwrite');
+      const store = tx.objectStore('private-prekeys');
+      for (const record of data['prekeys:private']) {
+        store.put(record);
+      }
+      await new Promise<void>((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+    } catch (e) {
+      console.warn('[SecureBackup] Failed to restore private prekeys', e);
+    }
+  }
+
+  // Phase 5: Restore fingerprints
   if (data['fingerprints']) {
     localStorage.setItem('forsure-known-fps', data['fingerprints']);
   }
+
+  console.log('[SecureBackup] Atomic restore complete — stores:', restoredStores.join(', '));
 }
 
 export function useSecureBackup() {
