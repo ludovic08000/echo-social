@@ -525,7 +525,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           setState(s => ({
             ...s,
             encrypted: false,
-            ready: true,
+            ready: false,
             peerKeyMissing: true,
           }));
         }
@@ -535,7 +535,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           setState(s => ({
             ...s,
             encrypted: false,
-            ready: true,
+            ready: false,
             initError: 'Peer key fetch failed',
           }));
         }
@@ -603,7 +603,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   /**
    * Initialize Double Ratchet as initiator (sender of first ratchet message).
    * Uses X3DH for key agreement (3 or 4 DH operations) then seeds Double Ratchet.
-   * Falls back to legacy DH if X3DH bundle is unavailable.
+   * Never falls back to legacy for outbound modern messages.
    */
   const initRatchetIfNeeded = useCallback(async (): Promise<RatchetState | null> => {
     if (!conversationId || !keysRef.current || !peerKeyRef.current || !peerUserId) return null;
@@ -613,9 +613,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       if (isRatchetFullyReady(ratchetRef.current)) {
         return ratchetRef.current;
       }
-      // Ratchet exists but not fully ready (e.g. responder waiting for first msg)
-      console.debug('[E2EE] Ratchet exists but not encrypt-ready — cannot encrypt yet');
-      return null;
+      throw new EncryptionError('🔒 Session Double Ratchet incomplète — message en attente chiffrée');
     }
 
     // Try loading persisted ratchet
@@ -626,7 +624,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         console.info('[E2EE] Loaded persisted ratchet — ready for encrypt');
         return persisted;
       }
-      console.debug('[E2EE] Persisted ratchet incomplete — cannot encrypt yet');
+      throw new EncryptionError('🔒 Session Double Ratchet persistée incomplète — message en attente chiffrée');
     }
 
     // X3DH key agreement (Signal spec) — NO legacy fallback
@@ -634,8 +632,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     const bundle = await fetchPrekeyBundle(peerUserId);
     if (!bundle) {
-      console.warn('[E2EE] ⚠️ No valid X3DH bundle for peer — ratchet init impossible. Will use legacy session.');
-      return null;
+      console.error('[X3DH] ⛔ Bundle pair absent, expiré ou incohérent — impossible d\'initialiser X3DH');
+      throw new EncryptionError('🔒 Bundle X3DH du contact indisponible ou incohérent — message en attente chiffrée');
     }
 
     const x3dhResult = await x3dhInitiate(keysRef.current, bundle);
@@ -667,8 +665,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     const readiness = getRatchetReadiness(ratchet);
     if (!readiness.canEncrypt) {
-      console.warn('[E2EE] Ratchet initialized but not encrypt-ready:', readiness.reason);
-      return null;
+      throw new EncryptionError(`🔒 Double Ratchet non prêt pour l'envoi${readiness.reason ? ` (${readiness.reason})` : ''} — message en attente chiffrée`);
     }
 
     ratchetRef.current = ratchet;
@@ -713,96 +710,51 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       throw new EncryptionError('Encryption not available — keys not ready');
     }
 
-    // If peer has no identity key but we have a prekey-based session, use it
-    if (!peerKeyRef.current && !legacySessionReadyRef.current) {
-      throw new EncryptionError('🔒 Chiffrement impossible — le contact n\'a pas encore de clés. Le message sera envoyé dès qu\'il se connectera.');
+    if (!peerKeyRef.current) {
+      throw new EncryptionError('🔒 Clés du contact indisponibles — message en attente chiffrée jusqu\'à publication du bundle');
     }
 
     if (!cryptoRateCheck('encrypt')) {
       throw new EncryptionError('Rate limited — possible exfiltration attempt');
     }
 
-    // PRIMARY: Double Ratchet with X3DH — only if ratchet is FULLY READY
-    if (peerKeyRef.current) {
-      try {
-        const ratchet = await initRatchetIfNeeded();
-        const readiness = getRatchetReadiness(ratchet);
-        if (ratchet && readiness.canEncrypt && isRatchetReadyForEncrypt(ratchet)) {
-          const { envelope, newState } = await ratchetEncrypt(
-            ratchet,
-            plaintext,
-            keysRef.current.signingPrivateKey,
-            keysRef.current.fingerprint,
-          );
-
-          const taggedEnvelope = envelope as any;
-          taggedEnvelope.encryptionMode = 'ratchet';
-
-          if (x3dhInfoRef.current) {
-            taggedEnvelope.x3dh = x3dhInfoRef.current;
-            console.info('[E2EE] ✅ encrypt via X3DH + Double Ratchet (initial message with X3DH header attached)');
-          } else {
-            console.info('[E2EE] ✅ encrypt via Double Ratchet (payload prepared, awaiting ACK)');
-          }
-
-          const serializedPayload = hardGlobals.jsonStringify(taggedEnvelope);
-          if (localId) {
-            pendingRatchetStateRef.current.set(localId, newState);
-            pendingPayloadRef.current.set(localId, serializedPayload);
-          }
-          setState(s => ({ ...s, ratchetActive: true }));
-          return serializedPayload;
-        }
-
-        if (ratchet) {
-          console.warn(`[RATCHET] encrypt blocked — ratchet not ready (${readiness.reason ?? 'unknown'})`);
-        }
-      } catch (ratchetErr) {
-        console.warn('[E2EE] Ratchet encrypt failed, falling back to legacy:', 
-          ratchetErr instanceof Error ? ratchetErr.message : String(ratchetErr));
-      }
-    }
-
-    // FALLBACK: Legacy or prekey-based session (AES-GCM)
     try {
-      let session = peerKeyRef.current ? await ensureLegacySession() : await loadSessionKey(conversationId!);
-      if (!session) {
-        throw new EncryptionError('No encryption session available');
+      const ratchet = await initRatchetIfNeeded();
+      const readiness = getRatchetReadiness(ratchet);
+      if (!ratchet || !readiness.canEncrypt || !isRatchetReadyForEncrypt(ratchet)) {
+        throw new EncryptionError(`🔒 Double Ratchet non prêt pour l'envoi${readiness.reason ? ` (${readiness.reason})` : ''} — message en attente chiffrée`);
       }
 
-      // Rotate key if needed ONLY on encrypt path (never on decrypt)
-      if (peerKeyRef.current && await needsKeyRotation(conversationId!)) {
-        session = await rotateSessionKey(keysRef.current, peerKeyRef.current.identityKey, conversationId!, peerKeyRef.current.fingerprint);
-        console.log('[E2EE] 🔄 Session key rotated for forward secrecy');
-      }
-
-      const seq = await incrementSessionMessageCount(conversationId!);
-      let result = await encryptMessage(
-        plaintext, session.sharedSecret,
-        keysRef.current.signingPrivateKey, keysRef.current.fingerprint, seq,
+      const { envelope, newState } = await ratchetEncrypt(
+        ratchet,
+        plaintext,
+        keysRef.current.signingPrivateKey,
+        keysRef.current.fingerprint,
       );
 
-      // Tag with encryption mode
-      const parsed = hardGlobals.jsonParse(result);
-      parsed.encryptionMode = 'legacy';
+      const taggedEnvelope = envelope as any;
+      taggedEnvelope.encryptionMode = 'ratchet';
 
-      // If this is a prekey-based message, wrap with prekey metadata so receiver can derive
-      if (prekeyInfoRef.current && !peerKeyRef.current) {
-        parsed.prekey = {
-          id: prekeyInfoRef.current.prekeyId,
-          senderKey: prekeyInfoRef.current.senderPublicKey,
-        };
-        console.log('[E2EE] ✅ encrypt via prekey session (first contact)');
+      if (x3dhInfoRef.current) {
+        taggedEnvelope.x3dh = x3dhInfoRef.current;
+        console.info('[E2EE] ✅ encrypt via X3DH + Double Ratchet (initial message with X3DH header attached)');
       } else {
-        console.log('[E2EE] ✅ encrypt via legacy session');
+        console.info('[E2EE] ✅ encrypt via Double Ratchet (payload prepared, awaiting ACK)');
       }
-      return hardGlobals.jsonStringify(parsed);
+
+      const serializedPayload = hardGlobals.jsonStringify(taggedEnvelope);
+      if (localId) {
+        pendingRatchetStateRef.current.set(localId, newState);
+        pendingPayloadRef.current.set(localId, serializedPayload);
+      }
+      setState(s => ({ ...s, ratchetActive: true }));
+      return serializedPayload;
     } catch (err) {
       if (err instanceof EncryptionError) throw err;
       console.error('[E2EE] ❌ Encrypt failed:', err);
       throw new EncryptionError(`Encryption failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [state.fingerprintChanged, conversationId, user, ensureLegacySession, initRatchetIfNeeded]);
+  }, [state.fingerprintChanged, conversationId, user, initRatchetIfNeeded]);
 
   /**
    * Decrypt — NEVER shows raw ciphertext.
@@ -839,17 +791,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
       if (isRatchetEnvelope(body)) {
         // Looks like a ratchet envelope (has v, hdr, ct fields)
-        const result = await decryptRatchetMessage(parsed, body);
-        if (result.text !== '🔒 Message illisible (session expirée)') {
-          return result;
-        }
-        // If ratchet failed on an untagged message, try legacy as last resort
-        console.debug('[E2EE] Untagged ratchet envelope failed — trying legacy fallback');
-        try {
-          return await decryptLegacyMessage(parsed, body);
-        } catch {
-          return result; // Return the ratchet error
-        }
+        return await decryptRatchetMessage(parsed, body);
       }
 
       // Legacy envelope (has ct but no hdr)
@@ -907,14 +849,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           return { text: '🔒 Message illisible (clé signée introuvable)', encrypted: true, verified: false };
         }
         if (errMsg.includes('OPK') && errMsg.includes('NOT FOUND')) {
-          // OPK was consumed on server but missing locally — shared secret would differ
-          // Try legacy fallback for this message
-          console.warn('[E2EE] OPK missing — attempting legacy session fallback for this message');
-          try {
-            return await decryptLegacyMessage(parsed, rawBody);
-          } catch {
-            return { text: '🔒 Message illisible (OPK introuvable)', encrypted: true, verified: false };
-          }
+          return { text: '🔒 Message illisible (OPK introuvable / handshake incohérent)', encrypted: true, verified: false };
         }
         return { text: '🔒 Message illisible (erreur d\'initialisation)', encrypted: true, verified: false };
       }
@@ -969,8 +904,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         generateAndUploadPrekeys(user.id).catch(err => {
           console.error('[X3DH] Failed to re-upload prekeys after OPK mismatch:', err);
         });
+        return { text: '🔒 Message illisible (prekey introuvable / état incohérent)', encrypted: true, verified: false };
       } catch (prekeyErr) {
-        console.warn('[E2EE] Prekey decrypt failed:', prekeyErr);
+        console.error('[E2EE] Prekey decrypt failed:', prekeyErr);
+        return { text: '🔒 Message illisible (échec prekey / état incohérent)', encrypted: true, verified: false };
       }
     }
 

@@ -323,7 +323,7 @@ class MessageQueueManager {
 
         const handlers = this.getReadyAwareHandlers(msg.conversationId);
         if (!handlers?.encrypt) {
-          await this.updateStatus(msg, 'retry_pending', 'Canal sécurisé indisponible');
+          await this.updateStatus(msg, 'waiting_secure_channel', 'Canal sécurisé indisponible');
           this.scheduleRetry(msg, 'secure_wait');
           return;
         }
@@ -344,7 +344,7 @@ class MessageQueueManager {
           // CRITICAL: Verify encryption actually produced ciphertext
           if (!withLocalId || withLocalId === plaintext || !withLocalId.startsWith('{')) {
             console.error('[E2EE] encrypt failed — output is plaintext or empty', msg.localId);
-            await this.updateStatus(msg, 'retry_pending', 'Canal sécurisé indisponible');
+            await this.updateStatus(msg, 'waiting_secure_channel', 'Canal sécurisé indisponible');
             this.scheduleRetry(msg, 'secure_wait');
             return;
           }
@@ -360,12 +360,19 @@ class MessageQueueManager {
             normalized.includes('initializ') ||
             normalized.includes('keys not ready') ||
             normalized.includes('encryption not available') ||
+            normalized.includes('message en attente chiffrée') ||
+            normalized.includes('bundle x3dh') ||
+            normalized.includes('double ratchet') ||
+            normalized.includes('clés du contact indisponibles') ||
+            normalized.includes('chiffrement requis') ||
+            normalized.includes('contact n\'a pas encore de clés') ||
+            normalized.includes('contact n\'a pas encore publié ses clés') ||
             normalized.includes('key') && normalized.includes('ready');
 
           console.error('[E2EE] encrypt failed', msg.localId, errMsg);
 
           if (waitingForKeys) {
-            await this.updateStatus(msg, 'retry_pending', 'Canal sécurisé indisponible');
+            await this.updateStatus(msg, 'waiting_secure_channel', errMsg);
             this.scheduleRetry(msg, 'secure_wait');
           } else {
             await this.updateStatus(msg, 'retry_pending', errMsg);
@@ -453,8 +460,7 @@ class MessageQueueManager {
   private scheduleRetry(msg: OutboundMessage, mode: 'retry' | 'secure_wait' = 'retry') {
     this.clearRetryTimer(msg.localId);
 
-    const SECURE_WAIT_RETRY_MS = 300;
-    const SECURE_WAIT_MAX_MS = 20_000;
+    const SECURE_WAIT_RETRY_MS = 10_000;
 
     const delay = mode === 'secure_wait'
       ? SECURE_WAIT_RETRY_MS
@@ -466,16 +472,6 @@ class MessageQueueManager {
       this.retryTimers.delete(msg.localId);
       const latest = await this.dbGet(msg.localId);
       if (!latest || latest.status === 'sent') return;
-
-      // Avoid infinite waiting if peer never exposes keys
-      if (mode === 'secure_wait' && Date.now() - latest.createdAt > SECURE_WAIT_MAX_MS) {
-        await this.updateStatus(
-          latest,
-          'failed_visible',
-          'Canal sécurisé indisponible (contact sans clé de chiffrement)'
-        );
-        return;
-      }
 
       if (mode === 'retry') {
         latest.retryCount++;

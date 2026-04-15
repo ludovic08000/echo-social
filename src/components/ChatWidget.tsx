@@ -388,8 +388,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     conversationId,
     e2ee.encrypt,
     e2ee.isReady(),
-    !isZeusConversation && e2ee.encrypted,
+    !isZeusConversation,
     e2ee.acknowledgeSentPayload,
+    isZeusConversation,
   );
 
   // Decrypted text cache for widget
@@ -581,7 +582,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const handleMediaFile = useCallback(async (file: File) => {
     const label = '📷 Photo';
 
-    if (isZeusConversation || !e2ee.encrypted) {
+    if (isZeusConversation) {
       const url = await rawUpload(file);
       if (url) {
         if (isZeusConversation) {
@@ -607,7 +608,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       console.error('Media encryption failed:', err);
       toast.error('Erreur de chiffrement du média');
     }
-  }, [isZeusConversation, e2ee.encrypted, rawUpload, conversationId, sendMessage, queue]);
+  }, [isZeusConversation, rawUpload, conversationId, sendMessage, queue]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -624,12 +625,6 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     // Block send if fingerprint changed
     if (!isZeusConversation && e2ee.fingerprintChanged) {
       toast.error('Clé de sécurité modifiée — valide d\'abord le contact (bouton OK en haut).');
-      return;
-    }
-
-    // BLOCK plaintext: if peer has no keys AND no prekey session, refuse to send
-    if (!isZeusConversation && e2ee.peerKeyMissing) {
-      toast.error('🔒 Envoi impossible : le contact n\'a pas encore de clés de chiffrement.');
       return;
     }
 
