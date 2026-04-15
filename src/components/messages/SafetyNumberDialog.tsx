@@ -238,6 +238,19 @@ export function SafetyNumberDialog({
     }
   }, [myFingerprint, peerFingerprint, conversationId]);
 
+  const [repairing, setRepairing] = useState(false);
+  const repairFingerprints = useCallback(async () => {
+    setRepairing(true);
+    try {
+      await supabase.rpc('push_my_fingerprint_to_peers');
+      // Re-run diagnostic to confirm fix
+      await runDiagnostic();
+    } catch {
+    } finally {
+      setRepairing(false);
+    }
+  }, [runDiagnostic]);
+
   const statusIcon = (status: SyncCheck['status']) => {
     switch (status) {
       case 'ok': return <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />;
