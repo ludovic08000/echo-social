@@ -120,6 +120,7 @@ function IncomingCallHandler() {
       call.startCall(accepted.conversation_id, accepted.call_type, accepted.decryptedCallKey);
     } catch (err) {
       console.error('[CALL] Failed to accept call:', err);
+      toast.error("Impossible d'accepter l'appel — réessayez");
     }
   }, [acceptCall, openChat, call]);
 
