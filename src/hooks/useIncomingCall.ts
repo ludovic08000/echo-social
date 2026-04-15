@@ -141,28 +141,48 @@ export function useIncomingCall() {
   const encryptedCallKeyRef = useRef<string | null>(null);
   const callConversationIdRef = useRef<string | null>(null);
 
+  // Track which call IDs we've already handled to avoid duplicate rings
+  const handledCallIdsRef = useRef<Set<string>>(new Set());
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     if (!user?.id) return;
 
     primeAudioForIOS();
 
-    const checkExisting = async () => {
-      const { data, error } = await supabase.rpc('call_signal', {
-        p_action: 'latest_for_callee',
-      });
+    const pollForCalls = async () => {
+      // Don't poll if already showing an incoming call
+      if (incomingCall) return;
 
-      if (!error && data) {
-        handleIncomingCall(data);
+      try {
+        const { data, error } = await supabase.rpc('call_signal', {
+          p_action: 'latest_for_callee',
+        });
+
+        if (!error && data && (data as any).id) {
+          const callData = data as any;
+          if (callData.status === 'ringing' && !handledCallIdsRef.current.has(callData.id)) {
+            handledCallIdsRef.current.add(callData.id);
+            handleIncomingCall(callData);
+          }
+        }
+      } catch {
+        // Silently ignore polling errors
       }
-
-      await supabase.rpc('call_signal', {
-        p_action: 'expire_old_for_callee',
-      });
     };
-    checkExisting();
 
+    // Initial check
+    pollForCalls();
+
+    // Expire old calls once
+    supabase.rpc('call_signal', { p_action: 'expire_old_for_callee' }).catch(() => {});
+
+    // Fallback polling every 3 seconds — catches calls even if Realtime fails
+    pollIntervalRef.current = setInterval(pollForCalls, 3000);
+
+    // Realtime channel for instant notification (primary path)
     const channel = supabase
-      .channel('incoming-calls')
+      .channel(`incoming-calls-${user.id}`)
       .on(
         'postgres_changes',
         {
@@ -172,8 +192,10 @@ export function useIncomingCall() {
           filter: `callee_id=eq.${user.id}`,
         },
         (payload) => {
-          if (payload.new && (payload.new as any).status === 'ringing') {
-            handleIncomingCall(payload.new as any);
+          const callData = payload.new as any;
+          if (callData?.status === 'ringing' && !handledCallIdsRef.current.has(callData.id)) {
+            handledCallIdsRef.current.add(callData.id);
+            handleIncomingCall(callData);
           }
         }
       )
@@ -187,7 +209,7 @@ export function useIncomingCall() {
         },
         (payload) => {
           const updated = payload.new as any;
-          if (updated.status === 'cancelled' || updated.status === 'ended') {
+          if (updated.status === 'cancelled' || updated.status === 'ended' || updated.status === 'declined') {
             ringtoneRef.current.stop();
             setIncomingCall(null);
             encryptedCallKeyRef.current = null;
@@ -196,10 +218,17 @@ export function useIncomingCall() {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[IncomingCall] Realtime channel subscribed ✅');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[IncomingCall] Realtime channel issue, relying on polling fallback');
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       ringtoneRef.current.stop();
       encryptedCallKeyRef.current = null;
       callConversationIdRef.current = null;
