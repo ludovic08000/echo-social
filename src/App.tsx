@@ -17,6 +17,7 @@ import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { useCall } from "@/hooks/useCall";
 import { CallOverlay } from "@/components/CallOverlay";
 import { Suspense, lazy, useCallback, useRef } from "react";
+import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
 
