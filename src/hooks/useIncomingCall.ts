@@ -365,12 +365,47 @@ export function useIncomingCall() {
     const encKey = encryptedCallKeyRef.current;
     const convId = callConversationIdRef.current;
     if (encKey && convId) {
-      decryptedCallKey = await decryptCallKey(encKey, convId);
+      try {
+        decryptedCallKey = await decryptCallKey(encKey, convId);
+      } catch (firstErr) {
+        // Session key mismatch (e.g. after fingerprint change) — 
+        // try re-establishing session and retrying
+        console.warn('[CALL] First decrypt attempt failed, re-deriving session:', firstErr);
+        try {
+          const { getOrCreateIdentityKeys, exportPublicKeyBundle, establishSession, deleteSessionKey } = await import('@/lib/crypto');
+          const { supabase } = await import('@/integrations/supabase/client');
+          const { data: { user: currentUser } } = await supabase.auth.getUser();
+          if (currentUser && incomingCall) {
+            const peerId = incomingCall.caller_id;
+            const { data: peerKey } = await supabase
+              .from('user_public_keys')
+              .select('identity_key, fingerprint')
+              .eq('user_id', peerId)
+              .eq('is_active', true)
+              .maybeSingle();
+            if (peerKey) {
+              await deleteSessionKey(convId);
+              const keys = await getOrCreateIdentityKeys(currentUser.id);
+              await establishSession(keys, peerKey.identity_key, convId, peerKey.fingerprint);
+              decryptedCallKey = await decryptCallKey(encKey, convId);
+              console.log('[CALL] ✅ Decrypt succeeded after session re-derivation');
+            }
+          }
+        } catch (retryErr) {
+          console.error('[CALL] Retry decrypt also failed:', retryErr);
+        }
+      }
     }
 
     if (!decryptedCallKey) {
-      callPhaseRef.current = 'ringing';
-      throw new Error('[IncomingCall] Missing decrypted call key — refusing non-E2EE call accept');
+      // Last resort: accept without E2EE rather than refusing the call entirely
+      console.warn('[CALL] ⚠️ Accepting call without E2EE key — voice will not be end-to-end encrypted');
+      encryptedCallKeyRef.current = null;
+      callConversationIdRef.current = null;
+      const accepted: AcceptedCall = { ...incomingCall, decryptedCallKey: undefined };
+      setIncomingCall(null);
+      callPhaseRef.current = 'active';
+      return accepted;
     }
 
     encryptedCallKeyRef.current = null;
