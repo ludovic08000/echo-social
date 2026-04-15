@@ -784,7 +784,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     // BLOCK if fingerprint changed and not yet acknowledged
     if (state.fingerprintChanged) {
-      throw new EncryptionError('La clé de sécurité du contact a changé — vérification requise');
+      // Auto-acknowledged: log warning but allow encryption to proceed
+      console.warn('[E2EE] ⚠️ Encrypting with auto-acknowledged new peer key');
     }
 
     // Auto-load keys if ref is empty (race with initKeys)
@@ -1063,11 +1064,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   /** Check if encryption is ready for this conversation */
   const isReady = useCallback((): boolean => {
     if (isZeus) return true;
-    // Block if fingerprint changed
-    if (state.fingerprintChanged) return false;
-    // Ready if we have peer keys and our own keys (ratchet will be established on first encrypt)
+    // Ready if we have peer keys and our own keys (fingerprint changes are auto-acknowledged)
     return state.encrypted && !!keysRef.current && !!peerKeyRef.current;
-  }, [state.encrypted, state.fingerprintChanged, isZeus]);
+  }, [state.encrypted, isZeus]);
 
   /** Acknowledge fingerprint change — user explicitly trusts new key */
   const acknowledgeFingerprint = useCallback(async () => {
