@@ -323,6 +323,12 @@ class MessageQueueManager {
 
         const handlers = this.getReadyAwareHandlers(msg.conversationId);
         if (!handlers?.encrypt) {
+          // Fail fast: if no handler is registered after 30s, mark as failed
+          const age = Date.now() - msg.createdAt;
+          if (age > 30_000) {
+            await this.updateStatus(msg, 'failed_visible', 'Canal sécurisé indisponible — réessayez plus tard');
+            return;
+          }
           await this.updateStatus(msg, 'waiting_secure_channel', 'Canal sécurisé indisponible');
           this.scheduleRetry(msg, 'secure_wait');
           return;
@@ -371,12 +377,24 @@ class MessageQueueManager {
 
           console.error('[E2EE] encrypt failed', msg.localId, errMsg);
 
+          // Fail fast after 30s total elapsed time for key-waiting errors
+          const age = Date.now() - msg.createdAt;
+          if (waitingForKeys && age > 30_000) {
+            await this.updateStatus(msg, 'failed_visible', 'Chiffrement impossible — clés du contact indisponibles. Réessayez.');
+            return;
+          }
+
           if (waitingForKeys) {
             await this.updateStatus(msg, 'waiting_secure_channel', errMsg);
             this.scheduleRetry(msg, 'secure_wait');
           } else {
-            await this.updateStatus(msg, 'retry_pending', errMsg);
-            this.scheduleRetry(msg);
+            // Non-key errors: fail after 3 retries instead of 10
+            if (msg.retryCount >= 3) {
+              await this.updateStatus(msg, 'failed_visible', `Échec chiffrement: ${errMsg}`);
+            } else {
+              await this.updateStatus(msg, 'retry_pending', errMsg);
+              this.scheduleRetry(msg);
+            }
           }
           return;
         }
