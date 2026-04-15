@@ -48,6 +48,15 @@ export function useCall(options?: UseCallOptions) {
   const noAnswerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const manualEndRef = useRef(false);
   const hadRemoteParticipantRef = useRef(false);
+  // Stabilize the callback ref to avoid effect dependency issues
+  const onCallEndedRef = useRef(options?.onCallEnded);
+  // Track if startCall is in progress to prevent double-init
+  const connectingRef = useRef(false);
+
+  // Keep callback ref up to date without triggering effects
+  useEffect(() => {
+    onCallEndedRef.current = options?.onCallEnded;
+  });
 
   // Keep refs in sync
   useEffect(() => { callStateRef.current = callState; }, [callState]);
@@ -72,6 +81,13 @@ export function useCall(options?: UseCallOptions) {
   }, [callState]);
 
   const startCall = useCallback(async (conversationId: string, type: CallType, e2eeKeyB64?: string) => {
+    // Prevent double-init
+    if (connectingRef.current || roomRef.current) {
+      console.warn('[Call] startCall ignored — already connecting or connected');
+      return;
+    }
+    connectingRef.current = true;
+
     // Request permissions before connecting
     const perms = await requestMediaPermissions({
       audio: true,
@@ -79,6 +95,7 @@ export function useCall(options?: UseCallOptions) {
     });
 
     if (!perms.granted) {
+      connectingRef.current = false;
       toast.error(perms.error || "Impossible d'accéder au micro/caméra");
       return;
     }
@@ -130,6 +147,8 @@ export function useCall(options?: UseCallOptions) {
 
       roomRef.current = room;
 
+      // ── Event listeners (attached ONCE) ──
+
       room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
         const el = track.attach();
         if (track.kind === Track.Kind.Video && remoteVideoRef.current) {
@@ -148,7 +167,8 @@ export function useCall(options?: UseCallOptions) {
         track.detach().forEach(el => el.remove());
       });
 
-      room.on(RoomEvent.Disconnected, () => {
+      room.on(RoomEvent.Disconnected, (reason) => {
+        console.info('[Call] Room disconnected, reason:', reason, 'manualEnd:', manualEndRef.current);
         if (manualEndRef.current) return;
         const wasMissed = callStateRef.current !== 'connected';
         const endDuration = durationRef.current;
@@ -156,8 +176,9 @@ export function useCall(options?: UseCallOptions) {
         setCallState('idle');
         setDuration(0);
         setIsE2eeActive(false);
+        connectingRef.current = false;
         releaseWakeLock();
-        options?.onCallEnded?.({ type: endType, duration: endDuration, wasMissed });
+        onCallEndedRef.current?.({ type: endType, duration: endDuration, wasMissed });
       });
 
       room.on(RoomEvent.ParticipantConnected, () => {
@@ -170,12 +191,23 @@ export function useCall(options?: UseCallOptions) {
       });
 
       room.on(RoomEvent.ParticipantDisconnected, () => {
+        // Only auto-disconnect if a remote participant was connected and ALL have left
         if (!manualEndRef.current && hadRemoteParticipantRef.current && room.remoteParticipants.size === 0) {
+          console.info('[Call] All remote participants left — ending call');
           room.disconnect();
         }
       });
 
+      // ── Connect ──
       await room.connect(url, token);
+
+      // Check if component unmounted / manual end during async connect
+      if (manualEndRef.current) {
+        room.disconnect();
+        roomRef.current = null;
+        connectingRef.current = false;
+        return;
+      }
 
       // Enable E2EE after connection
       if (e2eeKeyProvider) {
@@ -188,6 +220,7 @@ export function useCall(options?: UseCallOptions) {
         }
       }
 
+      // ── Publish tracks AFTER connection is stable ──
       // Enable mic always
       await room.localParticipant.setMicrophoneEnabled(true);
 
@@ -214,28 +247,35 @@ export function useCall(options?: UseCallOptions) {
       } else {
         setCallState('connecting');
         noAnswerTimeoutRef.current = setTimeout(() => {
-          toast.error("Pas de réponse");
-          if (roomRef.current) {
-            roomRef.current.disconnect();
-            roomRef.current = null;
+          if (callStateRef.current !== 'connected') {
+            toast.error("Pas de réponse");
+            if (roomRef.current) {
+              roomRef.current.disconnect();
+              roomRef.current = null;
+            }
+            if (localVideoRef.current) localVideoRef.current.innerHTML = '';
+            if (remoteVideoRef.current) remoteVideoRef.current.innerHTML = '';
+            setCallState('idle');
+            setDuration(0);
+            setIsE2eeActive(false);
+            connectingRef.current = false;
+            releaseWakeLock();
+            onCallEndedRef.current?.({ type: callTypeRef.current, duration: 0, wasMissed: true });
           }
-          if (localVideoRef.current) localVideoRef.current.innerHTML = '';
-          if (remoteVideoRef.current) remoteVideoRef.current.innerHTML = '';
-          setCallState('idle');
-          setDuration(0);
-          setIsE2eeActive(false);
-          releaseWakeLock();
-          options?.onCallEnded?.({ type: callTypeRef.current, duration: 0, wasMissed: true });
         }, 30000);
       }
+
+      connectingRef.current = false;
     } catch (err) {
       console.error('Call error:', err);
       toast.error("Impossible de lancer l'appel. Vérifiez votre connexion.");
       setCallState('ended');
       setIsE2eeActive(false);
+      connectingRef.current = false;
+      roomRef.current = null;
       releaseWakeLock();
     }
-  }, [options]);
+  }, []);  // No dependencies — uses refs for everything
 
   const endCall = useCallback(() => {
     manualEndRef.current = true;
@@ -257,9 +297,10 @@ export function useCall(options?: UseCallOptions) {
     setCallState('idle');
     setDuration(0);
     setIsE2eeActive(false);
+    connectingRef.current = false;
     releaseWakeLock();
-    options?.onCallEnded?.({ type: endType, duration: endDuration, wasMissed });
-  }, [options]);
+    onCallEndedRef.current?.({ type: endType, duration: endDuration, wasMissed });
+  }, []);  // No dependencies — uses refs
 
   const toggleMute = useCallback(() => {
     const room = roomRef.current;
@@ -326,8 +367,15 @@ export function useCall(options?: UseCallOptions) {
   useEffect(() => {
     return () => {
       if (roomRef.current) {
+        manualEndRef.current = true; // Prevent Disconnected handler from firing
         roomRef.current.disconnect();
+        roomRef.current = null;
       }
+      if (noAnswerTimeoutRef.current) {
+        clearTimeout(noAnswerTimeoutRef.current);
+        noAnswerTimeoutRef.current = null;
+      }
+      connectingRef.current = false;
       releaseWakeLock();
     };
   }, []);
