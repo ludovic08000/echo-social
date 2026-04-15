@@ -4105,6 +4105,36 @@ export type Database = {
         }
         Relationships: []
       }
+      user_behavior_signals: {
+        Row: {
+          created_at: string
+          id: string
+          metadata: Json | null
+          post_id: string
+          signal_type: string
+          user_id: string
+          value: number | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          post_id: string
+          signal_type: string
+          user_id: string
+          value?: number | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          post_id?: string
+          signal_type?: string
+          user_id?: string
+          value?: number | null
+        }
+        Relationships: []
+      }
       user_chat_pins: {
         Row: {
           created_at: string
@@ -4920,6 +4950,7 @@ export type Database = {
       }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_expired_device_links: { Args: never; Returns: undefined }
+      cleanup_old_behavior_signals: { Args: never; Returns: undefined }
       cleanup_old_fingerprints: { Args: never; Returns: undefined }
       complete_onboarding: { Args: { _user_id: string }; Returns: boolean }
       consume_prekey: {
