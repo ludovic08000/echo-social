@@ -76,6 +76,27 @@ async function saveWrappedKeys(userId: string, data: {
   });
 }
 
+async function encryptAndSaveWrappedCrypto(
+  userId: string,
+  wrapKey: CryptoKey,
+  saltB64: string,
+  blob: string,
+): Promise<void> {
+  const iv = hardCrypto.getRandomValues(new Uint8Array(12));
+  const plainBytes = new TextEncoder().encode(blob);
+  const ciphertext = await hardCrypto.encrypt(
+    { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
+    wrapKey,
+    plainBytes as Uint8Array<ArrayBuffer>,
+  );
+
+  await saveWrappedKeys(userId, {
+    wrappedBlob: bytesToBase64(new Uint8Array(ciphertext)),
+    iv: bytesToBase64(iv),
+    salt: saltB64,
+  });
+}
+
 async function loadWrappedKeys(userId: string): Promise<{
   wrappedBlob: string;
   iv: string;
@@ -278,6 +299,8 @@ export function useChatPin() {
   const checkedRef = useRef(false);
   const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pinModeRef = useRef<PinMode>('every_open');
+  const runtimeWrapKeyRef = useRef<CryptoKey | null>(null);
+  const runtimeWrapSaltRef = useRef<string | null>(null);
 
   // Fetch PIN mode from DB
   const fetchPinMode = useCallback(async (): Promise<PinMode> => {
@@ -422,21 +445,13 @@ export function useChatPin() {
       const salt = base64ToBytes(saltB64);
       const wrapKey = await derivePinKey(pin, salt);
 
+      runtimeWrapKeyRef.current = wrapKey;
+      runtimeWrapSaltRef.current = saltB64;
+
       // Collect ALL crypto material (identity + session + ratchet) for wrapping
       const fullBlob = await collectAllCryptoBlob(user.id);
       if (fullBlob) {
-        const iv = hardCrypto.getRandomValues(new Uint8Array(12));
-        const plainBytes = new TextEncoder().encode(fullBlob);
-        const ciphertext = await hardCrypto.encrypt(
-          { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
-          wrapKey,
-          plainBytes as Uint8Array<ArrayBuffer>,
-        );
-        await saveWrappedKeys(user.id, {
-          wrappedBlob: bytesToBase64(new Uint8Array(ciphertext)),
-          iv: bytesToBase64(iv),
-          salt: saltB64,
-        });
+        await encryptAndSaveWrappedCrypto(user.id, wrapKey, saltB64, fullBlob);
         await deleteRawIdentityBlob(user.id);
         console.log('[PIN] Full crypto blob wrapped (v2)');
       }
@@ -489,6 +504,8 @@ export function useChatPin() {
       if (wrapped) {
         try {
           const wrapKey = await derivePinKey(pin, base64ToBytes(wrapped.salt));
+          runtimeWrapKeyRef.current = wrapKey;
+          runtimeWrapSaltRef.current = wrapped.salt;
           const cipherBytes = base64ToBytes(wrapped.wrappedBlob);
           const iv = base64ToBytes(wrapped.iv);
           const plainBuffer = await hardCrypto.decrypt(
@@ -497,7 +514,6 @@ export function useChatPin() {
             cipherBytes as Uint8Array<ArrayBuffer>,
           );
           const rawBlob = new TextDecoder().decode(plainBuffer);
-          // Restore ALL crypto material (identity + session + ratchet)
           await restoreAllCryptoBlob(user.id, rawBlob);
           console.log('[PIN] All keys unwrapped and restored');
           window.dispatchEvent(new CustomEvent('forsure-keys-unlocked'));
@@ -510,17 +526,9 @@ export function useChatPin() {
           if (fullBlob) {
             const salt = base64ToBytes(verifyResult.salt);
             const wrapKey = await derivePinKey(pin, salt);
-            const iv = hardCrypto.getRandomValues(new Uint8Array(12));
-            const ciphertext = await hardCrypto.encrypt(
-              { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
-              wrapKey,
-              new TextEncoder().encode(fullBlob) as Uint8Array<ArrayBuffer>,
-            );
-            await saveWrappedKeys(user.id, {
-              wrappedBlob: bytesToBase64(new Uint8Array(ciphertext)),
-              iv: bytesToBase64(iv),
-              salt: verifyResult.salt,
-            });
+            runtimeWrapKeyRef.current = wrapKey;
+            runtimeWrapSaltRef.current = verifyResult.salt;
+            await encryptAndSaveWrappedCrypto(user.id, wrapKey, verifyResult.salt, fullBlob);
             await deleteRawIdentityBlob(user.id);
             console.log('[PIN] Full crypto blob wrapped on first verify (v2)');
           }
@@ -548,15 +556,32 @@ export function useChatPin() {
     }
   }, [user, fetchPinMode]);
 
-  /** Lock messaging — protect keys, preserve session keys for later restore */
+  /** Lock messaging — refresh wrapped crypto snapshot, preserve session keys locally. */
   const lock = useCallback(async () => {
     sessionStorage.removeItem(SESSION_KEY);
+
     if (user) {
-      // Only delete raw identity keys (already PIN-wrapped).
-      // Session keys + ratchet states stay in IndexedDB — they are useless
-      // without identity keys and the UI is PIN-gated anyway.
-      await deleteRawIdentityBlob(user.id).catch(() => {});
+      try {
+        if (runtimeWrapKeyRef.current && runtimeWrapSaltRef.current) {
+          const fullBlob = await collectAllCryptoBlob(user.id);
+          if (fullBlob) {
+            await encryptAndSaveWrappedCrypto(
+              user.id,
+              runtimeWrapKeyRef.current,
+              runtimeWrapSaltRef.current,
+              fullBlob,
+            );
+            console.log('[PIN] Latest crypto snapshot wrapped before lock');
+          }
+        }
+
+        await deleteRawIdentityBlob(user.id);
+        console.log('[PIN] Locked: raw identity blob removed, session crypto preserved');
+      } catch (err) {
+        console.warn('[PIN] lock(): failed to preserve crypto before lock:', err);
+      }
     }
+
     setState(s => ({ ...s, unlocked: false }));
   }, [user]);
 
