@@ -1002,12 +1002,25 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     setState(s => ({ ...s, fingerprintChanged: false, ready: true, ratchetActive: false }));
   }, [peerUserId, conversationId]);
 
+  /**
+   * Clear the X3DH initial message header after the first message is confirmed sent.
+   * This prevents re-attaching stale X3DH metadata to subsequent messages.
+   * MUST be called by the message sender after successful delivery.
+   */
+  const clearX3DHHeader = useCallback(() => {
+    if (x3dhInfoRef.current) {
+      console.log('[E2EE] X3DH header cleared after confirmed send');
+      x3dhInfoRef.current = null;
+    }
+  }, []);
+
   return {
     ...state,
     encrypt,
     decrypt,
     isReady,
     acknowledgeFingerprint,
+    clearX3DHHeader,
   };
 }
 
