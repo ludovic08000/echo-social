@@ -28,6 +28,9 @@ export default defineConfig(({ mode }) => ({
         maximumFileSizeToCacheInBytes: 5242880,
         navigateFallbackDenylist: [/^\/~oauth/],
         globPatterns: ["**/*.{js,css,html,ico,svg,woff2}"],
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/vkpmoqfzrihcijjochks\.supabase\.co\/rest\/.*/i,
