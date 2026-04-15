@@ -52,6 +52,7 @@ import {
   type RatchetEnvelope,
   type X3DHInitialMessage,
 } from '@/lib/crypto';
+import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
 import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
 import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
 import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/lib/crypto/cryptoIntegrity';
