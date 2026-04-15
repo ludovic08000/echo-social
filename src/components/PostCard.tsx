@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo } from 'react';
+import { useEffect, useRef, useState, memo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -25,6 +25,7 @@ import { toast } from 'sonner';
 import { FeedAutoplayVideo } from './FeedAutoplayVideo';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { imagePresets } from '@/lib/imageOptimize';
+import { useMLTracking } from '@/hooks/useMLFeed';
 import {
   DropdownMenu,
   DropdownMenuContent,
