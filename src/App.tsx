@@ -117,7 +117,6 @@ function IncomingCallHandler() {
 
       openChat(accepted.conversation_id);
       activeIncomingCallIdRef.current = accepted.id;
-      // startCall handles undefined e2eeKeyB64 gracefully (call works without LiveKit E2EE)
       call.startCall(accepted.conversation_id, accepted.call_type, accepted.decryptedCallKey);
     } catch (err) {
       console.error('[CALL] Failed to accept call:', err);

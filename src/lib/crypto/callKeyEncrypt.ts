@@ -10,10 +10,44 @@
 
 import { hardCrypto } from './cryptoIntegrity';
 import { randomBytes, bufferToBase64, base64ToBuffer } from './utils';
-import { loadSessionKey } from './keyManager';
+import { loadSessionKey, deleteSessionKey, getOrCreateIdentityKeys } from './keyManager';
+import { establishSession } from './e2ee';
+import { supabase } from '@/integrations/supabase/client';
 
 const IV_LEN = 12;
 const ENCRYPTED_SEPARATOR = '.';
+
+async function ensureFreshCallSession(
+  conversationId: string,
+  localUserId: string,
+  peerUserId: string,
+) {
+  const { data: peerKey } = await supabase
+    .from('user_public_keys')
+    .select('identity_key, fingerprint')
+    .eq('user_id', peerUserId)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (!peerKey?.identity_key || !peerKey.fingerprint) {
+    throw new Error('No active peer identity key for this conversation');
+  }
+
+  const session = await loadSessionKey(conversationId);
+  if (session?.sharedSecret && session.peerFingerprint === peerKey.fingerprint) {
+    return session;
+  }
+
+  await deleteSessionKey(conversationId);
+  const identityKeys = await getOrCreateIdentityKeys(localUserId);
+
+  return establishSession(
+    identityKeys,
+    peerKey.identity_key,
+    conversationId,
+    peerKey.fingerprint,
+  );
+}
 
 /**
  * Encrypt a call E2EE key using the conversation's shared session key.
@@ -23,8 +57,12 @@ const ENCRYPTED_SEPARATOR = '.';
 export async function encryptCallKey(
   callKeyB64: string,
   conversationId: string,
+  localUserId?: string,
+  peerUserId?: string,
 ): Promise<string> {
-  const session = await loadSessionKey(conversationId);
+  const session = localUserId && peerUserId
+    ? await ensureFreshCallSession(conversationId, localUserId, peerUserId)
+    : await loadSessionKey(conversationId);
   if (!session?.sharedSecret) {
     throw new Error('No E2EE session for this conversation');
   }
