@@ -246,7 +246,7 @@ export function useCall(options?: UseCallOptions) {
         throw new Error('Unable to initialize call E2EE');
       }
 
-      if (endingRef.current || phaseRef.current === 'idle') {
+      if (endingRef.current || phaseRef.current !== 'connecting') {
         console.info('[CALL] start aborted before room creation');
         connectingRef.current = false;
         releaseWakeLock();
