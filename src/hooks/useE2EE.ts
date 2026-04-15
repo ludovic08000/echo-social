@@ -604,49 +604,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       return persisted;
     }
 
-    // PRIMARY: X3DH key agreement (Signal spec)
-    try {
-      const bundle = await fetchPrekeyBundle(peerUserId!);
-      if (bundle) {
-        const x3dhResult = await x3dhInitiate(keysRef.current, bundle);
-
-        // Store X3DH metadata for the initial message header
-        const myPubRaw = await hardCrypto.exportKey('raw', keysRef.current.publicKey);
-        x3dhInfoRef.current = {
-          ik: bufferToBase64(myPubRaw),
-          ek: x3dhResult.ephemeralKey,
-          spkId: x3dhResult.usedSPKId,
-          opkId: x3dhResult.usedOTPKId,
-          kemCt: x3dhResult.kemCiphertext,
-        };
-
-        // Import peer SPK as DH ratchet key for Double Ratchet init
-        const peerSPKKey = await hardCrypto.importKey(
-          'raw', base64ToBuffer(bundle.signedPrekey),
-          KX_KEY_PARAMS as any, true, [],
-        );
-
-        const ratchet = await initRatchetAsInitiator(
-          conversationId,
-          x3dhResult.sharedSecret,
-          peerSPKKey,
-        );
-
-        ratchetRef.current = ratchet;
-        await saveRatchetLocal(conversationId, ratchet);
-        console.log('[E2EE] 🔄 Double Ratchet initialized via X3DH (initiator)');
-        return ratchet;
-      }
-    } catch (x3dhErr) {
-      console.warn('[E2EE] X3DH init failed, falling back to legacy DH:', x3dhErr);
-    }
-
-    // FALLBACK: Legacy single-DH session
-    // Skip ratchet init from legacy — session keys are non-extractable at runtime.
-    // The legacy encrypt/decrypt path works directly with the CryptoKey.
-    console.log('[E2EE] Skipping ratchet from legacy session (non-extractable keys) — will use legacy encrypt');
+    // X3DH/Ratchet is currently broken (signed prekey signature mismatch).
+    // Skip directly to legacy session which works reliably.
     return null;
-  }, [conversationId, ensureLegacySession]);
+  }, [conversationId]);
 
   /**
    * Encrypt — NEVER returns plaintext.
