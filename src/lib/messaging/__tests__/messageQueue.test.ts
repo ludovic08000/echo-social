@@ -12,6 +12,12 @@ const applyRetryPolicy = (message: { retryCount: number; updatedAt: number; encr
   return next;
 };
 
+const applyManualRetry = (message: { retryCount: number; updatedAt: number; encryptedBody: string | null }) => ({
+  ...message,
+  retryCount: 0,
+  updatedAt: Date.now(),
+});
+
 describe('messageQueue retry policy', () => {
   it('preserves first encrypted payload on normal retry', () => {
     const original = {
@@ -40,5 +46,22 @@ describe('messageQueue retry policy', () => {
     const retried = applyRetryPolicy(original, 'secure_wait');
     expect(retried.retryCount).toBe(0);
     expect(retried.encryptedBody).toBeNull();
+  });
+
+  it('preserves the first encrypted payload on manual retry', () => {
+    const original = {
+      retryCount: 3,
+      updatedAt: 1,
+      encryptedBody: JSON.stringify({
+        encryptionMode: 'ratchet',
+        x3dh: { ik: 'ik', ek: 'ek', spkId: 7 },
+        hdr: { dh: 'dh', pn: 0, n: 0 },
+        ct: 'cipher',
+      }),
+    };
+
+    const retried = applyManualRetry(original);
+    expect(retried.retryCount).toBe(0);
+    expect(retried.encryptedBody).toBe(original.encryptedBody);
   });
 });

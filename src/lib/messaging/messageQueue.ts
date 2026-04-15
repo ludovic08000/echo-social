@@ -507,7 +507,6 @@ class MessageQueueManager {
     if (!msg) return;
 
     msg.retryCount = 0;
-    msg.encryptedBody = null;
     msg.lastError = null;
     msg.status = 'pending_local';
     msg.updatedAt = Date.now();

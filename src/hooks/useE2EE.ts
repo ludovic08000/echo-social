@@ -410,6 +410,27 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     return () => window.removeEventListener('forsure-keys-unlocked', handler);
   }, [initKeys]);
 
+  useEffect(() => {
+    const handler = () => {
+      console.log('[E2EE] Keys locked via PIN — clearing in-memory crypto state');
+      keysRef.current = null;
+      ratchetRef.current = null;
+      prekeyInfoRef.current = null;
+      x3dhInfoRef.current = null;
+      legacySessionReadyRef.current = false;
+      pendingRatchetStateRef.current.clear();
+      pendingPayloadRef.current.clear();
+      setState(s => ({
+        ...s,
+        ready: false,
+        ratchetActive: false,
+        initError: null,
+      }));
+    };
+    window.addEventListener('forsure-keys-locked', handler);
+    return () => window.removeEventListener('forsure-keys-locked', handler);
+  }, []);
+
   // Fetch peer public key + pre-establish legacy session
   useEffect(() => {
     if (!peerUserId || !user) return;
