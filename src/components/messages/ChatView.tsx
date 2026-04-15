@@ -100,6 +100,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const e2ee = useE2EE(conversationId, peerUserId);
 
+  // Cache plaintext for own sent messages (ratchet can't decrypt own ciphertext)
+  const handlePlaintextCached = useCallback((serverId: string, plaintext: string) => {
+    decryptedCache.set(serverId, plaintext);
+  }, []);
+
   // Message queue for encrypted sending
   // Always pass encrypt handler so it's available when E2EE becomes ready
   const queue = useMessageQueue(
@@ -109,6 +114,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
     !isZeusConversation,
     e2ee.acknowledgeSentPayload,
     isZeusConversation,
+    handlePlaintextCached,
   );
 
   const { upload: rawUpload, isUploading } = useImageUpload({

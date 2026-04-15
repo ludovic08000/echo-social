@@ -391,6 +391,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     !isZeusConversation,
     e2ee.acknowledgeSentPayload,
     isZeusConversation,
+    (serverId, plaintext) => decryptedCacheRef.current.set(serverId, plaintext),
   );
 
   // Decrypted text cache for widget
