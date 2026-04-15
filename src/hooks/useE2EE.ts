@@ -781,10 +781,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       return { text: '🔒 Opération limitée (sécurité)', encrypted: true, verified: false };
     }
 
-    // Log tamper warning but do NOT block decrypt — hardCrypto is safe
-    if (isTampered()) {
-      console.warn('[E2EE] crypto.subtle tampered on decrypt — using hardCrypto snapshots');
-    }
+    // hardCrypto snapshots are always safe — no need to check isTampered()
 
     try {
       if (isRatchetEnvelope(body)) {
