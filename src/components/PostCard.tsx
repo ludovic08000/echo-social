@@ -73,6 +73,28 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const { data: isMinorUser } = useCurrentUserIsMinor();
   const reportUser = useReportUser();
   const isMobile = useIsMobile();
+  const { trackView, startDwell, endDwell, trackInteraction } = useMLTracking();
+  const cardRef = useRef<HTMLElement>(null);
+
+  // ML tracking: IntersectionObserver for view + dwell
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || !user) return;
+    const contentType = isVideoPost ? 'video' : post.image_url ? 'image' : 'text';
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          trackView(post.id, { content_type: contentType });
+          startDwell(post.id);
+        } else {
+          endDwell(post.id, { content_type: contentType });
+        }
+      },
+      { threshold: 0.5 }
+    );
+    observer.observe(el);
+    return () => { observer.disconnect(); endDwell(post.id, { content_type: contentType }); };
+  }, [post.id, user?.id]);
 
   const postUrl = generatePostUrl(post.id);
   const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
