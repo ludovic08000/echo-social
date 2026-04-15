@@ -111,25 +111,19 @@ function recreateLegacyE2EEDatabase(): Promise<void> {
         }
       };
       openReq.onerror = () => {
-        // DB truly broken — delete and recreate (keys will be regenerated)
-        const deletion = indexedDB.deleteDatabase(DB_NAME);
-        deletion.onsuccess = () => resolve();
-        deletion.onerror = () => resolve();
-        deletion.onblocked = () => resolve();
+        // DB truly broken — but do NOT delete it (would destroy identity keys).
+        // Instead, log and resolve — identity keys may survive a version upgrade.
+        console.error('[E2EE] IndexedDB open failed — identity keys may be lost');
+        resolve();
       };
       openReq.onupgradeneeded = () => {
         // Schema upgrade needed — let it proceed normally (openDB handles this)
         // Don't abort — the stores will be recreated by the onupgradeneeded handler
       };
     } catch {
-      try {
-        const deletion = indexedDB.deleteDatabase(DB_NAME);
-        deletion.onsuccess = () => resolve();
-        deletion.onerror = () => resolve();
-        deletion.onblocked = () => resolve();
-      } catch {
-        resolve();
-      }
+      // Do NOT delete the database — just log the error
+      console.error('[E2EE] Failed to repair E2EE database — identity keys preserved');
+      resolve();
     }
   });
 }
@@ -341,6 +335,27 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       keysRef.current = keys;
 
       const bundle = await exportPublicKeyBundle(keys);
+
+      // CRITICAL: Check if server already has keys for this user
+      // If server fingerprint differs from local, it means local keys were regenerated
+      // (IndexedDB was cleared). Only upload if NO server keys exist.
+      const { data: existingServerKey } = await supabase
+        .from('user_public_keys')
+        .select('fingerprint, identity_key')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (existingServerKey && existingServerKey.fingerprint !== bundle.fingerprint) {
+        // Server has different keys — local keys were regenerated after data loss.
+        // DO NOT overwrite server keys blindly. Log the event.
+        console.warn(
+          '[E2EE] ⚠️ Local identity key mismatch with server!',
+          `Local: ${bundle.fingerprint}`,
+          `Server: ${existingServerKey.fingerprint}`,
+          '— Uploading new keys (previous sessions will need re-establishment)'
+        );
+      }
 
       await supabase
         .from('user_public_keys')
