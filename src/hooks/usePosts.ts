@@ -168,7 +168,7 @@ export function usePosts() {
 
         // Set user interests
         if (interestsRes.data) {
-          mcCtx.userInterests = interestsRes.data.map((i: any) => i.interest);
+          mcCtx.userInterests = interestsRes.data.map((i: any) => i.interest_value);
         }
       } catch {}
 
