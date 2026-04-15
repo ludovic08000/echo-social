@@ -20,10 +20,7 @@ import "./index.css";
 import { activateRuntimeShield } from '@/lib/runtimeShield';
 activateRuntimeShield();
 
-// ─── Console lockdown: must run BEFORE any other import logs ───
-import { captureInternalLogger, lockdownConsole } from '@/lib/consoleGuard';
-captureInternalLogger();
-lockdownConsole();
+// Console guard disabled for debugging
 
 // ─── Crypto hardening: start integrity monitor at boot ───
 import { startIntegrityMonitor, hardenPrototypes, onAutoWipe, onTamperDetected } from '@/lib/crypto';
