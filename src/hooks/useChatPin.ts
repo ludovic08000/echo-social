@@ -422,10 +422,11 @@ export function useChatPin() {
       const salt = base64ToBytes(saltB64);
       const wrapKey = await derivePinKey(pin, salt);
 
-      const rawBlob = await readRawIdentityBlob(user.id);
-      if (rawBlob) {
+      // Collect ALL crypto material (identity + session + ratchet) for wrapping
+      const fullBlob = await collectAllCryptoBlob(user.id);
+      if (fullBlob) {
         const iv = hardCrypto.getRandomValues(new Uint8Array(12));
-        const plainBytes = new TextEncoder().encode(rawBlob);
+        const plainBytes = new TextEncoder().encode(fullBlob);
         const ciphertext = await hardCrypto.encrypt(
           { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
           wrapKey,
@@ -437,7 +438,7 @@ export function useChatPin() {
           salt: saltB64,
         });
         await deleteRawIdentityBlob(user.id);
-        console.log('[PIN] Raw identity keys deleted after wrapping');
+        console.log('[PIN] Full crypto blob wrapped (v2)');
       }
 
       sessionStorage.setItem(SESSION_KEY, user.id);
