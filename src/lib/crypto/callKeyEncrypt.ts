@@ -17,6 +17,12 @@ import { supabase } from '@/integrations/supabase/client';
 const IV_LEN = 12;
 const ENCRYPTED_SEPARATOR = '.';
 
+/**
+ * ALWAYS re-derive a fresh ECDH session for call key operations.
+ * Unlike messaging (where sessions are cached), call key crypto
+ * must be 100% in sync between caller and callee at the exact
+ * moment of the call — so we never trust cached sessions.
+ */
 async function ensureFreshCallSession(
   conversationId: string,
   localUserId: string,
@@ -33,20 +39,50 @@ async function ensureFreshCallSession(
     throw new Error('No active peer identity key for this conversation');
   }
 
-  const session = await loadSessionKey(conversationId);
-  if (session?.sharedSecret && session.peerFingerprint === peerKey.fingerprint) {
-    return session;
-  }
-
-  await deleteSessionKey(conversationId);
+  // Always derive fresh — never trust cached session for calls
   const identityKeys = await getOrCreateIdentityKeys(localUserId);
 
-  return establishSession(
-    identityKeys,
-    peerKey.identity_key,
-    conversationId,
-    peerKey.fingerprint,
+  // Derive shared secret from current key material (both sides)
+  const peerRaw = base64ToBuffer(peerKey.identity_key);
+  const peerPub = await hardCrypto.importKey(
+    'raw', peerRaw, { name: 'ECDH', namedCurve: 'X25519' } as any, true, []
   );
+
+  const sharedBits = await hardCrypto.deriveBits(
+    { name: 'ECDH', public: peerPub } as any,
+    identityKeys.privateKey,
+    256,
+  );
+
+  const saltSource = new TextEncoder().encode(`forsure-call-salt-${conversationId}`);
+  const salt = new Uint8Array(await hardCrypto.digest('SHA-256', saltSource)) as Uint8Array<ArrayBuffer>;
+  const info = new TextEncoder().encode(`forsure-call-key-${conversationId}`);
+
+  const hkdfKey = await hardCrypto.importKey('raw', sharedBits, 'HKDF', false, ['deriveKey']);
+
+  const aesKey = await hardCrypto.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt, info },
+    hkdfKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+
+  return {
+    conversationId,
+    sharedSecret: aesKey,
+    messageCount: 0,
+    createdAt: Date.now(),
+    peerFingerprint: peerKey.fingerprint,
+  };
+}
+
+/**
+ * Utility to convert base64 to ArrayBuffer.
+ * Re-exported locally to avoid import of keyManager internals.
+ */
+function base64ToBufferLocal(b64: string): ArrayBuffer {
+  return base64ToBuffer(b64);
 }
 
 /**
