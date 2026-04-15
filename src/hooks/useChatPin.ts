@@ -147,7 +147,7 @@ async function hashPinLegacy(pin: string, salt: Uint8Array): Promise<string> {
   return bytesToBase64(new Uint8Array(hash));
 }
 
-// ─── Read raw identity keys from IndexedDB (to wrap them) ───
+// ─── Read/write raw keys + full crypto blob helpers ───
 
 async function readRawIdentityBlob(userId: string): Promise<string | null> {
   try {
@@ -155,9 +155,7 @@ async function readRawIdentityBlob(userId: string): Promise<string | null> {
       const req = indexedDB.open('forsure-e2ee', 3);
       req.onerror = () => reject(req.error);
       req.onsuccess = () => resolve(req.result);
-      req.onupgradeneeded = () => {
-        // Don't create stores, just open
-      };
+      req.onupgradeneeded = () => {};
     });
     if (!db.objectStoreNames.contains('identity-keys')) return null;
     const tx = db.transaction('identity-keys', 'readonly');
@@ -170,6 +168,51 @@ async function readRawIdentityBlob(userId: string): Promise<string | null> {
     return JSON.stringify(result);
   } catch {
     return null;
+  }
+}
+
+/** Collect ALL crypto material (identity + session + ratchet) for PIN wrapping */
+async function collectAllCryptoBlob(userId: string): Promise<string | null> {
+  try {
+    const { exportAllSessionKeys, exportAllRatchetStates } = await import('@/lib/crypto/keyManager');
+    const [identityBlob, sessionKeys, ratchetStates] = await Promise.all([
+      readRawIdentityBlob(userId),
+      exportAllSessionKeys(),
+      exportAllRatchetStates(),
+    ]);
+    if (!identityBlob && sessionKeys.length === 0) return null;
+    return JSON.stringify({
+      identity: identityBlob ? JSON.parse(identityBlob) : null,
+      sessionKeys,
+      ratchetStates,
+      _v: 2,
+    });
+  } catch (e) {
+    console.warn('[PIN] collectAllCryptoBlob failed:', e);
+    return readRawIdentityBlob(userId);
+  }
+}
+
+/** Restore ALL crypto material from unwrapped blob */
+async function restoreAllCryptoBlob(userId: string, blob: string): Promise<void> {
+  const parsed = JSON.parse(blob);
+  if (parsed._v === 2) {
+    if (parsed.identity) {
+      await writeRawIdentityBlob(userId, JSON.stringify(parsed.identity));
+    }
+    if (parsed.sessionKeys?.length) {
+      const { importAllSessionKeys } = await import('@/lib/crypto/keyManager');
+      await importAllSessionKeys(parsed.sessionKeys);
+    }
+    if (parsed.ratchetStates?.length) {
+      const { importAllRatchetStates } = await import('@/lib/crypto/keyManager');
+      await importAllRatchetStates(parsed.ratchetStates);
+    }
+    console.log('[PIN] All crypto material restored (v2 blob)');
+  } else {
+    // Legacy v1: identity-only blob
+    await writeRawIdentityBlob(userId, blob);
+    console.log('[PIN] Identity keys restored (v1 legacy blob)');
   }
 }
 
