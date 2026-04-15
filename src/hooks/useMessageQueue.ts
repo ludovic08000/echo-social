@@ -119,10 +119,10 @@ export function useMessageQueue(
       setRawPendingMessages(forConv);
     });
 
-    // Clean up stuck messages older than 30s on mount
+    // Clean up stuck messages older than 5 minutes on mount (was 30s — too aggressive)
     messageQueue.getPendingMessages(conversationId).then(async (msgs) => {
       const now = Date.now();
-      const stuckThreshold = 30_000;
+      const stuckThreshold = 300_000; // 5 minutes
       for (const msg of msgs) {
         if ((msg.status === 'waiting_secure_channel' || msg.status === 'retry_pending') &&
             now - msg.createdAt > stuckThreshold) {
