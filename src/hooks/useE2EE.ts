@@ -733,19 +733,19 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           // The caller (ChatView) will call clearX3DHHeader() after confirmed send.
           if (x3dhInfoRef.current) {
             taggedEnvelope.x3dh = x3dhInfoRef.current;
-            console.log('[E2EE] ✅ encrypt via X3DH + Double Ratchet (initial message with X3DH header)');
+            console.info('[E2EE] ✅ encrypt via X3DH + Double Ratchet (initial message with X3DH header attached)');
           } else {
-            console.log('[E2EE] ✅ encrypt via Double Ratchet (forward secrecy)');
+            console.info('[E2EE] ✅ encrypt via Double Ratchet (forward secrecy, msg #' + newState.sendCount + ')');
           }
           return hardGlobals.jsonStringify(taggedEnvelope);
         }
 
         if (ratchet) {
-          console.debug('[E2EE] Ratchet not ready for encrypt, using legacy:', readiness.reason);
+          console.debug('[E2EE] Ratchet not ready for encrypt, falling back to legacy:', readiness.reason);
         }
       } catch (ratchetErr) {
-        // Ratchet not ready or failed — fall through to legacy silently
-        console.debug('[E2EE] Ratchet not available, using legacy:', 
+        // Log but fall through to legacy
+        console.warn('[E2EE] Ratchet encrypt failed, falling back to legacy:', 
           ratchetErr instanceof Error ? ratchetErr.message : String(ratchetErr));
       }
     }
