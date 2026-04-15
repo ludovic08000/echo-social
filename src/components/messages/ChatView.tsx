@@ -107,7 +107,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
     e2ee.encrypt,
     e2ee.isReady(),
     !isZeusConversation && e2ee.encrypted,
-    e2ee.clearX3DHHeader,
+    e2ee.acknowledgeSentPayload,
   );
 
   const { upload: rawUpload, isUploading } = useImageUpload({

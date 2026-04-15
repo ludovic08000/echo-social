@@ -300,6 +300,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const keysRef = useRef<IdentityKeyPair | null>(null);
   const peerKeyRef = useRef<{ identityKey: string; signingKey: string; fingerprint: string } | null>(null);
   const ratchetRef = useRef<RatchetState | null>(null);
+  const pendingRatchetStateRef = useRef<RatchetState | null>(null);
   const prekeyInfoRef = useRef<{ prekeyId: number; senderPublicKey: string } | null>(null);
   const x3dhInfoRef = useRef<X3DHInitialMessage | null>(null);
   const initRef = useRef(false);
@@ -720,8 +721,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             keysRef.current.signingPrivateKey,
             keysRef.current.fingerprint,
           );
-          ratchetRef.current = newState;
-          await saveRatchetLocal(conversationId!, newState);
+
+          // IMPORTANT: do NOT commit sender ratchet state before real send ACK.
+          // If DB/network send fails, retry must reuse the exact same first payload/X3DH header.
+          pendingRatchetStateRef.current = newState;
           setState(s => ({ ...s, ratchetActive: true }));
 
           // Tag with encryption mode
@@ -730,12 +733,11 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
           // Attach X3DH header to the FIRST message so responder can derive the same SK
           // IMPORTANT: We keep x3dhInfoRef intact so retries can re-attach the header.
-          // The caller (ChatView) will call clearX3DHHeader() after confirmed send.
           if (x3dhInfoRef.current) {
             taggedEnvelope.x3dh = x3dhInfoRef.current;
             console.info('[E2EE] ✅ encrypt via X3DH + Double Ratchet (initial message with X3DH header attached)');
           } else {
-            console.info('[E2EE] ✅ encrypt via Double Ratchet (forward secrecy, msg #' + newState.sendCount + ')');
+            console.info('[E2EE] ✅ encrypt via Double Ratchet (payload prepared, awaiting ACK)');
           }
           return hardGlobals.jsonStringify(taggedEnvelope);
         }
@@ -986,21 +988,24 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         } catch {}
       }).catch(() => {});
       ratchetRef.current = null;
+      pendingRatchetStateRef.current = null;
     }
     setState(s => ({ ...s, fingerprintChanged: false, ready: true, ratchetActive: false }));
   }, [peerUserId, conversationId]);
 
-  /**
-   * Clear the X3DH initial message header after the first message is confirmed sent.
-   * This prevents re-attaching stale X3DH metadata to subsequent messages.
-   * MUST be called by the message sender after successful delivery.
-   */
-  const clearX3DHHeader = useCallback(() => {
+  const acknowledgeSentPayload = useCallback(async () => {
+    if (pendingRatchetStateRef.current && conversationId) {
+      ratchetRef.current = pendingRatchetStateRef.current;
+      await saveRatchetLocal(conversationId, pendingRatchetStateRef.current);
+      pendingRatchetStateRef.current = null;
+      console.info('[RATCHET] ✅ sender state committed after confirmed send');
+    }
+
     if (x3dhInfoRef.current) {
-      console.log('[E2EE] X3DH header cleared after confirmed send');
+      console.info('[E2EE] X3DH header cleared after confirmed send');
       x3dhInfoRef.current = null;
     }
-  }, []);
+  }, [conversationId]);
 
   return {
     ...state,
@@ -1008,7 +1013,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     decrypt,
     isReady,
     acknowledgeFingerprint,
-    clearX3DHHeader,
+    acknowledgeSentPayload,
   };
 }
 
