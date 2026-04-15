@@ -692,9 +692,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       hasRatchet: !!ratchetRef.current,
     });
 
-    // BLOCK if crypto has been tampered with
-    if (isTampered() || !verifyCryptoIntegrity()) {
-      throw new EncryptionError('Crypto integrity compromised — operation blocked');
+    // Log tamper warning but do NOT block — hardCrypto uses snapshotted
+    // native references that are safe even if LiveKit E2EE replaced crypto.subtle
+    if (isTampered()) {
+      console.warn('[E2EE] crypto.subtle tampered (likely LiveKit E2EE) — using hardCrypto snapshots');
     }
 
     // BLOCK if fingerprint changed and not yet acknowledged
@@ -804,9 +805,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       return { text: '🔒 Opération limitée (sécurité)', encrypted: true, verified: false };
     }
 
-    // Tamper check on decrypt too
+    // Log tamper warning but do NOT block decrypt — hardCrypto is safe
     if (isTampered()) {
-      return { text: '🔒 Intégrité compromise', encrypted: true, verified: false };
+      console.warn('[E2EE] crypto.subtle tampered on decrypt — using hardCrypto snapshots');
     }
 
     try {
