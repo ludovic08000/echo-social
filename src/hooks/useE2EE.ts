@@ -630,6 +630,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       const x3dhResult = await x3dhInitiate(keysRef.current, bundle);
 
       // Store X3DH metadata for the initial message header
+      // IMPORTANT: Do NOT null this until the first message is confirmed sent
       const myPubRaw = await hardCrypto.exportKey('raw', keysRef.current.publicKey);
       x3dhInfoRef.current = {
         ik: bufferToBase64(myPubRaw),
@@ -640,6 +641,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       };
 
       // Import peer SPK as DH ratchet key for Double Ratchet init
+      // Per Signal spec: Alice uses Bob's SPK as the initial remote ratchet key
       const peerSPKKey = await hardCrypto.importKey(
         'raw', base64ToBuffer(bundle.signedPrekey),
         KX_KEY_PARAMS as any, true, [],
@@ -665,26 +667,15 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     // X3DH key agreement (Signal spec)
     try {
+      // fetchPrekeyBundle now validates SPK signature BEFORE consuming OPK
       const bundle = await fetchPrekeyBundle(peerUserId);
       if (bundle) {
-        try {
-          return await initFromBundle(bundle);
-        } catch (firstErr) {
-          const isSignatureMismatch = firstErr instanceof Error
-            && firstErr.message.includes('Signed prekey signature verification FAILED');
-
-          if (!isSignatureMismatch) throw firstErr;
-
-          console.warn('[E2EE] X3DH bundle stale during SPK rotation — refetching once');
-          const refreshedBundle = await fetchPrekeyBundle(peerUserId);
-          if (refreshedBundle) {
-            return await initFromBundle(refreshedBundle);
-          }
-          throw firstErr;
-        }
+        return await initFromBundle(bundle);
+      } else {
+        console.info('[E2EE] No valid X3DH bundle available for peer — using legacy');
       }
     } catch (x3dhErr) {
-      console.debug('[E2EE] X3DH not available, using legacy session:', 
+      console.warn('[E2EE] X3DH init failed:', 
         x3dhErr instanceof Error ? x3dhErr.message : String(x3dhErr));
     }
 
