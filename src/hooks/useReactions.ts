@@ -113,7 +113,6 @@ export function useAddReaction() {
       }
     },
     onSettled: (_data, _error, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['posts'] });
       queryClient.invalidateQueries({ queryKey: ['post-top-reactions', variables.postId] });
     },
   });
@@ -164,7 +163,6 @@ export function useRemoveReaction() {
       }
     },
     onSettled: (_data, _error, postId) => {
-      queryClient.invalidateQueries({ queryKey: ['posts'] });
       queryClient.invalidateQueries({ queryKey: ['post-top-reactions', postId] });
     },
   });
