@@ -359,7 +359,14 @@ export function useIncomingCall() {
     const encKey = encryptedCallKeyRef.current;
     const convId = callConversationIdRef.current;
     if (!encKey || !convId) {
-      clearCallState();
+      encryptedCallKeyRef.current = null;
+      callConversationIdRef.current = null;
+      activeCallIdRef.current = null;
+      setIncomingCall(null);
+      callPhaseRef.current = 'ended';
+      queueMicrotask(() => {
+        callPhaseRef.current = 'idle';
+      });
       throw new Error('[CALL_E2EE] Missing encrypted call key payload');
     }
 
@@ -399,7 +406,14 @@ export function useIncomingCall() {
         p_call_id: incomingCall.id,
         p_status: 'declined',
       });
-      clearCallState();
+      encryptedCallKeyRef.current = null;
+      callConversationIdRef.current = null;
+      activeCallIdRef.current = null;
+      setIncomingCall(null);
+      callPhaseRef.current = 'ended';
+      queueMicrotask(() => {
+        callPhaseRef.current = 'idle';
+      });
       throw new Error('[CALL_E2EE] Unable to decrypt incoming call key');
     }
 
