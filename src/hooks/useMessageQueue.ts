@@ -22,6 +22,7 @@ export function useMessageQueue(
   isEncryptionActive: boolean,
   onMessageSent?: (localId: string) => void | Promise<void>,
   allowPlaintext = false,
+  onPlaintextCached?: (serverId: string, plaintext: string) => void,
 ) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
