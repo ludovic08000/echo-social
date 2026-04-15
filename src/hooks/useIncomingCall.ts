@@ -131,6 +131,7 @@ function createRingtone(): { play: () => void; stop: () => void } {
 export function useIncomingCall() {
   const { user } = useAuth();
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
+  const incomingCallRef = useRef<IncomingCall | null>(null);
   const ringtoneRef = useRef(createRingtone());
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -145,6 +146,9 @@ export function useIncomingCall() {
   const handledCallIdsRef = useRef<Set<string>>(new Set());
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Keep ref in sync with state
+  useEffect(() => { incomingCallRef.current = incomingCall; }, [incomingCall]);
+
   useEffect(() => {
     if (!user?.id) return;
 
@@ -152,7 +156,7 @@ export function useIncomingCall() {
 
     const pollForCalls = async () => {
       // Don't poll if already showing an incoming call
-      if (incomingCall) return;
+      if (incomingCallRef.current) return;
 
       try {
         const { data, error } = await supabase.rpc('call_signal', {
