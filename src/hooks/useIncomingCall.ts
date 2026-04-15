@@ -242,7 +242,7 @@ export function useIncomingCall() {
     pollForCalls();
 
     // Expire old calls once
-    supabase.rpc('call_signal', { p_action: 'expire_old_for_callee' }).catch(() => {});
+    supabase.rpc('call_signal', { p_action: 'expire_old_for_callee' }).then(() => {}).catch(() => {});
 
     // Fallback polling every 2 seconds — catches calls even if Realtime fails
     pollIntervalRef.current = setInterval(pollForCalls, 2000);
@@ -419,20 +419,6 @@ export async function signalOutgoingCall(
   }
 
   const callId = (data as { id?: string } | null)?.id || null;
-
-  // Also insert a notification as backup signal for the callee
-  if (callId) {
-    try {
-      await supabase.from('notifications').insert({
-        user_id: calleeId,
-        actor_id: callerId,
-        type: 'incoming_call',
-        reference_id: callId,
-      });
-    } catch {
-      // Non-critical
-    }
-  }
 
   return callId;
 }
