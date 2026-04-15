@@ -340,6 +340,7 @@ export function useIncomingCall() {
       encryptedCallKeyRef.current = null;
       callConversationIdRef.current = null;
       activeCallIdRef.current = null;
+      callPhaseRef.current = 'idle';
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, [user?.id]);
@@ -352,6 +353,7 @@ export function useIncomingCall() {
     if (!incomingCall) return;
     ringtoneRef.current.stop();
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    callPhaseRef.current = 'connecting';
 
     await supabase.rpc('call_signal', {
       p_action: 'update_status',
@@ -359,7 +361,6 @@ export function useIncomingCall() {
       p_status: 'answered',
     });
 
-    // Decrypt call key now — one-shot, then wipe
     let decryptedCallKey: string | undefined;
     const encKey = encryptedCallKeyRef.current;
     const convId = callConversationIdRef.current;
@@ -371,13 +372,12 @@ export function useIncomingCall() {
       }
     }
 
-    // Wipe refs immediately
     encryptedCallKeyRef.current = null;
     callConversationIdRef.current = null;
-    activeCallIdRef.current = null;
 
     const accepted: AcceptedCall = { ...incomingCall, decryptedCallKey };
     setIncomingCall(null);
+    callPhaseRef.current = 'active';
     return accepted;
   }, [incomingCall]);
 
@@ -385,6 +385,7 @@ export function useIncomingCall() {
     if (!incomingCall) return;
     ringtoneRef.current.stop();
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    callPhaseRef.current = 'ended';
 
     await supabase.rpc('call_signal', {
       p_action: 'update_status',
@@ -392,11 +393,13 @@ export function useIncomingCall() {
       p_status: 'declined',
     });
 
-    // Wipe refs
     encryptedCallKeyRef.current = null;
     callConversationIdRef.current = null;
     activeCallIdRef.current = null;
     setIncomingCall(null);
+    queueMicrotask(() => {
+      callPhaseRef.current = 'idle';
+    });
   }, [incomingCall]);
 
   return {
