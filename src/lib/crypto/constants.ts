@@ -39,7 +39,7 @@ export const MAX_MESSAGES_PER_KEY = 500;
 
 // IndexedDB — bump version to force re-keying on upgrade
 export const DB_NAME = 'forsure-e2ee';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 export const STORE_KEYS = 'identity-keys';
 export const STORE_SESSION = 'session-keys';
 export const STORE_PREKEYS = 'pre-keys';

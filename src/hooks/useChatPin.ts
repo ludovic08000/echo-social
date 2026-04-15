@@ -152,7 +152,7 @@ async function hashPinLegacy(pin: string, salt: Uint8Array): Promise<string> {
 async function readRawIdentityBlob(userId: string): Promise<string | null> {
   try {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-e2ee', 2);
+      const req = indexedDB.open('forsure-e2ee', 3);
       req.onerror = () => reject(req.error);
       req.onsuccess = () => resolve(req.result);
       req.onupgradeneeded = () => {
@@ -176,7 +176,7 @@ async function readRawIdentityBlob(userId: string): Promise<string | null> {
 async function writeRawIdentityBlob(userId: string, blob: string): Promise<void> {
   const parsed = JSON.parse(blob);
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open('forsure-e2ee', 2);
+    const req = indexedDB.open('forsure-e2ee', 3);
     req.onerror = () => reject(req.error);
     req.onsuccess = () => resolve(req.result);
     req.onupgradeneeded = () => {
@@ -187,8 +187,8 @@ async function writeRawIdentityBlob(userId: string, blob: string): Promise<void>
       if (!d.objectStoreNames.contains('session-keys')) {
         d.createObjectStore('session-keys', { keyPath: 'conversationId' });
       }
-      if (!d.objectStoreNames.contains('prekeys')) {
-        d.createObjectStore('prekeys', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('pre-keys')) {
+        d.createObjectStore('pre-keys', { keyPath: 'id' });
       }
     };
   });
@@ -204,7 +204,7 @@ async function writeRawIdentityBlob(userId: string, blob: string): Promise<void>
 async function deleteRawIdentityBlob(userId: string): Promise<void> {
   try {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-e2ee', 2);
+      const req = indexedDB.open('forsure-e2ee', 3);
       req.onerror = () => reject(req.error);
       req.onsuccess = () => resolve(req.result);
     });

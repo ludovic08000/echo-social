@@ -63,7 +63,7 @@ async function collectKeys(): Promise<string> {
   // Identity keys from IndexedDB
   try {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-e2ee', 2);
+      const req = indexedDB.open('forsure-e2ee', 3);
       req.onerror = () => reject(req.error);
       req.onsuccess = () => resolve(req.result);
     });
@@ -120,7 +120,7 @@ async function restoreKeys(json: string): Promise<void> {
     const storeName = key.replace('e2ee:', '');
     try {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const req = indexedDB.open('forsure-e2ee', 2);
+        const req = indexedDB.open('forsure-e2ee', 3);
         req.onerror = () => reject(req.error);
         req.onsuccess = () => resolve(req.result);
         req.onupgradeneeded = () => {

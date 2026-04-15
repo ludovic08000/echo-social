@@ -102,11 +102,13 @@ export function useAdDailyStats(campaignId?: string) {
 }
 
 export function useActiveAds() {
-  const { loading } = useAuth();
+  const { user, loading } = useAuth();
 
   return useQuery({
-    queryKey: ['active-ads', loading ? 'loading' : 'ready'],
+    queryKey: ['active-ads', loading ? 'loading' : user?.id ?? 'guest'],
     queryFn: async () => {
+      if (!user) return [];
+
       const { data, error } = await supabase
         .from('ad_campaigns')
         .select('*')
@@ -119,7 +121,7 @@ export function useActiveAds() {
       if (error) throw error;
       return data as AdCampaign[];
     },
-    enabled: !loading,
+    enabled: !loading && !!user,
   });
 }
 
