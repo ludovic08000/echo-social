@@ -72,10 +72,15 @@ export function useMessageQueue(
           });
 
         if (error?.code === '23505') {
+          // Cache plaintext for own message display
+          if (msg.plaintext) onPlaintextCached?.(outboundId, msg.plaintext);
           await onMessageSent?.(msg.localId);
           return outboundId;
         }
         if (error) throw error;
+
+        // Cache plaintext so sender sees cleartext (ratchet can't decrypt own messages)
+        if (msg.plaintext) onPlaintextCached?.(outboundId, msg.plaintext);
 
         await supabase
           .from('conversations')
