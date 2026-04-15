@@ -175,7 +175,7 @@ export function useIncomingCall() {
     pollForCalls();
 
     // Expire old calls once
-    supabase.rpc('call_signal', { p_action: 'expire_old_for_callee' }).catch(() => {});
+    supabase.rpc('call_signal', { p_action: 'expire_old_for_callee' }).then(() => {}).catch(() => {});
 
     // Fallback polling every 3 seconds — catches calls even if Realtime fails
     pollIntervalRef.current = setInterval(pollForCalls, 3000);
