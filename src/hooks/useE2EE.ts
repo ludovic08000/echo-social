@@ -420,6 +420,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       x3dhInfoRef.current = null;
       legacySessionReadyRef.current = false;
       pendingRatchetStateRef.current.clear();
+      peerHasRespondedRef.current = false;
       pendingPayloadRef.current.clear();
       setState(s => ({
         ...s,
@@ -981,6 +982,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         } catch {}
       }).catch(() => {});
       ratchetRef.current = null;
+      peerHasRespondedRef.current = false;
       pendingRatchetStateRef.current.clear();
       pendingPayloadRef.current.clear();
     }
