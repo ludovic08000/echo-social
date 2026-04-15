@@ -485,11 +485,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             try {
               let session = await loadSessionKey(conversationId);
               if (cancelled) return;
-              if (!session || await needsKeyRotation(conversationId)) {
-                session = await (session
-                  ? rotateSessionKey(keysRef.current, data.identity_key, conversationId, data.fingerprint)
-                  : establishSession(keysRef.current, data.identity_key, conversationId, data.fingerprint)
-                );
+              if (!session) {
+                session = await establishSession(keysRef.current, data.identity_key, conversationId, data.fingerprint);
               }
               if (cancelled) return;
               legacySessionReadyRef.current = true;
@@ -579,15 +576,12 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     return () => { cancelled = true; };
   }, [peerUserId, user, conversationId, isZeus]);
 
-  // Legacy session — deterministic, always works
+  // Legacy session — load existing or establish new (NEVER rotates — rotation is encrypt-only)
   const ensureLegacySession = useCallback(async () => {
     if (!conversationId || !keysRef.current || !peerKeyRef.current) return null;
     let session = await loadSessionKey(conversationId);
-    if (!session || await needsKeyRotation(conversationId)) {
-      session = await (session
-        ? rotateSessionKey(keysRef.current, peerKeyRef.current.identityKey, conversationId, peerKeyRef.current.fingerprint)
-        : establishSession(keysRef.current, peerKeyRef.current.identityKey, conversationId, peerKeyRef.current.fingerprint)
-      );
+    if (!session) {
+      session = await establishSession(keysRef.current, peerKeyRef.current.identityKey, conversationId, peerKeyRef.current.fingerprint);
     }
     return session;
   }, [conversationId]);
@@ -736,6 +730,12 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         throw new EncryptionError('No encryption session available');
       }
 
+      // Rotate key if needed ONLY on encrypt path (never on decrypt)
+      if (peerKeyRef.current && await needsKeyRotation(conversationId!)) {
+        session = await rotateSessionKey(keysRef.current, peerKeyRef.current.identityKey, conversationId!, peerKeyRef.current.fingerprint);
+        console.log('[E2EE] 🔄 Session key rotated for forward secrecy');
+      }
+
       const seq = await incrementSessionMessageCount(conversationId!);
       let result = await encryptMessage(
         plaintext, session.sharedSecret,
@@ -868,7 +868,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         }
       }
 
-      // Standard legacy session
+      // Standard legacy session — load only, NEVER rotate on decrypt
       let session = peerKeyRef.current ? await ensureLegacySession() : await loadSessionKey(conversationId!);
       if (!session) {
         return { text: '🔒 Clé de session manquante', encrypted: true, verified: false };
@@ -877,32 +877,14 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       try {
         const result = await decryptMessage(body, session.sharedSecret, peerKeyRef.current?.signingKey);
         return { text: result.plaintext, encrypted: true, verified: result.verified };
-      } catch (firstErr) {
-        // Decrypt failed — session may be stale. Re-derive from current peer keys and retry.
-        if (peerKeyRef.current && keysRef.current && conversationId) {
-          console.warn('[E2EE] Legacy decrypt failed, re-deriving session key and retrying...');
-          try {
-            const { deleteSessionKey } = await import('@/lib/crypto/keyManager');
-            await deleteSessionKey(conversationId);
-            const freshSession = await establishSession(
-              keysRef.current,
-              peerKeyRef.current.identityKey,
-              conversationId,
-              peerKeyRef.current.fingerprint,
-            );
-            legacySessionReadyRef.current = true;
-            const result = await decryptMessage(body, freshSession.sharedSecret, peerKeyRef.current?.signingKey);
-            console.log('[E2EE] ✅ decrypt succeeded after session re-derivation');
-            return { text: result.plaintext, encrypted: true, verified: result.verified };
-          } catch (retryErr) {
-            console.error('[E2EE] decrypt retry also failed:', retryErr);
-          }
-        }
-        throw firstErr;
+      } catch {
+        // Decrypt failed — the message was likely encrypted with a different session key
+        // (key regeneration, different device, etc.). Don't destroy the current session.
+        return { text: '🔒 Message chiffré (clé expirée)', encrypted: true, verified: false };
       }
     } catch (err) {
       console.error('[E2EE] decrypt failed:', err);
-      return { text: '🔒 Message illisible', encrypted: true, verified: false };
+      return { text: '🔒 Message chiffré', encrypted: true, verified: false };
     }
   }, [conversationId, ensureLegacySession, user]);
 
