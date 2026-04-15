@@ -116,7 +116,7 @@ export function usePosts() {
           // User interests
           supabase
             .from('user_interests')
-            .select('interest')
+            .select('interest_value')
             .eq('user_id', user.id),
         ]);
 
