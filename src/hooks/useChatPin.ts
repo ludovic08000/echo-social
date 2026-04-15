@@ -147,7 +147,7 @@ async function hashPinLegacy(pin: string, salt: Uint8Array): Promise<string> {
   return bytesToBase64(new Uint8Array(hash));
 }
 
-// ─── Read raw identity keys from IndexedDB (to wrap them) ───
+// ─── Read/write raw keys + full crypto blob helpers ───
 
 async function readRawIdentityBlob(userId: string): Promise<string | null> {
   try {
@@ -155,9 +155,7 @@ async function readRawIdentityBlob(userId: string): Promise<string | null> {
       const req = indexedDB.open('forsure-e2ee', 3);
       req.onerror = () => reject(req.error);
       req.onsuccess = () => resolve(req.result);
-      req.onupgradeneeded = () => {
-        // Don't create stores, just open
-      };
+      req.onupgradeneeded = () => {};
     });
     if (!db.objectStoreNames.contains('identity-keys')) return null;
     const tx = db.transaction('identity-keys', 'readonly');
@@ -170,6 +168,51 @@ async function readRawIdentityBlob(userId: string): Promise<string | null> {
     return JSON.stringify(result);
   } catch {
     return null;
+  }
+}
+
+/** Collect ALL crypto material (identity + session + ratchet) for PIN wrapping */
+async function collectAllCryptoBlob(userId: string): Promise<string | null> {
+  try {
+    const { exportAllSessionKeys, exportAllRatchetStates } = await import('@/lib/crypto/keyManager');
+    const [identityBlob, sessionKeys, ratchetStates] = await Promise.all([
+      readRawIdentityBlob(userId),
+      exportAllSessionKeys(),
+      exportAllRatchetStates(),
+    ]);
+    if (!identityBlob && sessionKeys.length === 0) return null;
+    return JSON.stringify({
+      identity: identityBlob ? JSON.parse(identityBlob) : null,
+      sessionKeys,
+      ratchetStates,
+      _v: 2,
+    });
+  } catch (e) {
+    console.warn('[PIN] collectAllCryptoBlob failed:', e);
+    return readRawIdentityBlob(userId);
+  }
+}
+
+/** Restore ALL crypto material from unwrapped blob */
+async function restoreAllCryptoBlob(userId: string, blob: string): Promise<void> {
+  const parsed = JSON.parse(blob);
+  if (parsed._v === 2) {
+    if (parsed.identity) {
+      await writeRawIdentityBlob(userId, JSON.stringify(parsed.identity));
+    }
+    if (parsed.sessionKeys?.length) {
+      const { importAllSessionKeys } = await import('@/lib/crypto/keyManager');
+      await importAllSessionKeys(parsed.sessionKeys);
+    }
+    if (parsed.ratchetStates?.length) {
+      const { importAllRatchetStates } = await import('@/lib/crypto/keyManager');
+      await importAllRatchetStates(parsed.ratchetStates);
+    }
+    console.log('[PIN] All crypto material restored (v2 blob)');
+  } else {
+    // Legacy v1: identity-only blob
+    await writeRawIdentityBlob(userId, blob);
+    console.log('[PIN] Identity keys restored (v1 legacy blob)');
   }
 }
 
@@ -291,8 +334,8 @@ export function useChatPin() {
       if (document.hidden && pinModeRef.current === 'on_return' && state.unlocked) {
         sessionStorage.removeItem(SESSION_KEY);
         if (user) {
+          // Only remove identity keys (already PIN-wrapped). Do NOT wipe session keys.
           deleteRawIdentityBlob(user.id).catch(() => {});
-          import('@/lib/crypto/keyManager').then(m => m.wipeSessionKeys()).catch(() => {});
         }
         setState(s => ({ ...s, unlocked: false }));
       }
@@ -311,8 +354,8 @@ export function useChatPin() {
       inactivityTimer.current = setTimeout(async () => {
         sessionStorage.removeItem(SESSION_KEY);
         if (user) {
+          // Only remove identity keys (already PIN-wrapped). Do NOT wipe session keys.
           deleteRawIdentityBlob(user.id).catch(() => {});
-          import('@/lib/crypto/keyManager').then(m => m.wipeSessionKeys()).catch(() => {});
         }
         setState(s => ({ ...s, unlocked: false }));
       }, INACTIVITY_TIMEOUT);
@@ -379,10 +422,11 @@ export function useChatPin() {
       const salt = base64ToBytes(saltB64);
       const wrapKey = await derivePinKey(pin, salt);
 
-      const rawBlob = await readRawIdentityBlob(user.id);
-      if (rawBlob) {
+      // Collect ALL crypto material (identity + session + ratchet) for wrapping
+      const fullBlob = await collectAllCryptoBlob(user.id);
+      if (fullBlob) {
         const iv = hardCrypto.getRandomValues(new Uint8Array(12));
-        const plainBytes = new TextEncoder().encode(rawBlob);
+        const plainBytes = new TextEncoder().encode(fullBlob);
         const ciphertext = await hardCrypto.encrypt(
           { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
           wrapKey,
@@ -394,7 +438,7 @@ export function useChatPin() {
           salt: saltB64,
         });
         await deleteRawIdentityBlob(user.id);
-        console.log('[PIN] Raw identity keys deleted after wrapping');
+        console.log('[PIN] Full crypto blob wrapped (v2)');
       }
 
       sessionStorage.setItem(SESSION_KEY, user.id);
@@ -453,23 +497,24 @@ export function useChatPin() {
             cipherBytes as Uint8Array<ArrayBuffer>,
           );
           const rawBlob = new TextDecoder().decode(plainBuffer);
-          await writeRawIdentityBlob(user.id, rawBlob);
-          console.log('[PIN] Keys unwrapped successfully');
+          // Restore ALL crypto material (identity + session + ratchet)
+          await restoreAllCryptoBlob(user.id, rawBlob);
+          console.log('[PIN] All keys unwrapped and restored');
           window.dispatchEvent(new CustomEvent('forsure-keys-unlocked'));
         } catch (unwrapErr) {
           console.warn('[PIN] Key unwrap failed:', unwrapErr);
         }
       } else if (verifyResult.salt) {
         try {
-          const rawBlob = await readRawIdentityBlob(user.id);
-          if (rawBlob) {
+          const fullBlob = await collectAllCryptoBlob(user.id);
+          if (fullBlob) {
             const salt = base64ToBytes(verifyResult.salt);
             const wrapKey = await derivePinKey(pin, salt);
             const iv = hardCrypto.getRandomValues(new Uint8Array(12));
             const ciphertext = await hardCrypto.encrypt(
               { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
               wrapKey,
-              new TextEncoder().encode(rawBlob) as Uint8Array<ArrayBuffer>,
+              new TextEncoder().encode(fullBlob) as Uint8Array<ArrayBuffer>,
             );
             await saveWrappedKeys(user.id, {
               wrappedBlob: bytesToBase64(new Uint8Array(ciphertext)),
@@ -477,7 +522,7 @@ export function useChatPin() {
               salt: verifyResult.salt,
             });
             await deleteRawIdentityBlob(user.id);
-            console.log('[PIN] Existing keys wrapped and raw deleted');
+            console.log('[PIN] Full crypto blob wrapped on first verify (v2)');
           }
         } catch {}
       }
@@ -503,19 +548,14 @@ export function useChatPin() {
     }
   }, [user, fetchPinMode]);
 
-  /** Lock messaging — wipe all key material from IndexedDB */
+  /** Lock messaging — protect keys, preserve session keys for later restore */
   const lock = useCallback(async () => {
     sessionStorage.removeItem(SESSION_KEY);
     if (user) {
-      // Delete raw identity keys
+      // Only delete raw identity keys (already PIN-wrapped).
+      // Session keys + ratchet states stay in IndexedDB — they are useless
+      // without identity keys and the UI is PIN-gated anyway.
       await deleteRawIdentityBlob(user.id).catch(() => {});
-      // Also wipe session keys and ratchet states (JWKs at rest)
-      try {
-        const { wipeSessionKeys } = await import('@/lib/crypto/keyManager');
-        await wipeSessionKeys();
-      } catch (e) {
-        console.warn('[PIN] Session key wipe failed:', e);
-      }
     }
     setState(s => ({ ...s, unlocked: false }));
   }, [user]);

@@ -326,11 +326,9 @@ export async function wipeAllKeys(): Promise<void> {
 
 /**
  * Wipe session keys and ratchet states from IndexedDB.
- * Called on PIN lock to ensure raw JWKs don't persist at rest.
- * Identity keys are handled separately (PIN-wrapped).
+ * Called on PIN lock AFTER successful wrapping.
  */
 export async function wipeSessionKeys(): Promise<void> {
-  // 1. Clear session keys from main E2EE DB
   try {
     const db = await openDB();
     const tx = db.transaction([STORE_SESSION], 'readwrite');
@@ -343,7 +341,6 @@ export async function wipeSessionKeys(): Promise<void> {
     console.warn('[KEY_MGR] Failed to clear session keys:', e);
   }
 
-  // 2. Clear ratchet states (separate DB)
   try {
     const ratchetReq = hardGlobals.idbOpen('forsure-ratchet', 1);
     const ratchetDB = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -367,6 +364,88 @@ export async function wipeSessionKeys(): Promise<void> {
   } catch (e) {
     console.warn('[KEY_MGR] Failed to clear ratchet states:', e);
   }
-
   console.log('[KEY_MGR] Session keys and ratchet states wiped');
+}
+
+/** Export all raw session key records from IndexedDB (for PIN wrapping) */
+export async function exportAllSessionKeys(): Promise<StoredSessionKey[]> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_SESSION, 'readonly');
+    const req = tx.objectStore(STORE_SESSION).getAll();
+    return new Promise((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** Import raw session key records into IndexedDB (from PIN unwrap) */
+export async function importAllSessionKeys(records: StoredSessionKey[]): Promise<void> {
+  if (!records.length) return;
+  const db = await openDB();
+  const tx = db.transaction(STORE_SESSION, 'readwrite');
+  const store = tx.objectStore(STORE_SESSION);
+  for (const r of records) store.put(r);
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  console.log(`[KEY_MGR] ${records.length} session keys restored`);
+}
+
+/** Export all ratchet state records from IndexedDB (for PIN wrapping) */
+export async function exportAllRatchetStates(): Promise<any[]> {
+  try {
+    const ratchetReq = hardGlobals.idbOpen('forsure-ratchet', 1);
+    const ratchetDB = await new Promise<IDBDatabase>((resolve, reject) => {
+      ratchetReq.onerror = () => reject(ratchetReq.error);
+      ratchetReq.onsuccess = () => resolve(ratchetReq.result);
+      ratchetReq.onupgradeneeded = () => {
+        const db = ratchetReq.result;
+        if (!db.objectStoreNames.contains('ratchet-states')) {
+          db.createObjectStore('ratchet-states', { keyPath: 'convId' });
+        }
+      };
+    });
+    if (!ratchetDB.objectStoreNames.contains('ratchet-states')) return [];
+    const tx = ratchetDB.transaction('ratchet-states', 'readonly');
+    const req = tx.objectStore('ratchet-states').getAll();
+    return new Promise((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** Import ratchet state records into IndexedDB (from PIN unwrap) */
+export async function importAllRatchetStates(records: any[]): Promise<void> {
+  if (!records.length) return;
+  try {
+    const ratchetReq = hardGlobals.idbOpen('forsure-ratchet', 1);
+    const ratchetDB = await new Promise<IDBDatabase>((resolve, reject) => {
+      ratchetReq.onerror = () => reject(ratchetReq.error);
+      ratchetReq.onsuccess = () => resolve(ratchetReq.result);
+      ratchetReq.onupgradeneeded = () => {
+        const db = ratchetReq.result;
+        if (!db.objectStoreNames.contains('ratchet-states')) {
+          db.createObjectStore('ratchet-states', { keyPath: 'convId' });
+        }
+      };
+    });
+    const tx = ratchetDB.transaction('ratchet-states', 'readwrite');
+    const store = tx.objectStore('ratchet-states');
+    for (const r of records) store.put(r);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    console.log(`[KEY_MGR] ${records.length} ratchet states restored`);
+  } catch (e) {
+    console.warn('[KEY_MGR] Failed to restore ratchet states:', e);
+  }
 }
