@@ -361,6 +361,20 @@ export function SafetyNumberDialog({
                 ))}
               </div>
             )}
+          {diagResults && !allOk && (
+            <div className="px-3 py-2 border-t">
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full text-xs"
+                onClick={repairFingerprints}
+                disabled={repairing}
+              >
+                {repairing ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
+                Réparer la synchronisation
+              </Button>
+            </div>
+          )}
           </div>
 
           {/* Actions */}
