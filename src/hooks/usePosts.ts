@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tansta
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { ReactionType } from '@/hooks/useReactions';
-import { loadContentPrefs, loadFeedWeights, containsMutedKeyword, monteCarloRank, type ScoringContext } from '@/lib/feedAlgorithm';
+import { loadContentPrefs, loadFeedWeights, containsMutedKeyword, monteCarloRank, loadAlgorithmConfig, type ScoringContext } from '@/lib/feedAlgorithm';
 
 export interface Post {
   id: string;
@@ -77,6 +77,7 @@ export function usePosts() {
       // ── Authenticated feed with personalization ──
       const prefs = loadContentPrefs();
       const weights = loadFeedWeights();
+      const algoConfig = await loadAlgorithmConfig();
 
       // Build Monte Carlo scoring context
       const mcCtx: ScoringContext = {
@@ -86,20 +87,88 @@ export function usePosts() {
         weights,
         seenAuthors: new Set(),
         postIndex: 0,
+        userInterests: [],
+        algoConfig,
       };
 
-      // Load friend interaction counts for social proximity scoring
+      // Load social signals in parallel: friendships, user interactions, interests
       try {
-        const { data: friendships } = await supabase
-          .from('friendships')
-          .select('requester_id, addressee_id')
-          .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
-          .eq('status', 'accepted');
-        if (friendships) {
-          friendships.forEach((f: any) => {
+        const [friendshipsRes, likesGivenRes, commentsGivenRes, interestsRes] = await Promise.all([
+          supabase
+            .from('friendships')
+            .select('requester_id, addressee_id')
+            .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
+            .eq('status', 'accepted'),
+          // Likes the user gave to other users' posts (last 30 days)
+          supabase
+            .from('likes')
+            .select('post_id')
+            .eq('user_id', user.id)
+            .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
+            .limit(200),
+          // Comments the user wrote (last 30 days)
+          supabase
+            .from('comments')
+            .select('post_id')
+            .eq('user_id', user.id)
+            .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
+            .limit(200),
+          // User interests
+          supabase
+            .from('user_interests')
+            .select('interest')
+            .eq('user_id', user.id),
+        ]);
+
+        // Build friend set
+        const friendIds = new Set<string>();
+        if (friendshipsRes.data) {
+          friendshipsRes.data.forEach((f: any) => {
             const friendId = f.requester_id === user.id ? f.addressee_id : f.requester_id;
-            mcCtx.friendInteractionCounts.set(friendId, (mcCtx.friendInteractionCounts.get(friendId) || 0) + 1);
+            friendIds.add(friendId);
+            mcCtx.friendInteractionCounts.set(friendId, 1); // base score
           });
+        }
+
+        // Enrich with interaction counts: resolve post authors for likes/comments
+        const interactedPostIds = new Set<string>();
+        likesGivenRes.data?.forEach((l: any) => interactedPostIds.add(l.post_id));
+        commentsGivenRes.data?.forEach((c: any) => interactedPostIds.add(c.post_id));
+
+        if (interactedPostIds.size > 0) {
+          const { data: postAuthors } = await supabase
+            .from('posts')
+            .select('id, user_id')
+            .in('id', Array.from(interactedPostIds).slice(0, 200));
+
+          if (postAuthors) {
+            const authorInteractions = new Map<string, number>();
+            // Count likes given to each author
+            const postAuthorMap = new Map(postAuthors.map(p => [p.id, p.user_id]));
+            likesGivenRes.data?.forEach((l: any) => {
+              const authorId = postAuthorMap.get(l.post_id);
+              if (authorId && authorId !== user.id) {
+                authorInteractions.set(authorId, (authorInteractions.get(authorId) || 0) + 2);
+              }
+            });
+            commentsGivenRes.data?.forEach((c: any) => {
+              const authorId = postAuthorMap.get(c.post_id);
+              if (authorId && authorId !== user.id) {
+                authorInteractions.set(authorId, (authorInteractions.get(authorId) || 0) + 3);
+              }
+            });
+
+            // Merge into friend interaction counts
+            authorInteractions.forEach((count, authorId) => {
+              const existing = mcCtx.friendInteractionCounts.get(authorId) || 0;
+              mcCtx.friendInteractionCounts.set(authorId, existing + count);
+            });
+          }
+        }
+
+        // Set user interests
+        if (interestsRes.data) {
+          mcCtx.userInterests = interestsRes.data.map((i: any) => i.interest);
         }
       } catch {}
 
@@ -450,8 +519,35 @@ export function useToggleLike() {
         }
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['posts'] });
+    onMutate: async ({ postId, isLiked }) => {
+      await queryClient.cancelQueries({ queryKey: ['posts', 'friends-feed'] });
+      const previous = queryClient.getQueriesData({ queryKey: ['posts', 'friends-feed'] });
+
+      queryClient.setQueriesData({ queryKey: ['posts', 'friends-feed'] }, (old: any) => {
+        if (!old?.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any[]) =>
+            page.map((p: any) =>
+              p.id === postId
+                ? {
+                    ...p,
+                    is_liked: !isLiked,
+                    user_reaction: isLiked ? null : 'like',
+                    likes_count: isLiked ? Math.max(0, (p.likes_count || 0) - 1) : (p.likes_count || 0) + 1,
+                  }
+                : p
+            )
+          ),
+        };
+      });
+
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        context.previous.forEach(([key, data]) => queryClient.setQueryData(key, data));
+      }
     },
   });
 }

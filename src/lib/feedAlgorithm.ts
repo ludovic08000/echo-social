@@ -1,7 +1,8 @@
 // ────────────────────────────────────────────────────────
-// Feed Algorithm Engine
-// Anti-spam, anti-bias, configurable scoring, diversity
-// Supports live DB-backed config via feed_algorithm_config table
+// Feed Algorithm Engine v2
+// Monte Carlo + Thompson Sampling + Social Graph Scoring
+// Anti-spam, anti-bias, diversity quotas, cold-start boost
+// DB-backed config via feed_algorithm_config table
 // ────────────────────────────────────────────────────────
 
 import { supabase } from '@/integrations/supabase/client';
@@ -23,12 +24,14 @@ export interface FeedWeights {
 }
 
 export interface ScoringContext {
-  friendInteractionCounts: Map<string, number>;
+  friendInteractionCounts: Map<string, number>; // friend_id → interaction score
   userId: string;
   prefs: ContentPrefs;
   weights: FeedWeights;
-  seenAuthors: Set<string>; // for diversity tracking
-  postIndex: number; // position in feed for decay
+  seenAuthors: Set<string>;
+  postIndex: number;
+  userInterests?: string[];         // user's interest tags
+  algoConfig?: Record<string, any>; // DB-backed config overrides
 }
 
 const DEFAULT_PREFS: ContentPrefs = {
@@ -67,41 +70,27 @@ export function loadFeedWeights(): FeedWeights {
 
 // ── Anti-spam detection ──
 const SPAM_PATTERNS = [
-  /(.)\1{5,}/i,                    // character repetition: aaaaaa
-  /https?:\/\/\S+/gi,              // excessive links (counted)
-  /(buy|sell|discount|free|click|subscribe|follow me)/gi, // spammy keywords
-  /(\b\w+\b)(\s+\1){3,}/gi,       // word repetition
+  /(.)\1{5,}/i,
+  /https?:\/\/\S+/gi,
+  /(buy|sell|discount|free|click|subscribe|follow me)/gi,
+  /(\b\w+\b)(\s+\1){3,}/gi,
 ];
 
 export function getSpamScore(text: string): number {
   let spam = 0;
-  
-  // Character repetition
   if (SPAM_PATTERNS[0].test(text)) spam += 30;
-  
-  // Link density
   const links = text.match(SPAM_PATTERNS[1]);
   if (links && links.length > 2) spam += 20 * links.length;
-  
-  // Spammy keywords density
   const spamWords = text.match(SPAM_PATTERNS[2]);
   if (spamWords && spamWords.length > 3) spam += 15 * spamWords.length;
-  
-  // Word repetition
   if (SPAM_PATTERNS[3].test(text)) spam += 25;
-  
-  // ALL CAPS ratio
   const capsRatio = (text.match(/[A-Z]/g)?.length || 0) / Math.max(1, text.length);
   if (capsRatio > 0.5 && text.length > 20) spam += 20;
-  
-  // Excessive emojis
   const emojiCount = (text.match(/[\u{1F300}-\u{1F9FF}]/gu) || []).length;
   if (emojiCount > 10) spam += 15;
-  
   return Math.min(100, spam);
 }
 
-// ── Muted keyword filter ──
 export function containsMutedKeyword(text: string, keywords: string[]): boolean {
   if (keywords.length === 0) return false;
   const lower = text.toLowerCase();
@@ -115,9 +104,119 @@ export function getDiversityPenalty(
   diversityBoost: number
 ): number {
   const count = seenAuthors.get(authorId) || 0;
-  // Higher diversity boost = stronger penalty for repeated authors
   const factor = (diversityBoost / 100) * 15;
   return count * factor;
+}
+
+// ── Continuous recency decay (half-life model) ──
+// Half-life = 4 hours → score halves every 4h
+// Much smoother than step function; recent posts get strong boost, old posts decay gracefully
+function getRecencyScore(ageHours: number): number {
+  const halfLife = 4; // hours
+  const maxScore = 55;
+  // Exponential decay: score = max * 0.5^(age/halfLife)
+  return maxScore * Math.pow(0.5, ageHours / halfLife);
+}
+
+// ── Engagement velocity (trending detection) ──
+// Uses Wilson score interval lower bound for statistical significance
+function getEngagementVelocity(likes: number, comments: number, ageHours: number): number {
+  if (ageHours < 0.05) return 0;
+  const total = likes + comments * 2.5; // comments weighted more
+  const velocity = total / Math.max(0.5, ageHours);
+  
+  // Wilson score: confidence-adjusted engagement rate
+  const n = Math.max(1, Math.ceil(ageHours * 10)); // estimated impressions
+  const p = Math.min(1, total / n);
+  const z = 1.96; // 95% confidence
+  const wilson = (p + z * z / (2 * n) - z * Math.sqrt((p * (1 - p) + z * z / (4 * n)) / n)) / (1 + z * z / n);
+  
+  const velocityScore = Math.min(20, Math.log2(1 + velocity) * 5);
+  const wilsonBonus = Math.max(0, wilson * 15);
+  
+  return velocityScore + wilsonBonus;
+}
+
+// ── Social proximity: multi-signal scoring ──
+// Combines: friendship, mutual interactions (likes, comments, messages)
+function getSocialProximityScore(
+  authorId: string,
+  ctx: ScoringContext
+): number {
+  const friendWeight = ctx.weights.friends / 100;
+  const interactionScore = ctx.friendInteractionCounts.get(authorId) || 0;
+  const isFriend = interactionScore > 0 || authorId === ctx.userId;
+
+  if (ctx.prefs.feedAlgorithm === 'friends_first') {
+    // In friends_first mode, massive boost for friends
+    return isFriend ? 60 : -10;
+  }
+
+  let score = 0;
+
+  // Base friendship bonus
+  if (isFriend) score += 10;
+
+  // Interaction-weighted proximity (logarithmic to avoid power users dominating)
+  // interactionScore is a composite: likes_given*2 + comments_given*3 + messages*1
+  if (interactionScore > 0) {
+    score += Math.min(30, Math.log2(1 + interactionScore) * 8) * friendWeight;
+  }
+
+  return score;
+}
+
+// ── Content quality scoring ──
+function getContentQualityScore(post: { body: string; image_url: string | null }): number {
+  let score = 0;
+
+  // Rich media bonus
+  if (post.image_url) score += 12;
+
+  // Optimal text length (sweet spot: 80-400 chars)
+  const len = post.body.length;
+  if (len >= 80 && len <= 400) score += 10;
+  else if (len > 400 && len <= 800) score += 7;
+  else if (len > 20 && len < 80) score += 4;
+  else if (len <= 20) score += 1; // very short = low effort
+
+  // Paragraph structure (line breaks = better formatting)
+  const paragraphs = post.body.split(/\n\s*\n/).length;
+  if (paragraphs >= 2 && paragraphs <= 5) score += 3;
+
+  // Question mark = engagement driver
+  if (post.body.includes('?')) score += 3;
+
+  // Hashtag presence (topical)
+  const hashtags = (post.body.match(/#\w+/g) || []).length;
+  if (hashtags >= 1 && hashtags <= 5) score += 2;
+  if (hashtags > 8) score -= 5; // hashtag spam
+
+  return score;
+}
+
+// ── Interest affinity scoring ──
+function getInterestAffinity(postBody: string, userInterests: string[]): number {
+  if (!userInterests || userInterests.length === 0) return 0;
+  const lower = postBody.toLowerCase();
+  let matches = 0;
+  for (const interest of userInterests) {
+    if (lower.includes(interest.toLowerCase())) matches++;
+  }
+  // Diminishing returns: first match = 8pts, second = 5pts, etc.
+  if (matches === 0) return 0;
+  return Math.min(20, 8 + (matches - 1) * 3);
+}
+
+// ── Cold-start exploration boost ──
+// New posts with very low engagement get a boost to ensure they're seen
+function getColdStartBoost(likes: number, comments: number, ageHours: number): number {
+  const totalEngagement = likes + comments;
+  if (totalEngagement > 5 || ageHours > 12) return 0;
+  // The less engagement + the newer = more boost
+  const freshness = Math.max(0, 1 - ageHours / 12);
+  const coldness = Math.max(0, 1 - totalEngagement / 5);
+  return freshness * coldness * 12;
 }
 
 // ── Time-of-day activity multiplier ──
@@ -129,33 +228,7 @@ function getTimeOfDayMultiplier(postDate: Date): number {
   return 0.7;
 }
 
-// ── Engagement velocity (trending detection) ──
-function getEngagementVelocity(likes: number, comments: number, ageHours: number): number {
-  if (ageHours < 0.1) return 0;
-  const total = likes + comments * 2;
-  const velocity = total / Math.max(0.5, ageHours);
-  return Math.min(20, Math.log2(1 + velocity) * 5);
-}
-
-// ── Tiered recency for dynamic feed ──
-function getRecencyScore(ageHours: number): number {
-  if (ageHours < 1) return 50;
-  if (ageHours < 3) return 40;
-  if (ageHours < 6) return 30;
-  if (ageHours < 12) return 18;
-  if (ageHours < 24) return 10;
-  if (ageHours < 48) return 5;
-  return Math.max(0, 3 * Math.exp(-(ageHours - 48) / 72));
-}
-
-// ── Monte Carlo Feed Engine ──────────────────────────────
-// Hybrid algorithm combining:
-//   1. Thompson Sampling for exploration (discover new content)
-//   2. Monte Carlo simulation for engagement optimisation
-//   3. Diversity enforcement via category quotas
-// ─────────────────────────────────────────────────────────
-
-/** Seeded PRNG (xorshift32) for deterministic per-session randomness */
+// ── Monte Carlo PRNG ──
 let _mcSeed = (Date.now() ^ 0xDEADBEEF) >>> 0;
 function mcRandom(): number {
   _mcSeed ^= _mcSeed << 13;
@@ -164,9 +237,7 @@ function mcRandom(): number {
   return (_mcSeed >>> 0) / 0xFFFFFFFF;
 }
 
-/** Beta distribution sample (Thompson Sampling) via Jöhnk's method */
 function sampleBeta(alpha: number, beta: number): number {
-  // Simple gamma approximation for small alpha/beta
   function gammaVariate(shape: number): number {
     if (shape >= 1) {
       const d = shape - 1 / 3;
@@ -183,10 +254,8 @@ function sampleBeta(alpha: number, beta: number): number {
         if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
       }
     }
-    // shape < 1: boost trick
     return gammaVariate(shape + 1) * Math.pow(mcRandom(), 1 / shape);
   }
-
   const ga = gammaVariate(alpha);
   const gb = gammaVariate(beta);
   return ga / (ga + gb);
@@ -208,7 +277,6 @@ function gaussianRandom(): number {
   return u * s;
 }
 
-/** Content category for diversity quotas */
 type ContentCategory = 'friend_text' | 'friend_media' | 'discovery_text' | 'discovery_media' | 'own';
 
 function classifyPost(post: { user_id: string; image_url: string | null }, isFriend: boolean, isOwn: boolean): ContentCategory {
@@ -218,7 +286,6 @@ function classifyPost(post: { user_id: string; image_url: string | null }, isFri
   return hasMedia ? 'discovery_media' : 'discovery_text';
 }
 
-/** Target category distribution (percentages) */
 const CATEGORY_TARGETS: Record<ContentCategory, number> = {
   own: 0.05,
   friend_media: 0.30,
@@ -227,7 +294,6 @@ const CATEGORY_TARGETS: Record<ContentCategory, number> = {
   discovery_text: 0.15,
 };
 
-/** Compute diversity bonus/penalty based on category fill rates */
 function getDiversityAdjustment(
   category: ContentCategory,
   categoryCounts: Map<ContentCategory, number>,
@@ -237,11 +303,11 @@ function getDiversityAdjustment(
   if (totalPlaced < 2) return 0;
   const actual = (categoryCounts.get(category) || 0) / totalPlaced;
   const target = CATEGORY_TARGETS[category];
-  const deficit = target - actual; // positive = under-represented
+  const deficit = target - actual;
   return deficit * (diversityBoost / 100) * 40;
 }
 
-// ── Main scoring function (deterministic base) ──
+// ── Main scoring function ──
 export function scorePost(
   post: {
     id: string;
@@ -254,57 +320,60 @@ export function scorePost(
   },
   ctx: ScoringContext
 ): number {
-  const { prefs, weights } = ctx;
-  
+  const { prefs } = ctx;
+
   if (prefs.feedAlgorithm === 'chronological') {
     return -new Date(post.created_at).getTime();
   }
 
+  // Get DB config overrides
+  const cfg = ctx.algoConfig || {};
+  const recencyMultiplier = (cfg.recency_multiplier as number) || 1.0;
+  const engagementMultiplier = (cfg.engagement_multiplier as number) || 1.0;
+  const socialMultiplier = (cfg.social_multiplier as number) || 1.0;
+  const qualityMultiplier = (cfg.quality_multiplier as number) || 1.0;
+
   let score = 0;
-  const isFriend = ctx.friendInteractionCounts.has(post.user_id) || post.user_id === ctx.userId;
   const isOwn = post.user_id === ctx.userId;
   const postDate = new Date(post.created_at);
   const ageMs = Date.now() - postDate.getTime();
   const ageHours = ageMs / (1000 * 60 * 60);
 
-  // ── 1. RECENCY ──
-  score += getRecencyScore(ageHours);
+  // ── 1. RECENCY (half-life decay) ──
+  score += getRecencyScore(ageHours) * recencyMultiplier;
 
-  // ── 2. ENGAGEMENT VELOCITY ──
-  score += getEngagementVelocity(post.likes_count, post.comments_count, ageHours);
+  // ── 2. ENGAGEMENT VELOCITY (Wilson score) ──
+  score += getEngagementVelocity(post.likes_count, post.comments_count, ageHours) * engagementMultiplier;
 
-  // ── 3. ENGAGEMENT (capped) ──
+  // ── 3. CAPPED ENGAGEMENT ──
   const rawEngagement = post.likes_count * 1.0 + post.comments_count * 2.5;
   const engagementCap = prefs.viralContentReduce ? 15 : 30;
-  score += Math.min(engagementCap, rawEngagement * 1.5);
+  score += Math.min(engagementCap, rawEngagement * 1.5) * engagementMultiplier;
 
-  // ── 4. SOCIAL PROXIMITY ──
-  const friendWeight = weights.friends / 100;
-  if (prefs.feedAlgorithm === 'friends_first') {
-    if (isFriend) score += 45;
-  } else {
-    const interactionCount = ctx.friendInteractionCounts.get(post.user_id) || 0;
-    score += Math.min(25, interactionCount * 4) * friendWeight;
-    if (isFriend) score += 8;
-  }
+  // ── 4. SOCIAL PROXIMITY (multi-signal) ──
+  score += getSocialProximityScore(post.user_id, ctx) * socialMultiplier;
 
   // ── 5. DISCOVERY BOOST ──
-  const discoveryWeight = weights.discovery / 100;
-  if (!isFriend) {
+  const isFriend = ctx.friendInteractionCounts.has(post.user_id);
+  const discoveryWeight = ctx.weights.discovery / 100;
+  if (!isFriend && !isOwn) {
     const discoveryRecency = ageHours < 6 ? 15 : 8;
     score += discoveryRecency * discoveryWeight;
   }
 
-  // ── 6. RICH CONTENT ──
-  if (post.image_url) score += 14;
-  const textLen = post.body.length;
-  if (textLen > 80 && textLen < 600) score += 8;
-  else if (textLen > 20 && textLen <= 80) score += 4;
+  // ── 6. CONTENT QUALITY ──
+  score += getContentQualityScore(post) * qualityMultiplier;
 
-  // ── 7. TIME-OF-DAY BOOST ──
+  // ── 7. INTEREST AFFINITY ──
+  score += getInterestAffinity(post.body, ctx.userInterests || []);
+
+  // ── 8. COLD-START BOOST ──
+  score += getColdStartBoost(post.likes_count, post.comments_count, ageHours);
+
+  // ── 9. TIME-OF-DAY ──
   score += (getTimeOfDayMultiplier(postDate) - 1) * 15;
 
-  // ── 8. OWN POSTS ──
+  // ── 10. OWN POSTS (always visible at top when fresh) ──
   if (isOwn) {
     if (ageHours < 0.5) score += 500;
     else if (ageHours < 2) score += 100;
@@ -312,33 +381,19 @@ export function scorePost(
     else score += 5;
   }
 
-  // ── 9. ANTI-SPAM ──
+  // ── 11. ANTI-SPAM ──
   score -= getSpamScore(post.body) * 0.6;
 
-  // ── 10. DIVERSITY PENALTY (author repetition) ──
-  const authorAppearances = ctx.seenAuthors.has(post.user_id) ? 1 : 0;
-  if (authorAppearances > 0) {
-    score -= (prefs.diversityBoost / 100) * (8 + 6 * authorAppearances);
+  // ── 12. DIVERSITY PENALTY (author repetition, exponential) ──
+  const authorSeen = ctx.seenAuthors.has(post.user_id);
+  if (authorSeen) {
+    score -= (prefs.diversityBoost / 100) * 14;
   }
 
   return score;
 }
 
-// ── Monte Carlo simulation: run N simulations of feed orderings ──
-interface MCSimResult {
-  postId: string;
-  finalScore: number;
-}
-
-/**
- * Monte Carlo Feed Ranker
- * Runs multiple simulated feed orderings to find the optimal arrangement
- * that maximises predicted engagement while maintaining diversity.
- *
- * @param posts - candidate posts with base scores
- * @param ctx   - scoring context
- * @param simulations - number of Monte Carlo iterations (default 50)
- */
+// ── Monte Carlo Feed Ranker ──
 export function monteCarloRank<T extends {
   id: string;
   user_id: string;
@@ -354,23 +409,20 @@ export function monteCarloRank<T extends {
 ): T[] {
   if (posts.length <= 1 || ctx.prefs.feedAlgorithm === 'chronological') return posts;
 
-  // Pre-compute base scores
   const baseScores = new Map<string, number>();
   posts.forEach(p => baseScores.set(p.id, scorePost(p, ctx)));
 
-  // Thompson Sampling parameters per post (alpha=successes+1, beta=failures+1)
-  // Use engagement as a proxy for success
+  // Thompson Sampling with engagement + recency priors
   const thompsonParams = new Map<string, { alpha: number; beta: number }>();
   posts.forEach(p => {
     const engagement = p.likes_count + p.comments_count * 2;
     const ageHours = (Date.now() - new Date(p.created_at).getTime()) / 3_600_000;
-    const exposure = Math.max(1, Math.ceil(ageHours / 2)); // rough impressions estimate
+    const exposure = Math.max(1, Math.ceil(ageHours * 8)); // better impressions estimate
     const alpha = 1 + engagement;
     const beta = 1 + Math.max(0, exposure - engagement);
     thompsonParams.set(p.id, { alpha, beta });
   });
 
-  // Accumulate scores across simulations
   const totalScores = new Map<string, number>();
   posts.forEach(p => totalScores.set(p.id, 0));
 
@@ -378,25 +430,19 @@ export function monteCarloRank<T extends {
     const categoryCounts = new Map<ContentCategory, number>();
     let totalPlaced = 0;
 
-    // Sample each post's score with Thompson Sampling noise
     const simScores: { id: string; score: number }[] = posts.map(p => {
       const base = baseScores.get(p.id) || 0;
       const params = thompsonParams.get(p.id)!;
 
-      // 1. Thompson Sampling: sample engagement probability
       const sampledEngagement = sampleBeta(params.alpha, params.beta);
       const explorationBonus = sampledEngagement * 25;
-
-      // 2. Gaussian noise for exploration variety
       const noise = gaussianRandom() * 3;
 
       return { id: p.id, score: base + explorationBonus + noise };
     });
 
-    // Sort by simulated score
     simScores.sort((a, b) => b.score - a.score);
 
-    // Apply diversity adjustment in placement order
     simScores.forEach((item, idx) => {
       const post = posts.find(p => p.id === item.id)!;
       const isFriend = ctx.friendInteractionCounts.has(post.user_id) || post.user_id === ctx.userId;
@@ -404,72 +450,47 @@ export function monteCarloRank<T extends {
       const category = classifyPost(post, isFriend, isOwn);
 
       const diversityAdj = getDiversityAdjustment(category, categoryCounts, totalPlaced, ctx.prefs.diversityBoost);
-
-      // Position decay: penalise being placed late
       const positionPenalty = idx * 0.5;
-
       const adjustedScore = item.score + diversityAdj - positionPenalty;
 
       totalScores.set(item.id, (totalScores.get(item.id) || 0) + adjustedScore);
-
-      // Track category fill
       categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1);
       totalPlaced++;
     });
   }
 
-  // Average scores and sort
   const ranked = posts
-    .map(p => ({
-      post: p,
-      avgScore: (totalScores.get(p.id) || 0) / simulations,
-    }))
+    .map(p => ({ post: p, avgScore: (totalScores.get(p.id) || 0) / simulations }))
     .sort((a, b) => b.avgScore - a.avgScore);
 
   return ranked.map(r => r.post);
 }
 
 // ── Fair marketplace rotation ──
-// Ensures equitable seller exposure, not always the same sellers on top
 export function rotateMarketplaceProducts<T extends { seller_id: string; created_at: string; order_count: number; view_count: number }>(
   products: T[],
   pageIndex: number = 0
 ): T[] {
   if (products.length === 0) return [];
-
-  // Group by seller
   const sellerGroups = new Map<string, T[]>();
   products.forEach(p => {
     const group = sellerGroups.get(p.seller_id) || [];
     group.push(p);
     sellerGroups.set(p.seller_id, group);
   });
-
-  // Round-robin across sellers with a rotating offset based on time + page
   const sellers = Array.from(sellerGroups.keys());
   const hourOfDay = new Date().getHours();
   const offset = (hourOfDay + pageIndex) % Math.max(1, sellers.length);
-  
-  // Rotate seller order
   const rotatedSellers = [...sellers.slice(offset), ...sellers.slice(0, offset)];
-
-  // Interleave: take one product from each seller in rotation
   const result: T[] = [];
   let maxDepth = 0;
-  rotatedSellers.forEach(s => {
-    const group = sellerGroups.get(s)!;
-    maxDepth = Math.max(maxDepth, group.length);
-  });
-
+  rotatedSellers.forEach(s => { maxDepth = Math.max(maxDepth, sellerGroups.get(s)!.length); });
   for (let depth = 0; depth < maxDepth; depth++) {
     for (const seller of rotatedSellers) {
       const group = sellerGroups.get(seller)!;
-      if (depth < group.length) {
-        result.push(group[depth]);
-      }
+      if (depth < group.length) result.push(group[depth]);
     }
   }
-
   return result;
 }
 
@@ -495,21 +516,15 @@ export function groupNotifications(
   }>
 ): GroupedNotification[] {
   const groups = new Map<string, GroupedNotification>();
-
   for (const n of notifications) {
-    // Group by type + post_id (e.g., "3 people liked your post")
     const key = `${n.type}:${n.post_id || 'none'}`;
-    
     const existing = groups.get(key);
     if (existing) {
-      // Only add unique actors
       if (!existing.actors.find(a => a.id === n.actor_id)) {
         existing.actors.push({ id: n.actor_id, name: n.actor.name, avatar_url: n.actor.avatar_url });
       }
       existing.count++;
-      if (new Date(n.created_at) > new Date(existing.latestAt)) {
-        existing.latestAt = n.created_at;
-      }
+      if (new Date(n.created_at) > new Date(existing.latestAt)) existing.latestAt = n.created_at;
       if (n.read_at === null) existing.readAt = null;
     } else {
       groups.set(key, {
@@ -522,14 +537,12 @@ export function groupNotifications(
       });
     }
   }
-
-  // Sort by most recent
   return Array.from(groups.values()).sort(
     (a, b) => new Date(b.latestAt).getTime() - new Date(a.latestAt).getTime()
   );
 }
 
-// ── Wellbeing: scroll pause tracker ──
+// ── Wellbeing ──
 export function getSessionMinutes(): number {
   const sessionStart = sessionStorage.getItem('forsure-session-start');
   if (!sessionStart) {
@@ -544,9 +557,7 @@ export function getTodayMinutes(): number {
     const data = JSON.parse(localStorage.getItem('forsure-daily-usage') || '{}');
     const today = new Date().toISOString().split('T')[0];
     return data[today] || 0;
-  } catch {
-    return 0;
-  }
+  } catch { return 0; }
 }
 
 export function trackMinute() {
@@ -554,7 +565,6 @@ export function trackMinute() {
     const data = JSON.parse(localStorage.getItem('forsure-daily-usage') || '{}');
     const today = new Date().toISOString().split('T')[0];
     data[today] = (data[today] || 0) + 1;
-    // Keep only last 7 days
     const keys = Object.keys(data).sort().slice(-7);
     const cleaned: Record<string, number> = {};
     keys.forEach(k => { cleaned[k] = data[k]; });
@@ -573,15 +583,13 @@ export function getWeeklyUsage(): number[] {
       result.push(data[key] || 0);
     }
     return result;
-  } catch {
-    return [0, 0, 0, 0, 0, 0, 0];
-  }
+  } catch { return [0, 0, 0, 0, 0, 0, 0]; }
 }
 
 // ── DB-backed algorithm config (Zeus can modify these) ──
 let _cachedAlgoConfig: Record<string, any> | null = null;
 let _cacheTime = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 min
+const CACHE_TTL = 5 * 60 * 1000;
 
 export async function loadAlgorithmConfig(): Promise<Record<string, any>> {
   if (_cachedAlgoConfig && Date.now() - _cacheTime < CACHE_TTL) {
