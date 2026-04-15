@@ -52,6 +52,7 @@ import {
   type RatchetEnvelope,
   type X3DHInitialMessage,
 } from '@/lib/crypto';
+import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
 import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
 import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
 import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/lib/crypto/cryptoIntegrity';
@@ -331,14 +332,14 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const initKeys = useCallback(async () => {
     if (!user) return;
     try {
-      const keys = await getOrCreateIdentityKeys(user.id);
+      const keysResult = await getOrCreateIdentityKeys(user.id);
+      const isNewIdentity = !!(keysResult as any).isNewIdentity;
+      const keys: IdentityKeyPair = keysResult;
       keysRef.current = keys;
 
       const bundle = await exportPublicKeyBundle(keys);
 
-      // CRITICAL: Check if server already has keys for this user
-      // If server fingerprint differs from local, it means local keys were regenerated
-      // (IndexedDB was cleared). Only upload if NO server keys exist.
+      // Check server state BEFORE publishing
       const { data: existingServerKey } = await supabase
         .from('user_public_keys')
         .select('fingerprint, identity_key')
@@ -346,17 +347,42 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         .eq('is_active', true)
         .maybeSingle();
 
-      if (existingServerKey && existingServerKey.fingerprint !== bundle.fingerprint) {
-        // Server has different keys — local keys were regenerated after data loss.
-        // DO NOT overwrite server keys blindly. Log the event.
+      if (isNewIdentity && existingServerKey) {
+        // IDENTITY LOSS DETECTED: local keys were regenerated but server has old keys.
+        // Check if an encrypted backup exists — if so, require restore instead of overwriting.
+        const { data: backupData } = await supabase
+          .from('user_backups' as any)
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (backupData) {
+          console.error(
+            '[E2EE] ⛔ Identity loss detected! Server fingerprint:',
+            existingServerKey.fingerprint,
+            '— Encrypted backup exists. Requesting restore before continuing.'
+          );
+          setState(s => ({
+            ...s,
+            ready: false,
+            initError: 'identity_lost_backup_available',
+          }));
+          // Dispatch event so UI can show restore dialog
+          window.dispatchEvent(new CustomEvent('forsure-identity-lost', {
+            detail: { hasBackup: true, serverFingerprint: existingServerKey.fingerprint }
+          }));
+          return;
+        }
+
+        // No backup exists — this is a genuine new identity (first device, or user accepted loss)
         console.warn(
-          '[E2EE] ⚠️ Local identity key mismatch with server!',
-          `Local: ${bundle.fingerprint}`,
-          `Server: ${existingServerKey.fingerprint}`,
-          '— Uploading new keys (previous sessions will need re-establishment)'
+          '[E2EE] ⚠️ New identity created (no backup found). Server keys will be replaced.',
+          `Old: ${existingServerKey.fingerprint}`,
+          `New: ${bundle.fingerprint}`
         );
       }
 
+      // Publish keys to server
       await supabase
         .from('user_public_keys')
         .upsert({
@@ -399,6 +425,18 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       }));
       console.log('[E2EE] Keys initialized & published (with prekeys)');
     } catch (err) {
+      // Handle PIN unlock required (keys exist wrapped, need PIN)
+      if (err instanceof PinUnlockRequiredError) {
+        console.log('[E2EE] PIN unlock required to recover identity keys');
+        setState(s => ({
+          ...s,
+          ready: false,
+          initError: 'pin_unlock_required',
+        }));
+        window.dispatchEvent(new CustomEvent('forsure-pin-required-for-keys'));
+        return;
+      }
+
       console.error('[E2EE] Init failed:', err);
       const isMissingStoreError = err instanceof DOMException && err.name === 'NotFoundError';
       if (isMissingStoreError) {
