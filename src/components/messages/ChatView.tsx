@@ -186,7 +186,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
       const t2 = setTimeout(() => setIsTyping(false), 3000);
       return () => { clearTimeout(t); clearTimeout(t2); };
     }
-  }, []);
+  }, [newMessage]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

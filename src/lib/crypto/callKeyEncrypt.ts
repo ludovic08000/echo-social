@@ -8,10 +8,11 @@
  * can decrypt it locally at call-accept time.
  */
 
-import { hardCrypto } from './cryptoIntegrity';
+import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import { randomBytes, bufferToBase64, base64ToBuffer } from './utils';
 import { loadSessionKey, getOrCreateIdentityKeys } from './keyManager';
 import { supabase } from '@/integrations/supabase/client';
+import { KX_KEY_PARAMS } from './constants';
 
 const IV_LEN = 12;
 const ENCRYPTED_SEPARATOR = '.';
@@ -44,11 +45,11 @@ async function ensureFreshCallSession(
   // Derive shared secret from current key material (both sides)
   const peerRaw = base64ToBuffer(peerKey.identity_key);
   const peerPub = await hardCrypto.importKey(
-    'raw', peerRaw, { name: 'ECDH', namedCurve: 'X25519' } as any, true, []
+    'raw', peerRaw, KX_KEY_PARAMS as any, true, []
   );
 
   const sharedBits = await hardCrypto.deriveBits(
-    { name: 'ECDH', public: peerPub } as any,
+    { name: 'X25519', public: peerPub } as any,
     identityKeys.privateKey,
     256,
   );
