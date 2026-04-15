@@ -877,22 +877,22 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           ratchetRef.current = ratchet;
         } else if (x3dhHeader) {
           // X3DH responder: derive shared secret from the X3DH header
-          const { sharedSecret, responderDhKey } = await x3dhRespond(
+          console.info(`[E2EE] X3DH responder init — SPK #${x3dhHeader.spkId}, OPK ${x3dhHeader.opkId ?? 'none'}`);
+          const { sharedSecret, spkKeyPair } = await x3dhRespond(
             keysRef.current,
             user.id,
             x3dhHeader,
           );
-          const ourDhPair = await hardCrypto.generateKey(
-            KX_KEY_PARAMS as any, true, ['deriveBits']
-          ) as CryptoKeyPair;
+          // Per Signal spec: Bob uses his SPK key pair as initial ratchet DH pair
+          // dhReceivingKey is null — it will be set when processing Alice's first ratchet header
           ratchet = await initRatchetAsResponder(
-            conversationId, sharedSecret, ourDhPair,
+            conversationId, sharedSecret, spkKeyPair,
           );
-          ratchet.dhReceivingKey = responderDhKey;
           ratchetRef.current = ratchet;
           console.log('[E2EE] 🔄 Double Ratchet initialized via X3DH (responder)');
         } else {
-          // Fallback: legacy shared secret as seed
+          // No X3DH header on this message — try legacy shared secret as seed
+          console.debug('[E2EE] No X3DH header on ratchet message — attempting legacy seed');
           const session = await ensureLegacySession();
           if (session) {
             const sharedSecretRaw = await hardCrypto.exportKey('raw', session.sharedSecret);
