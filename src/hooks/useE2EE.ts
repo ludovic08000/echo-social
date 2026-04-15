@@ -812,7 +812,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
               ratchetRef.current = ratchet;
             } else if (x3dhHeader) {
               // X3DH responder: derive shared secret from the X3DH header
-              const sharedSecret = await x3dhRespond(
+              const { sharedSecret, responderDhKey } = await x3dhRespond(
                 keysRef.current,
                 user.id,
                 x3dhHeader,
@@ -823,6 +823,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
               ratchet = await initRatchetAsResponder(
                 conversationId, sharedSecret, ourDhPair,
               );
+              ratchet.dhReceivingKey = responderDhKey;
               ratchetRef.current = ratchet;
               console.log('[E2EE] 🔄 Double Ratchet initialized via X3DH (responder)');
             } else {
