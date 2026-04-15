@@ -136,12 +136,11 @@ async function runKeySyncDiagnostic(
       }
 
       // 3. Cross-check: verify that what the peer sees as MY fingerprint matches
-      const { data: peerKnownFp } = await supabase
-        .from('user_known_fingerprints')
-        .select('fingerprint, acknowledged')
-        .eq('user_id', peerUserId)
-        .eq('peer_user_id', user.id)
-        .maybeSingle();
+      // Uses security-definer function to bypass RLS
+      const { data: peerKnownRows } = await supabase
+        .rpc('check_peer_knows_my_fingerprint', { p_peer_user_id: peerUserId });
+
+      const peerKnownFp = peerKnownRows?.[0] ?? null;
 
       if (!peerKnownFp) {
         checks.push({ label: 'Vérification croisée', status: 'warning', detail: 'Le contact n\'a pas encore enregistré votre clé' });
