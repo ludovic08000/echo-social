@@ -101,6 +101,7 @@ function IncomingCallHandler() {
   const { openChat } = useChatWidget();
 
   const activeIncomingCallIdRef = useRef<string | null>(null);
+  const activeIncomingConversationIdRef = useRef<string | null>(null);
 
   const call = useCall({
     onCallEnded: useCallback(() => {
@@ -108,7 +109,13 @@ function IncomingCallHandler() {
         endActiveCall(activeIncomingCallIdRef.current);
         activeIncomingCallIdRef.current = null;
       }
+      activeIncomingConversationIdRef.current = null;
     }, []),
+    onCallConnected: useCallback(() => {
+      if (activeIncomingConversationIdRef.current) {
+        openChat(activeIncomingConversationIdRef.current);
+      }
+    }, [openChat]),
   });
 
   const handleAccept = useCallback(async () => {
@@ -116,14 +123,14 @@ function IncomingCallHandler() {
       const accepted = await acceptCall();
       if (!accepted) return;
 
-      openChat(accepted.conversation_id);
       activeIncomingCallIdRef.current = accepted.id;
+      activeIncomingConversationIdRef.current = accepted.conversation_id;
       call.startCall(accepted.conversation_id, accepted.call_type, accepted.decryptedCallKey);
     } catch (err) {
       console.error('[CALL] Failed to accept call:', err);
       toast.error("Impossible d'accepter l'appel — réessayez");
     }
-  }, [acceptCall, openChat, call]);
+  }, [acceptCall, call]);
 
   if (!user) return null;
 
