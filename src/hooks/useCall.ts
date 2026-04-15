@@ -248,7 +248,7 @@ export function useCall(options?: UseCallOptions) {
       // ── Register event listeners ONCE ──
 
       room.on(RoomEvent.TrackSubscribed, (track) => {
-        console.debug(`[CALL] track subscribed: ${track.kind}`);
+        console.info(`[CALL] track subscribed: ${track.kind}`);
         const el = track.attach();
         if (track.kind === Track.Kind.Video && remoteVideoRef.current) {
           el.style.width = '100%';
@@ -257,8 +257,30 @@ export function useCall(options?: UseCallOptions) {
           remoteVideoRef.current.innerHTML = '';
           remoteVideoRef.current.appendChild(el);
         } else if (track.kind === Track.Kind.Audio) {
-          document.body.appendChild(el);
-          el.style.display = 'none';
+          // Ensure remote audio is audible
+          const audioEl = el as HTMLAudioElement;
+          audioEl.autoplay = true;
+          audioEl.muted = false;
+          audioEl.volume = 1.0;
+          audioEl.setAttribute('playsinline', 'true');
+          audioEl.style.position = 'absolute';
+          audioEl.style.width = '0';
+          audioEl.style.height = '0';
+          audioEl.style.opacity = '0';
+          audioEl.style.pointerEvents = 'none';
+          // Don't use display:none — it prevents playback in some browsers
+          document.body.appendChild(audioEl);
+          // Force play (handles autoplay policy)
+          audioEl.play().catch((e) => {
+            console.warn('[CALL] audio autoplay blocked, retrying on user gesture:', e);
+            const resume = () => {
+              audioEl.play().catch(() => {});
+              window.removeEventListener('click', resume);
+              window.removeEventListener('touchstart', resume);
+            };
+            window.addEventListener('click', resume, { once: true });
+            window.addEventListener('touchstart', resume, { once: true });
+          });
         }
       });
 
