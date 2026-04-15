@@ -5177,6 +5177,13 @@ export type Database = {
         Args: { _order_id: string; _seller_id: string }
         Returns: boolean
       }
+      check_peer_knows_my_fingerprint: {
+        Args: { p_peer_user_id: string }
+        Returns: {
+          acknowledged: boolean
+          fingerprint: string
+        }[]
+      }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_expired_device_links: { Args: never; Returns: undefined }
       cleanup_old_behavior_signals: { Args: never; Returns: undefined }
