@@ -22,18 +22,9 @@ activateRuntimeShield();
 
 // Console guard disabled for debugging
 
-// ─── Crypto hardening: start integrity monitor at boot ───
-import { startIntegrityMonitor, hardenPrototypes, onAutoWipe, onTamperDetected } from '@/lib/crypto';
+// ─── Crypto hardening: prototype lock only (integrity monitor disabled — LiveKit legitimately wraps crypto.subtle) ───
+import { hardenPrototypes } from '@/lib/crypto';
 
 hardenPrototypes();
-startIntegrityMonitor(15_000);
-
-onTamperDetected(() => {
-  // Silent — no info leak
-});
-
-onAutoWipe(() => {
-  window.location.href = '/login';
-});
 
 createRoot(document.getElementById("root")!).render(<App />);
