@@ -496,8 +496,9 @@ export function useChatPin() {
             cipherBytes as Uint8Array<ArrayBuffer>,
           );
           const rawBlob = new TextDecoder().decode(plainBuffer);
-          await writeRawIdentityBlob(user.id, rawBlob);
-          console.log('[PIN] Keys unwrapped successfully');
+          // Restore ALL crypto material (identity + session + ratchet)
+          await restoreAllCryptoBlob(user.id, rawBlob);
+          console.log('[PIN] All keys unwrapped and restored');
           window.dispatchEvent(new CustomEvent('forsure-keys-unlocked'));
         } catch (unwrapErr) {
           console.warn('[PIN] Key unwrap failed:', unwrapErr);
