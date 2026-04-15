@@ -1114,11 +1114,12 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                           <div className="mt-0.5">
                             <button
                               onClick={() => {
-                                const text = decryptedCacheRef.current.get(msg.id) || msg.body;
+                                const text = decryptedCacheRef.current.get(msg.id);
+                                if (!text) return;
                                 translateMsg(msg.id, text);
                               }}
-                              disabled={translating === msg.id}
-                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+                              disabled={translating === msg.id || (!translations[msg.id] && !decryptedCacheRef.current.get(msg.id))}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all disabled:pointer-events-none disabled:opacity-40"
                             >
                               {translating === msg.id ? (
                                 <div className="w-2.5 h-2.5 rounded-full border border-primary border-t-transparent animate-spin" />
