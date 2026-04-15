@@ -27,8 +27,25 @@ export function useIsMinor(userId: string | undefined) {
  * Check if the current user is a minor.
  */
 export function useCurrentUserIsMinor() {
-  const { user } = useAuth();
-  return useIsMinor(user?.id);
+  const { user, loading } = useAuth();
+
+  return useQuery({
+    queryKey: ['is-minor', user?.id, loading ? 'loading' : 'ready'],
+    queryFn: async () => {
+      if (!user?.id) return false;
+
+      const { data } = await supabase
+        .from('parental_controls')
+        .select('is_active')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      return !!data;
+    },
+    enabled: !!user?.id && !loading,
+    staleTime: 5 * 60_000,
+  });
 }
 
 /**

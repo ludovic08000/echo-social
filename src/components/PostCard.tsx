@@ -58,7 +58,7 @@ interface PostCardProps {
 }
 
 export const PostCard = memo(function PostCard({ post, showActions = true, onCommentClick }: PostCardProps) {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
   const deletePost = useDeletePost();
   const { data: isPostAuthorCreator } = useIsCreator(post.user_id);
@@ -108,7 +108,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         .eq('post_id', post.id);
       return count || 0;
     },
-    enabled: isVideoPost,
+    enabled: isVideoPost && !loading && !!user,
     staleTime: 60_000,
   });
 
@@ -129,7 +129,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         .slice(0, 2)
         .map(([type]) => type);
     },
-    enabled: post.likes_count > 0,
+    enabled: post.likes_count > 0 && !loading,
     staleTime: 60_000,
   });
 
