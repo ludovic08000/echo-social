@@ -85,12 +85,12 @@ serve(async (req) => {
       // Get current user profile + interests
       const [profileRes, interestsRes, behaviorRes] = await Promise.all([
         supabase.from("profiles").select("*").eq("user_id", user.id).single(),
-        supabase.from("user_interests").select("interest").eq("user_id", user.id),
+        supabase.from("user_interests").select("interest_value").eq("user_id", user.id),
         supabase.from("user_behavior_signals").select("signal_type, post_id, created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(100),
       ]);
 
       const myProfile = profileRes.data;
-      const myInterests = (interestsRes.data || []).map((i: any) => i.interest);
+      const myInterests = (interestsRes.data || []).map((i: any) => i.interest_value);
       const myBehavior = behaviorRes.data || [];
 
       // Get existing friends & pending
@@ -125,13 +125,13 @@ serve(async (req) => {
       const candidateIds = candidates.map((c: any) => c.user_id);
       const { data: candidateInterests } = await supabase
         .from("user_interests")
-        .select("user_id, interest")
+        .select("user_id, interest_value")
         .in("user_id", candidateIds);
 
       const interestMap = new Map<string, string[]>();
       for (const ci of candidateInterests || []) {
         if (!interestMap.has(ci.user_id)) interestMap.set(ci.user_id, []);
-        interestMap.get(ci.user_id)!.push(ci.interest);
+        interestMap.get(ci.user_id)!.push(ci.interest_value);
       }
 
       // Get mutual friends count for candidates
