@@ -371,18 +371,22 @@ export function useIncomingCall() {
     }
 
     try {
-      decryptedCallKey = await decryptCallKey(encKey, convId);
+      // Always pass user IDs for fresh session derivation
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error('Not authenticated');
+      const peerId = incomingCall.caller_id;
+      decryptedCallKey = await decryptCallKey(encKey, convId, currentUser.id, peerId);
     } catch (firstErr) {
       console.warn('[CALL] First decrypt attempt failed, re-deriving session:', firstErr);
       try {
         const { getOrCreateIdentityKeys, establishSession, deleteSessionKey } = await import('@/lib/crypto');
-        const { data: { user: currentUser } } = await supabase.auth.getUser();
-        if (currentUser && incomingCall) {
-          const peerId = incomingCall.caller_id;
+        const { data: { user: retryUser } } = await supabase.auth.getUser();
+        if (retryUser && incomingCall) {
+          const retryPeerId = incomingCall.caller_id;
           const { data: peerKey } = await supabase
             .from('user_public_keys')
             .select('identity_key, fingerprint')
-            .eq('user_id', peerId)
+            .eq('user_id', retryPeerId)
             .eq('is_active', true)
             .maybeSingle();
           if (!peerKey?.identity_key || !peerKey.fingerprint) {
@@ -390,9 +394,9 @@ export function useIncomingCall() {
           }
 
           await deleteSessionKey(convId);
-          const keys = await getOrCreateIdentityKeys(currentUser.id);
+          const keys = await getOrCreateIdentityKeys(retryUser.id);
           await establishSession(keys, peerKey.identity_key, convId, peerKey.fingerprint);
-          decryptedCallKey = await decryptCallKey(encKey, convId);
+          decryptedCallKey = await decryptCallKey(encKey, convId, retryUser.id, retryPeerId);
           console.log('[CALL] ✅ Decrypt succeeded after session re-derivation');
         }
       } catch (retryErr) {
