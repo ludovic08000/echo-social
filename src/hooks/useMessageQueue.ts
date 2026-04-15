@@ -17,10 +17,10 @@ import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/m
 
 export function useMessageQueue(
   conversationId: string,
-  encrypt: ((plaintext: string) => Promise<string>) | null,
+  encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
   isEncryptionReady: boolean,
   isEncryptionActive: boolean,
-  onMessageSent?: () => void,
+  onMessageSent?: (localId: string) => void | Promise<void>,
 ) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -42,16 +42,14 @@ export function useMessageQueue(
     if (!user || !conversationId) return;
 
     messageQueue.registerHandlers(conversationId, handlerIdRef.current, {
-      encrypt: async (plaintext: string, _convId: string) => {
+      encrypt: async (plaintext: string, _convId: string, localId: string) => {
         if (!activeRef.current) {
           throw new Error('Encryption not active');
         }
-        // Do not gate on local readyRef here: it can lag behind real crypto readiness.
-        // Let encrypt() attempt directly and report concrete key state errors.
         if (!encryptRef.current) {
           throw new Error('Encryption initializing');
         }
-        return encryptRef.current(plaintext);
+        return encryptRef.current(plaintext, localId);
       },
       send: async (msg: OutboundMessage) => {
         if (!msg.encryptedBody) {
@@ -188,62 +186,19 @@ export function useMessageQueue(
       return;
     }
 
-    // Case 2: Try encrypt + send directly
-    if (encrypt) {
-      try {
-        console.log('[MSG] Attempting direct encrypt...');
-        const encrypted = await encrypt(sanitized);
-        if (encrypted && encrypted !== sanitized && encrypted.startsWith('{')) {
-          console.log('[MSG] ✅ Encrypt success, inserting to DB...');
-          const { error } = await supabase
-            .from('messages')
-            .insert({
-              conversation_id: conversationId,
-              sender_id: user.id,
-              body: encrypted,
-              image_url: imageUrl || null,
-            });
-          if (error) {
-            console.error('[MSG] ❌ DB insert failed:', error);
-            throw error;
-          }
-          console.log('[MSG] ✅ Message delivered!');
-          if (!isSpecial) recordSentMessage(sanitized);
-          onMessageSent?.();
-          queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
-          queryClient.invalidateQueries({ queryKey: ['conversations'] });
-          return;
-        }
-        console.warn('[MSG] Encrypt returned invalid output:', encrypted?.substring(0, 50));
-      } catch (e) {
-          const errMessage = e instanceof Error ? e.message : String(e);
-          const normalized = errMessage.toLowerCase();
-          const requiresSecurityVerification =
-            normalized.includes('clé de sécurité') ||
-            normalized.includes('cle de securite') ||
-            normalized.includes('vérification requise') ||
-            normalized.includes('verification requise') ||
-            normalized.includes('fingerprint');
-
-          console.error('[MSG] ❌ Direct encrypt failed:', errMessage);
-
-          if (requiresSecurityVerification) {
-            throw new Error('Validation de sécurité requise : appuie sur OK en haut avant d\'envoyer.');
-          }
-      }
-    } else {
-      console.warn('[MSG] No encrypt function available, queuing');
-    }
-
-    // Case 3: encrypt not available yet → queue (will encrypt + send when ready)
-    console.log('[MSG] Queuing message for later delivery');
-    await messageQueue.enqueue({
+    // Case 2: encrypted conversation → always go through queue
+    // This guarantees retry reuses the exact same ciphertext/header.
+    console.log('[MSG] Queueing encrypted message for managed secure delivery');
+    const queued = await messageQueue.enqueue({
       conversationId,
       senderId: user.id,
       plaintext: sanitized,
       imageUrl,
     });
-  }, [user, conversationId, isEncryptionActive, encrypt, queryClient]);
+
+    if (!isSpecial) recordSentMessage(sanitized);
+    return queued;
+  }, [user, conversationId, isEncryptionActive]);
 
   /** Retry a failed message */
   const retryMessage = useCallback(async (localId: string) => {

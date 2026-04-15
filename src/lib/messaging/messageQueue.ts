@@ -46,7 +46,7 @@ export interface OutboundMessage {
 type QueueListener = (messages: OutboundMessage[]) => void;
 
 interface QueueHandlers {
-  encrypt: (plaintext: string, conversationId: string) => Promise<string>;
+  encrypt: (plaintext: string, conversationId: string, localId: string) => Promise<string>;
   send: (msg: OutboundMessage) => Promise<string>;
   isReady: (conversationId: string) => boolean;
 }
@@ -70,6 +70,7 @@ class MessageQueueManager {
   private listeners = new Set<QueueListener>();
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private processing = new Set<string>();
+  private processingConversations = new Set<string>();
   private dbPromise: Promise<IDBDatabase> | null = null;
   private handlersByConversation = new Map<string, Map<string, HandlerEntry>>();
   /** SECURITY: Plaintext stored ONLY in volatile memory, never in IndexedDB */
