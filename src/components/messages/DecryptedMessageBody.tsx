@@ -58,6 +58,16 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       return;
     }
 
+    // Messages we just sent are already known locally: avoid re-running Ratchet
+    // decrypt on our own outbound envelope, which can legitimately use a different
+    // receiving state and create noisy OperationError warnings.
+    if (isMe) {
+      setDisplayText(body);
+      setMediaKeyB64(null);
+      onDecrypted?.(body);
+      return;
+    }
+
     let cancelled = false;
     setIsDecrypting(true);
 
@@ -87,7 +97,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     });
 
     return () => { cancelled = true; };
-  }, [body, decrypt, isEncryptionActive, onDecrypted]);
+  }, [body, decrypt, isEncryptionActive, onDecrypted, isMe]);
 
   if (isDecrypting || displayText === null) {
     return (
