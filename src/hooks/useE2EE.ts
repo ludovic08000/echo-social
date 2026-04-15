@@ -425,7 +425,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       prekeyInfoRef.current = null;
       x3dhInfoRef.current = null;
       legacySessionReadyRef.current = false;
-      pendingRatchetStateRef.current.clear();
       peerHasRespondedRef.current = false;
       pendingPayloadRef.current.clear();
       setState(s => ({
@@ -856,7 +855,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       try {
         const persisted = await loadRatchetLocal(conversationId);
         if (persisted) {
-          ratchet = persisted;
+          ratchet = persisted.state;
           ratchetRef.current = ratchet;
           console.info('[RATCHET] Loaded persisted ratchet state for decrypt');
         } else if (x3dhHeader) {
@@ -995,7 +994,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       }).catch(() => {});
       ratchetRef.current = null;
       peerHasRespondedRef.current = false;
-      pendingRatchetStateRef.current.clear();
+      
       pendingPayloadRef.current.clear();
     }
     setState(s => ({ ...s, fingerprintChanged: false, ready: true, ratchetActive: false }));
