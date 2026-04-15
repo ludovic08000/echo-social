@@ -227,8 +227,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
     if (!newMessage.trim() || isSending) return;
 
     if (!isZeusConversation && e2ee.fingerprintChanged) {
-      toast.error('Clé de sécurité modifiée : valide d\'abord le contact (bouton OK en haut).');
-      return;
+      // Show non-blocking warning — encryption proceeds with auto-acknowledged key
+      toast.warning('⚠️ La clé de sécurité du contact a changé.');
     }
 
     const body = replyTo
