@@ -126,12 +126,10 @@ function createRingtone(): { play: () => void; stop: () => void } {
     try { oscillatorA?.stop(); oscillatorA?.disconnect(); } catch {}
     try { oscillatorB?.stop(); oscillatorB?.disconnect(); } catch {}
     try { gainNode?.disconnect(); } catch {}
-    // Suspend the audio context to guarantee silence immediately
-    try { if (audioCtx && audioCtx !== sharedAudioContext) audioCtx.close(); } catch {}
     oscillatorA = null;
     oscillatorB = null;
     gainNode = null;
-    audioCtx = null;
+    // Do NOT close or null audioCtx — it may be the shared context used by LiveKit
   };
 
   return { play, stop };
