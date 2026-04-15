@@ -53,6 +53,20 @@ export function useMessageTranslation() {
     return text.includes('"ct"') || text.includes('"hdr"') || text.includes('"kem"');
   }, []);
 
+  const sanitizeTranslation = useCallback((text: string | null | undefined) => {
+    if (!text?.trim()) return null;
+    return isEncryptedPayload(text) ? null : text;
+  }, [isEncryptedPayload]);
+
+  useEffect(() => {
+    setTranslations(prev => {
+      const next = Object.fromEntries(
+        Object.entries(prev).filter(([, value]) => sanitizeTranslation(value) !== null)
+      );
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
+  }, [sanitizeTranslation]);
+
   const doTranslate = useCallback(async (messageId: string, text: string): Promise<string | null> => {
     if (!text?.trim() || isEncryptedPayload(text)) return null;
 
@@ -68,11 +82,11 @@ export function useMessageTranslation() {
       });
       trackAICall('msg-translate', Math.round(performance.now() - start), !error && !data?.error);
       if (error || data?.error) return null;
-      return data?.result || null;
+      return sanitizeTranslation(data?.result || null);
     } catch {
       return null;
     }
-  }, [isEncryptedPayload]);
+  }, [isEncryptedPayload, sanitizeTranslation]);
 
   const translate = useCallback(async (messageId: string, text: string) => {
     if (!text?.trim() || isEncryptedPayload(text)) return;
@@ -90,8 +104,6 @@ export function useMessageTranslation() {
     const result = await doTranslate(messageId, text);
     if (result) {
       setTranslations(prev => ({ ...prev, [messageId]: result }));
-    } else {
-      toast.error('Erreur de traduction');
     }
     setTranslating(null);
   }, [translations, doTranslate, isEncryptedPayload]);
