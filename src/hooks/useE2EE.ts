@@ -939,78 +939,43 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       throw new EncryptionError('Rate limited — possible exfiltration attempt');
     }
 
-    // Try Double Ratchet first, fall back to legacy session if X3DH/ratchet unavailable
-    try {
-      const ratchet = await initRatchetIfNeeded();
-      const readiness = getRatchetReadiness(ratchet);
-      if (!ratchet || !readiness.canEncrypt || !isRatchetReadyForEncrypt(ratchet)) {
-        throw new Error('Ratchet not ready');
-      }
-
-      const { envelope, newState } = await ratchetEncrypt(
-        ratchet,
-        plaintext,
-        keysRef.current.signingPrivateKey,
-        keysRef.current.fingerprint,
-      );
-
-      const taggedEnvelope = envelope as any;
-      taggedEnvelope.encryptionMode = 'ratchet';
-
-      if (x3dhInfoRef.current && !peerHasRespondedRef.current) {
-        taggedEnvelope.x3dh = x3dhInfoRef.current;
-        console.info('[E2EE] ✅ encrypt with PreKey header (awaiting peer response)');
-      } else {
-        console.info('[E2EE] ✅ encrypt via Double Ratchet');
-      }
-
-      const serializedPayload = hardGlobals.jsonStringify(taggedEnvelope);
-      if (localId) {
-        pendingPayloadRef.current.set(localId, serializedPayload);
-      }
-
-      ratchetRef.current = newState;
-      await saveRatchetLocal(conversationId!, newState, x3dhInfoRef.current);
-
-      setState(s => ({ ...s, ratchetActive: true }));
-      return serializedPayload;
-    } catch (ratchetErr) {
-      // Ratchet failed — try legacy session as fallback
-      console.warn('[E2EE] Ratchet unavailable, trying legacy session:', ratchetErr instanceof Error ? ratchetErr.message : ratchetErr);
-      try {
-        const session = await ensureLegacySession();
-        if (!session) {
-          throw new EncryptionError('🔒 Aucune session de chiffrement disponible — réessayez dans quelques instants');
-        }
-
-        const { incrementSessionMessageCount } = await import('@/lib/crypto/keyManager');
-        const ciphertext = await encryptMessage(
-          plaintext,
-          session.sharedSecret,
-          keysRef.current!.signingPrivateKey,
-          keysRef.current!.fingerprint,
-          session.messageCount,
-        );
-
-        // Tag as legacy for deterministic decryption routing
-        const parsed = hardGlobals.jsonParse(ciphertext);
-        parsed.encryptionMode = 'legacy';
-        const serializedPayload = hardGlobals.jsonStringify(parsed);
-
-        if (localId) {
-          pendingPayloadRef.current.set(localId, serializedPayload);
-        }
-
-        await incrementSessionMessageCount(conversationId!);
-        legacySessionReadyRef.current = true;
-        console.info('[E2EE] ✅ encrypt via legacy session (fallback)');
-        return serializedPayload;
-      } catch (legacyErr) {
-        if (legacyErr instanceof EncryptionError) throw legacyErr;
-        console.error('[E2EE] ❌ Both ratchet and legacy encrypt failed:', legacyErr);
-        throw new EncryptionError('🔒 Chiffrement impossible — réessayez dans quelques instants');
-      }
+    // Signal protocol: NEVER fall back from Double Ratchet to legacy.
+    // A fallback would be a downgrade attack vector — an attacker who causes
+    // ratchet init to fail (e.g. by deleting prekeys) would force weaker encryption.
+    // Instead, we throw and let the message queue retry when ratchet is ready.
+    const ratchet = await initRatchetIfNeeded();
+    const readiness = getRatchetReadiness(ratchet);
+    if (!ratchet || !readiness.canEncrypt || !isRatchetReadyForEncrypt(ratchet)) {
+      throw new EncryptionError('🔒 Session Double Ratchet non prête — message en attente, réessai automatique');
     }
+
+    const { envelope, newState } = await ratchetEncrypt(
+      ratchet,
+      plaintext,
+      keysRef.current.signingPrivateKey,
+      keysRef.current.fingerprint,
+    );
+
+    const taggedEnvelope = envelope as any;
+    taggedEnvelope.encryptionMode = 'ratchet';
+
+    if (x3dhInfoRef.current && !peerHasRespondedRef.current) {
+      taggedEnvelope.x3dh = x3dhInfoRef.current;
+      console.info('[E2EE] ✅ encrypt with PreKey header (awaiting peer response)');
+    } else {
+      console.info('[E2EE] ✅ encrypt via Double Ratchet');
+    }
+
+    const serializedPayload = hardGlobals.jsonStringify(taggedEnvelope);
+    if (localId) {
+      pendingPayloadRef.current.set(localId, serializedPayload);
+    }
+
+    ratchetRef.current = newState;
+    await saveRatchetLocal(conversationId!, newState, x3dhInfoRef.current);
+
+    setState(s => ({ ...s, ratchetActive: true }));
+    return serializedPayload;
   }, [state.fingerprintChanged, conversationId, user, initRatchetIfNeeded]);
 
   /**
