@@ -45,7 +45,7 @@ async function deriveWrappingKey(secret: string, salt: Uint8Array): Promise<Cryp
     ['deriveKey'],
   );
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: salt as unknown as BufferSource, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: salt.buffer as ArrayBuffer, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
     keyMaterial,
     { name: 'AES-GCM', length: 256 },
     false,
@@ -60,7 +60,7 @@ function passwordSecret(password: string, userId: string): string {
 /** Wrap (encrypt) the Master Key with a wrapping key */
 async function wrapMasterKey(masterKeyRaw: Uint8Array, wrappingKey: CryptoKey): Promise<{ wrapped: string; iv: string }> {
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, wrappingKey, masterKeyRaw);
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, wrappingKey, masterKeyRaw.buffer as ArrayBuffer);
   return { wrapped: bufferToBase64(ciphertext), iv: bufferToBase64(iv.buffer) };
 }
 
