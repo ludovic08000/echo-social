@@ -994,8 +994,15 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       return { text: body, encrypted: false, verified: false };
     }
 
-    if (!isZeus) {
-      await ensureKeysAndPeerSync(false);
+    if (!isZeus && !peerKeyRef.current) {
+      // Only sync if we don't have peer keys yet — prevents request storm
+      // when decrypting many messages concurrently
+      const syncKey = `${user?.id}:${peerUserId}`;
+      if (!_peerSyncPromise.has(syncKey)) {
+        const p = ensureKeysAndPeerSync(false).finally(() => _peerSyncPromise.delete(syncKey));
+        _peerSyncPromise.set(syncKey, p);
+      }
+      await _peerSyncPromise.get(syncKey);
     }
 
     if (!cryptoRateCheck('decrypt')) {
