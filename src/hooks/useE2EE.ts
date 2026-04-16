@@ -391,6 +391,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   // Initialize identity keys + publish
   const initKeys = useCallback(async () => {
     if (!user) return;
+    // Warm up the auth user ID cache to avoid repeated getUser() calls
+    _cachedAuthUserId = user.id;
+    _cachedAuthUserIdTs = Date.now();
     try {
       const keysResult = await getOrCreateIdentityKeys(user.id);
       const isNewIdentity = !!(keysResult as any).isNewIdentity;
