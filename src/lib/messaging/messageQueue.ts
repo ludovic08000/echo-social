@@ -406,6 +406,15 @@ class MessageQueueManager {
       }
 
       // Step 2: Send encrypted payload
+      // CRITICAL FIX: Hydrate msg.plaintext from volatile memory BEFORE sending.
+      // The send handler needs plaintext to cache it for the sender's own display
+      // (Double Ratchet can't decrypt own messages — Signal design).
+      // This is safe because dbPut() always strips plaintext via toPersistedMessage().
+      const volatilePt = this.volatilePlaintext.get(msg.localId);
+      if (volatilePt) {
+        msg.plaintext = volatilePt;
+      }
+
       await this.updateStatus(msg, 'sending');
 
       const handlers = this.getHandlers(msg.conversationId);

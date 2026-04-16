@@ -911,10 +911,12 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       }
     }
 
-    // BLOCK if fingerprint changed and not yet acknowledged
+    // BLOCK if fingerprint changed and not yet acknowledged (Signal-style strict mode)
+    // Per Signal protocol: a fingerprint change MUST be explicitly acknowledged before
+    // any new messages can be encrypted. This prevents MITM downgrade attacks where
+    // an attacker replaces the peer's key and the sender unknowingly encrypts to the attacker.
     if (state.fingerprintChanged) {
-      // Auto-acknowledged: log warning but allow encryption to proceed
-      console.warn('[E2EE] ⚠️ Encrypting with auto-acknowledged new peer key');
+      throw new EncryptionError('🔒 Clé de sécurité du contact modifiée — vérifiez l\'identité avant d\'envoyer');
     }
 
     // Auto-load keys if ref is empty (race with initKeys)
@@ -1185,7 +1187,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     if (isZeus) return true;
     // Ready if we have peer keys and our own keys, and no fingerprint block
     return state.encrypted && !!keysRef.current && !!peerKeyRef.current && !state.fingerprintChanged;
-  }, [state.encrypted, isZeus]);
+  }, [state.encrypted, state.fingerprintChanged, isZeus]);
 
   /** Acknowledge fingerprint change — user explicitly trusts new key */
   const acknowledgeFingerprint = useCallback(async () => {
