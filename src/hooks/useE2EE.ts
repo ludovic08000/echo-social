@@ -633,23 +633,28 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           const bundle = await exportPublicKeyBundle(keys);
           if (cancelled) return;
           
-          // Publish if not done yet
-          await supabase
-            .from('user_public_keys')
-            .upsert({
-              user_id: user.id,
-              identity_key: bundle.identityKey,
-              signing_key: bundle.signingKey,
-              fingerprint: bundle.fingerprint,
-              kem_type: 'X25519',
-              is_active: true,
-              updated_at: new Date().toISOString(),
-            }, { onConflict: 'user_id,is_active' });
-          
-          // Push updated fingerprint to all peers who have a stale copy
-          supabase.rpc('push_my_fingerprint_to_peers').then(({ data: updated }) => {
-            if (updated && (updated as number) > 0) console.log('[E2EE] Pushed fingerprint to', updated, 'peer(s)');
-          });
+          // Publish if not done yet — DEDUPLICATED across hook instances
+          if (!_ownKeyPublishPromise || Date.now() - _ownKeyPublishTs > OWN_KEY_PUBLISH_TTL) {
+            _ownKeyPublishTs = Date.now();
+            _ownKeyPublishPromise = (async () => {
+              await supabase
+                .from('user_public_keys')
+                .upsert({
+                  user_id: user.id,
+                  identity_key: bundle.identityKey,
+                  signing_key: bundle.signingKey,
+                  fingerprint: bundle.fingerprint,
+                  kem_type: 'X25519',
+                  is_active: true,
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'user_id,is_active' });
+              
+              supabase.rpc('push_my_fingerprint_to_peers').then(({ data: updated }) => {
+                if (updated && (updated as number) > 0) console.log('[E2EE] Pushed fingerprint to', updated, 'peer(s)');
+              });
+            })();
+          }
+          await _ownKeyPublishPromise;
           
           setState(s => ({ ...s, fingerprint: bundle.fingerprint }));
           console.log('[E2EE] Own keys loaded on-demand');
