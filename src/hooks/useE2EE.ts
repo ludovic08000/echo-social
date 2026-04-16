@@ -81,6 +81,38 @@ let _cachedAuthUserId: string | null = null;
 let _cachedAuthUserIdTs = 0;
 const AUTH_USER_CACHE_TTL = 300_000; // 5 minutes
 
+/**
+ * Global decrypt serializer per conversation.
+ * When 50 messages mount simultaneously, they ALL call decrypt() in parallel.
+ * Without serialization, each one tries to init the ratchet independently,
+ * causing hundreds of duplicate user_public_keys/x3dh requests.
+ * This ensures only ONE ratchet init runs at a time per conversation.
+ */
+const _decryptQueue = new Map<string, Promise<any>>();
+
+async function serializedDecrypt<T>(convId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = _decryptQueue.get(convId) ?? Promise.resolve();
+  const next = prev.then(fn, fn); // run fn after previous completes (even if it failed)
+  _decryptQueue.set(convId, next);
+  // Clean up the reference once done to prevent memory leaks
+  next.finally(() => {
+    if (_decryptQueue.get(convId) === next) {
+      _decryptQueue.delete(convId);
+    }
+  });
+  return next;
+}
+
+/** Dedup for own key publishing — prevents ChatView + ChatWidget from both publishing */
+let _ownKeyPublishPromise: Promise<void> | null = null;
+let _ownKeyPublishTs = 0;
+const OWN_KEY_PUBLISH_TTL = 60_000; // 1 minute
+
+/** Dedup for peer key setup effect — prevents duplicate runs from ChatView + ChatWidget */
+const _peerSetupPromise = new Map<string, Promise<void>>();
+const _peerSetupTs = new Map<string, number>();
+const PEER_SETUP_TTL = 30_000; // 30 seconds
+
 async function getCachedAuthUserId(): Promise<string | null> {
   if (_cachedAuthUserId && Date.now() - _cachedAuthUserIdTs < AUTH_USER_CACHE_TTL) {
     return _cachedAuthUserId;
@@ -601,23 +633,28 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           const bundle = await exportPublicKeyBundle(keys);
           if (cancelled) return;
           
-          // Publish if not done yet
-          await supabase
-            .from('user_public_keys')
-            .upsert({
-              user_id: user.id,
-              identity_key: bundle.identityKey,
-              signing_key: bundle.signingKey,
-              fingerprint: bundle.fingerprint,
-              kem_type: 'X25519',
-              is_active: true,
-              updated_at: new Date().toISOString(),
-            }, { onConflict: 'user_id,is_active' });
-          
-          // Push updated fingerprint to all peers who have a stale copy
-          supabase.rpc('push_my_fingerprint_to_peers').then(({ data: updated }) => {
-            if (updated && (updated as number) > 0) console.log('[E2EE] Pushed fingerprint to', updated, 'peer(s)');
-          });
+          // Publish if not done yet — DEDUPLICATED across hook instances
+          if (!_ownKeyPublishPromise || Date.now() - _ownKeyPublishTs > OWN_KEY_PUBLISH_TTL) {
+            _ownKeyPublishTs = Date.now();
+            _ownKeyPublishPromise = (async () => {
+              await supabase
+                .from('user_public_keys')
+                .upsert({
+                  user_id: user.id,
+                  identity_key: bundle.identityKey,
+                  signing_key: bundle.signingKey,
+                  fingerprint: bundle.fingerprint,
+                  kem_type: 'X25519',
+                  is_active: true,
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'user_id,is_active' });
+              
+              supabase.rpc('push_my_fingerprint_to_peers').then(({ data: updated }) => {
+                if (updated && (updated as number) > 0) console.log('[E2EE] Pushed fingerprint to', updated, 'peer(s)');
+              });
+            })();
+          }
+          await _ownKeyPublishPromise;
           
           setState(s => ({ ...s, fingerprint: bundle.fingerprint }));
           console.log('[E2EE] Own keys loaded on-demand');
@@ -1056,59 +1093,57 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
    * Decrypt — NEVER shows raw ciphertext.
    * Uses `encryptionMode` tag for deterministic dispatch.
    * For legacy messages without the tag, falls back to heuristic detection.
+   * 
+   * CRITICAL: All decrypts for the same conversation are SERIALIZED via a global
+   * queue to prevent 50 concurrent ratchet inits when loading a chat.
    */
   const decrypt = useCallback(async (body: string): Promise<{ text: string; encrypted: boolean; verified: boolean }> => {
     if (!isEncryptedMessage(body) && !isRatchetEnvelope(body)) {
       return { text: body, encrypted: false, verified: false };
     }
 
-    if (!isZeus && !peerKeyRef.current) {
-      // Only sync if we don't have peer keys yet — prevents request storm
-      // when decrypting many messages concurrently
-      const syncKey = `${user?.id}:${peerUserId}`;
-      if (!_peerSyncPromise.has(syncKey)) {
-        const p = ensureKeysAndPeerSync(false).finally(() => _peerSyncPromise.delete(syncKey));
-        _peerSyncPromise.set(syncKey, p);
-      }
-      await _peerSyncPromise.get(syncKey);
-    }
-
-    if (!cryptoRateCheck('decrypt')) {
-      return { text: '🔒 Opération limitée (sécurité)', encrypted: true, verified: false };
-    }
-
-    try {
-      const parsed = hardGlobals.jsonParse(body);
-      const explicitMode: string | undefined = parsed.encryptionMode;
-
-      // ── Deterministic dispatch based on encryptionMode tag ──
-
-      if (explicitMode === 'ratchet') {
-        // ONLY attempt ratchet decryption
-        return await decryptRatchetMessage(parsed, body);
+    // Serialize all decrypt operations for this conversation to prevent
+    // concurrent ratchet init storms (50 messages → 50 x3dh inits)
+    const convId = conversationId || 'unknown';
+    return serializedDecrypt(convId, async () => {
+      if (!isZeus && !peerKeyRef.current) {
+        const syncKey = `${user?.id}:${peerUserId}`;
+        if (!_peerSyncPromise.has(syncKey)) {
+          const p = ensureKeysAndPeerSync(false).finally(() => _peerSyncPromise.delete(syncKey));
+          _peerSyncPromise.set(syncKey, p);
+        }
+        await _peerSyncPromise.get(syncKey);
       }
 
-      if (explicitMode === 'legacy') {
-        // ONLY attempt legacy decryption
+      if (!cryptoRateCheck('decrypt')) {
+        return { text: '🔒 Opération limitée (sécurité)', encrypted: true, verified: false };
+      }
+
+      try {
+        const parsed = hardGlobals.jsonParse(body);
+        const explicitMode: string | undefined = parsed.encryptionMode;
+
+        if (explicitMode === 'ratchet') {
+          return await decryptRatchetMessage(parsed, body);
+        }
+
+        if (explicitMode === 'legacy') {
+          return await decryptLegacyMessage(parsed, body);
+        }
+
+        // No encryptionMode tag: backward-compatible heuristic
+        if (isRatchetEnvelope(body)) {
+          return await decryptRatchetMessage(parsed, body);
+        }
+
         return await decryptLegacyMessage(parsed, body);
+
+      } catch (err) {
+        console.error('[E2EE] decrypt failed:', err);
+        return { text: '🔒 Message chiffré', encrypted: true, verified: false };
       }
-
-      // ── No encryptionMode tag: backward-compatible heuristic ──
-      // Old messages before v6 don't have the tag
-
-      if (isRatchetEnvelope(body)) {
-        // Looks like a ratchet envelope (has v, hdr, ct fields)
-        return await decryptRatchetMessage(parsed, body);
-      }
-
-      // Legacy envelope (has ct but no hdr)
-      return await decryptLegacyMessage(parsed, body);
-
-    } catch (err) {
-      console.error('[E2EE] decrypt failed:', err);
-      return { text: '🔒 Message chiffré', encrypted: true, verified: false };
-    }
-  }, [conversationId, ensureKeysAndPeerSync, isZeus, user]);
+    });
+  }, [conversationId, ensureKeysAndPeerSync, isZeus, user, peerUserId]);
 
   /** Decrypt a ratchet-mode message */
   const decryptRatchetMessage = useCallback(async (
