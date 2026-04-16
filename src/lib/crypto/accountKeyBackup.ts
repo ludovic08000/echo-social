@@ -74,7 +74,7 @@ async function unwrapMasterKey(wrapped: string, iv: string, wrappingKey: CryptoK
 
 /** Import raw Master Key bytes into a CryptoKey for AES-GCM */
 async function importMasterKey(raw: Uint8Array): Promise<CryptoKey> {
-  return crypto.subtle.importKey('raw', raw, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  return crypto.subtle.importKey('raw', raw.buffer as ArrayBuffer, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
 
 /** Encrypt data with the Master Key */
