@@ -7,6 +7,8 @@
  * - All E2EE key material is collected, encrypted, and uploaded as an opaque blob
  * - Server NEVER sees plaintext keys or recovery key
  * - Restore requires the same recovery key — full restore or explicit failure
+ * 
+ * v2: Uses backup_type='recovery' to avoid collision with account-based backup
  */
 
 import { useCallback, useState } from 'react';
@@ -16,12 +18,12 @@ import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
 import { generateRecoveryKey, normalizeRecoveryKey, isValidRecoveryKey } from '@/lib/crypto/recoveryKey';
 
-const PBKDF2_ITERATIONS = 600_000; // OWASP 2023 recommendation
+const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
 const IV_LENGTH = 12;
-const BACKUP_VERSION = 2; // v2 = recovery key model
+const BACKUP_VERSION = 2;
+const BACKUP_TYPE = 'recovery';
 
-// Re-export for external use
 export { generateRecoveryKey, normalizeRecoveryKey, isValidRecoveryKey };
 
 async function deriveKey(recoveryKey: string, salt: Uint8Array): Promise<CryptoKey> {
@@ -68,10 +70,8 @@ async function decryptBlob(encrypted: string, salt: string, iv: string, recovery
 async function collectKeys(): Promise<string> {
   const data: Record<string, any> = {};
 
-  // Identity keys from IndexedDB
   try {
     const db = await openE2EEDB();
-
     for (const storeName of Array.from(db.objectStoreNames)) {
       const tx = db.transaction(storeName, 'readonly');
       const store = tx.objectStore(storeName);
@@ -85,14 +85,13 @@ async function collectKeys(): Promise<string> {
     db.close();
   } catch {}
 
-  // Ratchet states from IndexedDB
+  // Ratchet states
   try {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const req = indexedDB.open('forsure-ratchet', 1);
       req.onerror = () => reject(req.error);
       req.onsuccess = () => resolve(req.result);
     });
-
     if (db.objectStoreNames.contains('ratchet-states')) {
       const tx = db.transaction('ratchet-states', 'readonly');
       const all = await new Promise<any[]>((resolve, reject) => {
@@ -149,15 +148,15 @@ async function collectKeys(): Promise<string> {
     if (fps) data['fingerprints'] = fps;
   } catch {}
 
-  // Integrity check: backup MUST contain identity keys
+  // Integrity check
   const hasIdentity = data['e2ee:identity-keys']?.length > 0 || data['pinwrap:keys']?.length > 0;
   if (!hasIdentity) {
     throw new Error('Cannot create backup: no identity keys found locally');
   }
 
-  // Add metadata
   data['_meta'] = {
     version: BACKUP_VERSION,
+    backup_type: BACKUP_TYPE,
     createdAt: new Date().toISOString(),
     stores: Object.keys(data).filter(k => k !== '_meta'),
   };
@@ -166,143 +165,190 @@ async function collectKeys(): Promise<string> {
 }
 
 /**
- * Restore all local E2EE keys from backup — ATOMIC.
- * If any critical store fails to restore, the entire operation is rolled back.
+ * Restore all local E2EE keys from backup — TRULY ATOMIC.
+ * If ANY store fails to restore, ALL changes are rolled back.
  */
 async function restoreKeys(json: string): Promise<void> {
   const data = JSON.parse(json);
 
-  // Validate backup integrity before writing anything
   const hasIdentityKeys = data['e2ee:identity-keys']?.length > 0;
   const hasPinWrappedKeys = data['pinwrap:keys']?.length > 0;
   if (!hasIdentityKeys && !hasPinWrappedKeys) {
     throw new Error('Backup invalide : aucune clé d\'identité trouvée');
   }
 
-  // Phase 1: Restore E2EE IndexedDB stores (identity-keys is CRITICAL)
-  const restoredStores: string[] = [];
-  for (const [key, records] of Object.entries(data)) {
-    if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
-    const storeName = key.replace('e2ee:', '');
-      try {
-        const db = await openE2EEDB();
+  const rollbackOps: Array<() => Promise<void>> = [];
 
+  try {
+    // Phase 1: Restore E2EE IndexedDB stores
+    for (const [key, records] of Object.entries(data)) {
+      if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
+      const storeName = key.replace('e2ee:', '');
+      const db = await openE2EEDB();
       if (db.objectStoreNames.contains(storeName)) {
+        // Save existing for rollback
+        const existingTx = db.transaction(storeName, 'readonly');
+        const existingData = await new Promise<any[]>((resolve, reject) => {
+          const req = existingTx.objectStore(storeName).getAll();
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+
         const tx = db.transaction(storeName, 'readwrite');
         const store = tx.objectStore(storeName);
-        for (const record of records) {
-          store.put(record);
-        }
+        store.clear();
+        for (const record of records) store.put(record);
         await new Promise<void>((resolve, reject) => {
-          tx.oncomplete = () => { restoredStores.push(storeName); resolve(); };
+          tx.oncomplete = () => resolve();
           tx.onerror = () => reject(tx.error);
+        });
+
+        const sn = storeName;
+        const ed = existingData;
+        rollbackOps.push(async () => {
+          const rdb = await openE2EEDB();
+          if (rdb.objectStoreNames.contains(sn)) {
+            const rtx = rdb.transaction(sn, 'readwrite');
+            const rs = rtx.objectStore(sn);
+            rs.clear();
+            for (const r of ed) rs.put(r);
+            await new Promise<void>((r, j) => { rtx.oncomplete = () => r(); rtx.onerror = () => j(rtx.error); });
+          }
+          rdb.close();
         });
       }
       db.close();
-    } catch (e) {
-      if (storeName === 'identity-keys') {
-        throw new Error(`Critical restore failure: ${storeName} — ${e}`);
-      }
-      console.warn('[SecureBackup] Non-critical store restore failed:', storeName, e);
     }
-  }
 
-  // Phase 2: Restore ratchet states
-  if (data['ratchet:states'] && Array.isArray(data['ratchet:states'])) {
-    try {
+    // Phase 2: Restore ratchet states
+    if (data['ratchet:states'] && Array.isArray(data['ratchet:states'])) {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
         const req = indexedDB.open('forsure-ratchet', 1);
         req.onerror = () => reject(req.error);
         req.onsuccess = () => resolve(req.result);
         req.onupgradeneeded = () => {
-          const db = req.result;
-          if (!db.objectStoreNames.contains('ratchet-states')) {
-            db.createObjectStore('ratchet-states', { keyPath: 'convId' });
-          }
+          if (!req.result.objectStoreNames.contains('ratchet-states'))
+            req.result.createObjectStore('ratchet-states', { keyPath: 'convId' });
         };
+      });
+      const existingTx = db.transaction('ratchet-states', 'readonly');
+      const existingData = await new Promise<any[]>((r, j) => {
+        const req = existingTx.objectStore('ratchet-states').getAll();
+        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
       });
 
       const tx = db.transaction('ratchet-states', 'readwrite');
       const store = tx.objectStore('ratchet-states');
-      for (const record of data['ratchet:states']) {
-        store.put(record);
-      }
-      await new Promise<void>((resolve, reject) => {
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
+      store.clear();
+      for (const record of data['ratchet:states']) store.put(record);
+      await new Promise<void>((r, j) => { tx.oncomplete = () => r(); tx.onerror = () => j(tx.error); });
       db.close();
-    } catch (e) {
-      console.warn('[SecureBackup] Failed to restore ratchet states', e);
-    }
-  }
 
-  // Phase 3: Restore PIN-wrapped keys
-  if (data['pinwrap:keys'] && Array.isArray(data['pinwrap:keys'])) {
-    try {
+      rollbackOps.push(async () => {
+        const rdb = await new Promise<IDBDatabase>((resolve, reject) => {
+          const req = indexedDB.open('forsure-ratchet', 1);
+          req.onerror = () => reject(req.error); req.onsuccess = () => resolve(req.result);
+        });
+        const rtx = rdb.transaction('ratchet-states', 'readwrite');
+        rtx.objectStore('ratchet-states').clear();
+        for (const r of existingData) rtx.objectStore('ratchet-states').put(r);
+        await new Promise<void>((r, j) => { rtx.oncomplete = () => r(); rtx.onerror = () => j(rtx.error); });
+        rdb.close();
+      });
+    }
+
+    // Phase 3: Restore PIN-wrapped keys
+    if (data['pinwrap:keys'] && Array.isArray(data['pinwrap:keys'])) {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
         const req = indexedDB.open('forsure-pin-wrap', 1);
         req.onerror = () => reject(req.error);
         req.onsuccess = () => resolve(req.result);
         req.onupgradeneeded = () => {
-          const db = req.result;
-          if (!db.objectStoreNames.contains('pin-wrapped-keys')) {
-            db.createObjectStore('pin-wrapped-keys', { keyPath: 'id' });
-          }
+          if (!req.result.objectStoreNames.contains('pin-wrapped-keys'))
+            req.result.createObjectStore('pin-wrapped-keys', { keyPath: 'id' });
         };
+      });
+      const existingTx = db.transaction('pin-wrapped-keys', 'readonly');
+      const existingData = await new Promise<any[]>((r, j) => {
+        const req = existingTx.objectStore('pin-wrapped-keys').getAll();
+        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
       });
 
       const tx = db.transaction('pin-wrapped-keys', 'readwrite');
       const store = tx.objectStore('pin-wrapped-keys');
-      for (const record of data['pinwrap:keys']) {
-        store.put(record);
-      }
-      await new Promise<void>((resolve, reject) => {
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
+      store.clear();
+      for (const record of data['pinwrap:keys']) store.put(record);
+      await new Promise<void>((r, j) => { tx.oncomplete = () => r(); tx.onerror = () => j(tx.error); });
       db.close();
-    } catch (e) {
-      console.warn('[SecureBackup] Failed to restore PIN-wrapped keys', e);
-    }
-  }
 
-  // Phase 4: Restore private prekeys
-  if (data['prekeys:private'] && Array.isArray(data['prekeys:private'])) {
-    try {
+      rollbackOps.push(async () => {
+        const rdb = await new Promise<IDBDatabase>((resolve, reject) => {
+          const req = indexedDB.open('forsure-pin-wrap', 1);
+          req.onerror = () => reject(req.error); req.onsuccess = () => resolve(req.result);
+        });
+        const rtx = rdb.transaction('pin-wrapped-keys', 'readwrite');
+        rtx.objectStore('pin-wrapped-keys').clear();
+        for (const r of existingData) rtx.objectStore('pin-wrapped-keys').put(r);
+        await new Promise<void>((r, j) => { rtx.oncomplete = () => r(); rtx.onerror = () => j(rtx.error); });
+        rdb.close();
+      });
+    }
+
+    // Phase 4: Restore private prekeys
+    if (data['prekeys:private'] && Array.isArray(data['prekeys:private'])) {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
         const req = indexedDB.open('forsure-prekeys', 1);
         req.onerror = () => reject(req.error);
         req.onsuccess = () => resolve(req.result);
         req.onupgradeneeded = () => {
-          const db = req.result;
-          if (!db.objectStoreNames.contains('private-prekeys')) {
-            db.createObjectStore('private-prekeys', { keyPath: 'id' });
-          }
+          if (!req.result.objectStoreNames.contains('private-prekeys'))
+            req.result.createObjectStore('private-prekeys', { keyPath: 'id' });
         };
+      });
+      const existingTx = db.transaction('private-prekeys', 'readonly');
+      const existingData = await new Promise<any[]>((r, j) => {
+        const req = existingTx.objectStore('private-prekeys').getAll();
+        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
       });
 
       const tx = db.transaction('private-prekeys', 'readwrite');
       const store = tx.objectStore('private-prekeys');
-      for (const record of data['prekeys:private']) {
-        store.put(record);
-      }
-      await new Promise<void>((resolve, reject) => {
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
+      store.clear();
+      for (const record of data['prekeys:private']) store.put(record);
+      await new Promise<void>((r, j) => { tx.oncomplete = () => r(); tx.onerror = () => j(tx.error); });
       db.close();
-    } catch (e) {
-      console.warn('[SecureBackup] Failed to restore private prekeys', e);
+
+      rollbackOps.push(async () => {
+        const rdb = await new Promise<IDBDatabase>((resolve, reject) => {
+          const req = indexedDB.open('forsure-prekeys', 1);
+          req.onerror = () => reject(req.error); req.onsuccess = () => resolve(req.result);
+        });
+        const rtx = rdb.transaction('private-prekeys', 'readwrite');
+        rtx.objectStore('private-prekeys').clear();
+        for (const r of existingData) rtx.objectStore('private-prekeys').put(r);
+        await new Promise<void>((r, j) => { rtx.oncomplete = () => r(); rtx.onerror = () => j(rtx.error); });
+        rdb.close();
+      });
     }
-  }
 
-  // Phase 5: Restore fingerprints
-  if (data['fingerprints']) {
-    localStorage.setItem('forsure-known-fps', data['fingerprints']);
-  }
+    // Phase 5: Restore fingerprints
+    if (data['fingerprints']) {
+      const oldFps = localStorage.getItem('forsure-known-fps');
+      localStorage.setItem('forsure-known-fps', data['fingerprints']);
+      rollbackOps.push(async () => {
+        if (oldFps) localStorage.setItem('forsure-known-fps', oldFps);
+        else localStorage.removeItem('forsure-known-fps');
+      });
+    }
 
-  console.log('[SecureBackup] Atomic restore complete — stores:', restoredStores.join(', '));
+    console.log('[SecureBackup] ✅ Atomic restore complete');
+  } catch (error) {
+    console.error('[SecureBackup] Restore failed, rolling back ALL changes...', error);
+    for (const rollback of rollbackOps.reverse()) {
+      try { await rollback(); } catch (e) { console.warn('[SecureBackup] Rollback step failed:', e); }
+    }
+    throw new Error(`Restore échoué et annulé : ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 export function useSecureBackup() {
@@ -310,19 +356,10 @@ export function useSecureBackup() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /**
-   * Create a new backup with a freshly generated recovery key.
-   * Returns the recovery key that the user MUST save — it's the only way to restore.
-   */
   const createBackup = useCallback(async (): Promise<string | null> => {
-    if (!user) {
-      setError('Non authentifié');
-      return null;
-    }
-
+    if (!user) { setError('Non authentifié'); return null; }
     setIsLoading(true);
     setError(null);
-
     try {
       const keysJson = await collectKeys();
       const recoveryKey = generateRecoveryKey();
@@ -337,13 +374,13 @@ export function useSecureBackup() {
           salt,
           iv,
           version: BACKUP_VERSION,
+          backup_type: BACKUP_TYPE,
           created_at: new Date().toISOString(),
-        }, { onConflict: 'user_id' });
+        }, { onConflict: 'user_id,backup_type' });
 
       if (dbError) throw dbError;
-
       console.log('[SecureBackup] Backup created with recovery key');
-      return recoveryKey; // Formatted with dashes for readability
+      return recoveryKey;
     } catch (err: any) {
       console.error('[SecureBackup] Backup failed:', err);
       setError(err.message || 'Échec de la sauvegarde');
@@ -353,19 +390,10 @@ export function useSecureBackup() {
     }
   }, [user]);
 
-  /**
-   * Update an existing backup using the same recovery key.
-   * Used by auto-backup to refresh the blob without generating a new key.
-   */
   const updateBackup = useCallback(async (recoveryKey: string): Promise<boolean> => {
-    if (!user) {
-      setError('Non authentifié');
-      return false;
-    }
-
+    if (!user) { setError('Non authentifié'); return false; }
     setIsLoading(true);
     setError(null);
-
     try {
       const keysJson = await collectKeys();
       const normalized = normalizeRecoveryKey(recoveryKey);
@@ -379,11 +407,11 @@ export function useSecureBackup() {
           salt,
           iv,
           version: BACKUP_VERSION,
+          backup_type: BACKUP_TYPE,
           created_at: new Date().toISOString(),
-        }, { onConflict: 'user_id' });
+        }, { onConflict: 'user_id,backup_type' });
 
       if (dbError) throw dbError;
-
       console.log('[SecureBackup] Backup updated');
       return true;
     } catch (err: any) {
@@ -395,40 +423,32 @@ export function useSecureBackup() {
     }
   }, [user]);
 
-  /**
-   * Restore backup using recovery key.
-   * Full restore or explicit failure — no partial state.
-   */
   const restoreBackup = useCallback(async (recoveryKey: string): Promise<boolean> => {
-    if (!user) {
-      setError('Non authentifié');
-      return false;
-    }
-    if (!isValidRecoveryKey(recoveryKey)) {
-      setError('Clé de récupération invalide');
-      return false;
-    }
-
+    if (!user) { setError('Non authentifié'); return false; }
+    if (!isValidRecoveryKey(recoveryKey)) { setError('Clé de récupération invalide'); return false; }
     setIsLoading(true);
     setError(null);
-
     try {
       const { data, error: dbError } = await supabase
         .from('user_backups' as any)
-        .select('encrypted_blob, salt, iv, version')
+        .select('encrypted_blob, salt, iv, version, backup_type')
         .eq('user_id', user.id)
+        .eq('backup_type', BACKUP_TYPE)
         .single();
 
-      if (dbError || !data) {
-        setError('Aucune sauvegarde trouvée');
+      if (dbError || !data) { setError('Aucune sauvegarde de type recovery trouvée'); return false; }
+
+      const backup = data as unknown as { encrypted_blob: string; salt: string; iv: string; version: number; backup_type: string };
+
+      // Version guard: refuse account-based backup format
+      if (backup.version >= 3 && backup.backup_type !== BACKUP_TYPE) {
+        setError('Format de sauvegarde incompatible (backup compte détecté)');
         return false;
       }
 
-      const backup = data as unknown as { encrypted_blob: string; salt: string; iv: string; version: number };
       const normalized = normalizeRecoveryKey(recoveryKey);
       const keysJson = await decryptBlob(backup.encrypted_blob, backup.salt, backup.iv, normalized);
       await restoreKeys(keysJson);
-
       console.log('[SecureBackup] Full restore completed successfully');
       return true;
     } catch (err: any) {
@@ -451,6 +471,7 @@ export function useSecureBackup() {
         .from('user_backups' as any)
         .select('id')
         .eq('user_id', user.id)
+        .eq('backup_type', BACKUP_TYPE)
         .maybeSingle();
       return !!data;
     } catch {
@@ -458,12 +479,5 @@ export function useSecureBackup() {
     }
   }, [user]);
 
-  return {
-    createBackup,
-    updateBackup,
-    restoreBackup,
-    hasBackup,
-    isLoading,
-    error,
-  };
+  return { createBackup, updateBackup, restoreBackup, hasBackup, isLoading, error };
 }
