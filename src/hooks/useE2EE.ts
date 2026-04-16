@@ -190,8 +190,8 @@ async function saveKnownFingerprintServer(peerUserId: string, fp: string) {
   }
 }
 
-/** Check fingerprint against both local AND server records */
-async function checkFingerprintChangeWithServer(
+/** Check fingerprint against both local AND server records (with cache) */
+const _fpCheckCache = new Map<string, { result: { changed: boolean; previousFp: string | null }; ts: number }>();
   currentUserId: string,
   peerUserId: string,
   currentFp: string
