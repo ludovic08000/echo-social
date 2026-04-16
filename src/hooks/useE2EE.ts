@@ -776,7 +776,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           }));
         }
       } catch {}
-    }, 10_000); // retry every 10s
+    }, 30_000); // retry every 30s
     return () => clearInterval(interval);
   }, [state.peerKeyMissing, peerUserId, isZeus, conversationId]);
 
