@@ -91,6 +91,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const peerUserId = conversation?.participant?.user_id;
   const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const e2ee = useE2EE(conversationId, peerUserId);
+  const decryptRefreshKey = `${Number(e2ee.ready)}:${Number(e2ee.encrypted)}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.ratchetActive)}:${Number(e2ee.peerKeyMissing)}:${e2ee.initError ?? 'ok'}`;
 
   // Cache plaintext for own sent messages (ratchet can't decrypt own ciphertext)
   const handlePlaintextCached = useCallback((serverId: string, plaintext: string) => {
@@ -690,10 +691,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
                             <DecryptedMessageBody
                               body={msg.body}
                               decrypt={e2ee.decrypt}
-                              isEncryptionActive={e2ee.encrypted}
+                              isEncryptionActive={e2ee.encrypted && !isZeusConversation}
                               onDecrypted={(text) => onDecrypted(msg.id, text)}
                               isMe={isMe}
                               cachedPlaintext={isMe ? decryptedCache.get(msg.id) : undefined}
+                              refreshKey={decryptRefreshKey}
                             />
                           </div>
 

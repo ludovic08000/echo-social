@@ -377,13 +377,16 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
   // E2EE integration
   const e2ee = useE2EE(conversationId, peerUserId);
+  const isEncryptionActive = !isZeusConversation && e2ee.encrypted;
+  const allowPlaintextFallback = isZeusConversation || (!e2ee.encrypted && !isZeusConversation);
+  const decryptRefreshKey = `${Number(e2ee.ready)}:${Number(e2ee.encrypted)}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.ratchetActive)}:${Number(e2ee.peerKeyMissing)}:${e2ee.initError ?? 'ok'}`;
   const queue = useMessageQueue(
     conversationId,
     e2ee.encrypt,
     e2ee.isReady(),
-    !isZeusConversation,
+    isEncryptionActive,
     e2ee.acknowledgeSentPayload,
-    isZeusConversation,
+    allowPlaintextFallback,
     (serverId, plaintext) => decryptedCacheRef.current.set(serverId, plaintext),
   );
 
@@ -1095,9 +1098,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                             <DecryptedMessageBody
                               body={msg.body}
                               decrypt={e2ee.decrypt}
-                              isEncryptionActive={e2ee.encrypted && !isZeusConversation}
+                              isEncryptionActive={isEncryptionActive}
                               onDecrypted={(text) => onDecrypted(msg.id, text)}
                               isMe={isMe}
+                              cachedPlaintext={isMe ? decryptedCacheRef.current.get(msg.id) : undefined}
+                              refreshKey={decryptRefreshKey}
                             />
                           </div>
                         )}
