@@ -620,12 +620,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           console.log('[E2EE] Own keys loaded on-demand');
         }
 
-        const { data } = await supabase
-          .from('user_public_keys')
-          .select('identity_key, signing_key, fingerprint')
-          .eq('user_id', peerUserId)
-          .eq('is_active', true)
-          .maybeSingle();
+        const data = await fetchPeerPublicKeys(peerUserId);
 
         if (cancelled) return;
 
