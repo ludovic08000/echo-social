@@ -233,10 +233,12 @@ async function saveKnownFingerprintServer(peerUserId: string, fp: string) {
   _fpSaveCache.set(cacheKey, Date.now());
 
   try {
+    const userId = await getCachedAuthUserId();
+    if (!userId) return;
     await supabase
       .from('user_known_fingerprints')
       .upsert({
-        user_id: (await supabase.auth.getUser()).data.user?.id,
+        user_id: userId,
         peer_user_id: peerUserId,
         fingerprint: fp,
         last_seen_at: new Date().toISOString(),
