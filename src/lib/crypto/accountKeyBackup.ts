@@ -17,6 +17,7 @@
  */
 
 import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
+import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -37,14 +38,14 @@ let _sessionUserId: string | null = null;
 // ── Crypto Primitives ──
 
 async function deriveWrappingKey(secret: string, salt: Uint8Array): Promise<CryptoKey> {
-  const keyMaterial = await crypto.subtle.importKey(
+  const keyMaterial = await hardCrypto.importKey(
     'raw',
-    new TextEncoder().encode(secret),
+    new hardGlobals.TextEncoder().encode(secret),
     'PBKDF2',
     false,
     ['deriveKey'],
   );
-  return crypto.subtle.deriveKey(
+  return hardCrypto.deriveKey(
     { name: 'PBKDF2', salt: salt.buffer as ArrayBuffer, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
     keyMaterial,
     { name: 'AES-GCM', length: 256 },
@@ -59,9 +60,9 @@ function passwordSecret(password: string, userId: string): string {
 
 /** Wrap (encrypt) the Master Key with a wrapping key */
 async function wrapMasterKey(masterKeyRaw: Uint8Array, wrappingKey: CryptoKey): Promise<{ wrapped: string; iv: string }> {
-  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+  const iv = hardCrypto.getRandomValues(new Uint8Array(IV_LENGTH));
   // Use slice() to get a clean ArrayBuffer (no offset issues — Signal lesson)
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, wrappingKey, masterKeyRaw.slice().buffer);
+  const ciphertext = await hardCrypto.encrypt({ name: 'AES-GCM', iv }, wrappingKey, masterKeyRaw.slice().buffer);
   return { wrapped: bufferToBase64(ciphertext), iv: bufferToBase64(iv.buffer) };
 }
 
@@ -69,21 +70,21 @@ async function wrapMasterKey(masterKeyRaw: Uint8Array, wrappingKey: CryptoKey): 
 async function unwrapMasterKey(wrapped: string, iv: string, wrappingKey: CryptoKey): Promise<Uint8Array> {
   const ivBuf = new Uint8Array(base64ToBuffer(iv));
   const ciphertext = base64ToBuffer(wrapped);
-  const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivBuf }, wrappingKey, ciphertext);
+  const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf }, wrappingKey, ciphertext);
   return new Uint8Array(plainBuf);
 }
 
 /** Import raw Master Key bytes into a CryptoKey for AES-GCM */
 async function importMasterKey(raw: Uint8Array): Promise<CryptoKey> {
   // slice() ensures clean buffer with byteOffset=0 (Signal-style safety)
-  return crypto.subtle.importKey('raw', raw.slice().buffer, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  return hardCrypto.importKey('raw', raw.slice().buffer, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
 
 /** Encrypt data with the Master Key */
 async function encryptWithMasterKey(data: string, masterKey: CryptoKey): Promise<{ encrypted: string; iv: string }> {
-  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
-  const encoded = new TextEncoder().encode(data);
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, masterKey, encoded);
+  const iv = hardCrypto.getRandomValues(new Uint8Array(IV_LENGTH));
+  const encoded = new hardGlobals.TextEncoder().encode(data);
+  const ciphertext = await hardCrypto.encrypt({ name: 'AES-GCM', iv }, masterKey, encoded);
   return { encrypted: bufferToBase64(ciphertext), iv: bufferToBase64(iv.buffer) };
 }
 
@@ -91,13 +92,13 @@ async function encryptWithMasterKey(data: string, masterKey: CryptoKey): Promise
 async function decryptWithMasterKey(encrypted: string, iv: string, masterKey: CryptoKey): Promise<string> {
   const ivBuf = new Uint8Array(base64ToBuffer(iv));
   const ciphertext = base64ToBuffer(encrypted);
-  const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivBuf }, masterKey, ciphertext);
-  return new TextDecoder().decode(plainBuf);
+  const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf }, masterKey, ciphertext);
+  return new hardGlobals.TextDecoder().decode(plainBuf);
 }
 
 /** Generate a fresh random Master Key */
 function generateMasterKey(): Uint8Array {
-  return crypto.getRandomValues(new Uint8Array(MASTER_KEY_LENGTH));
+  return hardCrypto.getRandomValues(new Uint8Array(MASTER_KEY_LENGTH));
 }
 
 // ── IndexedDB helpers (shared with collectAllKeys / restoreAllKeys) ──
