@@ -4261,6 +4261,7 @@ export type Database = {
       }
       user_backups: {
         Row: {
+          backup_type: string
           created_at: string
           encrypted_blob: string
           id: string
@@ -4270,6 +4271,7 @@ export type Database = {
           version: number
         }
         Insert: {
+          backup_type?: string
           created_at?: string
           encrypted_blob: string
           id?: string
@@ -4279,6 +4281,7 @@ export type Database = {
           version?: number
         }
         Update: {
+          backup_type?: string
           created_at?: string
           encrypted_blob?: string
           id?: string

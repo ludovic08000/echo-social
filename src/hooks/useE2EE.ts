@@ -559,17 +559,18 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             fingerprint: data.fingerprint,
           };
 
-          // If fingerprint changed: auto-acknowledge with warning banner
-          // Signal only hard-blocks when safety numbers were EXPLICITLY verified.
-          // Since we don't have explicit verification, auto-accept + warn.
+          // STRICT MODE: If fingerprint changed, BLOCK sending until user explicitly acknowledges.
+          // Do NOT auto-accept — this is the core MITM/key-replacement detection.
           if (fpChanged) {
-            console.warn('[PEER_KEY] ⚠️ Fingerprint changed for', peerUserId, '— auto-acknowledging (no explicit verification)');
+            console.warn('[PEER_KEY] 🛑 Fingerprint changed for', peerUserId, '— BLOCKING until user acknowledges');
             
-            // Auto-save the new fingerprint
-            saveKnownFingerprint(peerUserId, data.fingerprint);
-            saveKnownFingerprintServer(peerUserId, data.fingerprint);
-            
-            // Clear old crypto state for this conversation
+            peerKeyRef.current = {
+              identityKey: data.identity_key,
+              signingKey: data.signing_key,
+              fingerprint: data.fingerprint,
+            };
+
+            // Clear old crypto state but do NOT re-establish session
             if (conversationId) {
               openRatchetDB().then(db => {
                 try {
@@ -581,34 +582,19 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
               peerHasRespondedRef.current = false;
               x3dhInfoRef.current = null;
               pendingPayloadRef.current.clear();
-              
-              try {
-                const { deleteSessionKey: delSession } = await import('@/lib/crypto/keyManager');
-                await delSession(conversationId);
-              } catch {}
-              
-              // Re-establish legacy session with new key
-              if (keysRef.current) {
-                try {
-                  await establishSession(keysRef.current, data.identity_key, conversationId, data.fingerprint);
-                  legacySessionReadyRef.current = true;
-                  console.log('[E2EE] ✅ Session re-established after auto-acknowledge');
-                } catch (e) {
-                  console.warn('[E2EE] Session re-establish failed:', e);
-                }
-              }
+              legacySessionReadyRef.current = false;
             }
             
-            // Set fingerprintChanged=true for UI warning banner, but keep ready=true
+            // Set fingerprintChanged=true AND ready=false to BLOCK sending
             setState(s => ({
               ...s,
               peerFingerprint: data.fingerprint,
               encrypted: true,
-              ready: true,
+              ready: false,
               fingerprintChanged: true,
               peerKeyMissing: false,
               ratchetActive: false,
-              initError: null,
+              initError: 'fingerprint_changed',
             }));
             return;
           }
@@ -1232,8 +1218,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   /** Check if encryption is ready for this conversation */
   const isReady = useCallback((): boolean => {
     if (isZeus) return true;
-    // Ready if we have peer keys and our own keys (fingerprint changes are auto-acknowledged)
-    return state.encrypted && !!keysRef.current && !!peerKeyRef.current;
+    // Ready if we have peer keys and our own keys, and no fingerprint block
+    return state.encrypted && !!keysRef.current && !!peerKeyRef.current && !state.fingerprintChanged;
   }, [state.encrypted, isZeus]);
 
   /** Acknowledge fingerprint change — user explicitly trusts new key */
@@ -1272,7 +1258,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         }
       }
     }
-    setState(s => ({ ...s, fingerprintChanged: false, ready: true, ratchetActive: false }));
+    setState(s => ({ ...s, fingerprintChanged: false, ready: true, ratchetActive: false, initError: null }));
   }, [peerUserId, conversationId]);
 
   const acknowledgeSentPayload = useCallback(async (localId: string) => {
