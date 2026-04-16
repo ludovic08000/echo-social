@@ -5,24 +5,28 @@
 
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 
-/** Convert ArrayBuffer to Base64 string */
+/** Convert ArrayBuffer to Base64 string (Signal-style: always use clean copy) */
 export function bufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
+  // Signal safety: slice() ensures we read from offset 0 with correct length
+  // even if the buffer is a view into a larger backing store
+  const bytes = new Uint8Array(buffer.byteLength !== undefined ? buffer : new ArrayBuffer(0));
+  const clean = bytes.slice();
   let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < clean.byteLength; i++) {
+    binary += String.fromCharCode(clean[i]);
   }
   return hardGlobals.btoa(binary);
 }
 
-/** Convert Base64 string to ArrayBuffer */
+/** Convert Base64 string to ArrayBuffer (always returns clean buffer at offset 0) */
 export function base64ToBuffer(base64: string): ArrayBuffer {
   const binary = hardGlobals.atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
   }
-  return bytes.buffer;
+  // .slice() guarantees byteOffset=0 and correct byteLength
+  return bytes.slice().buffer;
 }
 
 /** Generate cryptographically secure random bytes */
@@ -57,9 +61,10 @@ export function concatBuffers(...buffers: ArrayBuffer[]): ArrayBuffer {
   return result.buffer;
 }
 
-/** Encode string to ArrayBuffer */
+/** Encode string to ArrayBuffer (Signal-style: .slice() for clean buffer) */
 export function encodeString(str: string): ArrayBuffer {
-  return new hardGlobals.TextEncoder().encode(str).buffer;
+  const encoded = new hardGlobals.TextEncoder().encode(str);
+  return encoded.slice().buffer;
 }
 
 /** Decode ArrayBuffer to string */
