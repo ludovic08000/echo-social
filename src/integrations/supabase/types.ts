@@ -4266,9 +4266,11 @@ export type Database = {
           encrypted_blob: string
           id: string
           iv: string
+          master_key_iv: string | null
           salt: string
           user_id: string
           version: number
+          wrapped_master_key: string | null
         }
         Insert: {
           backup_type?: string
@@ -4276,9 +4278,11 @@ export type Database = {
           encrypted_blob: string
           id?: string
           iv: string
+          master_key_iv?: string | null
           salt: string
           user_id: string
           version?: number
+          wrapped_master_key?: string | null
         }
         Update: {
           backup_type?: string
@@ -4286,9 +4290,11 @@ export type Database = {
           encrypted_blob?: string
           id?: string
           iv?: string
+          master_key_iv?: string | null
           salt?: string
           user_id?: string
           version?: number
+          wrapped_master_key?: string | null
         }
         Relationships: []
       }
