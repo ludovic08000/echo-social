@@ -806,12 +806,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     }
 
     try {
-      const { data: freshPeerKey } = await supabase
-        .from('user_public_keys')
-        .select('identity_key, signing_key, fingerprint')
-        .eq('user_id', peerUserId)
-        .eq('is_active', true)
-        .maybeSingle();
+      const freshPeerKey = await fetchPeerPublicKeys(peerUserId);
 
       if (!freshPeerKey) {
         setState(s => ({
