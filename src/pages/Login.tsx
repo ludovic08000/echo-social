@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { checkLoginAllowed, recordFailedLogin, resetLoginAttempts } from '@/lib/loginRateLimit';
+import { initAccountKeySync } from '@/lib/crypto/accountKeyBackup';
 import loginBg from '@/assets/login-bg.png';
 
 export default function Login() {
@@ -74,6 +75,20 @@ export default function Login() {
 
     resetLoginAttempts();
     queryClient.removeQueries({ queryKey: ['posts', 'friends-feed'] });
+
+    // Auto-sync E2EE keys from server backup (Google-style)
+    try {
+      const { data: { user: authUser } } = await (await import('@/integrations/supabase/client')).supabase.auth.getUser();
+      if (authUser) {
+        const result = await initAccountKeySync(password, authUser.id);
+        if (result === 'restored') {
+          toast({ title: '🔑 Clés E2EE restaurées automatiquement' });
+        }
+      }
+    } catch (e) {
+      console.warn('[Login] Key sync failed:', e);
+    }
+
     setIsLoading(false);
   };
 
