@@ -108,6 +108,11 @@ let _ownKeyPublishPromise: Promise<void> | null = null;
 let _ownKeyPublishTs = 0;
 const OWN_KEY_PUBLISH_TTL = 60_000; // 1 minute
 
+/** Dedup for initKeys — prevents ChatView + ChatWidget from both initializing */
+let _initKeysPromise: Promise<void> | null = null;
+let _initKeysTs = 0;
+const INIT_KEYS_TTL = 30_000; // 30 seconds
+
 /** Dedup for peer key setup effect — prevents duplicate runs from ChatView + ChatWidget */
 const _peerSetupPromise = new Map<string, Promise<void>>();
 const _peerSetupTs = new Map<string, number>();
