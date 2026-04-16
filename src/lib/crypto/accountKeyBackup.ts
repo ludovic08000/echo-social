@@ -105,7 +105,7 @@ function generateMasterKey(): Uint8Array {
 
 async function openDB(name: string, version: number, storeNames?: string[]): Promise<IDBDatabase> {
   return new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open(name, version);
+    const req = hardGlobals.idbOpen(name, version);
     req.onerror = () => reject(req.error);
     req.onsuccess = () => resolve(req.result);
     if (storeNames) {
@@ -357,7 +357,7 @@ export async function computeLocalCryptoDigest(): Promise<string> {
   }
 
   const combined = parts.join('|');
-  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(combined));
+  const hash = await hardCrypto.digest('SHA-256', new hardGlobals.TextEncoder().encode(combined));
   return bufferToBase64(hash);
 }
 
@@ -392,7 +392,7 @@ async function uploadBackup(
   const { encrypted, iv: dataIv } = await encryptWithMasterKey(keysJson, masterKey);
 
   // 2. Wrap Master Key with the wrapping secret (password or recovery key)
-  const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+  const salt = hardCrypto.getRandomValues(new Uint8Array(SALT_LENGTH));
   const wrappingKey = await deriveWrappingKey(wrappingSecret, salt);
   const { wrapped, iv: mkIv } = await wrapMasterKey(masterKeyRaw, wrappingKey);
 
@@ -451,8 +451,8 @@ async function downloadAndRestore(
     const ivBuf = new Uint8Array(base64ToBuffer(backup.iv));
     const key = await deriveWrappingKey(wrappingSecret, saltBuf);
     const ciphertext = base64ToBuffer(backup.encrypted_blob);
-    const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivBuf }, key, ciphertext);
-    const json = new TextDecoder().decode(plainBuf);
+    const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf }, key, ciphertext);
+    const json = new hardGlobals.TextDecoder().decode(plainBuf);
     await restoreAllKeys(json);
     // Migrate: generate Master Key and re-upload in v5 format
     const mkRaw = generateMasterKey();
@@ -468,8 +468,8 @@ async function downloadAndRestore(
     const ivBuf = new Uint8Array(base64ToBuffer(backup.iv));
     const key = await deriveWrappingKey(wrappingSecret, saltBuf);
     const ciphertext = base64ToBuffer(backup.encrypted_blob);
-    const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivBuf }, key, ciphertext);
-    const json = new TextDecoder().decode(plainBuf);
+    const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf }, key, ciphertext);
+    const json = new hardGlobals.TextDecoder().decode(plainBuf);
     await restoreAllKeys(json);
     const mkRaw = generateMasterKey();
     const mk = await importMasterKey(mkRaw);
