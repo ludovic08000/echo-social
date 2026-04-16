@@ -108,6 +108,11 @@ let _ownKeyPublishPromise: Promise<void> | null = null;
 let _ownKeyPublishTs = 0;
 const OWN_KEY_PUBLISH_TTL = 60_000; // 1 minute
 
+/** Dedup for initKeys — prevents ChatView + ChatWidget from both initializing */
+let _initKeysPromise: Promise<void> | null = null;
+let _initKeysTs = 0;
+const INIT_KEYS_TTL = 30_000; // 30 seconds
+
 /** Dedup for peer key setup effect — prevents duplicate runs from ChatView + ChatWidget */
 const _peerSetupPromise = new Map<string, Promise<void>>();
 const _peerSetupTs = new Map<string, number>();
@@ -572,12 +577,30 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     }
   }, [user]);
 
-  // Auto-init on mount
+  // Auto-init on mount — GLOBALLY DEDUPLICATED across hook instances
   useEffect(() => {
     if (!user || initRef.current) return;
     initRef.current = true;
     cleanupLegacyStorage();
-    initKeys();
+    // Dedup: if another instance already ran initKeys recently, reuse its promise
+    if (_initKeysPromise && Date.now() - _initKeysTs < INIT_KEYS_TTL) {
+      _initKeysPromise.then(() => {
+        // After the other instance finishes, sync our local refs
+        if (!keysRef.current) {
+          getOrCreateIdentityKeys(user.id).then(keys => {
+            keysRef.current = keys;
+            exportPublicKeyBundle(keys).then(b => {
+              setState(s => ({ ...s, fingerprint: b.fingerprint, initError: null }));
+            });
+          }).catch(() => {});
+        }
+      });
+      return;
+    }
+    _initKeysTs = Date.now();
+    _initKeysPromise = initKeys().catch(() => {}).finally(() => {
+      // Keep promise reference for TTL window, don't null immediately
+    });
   }, [user, initKeys]);
 
   // Re-init when PIN unlocks keys
@@ -612,6 +635,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   }, []);
 
   // Fetch peer public key + pre-establish legacy session
+  // GLOBALLY DEDUPLICATED: if ChatView + ChatWidget both mount with the same
+  // conversationId+peerUserId, only ONE runs the full setup; the other waits.
   useEffect(() => {
     if (!peerUserId || !user) return;
 
@@ -620,9 +645,35 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       return;
     }
 
+    const setupKey = `${user.id}:${peerUserId}:${conversationId}`;
+    const lastSetup = _peerSetupTs.get(setupKey);
+    if (lastSetup && Date.now() - lastSetup < PEER_SETUP_TTL && _peerSetupPromise.has(setupKey)) {
+      // Another hook instance already ran this setup recently — wait for it
+      _peerSetupPromise.get(setupKey)!.then(() => {
+        // Sync state from cached data
+        const cached = _peerKeyCache.get(peerUserId);
+        if (cached?.data) {
+          peerKeyRef.current = {
+            identityKey: cached.data.identity_key,
+            signingKey: cached.data.signing_key,
+            fingerprint: cached.data.fingerprint,
+          };
+          setState(s => ({
+            ...s,
+            peerFingerprint: cached.data!.fingerprint,
+            encrypted: true,
+            ready: true,
+            peerKeyMissing: false,
+            initError: null,
+          }));
+        }
+      }).catch(() => {});
+      return;
+    }
+
     let cancelled = false;
 
-    (async () => {
+    const setupPromise = (async () => {
       try {
         // Ensure our own keys are ready first (may race with initKeys)
         if (!keysRef.current) {
@@ -677,7 +728,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           };
 
           // STRICT MODE: If fingerprint changed, BLOCK sending until user explicitly acknowledges.
-          // Do NOT auto-accept — this is the core MITM/key-replacement detection.
           if (fpChanged) {
             console.warn('[PEER_KEY] 🛑 Fingerprint changed for', peerUserId, '— BLOCKING until user acknowledges');
             
@@ -687,7 +737,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
               fingerprint: data.fingerprint,
             };
 
-            // Clear old crypto state but do NOT re-establish session
             if (conversationId) {
               openRatchetDB().then(db => {
                 try {
@@ -702,7 +751,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
               legacySessionReadyRef.current = false;
             }
             
-            // Set fingerprintChanged=true AND ready=false to BLOCK sending
             setState(s => ({
               ...s,
               peerFingerprint: data.fingerprint,
@@ -748,9 +796,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           }));
         } else {
           console.log('[PEER_KEY] No identity key found for', peerUserId, '— peer may not have published keys yet');
-
-          // No identity key found — mark as temporarily unavailable but allow retry
-          // The peer may come online and publish their keys later
           console.warn('[PEER_KEY] ⚠️ No public keys for', peerUserId, '— will retry on next open');
           setState(s => ({
             ...s,
@@ -771,6 +816,17 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         }
       }
     })();
+
+    _peerSetupTs.set(setupKey, Date.now());
+    _peerSetupPromise.set(setupKey, setupPromise);
+    setupPromise.finally(() => {
+      // Clean up after TTL to allow re-runs
+      setTimeout(() => {
+        if (_peerSetupPromise.get(setupKey) === setupPromise) {
+          _peerSetupPromise.delete(setupKey);
+        }
+      }, PEER_SETUP_TTL);
+    });
 
     return () => { cancelled = true; };
   }, [peerUserId, user, conversationId, isZeus]);
