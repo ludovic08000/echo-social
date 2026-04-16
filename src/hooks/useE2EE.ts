@@ -65,9 +65,66 @@ const RATCHET_DB_VERSION = 1;
 const RATCHET_STORE_NAME = 'ratchet-states';
 const KNOWN_FP_KEY = 'forsure-known-fps';
 
-// Deduplication lock for ensureKeysAndPeerSync — prevents concurrent calls
-// from firing dozens of identical API requests
-let _peerSyncPromise: Map<string, Promise<boolean>> = new Map();
+// ─── Global deduplication & caching layer ───
+// Prevents request storms when multiple hook instances or concurrent decrypts
+// fire identical API calls.
+
+/** Deduplication lock for ensureKeysAndPeerSync */
+const _peerSyncPromise = new Map<string, Promise<boolean>>();
+
+/** Global cache for peer public keys — prevents repeated fetches */
+const _peerKeyCache = new Map<string, { data: { identity_key: string; signing_key: string; fingerprint: string } | null; ts: number }>();
+const PEER_KEY_TTL = 120_000; // 2 minutes
+
+/** Cached auth user ID — avoids repeated supabase.auth.getUser() network calls */
+let _cachedAuthUserId: string | null = null;
+let _cachedAuthUserIdTs = 0;
+const AUTH_USER_CACHE_TTL = 300_000; // 5 minutes
+
+async function getCachedAuthUserId(): Promise<string | null> {
+  if (_cachedAuthUserId && Date.now() - _cachedAuthUserIdTs < AUTH_USER_CACHE_TTL) {
+    return _cachedAuthUserId;
+  }
+  try {
+    const { data } = await supabase.auth.getUser();
+    _cachedAuthUserId = data.user?.id ?? null;
+    _cachedAuthUserIdTs = Date.now();
+    return _cachedAuthUserId;
+  } catch {
+    return _cachedAuthUserId; // return stale if network fails
+  }
+}
+
+/** Fetch peer public keys with global dedup + cache */
+async function fetchPeerPublicKeys(peerUserId: string): Promise<{ identity_key: string; signing_key: string; fingerprint: string } | null> {
+  const cached = _peerKeyCache.get(peerUserId);
+  if (cached && Date.now() - cached.ts < PEER_KEY_TTL) {
+    return cached.data;
+  }
+
+  // Dedup in-flight requests for the same peer
+  const inflightKey = `fetch:${peerUserId}`;
+  if (_peerSyncPromise.has(inflightKey)) {
+    await _peerSyncPromise.get(inflightKey);
+    const afterWait = _peerKeyCache.get(peerUserId);
+    return afterWait?.data ?? null;
+  }
+
+  const p = (async () => {
+    const { data } = await supabase
+      .from('user_public_keys')
+      .select('identity_key, signing_key, fingerprint')
+      .eq('user_id', peerUserId)
+      .eq('is_active', true)
+      .maybeSingle();
+    _peerKeyCache.set(peerUserId, { data, ts: Date.now() });
+    return !!data;
+  })().finally(() => _peerSyncPromise.delete(inflightKey));
+
+  _peerSyncPromise.set(inflightKey, p);
+  await p;
+  return _peerKeyCache.get(peerUserId)?.data ?? null;
+}
 
 // ─── IndexedDB ratchet persistence ───
 
@@ -176,10 +233,12 @@ async function saveKnownFingerprintServer(peerUserId: string, fp: string) {
   _fpSaveCache.set(cacheKey, Date.now());
 
   try {
+    const userId = await getCachedAuthUserId();
+    if (!userId) return;
     await supabase
       .from('user_known_fingerprints')
       .upsert({
-        user_id: (await supabase.auth.getUser()).data.user?.id,
+        user_id: userId,
         peer_user_id: peerUserId,
         fingerprint: fp,
         last_seen_at: new Date().toISOString(),
@@ -332,6 +391,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   // Initialize identity keys + publish
   const initKeys = useCallback(async () => {
     if (!user) return;
+    // Warm up the auth user ID cache to avoid repeated getUser() calls
+    _cachedAuthUserId = user.id;
+    _cachedAuthUserIdTs = Date.now();
     try {
       const keysResult = await getOrCreateIdentityKeys(user.id);
       const isNewIdentity = !!(keysResult as any).isNewIdentity;
@@ -561,12 +623,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           console.log('[E2EE] Own keys loaded on-demand');
         }
 
-        const { data } = await supabase
-          .from('user_public_keys')
-          .select('identity_key, signing_key, fingerprint')
-          .eq('user_id', peerUserId)
-          .eq('is_active', true)
-          .maybeSingle();
+        const data = await fetchPeerPublicKeys(peerUserId);
 
         if (cancelled) return;
 
@@ -686,12 +743,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     if (!state.peerKeyMissing || !peerUserId || isZeus) return;
     const interval = setInterval(async () => {
       try {
-        const { data } = await supabase
-          .from('user_public_keys')
-          .select('identity_key, signing_key, fingerprint')
-          .eq('user_id', peerUserId)
-          .eq('is_active', true)
-          .maybeSingle();
+        // Invalidate cache before retry to get fresh data
+        _peerKeyCache.delete(peerUserId);
+        const data = await fetchPeerPublicKeys(peerUserId);
         if (data) {
           console.log('[PEER_KEY] ✅ Peer keys now available — upgrading to encrypted mode');
           peerKeyRef.current = {
@@ -722,7 +776,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           }));
         }
       } catch {}
-    }, 10_000); // retry every 10s
+    }, 30_000); // retry every 30s
     return () => clearInterval(interval);
   }, [state.peerKeyMissing, peerUserId, isZeus, conversationId]);
 
@@ -755,12 +809,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     }
 
     try {
-      const { data: freshPeerKey } = await supabase
-        .from('user_public_keys')
-        .select('identity_key, signing_key, fingerprint')
-        .eq('user_id', peerUserId)
-        .eq('is_active', true)
-        .maybeSingle();
+      const freshPeerKey = await fetchPeerPublicKeys(peerUserId);
 
       if (!freshPeerKey) {
         setState(s => ({
