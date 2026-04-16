@@ -17,6 +17,7 @@ import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { useCall } from "@/hooks/useCall";
 import { CallOverlay } from "@/components/CallOverlay";
 import { Suspense, lazy, useCallback, useRef } from "react";
+import { useAccountKeySync } from "@/hooks/useAccountKeySync";
 import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
@@ -177,6 +178,7 @@ function AppContent() {
           <Sonner />
           <BrowserRouter>
             <RecoveryFlowGuard />
+            <AccountKeySyncRunner />
             <IncomingCallHandler />
             <ErrorBoundary>
             <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
