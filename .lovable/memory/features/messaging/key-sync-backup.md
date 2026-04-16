@@ -1,20 +1,24 @@
 ---
 name: E2EE Key Sync & Backup
-description: Recovery key model (32 bytes random, PBKDF2+AES-256-GCM) replaces password-based backup. Full restore or explicit failure.
+description: Account-based auto-backup (password-derived AES key, PBKDF2) replaces manual recovery key. Auto-restore on login, auto-sync on key changes.
 type: feature
 ---
-## Architecture (Element/Matrix model)
-- Random 32-byte recovery key generated client-side, displayed once as `ABCD-EFGH-...` groups
-- Recovery key derives AES-256-GCM key via PBKDF2 (600k iterations)
-- Complete backup bundle: identity keys, sessions, ratchet states, prekeys, PIN-wrapped keys, fingerprints
-- Server stores only opaque encrypted blob (`user_backups` table)
-- **Full restore or explicit failure** — no partial state
-- Auto-backup: recovery key kept in volatile JS ref (RAM only), never persisted
-- If recovery key is lost and no device available → new identity, old messages unrecoverable
+## Architecture (Google Key Vault model — v3)
+- On login, AES-256-GCM key is derived from `password + userId` via PBKDF2 (600k iterations)
+- Derived key stored in volatile JS ref (RAM only, cleared on tab close)
+- All E2EE keys auto-encrypted and synced to `user_backups` table
+- On next login with no local keys → auto-restore from server backup
+- **Zero manual action** — no recovery key to note
+- If password changes, backup re-encrypted at next login
 
 ## Files
-- `src/lib/crypto/recoveryKey.ts` — generate, normalize, validate, format
-- `src/hooks/useSecureBackup.ts` — createBackup returns recovery key, updateBackup, restoreBackup
-- `src/hooks/useAutoBackup.ts` — setRecoveryKey/clearRecoveryKey (volatile ref)
-- `src/components/KeyBackupPanel.tsx` — UI: create shows key once, restore requires key input
+- `src/lib/crypto/accountKeyBackup.ts` — derive key, encrypt/decrypt, sync, restore
+- `src/hooks/useAccountKeySync.ts` — polls IndexedDB, auto-syncs on changes
+- `src/pages/Login.tsx` — calls `initAccountKeySync(password, userId)` after successful login
+- `src/App.tsx` — `AccountKeySyncRunner` component runs the sync hook
+- `src/components/KeyBackupPanel.tsx` — UI shows auto-backup status, manual sync button, device transfer
+
+## Legacy (kept for compatibility)
+- `src/hooks/useSecureBackup.ts` — recovery key model (v2), still used by KeyBackupPanel fallback
+- `src/hooks/useAutoBackup.ts` — old auto-backup with recovery key in memory
 - Device transfer: QR + separate PIN (useDeviceLink) unchanged

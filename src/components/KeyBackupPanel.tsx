@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, QrCode, Download, Upload, Loader2, Check, AlertCircle, Copy, Key, RefreshCw } from 'lucide-react';
+import { Shield, QrCode, Download, Upload, Loader2, Check, AlertCircle, Copy, Key, RefreshCw, Cloud } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,21 +7,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSecureBackup } from '@/hooks/useSecureBackup';
 import { useDeviceLink } from '@/hooks/useDeviceLink';
-import { useAutoBackup } from '@/hooks/useAutoBackup';
-import { formatRecoveryKey, normalizeRecoveryKey, isValidRecoveryKey } from '@/lib/crypto/recoveryKey';
+import { isAutoBackupActive, syncBackupToServer, hasLocalKeys } from '@/lib/crypto/accountKeyBackup';
 import { toast } from 'sonner';
 
 export function KeyBackupPanel() {
   const backup = useSecureBackup();
   const deviceLink = useDeviceLink();
-  const autoBackup = useAutoBackup();
   const [hasExisting, setHasExisting] = useState(false);
-  // Recovery key shown after backup creation — user MUST save it
-  const [displayedRecoveryKey, setDisplayedRecoveryKey] = useState<string | null>(null);
-  const [recoveryKeySaved, setRecoveryKeySaved] = useState(false);
-  // Restore input
-  const [restoreKeyInput, setRestoreKeyInput] = useState('');
-  const [done, setDone] = useState(false);
+  const [autoBackupOn, setAutoBackupOn] = useState(false);
+  const [hasLocal, setHasLocal] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   // Device transfer
   const [qrData, setQrData] = useState<string | null>(null);
   const [transferPin, setTransferPin] = useState<string | null>(null);
@@ -30,50 +25,24 @@ export function KeyBackupPanel() {
 
   useEffect(() => {
     backup.hasBackup().then(setHasExisting);
+    setAutoBackupOn(isAutoBackupActive());
+    hasLocalKeys().then(setHasLocal);
   }, []);
 
-  const handleCreateBackup = async () => {
-    const recoveryKey = await backup.createBackup();
-    if (recoveryKey) {
-      setDisplayedRecoveryKey(recoveryKey);
-      setRecoveryKeySaved(false);
-      // Store normalized key in auto-backup memory (volatile)
-      autoBackup.setRecoveryKey(normalizeRecoveryKey(recoveryKey));
-      setHasExisting(true);
-      toast.success('Coffre chiffré créé ✅');
-    } else {
-      toast.error(backup.error || 'Échec de la sauvegarde');
-    }
-  };
-
-  const handleCopyRecoveryKey = () => {
-    if (displayedRecoveryKey) {
-      navigator.clipboard.writeText(displayedRecoveryKey);
-      toast.success('Clé copiée dans le presse-papier');
-      setRecoveryKeySaved(true);
-    }
-  };
-
-  const handleDismissRecoveryKey = () => {
-    setDisplayedRecoveryKey(null);
-    setDone(true);
-  };
-
-  const handleRestore = async () => {
-    const normalized = normalizeRecoveryKey(restoreKeyInput);
-    if (!isValidRecoveryKey(restoreKeyInput)) {
-      toast.error('Clé de récupération invalide (32 caractères attendus)');
-      return;
-    }
-    const ok = await backup.restoreBackup(normalized);
-    if (ok) {
-      toast.success('Identité et clés restaurées ✅');
-      setDone(true);
-      setRestoreKeyInput('');
-      // Enable auto-backup with the restored key
-      autoBackup.setRecoveryKey(normalized);
-    } else {
-      toast.error(backup.error || 'Échec — clé incorrecte ou backup corrompu');
+  const handleForceSync = async () => {
+    setSyncing(true);
+    try {
+      const ok = await syncBackupToServer();
+      if (ok) {
+        toast.success('Clés synchronisées avec le serveur ✅');
+        setHasExisting(true);
+      } else {
+        toast.error('Aucune clé locale à sauvegarder');
+      }
+    } catch {
+      toast.error('Échec de la synchronisation');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -89,18 +58,11 @@ export function KeyBackupPanel() {
   };
 
   const handleClaimLink = async () => {
-    if (!scanInput.trim()) {
-      toast.error('Colle le code de transfert');
-      return;
-    }
-    if (!pinInput.trim()) {
-      toast.error('Entre le code PIN de vérification');
-      return;
-    }
+    if (!scanInput.trim()) { toast.error('Colle le code de transfert'); return; }
+    if (!pinInput.trim()) { toast.error('Entre le code PIN de vérification'); return; }
     const ok = await deviceLink.claimLink(scanInput, pinInput);
     if (ok) {
       toast.success('Clés transférées avec succès ✅');
-      setDone(true);
     } else {
       toast.error(deviceLink.error || 'Erreur de transfert');
     }
@@ -121,14 +83,14 @@ export function KeyBackupPanel() {
           Coffre E2EE — Sauvegarde & Transfert
         </CardTitle>
         <CardDescription className="text-xs">
-          Sauvegarde chiffrée de tes clés avec une clé de récupération unique. Sans elle, tes messages chiffrés seront irrécupérables.
+          Tes clés de chiffrement sont automatiquement sauvegardées avec ton compte. Si tu changes d'appareil ou vides ton cache, elles seront restaurées à la connexion.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="backup" className="w-full">
           <TabsList className="grid w-full grid-cols-2 h-8">
             <TabsTrigger value="backup" className="text-xs gap-1">
-              <Key className="h-3 w-3" /> Sauvegarde
+              <Cloud className="h-3 w-3" /> Sauvegarde auto
             </TabsTrigger>
             <TabsTrigger value="device" className="text-xs gap-1">
               <QrCode className="h-3 w-3" /> Transfert
@@ -136,99 +98,60 @@ export function KeyBackupPanel() {
           </TabsList>
 
           <TabsContent value="backup" className="space-y-3 mt-3">
-            {/* Recovery key display (shown only after creation) */}
-            {displayedRecoveryKey && (
-              <div className="p-3 bg-destructive/10 border border-destructive/30 rounded-lg space-y-2">
-                <p className="text-xs font-bold text-destructive flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" />
-                  SAUVEGARDE CETTE CLÉ — Elle ne sera plus jamais affichée
-                </p>
-                <code className="block text-center text-sm font-bold tracking-[0.15em] bg-background p-3 rounded select-all break-all">
-                  {displayedRecoveryKey}
-                </code>
+            {/* Auto-backup status */}
+            <div className="p-3 rounded-lg bg-muted/50 space-y-2">
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${autoBackupOn ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                <span className="text-xs font-medium">
+                  {autoBackupOn ? 'Sauvegarde automatique active' : 'Reconnecte-toi pour activer la sauvegarde auto'}
+                </span>
+              </div>
+
+              {hasLocal && (
                 <p className="text-[10px] text-muted-foreground">
-                  Note-la sur papier ou dans un gestionnaire de mots de passe. Si tu perds cette clé et ton cache navigateur, 
-                  tes messages chiffrés seront définitivement perdus.
+                  ✅ Clés locales présentes — {hasExisting ? 'synchronisées avec le serveur' : 'en attente de synchronisation'}
                 </p>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={handleCopyRecoveryKey} className="flex-1 gap-1">
-                    <Copy className="h-3 w-3" /> Copier
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={recoveryKeySaved ? 'default' : 'ghost'}
-                    onClick={handleDismissRecoveryKey}
-                    disabled={!recoveryKeySaved}
-                    className="flex-1 gap-1"
-                  >
-                    <Check className="h-3 w-3" /> {recoveryKeySaved ? 'J\'ai noté ma clé' : 'Copie d\'abord'}
-                  </Button>
-                </div>
-              </div>
+              )}
+
+              {!hasLocal && hasExisting && (
+                <p className="text-[10px] text-muted-foreground">
+                  ☁️ Sauvegarde disponible sur le serveur — reconnecte-toi pour restaurer automatiquement
+                </p>
+              )}
+
+              {!hasLocal && !hasExisting && (
+                <p className="text-[10px] text-muted-foreground">
+                  ⚠️ Aucune clé locale ni sauvegarde — envoie un premier message chiffré pour générer tes clés
+                </p>
+              )}
+            </div>
+
+            {/* Manual sync button */}
+            {autoBackupOn && hasLocal && (
+              <Button
+                onClick={handleForceSync}
+                disabled={syncing}
+                size="sm"
+                variant="outline"
+                className="w-full gap-1"
+              >
+                {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                Forcer la synchronisation maintenant
+              </Button>
             )}
 
-            {/* Create / Update backup */}
-            {!displayedRecoveryKey && (
-              <div className="space-y-2">
-                <Button
-                  onClick={handleCreateBackup}
-                  disabled={backup.isLoading}
-                  size="sm"
-                  className="w-full gap-1"
-                >
-                  {backup.isLoading ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : hasExisting ? (
-                    <RefreshCw className="h-3 w-3" />
-                  ) : (
-                    <Upload className="h-3 w-3" />
-                  )}
-                  {hasExisting ? 'Régénérer une nouvelle clé de récupération' : 'Créer un coffre chiffré'}
-                </Button>
-                {hasExisting && (
-                  <p className="text-[10px] text-muted-foreground text-center">
-                    ⚠️ Régénérer remplacera l'ancienne clé — l'ancienne ne fonctionnera plus.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Restore section */}
-            {hasExisting && !displayedRecoveryKey && (
-              <div className="border-t pt-3 space-y-2">
-                <p className="text-xs font-medium">Restaurer depuis le coffre</p>
-                <Input
-                  type="text"
-                  placeholder="ABCD-EFGH-JKLM-NPQR-STUV-WXYZ-2345-6789"
-                  value={restoreKeyInput}
-                  onChange={e => setRestoreKeyInput(e.target.value.toUpperCase())}
-                  className="h-9 text-xs font-mono tracking-wider text-center"
-                  spellCheck={false}
-                  autoComplete="off"
-                />
-                <Button
-                  onClick={handleRestore}
-                  disabled={backup.isLoading || !restoreKeyInput.trim()}
-                  size="sm"
-                  variant="outline"
-                  className="w-full gap-1"
-                >
-                  {backup.isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-                  Restaurer mes clés
-                </Button>
-              </div>
-            )}
-
-            {done && !displayedRecoveryKey && (
-              <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
-                <Check className="h-3 w-3" /> Opération réussie
+            {/* Info */}
+            <div className="p-3 bg-primary/5 rounded-lg space-y-1">
+              <p className="text-xs font-medium flex items-center gap-1">
+                <Cloud className="h-3 w-3 text-primary" /> Comment ça marche ?
               </p>
-            )}
-            {autoBackup.hasKey && (
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <Shield className="h-3 w-3" /> Sauvegarde automatique activée pour cette session
-              </p>
-            )}
+              <ul className="text-[10px] text-muted-foreground space-y-1 list-disc pl-4">
+                <li>Tes clés sont chiffrées avec un dérivé de ton mot de passe (jamais stocké en clair)</li>
+                <li>À chaque connexion, tes clés sont restaurées automatiquement si absentes localement</li>
+                <li>Les modifications de clés sont synchronisées en arrière-plan</li>
+                <li>Si tu changes ton mot de passe, la sauvegarde sera mise à jour à la prochaine connexion</li>
+              </ul>
+            </div>
           </TabsContent>
 
           <TabsContent value="device" className="space-y-3 mt-3">
