@@ -1138,7 +1138,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         return { text: '🔒 Message chiffré', encrypted: true, verified: false };
       }
     });
-  }, [conversationId, ensureKeysAndPeerSync, isZeus, user, peerUserId, decryptRatchetMessage, decryptLegacyMessage]);
+  }, [conversationId, ensureKeysAndPeerSync, isZeus, user, peerUserId]);
 
   /** Decrypt a ratchet-mode message */
   const decryptRatchetMessage = useCallback(async (
