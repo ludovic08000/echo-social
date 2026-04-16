@@ -433,13 +433,18 @@ export async function serializeRatchetState(state: RatchetState): Promise<string
 export async function deserializeRatchetState(json: string): Promise<RatchetState> {
   const d = hardGlobals.jsonParse(json);
 
-  // ALL keys re-imported as NON-EXTRACTABLE
-  const dhSendPub = await importKeyFromJWK(d.dhSendPubJWK, KX_KEY_PARAMS as any, [], false);
+  // Signal-style extractability rules:
+  // - Public keys: EXTRACTABLE (needed for ratchet headers + DH comparison)
+  // - Root key: EXTRACTABLE (needed as HKDF salt in kdfRootStep)
+  // - Private keys: NON-EXTRACTABLE (only used for deriveBits)
+  // - Chain keys: EXTRACTABLE (needed for HMAC chain + export for persistence)
+  // - Message keys: NON-EXTRACTABLE (only used for encrypt/decrypt)
+  const dhSendPub = await importKeyFromJWK(d.dhSendPubJWK, KX_KEY_PARAMS as any, [], true);
   const dhSendPriv = await importKeyFromJWK(d.dhSendPrivJWK, KX_KEY_PARAMS as any, ['deriveBits'], false);
-  const dhRecv = d.dhRecvJWK ? await importKeyFromJWK(d.dhRecvJWK, KX_KEY_PARAMS as any, [], false) : null;
-  const rootKey = await importKeyFromJWK(d.rootJWK, { name: 'HMAC', hash: 'SHA-256' } as AlgorithmIdentifier, ['sign'], false);
-  const sendCK = d.sendCKJWK ? await importKeyFromJWK(d.sendCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign'], false) : null;
-  const recvCK = d.recvCKJWK ? await importKeyFromJWK(d.recvCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign'], false) : null;
+  const dhRecv = d.dhRecvJWK ? await importKeyFromJWK(d.dhRecvJWK, KX_KEY_PARAMS as any, [], true) : null;
+  const rootKey = await importKeyFromJWK(d.rootJWK, { name: 'HMAC', hash: 'SHA-256' } as AlgorithmIdentifier, ['sign'], true);
+  const sendCK = d.sendCKJWK ? await importKeyFromJWK(d.sendCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign'], true) : null;
+  const recvCK = d.recvCKJWK ? await importKeyFromJWK(d.recvCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign'], true) : null;
 
   const skippedKeys = new Map<string, CryptoKey>();
   for (const [k, jwk] of d.skippedEntries || []) {
