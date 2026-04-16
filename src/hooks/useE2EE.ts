@@ -81,6 +81,38 @@ let _cachedAuthUserId: string | null = null;
 let _cachedAuthUserIdTs = 0;
 const AUTH_USER_CACHE_TTL = 300_000; // 5 minutes
 
+/**
+ * Global decrypt serializer per conversation.
+ * When 50 messages mount simultaneously, they ALL call decrypt() in parallel.
+ * Without serialization, each one tries to init the ratchet independently,
+ * causing hundreds of duplicate user_public_keys/x3dh requests.
+ * This ensures only ONE ratchet init runs at a time per conversation.
+ */
+const _decryptQueue = new Map<string, Promise<any>>();
+
+async function serializedDecrypt<T>(convId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = _decryptQueue.get(convId) ?? Promise.resolve();
+  const next = prev.then(fn, fn); // run fn after previous completes (even if it failed)
+  _decryptQueue.set(convId, next);
+  // Clean up the reference once done to prevent memory leaks
+  next.finally(() => {
+    if (_decryptQueue.get(convId) === next) {
+      _decryptQueue.delete(convId);
+    }
+  });
+  return next;
+}
+
+/** Dedup for own key publishing — prevents ChatView + ChatWidget from both publishing */
+let _ownKeyPublishPromise: Promise<void> | null = null;
+let _ownKeyPublishTs = 0;
+const OWN_KEY_PUBLISH_TTL = 60_000; // 1 minute
+
+/** Dedup for peer key setup effect — prevents duplicate runs from ChatView + ChatWidget */
+const _peerSetupPromise = new Map<string, Promise<void>>();
+const _peerSetupTs = new Map<string, number>();
+const PEER_SETUP_TTL = 30_000; // 30 seconds
+
 async function getCachedAuthUserId(): Promise<string | null> {
   if (_cachedAuthUserId && Date.now() - _cachedAuthUserIdTs < AUTH_USER_CACHE_TTL) {
     return _cachedAuthUserId;
