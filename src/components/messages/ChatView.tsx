@@ -395,6 +395,38 @@ export function ChatView({ conversationId }: ChatViewProps) {
         </div>
       )}
 
+      {/* Key lost / init error recovery banner */}
+      {!isZeusConversation && e2ee.initError && (
+        <div className="flex flex-col gap-2 px-4 py-3 bg-destructive/10 border-b border-destructive/20">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-destructive flex-shrink-0" />
+            <span className="text-xs text-destructive font-semibold flex-1">
+              {e2ee.initError === 'identity_lost_backup_available'
+                ? '🔑 Vos clés de chiffrement ont été perdues. Restaurez votre sauvegarde pour retrouver vos messages.'
+                : e2ee.initError === 'pin_unlock_required'
+                  ? '🔐 Déverrouillez votre PIN pour accéder à vos clés de chiffrement.'
+                  : '⚠️ Erreur d\'initialisation du chiffrement. Restaurez vos clés pour reprendre vos conversations.'}
+            </span>
+          </div>
+          <button
+            onClick={() => navigate('/settings', { state: { tab: 'privacy', scrollTo: 'key-backup' } })}
+            className="self-start px-4 py-1.5 rounded-full bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity"
+          >
+            🔑 Restaurer mes clés
+          </button>
+        </div>
+      )}
+
+      {/* Peer has no keys — can't encrypt */}
+      {!isZeusConversation && e2ee.peerKeyMissing && !e2ee.initError && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-muted border-b border-border/30">
+          <AlertTriangle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+          <span className="text-[11px] text-muted-foreground font-medium flex-1">
+            🔒 Ce contact n'a pas encore publié ses clés de chiffrement. Les messages ne peuvent pas être envoyés pour l'instant.
+          </span>
+        </div>
+      )}
+
       {/* Group Management Panel */}
       {isGroup && showGroupPanel && (
         <div className="border-b border-border/30 bg-card animate-in slide-in-from-top-2">
