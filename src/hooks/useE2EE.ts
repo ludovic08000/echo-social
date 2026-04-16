@@ -65,6 +65,10 @@ const RATCHET_DB_VERSION = 1;
 const RATCHET_STORE_NAME = 'ratchet-states';
 const KNOWN_FP_KEY = 'forsure-known-fps';
 
+// Deduplication lock for ensureKeysAndPeerSync — prevents concurrent calls
+// from firing dozens of identical API requests
+let _peerSyncPromise: Map<string, Promise<boolean>> = new Map();
+
 // ─── IndexedDB ratchet persistence ───
 
 function openRatchetDB(): Promise<IDBDatabase> {
