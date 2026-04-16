@@ -198,10 +198,10 @@ export async function ratchetEncrypt(
     n: state.sendCount,
   };
 
-  // Encrypt
+  // Encrypt with AES-256-GCM
   const iv = randomBytes(IV_LENGTH);
   const ct = await hardCrypto.encrypt(
-    { name: AES_ALGO, iv: new Uint8Array(iv) as unknown as Uint8Array<ArrayBuffer>, tagLength: 128 },
+    { name: AES_ALGO, iv: iv.slice() as Uint8Array<ArrayBuffer>, tagLength: 128 },
     messageKey,
     encodeString(plaintext),
   );
