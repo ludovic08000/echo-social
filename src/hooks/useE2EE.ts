@@ -65,6 +65,10 @@ const RATCHET_DB_VERSION = 1;
 const RATCHET_STORE_NAME = 'ratchet-states';
 const KNOWN_FP_KEY = 'forsure-known-fps';
 
+// Deduplication lock for ensureKeysAndPeerSync — prevents concurrent calls
+// from firing dozens of identical API requests
+let _peerSyncPromise: Map<string, Promise<boolean>> = new Map();
+
 // ─── IndexedDB ratchet persistence ───
 
 function openRatchetDB(): Promise<IDBDatabase> {
@@ -162,8 +166,15 @@ function saveKnownFingerprint(userId: string, fp: string) {
   localStorage.setItem(KNOWN_FP_KEY, hardGlobals.jsonStringify(known));
 }
 
-/** Save fingerprint to server for cross-device verification */
+/** Save fingerprint to server for cross-device verification (deduplicated) */
+const _fpSaveCache = new Map<string, number>();
 async function saveKnownFingerprintServer(peerUserId: string, fp: string) {
+  // Deduplicate: skip if same fp was saved in the last 60s
+  const cacheKey = `${peerUserId}:${fp}`;
+  const lastSaved = _fpSaveCache.get(cacheKey);
+  if (lastSaved && Date.now() - lastSaved < 60_000) return;
+  _fpSaveCache.set(cacheKey, Date.now());
+
   try {
     await supabase
       .from('user_known_fingerprints')
@@ -179,7 +190,8 @@ async function saveKnownFingerprintServer(peerUserId: string, fp: string) {
   }
 }
 
-/** Check fingerprint against both local AND server records */
+/** Check fingerprint against both local AND server records (with cache) */
+const _fpCheckCache = new Map<string, { result: { changed: boolean; previousFp: string | null }; ts: number }>();
 async function checkFingerprintChangeWithServer(
   currentUserId: string,
   peerUserId: string,
@@ -189,6 +201,13 @@ async function checkFingerprintChangeWithServer(
   const localPrevious = known[peerUserId];
   if (localPrevious && localPrevious !== currentFp) {
     return { changed: true, previousFp: localPrevious };
+  }
+
+  // Cache server check for 60s to avoid request storms
+  const cacheKey = `${currentUserId}:${peerUserId}:${currentFp}`;
+  const cached = _fpCheckCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < 60_000) {
+    return cached.result;
   }
 
   try {
@@ -201,12 +220,16 @@ async function checkFingerprintChangeWithServer(
 
     if (data && data.fingerprint !== currentFp) {
       console.warn('[PEER_KEY] ⚠️ Server-side fingerprint mismatch for', peerUserId);
-      return { changed: true, previousFp: data.fingerprint };
+      const result = { changed: true, previousFp: data.fingerprint };
+      _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
+      return result;
     }
   } catch {
   }
 
-  return { changed: false, previousFp: null };
+  const result = { changed: false, previousFp: null };
+  _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
+  return result;
 }
 
 function checkFingerprintChange(userId: string, currentFp: string): boolean {
@@ -990,8 +1013,15 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       return { text: body, encrypted: false, verified: false };
     }
 
-    if (!isZeus) {
-      await ensureKeysAndPeerSync(false);
+    if (!isZeus && !peerKeyRef.current) {
+      // Only sync if we don't have peer keys yet — prevents request storm
+      // when decrypting many messages concurrently
+      const syncKey = `${user?.id}:${peerUserId}`;
+      if (!_peerSyncPromise.has(syncKey)) {
+        const p = ensureKeysAndPeerSync(false).finally(() => _peerSyncPromise.delete(syncKey));
+        _peerSyncPromise.set(syncKey, p);
+      }
+      await _peerSyncPromise.get(syncKey);
     }
 
     if (!cryptoRateCheck('decrypt')) {
