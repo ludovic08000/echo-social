@@ -167,6 +167,11 @@ function IncomingCallHandler() {
   );
 }
 
+function AccountKeySyncRunner() {
+  useAccountKeySync();
+  return null;
+}
+
 function AppContent() {
   useSettingsInit();
   return (
