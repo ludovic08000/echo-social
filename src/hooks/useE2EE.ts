@@ -1218,8 +1218,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   /** Check if encryption is ready for this conversation */
   const isReady = useCallback((): boolean => {
     if (isZeus) return true;
-    // Ready if we have peer keys and our own keys (fingerprint changes are auto-acknowledged)
-    return state.encrypted && !!keysRef.current && !!peerKeyRef.current;
+    // Ready if we have peer keys and our own keys, and no fingerprint block
+    return state.encrypted && !!keysRef.current && !!peerKeyRef.current && !state.fingerprintChanged;
   }, [state.encrypted, isZeus]);
 
   /** Acknowledge fingerprint change — user explicitly trusts new key */
@@ -1258,7 +1258,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         }
       }
     }
-    setState(s => ({ ...s, fingerprintChanged: false, ready: true, ratchetActive: false }));
+    setState(s => ({ ...s, fingerprintChanged: false, ready: true, ratchetActive: false, initError: null }));
   }, [peerUserId, conversationId]);
 
   const acknowledgeSentPayload = useCallback(async (localId: string) => {
