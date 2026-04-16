@@ -577,12 +577,30 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     }
   }, [user]);
 
-  // Auto-init on mount
+  // Auto-init on mount — GLOBALLY DEDUPLICATED across hook instances
   useEffect(() => {
     if (!user || initRef.current) return;
     initRef.current = true;
     cleanupLegacyStorage();
-    initKeys();
+    // Dedup: if another instance already ran initKeys recently, reuse its promise
+    if (_initKeysPromise && Date.now() - _initKeysTs < INIT_KEYS_TTL) {
+      _initKeysPromise.then(() => {
+        // After the other instance finishes, sync our local refs
+        if (!keysRef.current) {
+          getOrCreateIdentityKeys(user.id).then(keys => {
+            keysRef.current = keys;
+            exportPublicKeyBundle(keys).then(b => {
+              setState(s => ({ ...s, fingerprint: b.fingerprint, initError: null }));
+            });
+          }).catch(() => {});
+        }
+      });
+      return;
+    }
+    _initKeysTs = Date.now();
+    _initKeysPromise = initKeys().catch(() => {}).finally(() => {
+      // Keep promise reference for TTL window, don't null immediately
+    });
   }, [user, initKeys]);
 
   // Re-init when PIN unlocks keys
