@@ -60,7 +60,8 @@ function passwordSecret(password: string, userId: string): string {
 /** Wrap (encrypt) the Master Key with a wrapping key */
 async function wrapMasterKey(masterKeyRaw: Uint8Array, wrappingKey: CryptoKey): Promise<{ wrapped: string; iv: string }> {
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, wrappingKey, masterKeyRaw.buffer as ArrayBuffer);
+  // Use slice() to get a clean ArrayBuffer (no offset issues — Signal lesson)
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, wrappingKey, masterKeyRaw.slice().buffer);
   return { wrapped: bufferToBase64(ciphertext), iv: bufferToBase64(iv.buffer) };
 }
 
@@ -74,7 +75,8 @@ async function unwrapMasterKey(wrapped: string, iv: string, wrappingKey: CryptoK
 
 /** Import raw Master Key bytes into a CryptoKey for AES-GCM */
 async function importMasterKey(raw: Uint8Array): Promise<CryptoKey> {
-  return crypto.subtle.importKey('raw', raw.buffer as ArrayBuffer, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  // slice() ensures clean buffer with byteOffset=0 (Signal-style safety)
+  return crypto.subtle.importKey('raw', raw.slice().buffer, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
 
 /** Encrypt data with the Master Key */
