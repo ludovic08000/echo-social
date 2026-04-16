@@ -7,7 +7,11 @@
  * when encrypting the backup bundle.
  * 
  * The recovery key NEVER leaves the client in plaintext.
+ * 
+ * SECURITY: Uses hardened crypto references to prevent XSS interception.
  */
+
+import { hardCrypto } from './cryptoIntegrity';
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // No ambiguous chars (0/O, 1/I/L)
 
@@ -16,7 +20,8 @@ const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // No ambiguous chars (0/O,
  * Output example: "ABCD-EFGH-JKLM-NPQR-STUV-WXYZ-2345-6789"
  */
 export function generateRecoveryKey(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  // SECURITY: Use hardened getRandomValues to prevent XSS interception
+  const bytes = hardCrypto.getRandomValues(new Uint8Array(32));
   let encoded = '';
   for (let i = 0; i < bytes.length; i++) {
     encoded += ALPHABET[bytes[i] % ALPHABET.length];

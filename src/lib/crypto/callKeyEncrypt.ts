@@ -9,7 +9,7 @@
  */
 
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
-import { randomBytes, bufferToBase64, base64ToBuffer } from './utils';
+import { randomBytes, bufferToBase64, base64ToBuffer, encodeString, decodeString } from './utils';
 import { loadSessionKey, getOrCreateIdentityKeys } from './keyManager';
 import { supabase } from '@/integrations/supabase/client';
 import { KX_KEY_PARAMS } from './constants';
@@ -54,9 +54,9 @@ async function ensureFreshCallSession(
     256,
   );
 
-  const saltSource = new TextEncoder().encode(`forsure-call-salt-${conversationId}`);
+  const saltSource = new hardGlobals.TextEncoder().encode(`forsure-call-salt-${conversationId}`);
   const salt = new Uint8Array(await hardCrypto.digest('SHA-256', saltSource)) as Uint8Array<ArrayBuffer>;
-  const info = new TextEncoder().encode(`forsure-call-key-${conversationId}`);
+  const info = new hardGlobals.TextEncoder().encode(`forsure-call-key-${conversationId}`);
 
   const hkdfKey = await hardCrypto.importKey('raw', sharedBits, 'HKDF', false, ['deriveKey']);
 
@@ -96,7 +96,7 @@ export async function encryptCallKey(
   }
 
   const iv = randomBytes(IV_LEN);
-  const plaintext = new TextEncoder().encode(callKeyB64);
+  const plaintext = new hardGlobals.TextEncoder().encode(callKeyB64);
 
   const ciphertext = await hardCrypto.encrypt(
     { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 },
@@ -143,5 +143,5 @@ export async function decryptCallKey(
     ciphertext,
   );
 
-  return new TextDecoder().decode(plainBuf);
+  return new hardGlobals.TextDecoder().decode(plainBuf);
 }
