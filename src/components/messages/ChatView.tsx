@@ -395,7 +395,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         </div>
       )}
 
-      {/* Key lost / init error recovery banner */}
+      {/* Key lost / init error / fingerprint change recovery banner */}
       {!isZeusConversation && e2ee.initError && (
         <div className="flex flex-col gap-2 px-4 py-3 bg-destructive/10 border-b border-destructive/20">
           <div className="flex items-center gap-2">
@@ -405,15 +405,26 @@ export function ChatView({ conversationId }: ChatViewProps) {
                 ? '🔑 Vos clés de chiffrement ont été perdues. Restaurez votre sauvegarde pour retrouver vos messages.'
                 : e2ee.initError === 'pin_unlock_required'
                   ? '🔐 Déverrouillez votre PIN pour accéder à vos clés de chiffrement.'
-                  : '⚠️ Erreur d\'initialisation du chiffrement. Restaurez vos clés pour reprendre vos conversations.'}
+                  : e2ee.initError === 'fingerprint_changed'
+                    ? '🛑 L\'identité cryptographique de votre contact a changé. Cela peut indiquer un changement d\'appareil légitime ou une tentative d\'interception. Vérifiez avec votre contact avant d\'accepter.'
+                    : '⚠️ Erreur d\'initialisation du chiffrement. Restaurez vos clés pour reprendre vos conversations.'}
             </span>
           </div>
-          <button
-            onClick={() => navigate('/settings', { state: { tab: 'privacy', scrollTo: 'key-backup' } })}
-            className="self-start px-4 py-1.5 rounded-full bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity"
-          >
-            🔑 Restaurer mes clés
-          </button>
+          {e2ee.initError === 'fingerprint_changed' ? (
+            <button
+              onClick={() => e2ee.acknowledgeFingerprint()}
+              className="self-start px-4 py-1.5 rounded-full bg-destructive text-destructive-foreground text-xs font-semibold hover:opacity-90 transition-opacity"
+            >
+              ✅ J'ai vérifié, accepter la nouvelle clé
+            </button>
+          ) : (
+            <button
+              onClick={() => navigate('/settings', { state: { tab: 'privacy', scrollTo: 'key-backup' } })}
+              className="self-start px-4 py-1.5 rounded-full bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity"
+            >
+              🔑 Restaurer mes clés
+            </button>
+          )}
         </div>
       )}
 
