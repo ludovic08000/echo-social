@@ -1088,59 +1088,57 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
    * Decrypt — NEVER shows raw ciphertext.
    * Uses `encryptionMode` tag for deterministic dispatch.
    * For legacy messages without the tag, falls back to heuristic detection.
+   * 
+   * CRITICAL: All decrypts for the same conversation are SERIALIZED via a global
+   * queue to prevent 50 concurrent ratchet inits when loading a chat.
    */
   const decrypt = useCallback(async (body: string): Promise<{ text: string; encrypted: boolean; verified: boolean }> => {
     if (!isEncryptedMessage(body) && !isRatchetEnvelope(body)) {
       return { text: body, encrypted: false, verified: false };
     }
 
-    if (!isZeus && !peerKeyRef.current) {
-      // Only sync if we don't have peer keys yet — prevents request storm
-      // when decrypting many messages concurrently
-      const syncKey = `${user?.id}:${peerUserId}`;
-      if (!_peerSyncPromise.has(syncKey)) {
-        const p = ensureKeysAndPeerSync(false).finally(() => _peerSyncPromise.delete(syncKey));
-        _peerSyncPromise.set(syncKey, p);
-      }
-      await _peerSyncPromise.get(syncKey);
-    }
-
-    if (!cryptoRateCheck('decrypt')) {
-      return { text: '🔒 Opération limitée (sécurité)', encrypted: true, verified: false };
-    }
-
-    try {
-      const parsed = hardGlobals.jsonParse(body);
-      const explicitMode: string | undefined = parsed.encryptionMode;
-
-      // ── Deterministic dispatch based on encryptionMode tag ──
-
-      if (explicitMode === 'ratchet') {
-        // ONLY attempt ratchet decryption
-        return await decryptRatchetMessage(parsed, body);
+    // Serialize all decrypt operations for this conversation to prevent
+    // concurrent ratchet init storms (50 messages → 50 x3dh inits)
+    const convId = conversationId || 'unknown';
+    return serializedDecrypt(convId, async () => {
+      if (!isZeus && !peerKeyRef.current) {
+        const syncKey = `${user?.id}:${peerUserId}`;
+        if (!_peerSyncPromise.has(syncKey)) {
+          const p = ensureKeysAndPeerSync(false).finally(() => _peerSyncPromise.delete(syncKey));
+          _peerSyncPromise.set(syncKey, p);
+        }
+        await _peerSyncPromise.get(syncKey);
       }
 
-      if (explicitMode === 'legacy') {
-        // ONLY attempt legacy decryption
+      if (!cryptoRateCheck('decrypt')) {
+        return { text: '🔒 Opération limitée (sécurité)', encrypted: true, verified: false };
+      }
+
+      try {
+        const parsed = hardGlobals.jsonParse(body);
+        const explicitMode: string | undefined = parsed.encryptionMode;
+
+        if (explicitMode === 'ratchet') {
+          return await decryptRatchetMessage(parsed, body);
+        }
+
+        if (explicitMode === 'legacy') {
+          return await decryptLegacyMessage(parsed, body);
+        }
+
+        // No encryptionMode tag: backward-compatible heuristic
+        if (isRatchetEnvelope(body)) {
+          return await decryptRatchetMessage(parsed, body);
+        }
+
         return await decryptLegacyMessage(parsed, body);
+
+      } catch (err) {
+        console.error('[E2EE] decrypt failed:', err);
+        return { text: '🔒 Message chiffré', encrypted: true, verified: false };
       }
-
-      // ── No encryptionMode tag: backward-compatible heuristic ──
-      // Old messages before v6 don't have the tag
-
-      if (isRatchetEnvelope(body)) {
-        // Looks like a ratchet envelope (has v, hdr, ct fields)
-        return await decryptRatchetMessage(parsed, body);
-      }
-
-      // Legacy envelope (has ct but no hdr)
-      return await decryptLegacyMessage(parsed, body);
-
-    } catch (err) {
-      console.error('[E2EE] decrypt failed:', err);
-      return { text: '🔒 Message chiffré', encrypted: true, verified: false };
-    }
-  }, [conversationId, ensureKeysAndPeerSync, isZeus, user]);
+    });
+  }, [conversationId, ensureKeysAndPeerSync, isZeus, user, peerUserId, decryptRatchetMessage, decryptLegacyMessage]);
 
   /** Decrypt a ratchet-mode message */
   const decryptRatchetMessage = useCallback(async (
