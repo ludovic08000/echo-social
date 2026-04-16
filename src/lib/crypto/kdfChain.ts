@@ -20,11 +20,12 @@ export async function kdfChainStep(chainKey: CryptoKey): Promise<{
   nextChainKey: CryptoKey;
   messageKey: CryptoKey;
 }> {
+  // Signal-style: use clean buffers with .slice() to avoid byteOffset issues
   const mkRaw = await hardCrypto.sign(
-    'HMAC', chainKey, new Uint8Array([0x01]).buffer
+    'HMAC', chainKey, new Uint8Array([0x01]).slice().buffer
   );
   const ckRaw = await hardCrypto.sign(
-    'HMAC', chainKey, new Uint8Array([0x02]).buffer
+    'HMAC', chainKey, new Uint8Array([0x02]).slice().buffer
   );
 
   const [messageKey, nextChainKey] = await Promise.all([
@@ -48,10 +49,10 @@ export async function kdfChainStepExportable(chainKey: CryptoKey): Promise<{
   messageKey: CryptoKey;
 }> {
   const mkRaw = await hardCrypto.sign(
-    'HMAC', chainKey, new Uint8Array([0x01]).buffer
+    'HMAC', chainKey, new Uint8Array([0x01]).slice().buffer
   );
   const ckRaw = await hardCrypto.sign(
-    'HMAC', chainKey, new Uint8Array([0x02]).buffer
+    'HMAC', chainKey, new Uint8Array([0x02]).slice().buffer
   );
 
   const [messageKey, nextChainKey] = await Promise.all([
