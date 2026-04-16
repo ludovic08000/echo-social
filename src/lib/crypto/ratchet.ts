@@ -434,21 +434,26 @@ export async function deserializeRatchetState(json: string): Promise<RatchetStat
   const d = hardGlobals.jsonParse(json);
 
   // Signal-style extractability rules:
-  // - Public keys: EXTRACTABLE (needed for ratchet headers + DH comparison)
-  // - Root key: EXTRACTABLE (needed as HKDF salt in kdfRootStep)
-  // - Private keys: NON-EXTRACTABLE (only used for deriveBits)
-  // - Chain keys: EXTRACTABLE (needed for HMAC chain + export for persistence)
-  // - Message keys: NON-EXTRACTABLE (only used for encrypt/decrypt)
+  // ALL keys that need re-serialization MUST be extractable.
+  // In Signal's libsignal, keys are stored as raw bytes — Web Crypto requires
+  // extractable=true for any key that will be exported to JWK for IndexedDB persistence.
+  //
+  // - Public keys: EXTRACTABLE (headers + DH comparison + re-serialization)
+  // - Private keys: EXTRACTABLE (deriveBits + re-serialization after state update)
+  // - Root key: EXTRACTABLE (HKDF salt export + re-serialization)
+  // - Chain keys: EXTRACTABLE (HMAC chain + re-serialization)
+  // - Skipped message keys: EXTRACTABLE (re-serialization to IndexedDB)
   const dhSendPub = await importKeyFromJWK(d.dhSendPubJWK, KX_KEY_PARAMS as any, [], true);
-  const dhSendPriv = await importKeyFromJWK(d.dhSendPrivJWK, KX_KEY_PARAMS as any, ['deriveBits'], false);
+  const dhSendPriv = await importKeyFromJWK(d.dhSendPrivJWK, KX_KEY_PARAMS as any, ['deriveBits'], true);
   const dhRecv = d.dhRecvJWK ? await importKeyFromJWK(d.dhRecvJWK, KX_KEY_PARAMS as any, [], true) : null;
   const rootKey = await importKeyFromJWK(d.rootJWK, { name: 'HMAC', hash: 'SHA-256' } as AlgorithmIdentifier, ['sign'], true);
   const sendCK = d.sendCKJWK ? await importKeyFromJWK(d.sendCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign'], true) : null;
   const recvCK = d.recvCKJWK ? await importKeyFromJWK(d.recvCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign'], true) : null;
 
+  // Skipped message keys also need extractable=true for re-serialization
   const skippedKeys = new Map<string, CryptoKey>();
   for (const [k, jwk] of d.skippedEntries || []) {
-    skippedKeys.set(k, await importKeyFromJWK(jwk as any, { name: AES_ALGO } as any, ['encrypt', 'decrypt'], false));
+    skippedKeys.set(k, await importKeyFromJWK(jwk as any, { name: AES_ALGO } as any, ['encrypt', 'decrypt'], true));
   }
 
   return {
