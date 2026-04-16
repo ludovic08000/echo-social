@@ -1,14 +1,19 @@
 /**
- * Account-based Key Backup — Google-style automatic key vault
+ * Account-based Key Backup — Signal-style Master Key architecture (v5)
  * 
- * Keys are encrypted using a key derived from the user's password + user_id.
- * On login, keys are automatically restored if local storage is empty.
- * On key changes, keys are automatically backed up.
+ * Architecture inspired by Signal SVR (Secure Value Recovery):
  * 
- * The password never leaves the client — only a PBKDF2-derived key is used.
+ * 1. A random 32-byte MASTER KEY is generated once per account
+ * 2. The Master Key encrypts all E2EE material (identity, ratchets, prekeys, etc.)
+ * 3. The Master Key itself is "wrapped" (encrypted) by TWO parallel mechanisms:
+ *    a. PASSWORD wrapping: PBKDF2(password + userId) → wraps Master Key → stored as backup_type='account'
+ *    b. RECOVERY KEY wrapping: PBKDF2(recoveryKey) → wraps Master Key → stored as backup_type='recovery'
+ * 4. On login: password → unwrap Master Key → decrypt E2EE state
+ * 5. On password change: just re-wrap the same Master Key (no re-encryption of state)
+ * 6. On key loss + password lost: recovery key → unwrap Master Key → restore
  * 
- * v4: random salt stored in backup, content-based change detection,
- *     checks pin-wrapped keys in hasLocalKeys, truly atomic restore.
+ * The Master Key NEVER leaves the client in plaintext.
+ * The password/recovery key NEVER leaves the client.
  */
 
 import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
@@ -18,29 +23,29 @@ import { supabase } from '@/integrations/supabase/client';
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
 const IV_LENGTH = 12;
-const BACKUP_VERSION = 4; // v4 = account-based with random salt + atomic restore
-const BACKUP_TYPE = 'account';
+const MASTER_KEY_LENGTH = 32;
+const BACKUP_VERSION = 5; // v5 = Signal-style Master Key architecture
+const BACKUP_TYPE_ACCOUNT = 'account';
+const BACKUP_TYPE_RECOVERY = 'recovery';
 
-// Volatile in-memory storage for the derived key — never persisted
-let _sessionDerivedKey: CryptoKey | null = null;
+// ── Session State (volatile, never persisted) ──
+let _sessionMasterKey: CryptoKey | null = null;
+let _sessionRawMasterKey: Uint8Array | null = null; // raw bytes for re-wrapping
+let _sessionPassword: string | null = null;
 let _sessionUserId: string | null = null;
-let _sessionPassword: string | null = null; // needed to re-derive with new random salt on each sync
 
-/**
- * Derive an AES-256-GCM key from password + userId + random salt.
- */
-async function deriveKeyFromPassword(password: string, userId: string, salt: Uint8Array): Promise<CryptoKey> {
-  const encoder = new TextEncoder();
-  const combined = `${password}::forsure::${userId}`;
+// ── Crypto Primitives ──
+
+async function deriveWrappingKey(secret: string, salt: Uint8Array): Promise<CryptoKey> {
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
-    encoder.encode(combined),
+    new TextEncoder().encode(secret),
     'PBKDF2',
     false,
     ['deriveKey'],
   );
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: salt as unknown as BufferSource, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: salt.buffer as ArrayBuffer, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
     keyMaterial,
     { name: 'AES-GCM', length: 256 },
     false,
@@ -48,26 +53,87 @@ async function deriveKeyFromPassword(password: string, userId: string, salt: Uin
   );
 }
 
-async function encryptWithPassword(data: string, password: string, userId: string): Promise<{ encrypted: string; iv: string; salt: string }> {
-  const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
-  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
-  const key = await deriveKeyFromPassword(password, userId, salt);
-  const encoded = new TextEncoder().encode(data);
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
-  return {
-    encrypted: bufferToBase64(ciphertext),
-    iv: bufferToBase64(iv.buffer),
-    salt: bufferToBase64(salt.buffer),
-  };
+function passwordSecret(password: string, userId: string): string {
+  return `${password}::forsure::${userId}`;
 }
 
-async function decryptWithPassword(encrypted: string, iv: string, salt: string, password: string, userId: string): Promise<string> {
-  const saltBuf = new Uint8Array(base64ToBuffer(salt));
+/** Wrap (encrypt) the Master Key with a wrapping key */
+async function wrapMasterKey(masterKeyRaw: Uint8Array, wrappingKey: CryptoKey): Promise<{ wrapped: string; iv: string }> {
+  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, wrappingKey, masterKeyRaw.buffer as ArrayBuffer);
+  return { wrapped: bufferToBase64(ciphertext), iv: bufferToBase64(iv.buffer) };
+}
+
+/** Unwrap (decrypt) the Master Key */
+async function unwrapMasterKey(wrapped: string, iv: string, wrappingKey: CryptoKey): Promise<Uint8Array> {
   const ivBuf = new Uint8Array(base64ToBuffer(iv));
-  const key = await deriveKeyFromPassword(password, userId, saltBuf);
+  const ciphertext = base64ToBuffer(wrapped);
+  const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivBuf }, wrappingKey, ciphertext);
+  return new Uint8Array(plainBuf);
+}
+
+/** Import raw Master Key bytes into a CryptoKey for AES-GCM */
+async function importMasterKey(raw: Uint8Array): Promise<CryptoKey> {
+  return crypto.subtle.importKey('raw', raw.buffer as ArrayBuffer, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+
+/** Encrypt data with the Master Key */
+async function encryptWithMasterKey(data: string, masterKey: CryptoKey): Promise<{ encrypted: string; iv: string }> {
+  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+  const encoded = new TextEncoder().encode(data);
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, masterKey, encoded);
+  return { encrypted: bufferToBase64(ciphertext), iv: bufferToBase64(iv.buffer) };
+}
+
+/** Decrypt data with the Master Key */
+async function decryptWithMasterKey(encrypted: string, iv: string, masterKey: CryptoKey): Promise<string> {
+  const ivBuf = new Uint8Array(base64ToBuffer(iv));
   const ciphertext = base64ToBuffer(encrypted);
-  const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivBuf }, key, ciphertext);
+  const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivBuf }, masterKey, ciphertext);
   return new TextDecoder().decode(plainBuf);
+}
+
+/** Generate a fresh random Master Key */
+function generateMasterKey(): Uint8Array {
+  return crypto.getRandomValues(new Uint8Array(MASTER_KEY_LENGTH));
+}
+
+// ── IndexedDB helpers (shared with collectAllKeys / restoreAllKeys) ──
+
+async function openDB(name: string, version: number, storeNames?: string[]): Promise<IDBDatabase> {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open(name, version);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => resolve(req.result);
+    if (storeNames) {
+      req.onupgradeneeded = () => {
+        for (const sn of storeNames) {
+          if (!req.result.objectStoreNames.contains(sn)) {
+            req.result.createObjectStore(sn, { keyPath: sn === 'ratchet-states' ? 'convId' : 'id' });
+          }
+        }
+      };
+    }
+  });
+}
+
+async function getAllFromStore(db: IDBDatabase, storeName: string): Promise<any[]> {
+  if (!db.objectStoreNames.contains(storeName)) return [];
+  const tx = db.transaction(storeName, 'readonly');
+  return new Promise<any[]>((resolve, reject) => {
+    const req = tx.objectStore(storeName).getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function putAllInStore(db: IDBDatabase, storeName: string, records: any[]): Promise<void> {
+  if (!db.objectStoreNames.contains(storeName)) return;
+  const tx = db.transaction(storeName, 'readwrite');
+  const store = tx.objectStore(storeName);
+  store.clear();
+  for (const r of records) store.put(r);
+  await new Promise<void>((r, j) => { tx.oncomplete = () => r(); tx.onerror = () => j(tx.error); });
 }
 
 /** Collect all local E2EE keys for backup */
@@ -77,88 +143,39 @@ async function collectAllKeys(): Promise<string | null> {
   try {
     const db = await openE2EEDB();
     for (const storeName of Array.from(db.objectStoreNames)) {
-      const tx = db.transaction(storeName, 'readonly');
-      const store = tx.objectStore(storeName);
-      const all = await new Promise<any[]>((resolve, reject) => {
-        const req = store.getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-      data[`e2ee:${storeName}`] = all;
+      data[`e2ee:${storeName}`] = await getAllFromStore(db, storeName);
     }
     db.close();
   } catch {}
 
-  // Ratchet states
   try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-ratchet', 1);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result);
-    });
-    if (db.objectStoreNames.contains('ratchet-states')) {
-      const tx = db.transaction('ratchet-states', 'readonly');
-      const all = await new Promise<any[]>((resolve, reject) => {
-        const req = tx.objectStore('ratchet-states').getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-      data['ratchet:states'] = all;
-    }
+    const db = await openDB('forsure-ratchet', 1);
+    data['ratchet:states'] = await getAllFromStore(db, 'ratchet-states');
     db.close();
   } catch {}
 
-  // PIN-wrapped keys
   try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-pin-wrap', 1);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result);
-    });
-    if (db.objectStoreNames.contains('pin-wrapped-keys')) {
-      const tx = db.transaction('pin-wrapped-keys', 'readonly');
-      const all = await new Promise<any[]>((resolve, reject) => {
-        const req = tx.objectStore('pin-wrapped-keys').getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-      data['pinwrap:keys'] = all;
-    }
+    const db = await openDB('forsure-pin-wrap', 1);
+    data['pinwrap:keys'] = await getAllFromStore(db, 'pin-wrapped-keys');
     db.close();
   } catch {}
 
-  // Private prekeys
   try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-prekeys', 1);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result);
-    });
-    if (db.objectStoreNames.contains('private-prekeys')) {
-      const tx = db.transaction('private-prekeys', 'readonly');
-      const all = await new Promise<any[]>((resolve, reject) => {
-        const req = tx.objectStore('private-prekeys').getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-      data['prekeys:private'] = all;
-    }
+    const db = await openDB('forsure-prekeys', 1);
+    data['prekeys:private'] = await getAllFromStore(db, 'private-prekeys');
     db.close();
   } catch {}
 
-  // Fingerprints
   try {
     const fps = localStorage.getItem('forsure-known-fps');
     if (fps) data['fingerprints'] = fps;
   } catch {}
 
-  // Check if there's anything worth backing up
   const hasIdentity = data['e2ee:identity-keys']?.length > 0 || data['pinwrap:keys']?.length > 0;
   if (!hasIdentity) return null;
 
   data['_meta'] = {
     version: BACKUP_VERSION,
-    backup_type: BACKUP_TYPE,
     createdAt: new Date().toISOString(),
     stores: Object.keys(data).filter(k => k !== '_meta'),
   };
@@ -167,8 +184,7 @@ async function collectAllKeys(): Promise<string | null> {
 }
 
 /**
- * Restore all local E2EE keys from backup JSON — TRULY ATOMIC.
- * If ANY store fails to restore, ALL changes are rolled back.
+ * Restore all local E2EE keys from backup — TRULY ATOMIC.
  */
 async function restoreAllKeys(json: string): Promise<void> {
   const data = JSON.parse(json);
@@ -179,160 +195,68 @@ async function restoreAllKeys(json: string): Promise<void> {
     throw new Error('Backup invalide : aucune clé d\'identité');
   }
 
-  // Collect all operations, execute them, rollback ALL on any failure
   const rollbackOps: Array<() => Promise<void>> = [];
 
   try {
-    // Phase 1: Restore E2EE stores
+    // Phase 1: E2EE stores
     for (const [key, records] of Object.entries(data)) {
       if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
       const storeName = key.replace('e2ee:', '');
       const db = await openE2EEDB();
       if (db.objectStoreNames.contains(storeName)) {
-        // Save existing data for rollback
-        const existingTx = db.transaction(storeName, 'readonly');
-        const existingData = await new Promise<any[]>((resolve, reject) => {
-          const req = existingTx.objectStore(storeName).getAll();
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error);
-        });
-
-        const tx = db.transaction(storeName, 'readwrite');
-        const store = tx.objectStore(storeName);
-        store.clear();
-        for (const record of records) store.put(record);
-        await new Promise<void>((resolve, reject) => {
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error);
-        });
-
-        // Register rollback
+        const existing = await getAllFromStore(db, storeName);
+        await putAllInStore(db, storeName, records);
         const sn = storeName;
-        const ed = existingData;
+        const ed = existing;
         rollbackOps.push(async () => {
           const rdb = await openE2EEDB();
-          if (rdb.objectStoreNames.contains(sn)) {
-            const rtx = rdb.transaction(sn, 'readwrite');
-            const rs = rtx.objectStore(sn);
-            rs.clear();
-            for (const r of ed) rs.put(r);
-            await new Promise<void>((r, j) => { rtx.oncomplete = () => r(); rtx.onerror = () => j(rtx.error); });
-          }
+          await putAllInStore(rdb, sn, ed);
           rdb.close();
         });
       }
       db.close();
     }
 
-    // Phase 2: Restore ratchet states
+    // Phase 2: Ratchet states
     if (Array.isArray(data['ratchet:states'])) {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const req = indexedDB.open('forsure-ratchet', 1);
-        req.onerror = () => reject(req.error);
-        req.onsuccess = () => resolve(req.result);
-        req.onupgradeneeded = () => {
-          if (!req.result.objectStoreNames.contains('ratchet-states'))
-            req.result.createObjectStore('ratchet-states', { keyPath: 'convId' });
-        };
-      });
-      const existingTx = db.transaction('ratchet-states', 'readonly');
-      const existingData = await new Promise<any[]>((r, j) => {
-        const req = existingTx.objectStore('ratchet-states').getAll();
-        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
-      });
-
-      const tx = db.transaction('ratchet-states', 'readwrite');
-      tx.objectStore('ratchet-states').clear();
-      for (const r of data['ratchet:states']) tx.objectStore('ratchet-states').put(r);
-      await new Promise<void>((r, j) => { tx.oncomplete = () => r(); tx.onerror = () => j(tx.error); });
+      const db = await openDB('forsure-ratchet', 1, ['ratchet-states']);
+      const existing = await getAllFromStore(db, 'ratchet-states');
+      await putAllInStore(db, 'ratchet-states', data['ratchet:states']);
       db.close();
-
       rollbackOps.push(async () => {
-        const rdb = await new Promise<IDBDatabase>((resolve, reject) => {
-          const req = indexedDB.open('forsure-ratchet', 1);
-          req.onerror = () => reject(req.error); req.onsuccess = () => resolve(req.result);
-        });
-        const rtx = rdb.transaction('ratchet-states', 'readwrite');
-        rtx.objectStore('ratchet-states').clear();
-        for (const r of existingData) rtx.objectStore('ratchet-states').put(r);
-        await new Promise<void>((r, j) => { rtx.oncomplete = () => r(); rtx.onerror = () => j(rtx.error); });
+        const rdb = await openDB('forsure-ratchet', 1);
+        await putAllInStore(rdb, 'ratchet-states', existing);
         rdb.close();
       });
     }
 
-    // Phase 3: Restore PIN-wrapped keys
+    // Phase 3: PIN-wrapped keys
     if (Array.isArray(data['pinwrap:keys'])) {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const req = indexedDB.open('forsure-pin-wrap', 1);
-        req.onerror = () => reject(req.error);
-        req.onsuccess = () => resolve(req.result);
-        req.onupgradeneeded = () => {
-          if (!req.result.objectStoreNames.contains('pin-wrapped-keys'))
-            req.result.createObjectStore('pin-wrapped-keys', { keyPath: 'id' });
-        };
-      });
-      const existingTx = db.transaction('pin-wrapped-keys', 'readonly');
-      const existingData = await new Promise<any[]>((r, j) => {
-        const req = existingTx.objectStore('pin-wrapped-keys').getAll();
-        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
-      });
-
-      const tx = db.transaction('pin-wrapped-keys', 'readwrite');
-      tx.objectStore('pin-wrapped-keys').clear();
-      for (const r of data['pinwrap:keys']) tx.objectStore('pin-wrapped-keys').put(r);
-      await new Promise<void>((r, j) => { tx.oncomplete = () => r(); tx.onerror = () => j(tx.error); });
+      const db = await openDB('forsure-pin-wrap', 1, ['pin-wrapped-keys']);
+      const existing = await getAllFromStore(db, 'pin-wrapped-keys');
+      await putAllInStore(db, 'pin-wrapped-keys', data['pinwrap:keys']);
       db.close();
-
       rollbackOps.push(async () => {
-        const rdb = await new Promise<IDBDatabase>((resolve, reject) => {
-          const req = indexedDB.open('forsure-pin-wrap', 1);
-          req.onerror = () => reject(req.error); req.onsuccess = () => resolve(req.result);
-        });
-        const rtx = rdb.transaction('pin-wrapped-keys', 'readwrite');
-        rtx.objectStore('pin-wrapped-keys').clear();
-        for (const r of existingData) rtx.objectStore('pin-wrapped-keys').put(r);
-        await new Promise<void>((r, j) => { rtx.oncomplete = () => r(); rtx.onerror = () => j(rtx.error); });
+        const rdb = await openDB('forsure-pin-wrap', 1);
+        await putAllInStore(rdb, 'pin-wrapped-keys', existing);
         rdb.close();
       });
     }
 
-    // Phase 4: Restore private prekeys
+    // Phase 4: Private prekeys
     if (Array.isArray(data['prekeys:private'])) {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const req = indexedDB.open('forsure-prekeys', 1);
-        req.onerror = () => reject(req.error);
-        req.onsuccess = () => resolve(req.result);
-        req.onupgradeneeded = () => {
-          if (!req.result.objectStoreNames.contains('private-prekeys'))
-            req.result.createObjectStore('private-prekeys', { keyPath: 'id' });
-        };
-      });
-      const existingTx = db.transaction('private-prekeys', 'readonly');
-      const existingData = await new Promise<any[]>((r, j) => {
-        const req = existingTx.objectStore('private-prekeys').getAll();
-        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
-      });
-
-      const tx = db.transaction('private-prekeys', 'readwrite');
-      tx.objectStore('private-prekeys').clear();
-      for (const r of data['prekeys:private']) tx.objectStore('private-prekeys').put(r);
-      await new Promise<void>((r, j) => { tx.oncomplete = () => r(); tx.onerror = () => j(tx.error); });
+      const db = await openDB('forsure-prekeys', 1, ['private-prekeys']);
+      const existing = await getAllFromStore(db, 'private-prekeys');
+      await putAllInStore(db, 'private-prekeys', data['prekeys:private']);
       db.close();
-
       rollbackOps.push(async () => {
-        const rdb = await new Promise<IDBDatabase>((resolve, reject) => {
-          const req = indexedDB.open('forsure-prekeys', 1);
-          req.onerror = () => reject(req.error); req.onsuccess = () => resolve(req.result);
-        });
-        const rtx = rdb.transaction('private-prekeys', 'readwrite');
-        rtx.objectStore('private-prekeys').clear();
-        for (const r of existingData) rtx.objectStore('private-prekeys').put(r);
-        await new Promise<void>((r, j) => { rtx.oncomplete = () => r(); rtx.onerror = () => j(rtx.error); });
+        const rdb = await openDB('forsure-prekeys', 1);
+        await putAllInStore(rdb, 'private-prekeys', existing);
         rdb.close();
       });
     }
 
-    // Phase 5: Restore fingerprints
+    // Phase 5: Fingerprints
     if (data['fingerprints']) {
       const oldFps = localStorage.getItem('forsure-known-fps');
       localStorage.setItem('forsure-known-fps', data['fingerprints']);
@@ -342,71 +266,56 @@ async function restoreAllKeys(json: string): Promise<void> {
       });
     }
 
-    console.log('[AccountKeySync] ✅ Atomic restore complete');
+    console.log('[MasterKey] ✅ Atomic restore complete');
   } catch (error) {
-    // ROLLBACK everything
-    console.error('[AccountKeySync] Restore failed, rolling back...', error);
+    console.error('[MasterKey] Restore failed, rolling back...', error);
     for (const rollback of rollbackOps.reverse()) {
-      try { await rollback(); } catch (e) { console.warn('[AccountKeySync] Rollback step failed:', e); }
+      try { await rollback(); } catch (e) { console.warn('[MasterKey] Rollback step failed:', e); }
     }
     throw new Error(`Restore échoué et annulé : ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 /**
- * Check if local E2EE keys exist — checks BOTH raw identity keys AND pin-wrapped keys.
+ * Check if local E2EE keys exist.
  */
 export async function hasLocalKeys(): Promise<boolean> {
-  // Check raw identity keys
   try {
     const db = await openE2EEDB();
     let rawCount = 0;
     if (db.objectStoreNames.contains('identity-keys')) {
       const tx = db.transaction('identity-keys', 'readonly');
-      rawCount = await new Promise<number>((resolve, reject) => {
+      rawCount = await new Promise<number>((r, j) => {
         const req = tx.objectStore('identity-keys').count();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
+        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
       });
     }
     db.close();
     if (rawCount > 0) return true;
   } catch {}
 
-  // Check pin-wrapped keys
   try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-pin-wrap', 1);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result);
-    });
+    const db = await openDB('forsure-pin-wrap', 1);
     let pinCount = 0;
     if (db.objectStoreNames.contains('pin-wrapped-keys')) {
       const tx = db.transaction('pin-wrapped-keys', 'readonly');
-      pinCount = await new Promise<number>((resolve, reject) => {
+      pinCount = await new Promise<number>((r, j) => {
         const req = tx.objectStore('pin-wrapped-keys').count();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
+        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
       });
     }
     db.close();
     if (pinCount > 0) return true;
   } catch {}
 
-  // Check ratchet states (keys exist but identity scrubbed = still "has keys")
   try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-ratchet', 1);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result);
-    });
+    const db = await openDB('forsure-ratchet', 1);
     let ratchetCount = 0;
     if (db.objectStoreNames.contains('ratchet-states')) {
       const tx = db.transaction('ratchet-states', 'readonly');
-      ratchetCount = await new Promise<number>((resolve, reject) => {
+      ratchetCount = await new Promise<number>((r, j) => {
         const req = tx.objectStore('ratchet-states').count();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
+        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
       });
     }
     db.close();
@@ -417,189 +326,289 @@ export async function hasLocalKeys(): Promise<boolean> {
 }
 
 /**
- * Compute a content-based hash of all local crypto state.
- * Used by useAccountKeySync to detect real changes, not just count changes.
+ * SHA-256 digest of all local crypto state for change detection.
  */
 export async function computeLocalCryptoDigest(): Promise<string> {
   const parts: string[] = [];
 
-  // E2EE DB
   try {
     const db = await openE2EEDB();
     for (const storeName of Array.from(db.objectStoreNames)) {
-      const tx = db.transaction(storeName, 'readonly');
-      const all = await new Promise<any[]>((resolve, reject) => {
-        const req = tx.objectStore(storeName).getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
+      const all = await getAllFromStore(db, storeName);
       parts.push(`${storeName}:${all.length}:${JSON.stringify(all).length}`);
     }
     db.close();
   } catch {}
 
-  // Ratchet DB
-  try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-ratchet', 1);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result);
-    });
-    if (db.objectStoreNames.contains('ratchet-states')) {
-      const tx = db.transaction('ratchet-states', 'readonly');
-      const all = await new Promise<any[]>((r, j) => {
-        const req = tx.objectStore('ratchet-states').getAll();
-        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
-      });
-      parts.push(`ratchet:${all.length}:${JSON.stringify(all).length}`);
-    }
-    db.close();
-  } catch {}
-
-  // PIN-wrap DB
-  try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-pin-wrap', 1);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result);
-    });
-    if (db.objectStoreNames.contains('pin-wrapped-keys')) {
-      const tx = db.transaction('pin-wrapped-keys', 'readonly');
-      const all = await new Promise<any[]>((r, j) => {
-        const req = tx.objectStore('pin-wrapped-keys').getAll();
-        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
-      });
-      parts.push(`pinwrap:${all.length}:${JSON.stringify(all).length}`);
-    }
-    db.close();
-  } catch {}
-
-  // Prekeys DB  
-  try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-prekeys', 1);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result);
-    });
-    if (db.objectStoreNames.contains('private-prekeys')) {
-      const tx = db.transaction('private-prekeys', 'readonly');
-      const all = await new Promise<any[]>((r, j) => {
-        const req = tx.objectStore('private-prekeys').getAll();
-        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
-      });
-      parts.push(`prekeys:${all.length}:${JSON.stringify(all).length}`);
-    }
-    db.close();
-  } catch {}
+  for (const [dbName, storeName] of [
+    ['forsure-ratchet', 'ratchet-states'],
+    ['forsure-pin-wrap', 'pin-wrapped-keys'],
+    ['forsure-prekeys', 'private-prekeys'],
+  ]) {
+    try {
+      const db = await openDB(dbName, 1);
+      const all = await getAllFromStore(db, storeName);
+      parts.push(`${storeName}:${all.length}:${JSON.stringify(all).length}`);
+      db.close();
+    } catch {}
+  }
 
   const combined = parts.join('|');
-  // Simple hash via SubtleCrypto
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(combined));
   return bufferToBase64(hash);
+}
+
+// ── Server I/O ──
+
+interface BackupRow {
+  encrypted_blob: string;
+  iv: string;
+  salt: string;
+  wrapped_master_key: string;
+  master_key_iv: string;
+  version: number;
+  backup_type: string;
+}
+
+/**
+ * Save the current E2EE state to server, encrypted with Master Key.
+ * Also saves the password-wrapped Master Key.
+ */
+async function uploadBackup(
+  masterKeyRaw: Uint8Array,
+  masterKey: CryptoKey,
+  password: string,
+  userId: string,
+  backupType: 'account' | 'recovery',
+  wrappingSecret: string,
+): Promise<boolean> {
+  const keysJson = await collectAllKeys();
+  if (!keysJson) return false;
+
+  // 1. Encrypt all E2EE state with Master Key
+  const { encrypted, iv: dataIv } = await encryptWithMasterKey(keysJson, masterKey);
+
+  // 2. Wrap Master Key with the wrapping secret (password or recovery key)
+  const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+  const wrappingKey = await deriveWrappingKey(wrappingSecret, salt);
+  const { wrapped, iv: mkIv } = await wrapMasterKey(masterKeyRaw, wrappingKey);
+
+  // 3. Upload
+  const { error } = await supabase
+    .from('user_backups' as any)
+    .upsert({
+      user_id: userId,
+      encrypted_blob: encrypted,
+      iv: dataIv,
+      salt: bufferToBase64(salt.buffer),
+      wrapped_master_key: wrapped,
+      master_key_iv: mkIv,
+      version: BACKUP_VERSION,
+      backup_type: backupType,
+      created_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,backup_type' });
+
+  if (error) throw error;
+  return true;
+}
+
+/**
+ * Restore from server: unwrap Master Key, decrypt E2EE state.
+ */
+async function downloadAndRestore(
+  userId: string,
+  backupType: 'account' | 'recovery',
+  wrappingSecret: string,
+): Promise<{ masterKeyRaw: Uint8Array; masterKey: CryptoKey } | null> {
+  const { data } = await supabase
+    .from('user_backups' as any)
+    .select('encrypted_blob, iv, salt, wrapped_master_key, master_key_iv, version, backup_type')
+    .eq('user_id', userId)
+    .eq('backup_type', backupType)
+    .maybeSingle();
+
+  if (!data) return null;
+
+  const backup = data as unknown as BackupRow;
+
+  // v5 Master Key format
+  if (backup.version >= 5 && backup.wrapped_master_key && backup.master_key_iv) {
+    const saltBuf = new Uint8Array(base64ToBuffer(backup.salt));
+    const wrappingKey = await deriveWrappingKey(wrappingSecret, saltBuf);
+    const masterKeyRaw = await unwrapMasterKey(backup.wrapped_master_key, backup.master_key_iv, wrappingKey);
+    const masterKey = await importMasterKey(masterKeyRaw);
+    const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, masterKey);
+    await restoreAllKeys(json);
+    return { masterKeyRaw, masterKey };
+  }
+
+  // Legacy v3/v4: password directly encrypts the state (no Master Key)
+  if (backup.version >= 3 && backupType === 'account') {
+    const saltBuf = new Uint8Array(base64ToBuffer(backup.salt));
+    const ivBuf = new Uint8Array(base64ToBuffer(backup.iv));
+    const key = await deriveWrappingKey(wrappingSecret, saltBuf);
+    const ciphertext = base64ToBuffer(backup.encrypted_blob);
+    const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivBuf }, key, ciphertext);
+    const json = new TextDecoder().decode(plainBuf);
+    await restoreAllKeys(json);
+    // Migrate: generate Master Key and re-upload in v5 format
+    const mkRaw = generateMasterKey();
+    const mk = await importMasterKey(mkRaw);
+    console.log('[MasterKey] Migrating legacy v' + backup.version + ' → v5');
+    await uploadBackup(mkRaw, mk, _sessionPassword || '', userId, 'account', wrappingSecret).catch(() => {});
+    return { masterKeyRaw: mkRaw, masterKey: mk };
+  }
+
+  // Legacy v2: recovery key format
+  if (backup.version === 2 && backupType === 'recovery') {
+    const saltBuf = new Uint8Array(base64ToBuffer(backup.salt));
+    const ivBuf = new Uint8Array(base64ToBuffer(backup.iv));
+    const key = await deriveWrappingKey(wrappingSecret, saltBuf);
+    const ciphertext = base64ToBuffer(backup.encrypted_blob);
+    const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivBuf }, key, ciphertext);
+    const json = new TextDecoder().decode(plainBuf);
+    await restoreAllKeys(json);
+    const mkRaw = generateMasterKey();
+    const mk = await importMasterKey(mkRaw);
+    return { masterKeyRaw: mkRaw, masterKey: mk };
+  }
+
+  console.warn('[MasterKey] Incompatible backup version:', backup.version);
+  return null;
 }
 
 // ── Public API ──
 
 /**
- * Called at login time with the user's password.
- * Derives the backup key and stores it in memory for the session.
- * Then checks if local keys exist — if not, auto-restores from server.
+ * Called at login time. Derives wrapping key from password, restores or creates Master Key.
  */
 export async function initAccountKeySync(password: string, userId: string): Promise<'restored' | 'local_ok' | 'no_backup' | 'error'> {
   try {
     _sessionPassword = password;
     _sessionUserId = userId;
-    // Derive a temporary key just for session (actual encrypt/decrypt uses fresh salt each time)
-    const tmpSalt = new Uint8Array(32);
-    _sessionDerivedKey = await deriveKeyFromPassword(password, userId, tmpSalt);
+    const secret = passwordSecret(password, userId);
 
-    // Check local keys (now checks raw + pin-wrapped + ratchet)
     const hasLocal = await hasLocalKeys();
     if (hasLocal) {
-      console.log('[AccountKeySync] Local keys present, syncing backup...');
-      syncBackupToServer().catch(() => {});
+      console.log('[MasterKey] Local keys present');
+      // If we don't have a Master Key yet, generate one and upload
+      if (!_sessionMasterKey) {
+        const mkRaw = generateMasterKey();
+        const mk = await importMasterKey(mkRaw);
+        _sessionRawMasterKey = mkRaw;
+        _sessionMasterKey = mk;
+        uploadBackup(mkRaw, mk, password, userId, 'account', secret).catch(() => {});
+      }
       return 'local_ok';
     }
 
-    // No local keys — try to restore from server
-    console.log('[AccountKeySync] No local keys, attempting restore...');
-    const { data } = await supabase
-      .from('user_backups' as any)
-      .select('encrypted_blob, iv, salt, version, backup_type')
-      .eq('user_id', userId)
-      .eq('backup_type', BACKUP_TYPE)
-      .maybeSingle();
-
-    if (!data) {
-      console.log('[AccountKeySync] No server backup found');
-      return 'no_backup';
-    }
-
-    const backup = data as unknown as { encrypted_blob: string; iv: string; salt: string; version: number; backup_type: string };
-    
-    // Version guard: refuse incompatible formats
-    if (backup.version < 3) {
-      console.warn('[AccountKeySync] Backup is recovery-key format (v' + backup.version + '), skipping');
-      return 'no_backup';
-    }
-
+    // No local keys — try restore from server
+    console.log('[MasterKey] No local keys, attempting restore...');
     try {
-      const json = await decryptWithPassword(backup.encrypted_blob, backup.iv, backup.salt, password, userId);
-      await restoreAllKeys(json);
-      console.log('[AccountKeySync] ✅ Keys auto-restored from server');
-      return 'restored';
-    } catch (decryptErr) {
-      console.warn('[AccountKeySync] Decrypt failed (password may have changed)', decryptErr);
-      return 'error';
+      const result = await downloadAndRestore(userId, 'account', secret);
+      if (result) {
+        _sessionRawMasterKey = result.masterKeyRaw;
+        _sessionMasterKey = result.masterKey;
+        console.log('[MasterKey] ✅ Keys restored from server');
+        return 'restored';
+      }
+    } catch (e) {
+      console.warn('[MasterKey] Password-based restore failed:', e);
     }
+
+    console.log('[MasterKey] No server backup found');
+    return 'no_backup';
   } catch (err) {
-    console.error('[AccountKeySync] Init failed:', err);
+    console.error('[MasterKey] Init failed:', err);
     return 'error';
   }
 }
 
 /**
- * Encrypt current keys and upload to server.
- * Uses fresh random salt each time for maximum security.
+ * Restore using a recovery key (fallback when password doesn't work).
  */
-export async function syncBackupToServer(): Promise<boolean> {
-  if (!_sessionPassword || !_sessionUserId) return false;
+export async function restoreWithRecoveryKey(recoveryKey: string, userId: string): Promise<boolean> {
+  try {
+    const result = await downloadAndRestore(userId, 'recovery', recoveryKey);
+    if (result) {
+      _sessionRawMasterKey = result.masterKeyRaw;
+      _sessionMasterKey = result.masterKey;
+      // Re-wrap with current password if available
+      if (_sessionPassword && _sessionUserId) {
+        const secret = passwordSecret(_sessionPassword, _sessionUserId);
+        await uploadBackup(result.masterKeyRaw, result.masterKey, _sessionPassword, _sessionUserId, 'account', secret).catch(() => {});
+      }
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.error('[MasterKey] Recovery key restore failed:', e);
+    return false;
+  }
+}
+
+/**
+ * Create a recovery-key-wrapped backup of the Master Key.
+ * Returns the recovery key to show to user.
+ */
+export async function createRecoveryKeyBackup(userId: string): Promise<string | null> {
+  if (!_sessionRawMasterKey || !_sessionMasterKey) {
+    // Generate Master Key if we don't have one
+    const mkRaw = generateMasterKey();
+    const mk = await importMasterKey(mkRaw);
+    _sessionRawMasterKey = mkRaw;
+    _sessionMasterKey = mk;
+  }
+
+  const { generateRecoveryKey, normalizeRecoveryKey } = await import('@/lib/crypto/recoveryKey');
+  const recoveryKey = generateRecoveryKey();
+  const normalized = normalizeRecoveryKey(recoveryKey);
 
   try {
-    const keysJson = await collectAllKeys();
-    if (!keysJson) return false;
+    await uploadBackup(_sessionRawMasterKey!, _sessionMasterKey!, _sessionPassword || '', userId, 'recovery', normalized);
+    return recoveryKey;
+  } catch (e) {
+    console.error('[MasterKey] Recovery backup creation failed:', e);
+    return null;
+  }
+}
 
-    const { encrypted, iv, salt } = await encryptWithPassword(keysJson, _sessionPassword, _sessionUserId);
+/**
+ * Sync current E2EE state to server (auto-sync on changes).
+ */
+export async function syncBackupToServer(): Promise<boolean> {
+  if (!_sessionPassword || !_sessionUserId || !_sessionRawMasterKey || !_sessionMasterKey) {
+    // Fallback: generate Master Key if session has password but no MK yet
+    if (_sessionPassword && _sessionUserId) {
+      const mkRaw = generateMasterKey();
+      const mk = await importMasterKey(mkRaw);
+      _sessionRawMasterKey = mkRaw;
+      _sessionMasterKey = mk;
+    } else {
+      return false;
+    }
+  }
 
-    const { error } = await supabase
-      .from('user_backups' as any)
-      .upsert({
-        user_id: _sessionUserId,
-        encrypted_blob: encrypted,
-        salt,
-        iv,
-        version: BACKUP_VERSION,
-        backup_type: BACKUP_TYPE,
-        created_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,backup_type' });
-
-    if (error) throw error;
-    console.log('[AccountKeySync] ✅ Backup synced to server');
-    return true;
+  try {
+    const secret = passwordSecret(_sessionPassword!, _sessionUserId!);
+    const ok = await uploadBackup(_sessionRawMasterKey!, _sessionMasterKey!, _sessionPassword!, _sessionUserId!, 'account', secret);
+    if (ok) console.log('[MasterKey] ✅ Backup synced');
+    return ok;
   } catch (err) {
-    console.warn('[AccountKeySync] Sync failed:', err);
+    console.warn('[MasterKey] Sync failed:', err);
     return false;
   }
 }
 
 /** Check if auto-backup session is active */
 export function isAutoBackupActive(): boolean {
-  return _sessionDerivedKey !== null && _sessionPassword !== null;
+  return _sessionPassword !== null && _sessionUserId !== null;
 }
 
-/** Clear session key (on logout) */
+/** Clear session state (on logout) */
 export function clearAccountKeySession(): void {
-  _sessionDerivedKey = null;
-  _sessionUserId = null;
+  _sessionMasterKey = null;
+  _sessionRawMasterKey = null;
   _sessionPassword = null;
+  _sessionUserId = null;
 }
