@@ -192,6 +192,7 @@ async function saveKnownFingerprintServer(peerUserId: string, fp: string) {
 
 /** Check fingerprint against both local AND server records (with cache) */
 const _fpCheckCache = new Map<string, { result: { changed: boolean; previousFp: string | null }; ts: number }>();
+async function checkFingerprintChangeWithServer(
   currentUserId: string,
   peerUserId: string,
   currentFp: string
@@ -200,6 +201,13 @@ const _fpCheckCache = new Map<string, { result: { changed: boolean; previousFp: 
   const localPrevious = known[peerUserId];
   if (localPrevious && localPrevious !== currentFp) {
     return { changed: true, previousFp: localPrevious };
+  }
+
+  // Cache server check for 60s to avoid request storms
+  const cacheKey = `${currentUserId}:${peerUserId}:${currentFp}`;
+  const cached = _fpCheckCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < 60_000) {
+    return cached.result;
   }
 
   try {
@@ -212,12 +220,16 @@ const _fpCheckCache = new Map<string, { result: { changed: boolean; previousFp: 
 
     if (data && data.fingerprint !== currentFp) {
       console.warn('[PEER_KEY] ⚠️ Server-side fingerprint mismatch for', peerUserId);
-      return { changed: true, previousFp: data.fingerprint };
+      const result = { changed: true, previousFp: data.fingerprint };
+      _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
+      return result;
     }
   } catch {
   }
 
-  return { changed: false, previousFp: null };
+  const result = { changed: false, previousFp: null };
+  _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
+  return result;
 }
 
 function checkFingerprintChange(userId: string, currentFp: string): boolean {
