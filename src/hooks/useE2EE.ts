@@ -166,8 +166,15 @@ function saveKnownFingerprint(userId: string, fp: string) {
   localStorage.setItem(KNOWN_FP_KEY, hardGlobals.jsonStringify(known));
 }
 
-/** Save fingerprint to server for cross-device verification */
+/** Save fingerprint to server for cross-device verification (deduplicated) */
+const _fpSaveCache = new Map<string, number>();
 async function saveKnownFingerprintServer(peerUserId: string, fp: string) {
+  // Deduplicate: skip if same fp was saved in the last 60s
+  const cacheKey = `${peerUserId}:${fp}`;
+  const lastSaved = _fpSaveCache.get(cacheKey);
+  if (lastSaved && Date.now() - lastSaved < 60_000) return;
+  _fpSaveCache.set(cacheKey, Date.now());
+
   try {
     await supabase
       .from('user_known_fingerprints')
