@@ -1288,11 +1288,16 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     return { text: '🔒 Message illisible (session expirée)', encrypted: true, verified: false };
   }, [conversationId, user, ensureLegacySession]);
 
-  /** Decrypt a legacy-mode message */
+  /** Decrypt a legacy-mode message — NON-DESTRUCTIVE retry only */
   const decryptLegacyMessage = useCallback(async (
     parsed: any,
     rawBody: string,
   ): Promise<{ text: string; encrypted: boolean; verified: boolean }> => {
+    // Strict fingerprint guard — refuse to decrypt if peer fingerprint changed
+    if (state.fingerprintChanged) {
+      return { text: '🔒 Empreinte du contact changée — vérification requise', encrypted: true, verified: false };
+    }
+
     // Handle prekey-based messages (receiver side)
     if (parsed.prekey && user && conversationId) {
       try {
@@ -1310,47 +1315,37 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         generateAndUploadPrekeys(user.id).catch(err => {
           console.error('[X3DH] Failed to re-upload prekeys after OPK mismatch:', err);
         });
-        return { text: '🔒 Message illisible (prekey introuvable / état incohérent)', encrypted: true, verified: false };
+        return { text: '🔒 Message legacy non restaurable (prekey perdu)', encrypted: true, verified: false };
       } catch (prekeyErr) {
         console.error('[E2EE] Prekey decrypt failed:', prekeyErr);
-        return { text: '🔒 Message illisible (échec prekey / état incohérent)', encrypted: true, verified: false };
+        return { text: '🔒 Message legacy non restaurable (ancienne session perdue)', encrypted: true, verified: false };
       }
     }
 
-    // Standard legacy session — load only, NEVER rotate on decrypt
-    let session = peerKeyRef.current ? await ensureLegacySession() : await loadSessionKey(conversationId!);
+    // Standard legacy session — load only, NEVER rotate or destroy on decrypt
+    const session = peerKeyRef.current ? await ensureLegacySession() : await loadSessionKey(conversationId!);
     if (!session) {
-      return { text: '🔒 Clé de session manquante', encrypted: true, verified: false };
+      return { text: '🔒 Message legacy non restaurable (ancienne session perdue)', encrypted: true, verified: false };
     }
 
     try {
       const result = await decryptMessage(rawBody, session.sharedSecret, peerKeyRef.current?.signingKey);
       return { text: result.plaintext, encrypted: true, verified: result.verified };
-    } catch {
-      // First decrypt failed — session may be desynchronized.
-      // Auto-correct local/remote key state, rebuild the session, and retry once.
-      if (user && conversationId && peerUserId) {
-        try {
-          console.warn('[E2EE] Legacy decrypt failed — attempting session re-derivation');
-          const repaired = await ensureKeysAndPeerSync(true);
-
-          if (repaired && peerKeyRef.current) {
-            const newSession = await loadSessionKey(conversationId);
-            if (!newSession) {
-              return { text: '🔒 Clé de session manquante', encrypted: true, verified: false };
-            }
-
-            const retryResult = await decryptMessage(rawBody, newSession.sharedSecret, peerKeyRef.current.signingKey);
-            console.info('[E2EE] ✅ Decrypt succeeded after session re-derivation');
-            return { text: retryResult.plaintext, encrypted: true, verified: retryResult.verified };
-          }
-        } catch (retryErr) {
-          console.error('[E2EE] Session re-derivation decrypt also failed:', retryErr);
-        }
+    } catch (firstErr) {
+      // NON-DESTRUCTIVE retry: just retry with the SAME session — no deletion, no re-derivation.
+      // The previous "repair" flow recomputed a new session with the current peer key,
+      // which is cryptographically wrong: an old message was encrypted with the OLD session,
+      // not derivable from the current key. We never destroy local state here.
+      try {
+        const retry = await decryptMessage(rawBody, session.sharedSecret, peerKeyRef.current?.signingKey);
+        return { text: retry.plaintext, encrypted: true, verified: retry.verified };
+      } catch {
+        // Trigger one-shot cleanup of irrecoverable legacy crypto bodies in this conversation
+        if (conversationId) void scheduleLegacyCleanup(conversationId);
+        return { text: '🔒 Message legacy non restaurable (ancienne session perdue)', encrypted: true, verified: false };
       }
-      return { text: '🔒 Message chiffré (clé expirée)', encrypted: true, verified: false };
     }
-  }, [conversationId, user, ensureKeysAndPeerSync, ensureLegacySession, peerUserId]);
+  }, [conversationId, user, ensureLegacySession, state.fingerprintChanged]);
 
   /** Check if encryption is ready for this conversation */
   const isReady = useCallback((): boolean => {
