@@ -510,9 +510,15 @@ export async function initAccountKeySync(password: string, userId: string): Prom
     try {
       const result = await downloadAndRestore(userId, 'account', secret);
       if (result) {
+        // Post-restore validation: ensure local identity actually exists now
+        const validated = await hasLocalKeys();
+        if (!validated) {
+          console.error('[MasterKey] ⛔ Restore reported success but no local identity found — failing restore');
+          return 'error';
+        }
         _sessionRawMasterKey = result.masterKeyRaw;
         _sessionMasterKey = result.masterKey;
-        console.log('[MasterKey] ✅ Keys restored from server');
+        console.log('[MasterKey] ✅ Keys restored from server (validated)');
         return 'restored';
       }
     } catch (e) {
