@@ -540,6 +540,12 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
   try {
     const result = await downloadAndRestore(userId, 'recovery', recoveryKey);
     if (result) {
+      // Post-restore validation: ensure local identity actually exists now
+      const validated = await hasLocalKeys();
+      if (!validated) {
+        console.error('[MasterKey] ⛔ Recovery restore reported success but no local identity found');
+        return false;
+      }
       _sessionRawMasterKey = result.masterKeyRaw;
       _sessionMasterKey = result.masterKey;
       // Re-wrap with current password if available
