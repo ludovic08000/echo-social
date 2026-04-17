@@ -1428,3 +1428,75 @@ function isRatchetEnvelope(body: string): boolean {
     return false;
   }
 }
+
+function isLegacyEncryptedEnvelope(body: string): boolean {
+  if (!body.startsWith('{')) return false;
+  try {
+    const p = hardGlobals.jsonParse(body);
+    return p.v !== undefined && p.kem !== undefined && p.ct !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Anti-loop guard: only run cleanup ONCE per conversation per session.
+ * Detects messages whose body starts with `{` and looks like an old crypto payload
+ * but is NEITHER a valid legacy envelope (v+kem+ct) NOR a valid ratchet envelope (v+hdr+ct),
+ * and deletes them. Plain text, GIFs, audio, calls and valid encrypted messages are untouched.
+ */
+const _legacyCleanupRan = new Set<string>();
+async function scheduleLegacyCleanup(conversationId: string): Promise<void> {
+  if (_legacyCleanupRan.has(conversationId)) return;
+  _legacyCleanupRan.add(conversationId);
+
+  try {
+    const { data: rows, error } = await supabase
+      .from('messages')
+      .select('id, body')
+      .eq('conversation_id', conversationId)
+      .like('body', '{%')
+      .limit(500);
+
+    if (error || !rows?.length) return;
+
+    const idsToDelete: string[] = [];
+    for (const row of rows) {
+      const body = (row as any).body as string | null;
+      if (!body || typeof body !== 'string') continue;
+      if (!body.startsWith('{')) continue;
+      // Keep valid envelopes
+      if (isRatchetEnvelope(body) || isLegacyEncryptedEnvelope(body)) continue;
+      // Heuristic: looks like a stale crypto payload (had v/kem/hdr fields) but not a valid one
+      try {
+        const p = hardGlobals.jsonParse(body);
+        const looksCrypto = p && (p.v !== undefined || p.kem !== undefined || p.hdr !== undefined || p.ct !== undefined);
+        if (looksCrypto) idsToDelete.push((row as any).id);
+      } catch {
+        // unparseable JSON-looking body → broken
+        idsToDelete.push((row as any).id);
+      }
+    }
+
+    if (idsToDelete.length === 0) {
+      console.log('[E2EE] Legacy cleanup: nothing to remove for', conversationId);
+      return;
+    }
+
+    const { error: delErr } = await supabase
+      .from('messages')
+      .delete()
+      .in('id', idsToDelete);
+
+    if (delErr) {
+      console.warn('[E2EE] Legacy cleanup delete failed:', delErr);
+      return;
+    }
+
+    console.log(`[E2EE] 🧹 Cleaned ${idsToDelete.length} broken legacy crypto message(s) in ${conversationId}`);
+    // Notify UI to reload the conversation
+    window.dispatchEvent(new CustomEvent('forsure-conversation-cleaned', { detail: { conversationId, removed: idsToDelete.length } }));
+  } catch (e) {
+    console.warn('[E2EE] Legacy cleanup error:', e);
+  }
+}
