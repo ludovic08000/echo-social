@@ -1,0 +1,1 @@
+DELETE FROM public.messages WHERE id = '6b22f72b-a852-43c6-930c-15e58d62c8dc';
