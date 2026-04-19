@@ -191,7 +191,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
     }
   }, [newMessage]);
 
+  const lastScrollSigRef = useRef<string>('');
   useEffect(() => {
+    const lastMsgId = messages?.length ? messages[messages.length - 1].id : '';
+    const lastPendingId = queue.pendingMessages.length
+      ? queue.pendingMessages[queue.pendingMessages.length - 1].localId
+      : '';
+    const sig = `${messages?.length ?? 0}:${lastMsgId}|${queue.pendingMessages.length}:${lastPendingId}`;
+    if (sig === lastScrollSigRef.current) return;
+    lastScrollSigRef.current = sig;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, queue.pendingMessages]);
 
