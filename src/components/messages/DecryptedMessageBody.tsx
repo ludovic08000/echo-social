@@ -76,6 +76,22 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   // flash "Déchiffrement…" on a message that's already been decrypted.
   const initial = (() => {
     if (cachedPlaintext) {
+      // If the cached plaintext embeds a media key, surface it synchronously
+      // so MessageMedia (rendered in the same cycle) can pick it up from the
+      // shared mediaKeyCache during its own initial render — avoids flashing
+      // raw "📷 Photo\x00MKEY:..." text and the broken-image fallback.
+      if (hasMediaKey(cachedPlaintext)) {
+        const parsed = parseMediaMessage(cachedPlaintext);
+        if (parsed) {
+          if (messageId) setMediaKey(messageId, parsed.keyB64, parsed.label.startsWith('🎬'));
+          plaintextCache.set(cacheKey(messageId, body), {
+            text: parsed.label,
+            mediaKeyB64: parsed.keyB64,
+            hidden: false,
+          });
+          return { text: parsed.label, mediaKeyB64: parsed.keyB64 as string | null, hidden: false, decrypting: false };
+        }
+      }
       return { text: cachedPlaintext, mediaKeyB64: null as string | null, hidden: false, decrypting: false };
     }
     const looksEnc = looksEncryptedMessage(body);
@@ -84,11 +100,9 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     }
     const cached = plaintextCache.get(cacheKey(messageId, body));
     if (cached) {
+      if (cached.mediaKeyB64 && messageId) setMediaKey(messageId, cached.mediaKeyB64, cached.text.startsWith('🎬'));
       return { text: cached.text, mediaKeyB64: cached.mediaKeyB64, hidden: cached.hidden, decrypting: false };
     }
-    // Own encrypted message: ratchet can't self-decrypt. We rely on the
-    // persistent plaintext store loaded asynchronously by the parent.
-    // Show the decrypting state until cachedPlaintext arrives (or stays empty).
     if (isMe) {
       return { text: null as string | null, mediaKeyB64: null as string | null, hidden: false, decrypting: true };
     }
