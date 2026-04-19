@@ -21,12 +21,6 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   getOrCreateIdentityKeys,
   exportPublicKeyBundle,
-  encryptMessage,
-  decryptMessage,
-  isEncryptedMessage,
-  establishSession,
-  loadSessionKey,
-  saveSessionKey,
   initRatchetAsInitiator,
   initRatchetAsResponder,
   ratchetEncrypt,
@@ -36,11 +30,6 @@ import {
   getRatchetReadiness,
   isRatchetReadyForEncrypt,
   isRatchetReadyForDecrypt,
-  generateAndUploadPrekeys,
-  refillPrekeysIfNeeded,
-  reconcilePrekeysWithServer,
-  consumePeerPrekey,
-  deriveFromOwnPrekey,
   // X3DH
   x3dhInitiate,
   x3dhRespond,
@@ -592,12 +581,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         if (updated && (updated as number) > 0) console.log('[E2EE] Pushed fingerprint to', updated, 'peer(s)');
       });
 
-      // Generate prekeys + signed prekeys if needed (Signal/X3DH-style)
-      Promise.all([
-        reconcilePrekeysWithServer(user.id),
-        refreshSignedPrekeyIfNeeded(user.id, keys.signingPrivateKey),
-      ]).catch(e => 
-        console.warn('[E2EE] Prekey/SPK refill failed:', e)
+      // Refresh Signed Prekey if needed (X3DH 3-DH only mode — no OPK).
+      refreshSignedPrekeyIfNeeded(user.id, keys.signingPrivateKey).catch(e =>
+        console.warn('[E2EE] SPK refresh failed:', e),
       );
 
       // Auto-scrub: once keys are loaded into memory as non-extractable CryptoKeys,
@@ -860,21 +846,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           saveKnownFingerprint(peerUserId, data.fingerprint);
           saveKnownFingerprintServer(peerUserId, data.fingerprint);
 
-          // Pre-establish legacy session immediately
-          if (keysRef.current && conversationId) {
-            try {
-              let session = await loadSessionKey(conversationId);
-              if (cancelled) return;
-              if (!session) {
-                session = await establishSession(keysRef.current, data.identity_key, conversationId, data.fingerprint);
-              }
-              if (cancelled) return;
-              legacySessionReadyRef.current = true;
-              console.log('[E2EE] ✅ Legacy session pre-established — ready to send');
-            } catch (e) {
-              console.warn('[E2EE] Legacy session pre-establish failed:', e);
-            }
-          }
+          // Legacy per-conversation session removed — Double Ratchet handles
+          // all messaging encryption. Nothing to pre-establish here.
 
           setState(s => ({
             ...s,
@@ -941,16 +914,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           saveKnownFingerprint(peerUserId, data.fingerprint);
           saveKnownFingerprintServer(peerUserId, data.fingerprint);
           
-          // Pre-establish legacy session
-          if (keysRef.current && conversationId) {
-            try {
-              let session = await loadSessionKey(conversationId);
-              if (!session) {
-                session = await establishSession(keysRef.current, data.identity_key, conversationId, data.fingerprint);
-              }
-              legacySessionReadyRef.current = true;
-            } catch {}
-          }
+          // Legacy per-conversation session removed.
           
           setState(s => ({
             ...s,
@@ -965,15 +929,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     return () => clearInterval(interval);
   }, [state.peerKeyMissing, peerUserId, isZeus, conversationId]);
 
-  // Legacy session — load existing or establish new (NEVER rotates — rotation is encrypt-only)
-  const ensureLegacySession = useCallback(async () => {
-    if (!conversationId || !keysRef.current || !peerKeyRef.current) return null;
-    let session = await loadSessionKey(conversationId);
-    if (!session) {
-      session = await establishSession(keysRef.current, peerKeyRef.current.identityKey, conversationId, peerKeyRef.current.fingerprint);
-    }
-    return session;
-  }, [conversationId]);
+  // Legacy per-conversation session helper removed — Double Ratchet only.
 
   const ensureKeysAndPeerSync = useCallback(async (forceSessionRefresh = false): Promise<boolean> => {
     if (!user || !peerUserId || isZeus) return false;
@@ -1044,15 +1000,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         } catch {}
       }
 
-      if (conversationId && keysRef.current) {
-        try {
-          await ensureLegacySession();
-          legacySessionReadyRef.current = true;
-        } catch (sessionError) {
-          legacySessionReadyRef.current = false;
-          console.warn('[E2EE] Session auto-repair failed:', sessionError);
-        }
-      }
+      // Legacy session re-establish removed.
 
       setState(s => ({
         ...s,
@@ -1070,7 +1018,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       console.warn('[E2EE] Peer key sync failed:', error);
       return false;
     }
-  }, [conversationId, ensureLegacySession, isZeus, peerUserId, user]);
+  }, [conversationId, isZeus, peerUserId, user]);
 
   const resetRatchetBootstrapState = useCallback(async (reason: string) => {
     if (!conversationId) return;
@@ -1456,64 +1404,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     return { text: '🔒 Message illisible (session expirée)', encrypted: true, verified: false };
   }, [conversationId, user, resetRatchetBootstrapState]);
 
-  /** Decrypt a legacy-mode message — NON-DESTRUCTIVE retry only */
-  const decryptLegacyMessage = useCallback(async (
-    parsed: any,
-    rawBody: string,
-  ): Promise<DecryptResult> => {
-    // Strict fingerprint guard — refuse to decrypt if peer fingerprint changed
-    if (state.fingerprintChanged) {
-      return { text: '🔒 Empreinte du contact changée — vérification requise', encrypted: true, verified: false };
-    }
-
-    // Handle prekey-based messages (receiver side)
-    if (parsed.prekey && user && conversationId) {
-      try {
-        const prekeySecret = await deriveFromOwnPrekey(
-          user.id,
-          parsed.prekey.id,
-          parsed.prekey.senderKey,
-          conversationId,
-        );
-        if (prekeySecret) {
-          const result = await decryptMessage(rawBody, prekeySecret, peerKeyRef.current?.signingKey);
-          return { text: result.plaintext, encrypted: true, verified: result.verified };
-        }
-        console.error(`[X3DH] OPK mismatch — resync needed (prekey #${parsed.prekey.id} introuvable localement)`);
-        generateAndUploadPrekeys(user.id).catch(err => {
-          console.error('[X3DH] Failed to re-upload prekeys after OPK mismatch:', err);
-        });
-        return { text: '🔒 Message legacy non restaurable (prekey perdu)', encrypted: true, verified: false };
-      } catch (prekeyErr) {
-        console.error('[E2EE] Prekey decrypt failed:', prekeyErr);
-        return { text: '🔒 Message legacy non restaurable (ancienne session perdue)', encrypted: true, verified: false };
-      }
-    }
-
-    // Standard legacy session — load only, NEVER rotate or destroy on decrypt
-    const session = peerKeyRef.current ? await ensureLegacySession() : await loadSessionKey(conversationId!);
-    if (!session) {
-      return { text: '🔒 Message legacy non restaurable (ancienne session perdue)', encrypted: true, verified: false };
-    }
-
-    try {
-      const result = await decryptMessage(rawBody, session.sharedSecret, peerKeyRef.current?.signingKey);
-      return { text: result.plaintext, encrypted: true, verified: result.verified };
-    } catch (firstErr) {
-      // NON-DESTRUCTIVE retry: just retry with the SAME session — no deletion, no re-derivation.
-      // The previous "repair" flow recomputed a new session with the current peer key,
-      // which is cryptographically wrong: an old message was encrypted with the OLD session,
-      // not derivable from the current key. We never destroy local state here.
-      try {
-        const retry = await decryptMessage(rawBody, session.sharedSecret, peerKeyRef.current?.signingKey);
-        return { text: retry.plaintext, encrypted: true, verified: retry.verified };
-      } catch {
-        // Trigger one-shot cleanup of irrecoverable legacy crypto bodies in this conversation
-        if (conversationId) void scheduleLegacyCleanup(conversationId);
-        return { text: '🔒 Message legacy non restaurable (ancienne session perdue)', encrypted: true, verified: false };
-      }
-    }
-  }, [conversationId, user, ensureLegacySession, state.fingerprintChanged]);
+  // Legacy message decrypt path removed — incompatible bodies are auto-purged.
 
   /** Check if encryption is ready for this conversation */
   const isReady = useCallback((): boolean => {
@@ -1541,22 +1432,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       x3dhInfoRef.current = null;
       pendingPayloadRef.current.clear();
 
-      // Delete old legacy session and re-establish with new peer key
-      try {
-        const { deleteSessionKey } = await import('@/lib/crypto/keyManager');
-        await deleteSessionKey(conversationId);
-      } catch {}
-
-      if (keysRef.current && peerKeyRef.current) {
-        try {
-          await establishSession(keysRef.current, peerKeyRef.current.identityKey, conversationId, peerKeyRef.current.fingerprint);
-          legacySessionReadyRef.current = true;
-          console.log('[E2EE] ✅ Legacy session re-established after fingerprint acknowledgement');
-        } catch (e) {
-          console.warn('[E2EE] Legacy session re-establish failed after ack:', e);
-          legacySessionReadyRef.current = false;
-        }
-      }
+      // Legacy session purge/re-establish removed — Double Ratchet only.
     }
     setState(s => ({ ...s, fingerprintChanged: false, ready: true, ratchetActive: false, initError: null }));
   }, [peerUserId, conversationId]);

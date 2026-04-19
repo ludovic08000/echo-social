@@ -18,7 +18,6 @@ import { useAuth } from '@/lib/auth';
 import {
   getOrCreateIdentityKeys,
   refreshSignedPrekeyIfNeeded,
-  refillPrekeysIfNeeded,
 } from '@/lib/crypto';
 
 const MAINTENANCE_TTL = 6 * 60 * 60 * 1000; // 6h between auto-refills
@@ -66,12 +65,7 @@ export function useCryptoMaintenance() {
           console.warn('[CRYPTO-MAINT] SPK refresh failed:', spkErr);
         }
 
-        // 3. Refill OPK + reconcile orphans
-        try {
-          await refillPrekeysIfNeeded(user.id);
-        } catch (opkErr) {
-          console.warn('[CRYPTO-MAINT] OPK refill failed:', opkErr);
-        }
+        // OPK system removed — only SPK rotation is needed.
 
         try {
           localStorage.setItem(STORAGE_KEY, String(Date.now()));

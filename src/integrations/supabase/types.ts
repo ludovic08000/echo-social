@@ -4514,36 +4514,6 @@ export type Database = {
         }
         Relationships: []
       }
-      user_prekeys: {
-        Row: {
-          consumed_at: string | null
-          consumed_by: string | null
-          created_at: string
-          id: string
-          prekey_id: number
-          public_key: string
-          user_id: string
-        }
-        Insert: {
-          consumed_at?: string | null
-          consumed_by?: string | null
-          created_at?: string
-          id?: string
-          prekey_id: number
-          public_key: string
-          user_id: string
-        }
-        Update: {
-          consumed_at?: string | null
-          consumed_by?: string | null
-          created_at?: string
-          id?: string
-          prekey_id?: number
-          public_key?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       user_public_keys: {
         Row: {
           created_at: string
@@ -5202,13 +5172,6 @@ export type Database = {
       cleanup_old_behavior_signals: { Args: never; Returns: undefined }
       cleanup_old_fingerprints: { Args: never; Returns: undefined }
       complete_onboarding: { Args: { _user_id: string }; Returns: boolean }
-      consume_prekey: {
-        Args: { p_peer_user_id: string }
-        Returns: {
-          prekey_id: number
-          public_key: string
-        }[]
-      }
       create_group_conversation: {
         Args: { p_member_ids: string[]; p_name: string }
         Returns: string

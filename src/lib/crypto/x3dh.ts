@@ -380,32 +380,15 @@ export async function fetchPrekeyBundle(peerUserId: string): Promise<X3DHPrekeyB
     return null;
   }
 
-  // 4. Try to get a one-time prekey (atomically consumed)
-  let oneTimePrekey: string | undefined;
-  let oneTimePrekeyId: number | undefined;
-  try {
-    const { data: opkData } = await supabase
-      .rpc('consume_prekey', { p_peer_user_id: peerUserId });
-    if (opkData && opkData.length > 0) {
-      oneTimePrekey = opkData[0].public_key;
-      oneTimePrekeyId = opkData[0].prekey_id;
-      console.log(`[X3DH] OPK #${oneTimePrekeyId} consumed for peer ${peerUserId}`);
-    } else {
-      console.info('[X3DH] No OPK available for peer — X3DH will use 3-DH (still secure)');
-    }
-  } catch (opkErr) {
-    console.warn('[X3DH] OPK consumption failed (non-fatal):', opkErr);
-    // X3DH still works with 3 DH operations
-  }
-
+  // OPK system removed — X3DH now always uses the 3-DH variant.
   return {
     identityKey: pubKeys.identity_key,
     signingKey: pubKeys.signing_key,
     signedPrekey: spk.public_key,
     signedPrekeySignature: spk.signature,
     signedPrekeyId: spk.spk_id,
-    oneTimePrekey,
-    oneTimePrekeyId,
+    oneTimePrekey: undefined,
+    oneTimePrekeyId: undefined,
   };
 }
 
@@ -565,35 +548,17 @@ export async function x3dhRespond(
     256,
   );
 
-  // DH4 = DH(OPKb_priv, EKa_pub) — optional but MUST match initiator
-  let dh4: ArrayBuffer | null = null;
+  // OPK / DH4 removed — handshake is now strictly 3-DH.
   if (initialMessage.opkId !== undefined) {
-    const { loadPrivatePrekey } = await import('./prekeys');
-    const opkPrivate = await loadPrivatePrekey(myUserId, initialMessage.opkId);
-    if (opkPrivate) {
-      dh4 = await hardCrypto.deriveBits(
-        { name: 'X25519', public: aliceEK } as any,
-        opkPrivate,
-        256,
-      );
-      console.info(`[X3DH] OPK #${initialMessage.opkId} used for 4-DH respond`);
-    } else {
-      // CRITICAL: Alice used 4-DH with this OPK. If we skip DH4, we get a DIFFERENT
-      // shared secret → all messages will be unreadable. We MUST fail here.
-      const errMsg = `[X3DH] ⛔ OPK #${initialMessage.opkId} consumed on server but NOT FOUND locally — shared secret would mismatch. Cannot complete X3DH.`;
-      console.error(errMsg);
-      throw new Error(errMsg);
-    }
+    console.warn(`[X3DH] Ignoring legacy OPK #${initialMessage.opkId} on incoming message — 3-DH only mode`);
   }
 
   const filler = new Uint8Array(32).fill(0xFF);
-  const dhConcat = dh4
-    ? concatBuffers(filler.buffer as ArrayBuffer, dh1, dh2, dh3, dh4)
-    : concatBuffers(filler.buffer as ArrayBuffer, dh1, dh2, dh3);
+  const dhConcat = concatBuffers(filler.buffer as ArrayBuffer, dh1, dh2, dh3);
 
   const sharedSecret = await x3dhKDF(dhConcat);
 
-  console.info(`[X3DH] ✅ Responded with ${dh4 ? '4' : '3'} DH operations (SPK #${initialMessage.spkId})`);
+  console.info(`[X3DH] ✅ Responded with 3 DH operations (SPK #${initialMessage.spkId})`);
 
   // Return the SPK key pair so the responder can use it as initial ratchet DH pair
   // Per Signal spec: Bob's SPK serves as his initial ratchet key — NO new random DH pair here

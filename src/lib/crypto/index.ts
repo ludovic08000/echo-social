@@ -5,14 +5,14 @@
  * Double Ratchet + Hybrid Post-Quantum Ready (Kyber768)
  */
 
-// Legacy single-key encryption (for fallback / Zeus / group bootstrap)
+// NOTE: Legacy single-key envelope helpers are still exported from './e2ee'
+// for internal modules that need symmetric primitives (mediaEncrypt,
+// callKeyEncrypt, accountKeyBackup). They are NOT used for messaging anymore.
 export {
   encryptMessage,
   decryptMessage,
-  establishSession,
-  rotateSessionKey,
-  needsKeyRotation,
   isEncryptedMessage,
+  establishSession,
   type EncryptedEnvelope,
 } from './e2ee';
 
@@ -36,13 +36,16 @@ export {
 export { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
 
 // Key management
+// NOTE: loadSessionKey/saveSessionKey/establishSession are kept for non-message
+// flows that still rely on a per-conversation symmetric session
+// (call key encryption, account key backup). Messaging itself uses Double
+// Ratchet exclusively and never touches these helpers anymore.
 export {
   getOrCreateIdentityKeys,
   exportPublicKeyBundle,
   loadSessionKey,
   saveSessionKey,
   deleteSessionKey,
-  incrementSessionMessageCount,
   wipeAllKeys,
   wipeSessionKeys,
   exportAllSessionKeys,
@@ -87,21 +90,6 @@ export {
   hasWrappedKeys,
   deleteWrappedKeys,
 } from './pinWrap';
-
-// Signal-style prekey system
-export {
-  generateAndUploadPrekeys,
-  refillPrekeysIfNeeded,
-  reconcilePrekeysWithServer,
-  consumePeerPrekey,
-  deriveFromOwnPrekey,
-  getPeerPrekeyCount,
-  loadPrivatePrekey,
-  exportAllPrivatePrekeys,
-  importAllPrivatePrekeys,
-  wipePrivatePrekeys,
-  type StoredPrivatePrekey,
-} from './prekeys';
 
 // X3DH key agreement (Signal spec)
 export {
