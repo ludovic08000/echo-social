@@ -746,11 +746,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               <Link to={`/profile/${conversation.participant.user_id}`} className="min-w-0">
                 <div className="flex items-center gap-1 min-w-0">
                   <p className="text-xs font-semibold truncate hover:underline">{conversation.participant.name}</p>
-                  {!isZeusConversation && e2ee.encrypted && (
+                  {!isZeusConversation && stableBadgeState.encrypted && (
                     <EncryptionBadge
                       encrypted
-                      verified={!e2ee.fingerprintChanged}
-                      ratchetActive={e2ee.ratchetActive}
+                      verified={stableBadgeState.verified}
+                      ratchetActive={stableBadgeState.ratchetActive}
                       size="xs"
                       showLabel
                       className="shrink-0 text-primary-foreground"
@@ -1180,11 +1180,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         {isLastInGroup && (
                           <div className="flex items-center gap-0.5 mt-0.5 px-0.5 flex-wrap">
                             <span className="text-[8px] text-muted-foreground">{format(new Date(msg.created_at), 'HH:mm')}</span>
-                            {!isZeusConversation && e2ee.encrypted && msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"')) && (
+                            {stableBadgeState.encrypted && msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"')) && (
                               <EncryptionBadge
                                 encrypted
-                                verified={decryptedCacheRef.current.has(msg.id) && !e2ee.fingerprintChanged}
-                                ratchetActive={e2ee.ratchetActive}
+                                verified={decryptedCacheRef.current.has(msg.id) && stableBadgeState.verified}
+                                ratchetActive={stableBadgeState.ratchetActive}
                                 size="xs"
                                 showLabel
                               />
