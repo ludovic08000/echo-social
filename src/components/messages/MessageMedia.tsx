@@ -10,7 +10,7 @@ import { useState, useEffect, memo } from 'react';
 import { EncryptedMedia } from './EncryptedMedia';
 import { parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
-import { getMediaKey } from './mediaKeyCache';
+import { getMediaKey, subscribeMediaKey } from './mediaKeyCache';
 import type { DecryptResult } from '@/hooks/useE2EE';
 
 function looksEncryptedMessage(body: string): boolean {
