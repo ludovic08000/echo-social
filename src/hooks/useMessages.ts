@@ -154,7 +154,7 @@ export function useConversations() {
             },
             participants: undefined,
             last_message: row.last_message_body ? {
-              body: row.last_message_body,
+              body: isUnsupportedEncryptedBody(row.last_message_body) ? '🧹 Message incompatible supprimé' : row.last_message_body,
               created_at: row.last_message_at,
               sender_id: row.last_message_sender,
             } : undefined,
@@ -213,14 +213,19 @@ export function useConversations() {
       // Get last message per conversation
       const { data: recentMessages } = await supabase
         .from('messages')
-        .select('conversation_id, body, created_at, sender_id')
+        .select('id, conversation_id, body, created_at, sender_id')
         .in('conversation_id', conversationIds)
         .order('created_at', { ascending: false })
         .limit(conversationIds.length);
 
+      const previewIncompatibleIds = (recentMessages || []).filter(m => isUnsupportedEncryptedBody(m.body)).map(m => m.id);
+      if (user && previewIncompatibleIds.length > 0) {
+        await hideMessagesForUser(user.id, previewIncompatibleIds);
+      }
+
       const lastMessageMap = new Map<string, { body: string; created_at: string; sender_id: string }>();
       recentMessages?.forEach(m => {
-        if (!lastMessageMap.has(m.conversation_id)) lastMessageMap.set(m.conversation_id, m);
+        if (!lastMessageMap.has(m.conversation_id) && !isUnsupportedEncryptedBody(m.body)) lastMessageMap.set(m.conversation_id, m);
       });
 
       return conversations.map(conv => {

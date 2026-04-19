@@ -52,10 +52,12 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   const [displayText, setDisplayText] = useState<string | null>(null);
   const [mediaKeyB64, setMediaKeyB64] = useState<string | null>(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
+  const [hidden, setHidden] = useState(false);
 
   useEffect(() => {
     // If we have cached plaintext (own sent message), use it directly
     if (cachedPlaintext) {
+      setHidden(false);
       setDisplayText(cachedPlaintext);
       setMediaKeyB64(null);
       onDecrypted?.(cachedPlaintext);
@@ -65,12 +67,14 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     const shouldAttemptDecrypt = isEncryptionActive || looksEncryptedMessage(body);
 
     if (!shouldAttemptDecrypt) {
+      setHidden(false);
       setDisplayText(body);
       setMediaKeyB64(null);
       return;
     }
 
     if (!looksEncryptedMessage(body)) {
+      setHidden(false);
       setDisplayText(body);
       setMediaKeyB64(null);
       return;
@@ -82,9 +86,11 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     decrypt(body).then(result => {
       if (!cancelled) {
         if (result.incompatible) {
+          setHidden(true);
           setDisplayText(null);
           setMediaKeyB64(null);
         } else if (hasMediaKey(result.text)) {
+          setHidden(false);
           const parsed = parseMediaMessage(result.text);
           if (parsed) {
             setMediaKeyB64(parsed.keyB64);
@@ -110,6 +116,8 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
     return () => { cancelled = true; };
   }, [body, decrypt, isEncryptionActive, onDecrypted, isMe, cachedPlaintext, refreshKey]);
+
+  if (hidden) return null;
 
   if (isDecrypting || displayText === null) {
     return (
