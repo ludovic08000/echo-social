@@ -351,6 +351,20 @@ export function useMessages(conversationId: string) {
     };
   }, [conversationId, user, queryClient]);
 
+  useEffect(() => {
+    if (!conversationId) return;
+
+    const handleCleaned = (event: Event) => {
+      const detail = (event as CustomEvent<{ conversationId?: string }>).detail;
+      if (detail?.conversationId !== conversationId) return;
+      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    };
+
+    window.addEventListener('forsure-conversation-cleaned', handleCleaned as EventListener);
+    return () => window.removeEventListener('forsure-conversation-cleaned', handleCleaned as EventListener);
+  }, [conversationId, queryClient]);
+
   return useQuery({
     queryKey: ['messages', conversationId],
     queryFn: async () => {
