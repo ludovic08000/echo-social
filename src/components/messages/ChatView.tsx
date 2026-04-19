@@ -255,6 +255,13 @@ export function ChatView({ conversationId }: ChatViewProps) {
     }
   };
 
+  const sendBlocked = !isZeusConversation && (
+    e2ee.fingerprintChanged ||
+    e2ee.peerKeyMissing ||
+    e2ee.initError === 'pin_unlock_required' ||
+    e2ee.initError === 'identity_lost_backup_available'
+  );
+
   const handleImageUpload = () => {
     fileInputRef.current?.click();
   };
@@ -940,7 +947,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
           {newMessage.trim() ? (
             <button
               type="submit"
-              disabled={isSending}
+              disabled={isSending || sendBlocked}
               className="w-10 h-10 rounded-full flex items-center justify-center text-primary hover:bg-primary/10 transition-colors flex-shrink-0"
             >
               <Send className="w-6 h-6" />

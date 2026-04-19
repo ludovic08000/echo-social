@@ -645,6 +645,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     }
   };
 
+  const sendBlocked = !isZeusConversation && (e2ee.fingerprintChanged || e2ee.peerKeyMissing || e2ee.initError === 'pin_unlock_required' || e2ee.initError === 'identity_lost_backup_available');
+
   const handleAI = async (action: 'correct' | 'improve' | 'translate', tone?: string) => {
     if (!newMessage.trim() || aiLoading) return;
     setAiLoading(true);
@@ -1595,7 +1597,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             />
 
             {newMessage.trim() ? (
-              <button type="submit" disabled={sendMessage.isPending} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
+              <button type="submit" disabled={sendMessage.isPending || sendBlocked} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
                 <Send className="w-3.5 h-3.5" />
               </button>
             ) : (
