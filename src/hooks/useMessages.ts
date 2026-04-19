@@ -218,11 +218,7 @@ export function useConversations() {
         .order('created_at', { ascending: false })
         .limit(conversationIds.length);
 
-      const previewIncompatibleIds = (recentMessages || []).filter(m => isUnsupportedEncryptedBody(m.body)).map(m => m.id);
-      if (user && previewIncompatibleIds.length > 0) {
-        await hideMessagesForUser(user.id, previewIncompatibleIds);
-      }
-
+      // Note: incompatible messages are filtered locally — no DB write during fetch.
       const lastMessageMap = new Map<string, { body: string; created_at: string; sender_id: string }>();
       recentMessages?.forEach(m => {
         if (!lastMessageMap.has(m.conversation_id) && !isUnsupportedEncryptedBody(m.body)) lastMessageMap.set(m.conversation_id, m);
@@ -394,13 +390,9 @@ export function useMessages(conversationId: string) {
 
       if (error) throw error;
 
-      // Filter out hidden messages
+      // Filter out hidden + incompatible messages locally — no DB writes here.
       const visibleMessages = messages.filter(m => !hiddenIds.has(m.id));
-      const incompatibleIds = visibleMessages.filter(m => isUnsupportedEncryptedBody(m.body)).map(m => m.id);
-      if (user && incompatibleIds.length > 0) {
-        await hideMessagesForUser(user.id, incompatibleIds);
-      }
-      const compatibleMessages = visibleMessages.filter(m => !incompatibleIds.includes(m.id));
+      const compatibleMessages = visibleMessages.filter(m => !isUnsupportedEncryptedBody(m.body));
 
       // Reconcile local queue with already delivered backend messages
       messageQueue.reconcileDelivered(
