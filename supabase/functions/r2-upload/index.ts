@@ -323,11 +323,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    const now = new Date();
-    const dateStamp = now.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-    const shortDate = dateStamp.substring(0, 8);
-    const credentialScope = `${shortDate}/auto/s3/aws4_request`;
-
     const payloadHash = await sha256Hex(new Uint8Array(fileBuffer));
 
     const headers: Record<string, string> = {
