@@ -218,11 +218,7 @@ export function useConversations() {
         .order('created_at', { ascending: false })
         .limit(conversationIds.length);
 
-      const previewIncompatibleIds = (recentMessages || []).filter(m => isUnsupportedEncryptedBody(m.body)).map(m => m.id);
-      if (user && previewIncompatibleIds.length > 0) {
-        await hideMessagesForUser(user.id, previewIncompatibleIds);
-      }
-
+      // Note: incompatible messages are filtered locally — no DB write during fetch.
       const lastMessageMap = new Map<string, { body: string; created_at: string; sender_id: string }>();
       recentMessages?.forEach(m => {
         if (!lastMessageMap.has(m.conversation_id) && !isUnsupportedEncryptedBody(m.body)) lastMessageMap.set(m.conversation_id, m);
@@ -365,7 +361,29 @@ export function useMessages(conversationId: string) {
     return () => window.removeEventListener('forsure-conversation-cleaned', handleCleaned as EventListener);
   }, [conversationId, queryClient]);
 
-  return useQuery({
+  // Background cleanup: hide incompatible messages once per conversation visit.
+  // Runs OUTSIDE the queryFn so it never triggers a re-render loop.
+  useEffect(() => {
+    if (!conversationId || !user) return;
+    let cancelled = false;
+    (async () => {
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('id, body')
+        .eq('conversation_id', conversationId)
+        .in('status', ['delivered', 'pending'])
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (cancelled || !msgs) return;
+      const ids = msgs.filter(m => isUnsupportedEncryptedBody(m.body)).map(m => m.id);
+      if (ids.length > 0) {
+        hideMessagesForUser(user.id, ids).catch(() => {});
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [conversationId, user]);
+
+  const messagesQuery = useQuery({
     queryKey: ['messages', conversationId],
     queryFn: async () => {
       if (!conversationId || !user) return [];
@@ -392,15 +410,9 @@ export function useMessages(conversationId: string) {
       // Reverse to chronological order for display
       messages.reverse();
 
-      if (error) throw error;
-
-      // Filter out hidden messages
+      // Filter out hidden + incompatible messages locally — no DB writes here.
       const visibleMessages = messages.filter(m => !hiddenIds.has(m.id));
-      const incompatibleIds = visibleMessages.filter(m => isUnsupportedEncryptedBody(m.body)).map(m => m.id);
-      if (user && incompatibleIds.length > 0) {
-        await hideMessagesForUser(user.id, incompatibleIds);
-      }
-      const compatibleMessages = visibleMessages.filter(m => !incompatibleIds.includes(m.id));
+      const compatibleMessages = visibleMessages.filter(m => !isUnsupportedEncryptedBody(m.body));
 
       // Reconcile local queue with already delivered backend messages
       messageQueue.reconcileDelivered(
@@ -434,6 +446,8 @@ export function useMessages(conversationId: string) {
     },
     enabled: !!conversationId,
   });
+
+  return messagesQuery;
 }
 
 export function useSendMessage() {

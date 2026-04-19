@@ -3,6 +3,7 @@ import { Lock } from 'lucide-react';
 import { VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { hasMediaKey, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import { setMediaKey } from './mediaKeyCache';
 import type { DecryptResult } from '@/hooks/useE2EE';
 
 function looksEncryptedMessage(body: string): boolean {
@@ -38,6 +39,10 @@ interface DecryptedMessageBodyProps {
   cachedPlaintext?: string;
   /** Changes when E2EE state self-heals so decryption retries automatically */
   refreshKey?: string | number;
+  /** Message id — used to share the extracted media key with MessageMedia */
+  messageId?: string;
+  /** Indicates the message has an attached media (image_url) */
+  hasMedia?: boolean;
 }
 
 export const DecryptedMessageBody = memo(function DecryptedMessageBody({
@@ -48,6 +53,8 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   isMe,
   cachedPlaintext,
   refreshKey,
+  messageId,
+  hasMedia,
 }: DecryptedMessageBodyProps) {
   const [displayText, setDisplayText] = useState<string | null>(null);
   const [mediaKeyB64, setMediaKeyB64] = useState<string | null>(null);
@@ -95,6 +102,9 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
           if (parsed) {
             setMediaKeyB64(parsed.keyB64);
             setDisplayText(parsed.label);
+            if (messageId) {
+              setMediaKey(messageId, parsed.keyB64, parsed.label.startsWith('🎬'));
+            }
           } else {
             setDisplayText(result.text);
             setMediaKeyB64(null);
@@ -115,7 +125,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     });
 
     return () => { cancelled = true; };
-  }, [body, decrypt, isEncryptionActive, onDecrypted, isMe, cachedPlaintext, refreshKey]);
+  }, [body, decrypt, isEncryptionActive, onDecrypted, isMe, cachedPlaintext, refreshKey, messageId]);
 
   if (hidden) return null;
 

@@ -1,15 +1,16 @@
 /**
  * MessageMedia — renders media attached to a message.
- * 
- * For encrypted conversations, it decrypts the message body independently
- * to extract the MKEY, then delegates to EncryptedMedia.
- * This avoids a timing dependency on the decryptedCache.
+ *
+ * For encrypted conversations, it first checks the per-message media-key cache
+ * (populated by DecryptedMessageBody). If absent, it falls back to decrypting
+ * the body itself. This eliminates double-decryption of the same envelope.
  */
 
 import { useState, useEffect, memo } from 'react';
 import { EncryptedMedia } from './EncryptedMedia';
 import { parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import { getMediaKey } from './mediaKeyCache';
 import type { DecryptResult } from '@/hooks/useE2EE';
 
 function looksEncryptedMessage(body: string): boolean {
@@ -21,6 +22,8 @@ interface MessageMediaProps {
   body: string;
   decrypt: (body: string) => Promise<DecryptResult>;
   isEncryptionActive: boolean;
+  /** Message id — enables sharing the decrypted media key across components */
+  messageId?: string;
 }
 
 export const MessageMedia = memo(function MessageMedia({
@@ -28,43 +31,82 @@ export const MessageMedia = memo(function MessageMedia({
   body,
   decrypt,
   isEncryptionActive,
+  messageId,
 }: MessageMediaProps) {
-  const [mediaKey, setMediaKey] = useState<string | null>(null);
-  const [isVideo, setIsVideo] = useState(false);
-  const [resolved, setResolved] = useState(!isEncryptionActive);
+  const [mediaKey, setMediaKey] = useState<string | null>(() => {
+    if (!messageId) return null;
+    const cached = getMediaKey(messageId);
+    return cached?.mediaKeyB64 ?? null;
+  });
+  const [isVideo, setIsVideo] = useState<boolean>(() => {
+    if (!messageId) return false;
+    return getMediaKey(messageId)?.isVideo ?? false;
+  });
+  const [resolved, setResolved] = useState<boolean>(() => {
+    if (!isEncryptionActive) return true;
+    if (messageId && getMediaKey(messageId)) return true;
+    return false;
+  });
 
   useEffect(() => {
-    const shouldAttemptDecrypt = isEncryptionActive || looksEncryptedMessage(body);
-
-    if (!shouldAttemptDecrypt) {
-      setResolved(true);
-      return;
-    }
-
-    if (!looksEncryptedMessage(body)) {
-      setResolved(true);
-      return;
-    }
-
-    let cancelled = false;
-    decrypt(body).then(result => {
-      if (cancelled) return;
-      if (result.incompatible) {
+    // Fast path — DecryptedMessageBody already resolved the media key.
+    if (messageId) {
+      const cached = getMediaKey(messageId);
+      if (cached) {
+        setMediaKey(cached.mediaKeyB64);
+        setIsVideo(cached.isVideo);
         setResolved(true);
         return;
       }
-      const parsed = parseMediaMessage(result.text);
-      if (parsed) {
-        setMediaKey(parsed.keyB64);
-        setIsVideo(parsed.label.startsWith('🎬'));
-      }
-      setResolved(true);
-    }).catch(() => {
-      if (!cancelled) setResolved(true);
-    });
+    }
 
-    return () => { cancelled = true; };
-  }, [body, decrypt, isEncryptionActive]);
+    const shouldAttemptDecrypt = isEncryptionActive || looksEncryptedMessage(body);
+
+    if (!shouldAttemptDecrypt || !looksEncryptedMessage(body)) {
+      setResolved(true);
+      return;
+    }
+
+    // Poll the cache briefly: DecryptedMessageBody may resolve very shortly
+    // after MessageMedia mounts. This avoids triggering a redundant decrypt.
+    let cancelled = false;
+    let attempts = 0;
+    const tryCache = (): boolean => {
+      if (!messageId) return false;
+      const cached = getMediaKey(messageId);
+      if (cached) {
+        setMediaKey(cached.mediaKeyB64);
+        setIsVideo(cached.isVideo);
+        setResolved(true);
+        return true;
+      }
+      return false;
+    };
+
+    const interval = setInterval(() => {
+      if (cancelled) return;
+      if (tryCache() || attempts++ > 20) {
+        clearInterval(interval);
+        if (!cancelled && !tryCache()) {
+          // Last-resort fallback: decrypt ourselves (rare path)
+          decrypt(body).then(result => {
+            if (cancelled) return;
+            if (result.incompatible) { setResolved(true); return; }
+            const parsed = parseMediaMessage(result.text);
+            if (parsed) {
+              setMediaKey(parsed.keyB64);
+              setIsVideo(parsed.label.startsWith('🎬'));
+            }
+            setResolved(true);
+          }).catch(() => {
+            if (!cancelled) setResolved(true);
+          });
+        }
+      }
+    }, 50);
+
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [body, decrypt, isEncryptionActive, messageId]);
 
   if (!resolved) return null;
 
