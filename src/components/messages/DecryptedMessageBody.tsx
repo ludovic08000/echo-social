@@ -108,6 +108,27 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       if (looksEncryptedMessage(body)) {
         void savePlaintextForCiphertext(body, cachedPlaintext);
       }
+      // If the cached plaintext embeds a media key, surface it so the attached
+      // image/video gets decrypted in-place (works for own sent messages too).
+      if (hasMediaKey(cachedPlaintext)) {
+        const parsed = parseMediaMessage(cachedPlaintext);
+        if (parsed) {
+          plaintextCache.set(cacheKey(messageId, body), {
+            text: parsed.label,
+            mediaKeyB64: parsed.keyB64,
+            hidden: false,
+          });
+          if (messageId) {
+            setMediaKey(messageId, parsed.keyB64, parsed.label.startsWith('🎬'));
+          }
+          setHidden(false);
+          setDisplayText(parsed.label);
+          setMediaKeyB64State(parsed.keyB64);
+          setIsDecrypting(false);
+          onDecryptedRef.current?.(parsed.label);
+          return;
+        }
+      }
       setHidden(false);
       setDisplayText(cachedPlaintext);
       setMediaKeyB64State(null);
