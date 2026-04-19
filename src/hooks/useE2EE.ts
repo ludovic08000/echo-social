@@ -1418,6 +1418,23 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       envelopeN: envelope?.hdr?.n,
       envelopeDh: envelope?.hdr?.dh?.slice(0, 12),
     });
+
+    // SELF-HEAL: si on a un ratchet local mais le message arrive sans header X3DH
+    // et qu'on n'arrive pas à le déchiffrer, c'est qu'on est désynchronisé avec
+    // le pair (notre ratchet vient d'un ancien handshake obsolète). On purge notre
+    // ratchet local : au prochain envoi, l'un des deux côtés relancera un X3DH
+    // propre (via cache-bust SPK ou détection in_memory_incomplete).
+    if (ratchet && !x3dhHeader && conversationId) {
+      console.warn('[E2EE] 🔄 Ratchet désynchronisé détecté — purge locale pour forcer re-handshake');
+      await resetRatchetBootstrapState('peer_ratchet_desync');
+      markRatchetTerminalFailure(conversationId, rawBody);
+      return {
+        text: '🔄 Synchronisation en cours — renvoyez ce message après quelques secondes',
+        encrypted: true,
+        verified: false,
+      };
+    }
+
     markRatchetTerminalFailure(conversationId, rawBody);
     if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
     return { text: '🔒 Message illisible (session expirée)', encrypted: true, verified: false };
