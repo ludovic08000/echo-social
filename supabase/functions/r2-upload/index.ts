@@ -58,7 +58,7 @@ function getCorsHeaders(req: Request): Record<string, string> {
     "Access-Control-Allow-Origin": isAllowed ? origin : ALLOWED_ORIGINS_LIST[0],
     "Access-Control-Allow-Headers":
       "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-    "Access-Control-Allow-Methods": "POST, DELETE, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     "Vary": "Origin",
   };
 }
@@ -86,7 +86,6 @@ const MIME_EXT_MAP: Record<string, string[]> = {
 };
 
 function validateMimeExtension(mime: string, filename: string, folder?: string): boolean {
-  // Skip extension validation for voice recordings — browsers report inconsistent MIME types
   if (folder === 'voice') return true;
   const ext = filename.split(".").pop()?.toLowerCase() || "";
   const allowed = MIME_EXT_MAP[mime];
@@ -94,12 +93,22 @@ function validateMimeExtension(mime: string, filename: string, folder?: string):
   return allowed.includes(ext);
 }
 
+function buildSignedHeaders(host: string, dateStamp: string, payloadHash: string, contentType?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    host,
+    "x-amz-content-sha256": payloadHash,
+    "x-amz-date": dateStamp,
+  };
+  if (contentType) headers["content-type"] = contentType;
+  return headers;
+}
+
 // ─── Path traversal protection ───
 function sanitizePath(input: string): string {
   return input
     .replace(/\.\./g, "")
     .replace(/[^a-zA-Z0-9\-_/.]/g, "")
-    .replace(/\/+/g, "/")
+    .replace(/\/+ /g, "/")
     .replace(/^\//, "");
 }
 
@@ -110,15 +119,13 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  // Only allow POST and DELETE
-  if (req.method !== "POST" && req.method !== "DELETE") {
+  if (req.method !== "GET" && req.method !== "POST" && req.method !== "DELETE") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
   try {
-    // ─── Auth check ───
     const authHeader = req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       throw new Error("Missing or invalid authorization header");
@@ -134,11 +141,9 @@ Deno.serve(async (req) => {
     const userId = claimsData?.claims?.sub as string | undefined;
     if (claimsError || !userId) throw new Error("Not authenticated");
 
-    // ─── Rate limit (DB-backed, persistent) ───
     const rateLimited = await checkRateLimitDB(`upload:${userId}`, RATE_LIMIT, RATE_WINDOW_S, corsHeaders);
     if (rateLimited) return rateLimited;
 
-    // ─── Fetch user profile for folder structure ───
     const serviceClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -160,7 +165,6 @@ Deno.serve(async (req) => {
       || "user";
     const userFolder = `${sanitizedName}-${userId.substring(0, 8)}`;
 
-    // ─── R2 config ───
     const accountId = Deno.env.get("R2_ACCOUNT_ID")?.trim() ?? "";
     let accessKeyId = Deno.env.get("R2_ACCESS_KEY_ID")?.trim() ?? "";
     let secretAccessKey = Deno.env.get("R2_SECRET_ACCESS_KEY")?.trim() ?? "";
@@ -180,36 +184,67 @@ Deno.serve(async (req) => {
     const endpoint = `https://${accountId}.${regionPrefix}r2.cloudflarestorage.com`;
     const host = `${accountId}.${regionPrefix}r2.cloudflarestorage.com`;
 
-    // ═══════ DELETE ═══════
+    const now = new Date();
+    const dateStamp = now.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+    const shortDate = dateStamp.substring(0, 8);
+    const credentialScope = `${shortDate}/auto/s3/aws4_request`;
+
+    if (req.method === "GET") {
+      const fileUrl = new URL(req.url).searchParams.get('url');
+      if (!fileUrl) throw new Error('Missing file url');
+      if (!fileUrl.startsWith(publicUrl.replace(/\/$/, '') + '/')) {
+        return new Response(JSON.stringify({ error: 'Unauthorized file url' }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const cleanPath = sanitizePath(fileUrl.replace(`${publicUrl.replace(/\/$/, '')}/`, ''));
+      if (!cleanPath.startsWith(`${userFolder}/`)) {
+        return new Response(JSON.stringify({ error: 'Unauthorized: can only read own files' }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const payloadHash = await sha256Hex(new Uint8Array(0));
+      const headers = buildSignedHeaders(host, dateStamp, payloadHash);
+      const authorization = await sign("GET", `/${bucketName}/${cleanPath}`, headers, payloadHash, dateStamp, shortDate, credentialScope, accessKeyId, secretAccessKey);
+      const r2Response = await fetch(`${endpoint}/${bucketName}/${cleanPath}`, {
+        method: 'GET',
+        headers: { ...headers, Authorization: authorization },
+      });
+
+      if (!r2Response.ok) {
+        return new Response(JSON.stringify({ error: `R2 read failed: ${r2Response.status}` }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(r2Response.body, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": r2Response.headers.get('content-type') || 'application/octet-stream',
+          "Cache-Control": "private, max-age=60",
+        },
+      });
+    }
+
     if (req.method === "DELETE") {
       const { path } = await req.json();
       if (!path || typeof path !== "string") throw new Error("No path provided");
 
       const cleanPath = sanitizePath(path);
-
-      // Security: strict ownership check — path MUST start with user's folder
       if (!cleanPath.startsWith(`${userFolder}/`)) {
         return new Response(JSON.stringify({ error: "Unauthorized: can only delete own files" }), {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      const url = `${endpoint}/${bucketName}/${cleanPath}`;
-      const now = new Date();
-      const dateStamp = now.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-      const shortDate = dateStamp.substring(0, 8);
-      const credentialScope = `${shortDate}/auto/s3/aws4_request`;
-
       const emptyHash = await sha256Hex(new Uint8Array(0));
-      const headers: Record<string, string> = {
-        host,
-        "x-amz-content-sha256": emptyHash,
-        "x-amz-date": dateStamp,
-      };
-
+      const headers = buildSignedHeaders(host, dateStamp, emptyHash);
       const sig = await sign("DELETE", `/${bucketName}/${cleanPath}`, headers, emptyHash, dateStamp, shortDate, credentialScope, accessKeyId, secretAccessKey);
 
-      await fetch(url, { method: "DELETE", headers: { ...headers, Authorization: sig } });
+      await fetch(`${endpoint}/${bucketName}/${cleanPath}`, { method: "DELETE", headers: { ...headers, Authorization: sig } });
 
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
