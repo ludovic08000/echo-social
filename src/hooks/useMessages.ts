@@ -268,6 +268,12 @@ export function useMessages(conversationId: string) {
         },
         async (payload) => {
           const newMsg = payload.new as any;
+          if (isUnsupportedEncryptedBody(newMsg.body)) {
+            if (user) {
+              hideMessagesForUser(user.id, [newMsg.id]).catch(() => {});
+            }
+            return;
+          }
 
           // Fetch profile for sender (use cache first)
           let profile = queryClient.getQueryData<any>(['profile', newMsg.sender_id]);
@@ -371,11 +377,16 @@ export function useMessages(conversationId: string) {
 
       // Filter out hidden messages
       const visibleMessages = messages.filter(m => !hiddenIds.has(m.id));
+      const incompatibleIds = visibleMessages.filter(m => isUnsupportedEncryptedBody(m.body)).map(m => m.id);
+      if (user && incompatibleIds.length > 0) {
+        await hideMessagesForUser(user.id, incompatibleIds);
+      }
+      const compatibleMessages = visibleMessages.filter(m => !incompatibleIds.includes(m.id));
 
       // Reconcile local queue with already delivered backend messages
       messageQueue.reconcileDelivered(
         conversationId,
-        visibleMessages.map(m => ({
+        compatibleMessages.map(m => ({
           id: m.id,
           senderId: m.sender_id,
           body: m.body,
@@ -383,7 +394,7 @@ export function useMessages(conversationId: string) {
         })),
       ).catch(() => {});
 
-      const senderIds = [...new Set(visibleMessages.map(m => m.sender_id))];
+      const senderIds = [...new Set(compatibleMessages.map(m => m.sender_id))];
       const { data: profiles } = await supabase
         .from('profiles')
         .select('user_id, name, avatar_url')
@@ -391,10 +402,10 @@ export function useMessages(conversationId: string) {
 
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
 
-      const hasZeusMessages = visibleMessages.some(m => m.sender_id === ZEUS_BOT_ID);
+      const hasZeusMessages = compatibleMessages.some(m => m.sender_id === ZEUS_BOT_ID);
       const companionDisplayName = hasZeusMessages ? await getCompanionName(user?.id) : 'Zeus ⚡';
 
-      return visibleMessages.map(msg => ({
+      return compatibleMessages.map(msg => ({
         ...msg,
         profile: {
           name: msg.sender_id === ZEUS_BOT_ID ? companionDisplayName : (profileMap.get(msg.sender_id)?.name || 'Unknown'),

@@ -9,17 +9,17 @@
 import { useState, useEffect, memo } from 'react';
 import { EncryptedMedia } from './EncryptedMedia';
 import { parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
-import { isEncryptedMessage } from '@/lib/crypto/e2ee';
+import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import type { DecryptResult } from '@/hooks/useE2EE';
 
 function looksEncryptedMessage(body: string): boolean {
-  if (isEncryptedMessage(body)) return true;
-  return body.startsWith('{') && body.includes('"ct"');
+  return isStrictRatchetEnvelopeBody(body);
 }
 
 interface MessageMediaProps {
   imageUrl: string;
   body: string;
-  decrypt: (body: string) => Promise<{ text: string; encrypted: boolean; verified: boolean }>;
+  decrypt: (body: string) => Promise<DecryptResult>;
   isEncryptionActive: boolean;
 }
 
@@ -49,6 +49,10 @@ export const MessageMedia = memo(function MessageMedia({
     let cancelled = false;
     decrypt(body).then(result => {
       if (cancelled) return;
+      if (result.incompatible) {
+        setResolved(true);
+        return;
+      }
       const parsed = parseMediaMessage(result.text);
       if (parsed) {
         setMediaKey(parsed.keyB64);

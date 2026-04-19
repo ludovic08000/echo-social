@@ -2,9 +2,11 @@ import { useState, useEffect, memo } from 'react';
 import { Lock } from 'lucide-react';
 import { VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { hasMediaKey, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
+import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import type { DecryptResult } from '@/hooks/useE2EE';
 
 function looksEncryptedMessage(body: string): boolean {
-  return body.startsWith('{') && body.includes('"ct"');
+  return isStrictRatchetEnvelopeBody(body);
 }
 
 /** Detect voice message pattern — supports multiple formats:
@@ -28,7 +30,7 @@ function parseGifMessage(text: string): string | null {
 
 interface DecryptedMessageBodyProps {
   body: string;
-  decrypt: (body: string) => Promise<{ text: string; encrypted: boolean; verified: boolean }>;
+  decrypt: (body: string) => Promise<DecryptResult>;
   isEncryptionActive: boolean;
   onDecrypted?: (text: string) => void;
   isMe?: boolean;
@@ -79,7 +81,10 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
     decrypt(body).then(result => {
       if (!cancelled) {
-        if (hasMediaKey(result.text)) {
+        if (result.incompatible) {
+          setDisplayText(null);
+          setMediaKeyB64(null);
+        } else if (hasMediaKey(result.text)) {
           const parsed = parseMediaMessage(result.text);
           if (parsed) {
             setMediaKeyB64(parsed.keyB64);
