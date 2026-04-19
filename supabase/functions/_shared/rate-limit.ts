@@ -5,6 +5,8 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+let rateLimitRpcUnavailable = false;
+
 /**
  * Check and apply rate limit using persistent DB storage.
  * @returns null if allowed, or a Response(429) if rate-limited.
@@ -15,6 +17,10 @@ export async function checkRateLimit(
   windowSeconds: number,
   headers: Record<string, string>,
 ): Promise<Response | null> {
+  if (rateLimitRpcUnavailable) {
+    return null;
+  }
+
   try {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -28,6 +34,13 @@ export async function checkRateLimit(
     });
 
     if (error) {
+      const missingRpc = error.message.includes("Could not find the function public.check_rate_limit");
+      if (missingRpc) {
+        rateLimitRpcUnavailable = true;
+        console.warn("[rate-limit] check_rate_limit RPC unavailable — skipping DB-backed rate limiting");
+        return null;
+      }
+
       console.error("[rate-limit] DB check failed, allowing request:", error.message);
       return null; // Fail open on DB errors to avoid blocking legitimate users
     }
