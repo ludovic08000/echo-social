@@ -1298,7 +1298,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     });
   }, [conversationId, ensureKeysAndPeerSync, isZeus, user, peerUserId]);
 
-  /** Decrypt a ratchet-mode message */
   const decryptRatchetMessage = useCallback(async (
     parsed: any,
     rawBody: string,
@@ -1307,7 +1306,30 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     const x3dhHeader: X3DHInitialMessage | undefined = parsed.x3dh;
     let ratchet = ratchetRef.current;
 
-    // Auto-init ratchet as responder if we don't have one yet
+    const bootstrapResponderFromHeader = async (reason: string): Promise<RatchetState | null> => {
+      if (!conversationId || !keysRef.current || !user || !x3dhHeader) return null;
+
+      console.warn(`[E2EE] Rebootstrapping responder ratchet (${reason}) for ${conversationId}`);
+      await resetRatchetBootstrapState(`responder_rebootstrap:${reason}`);
+
+      const { sharedSecret, spkKeyPair } = await x3dhRespond(
+        keysRef.current,
+        user.id,
+        x3dhHeader,
+      );
+
+      const rebuilt = await initRatchetAsResponder(
+        conversationId,
+        sharedSecret,
+        spkKeyPair,
+      );
+
+      ratchetRef.current = rebuilt;
+      await saveRatchetLocal(conversationId, rebuilt, null);
+      console.info('[RATCHET] ✅ responder ratchet rebuilt from X3DH header');
+      return rebuilt;
+    };
+
     if (!ratchet && conversationId && keysRef.current && user) {
       try {
         const persisted = await loadRatchetLocal(conversationId);
@@ -1316,30 +1338,14 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           ratchetRef.current = ratchet;
           console.info('[RATCHET] Loaded persisted ratchet state for decrypt');
         } else if (x3dhHeader) {
-          // X3DH responder: derive shared secret from the X3DH header
-          console.info(`[X3DH] init responder — SPK #${x3dhHeader.spkId}, OPK ${x3dhHeader.opkId ?? 'none'}`);
-          const { sharedSecret, spkKeyPair } = await x3dhRespond(
-            keysRef.current,
-            user.id,
-            x3dhHeader,
-          );
-          // Per Signal spec: Bob uses his SPK key pair as initial ratchet DH pair
-          // dhReceivingKey starts as null — it will be set from Alice's ratchet header below
-          ratchet = await initRatchetAsResponder(
-            conversationId, sharedSecret, spkKeyPair,
-          );
-          ratchetRef.current = ratchet;
-          console.info('[RATCHET] ✅ init with SPK (responder) — dhReceivingKey=null, will be set from header');
+          ratchet = await bootstrapResponderFromHeader('missing_local_state');
         } else {
-          // ⛔ No X3DH header on first ratchet message and no persisted state
-          // This is a protocol error — do NOT fallback with random keys
           console.error('[E2EE] ⛔ X3DH header MISSING on first ratchet message — cannot init responder ratchet. This message cannot be decrypted without proper X3DH handshake.');
           return { text: '🔒 Message illisible (en-tête X3DH manquant)', encrypted: true, verified: false };
         }
       } catch (initErr) {
         const errMsg = initErr instanceof Error ? initErr.message : String(initErr);
         console.error('[E2EE] ⛔ Ratchet responder init FAILED:', errMsg);
-        // Distinguish specific errors
         if (errMsg.includes('SPK') && errMsg.includes('NOT FOUND')) {
           return { text: '🔒 Message illisible (clé signée introuvable)', encrypted: true, verified: false };
         }
@@ -1354,6 +1360,23 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       const readiness = getRatchetReadiness(ratchet);
       if (!readiness.canDecrypt) {
         console.warn('[E2EE] Ratchet state not decrypt-ready:', readiness.reason);
+        if (x3dhHeader) {
+          try {
+            const healed = await bootstrapResponderFromHeader(`not_ready:${readiness.reason}`);
+            if (healed) {
+              const { plaintext, verified, newState } = await ratchetDecrypt(
+                healed, envelope, peerKeyRef.current?.signingKey,
+              );
+              ratchetRef.current = newState;
+              await saveRatchetLocal(conversationId!, newState, null);
+              setState(s => ({ ...s, ratchetActive: true }));
+              console.debug(`[RATCHET] ✅ decrypt OK after readiness self-heal — verified=${verified}`);
+              return { text: plaintext, encrypted: true, verified };
+            }
+          } catch (healErr) {
+            console.error('[E2EE] Ratchet self-heal after readiness failure failed:', healErr);
+          }
+        }
         return { text: '🔒 Message illisible (session expirée)', encrypted: true, verified: false };
       }
 
@@ -1370,7 +1393,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             x3dhInfoRef.current = null;
           }
         }
-        // Persist ratchet with X3DH header cleared (null if peer responded)
         await saveRatchetLocal(conversationId!, newState, x3dhInfoRef.current);
         setState(s => ({ ...s, ratchetActive: true }));
         console.debug(`[RATCHET] ✅ decrypt OK — verified=${verified}`);
@@ -1378,12 +1400,29 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       } catch (ratchetErr) {
         const errMsg = ratchetErr instanceof Error ? ratchetErr.message : String(ratchetErr);
         console.error('[E2EE] ❌ Ratchet decrypt failed:', errMsg);
-        // Do NOT fallback to legacy — this is a ratchet-tagged message
+
+        if (x3dhHeader) {
+          try {
+            const healed = await bootstrapResponderFromHeader(`decrypt_failed:${errMsg}`);
+            if (healed) {
+              const { plaintext, verified, newState } = await ratchetDecrypt(
+                healed, envelope, peerKeyRef.current?.signingKey,
+              );
+              ratchetRef.current = newState;
+              await saveRatchetLocal(conversationId!, newState, null);
+              setState(s => ({ ...s, ratchetActive: true }));
+              console.debug(`[RATCHET] ✅ decrypt OK after X3DH self-heal — verified=${verified}`);
+              return { text: plaintext, encrypted: true, verified };
+            }
+          } catch (healErr) {
+            console.error('[E2EE] Ratchet self-heal after decrypt failure failed:', healErr);
+          }
+        }
       }
     }
 
     return { text: '🔒 Message illisible (session expirée)', encrypted: true, verified: false };
-  }, [conversationId, user, ensureLegacySession]);
+  }, [conversationId, user, ensureLegacySession, resetRatchetBootstrapState]);
 
   /** Decrypt a legacy-mode message — NON-DESTRUCTIVE retry only */
   const decryptLegacyMessage = useCallback(async (
