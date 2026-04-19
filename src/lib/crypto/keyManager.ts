@@ -386,14 +386,7 @@ export async function wipeSessionKeys(userId?: string): Promise<void> {
     console.warn('[KEY_MGR] Failed to clear ratchet states:', e);
   }
 
-  try {
-    const { wipePrivatePrekeys } = await import('./prekeys');
-    await wipePrivatePrekeys(userId);
-  } catch (e) {
-    console.warn('[KEY_MGR] Failed to clear private prekeys:', e);
-  }
-
-  console.log('[KEY_MGR] Session keys, ratchet states and private prekeys wiped');
+  console.log('[KEY_MGR] Session keys and ratchet states wiped');
 }
 
 /** Export all raw session key records from IndexedDB (for PIN wrapping) */

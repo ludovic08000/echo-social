@@ -34,15 +34,26 @@ export {
 // KDF chains
 export { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
 
-// Key management (ratchet-only public surface)
+// Key management
+// NOTE: loadSessionKey/saveSessionKey/establishSession are kept for non-message
+// flows that still rely on a per-conversation symmetric session
+// (call key encryption, account key backup). Messaging itself uses Double
+// Ratchet exclusively and never touches these helpers anymore.
 export {
   getOrCreateIdentityKeys,
   exportPublicKeyBundle,
+  loadSessionKey,
+  saveSessionKey,
+  deleteSessionKey,
+  establishSession,
   wipeAllKeys,
   wipeSessionKeys,
+  exportAllSessionKeys,
+  importAllSessionKeys,
   exportAllRatchetStates,
   importAllRatchetStates,
   type IdentityKeyPair,
+  type SessionKey,
 } from './keyManager';
 
 export {

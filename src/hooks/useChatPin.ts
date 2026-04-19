@@ -188,21 +188,20 @@ async function readRawIdentityBlob(userId: string): Promise<string | null> {
   }
 }
 
-/** Collect ALL crypto material (identity + sessions + ratchet + private OPKs) for PIN wrapping */
+/** Collect ALL crypto material (identity + sessions + ratchet) for PIN wrapping */
 async function collectAllCryptoBlob(userId: string): Promise<string | null> {
-  const { exportAllSessionKeys, exportAllRatchetStates, exportAllPrivatePrekeys } = await import('@/lib/crypto');
-  const [identityBlob, sessionKeys, ratchetStates, privatePrekeys] = await Promise.all([
+  const { exportAllSessionKeys, exportAllRatchetStates } = await import('@/lib/crypto');
+  const [identityBlob, sessionKeys, ratchetStates] = await Promise.all([
     readRawIdentityBlob(userId),
     exportAllSessionKeys(),
     exportAllRatchetStates(),
-    exportAllPrivatePrekeys(userId),
   ]);
 
-  if (!identityBlob && sessionKeys.length === 0 && ratchetStates.length === 0 && privatePrekeys.length === 0) {
+  if (!identityBlob && sessionKeys.length === 0 && ratchetStates.length === 0) {
     return null;
   }
 
-  if (!identityBlob && (sessionKeys.length > 0 || ratchetStates.length > 0 || privatePrekeys.length > 0)) {
+  if (!identityBlob && (sessionKeys.length > 0 || ratchetStates.length > 0)) {
     throw new Error('Snapshot crypto incomplet: identity absente alors que du matériel crypto existe');
   }
 
@@ -210,32 +209,28 @@ async function collectAllCryptoBlob(userId: string): Promise<string | null> {
     identity: identityBlob ? JSON.parse(identityBlob) : null,
     sessionKeys,
     ratchetStates,
-    privatePrekeys,
     manifest: {
       hasIdentity: !!identityBlob,
       sessionCount: sessionKeys.length,
       ratchetCount: ratchetStates.length,
-      privatePrekeyCount: privatePrekeys.length,
     },
-    _v: 4,
+    _v: 5,
   });
 }
 
 /** Restore ALL crypto material from unwrapped blob */
 async function restoreAllCryptoBlob(userId: string, blob: string): Promise<void> {
   const parsed = JSON.parse(blob);
-  if (parsed._v === 4 || parsed._v === 3 || parsed._v === 2) {
+  if (parsed._v === 5 || parsed._v === 4 || parsed._v === 3 || parsed._v === 2) {
     const sessionKeys = Array.isArray(parsed.sessionKeys) ? parsed.sessionKeys : [];
     const ratchetStates = Array.isArray(parsed.ratchetStates) ? parsed.ratchetStates : [];
-    const privatePrekeys = Array.isArray(parsed.privatePrekeys) ? parsed.privatePrekeys : [];
     const hasIdentity = !!parsed.identity;
     const expectedSessionCount = parsed.manifest?.sessionCount ?? sessionKeys.length;
     const expectedRatchetCount = parsed.manifest?.ratchetCount ?? ratchetStates.length;
-    const expectedPrivatePrekeyCount = parsed.manifest?.privatePrekeyCount ?? privatePrekeys.length;
     const expectedHasIdentity = parsed.manifest?.hasIdentity ?? hasIdentity;
 
-    if ((sessionKeys.length > 0 || ratchetStates.length > 0 || privatePrekeys.length > 0) && !hasIdentity) {
-      throw new Error('Blob crypto invalide: sessions/ratchets/prekeys sans identité');
+    if ((sessionKeys.length > 0 || ratchetStates.length > 0) && !hasIdentity) {
+      throw new Error('Blob crypto invalide: sessions/ratchets sans identité');
     }
 
     const {
@@ -244,8 +239,6 @@ async function restoreAllCryptoBlob(userId: string, blob: string): Promise<void>
       exportAllSessionKeys,
       exportAllRatchetStates,
       wipeSessionKeys,
-      importAllPrivatePrekeys,
-      exportAllPrivatePrekeys,
     } = await import('@/lib/crypto');
 
     try {
@@ -259,21 +252,18 @@ async function restoreAllCryptoBlob(userId: string, blob: string): Promise<void>
 
       await importAllSessionKeys(sessionKeys);
       await importAllRatchetStates(ratchetStates);
-      await importAllPrivatePrekeys(privatePrekeys);
 
-      const [restoredIdentity, restoredSessionKeys, restoredRatchetStates, restoredPrivatePrekeys] = await Promise.all([
+      const [restoredIdentity, restoredSessionKeys, restoredRatchetStates] = await Promise.all([
         readRawIdentityBlob(userId),
         exportAllSessionKeys(),
         exportAllRatchetStates(),
-        exportAllPrivatePrekeys(userId),
       ]);
 
       const identityRestored = !!restoredIdentity;
       if (
         identityRestored !== expectedHasIdentity ||
         restoredSessionKeys.length !== expectedSessionCount ||
-        restoredRatchetStates.length !== expectedRatchetCount ||
-        restoredPrivatePrekeys.length !== expectedPrivatePrekeyCount
+        restoredRatchetStates.length !== expectedRatchetCount
       ) {
         throw new Error('Restauration crypto partielle détectée');
       }
