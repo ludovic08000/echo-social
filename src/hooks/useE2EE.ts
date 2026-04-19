@@ -1396,9 +1396,28 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             return { text: '🧹 Message incompatible supprimé', encrypted: true, verified: false, incompatible: true };
           }
         }
+        // No X3DH header to self-heal from — return a precise diagnostic.
+        console.error('[E2EE] ⛔ decrypt failed AND no X3DH header to self-heal — terminal', {
+          conversationId,
+          hasRatchet: !!ratchetRef.current,
+          envelopeN: envelope?.hdr?.n,
+          envelopeDh: envelope?.hdr?.dh?.slice(0, 12),
+          errMsg,
+        });
       }
     }
 
+    // Diagnostic dump before declaring "session expirée" — helps identify the
+    // exact path that led here (no ratchet, no X3DH header, peer key missing…).
+    console.error('[E2EE] ⛔ decryptRatchetMessage reached terminal fallback', {
+      conversationId,
+      hasRatchet: !!ratchet,
+      hasX3dhHeader: !!x3dhHeader,
+      hasPeerKey: !!peerKeyRef.current,
+      hasMyKeys: !!keysRef.current,
+      envelopeN: envelope?.hdr?.n,
+      envelopeDh: envelope?.hdr?.dh?.slice(0, 12),
+    });
     markRatchetTerminalFailure(conversationId, rawBody);
     if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
     return { text: '🔒 Message illisible (session expirée)', encrypted: true, verified: false };
