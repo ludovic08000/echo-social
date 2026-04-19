@@ -1027,6 +1027,18 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     }
   }, [conversationId, ensureLegacySession, isZeus, peerUserId, user]);
 
+  const resetRatchetBootstrapState = useCallback(async (reason: string) => {
+    if (!conversationId) return;
+
+    console.warn(`[E2EE] Resetting local ratchet bootstrap (${reason}) for conversation ${conversationId}`);
+    await deleteRatchetLocal(conversationId);
+    ratchetRef.current = null;
+    x3dhInfoRef.current = null;
+    peerHasRespondedRef.current = false;
+    pendingPayloadRef.current.clear();
+    setState(s => ({ ...s, ratchetActive: false }));
+  }, [conversationId]);
+
   /**
    * Initialize Double Ratchet as initiator (sender of first ratchet message).
    * Uses X3DH for key agreement (3 or 4 DH operations) then seeds Double Ratchet.
@@ -1044,10 +1056,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       : (await loadRatchetLocal(conversationId))?.x3dhHeader?.spkId;
     if (lastSpkId !== undefined && await isPeerSPKStale(peerUserId, lastSpkId)) {
       console.warn('[E2EE] 🔄 Cache-bust SPK déclenché — purge ratchet local et nouveau X3DH');
-      await deleteRatchetLocal(conversationId);
-      ratchetRef.current = null;
-      x3dhInfoRef.current = null;
-      peerHasRespondedRef.current = false;
+      await resetRatchetBootstrapState('peer_spk_stale');
     }
 
     // Already have a ratchet? Use it only if fully ready
@@ -1055,7 +1064,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       if (isRatchetFullyReady(ratchetRef.current)) {
         return ratchetRef.current;
       }
-      throw new EncryptionError('🔒 Session Double Ratchet incomplète — message en attente chiffrée');
+      await resetRatchetBootstrapState('in_memory_incomplete');
     }
 
     // Try loading persisted ratchet + X3DH header
@@ -1072,7 +1081,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         console.info('[E2EE] Loaded persisted ratchet — ready for encrypt');
         return persisted.state;
       }
-      throw new EncryptionError('🔒 Session Double Ratchet persistée incomplète — message en attente chiffrée');
+      await resetRatchetBootstrapState('persisted_incomplete');
     }
 
     // X3DH key agreement (Signal spec) — NO legacy fallback
@@ -1120,7 +1129,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     await saveRatchetLocal(conversationId, ratchet, x3dhInfoRef.current);
     console.info('[RATCHET] ✅ init with X3DH (initiator) — ready for encrypt');
     return ratchet;
-  }, [conversationId, peerUserId]);
+  }, [conversationId, peerUserId, resetRatchetBootstrapState]);
 
   /**
    * Encrypt — NEVER returns plaintext.
