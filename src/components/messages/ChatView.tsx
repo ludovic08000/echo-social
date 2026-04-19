@@ -37,14 +37,19 @@ import { ForwardMessageDialog } from './ForwardMessageDialog';
 import { NewConversationDialog } from './NewConversationDialog';
 import { ShareContentPicker } from './ShareContentPicker';
 import { EMOJI_CATEGORIES, formatDateSeparator, isSingleEmoji } from './constants';
+import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
 
 interface ChatViewProps {
   conversationId: string;
 }
 
 /**
- * Cache of decrypted message texts so actions (copy, reply, forward, report)
- * always use the plaintext, never the raw ciphertext.
+ * In-memory mirror of the persistent IndexedDB plaintext cache.
+ * - Hot path for synchronous reads (copy/reply/forward).
+ * - Persisted asynchronously to IndexedDB via savePlaintext() so messages
+ *   stay readable after a page reload — for both sender and receiver.
+ *   The persistent layer is encrypted with a non-extractable device key
+ *   that never leaves the browser; the server still only sees ciphertext.
  */
 const decryptedCache = new Map<string, string>();
 
@@ -116,9 +121,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
     return stableBadgeRef.current;
   }, [conversationId, e2ee.encrypted, e2ee.fingerprintChanged, e2ee.ratchetActive]);
 
-  // Cache plaintext for own sent messages (ratchet can't decrypt own ciphertext)
+  // Cache plaintext for own sent messages (ratchet can't decrypt own ciphertext).
+  // Persisted to IndexedDB (device-key encrypted) so the message stays readable
+  // after a page reload.
   const handlePlaintextCached = useCallback((serverId: string, plaintext: string) => {
     decryptedCache.set(serverId, plaintext);
+    void savePlaintext(serverId, plaintext);
   }, []);
 
   // Message queue for encrypted sending.
@@ -335,10 +343,28 @@ export function ChatView({ conversationId }: ChatViewProps) {
     return groups;
   }, [messages]);
 
-  /** Callback from DecryptedMessageBody to cache decrypted text */
+  /** Callback from DecryptedMessageBody to cache decrypted text + persist it */
   const onDecrypted = useCallback((msgId: string, text: string) => {
     decryptedCache.set(msgId, text);
+    void savePlaintext(msgId, text);
   }, []);
+
+  // Pre-warm the in-memory cache from the persistent IndexedDB store as soon as
+  // we know which messages are in the conversation. This keeps copy/reply/forward
+  // working synchronously even right after a reload.
+  useEffect(() => {
+    if (!messages?.length) return;
+    let cancelled = false;
+    (async () => {
+      for (const msg of messages) {
+        if (decryptedCache.has(msg.id)) continue;
+        const pt = await loadPlaintext(msg.id);
+        if (cancelled) return;
+        if (pt) decryptedCache.set(msg.id, pt);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [messages]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -776,7 +802,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                               isEncryptionActive={e2ee.encrypted && !isZeusConversation}
                               onDecrypted={(text) => onDecrypted(msg.id, text)}
                               isMe={isMe}
-                              cachedPlaintext={isMe ? decryptedCache.get(msg.id) : undefined}
+                              cachedPlaintext={decryptedCache.get(msg.id)}
                               refreshKey={decryptRefreshKey}
                               messageId={msg.id}
                               hasMedia={!!msg.image_url}

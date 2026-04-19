@@ -85,14 +85,11 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     if (cached) {
       return { text: cached.text, mediaKeyB64: cached.mediaKeyB64, hidden: cached.hidden, decrypting: false };
     }
-    // Own encrypted message after reload — ratchet can't self-decrypt.
+    // Own encrypted message: ratchet can't self-decrypt. We rely on the
+    // persistent plaintext store loaded asynchronously by the parent.
+    // Show the decrypting state until cachedPlaintext arrives (or stays empty).
     if (isMe) {
-      return {
-        text: '🔒 Message envoyé (contenu local effacé après rechargement)',
-        mediaKeyB64: null as string | null,
-        hidden: false,
-        decrypting: false,
-      };
+      return { text: null as string | null, mediaKeyB64: null as string | null, hidden: false, decrypting: true };
     }
     return { text: null as string | null, mediaKeyB64: null as string | null, hidden: false, decrypting: true };
   })();
@@ -123,21 +120,25 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       return;
     }
 
-    // Own message after reload: ratchet can't self-decrypt and the volatile
-    // plaintext cache is gone. Show an honest, non-alarming label instead of
-    // a misleading "session expirée" error.
+    // Own message after reload: ratchet can't self-decrypt. The parent will
+    // load the plaintext from the persistent device-encrypted store and feed
+    // it back via cachedPlaintext. Wait briefly; if it still isn't available
+    // (e.g. message sent from another device), show an honest fallback label.
     if (isMe) {
-      const entry: CachedDecryption = {
-        text: '🔒 Message envoyé (contenu local effacé après rechargement)',
-        mediaKeyB64: null,
-        hidden: false,
-      };
-      plaintextCache.set(cacheKey(messageId, body), entry);
-      setHidden(false);
-      setDisplayText(entry.text);
-      setMediaKeyB64State(null);
-      setIsDecrypting(false);
-      return;
+      setIsDecrypting(true);
+      const fallbackTimer = setTimeout(() => {
+        const entry: CachedDecryption = {
+          text: '🔒 Message envoyé (contenu local effacé après rechargement)',
+          mediaKeyB64: null,
+          hidden: false,
+        };
+        plaintextCache.set(cacheKey(messageId, body), entry);
+        setHidden(false);
+        setDisplayText(entry.text);
+        setMediaKeyB64State(null);
+        setIsDecrypting(false);
+      }, 800);
+      return () => clearTimeout(fallbackTimer);
     }
 
     const key = cacheKey(messageId, body);
