@@ -1422,8 +1422,19 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     // ratchet local : au prochain envoi, l'un des deux côtés relancera un X3DH
     // propre (via cache-bust SPK ou détection in_memory_incomplete).
     if (ratchet && !x3dhHeader && conversationId) {
-      console.warn('[E2EE] 🔄 Ratchet désynchronisé détecté — purge locale pour forcer re-handshake');
+      console.warn('[E2EE] 🔄 Ratchet désynchronisé détecté — purge locale + rotation SPK pour forcer re-handshake côté pair');
       await resetRatchetBootstrapState('peer_ratchet_desync');
+      // Rotate our SPK so the peer's next send detects isPeerSPKStale and re-runs X3DH automatically.
+      // Without this, the sender keeps using the same ratchet (no X3DH header attached after first peer response)
+      // and the receiver stays stuck in this terminal failure forever.
+      if (user && keysRef.current) {
+        try {
+          await generateAndUploadSignedPrekey(user.id, keysRef.current.signingPrivateKey);
+          console.info('[E2EE] ✅ SPK rotated — peer will re-handshake on next send');
+        } catch (e) {
+          console.warn('[E2EE] SPK rotation failed (peer may stay desynced):', e);
+        }
+      }
       markRatchetTerminalFailure(conversationId, rawBody);
       return { text: '', encrypted: true, verified: false, incompatible: true };
     }
