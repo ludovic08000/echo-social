@@ -217,13 +217,11 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
   if (hidden) return null;
 
+  // Silent placeholder while decryption is in flight — no visible spinner or
+  // "Déchiffrement…" text. The decryption pipeline runs invisibly in the
+  // background; users only ever see plaintext, never the crypto state.
   if (isDecrypting || displayText === null) {
-    return (
-      <span className="inline-flex items-center gap-1 text-muted-foreground">
-        <Lock className="w-3 h-3 animate-pulse" />
-        <span className="text-xs">Déchiffrement...</span>
-      </span>
-    );
+    return <span className="opacity-0 select-none">·</span>;
   }
 
   const voice = parseVoiceMessage(displayText);
