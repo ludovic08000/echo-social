@@ -90,6 +90,7 @@ const AUTH_USER_CACHE_TTL = 300_000; // 5 minutes
  * This ensures only ONE ratchet init runs at a time per conversation.
  */
 const _decryptQueue = new Map<string, Promise<any>>();
+const _ratchetTerminalFailures = new Set<string>();
 
 async function serializedDecrypt<T>(convId: string, fn: () => Promise<T>): Promise<T> {
   const prev = _decryptQueue.get(convId) ?? Promise.resolve();
@@ -102,6 +103,16 @@ async function serializedDecrypt<T>(convId: string, fn: () => Promise<T>): Promi
     }
   });
   return next;
+}
+
+function markRatchetTerminalFailure(conversationId: string | undefined, body: string | undefined) {
+  if (!conversationId || !body) return;
+  _ratchetTerminalFailures.add(`${conversationId}:${body}`);
+}
+
+function hasRatchetTerminalFailure(conversationId: string | undefined, body: string | undefined) {
+  if (!conversationId || !body) return false;
+  return _ratchetTerminalFailures.has(`${conversationId}:${body}`);
 }
 
 /** Dedup for own key publishing — prevents ChatView + ChatWidget from both publishing */
@@ -1303,6 +1314,11 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     parsed: any,
     rawBody: string,
   ): Promise<DecryptResult> => {
+    if (hasRatchetTerminalFailure(conversationId, rawBody)) {
+      if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
+      return { text: '🧹 Message incompatible supprimé', encrypted: true, verified: false, incompatible: true };
+    }
+
     const envelope: RatchetEnvelope = parsed;
     const x3dhHeader: X3DHInitialMessage | undefined = parsed.x3dh;
     let ratchet = ratchetRef.current;
@@ -1342,11 +1358,15 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           ratchet = await bootstrapResponderFromHeader('missing_local_state');
         } else {
           console.error('[E2EE] ⛔ X3DH header MISSING on first ratchet message — cannot init responder ratchet. This message cannot be decrypted without proper X3DH handshake.');
+          markRatchetTerminalFailure(conversationId, rawBody);
+          if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
           return { text: '🔒 Message illisible (en-tête X3DH manquant)', encrypted: true, verified: false };
         }
       } catch (initErr) {
         const errMsg = initErr instanceof Error ? initErr.message : String(initErr);
         console.error('[E2EE] ⛔ Ratchet responder init FAILED:', errMsg);
+        markRatchetTerminalFailure(conversationId, rawBody);
+        if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
         if (errMsg.includes('SPK') && errMsg.includes('NOT FOUND')) {
           return { text: '🔒 Message illisible (clé signée introuvable)', encrypted: true, verified: false };
         }
@@ -1376,6 +1396,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             }
           } catch (healErr) {
             console.error('[E2EE] Ratchet self-heal after readiness failure failed:', healErr);
+            markRatchetTerminalFailure(conversationId, rawBody);
+            if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
+            return { text: '🧹 Message incompatible supprimé', encrypted: true, verified: false, incompatible: true };
           }
         }
         const errLabel = readiness.reason === 'missing_peer_dh'
@@ -1420,13 +1443,18 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             }
           } catch (healErr) {
             console.error('[E2EE] Ratchet self-heal after decrypt failure failed:', healErr);
+            markRatchetTerminalFailure(conversationId, rawBody);
+            if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
+            return { text: '🧹 Message incompatible supprimé', encrypted: true, verified: false, incompatible: true };
           }
         }
       }
     }
 
+    markRatchetTerminalFailure(conversationId, rawBody);
+    if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
     return { text: '🔒 Message illisible (session expirée)', encrypted: true, verified: false };
-  }, [conversationId, user, ensureLegacySession, resetRatchetBootstrapState]);
+  }, [conversationId, user, resetRatchetBootstrapState]);
 
   /** Decrypt a legacy-mode message — NON-DESTRUCTIVE retry only */
   const decryptLegacyMessage = useCallback(async (
