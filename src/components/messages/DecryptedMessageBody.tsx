@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { Lock } from 'lucide-react';
 import { VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { hasMediaKey, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
@@ -8,6 +8,23 @@ import type { DecryptResult } from '@/hooks/useE2EE';
 
 function looksEncryptedMessage(body: string): boolean {
   return isStrictRatchetEnvelopeBody(body);
+}
+
+/**
+ * Module-level plaintext cache, keyed by `${messageId}|${body}`.
+ * Once a message is decrypted, we never re-decrypt or re-flash "Déchiffrement…".
+ * The `body` part of the key guarantees an edited/replaced ciphertext invalidates.
+ */
+interface CachedDecryption {
+  text: string;
+  mediaKeyB64: string | null;
+  hidden: boolean;
+}
+const plaintextCache = new Map<string, CachedDecryption>();
+const inflight = new Map<string, Promise<CachedDecryption>>();
+
+function cacheKey(messageId: string | undefined, body: string): string {
+  return `${messageId ?? 'noid'}|${body}`;
 }
 
 /** Detect voice message pattern — supports multiple formats:
@@ -52,80 +69,124 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   onDecrypted,
   isMe,
   cachedPlaintext,
-  refreshKey,
   messageId,
-  hasMedia,
 }: DecryptedMessageBodyProps) {
-  const [displayText, setDisplayText] = useState<string | null>(null);
-  const [mediaKeyB64, setMediaKeyB64] = useState<string | null>(null);
-  const [isDecrypting, setIsDecrypting] = useState(false);
-  const [hidden, setHidden] = useState(false);
+  // Compute the initial state synchronously from the cache so we never
+  // flash "Déchiffrement…" on a message that's already been decrypted.
+  const initial = (() => {
+    if (cachedPlaintext) {
+      return { text: cachedPlaintext, mediaKeyB64: null as string | null, hidden: false, decrypting: false };
+    }
+    const looksEnc = looksEncryptedMessage(body);
+    if (!looksEnc) {
+      return { text: body, mediaKeyB64: null as string | null, hidden: false, decrypting: false };
+    }
+    const cached = plaintextCache.get(cacheKey(messageId, body));
+    if (cached) {
+      return { text: cached.text, mediaKeyB64: cached.mediaKeyB64, hidden: cached.hidden, decrypting: false };
+    }
+    return { text: null as string | null, mediaKeyB64: null as string | null, hidden: false, decrypting: true };
+  })();
+
+  const [displayText, setDisplayText] = useState<string | null>(initial.text);
+  const [mediaKeyB64, setMediaKeyB64State] = useState<string | null>(initial.mediaKeyB64);
+  const [isDecrypting, setIsDecrypting] = useState(initial.decrypting);
+  const [hidden, setHidden] = useState(initial.hidden);
+  const onDecryptedRef = useRef(onDecrypted);
+  onDecryptedRef.current = onDecrypted;
 
   useEffect(() => {
-    // If we have cached plaintext (own sent message), use it directly
+    // Re-run only when the actual identity of the message changes.
     if (cachedPlaintext) {
       setHidden(false);
       setDisplayText(cachedPlaintext);
-      setMediaKeyB64(null);
-      onDecrypted?.(cachedPlaintext);
-      return;
-    }
-
-    const shouldAttemptDecrypt = isEncryptionActive || looksEncryptedMessage(body);
-
-    if (!shouldAttemptDecrypt) {
-      setHidden(false);
-      setDisplayText(body);
-      setMediaKeyB64(null);
+      setMediaKeyB64State(null);
+      setIsDecrypting(false);
+      onDecryptedRef.current?.(cachedPlaintext);
       return;
     }
 
     if (!looksEncryptedMessage(body)) {
       setHidden(false);
       setDisplayText(body);
-      setMediaKeyB64(null);
+      setMediaKeyB64State(null);
+      setIsDecrypting(false);
+      return;
+    }
+
+    const key = cacheKey(messageId, body);
+
+    // Hot path — already decrypted
+    const cached = plaintextCache.get(key);
+    if (cached) {
+      setHidden(cached.hidden);
+      setDisplayText(cached.text);
+      setMediaKeyB64State(cached.mediaKeyB64);
+      setIsDecrypting(false);
+      if (cached.mediaKeyB64 && messageId) {
+        const parsed = parseMediaMessage(cached.text);
+        if (parsed) setMediaKey(messageId, parsed.keyB64, parsed.label.startsWith('🎬'));
+      }
+      onDecryptedRef.current?.(cached.text);
       return;
     }
 
     let cancelled = false;
     setIsDecrypting(true);
 
-    decrypt(body).then(result => {
-      if (!cancelled) {
+    let promise = inflight.get(key);
+    if (!promise) {
+      promise = decrypt(body).then(result => {
         if (result.incompatible) {
-          setHidden(true);
-          setDisplayText(null);
-          setMediaKeyB64(null);
-        } else if (hasMediaKey(result.text)) {
-          setHidden(false);
+          const entry: CachedDecryption = { text: '', mediaKeyB64: null, hidden: true };
+          plaintextCache.set(key, entry);
+          return entry;
+        }
+        if (hasMediaKey(result.text)) {
           const parsed = parseMediaMessage(result.text);
           if (parsed) {
-            setMediaKeyB64(parsed.keyB64);
-            setDisplayText(parsed.label);
-            if (messageId) {
-              setMediaKey(messageId, parsed.keyB64, parsed.label.startsWith('🎬'));
-            }
-          } else {
-            setDisplayText(result.text);
-            setMediaKeyB64(null);
+            const entry: CachedDecryption = {
+              text: parsed.label,
+              mediaKeyB64: parsed.keyB64,
+              hidden: false,
+            };
+            plaintextCache.set(key, entry);
+            return entry;
           }
-        } else {
-          setDisplayText(result.text);
-          setMediaKeyB64(null);
         }
-        setIsDecrypting(false);
-        onDecrypted?.(result.text);
+        const entry: CachedDecryption = { text: result.text, mediaKeyB64: null, hidden: false };
+        plaintextCache.set(key, entry);
+        return entry;
+      });
+      inflight.set(key, promise);
+      promise.finally(() => inflight.delete(key));
+    }
+
+    promise.then(entry => {
+      if (cancelled) return;
+      setHidden(entry.hidden);
+      setDisplayText(entry.hidden ? null : entry.text);
+      setMediaKeyB64State(entry.mediaKeyB64);
+      setIsDecrypting(false);
+      if (entry.mediaKeyB64 && messageId) {
+        const parsed = parseMediaMessage(entry.text);
+        if (parsed) setMediaKey(messageId, parsed.keyB64, parsed.label.startsWith('🎬'));
       }
+      if (!entry.hidden) onDecryptedRef.current?.(entry.text);
     }).catch(() => {
       if (!cancelled) {
         setDisplayText('🔒 Message chiffré');
-        setMediaKeyB64(null);
+        setMediaKeyB64State(null);
         setIsDecrypting(false);
       }
     });
 
     return () => { cancelled = true; };
-  }, [body, decrypt, isEncryptionActive, onDecrypted, isMe, cachedPlaintext, refreshKey, messageId]);
+    // Deliberately exclude `decrypt`, `isEncryptionActive`, `refreshKey`, `isMe`
+    // from deps: they change during E2EE auto-heal and would re-trigger the
+    // "Déchiffrement…" flash even though the cached plaintext is valid.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [body, messageId, cachedPlaintext]);
 
   if (hidden) return null;
 
