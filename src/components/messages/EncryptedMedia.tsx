@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef, memo } from 'react';
 import { Lock } from 'lucide-react';
 import { importMediaKey, decryptMedia } from '@/lib/crypto/mediaEncrypt';
+import { fetchR2Object } from '@/lib/r2';
 
 interface EncryptedMediaProps {
   /** URL of the encrypted blob on R2 */
@@ -33,9 +34,8 @@ export const EncryptedMedia = memo(function EncryptedMedia({
 
     (async () => {
       try {
-        // 1. Download the encrypted blob
-        const response = await fetch(encryptedUrl);
-        if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+        // 1. Download the encrypted blob via authenticated proxy.
+        const response = await fetchR2Object(encryptedUrl);
         const encryptedData = await response.arrayBuffer();
 
         if (cancelled) return;
