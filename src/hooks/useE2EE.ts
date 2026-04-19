@@ -244,6 +244,53 @@ async function loadRatchetLocal(convId: string): Promise<{ state: RatchetState; 
   }
 }
 
+async function deleteRatchetLocal(convId: string): Promise<void> {
+  try {
+    const db = await openRatchetDB();
+    const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
+    tx.objectStore(RATCHET_STORE_NAME).delete(convId);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    console.info(`[E2EE] 🧹 Ratchet local purgé pour conv ${convId}`);
+  } catch (e) {
+    console.warn('[E2EE] deleteRatchetLocal failed:', e);
+  }
+}
+
+/**
+ * Cache-bust: vérifie côté serveur si le SPK actif du pair a changé depuis
+ * notre dernier handshake X3DH. Si oui, retourne true → la session locale doit
+ * être purgée pour forcer un nouveau X3DH avec le bundle frais.
+ *
+ * Throttle: 1 vérif max toutes les 30s par conversation pour éviter le spam réseau.
+ */
+const _spkCheckCache = new Map<string, number>();
+const SPK_CHECK_TTL = 30_000;
+
+async function isPeerSPKStale(peerUserId: string, lastUsedSpkId: number | undefined): Promise<boolean> {
+  if (lastUsedSpkId === undefined || lastUsedSpkId === null) return false;
+  const now = Date.now();
+  const last = _spkCheckCache.get(peerUserId) ?? 0;
+  if (now - last < SPK_CHECK_TTL) return false;
+  _spkCheckCache.set(peerUserId, now);
+
+  try {
+    const { data, error } = await supabase.rpc('get_signed_prekey', { p_user_id: peerUserId });
+    if (error || !data || data.length === 0) return false;
+    const currentSpkId = data[0].spk_id as number;
+    if (currentSpkId !== lastUsedSpkId) {
+      console.warn(`[E2EE] ⚠️ SPK du pair ${peerUserId} a changé (local=#${lastUsedSpkId} → serveur=#${currentSpkId}) — re-handshake requis`);
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.warn('[E2EE] isPeerSPKStale check failed:', e);
+    return false;
+  }
+}
+
 // ─── Fingerprint verification (server-backed + local cache) ───
 
 function getKnownFingerprints(): Record<string, string> {
