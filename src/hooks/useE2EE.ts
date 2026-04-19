@@ -1377,7 +1377,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             console.error('[E2EE] Ratchet self-heal after readiness failure failed:', healErr);
           }
         }
-        return { text: '🔒 Message illisible (session expirée)', encrypted: true, verified: false };
+        const errLabel = readiness.reason === 'missing_peer_dh'
+          ? 'session en attente du premier header'
+          : 'session expirée';
+        return { text: `🔒 Message illisible (${errLabel})`, encrypted: true, verified: false };
       }
 
       try {
