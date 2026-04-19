@@ -58,6 +58,19 @@ export function useMessageQueue(
           throw new Error('Message not encrypted');
         }
 
+        // SECURITY: Drop orphan messages from a previous user session.
+        // IndexedDB persists across logout/login; if senderId no longer matches
+        // the current authenticated user, RLS will return 403 forever.
+        if (!user || msg.senderId !== user.id) {
+          console.warn('[MSG] Dropping orphan queued message from previous session', {
+            localId: msg.localId,
+            queuedSender: msg.senderId,
+            currentUser: user?.id ?? null,
+          });
+          await messageQueue.removeMessage(msg.localId);
+          return msg.serverId ?? crypto.randomUUID();
+        }
+
         const outboundId = msg.serverId ?? crypto.randomUUID();
         msg.serverId = outboundId;
 
