@@ -343,10 +343,28 @@ export function ChatView({ conversationId }: ChatViewProps) {
     return groups;
   }, [messages]);
 
-  /** Callback from DecryptedMessageBody to cache decrypted text */
+  /** Callback from DecryptedMessageBody to cache decrypted text + persist it */
   const onDecrypted = useCallback((msgId: string, text: string) => {
     decryptedCache.set(msgId, text);
+    void savePlaintext(msgId, text);
   }, []);
+
+  // Pre-warm the in-memory cache from the persistent IndexedDB store as soon as
+  // we know which messages are in the conversation. This keeps copy/reply/forward
+  // working synchronously even right after a reload.
+  useEffect(() => {
+    if (!messages?.length) return;
+    let cancelled = false;
+    (async () => {
+      for (const msg of messages) {
+        if (decryptedCache.has(msg.id)) continue;
+        const pt = await loadPlaintext(msg.id);
+        if (cancelled) return;
+        if (pt) decryptedCache.set(msg.id, pt);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [messages]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
