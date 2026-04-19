@@ -378,7 +378,11 @@ class MessageQueueManager {
             normalized.includes('chiffrement requis') ||
             normalized.includes('contact n\'a pas encore de clés') ||
             normalized.includes('contact n\'a pas encore publié ses clés') ||
-            normalized.includes('key') && normalized.includes('ready');
+            (normalized.includes('key') && normalized.includes('ready'));
+          const transientCryptoPressure =
+            normalized.includes('rate limited') ||
+            normalized.includes('exfiltration attempt') ||
+            normalized.includes('opération limitée');
 
           console.error('[E2EE] encrypt failed', msg.localId, errMsg);
 
@@ -389,7 +393,7 @@ class MessageQueueManager {
             return;
           }
 
-          if (waitingForKeys) {
+          if (waitingForKeys || transientCryptoPressure) {
             await this.updateStatus(msg, 'waiting_secure_channel', errMsg);
             this.scheduleRetry(msg, 'secure_wait');
           } else {
