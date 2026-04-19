@@ -165,9 +165,13 @@ async function fetchPeerPublicKeys(peerUserId: string): Promise<{ identity_key: 
 
 // ─── IndexedDB ratchet persistence ───
 
-function openRatchetDBAt(version: number): Promise<IDBDatabase> {
+function openRatchetDBAt(version?: number): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = hardGlobals.idbOpen(RATCHET_DB_NAME, version);
+    // When version is undefined, IndexedDB opens at the existing version
+    // (or creates v1 if none exists) without triggering VersionError.
+    const req = version === undefined
+      ? hardGlobals.idbOpen(RATCHET_DB_NAME)
+      : hardGlobals.idbOpen(RATCHET_DB_NAME, version);
     req.onerror = () => reject(req.error);
     req.onblocked = () => reject(new Error('ratchet db blocked'));
     req.onsuccess = () => resolve(req.result);
@@ -181,12 +185,14 @@ function openRatchetDBAt(version: number): Promise<IDBDatabase> {
 }
 
 /**
- * Open the ratchet IndexedDB. If the database exists but the expected object
- * store is missing (corrupt/legacy install), bump the version to trigger
- * `onupgradeneeded` and create the store on the fly.
+ * Open the ratchet IndexedDB safely:
+ *   1. Open without specifying a version → discovers the actual existing version
+ *      (avoids VersionError when the DB has been upgraded in another tab/session).
+ *   2. If the expected object store is missing (corrupt/legacy install),
+ *      bump the version to trigger `onupgradeneeded` and create the store.
  */
 async function openRatchetDB(): Promise<IDBDatabase> {
-  let db = await openRatchetDBAt(RATCHET_DB_VERSION);
+  let db = await openRatchetDBAt();
   if (db.objectStoreNames.contains(RATCHET_STORE_NAME)) return db;
 
   const nextVersion = (db.version || RATCHET_DB_VERSION) + 1;
