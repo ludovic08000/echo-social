@@ -379,6 +379,28 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const e2ee = useE2EE(conversationId, peerUserId);
   const isEncryptionActive = !isZeusConversation && e2ee.encrypted;
   const decryptRefreshKey = `${conversationId}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.encrypted)}`;
+  const stableBadgeRef = useRef({ encrypted: false, verified: false, ratchetActive: false });
+
+  useEffect(() => {
+    stableBadgeRef.current = { encrypted: false, verified: false, ratchetActive: false };
+  }, [conversationId]);
+
+  const stableBadgeState = useMemo(() => {
+    if (e2ee.encrypted) {
+      stableBadgeRef.current = {
+        encrypted: true,
+        verified: !e2ee.fingerprintChanged,
+        ratchetActive: stableBadgeRef.current.ratchetActive || e2ee.ratchetActive,
+      };
+    } else if (e2ee.fingerprintChanged) {
+      stableBadgeRef.current = {
+        ...stableBadgeRef.current,
+        verified: false,
+      };
+    }
+
+    return stableBadgeRef.current;
+  }, [conversationId, e2ee.encrypted, e2ee.fingerprintChanged, e2ee.ratchetActive]);
   const queue = useMessageQueue(
     conversationId,
     e2ee.encrypt,
