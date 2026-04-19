@@ -1,11 +1,14 @@
 /**
- * useMessageQueue - React hook for the persistent local message queue.
- * 
- * Strategy:
- * - When E2EE is ready: encrypt + send directly (instant, no queue)
- * - When E2EE is active but not ready yet: queue with retry until encryption available
- * - Zeus conversations: send plaintext directly
- * - NEVER sends plaintext for encrypted conversations
+ * useMessageQueue — React hook for the persistent local message queue.
+ *
+ * Security model (v5 — strict):
+ * - For E2EE conversations: messages are ALWAYS queued and encrypted before send.
+ *   No plaintext ever leaves the device. If E2EE is not ready, the queue keeps
+ *   retrying with backoff until keys are available — the user sees the message
+ *   as "pending" but it is NEVER sent in clear.
+ * - For Zeus conversations only (`allowPlaintext = true`): the message is
+ *   inserted directly because Zeus is a server-side bot, not a peer.
+ * - Plaintext is held only in volatile memory (Map ref) — never persisted.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -21,6 +24,7 @@ export function useMessageQueue(
   isEncryptionReady: boolean,
   isEncryptionActive: boolean,
   onMessageSent?: (localId: string) => void | Promise<void>,
+  /** ONLY enable for Zeus (server bot). Never for peer conversations. */
   allowPlaintext = false,
   onPlaintextCached?: (serverId: string, plaintext: string) => void,
 ) {
@@ -178,6 +182,15 @@ export function useMessageQueue(
   const sendMessage = useCallback(async (body: string, imageUrl?: string | null) => {
     if (!user || !body.trim()) return;
 
+    // Defense in depth: re-check the live auth session matches the hook's user.
+    // Prevents queued messages from being sent under a different account after
+    // a token refresh / silent re-auth.
+    const { data: sess } = await supabase.auth.getSession();
+    const liveUserId = sess.session?.user?.id;
+    if (!liveUserId || liveUserId !== user.id) {
+      throw new Error('🔒 Session expirée — reconnectez-vous pour envoyer.');
+    }
+
     const isSpecial = body.startsWith('🎙️ voice:') || body === '📷 Photo';
     if (!isSpecial) {
       const validation = validateMessage(body);
@@ -186,19 +199,16 @@ export function useMessageQueue(
 
     const sanitized = isSpecial ? body : sanitizeMessageBody(body);
 
-    console.log('[MSG] sendMessage called', {
-      isEncryptionActive,
-      hasEncrypt: !!encrypt,
-      conversationId,
-    });
-
-    // Case 1: Plaintext explicitly allowed (Zeus only)
+    // Case A — Zeus (server bot, no peer): plaintext is allowed by design.
     if (!isEncryptionActive) {
       if (!allowPlaintext) {
-        throw new Error('🔒 Envoi bloqué — chiffrement requis pour cette conversation');
+        // Strict: never send plaintext for a peer conversation, even if E2EE
+        // is still initializing. The queue path below would handle this, but
+        // we treat "no encryption + not Zeus" as a hard error to surface
+        // misconfigurations early.
+        throw new Error('🔒 Chiffrement non disponible — envoi bloqué.');
       }
 
-      console.log('[MSG] Non-encrypted conversation, sending plaintext');
       const { error } = await supabase
         .from('messages')
         .insert({
@@ -214,9 +224,9 @@ export function useMessageQueue(
       return;
     }
 
-    // Case 2: encrypted conversation → always go through queue
-    // This guarantees retry reuses the exact same ciphertext/header.
-    console.log('[MSG] Queueing encrypted message for managed secure delivery');
+    // Case B — encrypted peer conversation: ALWAYS go through the queue.
+    // The queue encrypts before send, retries on transient failures, and
+    // never falls back to plaintext.
     const queued = await messageQueue.enqueue({
       conversationId,
       senderId: user.id,
@@ -226,7 +236,7 @@ export function useMessageQueue(
 
     if (!isSpecial) recordSentMessage(sanitized);
     return queued;
-  }, [user, conversationId, isEncryptionActive, allowPlaintext]);
+  }, [user, conversationId, isEncryptionActive, allowPlaintext, queryClient]);
 
   /** Retry a failed message */
   const retryMessage = useCallback(async (localId: string) => {
