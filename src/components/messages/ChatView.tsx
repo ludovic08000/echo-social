@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Send, Plus, Smile, Phone, Video,
@@ -92,6 +93,28 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const e2ee = useE2EE(conversationId, peerUserId);
   const decryptRefreshKey = `${conversationId}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.encrypted)}`;
+  const stableBadgeRef = useRef({ encrypted: false, verified: false, ratchetActive: false });
+
+  useEffect(() => {
+    stableBadgeRef.current = { encrypted: false, verified: false, ratchetActive: false };
+  }, [conversationId]);
+
+  const stableBadgeState = useMemo(() => {
+    if (e2ee.encrypted) {
+      stableBadgeRef.current = {
+        encrypted: true,
+        verified: !e2ee.fingerprintChanged,
+        ratchetActive: stableBadgeRef.current.ratchetActive || e2ee.ratchetActive,
+      };
+    } else if (e2ee.fingerprintChanged) {
+      stableBadgeRef.current = {
+        ...stableBadgeRef.current,
+        verified: false,
+      };
+    }
+
+    return stableBadgeRef.current;
+  }, [conversationId, e2ee.encrypted, e2ee.fingerprintChanged, e2ee.ratchetActive]);
 
   // Cache plaintext for own sent messages (ratchet can't decrypt own ciphertext)
   const handlePlaintextCached = useCallback((serverId: string, plaintext: string) => {
@@ -352,11 +375,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="text-[15px] font-semibold block truncate leading-tight">{conversation.participant.name}</span>
-                    {!isZeusConversation && e2ee.encrypted && (
+                    {!isZeusConversation && stableBadgeState.encrypted && (
                       <EncryptionBadge
                         encrypted
-                        verified={!e2ee.fingerprintChanged}
-                        ratchetActive={e2ee.ratchetActive}
+                        verified={stableBadgeState.verified}
+                        ratchetActive={stableBadgeState.ratchetActive}
                         size="sm"
                         showLabel
                         className="shrink-0"
@@ -777,11 +800,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
                               <span className="text-[11px] text-muted-foreground">
                                 {format(new Date(msg.created_at), 'HH:mm')}
                               </span>
-                              {e2ee.encrypted && looksEncrypted && (
+                              {stableBadgeState.encrypted && looksEncrypted && (
                                 <EncryptionBadge
                                   encrypted={true}
-                                  verified={decryptedCache.has(msg.id) && !e2ee.fingerprintChanged}
-                                  ratchetActive={e2ee.ratchetActive}
+                                  verified={decryptedCache.has(msg.id) && stableBadgeState.verified}
+                                  ratchetActive={stableBadgeState.ratchetActive}
                                   size="xs"
                                   showLabel
                                 />

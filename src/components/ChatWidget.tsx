@@ -379,6 +379,28 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const e2ee = useE2EE(conversationId, peerUserId);
   const isEncryptionActive = !isZeusConversation && e2ee.encrypted;
   const decryptRefreshKey = `${conversationId}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.encrypted)}`;
+  const stableBadgeRef = useRef({ encrypted: false, verified: false, ratchetActive: false });
+
+  useEffect(() => {
+    stableBadgeRef.current = { encrypted: false, verified: false, ratchetActive: false };
+  }, [conversationId]);
+
+  const stableBadgeState = useMemo(() => {
+    if (e2ee.encrypted) {
+      stableBadgeRef.current = {
+        encrypted: true,
+        verified: !e2ee.fingerprintChanged,
+        ratchetActive: stableBadgeRef.current.ratchetActive || e2ee.ratchetActive,
+      };
+    } else if (e2ee.fingerprintChanged) {
+      stableBadgeRef.current = {
+        ...stableBadgeRef.current,
+        verified: false,
+      };
+    }
+
+    return stableBadgeRef.current;
+  }, [conversationId, e2ee.encrypted, e2ee.fingerprintChanged, e2ee.ratchetActive]);
   const queue = useMessageQueue(
     conversationId,
     e2ee.encrypt,
@@ -724,11 +746,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               <Link to={`/profile/${conversation.participant.user_id}`} className="min-w-0">
                 <div className="flex items-center gap-1 min-w-0">
                   <p className="text-xs font-semibold truncate hover:underline">{conversation.participant.name}</p>
-                  {!isZeusConversation && e2ee.encrypted && (
+                  {!isZeusConversation && stableBadgeState.encrypted && (
                     <EncryptionBadge
                       encrypted
-                      verified={!e2ee.fingerprintChanged}
-                      ratchetActive={e2ee.ratchetActive}
+                      verified={stableBadgeState.verified}
+                      ratchetActive={stableBadgeState.ratchetActive}
                       size="xs"
                       showLabel
                       className="shrink-0 text-primary-foreground"
@@ -1158,11 +1180,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         {isLastInGroup && (
                           <div className="flex items-center gap-0.5 mt-0.5 px-0.5 flex-wrap">
                             <span className="text-[8px] text-muted-foreground">{format(new Date(msg.created_at), 'HH:mm')}</span>
-                            {!isZeusConversation && e2ee.encrypted && msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"')) && (
+                            {stableBadgeState.encrypted && msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"')) && (
                               <EncryptionBadge
                                 encrypted
-                                verified={decryptedCacheRef.current.has(msg.id) && !e2ee.fingerprintChanged}
-                                ratchetActive={e2ee.ratchetActive}
+                                verified={decryptedCacheRef.current.has(msg.id) && stableBadgeState.verified}
+                                ratchetActive={stableBadgeState.ratchetActive}
                                 size="xs"
                                 showLabel
                               />
