@@ -85,6 +85,15 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     if (cached) {
       return { text: cached.text, mediaKeyB64: cached.mediaKeyB64, hidden: cached.hidden, decrypting: false };
     }
+    // Own encrypted message after reload — ratchet can't self-decrypt.
+    if (isMe) {
+      return {
+        text: '🔒 Message envoyé (contenu local effacé après rechargement)',
+        mediaKeyB64: null as string | null,
+        hidden: false,
+        decrypting: false,
+      };
+    }
     return { text: null as string | null, mediaKeyB64: null as string | null, hidden: false, decrypting: true };
   })();
 
