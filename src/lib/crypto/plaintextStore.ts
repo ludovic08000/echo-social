@@ -86,33 +86,77 @@ interface StoredEntry {
   ts: number;
 }
 
+function bufferToHex(buffer: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buffer))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function toCiphertextLookupKey(ciphertextBody: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(ciphertextBody));
+  return `cipher:${bufferToHex(digest)}`;
+}
+
+async function saveEntry(id: string, plaintext: string): Promise<void> {
+  if (!id || !plaintext) return;
+  const key = await getOrCreateDeviceKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    new TextEncoder().encode(plaintext),
+  );
+  const db = await openDB();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_MESSAGES, 'readwrite');
+    tx.objectStore(STORE_MESSAGES).put({
+      id,
+      iv: iv.buffer,
+      ct,
+      ts: Date.now(),
+    } satisfies StoredEntry);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function loadEntry(id: string): Promise<string | null> {
+  if (!id) return null;
+  const db = await openDB();
+  const entry = await new Promise<StoredEntry | undefined>((resolve, reject) => {
+    const tx = db.transaction(STORE_MESSAGES, 'readonly');
+    const req = tx.objectStore(STORE_MESSAGES).get(id);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  if (!entry) return null;
+  const key = await getOrCreateDeviceKey();
+  const pt = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: entry.iv },
+    key,
+    entry.ct,
+  );
+  return new TextDecoder().decode(pt);
+}
+
 /**
  * Save plaintext for a message id (server id). Idempotent.
  */
 export async function savePlaintext(messageId: string, plaintext: string): Promise<void> {
   if (!messageId || !plaintext) return;
   try {
-    const key = await getOrCreateDeviceKey();
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const ct = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      new TextEncoder().encode(plaintext),
-    );
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_MESSAGES, 'readwrite');
-      tx.objectStore(STORE_MESSAGES).put({
-        id: messageId,
-        iv: iv.buffer,
-        ct,
-        ts: Date.now(),
-      } satisfies StoredEntry);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    await saveEntry(messageId, plaintext);
   } catch (e) {
     console.warn('[plaintextStore] savePlaintext failed', e);
+  }
+}
+
+export async function savePlaintextForCiphertext(ciphertextBody: string, plaintext: string): Promise<void> {
+  if (!ciphertextBody || !plaintext) return;
+  try {
+    await saveEntry(await toCiphertextLookupKey(ciphertextBody), plaintext);
+  } catch (e) {
+    console.warn('[plaintextStore] savePlaintextForCiphertext failed', e);
   }
 }
 
@@ -123,23 +167,19 @@ export async function savePlaintext(messageId: string, plaintext: string): Promi
 export async function loadPlaintext(messageId: string): Promise<string | null> {
   if (!messageId) return null;
   try {
-    const db = await openDB();
-    const entry = await new Promise<StoredEntry | undefined>((resolve, reject) => {
-      const tx = db.transaction(STORE_MESSAGES, 'readonly');
-      const req = tx.objectStore(STORE_MESSAGES).get(messageId);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-    if (!entry) return null;
-    const key = await getOrCreateDeviceKey();
-    const pt = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: entry.iv },
-      key,
-      entry.ct,
-    );
-    return new TextDecoder().decode(pt);
+    return await loadEntry(messageId);
   } catch (e) {
     console.warn('[plaintextStore] loadPlaintext failed', e);
+    return null;
+  }
+}
+
+export async function loadPlaintextForCiphertext(ciphertextBody: string): Promise<string | null> {
+  if (!ciphertextBody) return null;
+  try {
+    return await loadEntry(await toCiphertextLookupKey(ciphertextBody));
+  } catch (e) {
+    console.warn('[plaintextStore] loadPlaintextForCiphertext failed', e);
     return null;
   }
 }

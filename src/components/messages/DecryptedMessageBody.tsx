@@ -3,6 +3,7 @@ import { Lock } from 'lucide-react';
 import { VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { hasMediaKey, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { setMediaKey } from './mediaKeyCache';
 import type { DecryptResult } from '@/hooks/useE2EE';
 
@@ -104,6 +105,9 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   useEffect(() => {
     // Re-run only when the actual identity of the message changes.
     if (cachedPlaintext) {
+      if (looksEncryptedMessage(body)) {
+        void savePlaintextForCiphertext(body, cachedPlaintext);
+      }
       setHidden(false);
       setDisplayText(cachedPlaintext);
       setMediaKeyB64State(null);
@@ -200,7 +204,10 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
         const parsed = parseMediaMessage(entry.text);
         if (parsed) setMediaKey(messageId, parsed.keyB64, parsed.label.startsWith('🎬'));
       }
-      if (!entry.hidden) onDecryptedRef.current?.(entry.text);
+      if (!entry.hidden) {
+        void savePlaintextForCiphertext(body, entry.text);
+        onDecryptedRef.current?.(entry.text);
+      }
     }).catch(() => {
       if (!cancelled) {
         setDisplayText('🔒 Message chiffré');
