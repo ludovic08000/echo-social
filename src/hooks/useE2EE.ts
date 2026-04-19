@@ -1236,7 +1236,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       }
 
       if (!cryptoRateCheck('decrypt')) {
-        return { text: '🔒 Opération limitée (sécurité)', encrypted: true, verified: false };
+        return { text: '', encrypted: true, verified: false, incompatible: true };
       }
 
       try {
@@ -1249,11 +1249,11 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         if (conversationId) {
           void scheduleLegacyCleanup(conversationId, user?.id);
         }
-        return { text: '🧹 Message incompatible supprimé', encrypted: true, verified: false, incompatible: true };
+        return { text: '', encrypted: true, verified: false, incompatible: true };
 
       } catch (err) {
         console.error('[E2EE] decrypt failed:', err);
-        return { text: '🔒 Message chiffré', encrypted: true, verified: false };
+        return { text: '', encrypted: true, verified: false, incompatible: true };
       }
     });
   }, [conversationId, ensureKeysAndPeerSync, isZeus, user, peerUserId]);
@@ -1264,7 +1264,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   ): Promise<DecryptResult> => {
     if (hasRatchetTerminalFailure(conversationId, rawBody)) {
       if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
-      return { text: '🧹 Message incompatible supprimé', encrypted: true, verified: false, incompatible: true };
+      return { text: '', encrypted: true, verified: false, incompatible: true };
     }
 
     const envelope: RatchetEnvelope = parsed;
