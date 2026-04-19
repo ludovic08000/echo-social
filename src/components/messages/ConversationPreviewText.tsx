@@ -1,0 +1,53 @@
+import { useEffect, useMemo, useState } from 'react';
+import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import { loadPlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
+
+interface ConversationPreviewTextProps {
+  body?: string | null;
+  emptyText?: string;
+  maxLength?: number;
+}
+
+function formatPreview(body: string, maxLength: number) {
+  if (body.startsWith('📞 CALL:missed|')) {
+    return `📞 Appel ${body.includes('video') ? 'vidéo' : 'audio'} manqué`;
+  }
+  if (body.startsWith('📞 CALL:ended|')) {
+    return `📞 Appel ${body.includes('video') ? 'vidéo' : 'audio'} terminé`;
+  }
+  if (/^🎙️\s*(?:vocal|voice):/.test(body)) return '🎙️ Message vocal';
+  if (/^GIF:https?:\/\//i.test(body)) return '🖼️ GIF';
+  return body.length > maxLength ? `${body.substring(0, maxLength)}…` : body;
+}
+
+export function ConversationPreviewText({ body, emptyText = 'Démarrez la conversation…', maxLength = 80 }: ConversationPreviewTextProps) {
+  const [resolvedPlaintext, setResolvedPlaintext] = useState<string | null>(null);
+  const encrypted = !!body && isStrictRatchetEnvelopeBody(body);
+
+  useEffect(() => {
+    if (!body || !encrypted) {
+      setResolvedPlaintext(null);
+      return;
+    }
+
+    let cancelled = false;
+    loadPlaintextForCiphertext(body).then((plaintext) => {
+      if (!cancelled) setResolvedPlaintext(plaintext);
+    }).catch(() => {
+      if (!cancelled) setResolvedPlaintext(null);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [body, encrypted]);
+
+  const preview = useMemo(() => {
+    if (!body) return emptyText;
+    if (encrypted && resolvedPlaintext) return formatPreview(resolvedPlaintext, maxLength);
+    if (encrypted) return '🔒 Message chiffré';
+    return formatPreview(body, maxLength);
+  }, [body, emptyText, encrypted, maxLength, resolvedPlaintext]);
+
+  return <>{preview}</>;
+}
