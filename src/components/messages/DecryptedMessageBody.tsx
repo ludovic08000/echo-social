@@ -102,6 +102,9 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
           if (parsed) {
             setMediaKeyB64(parsed.keyB64);
             setDisplayText(parsed.label);
+            if (messageId) {
+              setMediaKey(messageId, parsed.keyB64, parsed.label.startsWith('🎬'));
+            }
           } else {
             setDisplayText(result.text);
             setMediaKeyB64(null);
