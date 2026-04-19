@@ -12,6 +12,7 @@ export {
   encryptMessage,
   decryptMessage,
   isEncryptedMessage,
+  establishSession,
   type EncryptedEnvelope,
 } from './e2ee';
 
@@ -45,7 +46,6 @@ export {
   loadSessionKey,
   saveSessionKey,
   deleteSessionKey,
-  establishSession,
   wipeAllKeys,
   wipeSessionKeys,
   exportAllSessionKeys,
