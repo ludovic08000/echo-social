@@ -11,17 +11,17 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const ALLOWED_MIME_TYPES: Record<string, string[]> = {
   avatars:       ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"],
   images:        ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"],
-  "post-images": ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime"],
-  videos:        ["video/mp4", "video/webm", "video/quicktime"],
+  "post-images": ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime", "application/octet-stream"],
+  videos:        ["video/mp4", "video/webm", "video/quicktime", "application/octet-stream"],
   products:      ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"],
-  stories:       ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime"],
+  stories:       ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime", "application/octet-stream"],
   backgrounds:   ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"],
   documents:     ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"],
   voice:         ["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg"],
   lives:         ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "video/webm", "video/mp4"],
-  feed:          ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime"],
+  feed:          ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime", "application/octet-stream"],
   thumbnails:    ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"],
-  uploads:       ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime"],
+  uploads:       ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime", "application/octet-stream"],
 };
 
 const FOLDER_MAX_SIZES: Record<string, number> = {
