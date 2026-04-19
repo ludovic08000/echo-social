@@ -97,7 +97,9 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const peerUserId = conversation?.participant?.user_id;
   const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const e2ee = useE2EE(conversationId, peerUserId);
-  const decryptRefreshKey = `${conversationId}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.encrypted)}`;
+  const [cacheVersion, setCacheVersion] = useState(0);
+  const bumpCache = useCallback(() => setCacheVersion(v => v + 1), []);
+  const decryptRefreshKey = `${conversationId}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.encrypted)}:${cacheVersion}`;
   const stableBadgeRef = useRef({ encrypted: false, verified: false, ratchetActive: false });
 
   useEffect(() => {
@@ -126,8 +128,9 @@ export function ChatView({ conversationId }: ChatViewProps) {
   // after a page reload.
   const handlePlaintextCached = useCallback((serverId: string, plaintext: string) => {
     decryptedCache.set(serverId, plaintext);
+    bumpCache();
     void savePlaintext(serverId, plaintext);
-  }, []);
+  }, [bumpCache]);
 
   // Message queue for encrypted sending.
   // STRICT: plaintext is allowed ONLY for the Zeus bot conversation.
@@ -346,8 +349,9 @@ export function ChatView({ conversationId }: ChatViewProps) {
   /** Callback from DecryptedMessageBody to cache decrypted text + persist it */
   const onDecrypted = useCallback((msgId: string, text: string) => {
     decryptedCache.set(msgId, text);
+    bumpCache();
     void savePlaintext(msgId, text);
-  }, []);
+  }, [bumpCache]);
 
   // Pre-warm the in-memory cache from the persistent IndexedDB store as soon as
   // we know which messages are in the conversation. This keeps copy/reply/forward
@@ -356,15 +360,17 @@ export function ChatView({ conversationId }: ChatViewProps) {
     if (!messages?.length) return;
     let cancelled = false;
     (async () => {
+      let added = false;
       for (const msg of messages) {
         if (decryptedCache.has(msg.id)) continue;
         const pt = await loadPlaintext(msg.id);
         if (cancelled) return;
-        if (pt) decryptedCache.set(msg.id, pt);
+        if (pt) { decryptedCache.set(msg.id, pt); added = true; }
       }
+      if (added && !cancelled) bumpCache();
     })();
     return () => { cancelled = true; };
-  }, [messages]);
+  }, [messages, bumpCache]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
