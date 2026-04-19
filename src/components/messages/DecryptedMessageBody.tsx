@@ -123,18 +123,19 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     // Own message after reload: ratchet can't self-decrypt. The parent will
     // load the plaintext from the persistent device-encrypted store and feed
     // it back via cachedPlaintext. Wait briefly; if it still isn't available
-    // (e.g. message sent from another device), show an honest fallback label.
+    // (sent from another device), render an invisible placeholder — the user
+    // never sees a "contenu effacé" label.
     if (isMe) {
       setIsDecrypting(true);
       const fallbackTimer = setTimeout(() => {
         const entry: CachedDecryption = {
-          text: '🔒 Message envoyé (contenu local effacé après rechargement)',
+          text: '',
           mediaKeyB64: null,
-          hidden: false,
+          hidden: true,
         };
         plaintextCache.set(cacheKey(messageId, body), entry);
-        setHidden(false);
-        setDisplayText(entry.text);
+        setHidden(true);
+        setDisplayText('');
         setMediaKeyB64State(null);
         setIsDecrypting(false);
       }, 800);
