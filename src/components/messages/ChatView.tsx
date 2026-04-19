@@ -802,7 +802,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                               isEncryptionActive={e2ee.encrypted && !isZeusConversation}
                               onDecrypted={(text) => onDecrypted(msg.id, text)}
                               isMe={isMe}
-                              cachedPlaintext={isMe ? decryptedCache.get(msg.id) : undefined}
+                              cachedPlaintext={decryptedCache.get(msg.id)}
                               refreshKey={decryptRefreshKey}
                               messageId={msg.id}
                               hasMedia={!!msg.image_url}
