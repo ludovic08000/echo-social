@@ -37,14 +37,19 @@ import { ForwardMessageDialog } from './ForwardMessageDialog';
 import { NewConversationDialog } from './NewConversationDialog';
 import { ShareContentPicker } from './ShareContentPicker';
 import { EMOJI_CATEGORIES, formatDateSeparator, isSingleEmoji } from './constants';
+import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
 
 interface ChatViewProps {
   conversationId: string;
 }
 
 /**
- * Cache of decrypted message texts so actions (copy, reply, forward, report)
- * always use the plaintext, never the raw ciphertext.
+ * In-memory mirror of the persistent IndexedDB plaintext cache.
+ * - Hot path for synchronous reads (copy/reply/forward).
+ * - Persisted asynchronously to IndexedDB via savePlaintext() so messages
+ *   stay readable after a page reload — for both sender and receiver.
+ *   The persistent layer is encrypted with a non-extractable device key
+ *   that never leaves the browser; the server still only sees ciphertext.
  */
 const decryptedCache = new Map<string, string>();
 
