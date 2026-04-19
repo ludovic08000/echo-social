@@ -244,6 +244,53 @@ async function loadRatchetLocal(convId: string): Promise<{ state: RatchetState; 
   }
 }
 
+async function deleteRatchetLocal(convId: string): Promise<void> {
+  try {
+    const db = await openRatchetDB();
+    const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
+    tx.objectStore(RATCHET_STORE_NAME).delete(convId);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    console.info(`[E2EE] 🧹 Ratchet local purgé pour conv ${convId}`);
+  } catch (e) {
+    console.warn('[E2EE] deleteRatchetLocal failed:', e);
+  }
+}
+
+/**
+ * Cache-bust: vérifie côté serveur si le SPK actif du pair a changé depuis
+ * notre dernier handshake X3DH. Si oui, retourne true → la session locale doit
+ * être purgée pour forcer un nouveau X3DH avec le bundle frais.
+ *
+ * Throttle: 1 vérif max toutes les 30s par conversation pour éviter le spam réseau.
+ */
+const _spkCheckCache = new Map<string, number>();
+const SPK_CHECK_TTL = 30_000;
+
+async function isPeerSPKStale(peerUserId: string, lastUsedSpkId: number | undefined): Promise<boolean> {
+  if (lastUsedSpkId === undefined || lastUsedSpkId === null) return false;
+  const now = Date.now();
+  const last = _spkCheckCache.get(peerUserId) ?? 0;
+  if (now - last < SPK_CHECK_TTL) return false;
+  _spkCheckCache.set(peerUserId, now);
+
+  try {
+    const { data, error } = await supabase.rpc('get_signed_prekey', { p_user_id: peerUserId });
+    if (error || !data || data.length === 0) return false;
+    const currentSpkId = data[0].spk_id as number;
+    if (currentSpkId !== lastUsedSpkId) {
+      console.warn(`[E2EE] ⚠️ SPK du pair ${peerUserId} a changé (local=#${lastUsedSpkId} → serveur=#${currentSpkId}) — re-handshake requis`);
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.warn('[E2EE] isPeerSPKStale check failed:', e);
+    return false;
+  }
+}
+
 // ─── Fingerprint verification (server-backed + local cache) ───
 
 function getKnownFingerprints(): Record<string, string> {
@@ -987,6 +1034,21 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
    */
   const initRatchetIfNeeded = useCallback(async (): Promise<RatchetState | null> => {
     if (!conversationId || !keysRef.current || !peerKeyRef.current || !peerUserId) return null;
+
+    // ─── Cache-bust: si le SPK du pair a changé sur le serveur depuis notre
+    // dernier handshake, purger la session locale pour forcer un nouveau X3DH.
+    // Sans ça, l'expéditeur réutilise une session basée sur un SPK obsolète
+    // que le récepteur ne peut plus déchiffrer ("clé signée introuvable").
+    const lastSpkId = ratchetRef.current
+      ? x3dhInfoRef.current?.spkId
+      : (await loadRatchetLocal(conversationId))?.x3dhHeader?.spkId;
+    if (lastSpkId !== undefined && await isPeerSPKStale(peerUserId, lastSpkId)) {
+      console.warn('[E2EE] 🔄 Cache-bust SPK déclenché — purge ratchet local et nouveau X3DH');
+      await deleteRatchetLocal(conversationId);
+      ratchetRef.current = null;
+      x3dhInfoRef.current = null;
+      peerHasRespondedRef.current = false;
+    }
 
     // Already have a ratchet? Use it only if fully ready
     if (ratchetRef.current) {
