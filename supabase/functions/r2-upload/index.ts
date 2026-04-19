@@ -108,7 +108,7 @@ function sanitizePath(input: string): string {
   return input
     .replace(/\.\./g, "")
     .replace(/[^a-zA-Z0-9\-_/.]/g, "")
-    .replace(/\/+ /g, "/")
+    .replace(/\/+/g, "/")
     .replace(/^\//, "");
 }
 
@@ -199,9 +199,9 @@ Deno.serve(async (req) => {
       }
 
       const cleanPath = sanitizePath(fileUrl.replace(`${publicUrl.replace(/\/$/, '')}/`, ''));
-      if (!cleanPath.startsWith(`${userFolder}/`)) {
-        return new Response(JSON.stringify({ error: 'Unauthorized: can only read own files' }), {
-          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      if (!cleanPath) {
+        return new Response(JSON.stringify({ error: 'Invalid file path' }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
