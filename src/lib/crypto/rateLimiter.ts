@@ -39,9 +39,9 @@ const buckets = new Map<string, RateBucket>();
 
 // Thresholds — generous for legitimate use, catches only extreme abuse
 const LIMITS: Record<string, { max: number; windowMs: number }> = {
-  encrypt:     { max: 120, windowMs: 10_000 },  // 120 encrypts per 10s
-  decrypt:     { max: 500, windowMs: 10_000 },  // 500 decrypts per 10s (loading full history)
-  sign:        { max: 120, windowMs: 10_000 },  // mirrors encrypt
+  encrypt:     { max: 600, windowMs: 10_000 },  // raised: retries + bursts shouldn't trip this
+  decrypt:     { max: 1000, windowMs: 10_000 }, // raised: full history loads
+  sign:        { max: 600, windowMs: 10_000 },
 };
 
 // Per-operation lockdown instead of global
