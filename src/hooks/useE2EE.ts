@@ -1035,6 +1035,21 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const initRatchetIfNeeded = useCallback(async (): Promise<RatchetState | null> => {
     if (!conversationId || !keysRef.current || !peerKeyRef.current || !peerUserId) return null;
 
+    // ─── Cache-bust: si le SPK du pair a changé sur le serveur depuis notre
+    // dernier handshake, purger la session locale pour forcer un nouveau X3DH.
+    // Sans ça, l'expéditeur réutilise une session basée sur un SPK obsolète
+    // que le récepteur ne peut plus déchiffrer ("clé signée introuvable").
+    const lastSpkId = ratchetRef.current
+      ? x3dhInfoRef.current?.spkId
+      : (await loadRatchetLocal(conversationId))?.x3dhHeader?.spkId;
+    if (lastSpkId !== undefined && await isPeerSPKStale(peerUserId, lastSpkId)) {
+      console.warn('[E2EE] 🔄 Cache-bust SPK déclenché — purge ratchet local et nouveau X3DH');
+      await deleteRatchetLocal(conversationId);
+      ratchetRef.current = null;
+      x3dhInfoRef.current = null;
+      peerHasRespondedRef.current = false;
+    }
+
     // Already have a ratchet? Use it only if fully ready
     if (ratchetRef.current) {
       if (isRatchetFullyReady(ratchetRef.current)) {
