@@ -85,6 +85,15 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     if (cached) {
       return { text: cached.text, mediaKeyB64: cached.mediaKeyB64, hidden: cached.hidden, decrypting: false };
     }
+    // Own encrypted message after reload — ratchet can't self-decrypt.
+    if (isMe) {
+      return {
+        text: '🔒 Message envoyé (contenu local effacé après rechargement)',
+        mediaKeyB64: null as string | null,
+        hidden: false,
+        decrypting: false,
+      };
+    }
     return { text: null as string | null, mediaKeyB64: null as string | null, hidden: false, decrypting: true };
   })();
 
@@ -109,6 +118,23 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     if (!looksEncryptedMessage(body)) {
       setHidden(false);
       setDisplayText(body);
+      setMediaKeyB64State(null);
+      setIsDecrypting(false);
+      return;
+    }
+
+    // Own message after reload: ratchet can't self-decrypt and the volatile
+    // plaintext cache is gone. Show an honest, non-alarming label instead of
+    // a misleading "session expirée" error.
+    if (isMe) {
+      const entry: CachedDecryption = {
+        text: '🔒 Message envoyé (contenu local effacé après rechargement)',
+        mediaKeyB64: null,
+        hidden: false,
+      };
+      plaintextCache.set(cacheKey(messageId, body), entry);
+      setHidden(false);
+      setDisplayText(entry.text);
       setMediaKeyB64State(null);
       setIsDecrypting(false);
       return;
