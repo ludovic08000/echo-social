@@ -5161,6 +5161,10 @@ export type Database = {
       }
     }
     Functions: {
+      add_group_members: {
+        Args: { p_conv_id: string; p_member_ids: string[] }
+        Returns: number
+      }
       advance_onboarding_step: {
         Args: { _expected_step: number; _user_id: string }
         Returns: number
@@ -5204,6 +5208,14 @@ export type Database = {
           prekey_id: number
           public_key: string
         }[]
+      }
+      create_group_conversation: {
+        Args: { p_member_ids: string[]; p_name: string }
+        Returns: string
+      }
+      create_or_get_dm_conversation: {
+        Args: { p_other_user: string }
+        Returns: string
       }
       ddos_check_ip: {
         Args: {

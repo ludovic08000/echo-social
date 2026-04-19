@@ -609,52 +609,18 @@ export function useCreateConversation() {
   return useMutation({
     mutationFn: async (otherUserId: string) => {
       if (!user) throw new Error('Not authenticated');
+      if (!otherUserId) throw new Error('Invalid peer');
 
-      const { data: existingParticipations } = await supabase
-        .from('conversation_participants')
-        .select('conversation_id')
-        .eq('user_id', user.id);
-
-      if (existingParticipations?.length) {
-        const { data: otherParticipations } = await supabase
-          .from('conversation_participants')
-          .select('conversation_id')
-          .eq('user_id', otherUserId)
-          .in('conversation_id', existingParticipations.map(p => p.conversation_id));
-
-        if (otherParticipations?.length) {
-          return { id: otherParticipations[0].conversation_id };
-        }
-      }
-
-      const conversationId = crypto.randomUUID();
-
-      const { error: convError } = await supabase
-        .from('conversations')
-        .insert({ id: conversationId });
-
-      if (convError) throw convError;
-
-      // Insert self first so RLS allows adding the other user
-      const { error: selfError } = await supabase
-        .from('conversation_participants')
-        .insert({ conversation_id: conversationId, user_id: user.id });
-
-      if (selfError) {
-        await supabase.from('conversations').delete().eq('id', conversationId);
-        throw selfError;
-      }
-
-      const { error: otherError } = await supabase
-        .from('conversation_participants')
-        .insert({ conversation_id: conversationId, user_id: otherUserId });
-
-      if (otherError) {
-        await supabase.from('conversations').delete().eq('id', conversationId);
-        throw otherError;
-      }
-
-      return { id: conversationId };
+      // Atomic server-side creation: either returns the existing 1-to-1
+      // conversation between the two users, or creates a fresh one with
+      // both participants in a single transaction. No client-side inserts
+      // into conversation_participants — RLS forbids it.
+      const { data, error } = await supabase.rpc('create_or_get_dm_conversation', {
+        p_other_user: otherUserId,
+      });
+      if (error) throw error;
+      if (!data) throw new Error('Failed to create conversation');
+      return { id: data as string };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
@@ -672,34 +638,13 @@ export function useCreateGroupConversation() {
       if (!name.trim()) throw new Error('Nom du groupe requis');
       if (memberIds.length < 2) throw new Error('Ajoutez au moins 2 amis');
 
-      const conversationId = crypto.randomUUID();
-
-      const { error: convError } = await supabase
-        .from('conversations')
-        .insert({
-          id: conversationId,
-          name: name.trim(),
-          is_group: true,
-          created_by: user.id,
-        });
-
-      if (convError) throw convError;
-
-      const participants = [user.id, ...memberIds].map(uid => ({
-        conversation_id: conversationId,
-        user_id: uid,
-      }));
-
-      const { error: partError } = await supabase
-        .from('conversation_participants')
-        .insert(participants);
-
-      if (partError) {
-        await supabase.from('conversations').delete().eq('id', conversationId);
-        throw partError;
-      }
-
-      return { id: conversationId };
+      const { data, error } = await supabase.rpc('create_group_conversation', {
+        p_name: name.trim(),
+        p_member_ids: memberIds,
+      });
+      if (error) throw error;
+      if (!data) throw new Error('Failed to create group');
+      return { id: data as string };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
@@ -840,13 +785,11 @@ export function useAddGroupMembers() {
 
   return useMutation({
     mutationFn: async ({ conversationId, memberIds }: { conversationId: string; memberIds: string[] }) => {
-      const participants = memberIds.map(uid => ({
-        conversation_id: conversationId,
-        user_id: uid,
-      }));
-      const { error } = await supabase
-        .from('conversation_participants')
-        .insert(participants);
+      // Server-side: only the group admin (created_by) can add members.
+      const { error } = await supabase.rpc('add_group_members', {
+        p_conv_id: conversationId,
+        p_member_ids: memberIds,
+      });
       if (error) throw error;
     },
     onSuccess: () => {
