@@ -361,6 +361,39 @@ export function useMessages(conversationId: string) {
     return () => window.removeEventListener('forsure-conversation-cleaned', handleCleaned as EventListener);
   }, [conversationId, queryClient]);
 
+  // Background cleanup: hide incompatible messages once per conversation visit.
+  // Runs OUTSIDE the queryFn so it never triggers a re-render loop.
+  const messagesQuery = useQuery({
+    queryKey: ['messages', conversationId],
+    queryFn: async () => {
+      if (!conversationId || !user) return [];
+
+      // Get hidden message IDs for this user
+      const { data: deletions } = await supabase
+        .from('message_deletions')
+        .select('message_id')
+        .eq('user_id', user.id);
+
+      const hiddenIds = new Set((deletions || []).map(d => d.message_id));
+
+      // Load only last 50 messages (cursor-based, most recent first then reversed)
+      const { data: messages, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .in('status', ['delivered', 'pending'])
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+
+      // Reverse to chronological order for display
+      messages.reverse();
+
+      // Filter out hidden + incompatible messages locally — no DB writes here.
+      const visibleMessages = messages.filter(m => !hiddenIds.has(m.id));
+      const compatibleMessages = visibleMessages.filter(m => !isUnsupportedEncryptedBody(m.body));
+
   return useQuery({
     queryKey: ['messages', conversationId],
     queryFn: async () => {
