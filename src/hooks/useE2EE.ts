@@ -1236,7 +1236,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       }
 
       if (!cryptoRateCheck('decrypt')) {
-        return { text: '🔒 Opération limitée (sécurité)', encrypted: true, verified: false };
+        return { text: '', encrypted: true, verified: false, incompatible: true };
       }
 
       try {
@@ -1249,11 +1249,11 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         if (conversationId) {
           void scheduleLegacyCleanup(conversationId, user?.id);
         }
-        return { text: '🧹 Message incompatible supprimé', encrypted: true, verified: false, incompatible: true };
+        return { text: '', encrypted: true, verified: false, incompatible: true };
 
       } catch (err) {
         console.error('[E2EE] decrypt failed:', err);
-        return { text: '🔒 Message chiffré', encrypted: true, verified: false };
+        return { text: '', encrypted: true, verified: false, incompatible: true };
       }
     });
   }, [conversationId, ensureKeysAndPeerSync, isZeus, user, peerUserId]);
@@ -1264,7 +1264,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   ): Promise<DecryptResult> => {
     if (hasRatchetTerminalFailure(conversationId, rawBody)) {
       if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
-      return { text: '🧹 Message incompatible supprimé', encrypted: true, verified: false, incompatible: true };
+      return { text: '', encrypted: true, verified: false, incompatible: true };
     }
 
     const envelope: RatchetEnvelope = parsed;
@@ -1308,7 +1308,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           console.error('[E2EE] ⛔ X3DH header MISSING on first ratchet message — cannot init responder ratchet. This message cannot be decrypted without proper X3DH handshake.');
           markRatchetTerminalFailure(conversationId, rawBody);
           if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
-          return { text: '🔒 Message illisible (en-tête X3DH manquant)', encrypted: true, verified: false };
+          return { text: '', encrypted: true, verified: false, incompatible: true };
         }
       } catch (initErr) {
         const errMsg = initErr instanceof Error ? initErr.message : String(initErr);
@@ -1316,12 +1316,12 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         markRatchetTerminalFailure(conversationId, rawBody);
         if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
         if (errMsg.includes('SPK') && errMsg.includes('NOT FOUND')) {
-          return { text: '🔒 Message illisible (clé signée introuvable)', encrypted: true, verified: false };
+          return { text: '', encrypted: true, verified: false, incompatible: true };
         }
         if (errMsg.includes('OPK') && errMsg.includes('NOT FOUND')) {
-          return { text: '🔒 Message illisible (OPK introuvable / handshake incohérent)', encrypted: true, verified: false };
+          return { text: '', encrypted: true, verified: false, incompatible: true };
         }
-        return { text: '🔒 Message illisible (erreur d\'initialisation)', encrypted: true, verified: false };
+        return { text: '', encrypted: true, verified: false, incompatible: true };
       }
     }
 
@@ -1346,13 +1346,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             console.error('[E2EE] Ratchet self-heal after readiness failure failed:', healErr);
             markRatchetTerminalFailure(conversationId, rawBody);
             if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
-            return { text: '🧹 Message incompatible supprimé', encrypted: true, verified: false, incompatible: true };
+            return { text: '', encrypted: true, verified: false, incompatible: true };
           }
         }
-        const errLabel = readiness.reason === 'missing_peer_dh'
-          ? 'session en attente du premier header'
-          : 'session expirée';
-        return { text: `🔒 Message illisible (${errLabel})`, encrypted: true, verified: false };
+        return { text: '', encrypted: true, verified: false, incompatible: true };
       }
 
       try {
@@ -1393,7 +1390,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             console.error('[E2EE] Ratchet self-heal after decrypt failure failed:', healErr);
             markRatchetTerminalFailure(conversationId, rawBody);
             if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
-            return { text: '🧹 Message incompatible supprimé', encrypted: true, verified: false, incompatible: true };
+            return { text: '', encrypted: true, verified: false, incompatible: true };
           }
         }
         // No X3DH header to self-heal from — return a precise diagnostic.
@@ -1428,16 +1425,12 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       console.warn('[E2EE] 🔄 Ratchet désynchronisé détecté — purge locale pour forcer re-handshake');
       await resetRatchetBootstrapState('peer_ratchet_desync');
       markRatchetTerminalFailure(conversationId, rawBody);
-      return {
-        text: '🔄 Synchronisation en cours — renvoyez ce message après quelques secondes',
-        encrypted: true,
-        verified: false,
-      };
+      return { text: '', encrypted: true, verified: false, incompatible: true };
     }
 
     markRatchetTerminalFailure(conversationId, rawBody);
     if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
-    return { text: '🔒 Message illisible (session expirée)', encrypted: true, verified: false };
+    return { text: '', encrypted: true, verified: false, incompatible: true };
   }, [conversationId, user, resetRatchetBootstrapState]);
 
   // Legacy message decrypt path removed — incompatible bodies are auto-purged.
