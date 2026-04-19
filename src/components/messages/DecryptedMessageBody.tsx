@@ -125,7 +125,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     });
 
     return () => { cancelled = true; };
-  }, [body, decrypt, isEncryptionActive, onDecrypted, isMe, cachedPlaintext, refreshKey]);
+  }, [body, decrypt, isEncryptionActive, onDecrypted, isMe, cachedPlaintext, refreshKey, messageId]);
 
   if (hidden) return null;
 
