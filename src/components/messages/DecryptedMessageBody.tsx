@@ -114,6 +114,23 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       return;
     }
 
+    // Own message after reload: ratchet can't self-decrypt and the volatile
+    // plaintext cache is gone. Show an honest, non-alarming label instead of
+    // a misleading "session expirée" error.
+    if (isMe) {
+      const entry: CachedDecryption = {
+        text: '🔒 Message envoyé (contenu local effacé après rechargement)',
+        mediaKeyB64: null,
+        hidden: false,
+      };
+      plaintextCache.set(cacheKey(messageId, body), entry);
+      setHidden(false);
+      setDisplayText(entry.text);
+      setMediaKeyB64State(null);
+      setIsDecrypting(false);
+      return;
+    }
+
     const key = cacheKey(messageId, body);
 
     // Hot path — already decrypted
