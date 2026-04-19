@@ -581,12 +581,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         if (updated && (updated as number) > 0) console.log('[E2EE] Pushed fingerprint to', updated, 'peer(s)');
       });
 
-      // Generate prekeys + signed prekeys if needed (Signal/X3DH-style)
-      Promise.all([
-        reconcilePrekeysWithServer(user.id),
-        refreshSignedPrekeyIfNeeded(user.id, keys.signingPrivateKey),
-      ]).catch(e => 
-        console.warn('[E2EE] Prekey/SPK refill failed:', e)
+      // Refresh Signed Prekey if needed (X3DH 3-DH only mode — no OPK).
+      refreshSignedPrekeyIfNeeded(user.id, keys.signingPrivateKey).catch(e =>
+        console.warn('[E2EE] SPK refresh failed:', e),
       );
 
       // Auto-scrub: once keys are loaded into memory as non-extractable CryptoKeys,
@@ -849,21 +846,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           saveKnownFingerprint(peerUserId, data.fingerprint);
           saveKnownFingerprintServer(peerUserId, data.fingerprint);
 
-          // Pre-establish legacy session immediately
-          if (keysRef.current && conversationId) {
-            try {
-              let session = await loadSessionKey(conversationId);
-              if (cancelled) return;
-              if (!session) {
-                session = await establishSession(keysRef.current, data.identity_key, conversationId, data.fingerprint);
-              }
-              if (cancelled) return;
-              legacySessionReadyRef.current = true;
-              console.log('[E2EE] ✅ Legacy session pre-established — ready to send');
-            } catch (e) {
-              console.warn('[E2EE] Legacy session pre-establish failed:', e);
-            }
-          }
+          // Legacy per-conversation session removed — Double Ratchet handles
+          // all messaging encryption. Nothing to pre-establish here.
 
           setState(s => ({
             ...s,
