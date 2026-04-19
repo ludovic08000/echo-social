@@ -165,10 +165,11 @@ async function fetchPeerPublicKeys(peerUserId: string): Promise<{ identity_key: 
 
 // ─── IndexedDB ratchet persistence ───
 
-function openRatchetDB(): Promise<IDBDatabase> {
+function openRatchetDBAt(version: number): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = hardGlobals.idbOpen(RATCHET_DB_NAME, RATCHET_DB_VERSION);
+    const req = hardGlobals.idbOpen(RATCHET_DB_NAME, version);
     req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error('ratchet db blocked'));
     req.onsuccess = () => resolve(req.result);
     req.onupgradeneeded = () => {
       const db = req.result;
@@ -177,6 +178,25 @@ function openRatchetDB(): Promise<IDBDatabase> {
       }
     };
   });
+}
+
+/**
+ * Open the ratchet IndexedDB. If the database exists but the expected object
+ * store is missing (corrupt/legacy install), bump the version to trigger
+ * `onupgradeneeded` and create the store on the fly.
+ */
+async function openRatchetDB(): Promise<IDBDatabase> {
+  let db = await openRatchetDBAt(RATCHET_DB_VERSION);
+  if (db.objectStoreNames.contains(RATCHET_STORE_NAME)) return db;
+
+  const nextVersion = (db.version || RATCHET_DB_VERSION) + 1;
+  db.close();
+  console.warn(`[E2EE] Ratchet store missing — upgrading IndexedDB to v${nextVersion} to recreate it`);
+  db = await openRatchetDBAt(nextVersion);
+  if (!db.objectStoreNames.contains(RATCHET_STORE_NAME)) {
+    throw new Error('Failed to provision ratchet object store');
+  }
+  return db;
 }
 
 function recreateLegacyE2EEDatabase(): Promise<void> {
