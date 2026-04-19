@@ -37,6 +37,7 @@ import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
 import { EncryptionBadge, EncryptionStatusBar } from '@/components/messages/EncryptionBadge';
 import { OutboundStatusIndicator } from '@/components/messages/OutboundStatus';
+import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
 import { MessagingPinGate } from '@/components/MessagingPinGate';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
 
@@ -378,7 +379,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   // E2EE integration — STRICT: plaintext allowed only for the Zeus bot.
   const e2ee = useE2EE(conversationId, peerUserId);
   const isEncryptionActive = !isZeusConversation && e2ee.encrypted;
-  const decryptRefreshKey = `${conversationId}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.encrypted)}`;
+  const [cacheVersion, setCacheVersion] = useState(0);
+  const bumpCache = useCallback(() => setCacheVersion(v => v + 1), []);
+  const decryptRefreshKey = `${conversationId}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.encrypted)}:${cacheVersion}`;
   const stableBadgeRef = useRef({ encrypted: false, verified: false, ratchetActive: false });
 
   useEffect(() => {
@@ -401,21 +404,27 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
     return stableBadgeRef.current;
   }, [conversationId, e2ee.encrypted, e2ee.fingerprintChanged, e2ee.ratchetActive]);
+
+  const decryptedCacheRef = useRef<Map<string, string>>(new Map());
+  const cachePlaintext = useCallback((msgId: string, text: string) => {
+    decryptedCacheRef.current.set(msgId, text);
+    bumpCache();
+    void savePlaintext(msgId, text);
+  }, [bumpCache]);
+
   const queue = useMessageQueue(
     conversationId,
     e2ee.encrypt,
     e2ee.isReady(),
     isEncryptionActive,
     e2ee.acknowledgeSentPayload,
-    isZeusConversation, // allowPlaintext — Zeus only
-    (serverId, plaintext) => decryptedCacheRef.current.set(serverId, plaintext),
+    isZeusConversation,
+    cachePlaintext,
   );
 
-  // Decrypted text cache for widget
-  const decryptedCacheRef = useRef<Map<string, string>>(new Map());
   const onDecrypted = useCallback((msgId: string, text: string) => {
-    decryptedCacheRef.current.set(msgId, text);
-  }, []);
+    cachePlaintext(msgId, text);
+  }, [cachePlaintext]);
 
   // Auto-load negotiation context from conversation if not set
   const { data: convNegotiations = [] } = useNegotiationsByConversation(!negotiationProduct ? conversationId : undefined);
@@ -631,6 +640,25 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, queue.pendingMessages]);
+
+  useEffect(() => {
+    if (!messages?.length) return;
+    let cancelled = false;
+    (async () => {
+      let added = false;
+      for (const msg of messages) {
+        if (decryptedCacheRef.current.has(msg.id)) continue;
+        const pt = await loadPlaintext(msg.id);
+        if (cancelled) return;
+        if (pt) {
+          decryptedCacheRef.current.set(msg.id, pt);
+          added = true;
+        }
+      }
+      if (added && !cancelled) bumpCache();
+    })();
+    return () => { cancelled = true; };
+  }, [messages, bumpCache]);
 
   useEffect(() => {
     if (conversationId) markRead.mutate(conversationId);
@@ -1160,7 +1188,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                               isEncryptionActive={isEncryptionActive}
                               onDecrypted={(text) => onDecrypted(msg.id, text)}
                               isMe={isMe}
-                              cachedPlaintext={isMe ? decryptedCacheRef.current.get(msg.id) : undefined}
+                              cachedPlaintext={decryptedCacheRef.current.get(msg.id)}
                               refreshKey={decryptRefreshKey}
                               messageId={msg.id}
                               hasMedia={!!msg.image_url}
