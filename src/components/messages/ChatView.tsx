@@ -121,9 +121,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
     return stableBadgeRef.current;
   }, [conversationId, e2ee.encrypted, e2ee.fingerprintChanged, e2ee.ratchetActive]);
 
-  // Cache plaintext for own sent messages (ratchet can't decrypt own ciphertext)
+  // Cache plaintext for own sent messages (ratchet can't decrypt own ciphertext).
+  // Persisted to IndexedDB (device-key encrypted) so the message stays readable
+  // after a page reload.
   const handlePlaintextCached = useCallback((serverId: string, plaintext: string) => {
     decryptedCache.set(serverId, plaintext);
+    void savePlaintext(serverId, plaintext);
   }, []);
 
   // Message queue for encrypted sending.
