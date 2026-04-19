@@ -58,6 +58,7 @@ import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
 import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/lib/crypto/cryptoIntegrity';
 import { KX_KEY_PARAMS, STORE_PREKEYS, STORE_SESSION } from '@/lib/crypto/constants';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
+import { isCryptoJsonBody, isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
 const RATCHET_DB_NAME = 'forsure-ratchet';
@@ -472,6 +473,13 @@ export interface E2EEState {
   peerKeyMissing: boolean;
   /** Initialization error if any */
   initError: string | null;
+}
+
+export interface DecryptResult {
+  text: string;
+  encrypted: boolean;
+  verified: boolean;
+  incompatible?: boolean;
 }
 
 export function useE2EE(conversationId: string | undefined, peerUserId: string | undefined) {

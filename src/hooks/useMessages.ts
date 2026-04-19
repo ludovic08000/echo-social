@@ -4,6 +4,14 @@ import { useAuth } from '@/lib/auth';
 import { useEffect } from 'react';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { messageQueue } from '@/lib/messaging/messageQueue';
+import { isUnsupportedEncryptedBody } from '@/lib/messaging/messageCompatibility';
+
+async function hideMessagesForUser(userId: string, messageIds: string[]) {
+  if (!userId || messageIds.length === 0) return;
+  const rows = messageIds.map((message_id) => ({ message_id, user_id: userId }));
+  const { error } = await supabase.from('message_deletions').insert(rows as any);
+  if (error && error.code !== '23505') throw error;
+}
 
 export const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
 
