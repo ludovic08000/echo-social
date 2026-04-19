@@ -914,16 +914,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           saveKnownFingerprint(peerUserId, data.fingerprint);
           saveKnownFingerprintServer(peerUserId, data.fingerprint);
           
-          // Pre-establish legacy session
-          if (keysRef.current && conversationId) {
-            try {
-              let session = await loadSessionKey(conversationId);
-              if (!session) {
-                session = await establishSession(keysRef.current, data.identity_key, conversationId, data.fingerprint);
-              }
-              legacySessionReadyRef.current = true;
-            } catch {}
-          }
+          // Legacy per-conversation session removed.
           
           setState(s => ({
             ...s,
@@ -938,15 +929,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     return () => clearInterval(interval);
   }, [state.peerKeyMissing, peerUserId, isZeus, conversationId]);
 
-  // Legacy session — load existing or establish new (NEVER rotates — rotation is encrypt-only)
-  const ensureLegacySession = useCallback(async () => {
-    if (!conversationId || !keysRef.current || !peerKeyRef.current) return null;
-    let session = await loadSessionKey(conversationId);
-    if (!session) {
-      session = await establishSession(keysRef.current, peerKeyRef.current.identityKey, conversationId, peerKeyRef.current.fingerprint);
-    }
-    return session;
-  }, [conversationId]);
+  // Legacy per-conversation session helper removed — Double Ratchet only.
 
   const ensureKeysAndPeerSync = useCallback(async (forceSessionRefresh = false): Promise<boolean> => {
     if (!user || !peerUserId || isZeus) return false;
