@@ -58,6 +58,7 @@ import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
 import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/lib/crypto/cryptoIntegrity';
 import { KX_KEY_PARAMS, STORE_PREKEYS, STORE_SESSION } from '@/lib/crypto/constants';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
+import { isCryptoJsonBody, isStrictRatchetEnvelopeBody, isUnsupportedEncryptedBody } from '@/lib/messaging/messageCompatibility';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
 const RATCHET_DB_NAME = 'forsure-ratchet';
@@ -472,6 +473,13 @@ export interface E2EEState {
   peerKeyMissing: boolean;
   /** Initialization error if any */
   initError: string | null;
+}
+
+export interface DecryptResult {
+  text: string;
+  encrypted: boolean;
+  verified: boolean;
+  incompatible?: boolean;
 }
 
 export function useE2EE(conversationId: string | undefined, peerUserId: string | undefined) {
@@ -1250,8 +1258,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
    * CRITICAL: All decrypts for the same conversation are SERIALIZED via a global
    * queue to prevent 50 concurrent ratchet inits when loading a chat.
    */
-  const decrypt = useCallback(async (body: string): Promise<{ text: string; encrypted: boolean; verified: boolean }> => {
-    if (!isEncryptedMessage(body) && !isRatchetEnvelope(body)) {
+  const decrypt = useCallback(async (body: string): Promise<DecryptResult> => {
+    if (!isCryptoJsonBody(body)) {
       return { text: body, encrypted: false, verified: false };
     }
 
@@ -1274,22 +1282,15 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
       try {
         const parsed = hardGlobals.jsonParse(body);
-        const explicitMode: string | undefined = parsed.encryptionMode;
 
-        if (explicitMode === 'ratchet') {
+        if (isStrictRatchetEnvelopeBody(body)) {
           return await decryptRatchetMessage(parsed, body);
         }
 
-        if (explicitMode === 'legacy') {
-          return await decryptLegacyMessage(parsed, body);
+        if (conversationId) {
+          void scheduleLegacyCleanup(conversationId, user?.id);
         }
-
-        // No encryptionMode tag: backward-compatible heuristic
-        if (isRatchetEnvelope(body)) {
-          return await decryptRatchetMessage(parsed, body);
-        }
-
-        return await decryptLegacyMessage(parsed, body);
+        return { text: '🧹 Message incompatible supprimé', encrypted: true, verified: false, incompatible: true };
 
       } catch (err) {
         console.error('[E2EE] decrypt failed:', err);
@@ -1301,7 +1302,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const decryptRatchetMessage = useCallback(async (
     parsed: any,
     rawBody: string,
-  ): Promise<{ text: string; encrypted: boolean; verified: boolean }> => {
+  ): Promise<DecryptResult> => {
     const envelope: RatchetEnvelope = parsed;
     const x3dhHeader: X3DHInitialMessage | undefined = parsed.x3dh;
     let ratchet = ratchetRef.current;
@@ -1431,7 +1432,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const decryptLegacyMessage = useCallback(async (
     parsed: any,
     rawBody: string,
-  ): Promise<{ text: string; encrypted: boolean; verified: boolean }> => {
+  ): Promise<DecryptResult> => {
     // Strict fingerprint guard — refuse to decrypt if peer fingerprint changed
     if (state.fingerprintChanged) {
       return { text: '🔒 Empreinte du contact changée — vérification requise', encrypted: true, verified: false };
@@ -1585,11 +1586,12 @@ function isLegacyEncryptedEnvelope(body: string): boolean {
  * and deletes them. Plain text, GIFs, audio, calls and valid encrypted messages are untouched.
  */
 const _legacyCleanupRan = new Set<string>();
-async function scheduleLegacyCleanup(conversationId: string): Promise<void> {
+async function scheduleLegacyCleanup(conversationId: string, userId?: string): Promise<void> {
   if (_legacyCleanupRan.has(conversationId)) return;
   _legacyCleanupRan.add(conversationId);
 
   try {
+    if (!userId) return;
     const { data: rows, error } = await supabase
       .from('messages')
       .select('id, body')
@@ -1604,17 +1606,7 @@ async function scheduleLegacyCleanup(conversationId: string): Promise<void> {
       const body = (row as any).body as string | null;
       if (!body || typeof body !== 'string') continue;
       if (!body.startsWith('{')) continue;
-      // Keep valid envelopes
-      if (isRatchetEnvelope(body) || isLegacyEncryptedEnvelope(body)) continue;
-      // Heuristic: looks like a stale crypto payload (had v/kem/hdr fields) but not a valid one
-      try {
-        const p = hardGlobals.jsonParse(body);
-        const looksCrypto = p && (p.v !== undefined || p.kem !== undefined || p.hdr !== undefined || p.ct !== undefined);
-        if (looksCrypto) idsToDelete.push((row as any).id);
-      } catch {
-        // unparseable JSON-looking body → broken
-        idsToDelete.push((row as any).id);
-      }
+      if (isUnsupportedEncryptedBody(body)) idsToDelete.push((row as any).id);
     }
 
     if (idsToDelete.length === 0) {
@@ -1623,16 +1615,15 @@ async function scheduleLegacyCleanup(conversationId: string): Promise<void> {
     }
 
     const { error: delErr } = await supabase
-      .from('messages')
-      .delete()
-      .in('id', idsToDelete);
+      .from('message_deletions')
+      .insert(idsToDelete.map((message_id) => ({ message_id, user_id: userId })) as any);
 
-    if (delErr) {
+    if (delErr && delErr.code !== '23505') {
       console.warn('[E2EE] Legacy cleanup delete failed:', delErr);
       return;
     }
 
-    console.log(`[E2EE] 🧹 Cleaned ${idsToDelete.length} broken legacy crypto message(s) in ${conversationId}`);
+    console.log(`[E2EE] 🧹 Hidden ${idsToDelete.length} incompatible crypto message(s) in ${conversationId}`);
     // Notify UI to reload the conversation
     window.dispatchEvent(new CustomEvent('forsure-conversation-cleaned', { detail: { conversationId, removed: idsToDelete.length } }));
   } catch (e) {

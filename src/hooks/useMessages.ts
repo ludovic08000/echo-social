@@ -4,6 +4,14 @@ import { useAuth } from '@/lib/auth';
 import { useEffect } from 'react';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { messageQueue } from '@/lib/messaging/messageQueue';
+import { isUnsupportedEncryptedBody } from '@/lib/messaging/messageCompatibility';
+
+async function hideMessagesForUser(userId: string, messageIds: string[]) {
+  if (!userId || messageIds.length === 0) return;
+  const rows = messageIds.map((message_id) => ({ message_id, user_id: userId }));
+  const { error } = await supabase.from('message_deletions').insert(rows as any);
+  if (error && error.code !== '23505') throw error;
+}
 
 export const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -146,7 +154,7 @@ export function useConversations() {
             },
             participants: undefined,
             last_message: row.last_message_body ? {
-              body: row.last_message_body,
+              body: isUnsupportedEncryptedBody(row.last_message_body) ? '🧹 Message incompatible supprimé' : row.last_message_body,
               created_at: row.last_message_at,
               sender_id: row.last_message_sender,
             } : undefined,
@@ -205,14 +213,19 @@ export function useConversations() {
       // Get last message per conversation
       const { data: recentMessages } = await supabase
         .from('messages')
-        .select('conversation_id, body, created_at, sender_id')
+        .select('id, conversation_id, body, created_at, sender_id')
         .in('conversation_id', conversationIds)
         .order('created_at', { ascending: false })
         .limit(conversationIds.length);
 
+      const previewIncompatibleIds = (recentMessages || []).filter(m => isUnsupportedEncryptedBody(m.body)).map(m => m.id);
+      if (user && previewIncompatibleIds.length > 0) {
+        await hideMessagesForUser(user.id, previewIncompatibleIds);
+      }
+
       const lastMessageMap = new Map<string, { body: string; created_at: string; sender_id: string }>();
       recentMessages?.forEach(m => {
-        if (!lastMessageMap.has(m.conversation_id)) lastMessageMap.set(m.conversation_id, m);
+        if (!lastMessageMap.has(m.conversation_id) && !isUnsupportedEncryptedBody(m.body)) lastMessageMap.set(m.conversation_id, m);
       });
 
       return conversations.map(conv => {
@@ -260,6 +273,12 @@ export function useMessages(conversationId: string) {
         },
         async (payload) => {
           const newMsg = payload.new as any;
+          if (isUnsupportedEncryptedBody(newMsg.body)) {
+            if (user) {
+              hideMessagesForUser(user.id, [newMsg.id]).catch(() => {});
+            }
+            return;
+          }
 
           // Fetch profile for sender (use cache first)
           let profile = queryClient.getQueryData<any>(['profile', newMsg.sender_id]);
@@ -363,11 +382,16 @@ export function useMessages(conversationId: string) {
 
       // Filter out hidden messages
       const visibleMessages = messages.filter(m => !hiddenIds.has(m.id));
+      const incompatibleIds = visibleMessages.filter(m => isUnsupportedEncryptedBody(m.body)).map(m => m.id);
+      if (user && incompatibleIds.length > 0) {
+        await hideMessagesForUser(user.id, incompatibleIds);
+      }
+      const compatibleMessages = visibleMessages.filter(m => !incompatibleIds.includes(m.id));
 
       // Reconcile local queue with already delivered backend messages
       messageQueue.reconcileDelivered(
         conversationId,
-        visibleMessages.map(m => ({
+        compatibleMessages.map(m => ({
           id: m.id,
           senderId: m.sender_id,
           body: m.body,
@@ -375,7 +399,7 @@ export function useMessages(conversationId: string) {
         })),
       ).catch(() => {});
 
-      const senderIds = [...new Set(visibleMessages.map(m => m.sender_id))];
+      const senderIds = [...new Set(compatibleMessages.map(m => m.sender_id))];
       const { data: profiles } = await supabase
         .from('profiles')
         .select('user_id, name, avatar_url')
@@ -383,10 +407,10 @@ export function useMessages(conversationId: string) {
 
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
 
-      const hasZeusMessages = visibleMessages.some(m => m.sender_id === ZEUS_BOT_ID);
+      const hasZeusMessages = compatibleMessages.some(m => m.sender_id === ZEUS_BOT_ID);
       const companionDisplayName = hasZeusMessages ? await getCompanionName(user?.id) : 'Zeus ⚡';
 
-      return visibleMessages.map(msg => ({
+      return compatibleMessages.map(msg => ({
         ...msg,
         profile: {
           name: msg.sender_id === ZEUS_BOT_ID ? companionDisplayName : (profileMap.get(msg.sender_id)?.name || 'Unknown'),
