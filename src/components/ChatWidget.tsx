@@ -375,10 +375,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const negotiationProduct = chatState.negotiationProduct;
 
-  // E2EE integration
+  // E2EE integration — STRICT: plaintext allowed only for the Zeus bot.
   const e2ee = useE2EE(conversationId, peerUserId);
   const isEncryptionActive = !isZeusConversation && e2ee.encrypted;
-  const allowPlaintextFallback = isZeusConversation || (!e2ee.encrypted && !isZeusConversation);
   const decryptRefreshKey = `${Number(e2ee.ready)}:${Number(e2ee.encrypted)}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.ratchetActive)}:${Number(e2ee.peerKeyMissing)}:${e2ee.initError ?? 'ok'}`;
   const queue = useMessageQueue(
     conversationId,
@@ -386,7 +385,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     e2ee.isReady(),
     isEncryptionActive,
     e2ee.acknowledgeSentPayload,
-    allowPlaintextFallback,
+    isZeusConversation, // allowPlaintext — Zeus only
     (serverId, plaintext) => decryptedCacheRef.current.set(serverId, plaintext),
   );
 
