@@ -1050,6 +1050,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                               body={msg.body}
                               decrypt={e2ee.decrypt}
                               isEncryptionActive={e2ee.encrypted && !isZeusConversation}
+                              messageId={msg.id}
                             />
                           </div>
                         )}
@@ -1139,6 +1140,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                               isMe={isMe}
                               cachedPlaintext={isMe ? decryptedCacheRef.current.get(msg.id) : undefined}
                               refreshKey={decryptRefreshKey}
+                              messageId={msg.id}
+                              hasMedia={!!msg.image_url}
                             />
                           </div>
                         )}

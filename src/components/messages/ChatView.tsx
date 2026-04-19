@@ -714,6 +714,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                                 body={msg.body}
                                 decrypt={e2ee.decrypt}
                                 isEncryptionActive={e2ee.encrypted && !isZeusConversation}
+                                messageId={msg.id}
                               />
                             </div>
                           )}
@@ -754,6 +755,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
                               isMe={isMe}
                               cachedPlaintext={isMe ? decryptedCache.get(msg.id) : undefined}
                               refreshKey={decryptRefreshKey}
+                              messageId={msg.id}
+                              hasMedia={!!msg.image_url}
                             />
                           </div>
 
