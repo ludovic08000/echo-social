@@ -88,7 +88,10 @@ export function getRatchetReadiness(state: RatchetState | null | undefined): Rat
     return { canEncrypt: false, canDecrypt: false, reason: 'missing_sending_pair' };
   }
 
-  const canDecrypt = !!state.receivingChainKey || !!state.dhReceivingKey;
+  // A responder that has completed X3DH but has not yet received the first
+  // Double Ratchet message is still decrypt-capable: the incoming header DH
+  // will seed the first receiving chain from the root key.
+  const canDecrypt = !!state.rootKey && !!state.dhSendingPair?.privateKey;
 
   if (!state.dhReceivingKey) {
     return { canEncrypt: false, canDecrypt, reason: 'missing_peer_dh' };
