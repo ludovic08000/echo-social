@@ -1390,7 +1390,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             console.error('[E2EE] Ratchet self-heal after decrypt failure failed:', healErr);
             markRatchetTerminalFailure(conversationId, rawBody);
             if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
-            return { text: '🧹 Message incompatible supprimé', encrypted: true, verified: false, incompatible: true };
+            return { text: '', encrypted: true, verified: false, incompatible: true };
           }
         }
         // No X3DH header to self-heal from — return a precise diagnostic.
@@ -1425,16 +1425,12 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       console.warn('[E2EE] 🔄 Ratchet désynchronisé détecté — purge locale pour forcer re-handshake');
       await resetRatchetBootstrapState('peer_ratchet_desync');
       markRatchetTerminalFailure(conversationId, rawBody);
-      return {
-        text: '🔄 Synchronisation en cours — renvoyez ce message après quelques secondes',
-        encrypted: true,
-        verified: false,
-      };
+      return { text: '', encrypted: true, verified: false, incompatible: true };
     }
 
     markRatchetTerminalFailure(conversationId, rawBody);
     if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
-    return { text: '🔒 Message illisible (session expirée)', encrypted: true, verified: false };
+    return { text: '', encrypted: true, verified: false, incompatible: true };
   }, [conversationId, user, resetRatchetBootstrapState]);
 
   // Legacy message decrypt path removed — incompatible bodies are auto-purged.
