@@ -420,13 +420,20 @@ async function sign(
 }
 
 async function sha256Hex(data: Uint8Array): Promise<string> {
-  return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", data)));
+  const buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+  return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", buffer)));
 }
 
 async function hmacSha256(key: Uint8Array | ArrayBuffer, message: string): Promise<Uint8Array> {
+  const rawKey = key instanceof Uint8Array
+    ? (key.buffer.slice(key.byteOffset, key.byteOffset + key.byteLength) as ArrayBuffer)
+    : key;
   const cryptoKey = await crypto.subtle.importKey(
-    "raw", key instanceof Uint8Array ? key : new Uint8Array(key),
-    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+    "raw",
+    rawKey,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
   );
   return new Uint8Array(await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(message)));
 }
