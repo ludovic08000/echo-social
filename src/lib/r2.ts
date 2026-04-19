@@ -80,6 +80,22 @@ export async function uploadToR2(
   return uploadProxy(file, category, fileName, session.access_token, onProgress);
 }
 
+export async function fetchR2Object(fileUrl: string): Promise<Response> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not authenticated');
+
+  const response = await fetch(`${getFunctionsBaseUrl()}/r2-upload?url=${encodeURIComponent(fileUrl)}`, {
+    method: 'GET',
+    headers: getFunctionHeaders(session.access_token),
+  });
+
+  if (!response.ok) {
+    throw new Error(await extractFunctionError(response, `Récupération média impossible: ${response.status}`));
+  }
+
+  return response;
+}
+
 // ─── Presigned direct upload ───
 async function uploadPresigned(
   file: File | Blob,
