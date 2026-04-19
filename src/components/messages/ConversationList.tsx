@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { NewConversationDialog } from './NewConversationDialog';
 import { formatMessageTime } from './constants';
+import { ConversationPreviewText } from './ConversationPreviewText';
 
 export function ConversationList() {
   const { data: conversations, isLoading } = useConversations();
@@ -181,21 +182,7 @@ export function ConversationList() {
                         "text-[13px] truncate flex-1",
                         conv.unread_count > 0 ? "text-foreground font-medium" : "text-muted-foreground"
                       )}>
-                        {conv.last_message?.body
-                          ? conv.last_message.body.startsWith('📞 CALL:missed|')
-                            ? `📞 Appel ${conv.last_message.body.includes('video') ? 'vidéo' : 'audio'} manqué`
-                            : conv.last_message.body.startsWith('📞 CALL:ended|')
-                              ? `📞 Appel ${conv.last_message.body.includes('video') ? 'vidéo' : 'audio'} terminé`
-                              : (conv.last_message.body.startsWith('{') && (conv.last_message.body.includes('"ct"') || conv.last_message.body.includes('"hdr"')))
-                                ? '🔒 Message chiffré'
-                                : /^🎙️\s*(?:vocal|voice):/.test(conv.last_message.body)
-                                  ? '🎙️ Message vocal'
-                                  : /^GIF:https?:\/\//i.test(conv.last_message.body)
-                                    ? '🖼️ GIF'
-                                    : conv.last_message.body.length > 80
-                                      ? conv.last_message.body.substring(0, 80) + '…'
-                                      : conv.last_message.body
-                          : 'Démarrez la conversation…'}
+                        <ConversationPreviewText body={conv.last_message?.body} />
                       </p>
                       {conv.unread_count > 0 && (
                         <div className="min-w-[20px] h-5 rounded-full bg-primary flex items-center justify-center flex-shrink-0 px-1.5">

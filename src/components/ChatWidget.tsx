@@ -37,6 +37,7 @@ import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
 import { EncryptionBadge, EncryptionStatusBar } from '@/components/messages/EncryptionBadge';
 import { OutboundStatusIndicator } from '@/components/messages/OutboundStatus';
+import { ConversationPreviewText } from '@/components/messages/ConversationPreviewText';
 import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
 import { MessagingPinGate } from '@/components/MessagingPinGate';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
@@ -312,13 +313,7 @@ function WidgetConversationList() {
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">
                   <p className={cn("text-[11px] truncate flex-1", conv.unread_count > 0 ? "text-foreground font-medium" : "text-muted-foreground")}>
-                    {conv.last_message?.body 
-                      ? isCallMessage(conv.last_message.body) 
-                        ? (getCallData(conv.last_message.body)?.status === 'missed' ? '📞 Appel manqué' : '📞 Appel terminé')
-                        : isVoiceMessage(conv.last_message.body) ? '🎙️ Message vocal'
-                        : isGifMessage(conv.last_message.body) ? '🎬 GIF'
-                        : conv.last_message.body
-                      : 'Démarrez la conversation…'}
+                    <ConversationPreviewText body={conv.last_message?.body} maxLength={50} />
                   </p>
                   {conv.unread_count > 0 && (
                     <span className="w-4 h-4 rounded-full bg-primary text-primary-foreground text-[8px] font-bold flex items-center justify-center flex-shrink-0">
