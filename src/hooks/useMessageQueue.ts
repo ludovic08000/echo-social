@@ -17,6 +17,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { messageQueue, type OutboundMessage } from '@/lib/messaging/messageQueue';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
+import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
 
 export function useMessageQueue(
   conversationId: string,
@@ -98,6 +99,19 @@ export function useMessageQueue(
 
         // Cache plaintext so sender sees cleartext (ratchet can't decrypt own messages)
         if (msg.plaintext) onPlaintextCached?.(outboundId, msg.plaintext);
+
+        // Multi-device fan-out (additive — failure is non-fatal).
+        // Distributes per-device copies so the recipient's other devices and
+        // the sender's other devices can read the message. The primary
+        // recipient device still relies on the per-conversation Double Ratchet.
+        if (msg.plaintext) {
+          fanoutMessageCopies({
+            messageId: outboundId,
+            conversationId: msg.conversationId,
+            senderUserId: msg.senderId,
+            plaintext: msg.plaintext,
+          }).catch(err => console.warn('[FANOUT] non-fatal failure', err));
+        }
 
         await supabase
           .from('conversations')
