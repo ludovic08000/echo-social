@@ -19,6 +19,7 @@ import { CallOverlay } from "@/components/CallOverlay";
 import { Suspense, lazy, useCallback, useRef } from "react";
 import { useAccountKeySync } from "@/hooks/useAccountKeySync";
 import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
+import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
 import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
@@ -171,6 +172,7 @@ function IncomingCallHandler() {
 function AccountKeySyncRunner() {
   useAccountKeySync();
   useCryptoMaintenance();
+  useDeviceRegistration();
   return null;
 }
 
