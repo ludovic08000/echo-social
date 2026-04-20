@@ -4,6 +4,7 @@ import { VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { hasMediaKey, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
+import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
 import { setMediaKey } from './mediaKeyCache';
 import type { DecryptResult } from '@/hooks/useE2EE';
 
@@ -203,27 +204,49 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
     let promise = inflight.get(key);
     if (!promise) {
-      promise = decrypt(body).then(result => {
+      const buildEntryFromText = (text: string): CachedDecryption => {
+        if (hasMediaKey(text)) {
+          const parsed = parseMediaMessage(text);
+          if (parsed) {
+            return { text: parsed.label, mediaKeyB64: parsed.keyB64, hidden: false };
+          }
+        }
+        return { text, mediaKeyB64: null, hidden: false };
+      };
+
+      promise = decrypt(body).then(async result => {
+        // Multi-device fallback: ratchet was incompatible (typical on a
+        // secondary device that has no ratchet state). Try the per-device copy.
+        if (result.incompatible && messageId) {
+          const copyText = await tryReadDeviceCopy(messageId);
+          if (copyText !== null) {
+            const entry = buildEntryFromText(copyText);
+            plaintextCache.set(key, entry);
+            return entry;
+          }
+          const entry: CachedDecryption = { text: '', mediaKeyB64: null, hidden: true };
+          plaintextCache.set(key, entry);
+          return entry;
+        }
         if (result.incompatible) {
           const entry: CachedDecryption = { text: '', mediaKeyB64: null, hidden: true };
           plaintextCache.set(key, entry);
           return entry;
         }
-        if (hasMediaKey(result.text)) {
-          const parsed = parseMediaMessage(result.text);
-          if (parsed) {
-            const entry: CachedDecryption = {
-              text: parsed.label,
-              mediaKeyB64: parsed.keyB64,
-              hidden: false,
-            };
+        const entry = buildEntryFromText(result.text);
+        plaintextCache.set(key, entry);
+        return entry;
+      }).catch(async (err) => {
+        // Hard ratchet failure → try device copy before giving up.
+        if (messageId) {
+          const copyText = await tryReadDeviceCopy(messageId);
+          if (copyText !== null) {
+            const entry = buildEntryFromText(copyText);
             plaintextCache.set(key, entry);
             return entry;
           }
         }
-        const entry: CachedDecryption = { text: result.text, mediaKeyB64: null, hidden: false };
-        plaintextCache.set(key, entry);
-        return entry;
+        throw err;
       });
       inflight.set(key, promise);
       promise.finally(() => inflight.delete(key));
