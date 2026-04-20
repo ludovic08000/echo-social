@@ -2274,9 +2274,57 @@ export type Database = {
           },
         ]
       }
+      message_device_copies: {
+        Row: {
+          created_at: string
+          delivered_at: string | null
+          encrypted_body: string
+          id: string
+          message_id: string
+          read_at: string | null
+          recipient_device_id: string
+          recipient_user_id: string
+          sender_device_id: string
+          sender_user_id: string
+        }
+        Insert: {
+          created_at?: string
+          delivered_at?: string | null
+          encrypted_body: string
+          id?: string
+          message_id: string
+          read_at?: string | null
+          recipient_device_id: string
+          recipient_user_id: string
+          sender_device_id: string
+          sender_user_id: string
+        }
+        Update: {
+          created_at?: string
+          delivered_at?: string | null
+          encrypted_body?: string
+          id?: string
+          message_id?: string
+          read_at?: string | null
+          recipient_device_id?: string
+          recipient_user_id?: string
+          sender_device_id?: string
+          sender_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_device_copies_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           body: string
+          body_kind: string
           conversation_id: string
           created_at: string
           id: string
@@ -2286,6 +2334,7 @@ export type Database = {
         }
         Insert: {
           body: string
+          body_kind?: string
           conversation_id: string
           created_at?: string
           id?: string
@@ -2295,6 +2344,7 @@ export type Database = {
         }
         Update: {
           body?: string
+          body_kind?: string
           conversation_id?: string
           created_at?: string
           id?: string
@@ -4373,6 +4423,48 @@ export type Database = {
         }
         Relationships: []
       }
+      user_devices: {
+        Row: {
+          created_at: string
+          device_id: string
+          device_name: string | null
+          device_public_key: string
+          id: string
+          is_active: boolean
+          last_seen_at: string
+          platform: string | null
+          updated_at: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          device_name?: string | null
+          device_public_key: string
+          id?: string
+          is_active?: boolean
+          last_seen_at?: string
+          platform?: string | null
+          updated_at?: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          device_name?: string | null
+          device_public_key?: string
+          id?: string
+          is_active?: boolean
+          last_seen_at?: string
+          platform?: string | null
+          updated_at?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_feed: {
         Row: {
           inserted_at: string
@@ -5217,6 +5309,15 @@ export type Database = {
           unread_count: number
         }[]
       }
+      get_device_copy_for_message: {
+        Args: { p_device_id: string; p_message_id: string }
+        Returns: {
+          created_at: string
+          encrypted_body: string
+          sender_device_id: string
+          sender_user_id: string
+        }[]
+      }
       get_feed_posts: {
         Args: { p_limit?: number; p_offset?: number; p_user_id: string }
         Returns: {
@@ -5328,6 +5429,14 @@ export type Database = {
         Returns: boolean
       }
       is_user_minor: { Args: { p_user_id: string }; Returns: boolean }
+      list_active_devices_for_user: {
+        Args: { p_user_id: string }
+        Returns: {
+          device_id: string
+          device_public_key: string
+          last_seen_at: string
+        }[]
+      }
       match_contacts_by_phone:
         | {
             Args: { p_phone_numbers: string[] }
