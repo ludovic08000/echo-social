@@ -21,7 +21,12 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId } from './currentDevice';
 import { wrapPlaintextForDevice, unwrapPlaintextForDevice } from './deviceWrap';
-import { fetchPrekeyBundleForDevice, x3dhInitiate, x3dhRespond } from '@/lib/crypto/x3dh';
+import {
+  fetchPrekeyBundleForDevice,
+  x3dhInitiate,
+  x3dhRespond,
+  x3dhRespondForDevice,
+} from '@/lib/crypto/x3dh';
 import { getOrCreateIdentityKeys } from '@/lib/crypto/keyManager';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { randomBytes, bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
