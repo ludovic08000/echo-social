@@ -2,18 +2,29 @@
  * Multi-device fan-out — distributes a sent message as additional, per-device
  * encrypted copies in `message_device_copies`.
  *
- * Strictly additive. The original `messages` row (encrypted with the per-conv
- * Double Ratchet) is the source of truth for the primary device.
- * Copies allow the SAME user reading on another device to see the plaintext,
- * and the recipient's other devices to read the message even if their ratchet
- * state is not yet set up.
+ * Two encryption paths per recipient device, in this order:
+ *   1. **X3DH-per-device** (preferred):
+ *      - fetch the device's signed prekey bundle (`get_device_prekey_bundle`)
+ *      - run a fresh X3DH handshake → 32-byte shared secret
+ *      - AES-256-GCM encrypt the plaintext with that secret
+ *      - the receiver re-runs X3DH responder using its OWN device SPK private
+ *        key to derive the same secret
+ *   2. **Device-wrap fallback** (legacy compatible):
+ *      - direct ECDH between sender identity ↔ recipient device public key
+ *      - used when the target device has not yet published a SPK
  *
+ * Strictly additive. The original `messages` row (encrypted with the per-conv
+ * Double Ratchet) remains the source of truth for the primary device.
  * Failure of fan-out is non-fatal: the message is still delivered via the
  * legacy single-device ratchet path.
  */
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId } from './currentDevice';
-import { wrapPlaintextForDevice } from './deviceWrap';
+import { wrapPlaintextForDevice, unwrapPlaintextForDevice } from './deviceWrap';
+import { fetchPrekeyBundleForDevice, x3dhInitiate, x3dhRespond } from '@/lib/crypto/x3dh';
+import { getOrCreateIdentityKeys } from '@/lib/crypto/keyManager';
+import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
+import { randomBytes, bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
 
 interface FanoutInput {
   messageId: string;
@@ -28,6 +39,81 @@ interface ActiveDevice {
   device_public_key: string;
 }
 
+// ─── X3DH-wrapped envelope (path 1) ─────────────────────────────────────────
+// Format: "x3dh1." base64(iv) "." base64(ct) "." base64(ek) "." spkId
+// `ek` is Alice's ephemeral public key; `spkId` is Bob's SPK id used.
+const X3DH_PREFIX = 'x3dh1.';
+
+async function aesFromSecret(secret: ArrayBuffer): Promise<CryptoKey> {
+  return hardCrypto.importKey('raw', secret.slice(0, 32), { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+
+async function x3dhWrapForDevice(
+  plaintext: string,
+  senderUserId: string,
+  recipientUserId: string,
+  recipientDeviceId: string,
+): Promise<string | null> {
+  try {
+    const bundle = await fetchPrekeyBundleForDevice(recipientUserId, recipientDeviceId);
+    if (!bundle) return null;
+
+    const myKeys = await getOrCreateIdentityKeys(senderUserId);
+    const result = await x3dhInitiate(myKeys, bundle);
+    const aes = await aesFromSecret(result.sharedSecret);
+    const iv = randomBytes(12);
+    const ct = await hardCrypto.encrypt(
+      { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 },
+      aes,
+      new hardGlobals.TextEncoder().encode(plaintext),
+    );
+    return [
+      X3DH_PREFIX + bufferToBase64(iv.buffer as ArrayBuffer),
+      bufferToBase64(ct as ArrayBuffer),
+      result.ephemeralKey,
+      String(result.usedSPKId),
+    ].join('.');
+  } catch (e) {
+    console.warn('[FANOUT] X3DH wrap failed, will fallback:', e);
+    return null;
+  }
+}
+
+async function x3dhUnwrapForDevice(
+  payload: string,
+  recipientUserId: string,
+  senderIdentityKeyB64: string,
+): Promise<string | null> {
+  try {
+    if (!payload.startsWith(X3DH_PREFIX)) return null;
+    const rest = payload.slice(X3DH_PREFIX.length);
+    const parts = rest.split('.');
+    if (parts.length !== 4) return null;
+    const [ivB64, ctB64, ekB64, spkIdStr] = parts;
+    const spkId = parseInt(spkIdStr, 10);
+    if (Number.isNaN(spkId)) return null;
+
+    const myKeys = await getOrCreateIdentityKeys(recipientUserId);
+    const { sharedSecret } = await x3dhRespond(myKeys, recipientUserId, {
+      ik: senderIdentityKeyB64,
+      ek: ekB64,
+      spkId,
+    });
+    const aes = await aesFromSecret(sharedSecret);
+    const pt = await hardCrypto.decrypt(
+      { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(ivB64)), tagLength: 128 },
+      aes,
+      base64ToBuffer(ctB64),
+    );
+    return new hardGlobals.TextDecoder().decode(pt);
+  } catch (e) {
+    console.warn('[FANOUT] X3DH unwrap failed:', e);
+    return null;
+  }
+}
+
+// ─── Public API ─────────────────────────────────────────────────────────────
+
 export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserted: number; multiDevice: boolean }> {
   const senderDeviceId = getCurrentDeviceId();
 
@@ -38,10 +124,9 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
     .eq('conversation_id', input.conversationId);
 
   if (!participants?.length) return { inserted: 0, multiDevice: false };
-
   const userIds = participants.map(p => p.user_id);
 
-  // 2. For each participant, list active devices (via SECURITY DEFINER RPC)
+  // 2. List active devices per participant
   const deviceLists = await Promise.all(
     userIds.map(async (uid) => {
       try {
@@ -56,42 +141,48 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
       }
     }),
   );
-
   const allDevices = deviceLists.flat();
 
-  // Decide if multi-device is in play: more than 1 device across participants
-  // (the sender's own device alone doesn't count).
-  const multiDevice = allDevices.filter(d =>
-    !(d.user_id === input.senderUserId && d.device_id === senderDeviceId)
-  ).length > 0;
+  // Multi-device only relevant if at least 1 device beyond the current sender device
+  const targets = allDevices.filter(d =>
+    !(d.user_id === input.senderUserId && d.device_id === senderDeviceId),
+  );
+  if (targets.length === 0) return { inserted: 0, multiDevice: false };
 
-  if (!multiDevice) return { inserted: 0, multiDevice: false };
-
-  // 3. Wrap plaintext per-device and insert copies (skip current sender device —
-  // the ratchet body in `messages` already serves it).
+  // 3. For each target device: try X3DH first, then deviceWrap fallback
   const rows: Array<Record<string, string>> = [];
-  for (const dev of allDevices) {
-    if (dev.user_id === input.senderUserId && dev.device_id === senderDeviceId) continue;
+  for (const dev of targets) {
     if (!dev.device_public_key) continue;
-    try {
-      const wrapped = await wrapPlaintextForDevice(
-        input.plaintext,
-        input.senderUserId,
-        dev.device_public_key,
-        dev.device_id,
-      );
-      rows.push({
-        message_id: input.messageId,
-        recipient_user_id: dev.user_id,
-        recipient_device_id: dev.device_id,
-        sender_user_id: input.senderUserId,
-        sender_device_id: senderDeviceId,
-        encrypted_body: wrapped,
-      });
-    } catch (e) {
-      // Skip this device — best-effort fan-out
-      console.warn('[FANOUT] wrap failed for device', dev.device_id, e);
+
+    let encrypted: string | null = await x3dhWrapForDevice(
+      input.plaintext,
+      input.senderUserId,
+      dev.user_id,
+      dev.device_id,
+    );
+
+    if (!encrypted) {
+      try {
+        encrypted = await wrapPlaintextForDevice(
+          input.plaintext,
+          input.senderUserId,
+          dev.device_public_key,
+          dev.device_id,
+        );
+      } catch (e) {
+        console.warn('[FANOUT] both X3DH and deviceWrap failed for device', dev.device_id, e);
+        continue;
+      }
     }
+
+    rows.push({
+      message_id: input.messageId,
+      recipient_user_id: dev.user_id,
+      recipient_device_id: dev.device_id,
+      sender_user_id: input.senderUserId,
+      sender_device_id: senderDeviceId,
+      encrypted_body: encrypted,
+    });
   }
 
   if (!rows.length) return { inserted: 0, multiDevice: true };
@@ -126,17 +217,30 @@ export async function tryReadDeviceCopy(messageId: string): Promise<string | nul
     if (!data || data.length === 0) return null;
     const row = data[0] as { encrypted_body: string; sender_user_id: string; sender_device_id: string };
 
-    // Need sender device public key to derive the same shared secret.
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    // Path 1: X3DH-wrapped envelope
+    if (row.encrypted_body.startsWith(X3DH_PREFIX)) {
+      const { data: senderPub } = await supabase
+        .from('user_public_keys')
+        .select('identity_key')
+        .eq('user_id', row.sender_user_id)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (!senderPub?.identity_key) return null;
+      const pt = await x3dhUnwrapForDevice(row.encrypted_body, user.id, senderPub.identity_key);
+      if (pt !== null) return pt;
+      // fall through to legacy attempt for safety
+    }
+
+    // Path 2: legacy deviceWrap (ECDH on sender identity ↔ recipient device key)
     const { data: senderDevices } = await supabase.rpc('list_active_devices_for_user', {
       p_user_id: row.sender_user_id,
     });
     const senderDev = (senderDevices || []).find((d: any) => d.device_id === row.sender_device_id);
     if (!senderDev?.device_public_key) return null;
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-
-    const { unwrapPlaintextForDevice } = await import('./deviceWrap');
     return await unwrapPlaintextForDevice(
       row.encrypted_body,
       user.id,

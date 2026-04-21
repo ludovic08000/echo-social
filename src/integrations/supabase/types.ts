@@ -1368,6 +1368,42 @@ export type Database = {
         }
         Relationships: []
       }
+      device_signed_prekeys: {
+        Row: {
+          created_at: string
+          device_id: string
+          expires_at: string
+          id: string
+          is_active: boolean
+          public_key: string
+          signature: string
+          spk_id: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          expires_at?: string
+          id?: string
+          is_active?: boolean
+          public_key: string
+          signature: string
+          spk_id: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          expires_at?: string
+          id?: string
+          is_active?: boolean
+          public_key?: string
+          signature?: string
+          spk_id?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       email_send_log: {
         Row: {
           created_at: string
@@ -5261,6 +5297,7 @@ export type Database = {
       }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_expired_device_links: { Args: never; Returns: undefined }
+      cleanup_expired_device_prekeys: { Args: never; Returns: undefined }
       cleanup_old_behavior_signals: { Args: never; Returns: undefined }
       cleanup_old_fingerprints: { Args: never; Returns: undefined }
       complete_onboarding: { Args: { _user_id: string }; Returns: boolean }
@@ -5316,6 +5353,15 @@ export type Database = {
           encrypted_body: string
           sender_device_id: string
           sender_user_id: string
+        }[]
+      }
+      get_device_prekey_bundle: {
+        Args: { p_device_id: string; p_user_id: string }
+        Returns: {
+          device_public_key: string
+          public_key: string
+          signature: string
+          spk_id: number
         }[]
       }
       get_feed_posts: {

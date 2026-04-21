@@ -1,16 +1,16 @@
 /**
  * useDeviceRegistration — registers the current browser as an active device
- * for the logged-in user. Run once per session at app load.
+ * for the logged-in user, and publishes a per-device Signed PreKey so that
+ * other users can perform a targeted X3DH handshake against THIS device.
  *
- * Used by the multi-device messaging fan-out:
- *   - sender side: lists active devices of the recipient via RPC
- *   - recipient side: fetches the message copy addressed to its device_id
+ * Hybrid multi-device model:
+ *   - identity key (IK) and signing key (SIG) are SHARED across the user's
+ *     devices (legacy compatible — kept in IndexedDB by getOrCreateIdentityKeys);
+ *   - each device has its OWN Signed PreKey + Double Ratchet state, so that
+ *     a sender can negotiate an independent secure channel per device.
  *
- * The registered public key is the user's E2EE identity key (already
- * persisted in IndexedDB). This is intentional: each browser/device has its
- * own IndexedDB, so the public key naturally differs between devices unless
- * the user copied keys via the QR/PIN device-link flow (in which case both
- * devices legitimately share the same identity).
+ * Failure here is NEVER fatal — the legacy single-device flow continues to
+ * work even if device or device-SPK registration fails.
  */
 
 import { useEffect, useRef } from 'react';
@@ -22,6 +22,7 @@ import {
   getCurrentPlatform,
 } from '@/lib/messaging/currentDevice';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto/keyManager';
+import { refreshDeviceSignedPrekeyIfNeeded } from '@/lib/crypto/x3dh';
 
 export function useDeviceRegistration() {
   const { user } = useAuth();
@@ -48,13 +49,24 @@ export function useDeviceRegistration() {
           last_seen_at: new Date().toISOString(),
         };
 
-        // Upsert (insert or refresh last_seen / public key if rotated)
-        await supabase
+        // 1. Register the device (idempotent upsert)
+        const { error: devErr } = await supabase
           .from('user_devices')
           .upsert(payload, { onConflict: 'user_id,device_id' });
+        if (devErr) {
+          console.warn('[useDeviceRegistration] device upsert failed:', devErr.message);
+          return;
+        }
+
+        // 2. Ensure a per-device Signed PreKey exists & is fresh.
+        //    This is what makes targeted X3DH per device possible.
+        try {
+          await refreshDeviceSignedPrekeyIfNeeded(user.id, deviceId, keys.signingPrivateKey);
+        } catch (spkErr) {
+          // Non-fatal: fan-out can still fall back to deviceWrap or legacy ratchet.
+          console.warn('[useDeviceRegistration] device SPK refresh failed (non-fatal):', spkErr);
+        }
       } catch (err) {
-        // Non-fatal: multi-device is additive. Legacy single-device flow
-        // continues to work even if registration fails.
         console.warn('[useDeviceRegistration] failed (non-fatal):', err);
       }
     })();

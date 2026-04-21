@@ -4,6 +4,15 @@
  * Security: The QR code contains ONLY the claim token.
  * The encryption PIN is communicated via a separate channel (shown on screen separately).
  * This prevents a single-channel compromise from exposing both claim + decrypt capability.
+ *
+ * MULTI-DEVICE NOTE (hybrid model):
+ *   This flow copies the SHARED identity key (IK + signing) so the new device
+ *   inherits the same per-user identity. However, each device still publishes
+ *   its OWN Signed PreKey + maintains its OWN ratchets (handled by
+ *   useDeviceRegistration on the new device after claim).
+ *   The copied ratchet states are useful for reading message history on the
+ *   linked device but are NOT required for new conversations — those will be
+ *   negotiated freshly via per-device X3DH.
  */
 
 import { useCallback, useState } from 'react';
