@@ -1368,6 +1368,33 @@ export type Database = {
         }
         Relationships: []
       }
+      device_one_time_prekeys: {
+        Row: {
+          created_at: string
+          device_id: string
+          id: string
+          opk_id: number
+          public_key: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          id?: string
+          opk_id: number
+          public_key: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          id?: string
+          opk_id?: number
+          public_key?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       device_signed_prekeys: {
         Row: {
           created_at: string
@@ -5295,12 +5322,23 @@ export type Database = {
           fingerprint: string
         }[]
       }
+      claim_device_one_time_prekey: {
+        Args: { p_device_id: string; p_user_id: string }
+        Returns: {
+          opk_id: number
+          public_key: string
+        }[]
+      }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_expired_device_links: { Args: never; Returns: undefined }
       cleanup_expired_device_prekeys: { Args: never; Returns: undefined }
       cleanup_old_behavior_signals: { Args: never; Returns: undefined }
       cleanup_old_fingerprints: { Args: never; Returns: undefined }
       complete_onboarding: { Args: { _user_id: string }; Returns: boolean }
+      count_device_one_time_prekeys: {
+        Args: { p_device_id: string; p_user_id: string }
+        Returns: number
+      }
       create_group_conversation: {
         Args: { p_member_ids: string[]; p_name: string }
         Returns: string
