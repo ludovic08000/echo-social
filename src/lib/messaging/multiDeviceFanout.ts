@@ -44,10 +44,13 @@ interface ActiveDevice {
   device_public_key: string;
 }
 
-// ─── X3DH-wrapped envelope (path 1) ─────────────────────────────────────────
-// Format: "x3dh1." base64(iv) "." base64(ct) "." base64(ek) "." spkId
-// `ek` is Alice's ephemeral public key; `spkId` is Bob's SPK id used.
-const X3DH_PREFIX = 'x3dh1.';
+// ─── X3DH-wrapped envelopes ─────────────────────────────────────────────────
+// Two on-wire formats, both per-device:
+//   v1 (legacy, no OPK): "x3dh1." iv "." ct "." ek "." spkId
+//   v2 (with OPK):       "x3dh2." iv "." ct "." ek "." spkId "." opkId
+// On read we detect the prefix and route to the right responder.
+const X3DH_PREFIX_V1 = 'x3dh1.';
+const X3DH_PREFIX_V2 = 'x3dh2.';
 
 async function aesFromSecret(secret: ArrayBuffer): Promise<CryptoKey> {
   return hardCrypto.importKey('raw', secret.slice(0, 32), { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
@@ -72,12 +75,16 @@ async function x3dhWrapForDevice(
       aes,
       new hardGlobals.TextEncoder().encode(plaintext),
     );
-    return [
-      X3DH_PREFIX + bufferToBase64(iv.buffer as ArrayBuffer),
+
+    const head = result.usedOTPKId !== undefined ? X3DH_PREFIX_V2 : X3DH_PREFIX_V1;
+    const parts = [
+      head + bufferToBase64(iv.buffer as ArrayBuffer),
       bufferToBase64(ct as ArrayBuffer),
       result.ephemeralKey,
       String(result.usedSPKId),
-    ].join('.');
+    ];
+    if (result.usedOTPKId !== undefined) parts.push(String(result.usedOTPKId));
+    return parts.join('.');
   } catch (e) {
     console.warn('[FANOUT] X3DH wrap failed, will fallback:', e);
     return null;
@@ -90,19 +97,30 @@ async function x3dhUnwrapForDevice(
   senderIdentityKeyB64: string,
 ): Promise<string | null> {
   try {
-    if (!payload.startsWith(X3DH_PREFIX)) return null;
-    const rest = payload.slice(X3DH_PREFIX.length);
-    const parts = rest.split('.');
-    if (parts.length !== 4) return null;
-    const [ivB64, ctB64, ekB64, spkIdStr] = parts;
+    const isV2 = payload.startsWith(X3DH_PREFIX_V2);
+    const isV1 = payload.startsWith(X3DH_PREFIX_V1);
+    if (!isV1 && !isV2) return null;
+
+    const prefix = isV2 ? X3DH_PREFIX_V2 : X3DH_PREFIX_V1;
+    const parts = payload.slice(prefix.length).split('.');
+    const expectedLen = isV2 ? 5 : 4;
+    if (parts.length !== expectedLen) return null;
+
+    const [ivB64, ctB64, ekB64, spkIdStr, opkIdStr] = parts;
     const spkId = parseInt(spkIdStr, 10);
     if (Number.isNaN(spkId)) return null;
+    const opkId = isV2 ? parseInt(opkIdStr, 10) : undefined;
+    if (isV2 && Number.isNaN(opkId as number)) return null;
 
     const myKeys = await getOrCreateIdentityKeys(recipientUserId);
-    const { sharedSecret } = await x3dhRespond(myKeys, recipientUserId, {
+    const myDeviceId = getCurrentDeviceId();
+
+    // Per-device responder: loads device-scoped SPK private + (optionally) the OPK private.
+    const { sharedSecret } = await x3dhRespondForDevice(myKeys, recipientUserId, myDeviceId, {
       ik: senderIdentityKeyB64,
       ek: ekB64,
       spkId,
+      opkId,
     });
     const aes = await aesFromSecret(sharedSecret);
     const pt = await hardCrypto.decrypt(
