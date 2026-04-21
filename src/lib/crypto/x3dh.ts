@@ -974,7 +974,77 @@ export async function x3dhRespond(
   };
 }
 
-// ─── PQXDH Structure (Future-Ready) ───
+// ─── Per-device responder (multi-device fan-out path) ───
+//
+// Mirror of x3dhRespond, but loads the DEVICE-SCOPED SPK private (not the per-user one)
+// and optionally consumes the matching OPK private for full 4-DH forward secrecy.
+// Used exclusively by multiDeviceFanout.ts — does NOT touch the legacy per-user flow.
+export async function x3dhRespondForDevice(
+  myKeys: IdentityKeyPair,
+  myUserId: string,
+  myDeviceId: string,
+  initialMessage: X3DHInitialMessage,
+): Promise<{ sharedSecret: ArrayBuffer; spkKeyPair: CryptoKeyPair }> {
+  console.info(
+    `[X3DH-DEV] respond — SPK #${initialMessage.spkId}, OPK ${initialMessage.opkId ?? 'none'}, dev=${myDeviceId.slice(0, 8)}…`,
+  );
+
+  const aliceIK = await importX25519Public(initialMessage.ik);
+  const aliceEK = await importX25519Public(initialMessage.ek);
+
+  // Load DEVICE-SCOPED SPK record (not per-user)
+  const spkRecord = await loadDeviceSPKRecord(myUserId, myDeviceId, initialMessage.spkId);
+  if (!spkRecord) {
+    throw new Error(
+      `[X3DH-DEV] device SPK #${initialMessage.spkId} NOT FOUND for ${myDeviceId.slice(0, 8)}…`,
+    );
+  }
+
+  const spkPrivate = await hardCrypto.importKey(
+    'jwk', spkRecord.privateKeyJWK, KX_KEY_PARAMS as any, true, ['deriveBits'],
+  );
+  const spkPublic = await hardCrypto.importKey(
+    'raw', base64ToBuffer(spkRecord.publicKeyBase64), KX_KEY_PARAMS as any, true, [],
+  );
+
+  // DH1..DH3 — Bob's perspective
+  const dh1 = await hardCrypto.deriveBits(
+    { name: 'X25519', public: aliceIK } as any, spkPrivate, 256,
+  );
+  const dh2 = await hardCrypto.deriveBits(
+    { name: 'X25519', public: aliceEK } as any, myKeys.privateKey, 256,
+  );
+  const dh3 = await hardCrypto.deriveBits(
+    { name: 'X25519', public: aliceEK } as any, spkPrivate, 256,
+  );
+
+  // DH4 — load + consume OPK private (one-shot)
+  let dh4: ArrayBuffer | null = null;
+  if (initialMessage.opkId !== undefined) {
+    const opkPriv = await loadDeviceOPKPrivate(myUserId, myDeviceId, initialMessage.opkId);
+    if (opkPriv) {
+      dh4 = await hardCrypto.deriveBits(
+        { name: 'X25519', public: aliceEK } as any, opkPriv, 256,
+      );
+      // Atomically delete the local private — OPK is single-use.
+      await deleteDeviceOPKPrivate(myUserId, myDeviceId, initialMessage.opkId);
+    } else {
+      console.warn(
+        `[X3DH-DEV] OPK #${initialMessage.opkId} private MISSING locally — degrading to 3-DH`,
+      );
+    }
+  }
+
+  const filler = new Uint8Array(32).fill(0xFF);
+  const dhConcat = dh4
+    ? concatBuffers(filler.buffer as ArrayBuffer, dh1, dh2, dh3, dh4)
+    : concatBuffers(filler.buffer as ArrayBuffer, dh1, dh2, dh3);
+
+  const sharedSecret = await x3dhKDF(dhConcat);
+  console.info(`[X3DH-DEV] ✅ responded with ${dh4 ? '4' : '3'}-DH (SPK #${initialMessage.spkId})`);
+
+  return { sharedSecret, spkKeyPair: { publicKey: spkPublic, privateKey: spkPrivate } };
+}
 
 /**
  * PQXDH extends X3DH by adding a KEM (Key Encapsulation Mechanism) step.
