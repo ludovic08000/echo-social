@@ -716,14 +716,22 @@ export async function fetchPrekeyBundleForDevice(
     return null;
   }
 
+  // 4. Try to atomically claim ONE OPK from the peer device's pool.
+  //    If pool is empty, X3DH falls back to 3-DH (no DH4) — secure but
+  //    less forward-secrecy on bursts of messages within the same window.
+  const opk = await claimPeerDeviceOPK(peerUserId, peerDeviceId);
+  if (opk) {
+    console.log(`[X3DH-DEV] 🔑 claimed OPK #${opk.opkId} for ${peerDeviceId.slice(0, 8)}…`);
+  }
+
   return {
     identityKey: pubKeys.identity_key,
     signingKey: pubKeys.signing_key,
     signedPrekey: spk.public_key,
     signedPrekeySignature: spk.signature,
     signedPrekeyId: spk.spk_id,
-    oneTimePrekey: undefined,
-    oneTimePrekeyId: undefined,
+    oneTimePrekey: opk?.publicKey,
+    oneTimePrekeyId: opk?.opkId,
   };
 }
 
