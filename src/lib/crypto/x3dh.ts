@@ -471,7 +471,7 @@ export async function refreshDeviceSignedPrekeyIfNeeded(
   try {
     const { data } = await supabase
       .from('device_signed_prekeys')
-      .select('created_at, spk_id')
+      .select('created_at, expires_at, spk_id')
       .eq('user_id', userId)
       .eq('device_id', deviceId)
       .eq('is_active', true)
@@ -491,8 +491,19 @@ export async function refreshDeviceSignedPrekeyIfNeeded(
       return;
     }
 
-    const ageMs = Date.now() - new Date(data.created_at).getTime();
-    if (ageMs > SPK_ROTATION_DAYS * 24 * 60 * 60 * 1000) {
+    const now = Date.now();
+    const ageMs = now - new Date(data.created_at).getTime();
+    const expiresAtMs = data.expires_at ? new Date(data.expires_at).getTime() : Infinity;
+    const expiresInMs = expiresAtMs - now;
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+    // Rotate if EITHER:
+    //   - local age > 7 days (proactive weekly rotation), OR
+    //   - server expires_at is within 7 days (defense-in-depth)
+    if (ageMs > SPK_ROTATION_DAYS * 24 * 60 * 60 * 1000 || expiresInMs < SEVEN_DAYS_MS) {
+      console.log(
+        `[X3DH-DEV] rotating device SPK (age=${Math.round(ageMs / 86400000)}d, expiresIn=${Math.round(expiresInMs / 86400000)}d)`,
+      );
       await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
     }
   } catch (e) {
