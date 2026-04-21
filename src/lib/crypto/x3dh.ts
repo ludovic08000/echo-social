@@ -329,10 +329,235 @@ export async function refreshSignedPrekeyIfNeeded(
   }
 }
 
+// ─── Per-device Signed PreKey (multi-device extension) ───
+//
+// Strictly additive layer on top of the per-user SPK system.
+// Each device of the same user maintains its own SPK so that a fan-out
+// initiator can perform a fresh X3DH targeted at one specific device.
+// The shared identity key (IK) is reused across devices (hybrid model).
+
+/** IDB record key for a device-scoped SPK */
+function deviceSpkKey(userId: string, deviceId: string, spkId: number): string {
+  return `${userId}::dev::${deviceId}::${spkId}`;
+}
+
+async function saveDeviceSPKPrivate(
+  userId: string,
+  deviceId: string,
+  spkId: number,
+  privateKey: CryptoKey,
+  publicBase64: string,
+): Promise<void> {
+  const jwk = await hardCrypto.exportKey('jwk', privateKey);
+  const db = await openSPKDB();
+  const tx = db.transaction(SPK_STORE, 'readwrite');
+  tx.objectStore(SPK_STORE).put({
+    id: deviceSpkKey(userId, deviceId, spkId),
+    spkId,
+    privateKeyJWK: jwk,
+    publicKeyBase64: publicBase64,
+    createdAt: Date.now(),
+  } as StoredSPK);
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function loadDeviceSPKRecord(
+  userId: string,
+  deviceId: string,
+  spkId: number,
+): Promise<StoredSPK | null> {
+  try {
+    const db = await openSPKDB();
+    const tx = db.transaction(SPK_STORE, 'readonly');
+    const req = tx.objectStore(SPK_STORE).get(deviceSpkKey(userId, deviceId, spkId));
+    const result = await new Promise<StoredSPK | undefined>((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return result ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function getNextDeviceSPKId(userId: string, deviceId: string): Promise<number> {
+  try {
+    const db = await openSPKDB();
+    const tx = db.transaction(SPK_STORE, 'readonly');
+    const allKeys = await new Promise<IDBValidKey[]>((resolve, reject) => {
+      const req = tx.objectStore(SPK_STORE).getAllKeys();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const prefix = `${userId}::dev::${deviceId}::`;
+    let maxId = 0;
+    for (const key of allKeys) {
+      const k = String(key);
+      if (k.startsWith(prefix)) {
+        const id = parseInt(k.slice(prefix.length), 10);
+        if (!Number.isNaN(id) && id > maxId) maxId = id;
+      }
+    }
+    return maxId + 1;
+  } catch {
+    return 1;
+  }
+}
+
+/**
+ * Generate and publish a Signed PreKey scoped to ONE device.
+ * Backed by the new `device_signed_prekeys` table — the legacy per-user SPK
+ * system continues to work unchanged for mono-device flows.
+ */
+export async function generateAndUploadDeviceSignedPrekey(
+  userId: string,
+  deviceId: string,
+  signingPrivateKey: CryptoKey,
+): Promise<{ spkId: number; publicKey: string; signature: string }> {
+  const spkId = await getNextDeviceSPKId(userId, deviceId);
+
+  const spkPair = await hardCrypto.generateKey(
+    KX_KEY_PARAMS as any, true, ['deriveBits'],
+  ) as CryptoKeyPair;
+
+  const publicRaw = await hardCrypto.exportKey('raw', spkPair.publicKey);
+  const publicBase64 = bufferToBase64(publicRaw);
+
+  const signature = await hardCrypto.sign('Ed25519' as any, signingPrivateKey, publicRaw);
+  const signatureBase64 = bufferToBase64(signature);
+
+  await saveDeviceSPKPrivate(userId, deviceId, spkId, spkPair.privateKey, publicBase64);
+
+  const { error } = await supabase
+    .from('device_signed_prekeys')
+    .upsert({
+      user_id: userId,
+      device_id: deviceId,
+      spk_id: spkId,
+      public_key: publicBase64,
+      signature: signatureBase64,
+      is_active: true,
+    }, { onConflict: 'user_id,device_id,spk_id' });
+
+  if (error) {
+    console.error('[X3DH-DEV] device SPK upload failed:', error);
+    throw new Error('Failed to upload device signed prekey');
+  }
+
+  // Deactivate previous device SPKs server-side (local privates kept for in-flight)
+  await supabase
+    .from('device_signed_prekeys')
+    .update({ is_active: false })
+    .eq('user_id', userId)
+    .eq('device_id', deviceId)
+    .neq('spk_id', spkId);
+
+  console.log(`[X3DH-DEV] ✅ device SPK #${spkId} for ${deviceId.slice(0, 8)}… uploaded`);
+  return { spkId, publicKey: publicBase64, signature: signatureBase64 };
+}
+
+/**
+ * Refresh the device SPK if missing or older than 7 days.
+ * Safe to call on every login.
+ */
+export async function refreshDeviceSignedPrekeyIfNeeded(
+  userId: string,
+  deviceId: string,
+  signingPrivateKey: CryptoKey,
+): Promise<void> {
+  try {
+    const { data } = await supabase
+      .from('device_signed_prekeys')
+      .select('created_at, spk_id')
+      .eq('user_id', userId)
+      .eq('device_id', deviceId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!data) {
+      await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
+      return;
+    }
+
+    const local = await loadDeviceSPKRecord(userId, deviceId, data.spk_id);
+    if (!local) {
+      console.warn('[X3DH-DEV] active device SPK missing locally → regenerating');
+      await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
+      return;
+    }
+
+    const ageMs = Date.now() - new Date(data.created_at).getTime();
+    if (ageMs > SPK_ROTATION_DAYS * 24 * 60 * 60 * 1000) {
+      await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
+    }
+  } catch (e) {
+    console.warn('[X3DH-DEV] device SPK refresh failed (non-fatal):', e);
+  }
+}
+
+/**
+ * Fetch a per-DEVICE prekey bundle (multi-device fan-out path).
+ * Returns null if the target device has not yet published a SPK — caller should
+ * fall back to the legacy per-user bundle or to deviceWrap.
+ */
+export async function fetchPrekeyBundleForDevice(
+  peerUserId: string,
+  peerDeviceId: string,
+): Promise<X3DHPrekeyBundle | null> {
+  // 1. Identity + signing key are still per-user (hybrid model)
+  const { data: pubKeys } = await supabase
+    .from('user_public_keys')
+    .select('identity_key, signing_key')
+    .eq('user_id', peerUserId)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (!pubKeys) return null;
+
+  // 2. Per-device SPK bundle via SECURITY DEFINER RPC
+  const { data: spkRows, error } = await supabase
+    .rpc('get_device_prekey_bundle', { p_user_id: peerUserId, p_device_id: peerDeviceId });
+  if (error || !spkRows || spkRows.length === 0) return null;
+  const spk = spkRows[0] as { spk_id: number; public_key: string; signature: string };
+
+  // 3. Verify signature against per-user signing key
+  let sigValid = false;
+  try {
+    const peerSigningKey = await hardCrypto.importKey(
+      'raw', base64ToBuffer(pubKeys.signing_key),
+      { name: 'Ed25519' } as any, true, ['verify'],
+    );
+    sigValid = await hardCrypto.verify(
+      'Ed25519' as any, peerSigningKey,
+      base64ToBuffer(spk.signature), base64ToBuffer(spk.public_key),
+    );
+  } catch (e) {
+    console.warn('[X3DH-DEV] device SPK signature check error:', e);
+  }
+  if (!sigValid) {
+    console.warn(`[X3DH-DEV] ⛔ device SPK signature INVALID for ${peerUserId}/${peerDeviceId}`);
+    return null;
+  }
+
+  return {
+    identityKey: pubKeys.identity_key,
+    signingKey: pubKeys.signing_key,
+    signedPrekey: spk.public_key,
+    signedPrekeySignature: spk.signature,
+    signedPrekeyId: spk.spk_id,
+    oneTimePrekey: undefined,
+    oneTimePrekeyId: undefined,
+  };
+}
+
 // ─── X3DH Initiator (Alice) ───
 
 /**
- * Fetch Bob's prekey bundle from the server.
+ * Fetch Bob's prekey bundle from the server (LEGACY per-user path).
  * Validates bundle coherence before returning.
  */
 export async function fetchPrekeyBundle(peerUserId: string): Promise<X3DHPrekeyBundle | null> {
