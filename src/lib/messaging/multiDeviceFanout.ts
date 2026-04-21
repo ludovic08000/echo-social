@@ -243,8 +243,8 @@ export async function tryReadDeviceCopy(messageId: string): Promise<string | nul
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
-    // Path 1: X3DH-wrapped envelope
-    if (row.encrypted_body.startsWith(X3DH_PREFIX)) {
+    // Path 1: X3DH-wrapped envelope (v1 = no OPK, v2 = with OPK)
+    if (row.encrypted_body.startsWith(X3DH_PREFIX_V1) || row.encrypted_body.startsWith(X3DH_PREFIX_V2)) {
       const { data: senderPub } = await supabase
         .from('user_public_keys')
         .select('identity_key')
