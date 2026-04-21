@@ -511,6 +511,168 @@ export async function refreshDeviceSignedPrekeyIfNeeded(
   }
 }
 
+// ─── Per-device One-Time PreKeys (OPK) ───
+//
+// One-shot keys consumed atomically by the server (`claim_device_one_time_prekey`)
+// to guarantee fresh forward secrecy: two senders to the same device in the same
+// window will get different OPKs → different shared secrets.
+// Pool is refilled in batches of OPK_BATCH_SIZE when count drops below OPK_LOW_THRESHOLD.
+
+const OPK_BATCH_SIZE = 50;
+const OPK_LOW_THRESHOLD = 10;
+
+function deviceOPKKey(userId: string, deviceId: string, opkId: number): string {
+  return `${userId}::dev::${deviceId}::opk::${opkId}`;
+}
+
+async function saveDeviceOPKPrivate(
+  userId: string,
+  deviceId: string,
+  opkId: number,
+  privateKey: CryptoKey,
+  publicBase64: string,
+): Promise<void> {
+  const jwk = await hardCrypto.exportKey('jwk', privateKey);
+  const db = await openSPKDB();
+  const tx = db.transaction(SPK_STORE, 'readwrite');
+  tx.objectStore(SPK_STORE).put({
+    id: deviceOPKKey(userId, deviceId, opkId),
+    spkId: opkId,
+    privateKeyJWK: jwk,
+    publicKeyBase64: publicBase64,
+    createdAt: Date.now(),
+  } as StoredSPK);
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function loadDeviceOPKPrivate(
+  userId: string,
+  deviceId: string,
+  opkId: number,
+): Promise<CryptoKey | null> {
+  try {
+    const db = await openSPKDB();
+    const tx = db.transaction(SPK_STORE, 'readonly');
+    const req = tx.objectStore(SPK_STORE).get(deviceOPKKey(userId, deviceId, opkId));
+    const result = await new Promise<StoredSPK | undefined>((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    if (!result) return null;
+    return hardCrypto.importKey(
+      'jwk', result.privateKeyJWK,
+      KX_KEY_PARAMS as any,
+      false,
+      ['deriveBits'],
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function deleteDeviceOPKPrivate(userId: string, deviceId: string, opkId: number): Promise<void> {
+  try {
+    const db = await openSPKDB();
+    const tx = db.transaction(SPK_STORE, 'readwrite');
+    tx.objectStore(SPK_STORE).delete(deviceOPKKey(userId, deviceId, opkId));
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch { /* non-fatal */ }
+}
+
+async function getNextDeviceOPKBaseId(userId: string, deviceId: string): Promise<number> {
+  try {
+    const db = await openSPKDB();
+    const tx = db.transaction(SPK_STORE, 'readonly');
+    const allKeys = await new Promise<IDBValidKey[]>((resolve, reject) => {
+      const req = tx.objectStore(SPK_STORE).getAllKeys();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const prefix = `${userId}::dev::${deviceId}::opk::`;
+    let maxId = 0;
+    for (const key of allKeys) {
+      const k = String(key);
+      if (k.startsWith(prefix)) {
+        const id = parseInt(k.slice(prefix.length), 10);
+        if (!Number.isNaN(id) && id > maxId) maxId = id;
+      }
+    }
+    return maxId + 1;
+  } catch {
+    return 1;
+  }
+}
+
+/**
+ * Refill the device's One-Time PreKey pool if it's running low.
+ * Generates OPK_BATCH_SIZE new X25519 keypairs, stores privates locally,
+ * and publishes publics to `device_one_time_prekeys`.
+ * Safe to call on every login — it's a no-op when pool is healthy.
+ */
+export async function refillDeviceOneTimePrekeysIfNeeded(
+  userId: string,
+  deviceId: string,
+): Promise<void> {
+  try {
+    const { data: count, error: countErr } = await supabase
+      .rpc('count_device_one_time_prekeys', { p_user_id: userId, p_device_id: deviceId });
+    if (countErr) {
+      console.warn('[X3DH-OPK] count failed:', countErr.message);
+      return;
+    }
+    const available = (count as unknown as number) ?? 0;
+    if (available >= OPK_LOW_THRESHOLD) return;
+
+    console.log(`[X3DH-OPK] pool low (${available}/${OPK_LOW_THRESHOLD}) → refilling +${OPK_BATCH_SIZE}`);
+    const baseId = await getNextDeviceOPKBaseId(userId, deviceId);
+    const rows: Array<{ user_id: string; device_id: string; opk_id: number; public_key: string }> = [];
+
+    for (let i = 0; i < OPK_BATCH_SIZE; i++) {
+      const opkId = baseId + i;
+      const pair = await hardCrypto.generateKey(
+        KX_KEY_PARAMS as any, true, ['deriveBits'],
+      ) as CryptoKeyPair;
+      const pubRaw = await hardCrypto.exportKey('raw', pair.publicKey);
+      const pubB64 = bufferToBase64(pubRaw);
+      await saveDeviceOPKPrivate(userId, deviceId, opkId, pair.privateKey, pubB64);
+      rows.push({ user_id: userId, device_id: deviceId, opk_id: opkId, public_key: pubB64 });
+    }
+
+    const { error: insErr } = await supabase
+      .from('device_one_time_prekeys')
+      .insert(rows as any);
+    if (insErr) {
+      console.error('[X3DH-OPK] batch insert failed:', insErr.message);
+      return;
+    }
+    console.log(`[X3DH-OPK] ✅ ${OPK_BATCH_SIZE} new OPKs published for ${deviceId.slice(0, 8)}…`);
+  } catch (e) {
+    console.warn('[X3DH-OPK] refill failed (non-fatal):', e);
+  }
+}
+
+/** Atomically claim ONE OPK published by the peer device. Returns null if pool empty. */
+async function claimPeerDeviceOPK(
+  peerUserId: string,
+  peerDeviceId: string,
+): Promise<{ opkId: number; publicKey: string } | null> {
+  try {
+    const { data, error } = await supabase
+      .rpc('claim_device_one_time_prekey', { p_user_id: peerUserId, p_device_id: peerDeviceId });
+    if (error || !data || (data as any[]).length === 0) return null;
+    const row = (data as any[])[0];
+    return { opkId: row.opk_id as number, publicKey: row.public_key as string };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Fetch a per-DEVICE prekey bundle (multi-device fan-out path).
  * Returns null if the target device has not yet published a SPK — caller should
@@ -554,14 +716,22 @@ export async function fetchPrekeyBundleForDevice(
     return null;
   }
 
+  // 4. Try to atomically claim ONE OPK from the peer device's pool.
+  //    If pool is empty, X3DH falls back to 3-DH (no DH4) — secure but
+  //    less forward-secrecy on bursts of messages within the same window.
+  const opk = await claimPeerDeviceOPK(peerUserId, peerDeviceId);
+  if (opk) {
+    console.log(`[X3DH-DEV] 🔑 claimed OPK #${opk.opkId} for ${peerDeviceId.slice(0, 8)}…`);
+  }
+
   return {
     identityKey: pubKeys.identity_key,
     signingKey: pubKeys.signing_key,
     signedPrekey: spk.public_key,
     signedPrekeySignature: spk.signature,
     signedPrekeyId: spk.spk_id,
-    oneTimePrekey: undefined,
-    oneTimePrekeyId: undefined,
+    oneTimePrekey: opk?.publicKey,
+    oneTimePrekeyId: opk?.opkId,
   };
 }
 
@@ -804,7 +974,77 @@ export async function x3dhRespond(
   };
 }
 
-// ─── PQXDH Structure (Future-Ready) ───
+// ─── Per-device responder (multi-device fan-out path) ───
+//
+// Mirror of x3dhRespond, but loads the DEVICE-SCOPED SPK private (not the per-user one)
+// and optionally consumes the matching OPK private for full 4-DH forward secrecy.
+// Used exclusively by multiDeviceFanout.ts — does NOT touch the legacy per-user flow.
+export async function x3dhRespondForDevice(
+  myKeys: IdentityKeyPair,
+  myUserId: string,
+  myDeviceId: string,
+  initialMessage: X3DHInitialMessage,
+): Promise<{ sharedSecret: ArrayBuffer; spkKeyPair: CryptoKeyPair }> {
+  console.info(
+    `[X3DH-DEV] respond — SPK #${initialMessage.spkId}, OPK ${initialMessage.opkId ?? 'none'}, dev=${myDeviceId.slice(0, 8)}…`,
+  );
+
+  const aliceIK = await importX25519Public(initialMessage.ik);
+  const aliceEK = await importX25519Public(initialMessage.ek);
+
+  // Load DEVICE-SCOPED SPK record (not per-user)
+  const spkRecord = await loadDeviceSPKRecord(myUserId, myDeviceId, initialMessage.spkId);
+  if (!spkRecord) {
+    throw new Error(
+      `[X3DH-DEV] device SPK #${initialMessage.spkId} NOT FOUND for ${myDeviceId.slice(0, 8)}…`,
+    );
+  }
+
+  const spkPrivate = await hardCrypto.importKey(
+    'jwk', spkRecord.privateKeyJWK, KX_KEY_PARAMS as any, true, ['deriveBits'],
+  );
+  const spkPublic = await hardCrypto.importKey(
+    'raw', base64ToBuffer(spkRecord.publicKeyBase64), KX_KEY_PARAMS as any, true, [],
+  );
+
+  // DH1..DH3 — Bob's perspective
+  const dh1 = await hardCrypto.deriveBits(
+    { name: 'X25519', public: aliceIK } as any, spkPrivate, 256,
+  );
+  const dh2 = await hardCrypto.deriveBits(
+    { name: 'X25519', public: aliceEK } as any, myKeys.privateKey, 256,
+  );
+  const dh3 = await hardCrypto.deriveBits(
+    { name: 'X25519', public: aliceEK } as any, spkPrivate, 256,
+  );
+
+  // DH4 — load + consume OPK private (one-shot)
+  let dh4: ArrayBuffer | null = null;
+  if (initialMessage.opkId !== undefined) {
+    const opkPriv = await loadDeviceOPKPrivate(myUserId, myDeviceId, initialMessage.opkId);
+    if (opkPriv) {
+      dh4 = await hardCrypto.deriveBits(
+        { name: 'X25519', public: aliceEK } as any, opkPriv, 256,
+      );
+      // Atomically delete the local private — OPK is single-use.
+      await deleteDeviceOPKPrivate(myUserId, myDeviceId, initialMessage.opkId);
+    } else {
+      console.warn(
+        `[X3DH-DEV] OPK #${initialMessage.opkId} private MISSING locally — degrading to 3-DH`,
+      );
+    }
+  }
+
+  const filler = new Uint8Array(32).fill(0xFF);
+  const dhConcat = dh4
+    ? concatBuffers(filler.buffer as ArrayBuffer, dh1, dh2, dh3, dh4)
+    : concatBuffers(filler.buffer as ArrayBuffer, dh1, dh2, dh3);
+
+  const sharedSecret = await x3dhKDF(dhConcat);
+  console.info(`[X3DH-DEV] ✅ responded with ${dh4 ? '4' : '3'}-DH (SPK #${initialMessage.spkId})`);
+
+  return { sharedSecret, spkKeyPair: { publicKey: spkPublic, privateKey: spkPrivate } };
+}
 
 /**
  * PQXDH extends X3DH by adding a KEM (Key Encapsulation Mechanism) step.

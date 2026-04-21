@@ -22,7 +22,7 @@ import {
   getCurrentPlatform,
 } from '@/lib/messaging/currentDevice';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto/keyManager';
-import { refreshDeviceSignedPrekeyIfNeeded } from '@/lib/crypto/x3dh';
+import { refreshDeviceSignedPrekeyIfNeeded, refillDeviceOneTimePrekeysIfNeeded } from '@/lib/crypto/x3dh';
 
 export function useDeviceRegistration() {
   const { user } = useAuth();
@@ -65,6 +65,14 @@ export function useDeviceRegistration() {
         } catch (spkErr) {
           // Non-fatal: fan-out can still fall back to deviceWrap or legacy ratchet.
           console.warn('[useDeviceRegistration] device SPK refresh failed (non-fatal):', spkErr);
+        }
+
+        // 3. Refill the OPK pool if low (forward secrecy on bursts).
+        //    Non-fatal: X3DH gracefully degrades to 3-DH when no OPK is available.
+        try {
+          await refillDeviceOneTimePrekeysIfNeeded(user.id, deviceId);
+        } catch (opkErr) {
+          console.warn('[useDeviceRegistration] OPK refill failed (non-fatal):', opkErr);
         }
       } catch (err) {
         console.warn('[useDeviceRegistration] failed (non-fatal):', err);
