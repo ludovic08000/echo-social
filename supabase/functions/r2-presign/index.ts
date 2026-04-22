@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkRateLimit as checkRateLimitDB } from "../_shared/rate-limit.ts";
 
 /**
  * r2-presign: Returns a presigned PUT URL so the client can upload
@@ -40,16 +41,9 @@ const FOLDER_MAX_SIZES: Record<string, number> = {
   uploads: 10 * 1024 * 1024,
 };
 
-// Rate limiting
-const tracker = new Map<string, { count: number; resetAt: number }>();
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const e = tracker.get(userId);
-  if (!e || now > e.resetAt) { tracker.set(userId, { count: 1, resetAt: now + 60_000 }); return true; }
-  if (e.count >= 20) return false;
-  e.count++;
-  return true;
-}
+// Rate limiting now DB-backed via shared helper (persistent across instances)
+const RATE_LIMIT = 20;
+const RATE_WINDOW_S = 60;
 
 // CORS — restricted to actual app domains + Lovable preview
 const ALLOWED_ORIGINS = [
@@ -91,9 +85,8 @@ Deno.serve(async (req) => {
     const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
     const userId = claimsData?.claims?.sub as string | undefined;
     if (claimsError || !userId) throw new Error("Non authentifié");
-    if (!checkRateLimit(userId)) {
-      return new Response(JSON.stringify({ error: "Trop de requêtes" }), { status: 429, headers: { ...h, "Content-Type": "application/json" } });
-    }
+    const rateLimited = await checkRateLimitDB(`presign:${userId}`, RATE_LIMIT, RATE_WINDOW_S, h);
+    if (rateLimited) return rateLimited;
 
     const { folder, filename, contentType, fileSize } = await req.json();
     if (!folder || !filename || !contentType || !fileSize) throw new Error("Paramètres manquants");
