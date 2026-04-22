@@ -243,7 +243,14 @@ export function useMessageQueue(
       throw new Error('🔒 Session expirée — reconnectez-vous pour envoyer.');
     }
 
-    const isSpecial = body.startsWith('🎙️ voice:') || body === '📷 Photo';
+    // Special messages bypass anti-spam: voice, plain photo/video labels,
+    // and E2EE media bodies that embed a per-file key (label\x00MKEY:<base64>).
+    const isMediaWithKey = body.includes('\x00MKEY:');
+    const isSpecial =
+      body.startsWith('🎙️ voice:') ||
+      body === '📷 Photo' ||
+      body === '🎬 Vidéo' ||
+      isMediaWithKey;
     if (!isSpecial) {
       const validation = validateMessage(body);
       if (!validation.valid) throw new Error(validation.error);
