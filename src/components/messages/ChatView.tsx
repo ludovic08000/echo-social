@@ -38,6 +38,7 @@ import { NewConversationDialog } from './NewConversationDialog';
 import { ShareContentPicker } from './ShareContentPicker';
 import { EMOJI_CATEGORIES, formatDateSeparator, isSingleEmoji } from './constants';
 import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
+import { useTypingPresence } from '@/hooks/useTypingPresence';
 
 interface ChatViewProps {
   conversationId: string;
