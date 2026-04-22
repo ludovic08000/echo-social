@@ -175,11 +175,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
       return;
     }
 
-    if (e2ee.fingerprintChanged) {
-      toast.error('Clé de sécurité modifiée — valide d’abord le contact avant d’envoyer une photo ou vidéo.');
-      return;
-    }
-
     if (e2ee.peerKeyMissing) {
       toast.error('Clés du contact indisponibles — impossible d’envoyer un média pour le moment.');
       return;
@@ -193,6 +188,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
     if (e2ee.initError === 'identity_lost_backup_available') {
       toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer un média.');
       return;
+    }
+
+    // Fingerprint changed: allow send with a non-blocking warning (matches text behavior).
+    if (e2ee.fingerprintChanged) {
+      toast.warning('⚠️ Clé de sécurité du contact modifiée — envoi du média en cours.');
     }
 
     try {
