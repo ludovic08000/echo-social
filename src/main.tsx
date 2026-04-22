@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import { HelmetProvider } from "react-helmet-async";
 import App from "./App.tsx";
 
 // ─── Suppress harmless React ref warnings from third-party libs (Radix, framer-motion) ───
