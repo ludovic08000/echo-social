@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useUXMode } from '@/hooks/useUXMode';
-import { ArrowLeft, Palette, Heart, Brain, Accessibility, Baby } from 'lucide-react';
+import { ArrowLeft, Palette, Heart, Brain, Accessibility, Baby, Smartphone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from '@/lib/i18n';
 import { AppLayout } from '@/components/AppLayout';
