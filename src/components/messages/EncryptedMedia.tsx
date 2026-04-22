@@ -5,10 +5,11 @@
  * The media key comes from the E2EE-encrypted message body (via MKEY: tag).
  */
 
-import { useState, useEffect, useRef, memo } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { Lock } from 'lucide-react';
 import { importMediaKey, decryptMedia } from '@/lib/crypto/mediaEncrypt';
 import { fetchR2Object } from '@/lib/r2';
+import { getDecryptedMedia, rememberDecryptedMedia } from './decryptedMediaCache';
 
 interface EncryptedMediaProps {
   /** URL of the encrypted blob on R2 */
