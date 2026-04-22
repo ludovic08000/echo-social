@@ -30,6 +30,12 @@ import {
 import { getOrCreateIdentityKeys } from '@/lib/crypto/keyManager';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { randomBytes, bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
+import {
+  ratchetEncrypt,
+  ratchetDecrypt,
+  establishDeviceSession,
+  RATCHET_PREFIX_V3,
+} from '@/lib/crypto/deviceRatchet';
 
 interface FanoutInput {
   messageId: string;
@@ -84,6 +90,20 @@ async function x3dhWrapForDevice(
       String(result.usedSPKId),
     ];
     if (result.usedOTPKId !== undefined) parts.push(String(result.usedOTPKId));
+
+    // After a successful X3DH, cache the device-pair session so subsequent
+    // messages skip the full handshake (uses the symmetric KDF chain).
+    try {
+      const myDeviceId = getCurrentDeviceId();
+      await establishDeviceSession(
+        senderUserId, myDeviceId,
+        recipientUserId, recipientDeviceId,
+        result.sharedSecret,
+      );
+    } catch (e) {
+      console.warn('[FANOUT] session cache after initiate failed (non-fatal)', e);
+    }
+
     return parts.join('.');
   } catch (e) {
     console.warn('[FANOUT] X3DH wrap failed, will fallback:', e);
@@ -95,6 +115,8 @@ async function x3dhUnwrapForDevice(
   payload: string,
   recipientUserId: string,
   senderIdentityKeyB64: string,
+  senderUserId: string,
+  senderDeviceId: string,
 ): Promise<string | null> {
   try {
     const isV2 = payload.startsWith(X3DH_PREFIX_V2);
@@ -128,6 +150,19 @@ async function x3dhUnwrapForDevice(
       aes,
       base64ToBuffer(ctB64),
     );
+
+    // Cache the device-pair session so the NEXT message from this peer device
+    // can be decrypted via the v3 fast path (no X3DH respond needed).
+    try {
+      await establishDeviceSession(
+        recipientUserId, myDeviceId,
+        senderUserId, senderDeviceId,
+        sharedSecret,
+      );
+    } catch (e) {
+      console.warn('[FANOUT] session cache after respond failed (non-fatal)', e);
+    }
+
     return new hardGlobals.TextDecoder().decode(pt);
   } catch (e) {
     console.warn('[FANOUT] X3DH unwrap failed:', e);
@@ -172,18 +207,32 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
   );
   if (targets.length === 0) return { inserted: 0, multiDevice: false };
 
-  // 3. For each target device: try X3DH first, then deviceWrap fallback
+  // 3. For each target device:
+  //    a) ratchet v3 (existing session, fastest)
+  //    b) X3DH per-device (v1/v2, also caches a session for next time)
+  //    c) deviceWrap (legacy ECDH fallback)
   const rows: Array<Record<string, string>> = [];
   for (const dev of targets) {
     if (!dev.device_public_key) continue;
 
-    let encrypted: string | null = await x3dhWrapForDevice(
+    // (a) Try the cached device-pair ratchet first.
+    let encrypted: string | null = await ratchetEncrypt(
+      input.senderUserId, senderDeviceId,
+      dev.user_id, dev.device_id,
       input.plaintext,
-      input.senderUserId,
-      dev.user_id,
-      dev.device_id,
     );
 
+    // (b) Fresh X3DH (v1 or v2) — this also seeds the ratchet for next time.
+    if (!encrypted) {
+      encrypted = await x3dhWrapForDevice(
+        input.plaintext,
+        input.senderUserId,
+        dev.user_id,
+        dev.device_id,
+      );
+    }
+
+    // (c) Legacy deviceWrap fallback.
     if (!encrypted) {
       try {
         encrypted = await wrapPlaintextForDevice(
@@ -193,7 +242,7 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
           dev.device_id,
         );
       } catch (e) {
-        console.warn('[FANOUT] both X3DH and deviceWrap failed for device', dev.device_id, e);
+        console.warn('[FANOUT] all paths failed for device', dev.device_id, e);
         continue;
       }
     }
@@ -243,6 +292,14 @@ export async function tryReadDeviceCopy(messageId: string): Promise<string | nul
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
+    // Path 0: v3 ratchet — uses a previously cached device-pair session.
+    if (row.encrypted_body.startsWith(RATCHET_PREFIX_V3)) {
+      const pt = await ratchetDecrypt(user.id, myDeviceId, row.encrypted_body);
+      if (pt !== null) return pt;
+      // No cached session → return null; sender will re-X3DH on next message.
+      return null;
+    }
+
     // Path 1: X3DH-wrapped envelope (v1 = no OPK, v2 = with OPK)
     if (row.encrypted_body.startsWith(X3DH_PREFIX_V1) || row.encrypted_body.startsWith(X3DH_PREFIX_V2)) {
       const { data: senderPub } = await supabase
@@ -252,7 +309,13 @@ export async function tryReadDeviceCopy(messageId: string): Promise<string | nul
         .eq('is_active', true)
         .maybeSingle();
       if (!senderPub?.identity_key) return null;
-      const pt = await x3dhUnwrapForDevice(row.encrypted_body, user.id, senderPub.identity_key);
+      const pt = await x3dhUnwrapForDevice(
+        row.encrypted_body,
+        user.id,
+        senderPub.identity_key,
+        row.sender_user_id,
+        row.sender_device_id,
+      );
       if (pt !== null) return pt;
       // fall through to legacy attempt for safety
     }
