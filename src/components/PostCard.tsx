@@ -280,6 +280,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                 <DropdownMenuItem 
                   onClick={async () => {
                     try {
+                      if (user) trackMLSignal(user.id, post.id, 'report');
                       await reportUser.mutateAsync({
                         reportedUserId: post.user_id,
                         reportType: 'inappropriate_content',
