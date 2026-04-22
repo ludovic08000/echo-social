@@ -350,6 +350,14 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const action = body.action;
 
+    // Privacy-aware: check if user opted out of AI personalization (post body forwarding)
+    const { data: privacyRow } = await supabase
+      .from("privacy_settings")
+      .select("ai_personalization_enabled")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const aiPersonalizationAllowed = (privacyRow as any)?.ai_personalization_enabled !== false;
+
     // ══════════════════════════════
     // TRACK — Record behavior signal
     // ══════════════════════════════
