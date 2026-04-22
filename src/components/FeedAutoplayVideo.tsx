@@ -13,6 +13,7 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
   const containerRef = useRef<HTMLDivElement>(null);
   const [isMuted, setIsMuted] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [userPaused, setUserPaused] = useState(false);
   const hasTrackedPlay = useRef(false);
   const isVisibleRef = useRef(false);
 
@@ -137,7 +138,7 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
         {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
       </button>
 
-      {!isPlaying && (
+      {userPaused && !isPlaying && (
         <div className="absolute inset-0 flex items-center justify-center cursor-pointer" onClick={togglePlay}>
           <div className="w-14 h-14 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
             <Play className="w-7 h-7 text-white fill-white" />
