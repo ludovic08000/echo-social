@@ -1625,9 +1625,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                 type="button"
                 onClick={() => {
                   if (sendBlocked) {
-                    if (e2ee.fingerprintChanged) {
-                      toast.error('Clé de sécurité modifiée — valide d’abord le contact avant d’envoyer une photo.');
-                    } else if (e2ee.peerKeyMissing) {
+                    if (e2ee.peerKeyMissing) {
                       toast.error('Clés du contact indisponibles — impossible d’envoyer une photo pour le moment.');
                     } else if (e2ee.initError === 'pin_unlock_required') {
                       toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer une photo.');
@@ -1635,6 +1633,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                       toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer une photo.');
                     }
                     return;
+                  }
+
+                  if (e2ee.fingerprintChanged) {
+                    toast.warning('⚠️ Clé de sécurité du contact modifiée — envoi de la photo en cours.');
                   }
 
                   fileInputRef.current?.click();
