@@ -307,8 +307,9 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
         setMediaKey(messageId, entry.mediaKeyB64, entry.text.startsWith('🎬'));
       }
       if (!entry.hidden) {
-        void savePlaintextForCiphertext(body, entry.text);
-        onDecryptedRef.current?.(entry.text);
+        const persistedText = entry.mediaKeyB64 ? `${entry.text}\x00MKEY:${entry.mediaKeyB64}` : entry.text;
+        void savePlaintextForCiphertext(body, persistedText);
+        onDecryptedRef.current?.(persistedText);
       }
     }).catch(() => {
       if (!cancelled) {

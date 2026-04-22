@@ -21,7 +21,7 @@ import { trackAICall } from '@/lib/aiEngine';
 import { cn } from '@/lib/utils';
 import { useChatWidget } from './ChatWidgetContext';
 import { useImageUpload } from '@/hooks/useImageUpload';
-import { generateMediaKey, encryptMedia, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
+import { generateMediaKey, encryptMedia, buildMediaMessageBody, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 import { MessageMedia } from '@/components/messages/MessageMedia';
 import { useCall, formatCallDuration, type CallEndInfo, generateCallE2EEKey } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
