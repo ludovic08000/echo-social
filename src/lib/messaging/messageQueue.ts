@@ -334,6 +334,9 @@ class MessageQueueManager {
 
     const msg: OutboundMessage = {
       localId: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      traceId: (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+        ? crypto.randomUUID()
+        : `trace-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       conversationId: params.conversationId,
       senderId: params.senderId,
       plaintext: '', // NEVER stored in IndexedDB
@@ -352,7 +355,8 @@ class MessageQueueManager {
     this.volatilePlaintext.set(msg.localId, params.plaintext);
 
     await this.dbPut(msg);
-    console.log('[MSG_QUEUE] created local message', msg.localId);
+    console.log('[MSG_QUEUE] created local message', msg.localId, 'trace', msg.traceId);
+    traceQueue(msg, 'enqueue', { plaintextLen: params.plaintext.length, hasImage: !!params.imageUrl });
     this.notifyListeners(msg.conversationId);
     this.processMessage(msg);
     return msg;
