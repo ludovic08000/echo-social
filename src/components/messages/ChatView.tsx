@@ -308,7 +308,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
    */
   const getDecryptedText = useCallback((msg: Message): string => {
     const cached = decryptedCache.get(msg.id);
-    if (cached) return cached;
+    if (cached) {
+      const parsed = parseMediaMessage(cached);
+      return parsed ? parsed.label : cached;
+    }
     // If it doesn't look encrypted, return body
     const looksEncrypted = msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"'));
     if (!looksEncrypted) return msg.body;
