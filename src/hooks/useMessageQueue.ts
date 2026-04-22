@@ -160,7 +160,10 @@ export function useMessageQueue(
         return outboundId;
       },
       isReady: (_convId: string) => {
-        return readyRef.current && activeRef.current;
+        // CRITICAL: also verify encrypt handler is wired — on iOS the
+        // `encrypted` flag can flip true a few ticks before `encrypt` is
+        // assigned, causing a tight E_NOT_ACTIVE retry loop.
+        return readyRef.current && activeRef.current && !!encryptRef.current;
       },
     });
 

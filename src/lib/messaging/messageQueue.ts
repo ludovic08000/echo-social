@@ -125,6 +125,9 @@ class MessageQueueManager {
   /** SECURITY: Plaintext stored ONLY in volatile memory, never in IndexedDB */
   private volatilePlaintext = new Map<string, string>();
   private legacyPlaintextScrubbed = false;
+  /** Debounce resumeForConversation to prevent tight loops on iOS where
+   *  React re-renders cause repeated resume calls before retry timers fire. */
+  private lastResumeAt = new Map<string, number>();
 
   // ─── DB ───
 
@@ -646,12 +649,27 @@ class MessageQueueManager {
   /** Resume messages for a specific conversation (when encryption becomes ready) */
   async resumeForConversation(conversationId: string): Promise<void> {
     try {
+      // Debounce: ignore resume calls that fire less than 1.5s after the previous one.
+      // On iOS, React re-renders trigger many redundant resume calls, which short-circuit
+      // the secure_wait retry timer (3s) and produce a tight retry loop.
+      const now = Date.now();
+      const last = this.lastResumeAt.get(conversationId) || 0;
+      if (now - last < 1500) {
+        return;
+      }
+      this.lastResumeAt.set(conversationId, now);
+
       const msgs = await this.dbGetByConversation(conversationId);
       const pending = msgs.filter(m =>
         m.status === 'waiting_secure_channel' || m.status === 'retry_pending' || m.status === 'pending_local'
       );
 
       for (const msg of pending) {
+        // Don't restart a message that already has an active retry timer.
+        // The timer will fire at the correct delay and call processMessage itself.
+        if (this.retryTimers.has(msg.localId)) continue;
+        if (this.processing.has(msg.localId)) continue;
+
         if (this.volatilePlaintext.has(msg.localId) || msg.encryptedBody) {
           msg.encryptedBody = msg.encryptedBody || null;
           msg.status = 'pending_local';
