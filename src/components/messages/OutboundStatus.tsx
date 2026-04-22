@@ -11,15 +11,19 @@ interface OutboundStatusProps {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  encrypting: 'Chiffrement...',
-  sending: 'Envoi...',
-  waiting_secure_channel: 'En attente du chiffrement...',
-  retry_pending: 'Nouvel essai...',
+  // Intermediate states are kept silent — users should never see "Chiffrement..."
+  // or "Envoi..." flicker. Only errors surface.
+  encrypting: '',
+  sending: '',
+  waiting_secure_channel: '',
+  retry_pending: '',
   failed_visible: 'Échec d\'envoi',
 };
 
 export function OutboundStatusIndicator({ status, lastError, onRetry, onRemove, className }: OutboundStatusProps) {
   if (status === 'sent') return null;
+  // Hide all non-error states entirely — encryption/sending happens invisibly.
+  if (status !== 'failed_visible') return null;
 
   const isError = status === 'failed_visible';
   const isWaiting = status === 'waiting_secure_channel' || status === 'retry_pending';
