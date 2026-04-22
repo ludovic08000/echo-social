@@ -81,6 +81,21 @@ export function useRealtimeNotifications() {
           else if (type === 'comment') category = 'comment';
           else if (type === 'like' || type === 'reaction') category = 'like';
 
+          // Special handling: new device linked to account → security toast
+          if (type === 'new_device') {
+            const meta = (row?.metadata ?? {}) as { device_name?: string; platform?: string };
+            const label = meta.device_name || meta.platform || 'Appareil inconnu';
+            toast.warning('Nouvel appareil connecté', {
+              description: `${label} vient de se connecter à votre compte. Vérifiez immédiatement.`,
+              duration: 10000,
+              action: {
+                label: 'Vérifier',
+                onClick: () => { window.location.href = '/settings?tab=devices'; },
+              },
+            });
+            category = 'friend_request';
+          }
+
           enqueueSound(category, senderName);
           queryClient.invalidateQueries({ queryKey: ['notifications'] });
         }
