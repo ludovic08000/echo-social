@@ -246,6 +246,14 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
       }
     } catch (e) {
       console.warn('[FANOUT] SPK rotation check failed (non-fatal)', e);
+      logCryptoException('fanout', e, {
+        severity: 'warning',
+        conversationId: input.conversationId,
+        myDeviceId: senderDeviceId,
+        peerUserId: dev.user_id,
+        peerDeviceId: dev.device_id,
+        metadata: { stage: 'spk_rotation_check' },
+      });
     }
 
     // (a) Try the cached device-pair ratchet first.
