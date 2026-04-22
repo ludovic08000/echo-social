@@ -102,7 +102,6 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
         autoPlay
         loop
         muted
-        defaultMuted
         playsInline
         // @ts-ignore
         webkit-playsinline=""
