@@ -519,6 +519,12 @@ export function useToggleLike() {
     mutationFn: async ({ postId, isLiked }: { postId: string; isLiked: boolean }) => {
       if (!user) throw new Error('Not authenticated');
 
+      // ML signal: track explicit like/unlike
+      try {
+        const { trackMLSignal } = await import('@/hooks/useMLTracker');
+        trackMLSignal(user.id, postId, isLiked ? 'skip_fast' : 'like');
+      } catch {}
+
       if (isLiked) {
         const { error } = await supabase.from('likes').delete().eq('user_id', user.id).eq('post_id', postId);
         if (error) throw error;
