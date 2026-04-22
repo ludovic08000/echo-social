@@ -23,6 +23,55 @@ export type OutboundMessageStatus =
   | 'retry_pending'
   | 'failed_visible';
 
+import { logCryptoError } from '@/lib/crypto/errorLogger';
+
+/**
+ * Emit a low-volume "trace" entry into crypto_error_logs so we can follow a
+ * single outbound message across its full lifecycle in the admin dashboard.
+ * Always severity=info — production-safe, never throws.
+ */
+function traceQueue(
+  msg: Pick<OutboundMessage, 'traceId' | 'localId' | 'conversationId' | 'senderId' | 'retryCount' | 'serverId'>,
+  event:
+    | 'enqueue'
+    | 'status:pending_local'
+    | 'status:encrypting'
+    | 'status:waiting_secure_channel'
+    | 'status:sending'
+    | 'status:sent'
+    | 'status:retry_pending'
+    | 'status:failed_visible'
+    | 'retry:scheduled'
+    | 'retry:user'
+    | 'remove:user'
+    | 'reconciled',
+  extra: Record<string, unknown> = {},
+) {
+  logCryptoError({
+    severity: 'info',
+    context: 'queue.trace',
+    errorCode: event,
+    errorMessage: `[trace ${msg.traceId.slice(0, 8)}] ${event}`,
+    conversationId: msg.conversationId,
+    metadata: {
+      traceId: msg.traceId,
+      localId: msg.localId,
+      senderId: msg.senderId,
+      retryCount: msg.retryCount,
+      serverId: msg.serverId,
+      ...extra,
+    },
+  });
+}
+
+  | 'pending_local'
+  | 'encrypting'
+  | 'waiting_secure_channel'
+  | 'sending'
+  | 'sent'
+  | 'retry_pending'
+  | 'failed_visible';
+
 export interface OutboundMessage {
   localId: string;
   /**
