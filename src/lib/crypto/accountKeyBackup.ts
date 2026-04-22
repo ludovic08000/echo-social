@@ -20,6 +20,7 @@ import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
 import { supabase } from '@/integrations/supabase/client';
+import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
@@ -486,6 +487,7 @@ async function downloadAndRestore(
  * Called at login time. Derives wrapping key from password, restores or creates Master Key.
  */
 export async function initAccountKeySync(password: string, userId: string): Promise<'restored' | 'local_ok' | 'no_backup' | 'error'> {
+  const t0 = performance.now();
   try {
     _sessionPassword = password;
     _sessionUserId = userId;
@@ -494,19 +496,31 @@ export async function initAccountKeySync(password: string, userId: string): Prom
     const hasLocal = await hasLocalKeys();
     if (hasLocal) {
       console.log('[MasterKey] Local keys present');
+      logCryptoError({
+        severity: 'info', context: 'backup', errorCode: 'BACKUP_INIT_LOCAL_OK',
+        errorMessage: 'Local E2EE keys present, no restore needed',
+        metadata: { userId, durationMs: Math.round(performance.now() - t0) },
+      });
       // If we don't have a Master Key yet, generate one and upload
       if (!_sessionMasterKey) {
         const mkRaw = generateMasterKey();
         const mk = await importMasterKey(mkRaw);
         _sessionRawMasterKey = mkRaw;
         _sessionMasterKey = mk;
-        uploadBackup(mkRaw, mk, password, userId, 'account', secret).catch(() => {});
+        uploadBackup(mkRaw, mk, password, userId, 'account', secret).catch((e) => {
+          logCryptoException('backup', e, { severity: 'warning', metadata: { stage: 'first_upload', userId } });
+        });
       }
       return 'local_ok';
     }
 
     // No local keys — try restore from server
     console.log('[MasterKey] No local keys, attempting restore...');
+    logCryptoError({
+      severity: 'info', context: 'restore', errorCode: 'RESTORE_ATTEMPT',
+      errorMessage: 'No local keys, attempting password-based restore',
+      metadata: { userId },
+    });
     try {
       const result = await downloadAndRestore(userId, 'account', secret);
       if (result) {
@@ -514,21 +528,44 @@ export async function initAccountKeySync(password: string, userId: string): Prom
         const validated = await hasLocalKeys();
         if (!validated) {
           console.error('[MasterKey] ⛔ Restore reported success but no local identity found — failing restore');
+          logCryptoError({
+            severity: 'critical', context: 'restore', errorCode: 'RESTORE_VALIDATION_FAILED',
+            errorMessage: 'Restore reported success but no local identity found',
+            metadata: { userId, durationMs: Math.round(performance.now() - t0) },
+          });
           return 'error';
         }
         _sessionRawMasterKey = result.masterKeyRaw;
         _sessionMasterKey = result.masterKey;
         console.log('[MasterKey] ✅ Keys restored from server (validated)');
+        logCryptoError({
+          severity: 'info', context: 'restore', errorCode: 'RESTORE_SUCCESS',
+          errorMessage: 'E2EE keys restored from server backup',
+          metadata: { userId, durationMs: Math.round(performance.now() - t0) },
+        });
         return 'restored';
       }
     } catch (e) {
       console.warn('[MasterKey] Password-based restore failed:', e);
+      logCryptoException('restore', e, {
+        severity: 'error',
+        metadata: { stage: 'password_restore', userId, durationMs: Math.round(performance.now() - t0) },
+      });
     }
 
     console.log('[MasterKey] No server backup found');
+    logCryptoError({
+      severity: 'warning', context: 'restore', errorCode: 'RESTORE_NO_BACKUP',
+      errorMessage: 'No server backup found for this account',
+      metadata: { userId },
+    });
     return 'no_backup';
   } catch (err) {
     console.error('[MasterKey] Init failed:', err);
+    logCryptoException('backup', err, {
+      severity: 'critical',
+      metadata: { stage: 'init', userId, durationMs: Math.round(performance.now() - t0) },
+    });
     return 'error';
   }
 }
@@ -537,13 +574,24 @@ export async function initAccountKeySync(password: string, userId: string): Prom
  * Restore using a recovery key (fallback when password doesn't work).
  */
 export async function restoreWithRecoveryKey(recoveryKey: string, userId: string): Promise<boolean> {
+  const t0 = performance.now();
   try {
+    logCryptoError({
+      severity: 'info', context: 'restore', errorCode: 'RESTORE_RECOVERY_ATTEMPT',
+      errorMessage: 'Attempting recovery-key restore',
+      metadata: { userId },
+    });
     const result = await downloadAndRestore(userId, 'recovery', recoveryKey);
     if (result) {
       // Post-restore validation: ensure local identity actually exists now
       const validated = await hasLocalKeys();
       if (!validated) {
         console.error('[MasterKey] ⛔ Recovery restore reported success but no local identity found');
+        logCryptoError({
+          severity: 'critical', context: 'restore', errorCode: 'RESTORE_RECOVERY_VALIDATION_FAILED',
+          errorMessage: 'Recovery restore succeeded but no local identity found',
+          metadata: { userId, durationMs: Math.round(performance.now() - t0) },
+        });
         return false;
       }
       _sessionRawMasterKey = result.masterKeyRaw;
@@ -551,13 +599,29 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
       // Re-wrap with current password if available
       if (_sessionPassword && _sessionUserId) {
         const secret = passwordSecret(_sessionPassword, _sessionUserId);
-        await uploadBackup(result.masterKeyRaw, result.masterKey, _sessionPassword, _sessionUserId, 'account', secret).catch(() => {});
+        await uploadBackup(result.masterKeyRaw, result.masterKey, _sessionPassword, _sessionUserId, 'account', secret).catch((e) => {
+          logCryptoException('backup', e, { severity: 'warning', metadata: { stage: 'rewrap_after_recovery', userId } });
+        });
       }
+      logCryptoError({
+        severity: 'info', context: 'restore', errorCode: 'RESTORE_RECOVERY_SUCCESS',
+        errorMessage: 'E2EE keys restored via recovery key',
+        metadata: { userId, durationMs: Math.round(performance.now() - t0) },
+      });
       return true;
     }
+    logCryptoError({
+      severity: 'warning', context: 'restore', errorCode: 'RESTORE_RECOVERY_NO_BACKUP',
+      errorMessage: 'No recovery backup found or wrong key',
+      metadata: { userId, durationMs: Math.round(performance.now() - t0) },
+    });
     return false;
   } catch (e) {
     console.error('[MasterKey] Recovery key restore failed:', e);
+    logCryptoException('restore', e, {
+      severity: 'error',
+      metadata: { stage: 'recovery_restore', userId, durationMs: Math.round(performance.now() - t0) },
+    });
     return false;
   }
 }
