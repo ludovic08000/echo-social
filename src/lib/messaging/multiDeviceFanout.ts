@@ -115,6 +115,8 @@ async function x3dhUnwrapForDevice(
   payload: string,
   recipientUserId: string,
   senderIdentityKeyB64: string,
+  senderUserId: string,
+  senderDeviceId: string,
 ): Promise<string | null> {
   try {
     const isV2 = payload.startsWith(X3DH_PREFIX_V2);
@@ -148,6 +150,19 @@ async function x3dhUnwrapForDevice(
       aes,
       base64ToBuffer(ctB64),
     );
+
+    // Cache the device-pair session so the NEXT message from this peer device
+    // can be decrypted via the v3 fast path (no X3DH respond needed).
+    try {
+      await establishDeviceSession(
+        recipientUserId, myDeviceId,
+        senderUserId, senderDeviceId,
+        sharedSecret,
+      );
+    } catch (e) {
+      console.warn('[FANOUT] session cache after respond failed (non-fatal)', e);
+    }
+
     return new hardGlobals.TextDecoder().decode(pt);
   } catch (e) {
     console.warn('[FANOUT] X3DH unwrap failed:', e);
