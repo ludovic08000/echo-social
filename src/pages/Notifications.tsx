@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Heart, MessageCircle, Check, ShoppingBag, UserPlus, UserCheck, Eye, SmilePlus } from 'lucide-react';
+import { Heart, MessageCircle, Check, ShoppingBag, UserPlus, UserCheck, Eye, SmilePlus, ShieldAlert } from 'lucide-react';
 import { useNotifications, useMarkAsRead } from '@/hooks/useNotifications';
 import { AppLayout } from '@/components/AppLayout';
 import { UserAvatar } from '@/components/UserAvatar';
@@ -25,7 +25,7 @@ function groupNotifications(notifications: any[]): GroupedNotification[] {
   const groups = new Map<string, GroupedNotification>();
 
   for (const n of notifications) {
-    const shouldGroup = !['message', 'friend_request', 'friend_accepted', 'story_view'].includes(n.type);
+    const shouldGroup = !['message', 'friend_request', 'friend_accepted', 'story_view', 'new_device'].includes(n.type);
     const key = shouldGroup ? `${n.type}-${n.post_id || 'no-post'}` : `${n.type}-${n.id}`;
 
     const existing = groups.get(key);
@@ -71,6 +71,7 @@ function getNotificationText(group: GroupedNotification): string {
     message: 'vous a envoyé un message',
     reaction: 'a réagi à votre publication',
     story_view: 'a vu votre story',
+    new_device: 'Nouvel appareil connecté à votre compte — vérifiez immédiatement',
   };
 
   const action = actionMap[group.type] || 'a interagi avec vous';
@@ -91,6 +92,8 @@ function getNotificationLink(group: GroupedNotification): string {
       return '/marketplace?sellerTab=orders';
     case 'story_view':
       return '/feed';
+    case 'new_device':
+      return '/settings?tab=devices';
     case 'like':
     case 'comment':
     case 'reaction':
@@ -118,6 +121,8 @@ function getNotificationIcon(type: string) {
       return { icon: SmilePlus, className: 'bg-pink-500', iconClass: 'text-white' };
     case 'story_view':
       return { icon: Eye, className: 'bg-purple-500', iconClass: 'text-white' };
+    case 'new_device':
+      return { icon: ShieldAlert, className: 'bg-destructive', iconClass: 'text-destructive-foreground' };
     default:
       return { icon: MessageCircle, className: 'bg-secondary', iconClass: 'text-secondary-foreground' };
   }

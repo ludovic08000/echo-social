@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { useRealtimeNotificationSound } from '@/hooks/useNotificationSounds';
 import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 /**
  * Global hook: listens for new notifications in realtime and plays a sound.
@@ -79,6 +80,21 @@ export function useRealtimeNotifications() {
           else if (type === 'friend_request' || type === 'friend_accepted') category = 'friend_request';
           else if (type === 'comment') category = 'comment';
           else if (type === 'like' || type === 'reaction') category = 'like';
+
+          // Special handling: new device linked to account → security toast
+          if (type === 'new_device') {
+            const meta = (row?.metadata ?? {}) as { device_name?: string; platform?: string };
+            const label = meta.device_name || meta.platform || 'Appareil inconnu';
+            toast.warning('Nouvel appareil connecté', {
+              description: `${label} vient de se connecter à votre compte. Vérifiez immédiatement.`,
+              duration: 10000,
+              action: {
+                label: 'Vérifier',
+                onClick: () => { window.location.href = '/settings?tab=devices'; },
+              },
+            });
+            category = 'friend_request';
+          }
 
           enqueueSound(category, senderName);
           queryClient.invalidateQueries({ queryKey: ['notifications'] });
