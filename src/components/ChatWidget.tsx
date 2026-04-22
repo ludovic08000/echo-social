@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { useChatWidget } from './ChatWidgetContext';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { generateMediaKey, encryptMedia, buildMediaMessageBody, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
+import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
 import { MessageMedia } from '@/components/messages/MessageMedia';
 import { useCall, formatCallDuration, type CallEndInfo, generateCallE2EEKey } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
@@ -632,6 +633,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     }
 
     // E2EE active → encrypt file before upload
+    const t0 = performance.now();
     try {
       const { key, keyB64 } = await generateMediaKey();
       const encryptedBlob = await encryptMedia(file, key);
@@ -639,10 +641,31 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       const url = await rawUpload(encFile);
       if (url) {
         const body = buildMediaMessageBody(label, keyB64);
-        queue.sendMessage(body, url).catch(() => toast.error('Erreur envoi photo'));
+        queue.sendMessage(body, url).catch((e) => {
+          logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send', isVideo: false } });
+          toast.error('Erreur envoi photo');
+        });
+        logCryptoError({
+          severity: 'info', context: 'media', errorCode: 'MEDIA_ENCRYPT_OK',
+          errorMessage: 'Media encrypted and uploaded',
+          conversationId,
+          metadata: { sizeBytes: file.size, mime: file.type, durationMs: Math.round(performance.now() - t0) },
+        });
+      } else {
+        logCryptoError({
+          severity: 'error', context: 'media', errorCode: 'MEDIA_UPLOAD_FAILED',
+          errorMessage: 'Encrypted media upload returned no URL',
+          conversationId,
+          metadata: { sizeBytes: file.size, mime: file.type },
+        });
       }
     } catch (err) {
       console.error('Media encryption failed:', err);
+      logCryptoException('media', err, {
+        severity: 'error',
+        conversationId,
+        metadata: { stage: 'encrypt_upload', sizeBytes: file.size, mime: file.type, durationMs: Math.round(performance.now() - t0) },
+      });
       toast.error('Erreur de chiffrement du média');
     }
   }, [isZeusConversation, rawUpload, conversationId, sendMessage, queue]);

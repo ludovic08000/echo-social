@@ -24,6 +24,7 @@ import { toast } from 'sonner';
 import { useMessageTranslation } from '@/hooks/useMessageTranslation';
 import { useE2EE } from '@/hooks/useE2EE';
 import { generateMediaKey, encryptMedia, buildMediaMessageBody, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
+import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
 import { compressImageForChat } from '@/lib/messaging/compressImage';
 import { MessageMedia } from './MessageMedia';
 import { rememberDecryptedMedia } from './decryptedMediaCache';
