@@ -26,6 +26,21 @@ interface CachedDecryption {
 const plaintextCache = new Map<string, CachedDecryption>();
 const inflight = new Map<string, Promise<CachedDecryption>>();
 
+// Bumped whenever the E2EE key material is restored / rotated. Components
+// listen via useEffect and re-run their decryption pipeline. We also drop
+// any cache entry that resolved to "hidden" since those were placeholders
+// produced while the keys were still missing.
+let cacheGeneration = 0;
+if (typeof window !== 'undefined') {
+  window.addEventListener('forsure-keys-restored', () => {
+    for (const [k, v] of plaintextCache) {
+      if (v.hidden) plaintextCache.delete(k);
+    }
+    cacheGeneration += 1;
+    window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
+  });
+}
+
 function cacheKey(messageId: string | undefined, body: string): string {
   return `${messageId ?? 'noid'}|${body}`;
 }
