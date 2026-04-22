@@ -34,6 +34,8 @@ import {
   ratchetEncrypt,
   ratchetDecrypt,
   establishDeviceSession,
+  getSessionPeerSpkId,
+  invalidateDeviceSession,
   RATCHET_PREFIX_V3,
   RATCHET_PREFIX_V4,
 } from '@/lib/crypto/deviceRatchet';
