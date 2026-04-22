@@ -40,6 +40,7 @@ import { OutboundStatusIndicator } from '@/components/messages/OutboundStatus';
 import { ConversationPreviewText } from '@/components/messages/ConversationPreviewText';
 import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
 import { MessagingPinGate } from '@/components/MessagingPinGate';
+import { useMessageReactions } from '@/hooks/useMessageReactions';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
 
 // ─── Utils ───────────────────────────────────────────────
@@ -352,7 +353,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
-  const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({});
+  // Persisted + realtime reactions (replaces local-only state)
   const [showAIMenu, setShowAIMenu] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
@@ -716,12 +717,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     } catch { toast.error('Erreur IA'); } finally { setAiLoading(false); }
   };
 
+  const messageIds = useMemo(() => (messages || []).map(m => m.id), [messages]);
+  const { reactions: reactionsByMessage, toggleReaction } = useMessageReactions(conversationId, messageIds);
+
   const handleReact = (msgId: string, emoji: string) => {
-    setMessageReactions(prev => {
-      const existing = prev[msgId] || [];
-      if (existing.includes(emoji)) return { ...prev, [msgId]: existing.filter(e => e !== emoji) };
-      return { ...prev, [msgId]: [...existing, emoji] };
-    });
+    void toggleReaction(msgId, emoji);
     setActiveMessageId(null);
   };
 
@@ -958,7 +958,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                   const nextMsg = mi < group.messages.length - 1 ? group.messages[mi + 1] : null;
                   const isFirstInGroup = !prevMsg || prevMsg.sender_id !== msg.sender_id;
                   const isLastInGroup = !nextMsg || nextMsg.sender_id !== msg.sender_id;
-                  const reactions = messageReactions[msg.id] || [];
+                  const reactions = reactionsByMessage[msg.id] || [];
                    const isBigEmoji = isSingleEmoji(msg.body);
                    const isNegotiationMsg = msg.body.startsWith('💰 OFFRE:') || msg.body.startsWith('✅ OFFRE') || msg.body.startsWith('❌ OFFRE') || msg.body.startsWith('🔄 CONTRE') || msg.body.startsWith('✅ CONTRE');
 
@@ -1186,8 +1186,22 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
                         {reactions.length > 0 && (
                           <div className="flex items-center -mt-1 px-0.5">
-                            <div className="flex items-center bg-background border border-border/40 rounded-full px-1 py-0 shadow-sm">
-                              {reactions.map((r, i) => <span key={i} className="text-[10px]">{r}</span>)}
+                            <div className="flex items-center gap-0.5 bg-background border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm">
+                              {Object.entries(
+                                reactions.reduce<Record<string, number>>((acc, r) => {
+                                  acc[r.emoji] = (acc[r.emoji] || 0) + 1;
+                                  return acc;
+                                }, {})
+                              ).map(([emoji, count]) => (
+                                <button
+                                  key={emoji}
+                                  onClick={() => toggleReaction(msg.id, emoji)}
+                                  className="flex items-center gap-0.5 text-[10px] hover:scale-110 transition-transform"
+                                >
+                                  <span>{emoji}</span>
+                                  {count > 1 && <span className="text-muted-foreground">{count}</span>}
+                                </button>
+                              ))}
                             </div>
                           </div>
                         )}

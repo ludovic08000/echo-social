@@ -11,6 +11,7 @@ import { format, isSameDay } from 'date-fns';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useDeleteMessageForMe, useDeleteMessageForEveryone, useLeaveGroup, useAddGroupMembers, useRemoveGroupMember, useGroupMembers, type Message } from '@/hooks/useMessages';
+import { useMessageReactions } from '@/hooks/useMessageReactions';
 import { useFriendships } from '@/hooks/useFriendships';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
@@ -68,7 +69,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const [showEmojis, setShowEmojis] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
-  const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({});
+  // Reactions are now persisted + realtime via useMessageReactions
   // peerTyping is driven by the realtime presence channel below — never by local input.
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [showSharePicker, setShowSharePicker] = useState(false);
@@ -374,14 +375,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
     e.target.value = '';
   };
 
+  const messageIds = useMemo(() => (messages || []).map(m => m.id), [messages]);
+  const { reactions: reactionsByMessage, toggleReaction } = useMessageReactions(conversationId, messageIds);
+
   const handleReact = (msgId: string, emoji: string) => {
-    setMessageReactions(prev => {
-      const existing = prev[msgId] || [];
-      if (existing.includes(emoji)) {
-        return { ...prev, [msgId]: existing.filter(e => e !== emoji) };
-      }
-      return { ...prev, [msgId]: [...existing, emoji] };
-    });
+    void toggleReaction(msgId, emoji);
   };
 
   const handleCopy = (msg: Message) => {
@@ -737,7 +735,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                     const nextMsg = mi < group.messages.length - 1 ? group.messages[mi + 1] : null;
                     const isFirstInGroup = !prevMsg || prevMsg.sender_id !== msg.sender_id;
                     const isLastInGroup = !nextMsg || nextMsg.sender_id !== msg.sender_id;
-                    const reactions = messageReactions[msg.id] || [];
+                    const reactions = reactionsByMessage[msg.id] || [];
                     const looksEncrypted = msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"'));
                     const isBigEmoji = !looksEncrypted && isSingleEmoji(msg.body);
                     const isImage = msg.image_url;
@@ -869,9 +867,21 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
                           {reactions.length > 0 && (
                             <div className="flex items-center gap-0.5 -mt-1 px-1 relative z-10">
-                              <div className="flex items-center gap-0 bg-background border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm">
-                                {reactions.map((r, i) => (
-                                  <span key={i} className="text-xs">{r}</span>
+                              <div className="flex items-center gap-1 bg-background border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm">
+                                {Object.entries(
+                                  reactions.reduce<Record<string, number>>((acc, r) => {
+                                    acc[r.emoji] = (acc[r.emoji] || 0) + 1;
+                                    return acc;
+                                  }, {})
+                                ).map(([emoji, count]) => (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => toggleReaction(msg.id, emoji)}
+                                    className="flex items-center gap-0.5 text-xs hover:scale-110 transition-transform"
+                                  >
+                                    <span>{emoji}</span>
+                                    {count > 1 && <span className="text-muted-foreground text-[10px]">{count}</span>}
+                                  </button>
                                 ))}
                               </div>
                             </div>
