@@ -29,18 +29,37 @@ import { KX_KEY_PARAMS } from '@/lib/crypto/constants';
 const IV_LEN = 12;
 const SEP = '.';
 
-async function deriveAesKey(
-  senderUserId: string,
-  recipientDevicePublicKeyB64: string,
+import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
+import { randomBytes, bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
+import { getOrCreateIdentityKeys } from '@/lib/crypto/keyManager';
+import { loadDeviceKxKey, getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
+import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import { KX_KEY_PARAMS } from '@/lib/crypto/constants';
+
+const IV_LEN = 12;
+const SEP = '.';
+
+/**
+ * Derive an AES-256-GCM key by ECDH between OUR private kx key and the peer's
+ * public kx key, salted+info'd with the recipient device id (HKDF SHA-256).
+ *
+ * `myPrivateKx` lets the caller choose between:
+ *   - the per-device dedicated kx key (preferred, true per-device isolation)
+ *   - the shared identity key (legacy fallback for devices that haven't
+ *     migrated yet, or for messages that were originally wrapped against the
+ *     identity key).
+ */
+async function deriveAesKeyWith(
+  myPrivateKx: CryptoKey,
+  peerPublicKxB64: string,
   recipientDeviceId: string,
 ): Promise<CryptoKey> {
-  const identityKeys = await getOrCreateIdentityKeys(senderUserId);
-  const peerRaw = base64ToBuffer(recipientDevicePublicKeyB64);
+  const peerRaw = base64ToBuffer(peerPublicKxB64);
   const peerPub = await hardCrypto.importKey('raw', peerRaw, KX_KEY_PARAMS as any, true, []);
 
   const sharedBits = await hardCrypto.deriveBits(
     { name: 'X25519', public: peerPub } as any,
-    identityKeys.privateKey,
+    myPrivateKx,
     256,
   );
 
@@ -58,13 +77,43 @@ async function deriveAesKey(
   );
 }
 
+/**
+ * Encrypt plaintext for a recipient device.
+ *
+ * Preferred path: derives ECDH from THIS device's dedicated kx key against the
+ * recipient device's published `device_public_key`. Both sides must have a
+ * dedicated kx key for this to succeed — the recipient device public key is
+ * already the dedicated one if its owner has logged in since the migration.
+ *
+ * Legacy path: if no per-device kx key exists locally, falls back to the
+ * sender's shared identity key (old behaviour). This keeps the function safe
+ * during the rolling migration window.
+ */
 export async function wrapPlaintextForDevice(
   plaintext: string,
   senderUserId: string,
   recipientDevicePublicKeyB64: string,
   recipientDeviceId: string,
 ): Promise<string> {
-  const aes = await deriveAesKey(senderUserId, recipientDevicePublicKeyB64, recipientDeviceId);
+  const myDeviceId = getCurrentDeviceId();
+
+  // 1) Preferred: dedicated per-device kx key
+  let aes: CryptoKey | null = null;
+  try {
+    const myKx = await loadDeviceKxKey(myDeviceId);
+    if (myKx?.privateKey) {
+      aes = await deriveAesKeyWith(myKx.privateKey, recipientDevicePublicKeyB64, recipientDeviceId);
+    }
+  } catch {
+    /* fall through to legacy */
+  }
+
+  // 2) Legacy fallback: shared identity key (still works for non-migrated devices)
+  if (!aes) {
+    const identityKeys = await getOrCreateIdentityKeys(senderUserId);
+    aes = await deriveAesKeyWith(identityKeys.privateKey, recipientDevicePublicKeyB64, recipientDeviceId);
+  }
+
   const iv = randomBytes(IV_LEN);
   const ct = await hardCrypto.encrypt(
     { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 },
@@ -74,6 +123,18 @@ export async function wrapPlaintextForDevice(
   return `${bufferToBase64(iv.buffer as ArrayBuffer)}${SEP}${bufferToBase64(ct as ArrayBuffer)}`;
 }
 
+/**
+ * Decrypt a payload addressed to THIS device.
+ *
+ * The sender may have wrapped against either:
+ *   (a) our dedicated per-device kx public key (preferred), or
+ *   (b) our shared identity public key (legacy / migration-window).
+ *
+ * We don't know which on the wire (same format). Strategy: try (a) first
+ * because it matches the published `device_public_key` of a migrated device,
+ * then fall back to (b). AES-GCM auth tag failures will surface as decrypt
+ * exceptions — we swallow the first attempt and retry with the legacy key.
+ */
 export async function unwrapPlaintextForDevice(
   payload: string,
   recipientUserId: string,
@@ -81,14 +142,25 @@ export async function unwrapPlaintextForDevice(
   myDeviceId: string,
 ): Promise<string> {
   if (!payload.includes(SEP)) throw new Error('Invalid device-wrapped payload');
-  const aes = await deriveAesKey(recipientUserId, senderDevicePublicKeyB64, myDeviceId);
   const [ivB64, ctB64] = payload.split(SEP);
   const iv = new Uint8Array(base64ToBuffer(ivB64));
   const ct = base64ToBuffer(ctB64);
-  const pt = await hardCrypto.decrypt(
-    { name: 'AES-GCM', iv, tagLength: 128 },
-    aes,
-    ct,
-  );
+
+  // (a) Try per-device kx key first
+  try {
+    const myKx = await getOrCreateDeviceKxKey(myDeviceId);
+    if (myKx?.privateKey) {
+      const aes = await deriveAesKeyWith(myKx.privateKey, senderDevicePublicKeyB64, myDeviceId);
+      const pt = await hardCrypto.decrypt({ name: 'AES-GCM', iv, tagLength: 128 }, aes, ct);
+      return new hardGlobals.TextDecoder().decode(pt);
+    }
+  } catch {
+    /* fall through to legacy identity key */
+  }
+
+  // (b) Legacy identity-key fallback
+  const identityKeys = await getOrCreateIdentityKeys(recipientUserId);
+  const aes = await deriveAesKeyWith(identityKeys.privateKey, senderDevicePublicKeyB64, myDeviceId);
+  const pt = await hardCrypto.decrypt({ name: 'AES-GCM', iv, tagLength: 128 }, aes, ct);
   return new hardGlobals.TextDecoder().decode(pt);
 }
