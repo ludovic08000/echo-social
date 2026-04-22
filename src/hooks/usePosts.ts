@@ -191,8 +191,9 @@ export function usePosts() {
             user_reaction: post.user_reaction || null,
           })) as Post[];
 
-          // Apply Monte Carlo ranking
-          return monteCarloRank(mapped, mcCtx, 50);
+          // Apply Monte Carlo ranking, then blend with ML hybrid score
+          const mcRanked = monteCarloRank(mapped, mcCtx, 50);
+          return await blendWithMLScore(mcRanked, user.id);
         }
       } catch {
         // Fall through to legacy fallback
@@ -214,8 +215,9 @@ export function usePosts() {
       const filteredPosts = posts.filter(p => !containsMutedKeyword(p.body, prefs.mutedKeywords));
       const enriched = await enrichPosts(filteredPosts.slice(0, PAGE_SIZE), user.id);
       
-      // Apply Monte Carlo ranking
-      return monteCarloRank(enriched, mcCtx, 50);
+      // Apply Monte Carlo ranking + ML hybrid blending
+      const mcRanked = monteCarloRank(enriched, mcCtx, 50);
+      return await blendWithMLScore(mcRanked, user.id);
     },
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.length < PAGE_SIZE) return undefined;
