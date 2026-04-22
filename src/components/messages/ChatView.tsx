@@ -1008,7 +1008,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
             <input
               ref={inputRef}
               value={newMessage}
-              onChange={e => setNewMessage(e.target.value)}
+              onChange={e => {
+                const v = e.target.value;
+                setNewMessage(v);
+                if (!isZeusConversation) {
+                  if (v.trim().length > 0) notifyTyping();
+                  else notifyStopped();
+                }
+              }}
+              onBlur={() => { if (!newMessage.trim()) notifyStopped(); }}
               onFocus={() => setShowEmojis(false)}
               placeholder="Aa"
               className="flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground min-w-0 py-2"
