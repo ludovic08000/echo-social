@@ -93,13 +93,17 @@ async function x3dhWrapForDevice(
     if (result.usedOTPKId !== undefined) parts.push(String(result.usedOTPKId));
 
     // After a successful X3DH, cache the device-pair session so subsequent
-    // messages skip the full handshake (uses the symmetric KDF chain).
+    // messages skip the full handshake. The peer's SPK acts as their initial
+    // DH ratchet public key — initiator immediately performs a DH-ratchet
+    // step so the very first DR message carries a fresh ratchet pub.
     try {
       const myDeviceId = getCurrentDeviceId();
       await establishDeviceSession(
         senderUserId, myDeviceId,
         recipientUserId, recipientDeviceId,
         result.sharedSecret,
+        undefined,
+        { peerInitialDhPubB64: bundle.signedPreKey, isInitiator: true },
       );
     } catch (e) {
       console.warn('[FANOUT] session cache after initiate failed (non-fatal)', e);
