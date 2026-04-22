@@ -533,6 +533,46 @@ async function decryptV3(myUserId: string, myDeviceId: string, payload: string):
   }
 }
 
+/**
+ * Returns the SPK id of the peer device used at handshake time, or null if
+ * the session is unknown / pre-tracking. Callers compare this with the
+ * latest published bundle to detect peer-side rotation.
+ */
+export async function getSessionPeerSpkId(
+  myUserId: string,
+  myDeviceId: string,
+  peerUserId: string,
+  peerDeviceId: string,
+): Promise<number | null> {
+  const session = await loadSession(compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId));
+  return session?.peerSpkId ?? null;
+}
+
+/**
+ * Drop the session for one peer device. Used when we detect that the peer
+ * has rotated its SignedPreKey: the cached root/chain keys are no longer
+ * derivable on the peer side, so any further v3/v4 message would silently
+ * fail to decrypt. Forcing re-X3DH heals the link.
+ */
+export async function invalidateDeviceSession(
+  myUserId: string,
+  myDeviceId: string,
+  peerUserId: string,
+  peerDeviceId: string,
+): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).delete(compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId));
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // non-fatal
+  }
+}
+
 /** Drop all device-pair sessions (e.g. on logout / key rotation). */
 export async function clearAllDeviceSessions(): Promise<void> {
   try {
