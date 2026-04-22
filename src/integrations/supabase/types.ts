@@ -2701,12 +2701,55 @@ export type Database = {
         }
         Relationships: []
       }
+      ml_post_embeddings: {
+        Row: {
+          created_at: string
+          embedding: string | null
+          last_trained_at: string
+          post_id: string
+          training_samples: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          embedding?: string | null
+          last_trained_at?: string
+          post_id: string
+          training_samples?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          embedding?: string | null
+          last_trained_at?: string
+          post_id?: string
+          training_samples?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_post_embeddings_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: true
+            referencedRelation: "feed_posts_enriched"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ml_post_embeddings_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: true
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ml_post_features: {
         Row: {
           avg_watch_time_ms: number | null
           ctr: number
           embedding: string | null
           embedding_updated_at: string | null
+          engagement_score: number
           engagement_velocity: number
           extracted_at: string
           has_media: boolean
@@ -2716,17 +2759,20 @@ export type Database = {
           positive_count: number
           post_id: string
           quality_score: number
+          revenue_score: number
           sentiment: number
           topics: string[]
           updated_at: string
           view_count: number
           watch_sample_count: number | null
+          wellbeing_score: number
         }
         Insert: {
           avg_watch_time_ms?: number | null
           ctr?: number
           embedding?: string | null
           embedding_updated_at?: string | null
+          engagement_score?: number
           engagement_velocity?: number
           extracted_at?: string
           has_media?: boolean
@@ -2736,17 +2782,20 @@ export type Database = {
           positive_count?: number
           post_id: string
           quality_score?: number
+          revenue_score?: number
           sentiment?: number
           topics?: string[]
           updated_at?: string
           view_count?: number
           watch_sample_count?: number | null
+          wellbeing_score?: number
         }
         Update: {
           avg_watch_time_ms?: number | null
           ctr?: number
           embedding?: string | null
           embedding_updated_at?: string | null
+          engagement_score?: number
           engagement_velocity?: number
           extracted_at?: string
           has_media?: boolean
@@ -2756,11 +2805,13 @@ export type Database = {
           positive_count?: number
           post_id?: string
           quality_score?: number
+          revenue_score?: number
           sentiment?: number
           topics?: string[]
           updated_at?: string
           view_count?: number
           watch_sample_count?: number | null
+          wellbeing_score?: number
         }
         Relationships: []
       }
@@ -2857,6 +2908,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ml_user_embeddings: {
+        Row: {
+          created_at: string
+          embedding: string | null
+          last_trained_at: string
+          training_samples: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          embedding?: string | null
+          last_trained_at?: string
+          training_samples?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          embedding?: string | null
+          last_trained_at?: string
+          training_samples?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       ml_user_profiles: {
         Row: {
@@ -5827,6 +5905,10 @@ export type Database = {
           score: number
         }[]
       }
+      ml_compute_post_scores: {
+        Args: { p_post_id: string }
+        Returns: undefined
+      }
       ml_find_similar_posts: {
         Args: { p_limit?: number; p_user_id: string }
         Returns: {
@@ -5835,6 +5917,16 @@ export type Database = {
         }[]
       }
       ml_is_cold_start: { Args: { p_user_id: string }; Returns: boolean }
+      ml_pareto_score: {
+        Args: {
+          p_post_id: string
+          p_user_id: string
+          p_w_engagement?: number
+          p_w_revenue?: number
+          p_w_wellbeing?: number
+        }
+        Returns: number
+      }
       ml_record_watch_time: {
         Args: { p_post_id: string; p_sample_count: number; p_total_ms: number }
         Returns: undefined
@@ -5848,6 +5940,10 @@ export type Database = {
         Returns: number
       }
       ml_score_post_v3: {
+        Args: { p_post_id: string; p_user_id: string }
+        Returns: number
+      }
+      ml_score_post_v4: {
         Args: { p_post_id: string; p_user_id: string }
         Returns: number
       }
