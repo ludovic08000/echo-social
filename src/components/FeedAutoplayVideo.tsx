@@ -14,6 +14,24 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
   const [isMuted, setIsMuted] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const hasTrackedPlay = useRef(false);
+  const isVisibleRef = useRef(false);
+
+  // Robust autoplay: retries if metadata isn't ready yet (mobile Safari quirk).
+  const tryPlay = (vid: HTMLVideoElement) => {
+    vid.muted = true;
+    vid.setAttribute('muted', '');
+    const p = vid.play();
+    if (p && typeof p.catch === 'function') {
+      p.then(() => {
+        if (!hasTrackedPlay.current) {
+          hasTrackedPlay.current = true;
+          onPlay?.();
+        }
+      }).catch(() => {
+        // Autoplay blocked — will retry on loadeddata/canplay if still visible.
+      });
+    }
+  };
 
   // IntersectionObserver: autoplay when 60% visible, pause when not
   useEffect(() => {
@@ -23,14 +41,10 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
 
     const observer = new IntersectionObserver(
       ([entry]) => {
+        isVisibleRef.current = entry.isIntersecting;
         if (entry.isIntersecting) {
-          vid.muted = true;
-          vid.play().catch(() => {});
+          tryPlay(vid);
           setIsPlaying(true);
-          if (!hasTrackedPlay.current) {
-            hasTrackedPlay.current = true;
-            onPlay?.();
-          }
         } else {
           vid.pause();
           setIsPlaying(false);
@@ -40,7 +54,19 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
     );
 
     observer.observe(container);
-    return () => observer.disconnect();
+
+    // Retry once data is ready (handles slow networks / late metadata).
+    const onCanPlay = () => {
+      if (isVisibleRef.current && vid.paused) tryPlay(vid);
+    };
+    vid.addEventListener('loadeddata', onCanPlay);
+    vid.addEventListener('canplay', onCanPlay);
+
+    return () => {
+      observer.disconnect();
+      vid.removeEventListener('loadeddata', onCanPlay);
+      vid.removeEventListener('canplay', onCanPlay);
+    };
   }, [onPlay]);
 
   const toggleMute = (e: React.MouseEvent) => {
