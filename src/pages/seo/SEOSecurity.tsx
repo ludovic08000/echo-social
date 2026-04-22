@@ -49,8 +49,9 @@ const jsonLd = {
 export default function SEOSecurity() {
   return (
     <SEOPageLayout
-      title="Réseau social sécurisé — Protection contre piratage et cyberattaques"
-      description="Forsure est le réseau social sécurisé français qui protège votre compte contre le piratage, les cyberattaques et le vol de données. Sécurité de niveau professionnel, gratuite pour tous."
+      title="Réseau social sécurisé — Sans tracking, données privées et protégées"
+      description="Forsure est le réseau social sécurisé sans tracking : vos données privées restent les vôtres. Protection contre piratage, intrusions et cyberattaques en temps réel."
+      url="https://forsure.fans/reseau-social-securise"
       jsonLd={jsonLd}
     >
       <section className="py-16 md:py-24">
