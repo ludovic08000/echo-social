@@ -432,8 +432,8 @@ Deno.serve(async (req) => {
         _is_friend: friendIds.has(p.user_id),
       }));
 
-      // AI scoring
-      const aiScores = await aiScorePosts(profile, enrichedPosts, user.id);
+      // AI scoring (privacy-aware)
+      const aiScores = await aiScorePosts(profile, enrichedPosts, user.id, aiPersonalizationAllowed);
 
       return new Response(JSON.stringify({ scores: aiScores, profile_summary: {
         interests: profile.topInterests.slice(0, 5),
@@ -486,7 +486,7 @@ Deno.serve(async (req) => {
         (p: any) => !friendIds.has(p.user_id) && p.user_id !== user.id
       );
 
-      const recommendedIds = await aiRecommend(profile, discoveryPosts, seenPostIds);
+      const recommendedIds = await aiRecommend(profile, discoveryPosts, seenPostIds, aiPersonalizationAllowed);
 
       return new Response(JSON.stringify({
         recommended_post_ids: recommendedIds,
