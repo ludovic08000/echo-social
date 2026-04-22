@@ -210,6 +210,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
       return;
     }
 
+    const t0 = performance.now();
     try {
       const { key, keyB64 } = await generateMediaKey();
       const encryptedBlob = await encryptMedia(prepared, key);
@@ -223,10 +224,31 @@ export function ChatView({ conversationId }: ChatViewProps) {
           rememberDecryptedMedia(url, localUrl, isVideo);
         } catch { /* noop */ }
         const body = buildMediaMessageBody(label, keyB64);
-        queue.sendMessage(body, url).catch(() => toast.error('Erreur envoi média'));
+        queue.sendMessage(body, url).catch((e) => {
+          logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send', isVideo } });
+          toast.error('Erreur envoi média');
+        });
+        logCryptoError({
+          severity: 'info', context: 'media', errorCode: 'MEDIA_ENCRYPT_OK',
+          errorMessage: 'Media encrypted and uploaded',
+          conversationId,
+          metadata: { sizeBytes: prepared.size, mime: prepared.type, isVideo, durationMs: Math.round(performance.now() - t0) },
+        });
+      } else {
+        logCryptoError({
+          severity: 'error', context: 'media', errorCode: 'MEDIA_UPLOAD_FAILED',
+          errorMessage: 'Encrypted media upload returned no URL',
+          conversationId,
+          metadata: { sizeBytes: prepared.size, mime: prepared.type, isVideo },
+        });
       }
     } catch (err) {
       console.error('Media encryption failed:', err);
+      logCryptoException('media', err, {
+        severity: 'error',
+        conversationId,
+        metadata: { stage: 'encrypt_upload', sizeBytes: prepared.size, mime: prepared.type, isVideo, durationMs: Math.round(performance.now() - t0) },
+      });
       toast.error('Erreur de chiffrement du média');
     }
   }, [
