@@ -21,7 +21,7 @@ import { trackAICall } from '@/lib/aiEngine';
 import { cn } from '@/lib/utils';
 import { useChatWidget } from './ChatWidgetContext';
 import { useImageUpload } from '@/hooks/useImageUpload';
-import { generateMediaKey, encryptMedia, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
+import { generateMediaKey, encryptMedia, buildMediaMessageBody, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 import { MessageMedia } from '@/components/messages/MessageMedia';
 import { useCall, formatCallDuration, type CallEndInfo, generateCallE2EEKey } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
@@ -432,7 +432,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   );
 
   const onDecrypted = useCallback((msgId: string, text: string) => {
-    cachePlaintext(msgId, text);
+    const parsed = parseMediaMessage(text);
+    cachePlaintext(msgId, parsed ? text : text);
   }, [cachePlaintext]);
 
   // Auto-load negotiation context from conversation if not set

@@ -23,7 +23,7 @@ import { useImageUpload } from '@/hooks/useImageUpload';
 import { toast } from 'sonner';
 import { useMessageTranslation } from '@/hooks/useMessageTranslation';
 import { useE2EE } from '@/hooks/useE2EE';
-import { generateMediaKey, encryptMedia, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
+import { generateMediaKey, encryptMedia, buildMediaMessageBody, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 import { compressImageForChat } from '@/lib/messaging/compressImage';
 import { MessageMedia } from './MessageMedia';
 import { rememberDecryptedMedia } from './decryptedMediaCache';
@@ -308,7 +308,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
    */
   const getDecryptedText = useCallback((msg: Message): string => {
     const cached = decryptedCache.get(msg.id);
-    if (cached) return cached;
+    if (cached) {
+      const parsed = parseMediaMessage(cached);
+      return parsed ? parsed.label : cached;
+    }
     // If it doesn't look encrypted, return body
     const looksEncrypted = msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"'));
     if (!looksEncrypted) return msg.body;
@@ -406,9 +409,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   /** Callback from DecryptedMessageBody to cache decrypted text + persist it */
   const onDecrypted = useCallback((msgId: string, text: string) => {
-    decryptedCache.set(msgId, text);
+    const parsed = parseMediaMessage(text);
+    decryptedCache.set(msgId, parsed ? text : text);
     bumpCache();
-    void savePlaintext(msgId, text);
+    void savePlaintext(msgId, parsed ? text : text);
   }, [bumpCache]);
 
   // Pre-warm the in-memory cache from the persistent IndexedDB store as soon as

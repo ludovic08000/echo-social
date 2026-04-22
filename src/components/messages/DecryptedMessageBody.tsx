@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, memo } from 'react';
 import { Lock } from 'lucide-react';
 import { VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
-import { hasMediaKey, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
+import { hasMediaKey, parseMediaMessage, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
@@ -165,7 +165,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
           setDisplayText(parsed.label);
           setMediaKeyB64State(parsed.keyB64);
           setIsDecrypting(false);
-          onDecryptedRef.current?.(parsed.label);
+          onDecryptedRef.current?.(cachedPlaintext);
           return;
         }
       }
@@ -217,10 +217,10 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       setMediaKeyB64State(cached.mediaKeyB64);
       setIsDecrypting(false);
       if (cached.mediaKeyB64 && messageId) {
-        const parsed = parseMediaMessage(cached.text);
-        if (parsed) setMediaKey(messageId, parsed.keyB64, parsed.label.startsWith('🎬'));
+        setMediaKey(messageId, cached.mediaKeyB64, cached.text.startsWith('🎬'));
       }
-      onDecryptedRef.current?.(cached.text);
+      const persistedText = cached.mediaKeyB64 ? buildMediaMessageBody(cached.text, cached.mediaKeyB64) : cached.text;
+      onDecryptedRef.current?.(persistedText);
       return;
     }
 
@@ -307,8 +307,9 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
         setMediaKey(messageId, entry.mediaKeyB64, entry.text.startsWith('🎬'));
       }
       if (!entry.hidden) {
-        void savePlaintextForCiphertext(body, entry.text);
-        onDecryptedRef.current?.(entry.text);
+        const persistedText = entry.mediaKeyB64 ? `${entry.text}\x00MKEY:${entry.mediaKeyB64}` : entry.text;
+        void savePlaintextForCiphertext(body, persistedText);
+        onDecryptedRef.current?.(persistedText);
       }
     }).catch(() => {
       if (!cancelled) {
