@@ -137,10 +137,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    // Server-side anti-bruteforce gate (per IP + per email). Fails open on infra error.
+    try {
+      const { data: gate } = await supabase.functions.invoke('login-rate-limit', {
+        body: { action: 'check', email },
+      });
+      if (gate && gate.allowed === false) {
+        const retry = gate.retry_after_seconds ?? 30;
+        return {
+          error: new Error(
+            `Trop de tentatives. Réessayez dans ${retry} seconde${retry > 1 ? 's' : ''}.`
+          ),
+        };
+      }
+    } catch { /* fail-open */ }
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+    // Record outcome (best-effort; never blocks the user)
+    supabase.functions.invoke('login-rate-limit', {
+      body: { action: 'record', email, success: !error },
+    }).catch(() => {});
+
     // Auto-restore E2EE keys from server backup using password
     if (!error && data.user) {
       initAccountKeySync(password, data.user.id).then((status) => {

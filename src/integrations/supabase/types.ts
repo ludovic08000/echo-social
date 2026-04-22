@@ -2359,6 +2359,33 @@ export type Database = {
           },
         ]
       }
+      login_attempts: {
+        Row: {
+          created_at: string
+          email_hash: string | null
+          id: string
+          ip_address: string | null
+          success: boolean
+          user_agent: string | null
+        }
+        Insert: {
+          created_at?: string
+          email_hash?: string | null
+          id?: string
+          ip_address?: string | null
+          success: boolean
+          user_agent?: string | null
+        }
+        Update: {
+          created_at?: string
+          email_hash?: string | null
+          id?: string
+          ip_address?: string | null
+          success?: boolean
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       message_deletions: {
         Row: {
           created_at: string
@@ -3571,6 +3598,7 @@ export type Database = {
       }
       privacy_settings: {
         Row: {
+          ai_data_sharing_enabled: boolean
           ai_personalization_enabled: boolean
           analytics_enabled: boolean
           comments_allowed: string
@@ -3591,6 +3619,7 @@ export type Database = {
           wall_visibility: string
         }
         Insert: {
+          ai_data_sharing_enabled?: boolean
           ai_personalization_enabled?: boolean
           analytics_enabled?: boolean
           comments_allowed?: string
@@ -3611,6 +3640,7 @@ export type Database = {
           wall_visibility?: string
         }
         Update: {
+          ai_data_sharing_enabled?: boolean
           ai_personalization_enabled?: boolean
           analytics_enabled?: boolean
           comments_allowed?: string
@@ -4563,6 +4593,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      stripe_processed_events: {
+        Row: {
+          event_id: string
+          event_type: string
+          processed_at: string
+        }
+        Insert: {
+          event_id: string
+          event_type: string
+          processed_at?: string
+        }
+        Update: {
+          event_id?: string
+          event_type?: string
+          processed_at?: string
+        }
+        Relationships: []
       }
       suppressed_emails: {
         Row: {
@@ -5675,6 +5723,10 @@ export type Database = {
         Args: { _order_id: string; _seller_id: string }
         Returns: boolean
       }
+      check_login_rate_limit: {
+        Args: { p_email_hash: string; p_ip: string }
+        Returns: Json
+      }
       check_peer_knows_my_fingerprint: {
         Args: { p_peer_user_id: string }
         Returns: {
@@ -5694,7 +5746,15 @@ export type Database = {
       cleanup_expired_device_prekeys: { Args: never; Returns: undefined }
       cleanup_old_behavior_signals: { Args: never; Returns: undefined }
       cleanup_old_fingerprints: { Args: never; Returns: undefined }
+      cleanup_old_login_attempts: { Args: never; Returns: undefined }
       complete_onboarding: { Args: { _user_id: string }; Returns: boolean }
+      consume_device_link_token: {
+        Args: { p_token_hash: string }
+        Returns: {
+          encrypted_payload: string
+          user_id: string
+        }[]
+      }
       count_device_one_time_prekeys: {
         Args: { p_device_id: string; p_user_id: string }
         Returns: number
@@ -5717,6 +5777,10 @@ export type Database = {
         Returns: Json
       }
       ddos_cleanup: { Args: never; Returns: undefined }
+      decrement_product_stock: {
+        Args: { p_product_id: string; p_quantity: number }
+        Returns: boolean
+      }
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
@@ -5726,6 +5790,10 @@ export type Database = {
         Returns: number
       }
       generate_order_number: { Args: never; Returns: string }
+      get_ai_data_sharing_enabled: {
+        Args: { p_user_id: string }
+        Returns: boolean
+      }
       get_conversations_with_details: {
         Args: { p_user_id: string }
         Returns: {
@@ -5976,6 +6044,19 @@ export type Database = {
           msg_id: number
           read_ct: number
         }[]
+      }
+      record_login_attempt: {
+        Args: {
+          p_email_hash: string
+          p_ip: string
+          p_success: boolean
+          p_user_agent?: string
+        }
+        Returns: undefined
+      }
+      stripe_mark_event_processed: {
+        Args: { p_event_id: string; p_event_type: string }
+        Returns: boolean
       }
     }
     Enums: {
