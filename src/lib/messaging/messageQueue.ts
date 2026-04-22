@@ -608,6 +608,7 @@ class MessageQueueManager {
     msg.status = 'pending_local';
     msg.updatedAt = Date.now();
     await this.dbPut(msg);
+    traceQueue(msg, 'retry:user');
     this.notifyListeners(msg.conversationId);
     this.processMessage(msg);
   }
