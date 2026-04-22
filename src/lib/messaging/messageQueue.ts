@@ -403,7 +403,7 @@ class MessageQueueManager {
             setTimeout(() => reject(new Error('Timeout chiffrement (15s)')), 15_000)
           );
           const encrypted = await Promise.race([encryptPromise, timeoutPromise]);
-          const withLocalId = this.attachLocalId(encrypted, msg.localId);
+          const withLocalId = this.attachLocalId(encrypted, msg.localId, msg.traceId);
 
           // CRITICAL: Verify encryption actually produced ciphertext
           if (!withLocalId || withLocalId === plaintext || !withLocalId.startsWith('{')) {
