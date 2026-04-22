@@ -23,6 +23,7 @@ import {
 } from '@/lib/messaging/currentDevice';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto/keyManager';
 import { refreshDeviceSignedPrekeyIfNeeded, refillDeviceOneTimePrekeysIfNeeded } from '@/lib/crypto/x3dh';
+import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 
 export function useDeviceRegistration() {
   const { user } = useAuth();
