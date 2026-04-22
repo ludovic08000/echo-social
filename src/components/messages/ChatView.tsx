@@ -217,13 +217,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
     }
     endCall();
   }, [endCall]);
-  useEffect(() => {
-    if (newMessage.length > 0) {
-      const t = setTimeout(() => setIsTyping(true), 500);
-      const t2 = setTimeout(() => setIsTyping(false), 3000);
-      return () => { clearTimeout(t); clearTimeout(t2); };
-    }
-  }, [newMessage]);
+  // NOTE: no real peer "typing" signal exists yet (would require an
+  // ephemeral realtime presence channel). Previously this effect faked it
+  // from our OWN input, which falsely displayed "X est en train d'écrire"
+  // for the recipient while they were idle. Disabled until a true presence
+  // channel is implemented.
+
 
   const lastScrollSigRef = useRef<string>('');
   useEffect(() => {
