@@ -888,7 +888,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
           </>
         )}
 
-        {isTyping && conversation && (
+        {peerTyping && conversation && !conversation.is_group && (
           <TypingIndicator name={conversation.participant.name} />
         )}
 
