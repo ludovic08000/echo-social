@@ -1,10 +1,17 @@
 import { ArrowLeft, Shield, Lock, Eye, Trash2, Download, UserCheck, Bell, Brain, ShoppingBag, Video, MessageSquare, Gamepad2, Fingerprint, Radar, KeyRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { SEOHead } from '@/components/SEOHead';
 
 export default function PrivacyPolicy() {
   return (
     <div className="min-h-screen bg-background">
+      <SEOHead
+        title="Politique de Confidentialité"
+        description="Politique de confidentialité Forsure : zéro revente de données, conformité RGPD, chiffrement bout en bout. Vos données personnelles restent les vôtres."
+        url="https://forsure.fans/privacy"
+        noindex
+      />
       <div className="max-w-3xl mx-auto px-4 py-8">
         <Link to="/">
           <Button variant="ghost" size="sm" className="mb-6">

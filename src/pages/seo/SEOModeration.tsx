@@ -49,8 +49,9 @@ const jsonLd = {
 export default function SEOModeration() {
   return (
     <SEOPageLayout
-      title="Intelligence artificielle de modération — Réseau social sans harcèlement"
-      description="L'intelligence artificielle de modération de Forsure détecte et bloque le harcèlement, les arnaques et les contenus toxiques en temps réel. Un réseau social sûr pour tous, gratuit."
+      title="Modération IA bienveillante — Réseau social sain sans harcèlement"
+      description="Modération IA bienveillante sur Forsure : un réseau social sain où le harcèlement, les arnaques et les contenus toxiques sont détectés et bloqués en temps réel par Zeus, notre IA éthique."
+      url="https://forsure.fans/ia-moderation"
       jsonLd={jsonLd}
     >
       <section className="py-16 md:py-24">

@@ -49,8 +49,9 @@ const jsonLd = {
 export default function SEOMessaging() {
   return (
     <SEOPageLayout
-      title="Messagerie chiffrée de bout en bout — Conversations 100% privées et gratuites"
-      description="La messagerie chiffrée de Forsure protège toutes vos conversations avec un chiffrement de bout en bout. Textes, photos, vidéos, appels — tout est protégé. Aussi sécurisé que Signal, gratuit."
+      title="Messagerie chiffrée bout en bout — Conversations privées et sécurisées"
+      description="Messagerie chiffrée bout en bout sur Forsure : vos conversations privées restent 100% confidentielles. Textes, photos, vidéos et appels protégés comme sur Signal, gratuitement."
+      url="https://forsure.fans/messagerie-chiffree"
       jsonLd={jsonLd}
     >
       <section className="py-16 md:py-24">

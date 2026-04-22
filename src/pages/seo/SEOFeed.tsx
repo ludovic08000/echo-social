@@ -49,8 +49,9 @@ const jsonLd = {
 export default function SEOFeed() {
   return (
     <SEOPageLayout
-      title="Feed intelligent et éthique — Fil d'actualité sans manipulation ni publicité"
-      description="Le feed intelligent de Forsure est transparent, éthique et sans publicité. Un fil d'actualité qui respecte votre temps, votre bien-être et votre vie privée. Zéro dark patterns, zéro manipulation."
+      title="Fil d'actualité personnalisé — Algorithme transparent et éthique"
+      description="Fil d'actualité personnalisé sur Forsure avec un algorithme transparent que vous contrôlez. Sans publicité, sans manipulation, sans dark patterns. Un feed qui respecte votre bien-être."
+      url="https://forsure.fans/feed-intelligent"
       jsonLd={jsonLd}
     >
       <section className="py-16 md:py-24">
