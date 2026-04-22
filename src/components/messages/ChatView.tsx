@@ -337,6 +337,19 @@ export function ChatView({ conversationId }: ChatViewProps) {
   );
 
   const handleImageUpload = () => {
+    if (sendBlocked) {
+      if (e2ee.fingerprintChanged) {
+        toast.error('Clé de sécurité modifiée — valide d’abord le contact avant d’envoyer une photo ou vidéo.');
+      } else if (e2ee.peerKeyMissing) {
+        toast.error('Clés du contact indisponibles — impossible d’envoyer un média pour le moment.');
+      } else if (e2ee.initError === 'pin_unlock_required') {
+        toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer un média.');
+      } else if (e2ee.initError === 'identity_lost_backup_available') {
+        toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer un média.');
+      }
+      return;
+    }
+
     fileInputRef.current?.click();
   };
 
@@ -1011,8 +1024,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
           <button
             type="button"
             onClick={handleImageUpload}
-            disabled={isUploading}
-            className="w-10 h-10 rounded-full flex items-center justify-center text-primary hover:bg-primary/10 transition-colors flex-shrink-0"
+            disabled={isUploading || sendBlocked}
+            className="w-10 h-10 rounded-full flex items-center justify-center text-primary hover:bg-primary/10 transition-colors flex-shrink-0 disabled:opacity-50 disabled:pointer-events-none"
           >
             {isUploading ? (
               <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
