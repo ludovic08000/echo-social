@@ -234,6 +234,37 @@ export function usePosts() {
   });
 }
 
+/**
+ * Blend Monte Carlo ordering with the hybrid ML score (collaborative + content + temporal + quality).
+ * Calls ml_score_post(user_id, post_id) for each post in parallel.
+ * Final score = position-decay (Monte Carlo rank) * 0.6 + ml_score * 0.4.
+ * Falls back to original order if scoring fails.
+ */
+async function blendWithMLScore(posts: Post[], userId: string): Promise<Post[]> {
+  if (!posts.length) return posts;
+  try {
+    const scores = await Promise.all(
+      posts.map(async (p, idx) => {
+        try {
+          const { data, error } = await supabase.rpc('ml_score_post', {
+            p_user_id: userId,
+            p_post_id: p.id,
+          });
+          if (error) return { post: p, finalScore: 1 - idx / posts.length };
+          const mlScore = typeof data === 'number' ? data : 0.5;
+          const mcScore = 1 - idx / posts.length; // position decay (0..1)
+          return { post: p, finalScore: mcScore * 0.6 + mlScore * 0.4 };
+        } catch {
+          return { post: p, finalScore: 1 - idx / posts.length };
+        }
+      })
+    );
+    return scores.sort((a, b) => b.finalScore - a.finalScore).map((s) => s.post);
+  } catch {
+    return posts;
+  }
+}
+
 /** Enrich posts with profiles and user reactions — shared between strategies */
 async function enrichPosts(posts: any[], userId: string): Promise<Post[]> {
   const userIds = [...new Set(posts.map(p => p.user_id))];
