@@ -26,6 +26,21 @@ interface CachedDecryption {
 const plaintextCache = new Map<string, CachedDecryption>();
 const inflight = new Map<string, Promise<CachedDecryption>>();
 
+// Bumped whenever the E2EE key material is restored / rotated. Components
+// listen via useEffect and re-run their decryption pipeline. We also drop
+// any cache entry that resolved to "hidden" since those were placeholders
+// produced while the keys were still missing.
+let cacheGeneration = 0;
+if (typeof window !== 'undefined') {
+  window.addEventListener('forsure-keys-restored', () => {
+    for (const [k, v] of plaintextCache) {
+      if (v.hidden) plaintextCache.delete(k);
+    }
+    cacheGeneration += 1;
+    window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
+  });
+}
+
 function cacheKey(messageId: string | undefined, body: string): string {
   return `${messageId ?? 'noid'}|${body}`;
 }
@@ -116,8 +131,16 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   const [mediaKeyB64, setMediaKeyB64State] = useState<string | null>(initial.mediaKeyB64);
   const [isDecrypting, setIsDecrypting] = useState(initial.decrypting);
   const [hidden, setHidden] = useState(initial.hidden);
+  const [retryTick, setRetryTick] = useState(0);
   const onDecryptedRef = useRef(onDecrypted);
   onDecryptedRef.current = onDecrypted;
+
+  // Listen for E2EE key restoration so we re-attempt decryption after login.
+  useEffect(() => {
+    const handler = () => setRetryTick(t => t + 1);
+    window.addEventListener('forsure-decrypt-retry', handler);
+    return () => window.removeEventListener('forsure-decrypt-retry', handler);
+  }, []);
 
   useEffect(() => {
     // Re-run only when the actual identity of the message changes.
@@ -299,8 +322,9 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     // Deliberately exclude `decrypt`, `isEncryptionActive`, `refreshKey`, `isMe`
     // from deps: they change during E2EE auto-heal and would re-trigger the
     // "Déchiffrement…" flash even though the cached plaintext is valid.
+    // `retryTick` is included so we retry after key restoration on login.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [body, messageId, cachedPlaintext]);
+  }, [body, messageId, cachedPlaintext, retryTick]);
 
   if (hidden) return null;
 

@@ -159,11 +159,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       body: { action: 'record', email, success: !error },
     }).catch(() => {});
 
-    // Auto-restore E2EE keys from server backup using password
+    // Auto-restore E2EE keys from server backup using password.
+    // CRITICAL: we await the restore so that the Messages page never tries
+    // to decrypt before the master key + ratchet states are reloaded.
+    // Without this await, messages and photos appear as "🔒 chiffré" right
+    // after a fresh login on a device whose IndexedDB was cleared.
     if (!error && data.user) {
-      initAccountKeySync(password, data.user.id).then((status) => {
+      try {
+        const status = await initAccountKeySync(password, data.user.id);
         console.log('[AUTH] Key sync status:', status);
-      }).catch((e) => console.warn('[AUTH] Key sync failed:', e));
+        // Notify decryption components so they invalidate their cache and retry.
+        window.dispatchEvent(new CustomEvent('forsure-keys-restored', { detail: { status } }));
+      } catch (e) {
+        console.warn('[AUTH] Key sync failed:', e);
+      }
     }
     return { error };
   };
