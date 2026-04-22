@@ -555,6 +555,7 @@ class MessageQueueManager {
       : Math.min(BASE_RETRY_MS * Math.pow(2, msg.retryCount), MAX_RETRY_MS);
 
     console.log(`[SEND] retry scheduled for ${msg.localId} in ${delay}ms (${mode})`);
+    traceQueue(msg, 'retry:scheduled', { mode, delayMs: delay });
 
     const timer = setTimeout(async () => {
       this.retryTimers.delete(msg.localId);
@@ -580,10 +581,18 @@ class MessageQueueManager {
 
   /** Update message status and persist */
   private async updateStatus(msg: OutboundMessage, status: OutboundMessageStatus, error?: string) {
+    const previous = msg.status;
     msg.status = status;
     msg.lastError = error || null;
     msg.updatedAt = Date.now();
     await this.dbPut(msg);
+    // Trace every transition (skip no-op transitions to keep volume sane)
+    if (previous !== status) {
+      traceQueue(msg, `status:${status}` as Parameters<typeof traceQueue>[1], {
+        previous,
+        error: error || null,
+      });
+    }
     this.notifyListeners(msg.conversationId);
   }
 
