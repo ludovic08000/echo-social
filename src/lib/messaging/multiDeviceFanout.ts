@@ -340,29 +340,72 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
  */
 export async function tryReadDeviceCopy(messageId: string): Promise<string | null> {
   const myDeviceId = getCurrentDeviceId();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
   try {
-    const { data } = await supabase.rpc('get_device_copy_for_message', {
+    // Primary: copy explicitly addressed to this device_id.
+    let rows: Array<{ encrypted_body: string; sender_user_id: string; sender_device_id: string }> = [];
+    const { data: targeted } = await supabase.rpc('get_device_copy_for_message', {
       p_message_id: messageId,
       p_device_id: myDeviceId,
     });
-    if (!data || data.length === 0) return null;
-    const row = data[0] as { encrypted_body: string; sender_user_id: string; sender_device_id: string };
+    if (targeted && targeted.length > 0) {
+      rows = targeted as typeof rows;
+    } else {
+      // Fallback: device_id changed (localStorage cleared, new browser session).
+      // Try every copy addressed to this user — cryptographic decryption gates
+      // which one actually opens. This recovers messages after a session reset.
+      const { data: allCopies } = await supabase.rpc('get_device_copies_for_user', {
+        p_message_id: messageId,
+      });
+      if (!allCopies || allCopies.length === 0) return null;
+      rows = allCopies as typeof rows;
+      logCryptoError({
+        severity: 'info',
+        context: 'decrypt',
+        errorCode: 'DEVICE_COPY_FALLBACK',
+        errorMessage: `Trying ${rows.length} device copies (current device_id has no targeted copy)`,
+        myDeviceId,
+        metadata: { messageId, candidates: rows.length },
+      });
+    }
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
+    // Try each candidate row in order; first successful decryption wins.
+    for (const row of rows) {
+      const pt = await tryDecryptCopy(row, user.id, myDeviceId);
+      if (pt !== null) return pt;
+    }
+    return null;
+  } catch (e) {
+    console.warn('[FANOUT] device-copy read failed', e);
+    logCryptoException('decrypt', e, {
+      severity: 'error',
+      myDeviceId,
+      metadata: { messageId, stage: 'tryReadDeviceCopy' },
+    });
+    return null;
+  }
+}
+
+/** Attempt decryption of a single device copy row. Returns plaintext or null. */
+async function tryDecryptCopy(
+  row: { encrypted_body: string; sender_user_id: string; sender_device_id: string },
+  userId: string,
+  myDeviceId: string,
+): Promise<string | null> {
+  try {
 
     // Path 0: cached device-pair ratchet (v3 legacy KDF chain or v4 Double Ratchet).
     if (
       row.encrypted_body.startsWith(RATCHET_PREFIX_V4) ||
       row.encrypted_body.startsWith(RATCHET_PREFIX_V3)
     ) {
-      const pt = await ratchetDecrypt(user.id, myDeviceId, row.encrypted_body);
+      const pt = await ratchetDecrypt(userId, myDeviceId, row.encrypted_body);
       if (pt !== null) return pt;
-      // No cached session → return null; sender will re-X3DH on next message.
       return null;
     }
 
-    // Path 1: X3DH-wrapped envelope (v1 = no OPK, v2 = with OPK)
     if (row.encrypted_body.startsWith(X3DH_PREFIX_V1) || row.encrypted_body.startsWith(X3DH_PREFIX_V2)) {
       const { data: senderPub } = await supabase
         .from('user_public_keys')
@@ -373,24 +416,20 @@ export async function tryReadDeviceCopy(messageId: string): Promise<string | nul
       if (!senderPub?.identity_key) return null;
       const pt = await x3dhUnwrapForDevice(
         row.encrypted_body,
-        user.id,
+        userId,
         senderPub.identity_key,
         row.sender_user_id,
         row.sender_device_id,
       );
       if (pt !== null) return pt;
-      // fall through to legacy attempt for safety
     }
 
-    // Path 2: legacy deviceWrap (ECDH on sender identity ↔ recipient device key)
     const { data: senderDevices } = await supabase.rpc('list_active_devices_for_user', {
       p_user_id: row.sender_user_id,
     });
     const senderDev = (senderDevices || []).find((d: any) => d.device_id === row.sender_device_id);
     if (!senderDev?.device_public_key) return null;
 
-    // Also fetch sender's legacy identity public key so we can decrypt
-    // pre-migration messages (when device_public_key was the identity key).
     const { data: senderPubLegacy } = await supabase
       .from('user_public_keys')
       .select('identity_key')
@@ -400,18 +439,13 @@ export async function tryReadDeviceCopy(messageId: string): Promise<string | nul
 
     return await unwrapPlaintextForDevice(
       row.encrypted_body,
-      user.id,
+      userId,
       senderDev.device_public_key,
       myDeviceId,
       senderPubLegacy?.identity_key ?? null,
     );
   } catch (e) {
-    console.warn('[FANOUT] device-copy read failed', e);
-    logCryptoException('decrypt', e, {
-      severity: 'error',
-      myDeviceId,
-      metadata: { messageId, stage: 'tryReadDeviceCopy' },
-    });
+    console.warn('[FANOUT] decrypt single copy failed', e);
     return null;
   }
 }
