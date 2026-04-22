@@ -5,6 +5,7 @@ import { generateFingerprint } from '@/hooks/useTrustAndSafety';
 import { startSessionGuard, stopSessionGuard } from '@/lib/sessionGuard';
 import { detectAndStoreRecoveryFromHash, isRecoveryPending, setRecoveryFlag } from '@/lib/authRecovery';
 import { getSafeRedirectUrl } from '@/lib/urlUtils';
+import { initAccountKeySync } from '@/lib/crypto/accountKeyBackup';
 
 /** Check URL hash for recovery tokens BEFORE any session is exposed */
 function detectRecoveryFromHash(): boolean {
@@ -120,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signUp = async (email: string, password: string, name: string, dateOfBirth?: string) => {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -128,14 +129,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         data: { name, date_of_birth: dateOfBirth },
       },
     });
+    // Initialize account key sync immediately so backups can occur as soon as keys exist
+    if (!error && data.user) {
+      initAccountKeySync(password, data.user.id).catch(() => {});
+    }
     return { error };
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
+    // Auto-restore E2EE keys from server backup using password
+    if (!error && data.user) {
+      initAccountKeySync(password, data.user.id).then((status) => {
+        console.log('[AUTH] Key sync status:', status);
+      }).catch((e) => console.warn('[AUTH] Key sync failed:', e));
+    }
     return { error };
   };
 
