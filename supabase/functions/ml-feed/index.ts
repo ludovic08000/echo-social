@@ -111,15 +111,31 @@ async function buildUserProfile(supabase: any, userId: string): Promise<UserProf
   };
 }
 
+/**
+ * Strip PII (emails, URLs, @mentions, phone numbers) and aggressively truncate
+ * post text before forwarding to the AI gateway. Returns "" if user opted out.
+ */
+function sanitizeForAI(text: string | null | undefined, allowed: boolean): string {
+  if (!allowed || !text) return "";
+  return text
+    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "[email]")
+    .replace(/https?:\/\/\S+/gi, "[link]")
+    .replace(/@[\w.-]+/g, "[user]")
+    .replace(/\+?\d[\d\s().-]{7,}/g, "[phone]")
+    .slice(0, 40)
+    .trim();
+}
+
 async function aiScorePosts(
   profile: UserProfile,
   posts: any[],
-  userId: string
+  userId: string,
+  aiPersonalizationAllowed: boolean
 ): Promise<Record<string, number>> {
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
   if (!LOVABLE_API_KEY || posts.length === 0) return {};
 
-  // Prepare compact post summaries for AI
+  // Prepare compact post summaries for AI — body_preview is sanitized + truncated
   const postSummaries = posts.slice(0, 40).map((p: any) => ({
     id: p.id,
     age_h: Math.round((Date.now() - new Date(p.created_at).getTime()) / 3600000),
@@ -127,7 +143,7 @@ async function aiScorePosts(
     comments: p.comments_count || 0,
     has_media: !!p.image_url,
     body_len: (p.body || "").length,
-    body_preview: (p.body || "").slice(0, 100),
+    body_preview: sanitizeForAI(p.body, aiPersonalizationAllowed),
     is_friend: p._is_friend || false,
   }));
 
