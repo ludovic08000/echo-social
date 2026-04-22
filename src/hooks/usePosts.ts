@@ -235,27 +235,33 @@ export function usePosts() {
 }
 
 /**
- * Blend Monte Carlo ordering with the hybrid ML score (collaborative + content + temporal + quality).
- * Calls ml_score_post(user_id, post_id) for each post in parallel.
- * Final score = position-decay (Monte Carlo rank) * 0.6 + ml_score * 0.4.
- * Falls back to original order if scoring fails.
+ * Blend Monte Carlo ordering with the hybrid ML score v2 (collab + content + temporal + quality + semantic embeddings).
+ * Calls ml_score_post_v2(user_id, post_id) for each post in parallel.
+ * v2 includes pgvector cosine similarity between user & post embeddings (768-dim Gemini).
+ * Final score = position-decay (Monte Carlo rank) * 0.5 + ml_score_v2 * 0.5.
+ * Falls back gracefully to v1 then to original order if scoring fails.
  */
 async function blendWithMLScore(posts: Post[], userId: string): Promise<Post[]> {
   if (!posts.length) return posts;
   try {
     const scores = await Promise.all(
       posts.map(async (p, idx) => {
+        const mcScore = 1 - idx / posts.length; // position decay (0..1)
         try {
-          const { data, error } = await supabase.rpc('ml_score_post', {
+          const { data, error } = await supabase.rpc('ml_score_post_v2' as any, {
             p_user_id: userId,
             p_post_id: p.id,
           });
-          if (error) return { post: p, finalScore: 1 - idx / posts.length };
-          const mlScore = typeof data === 'number' ? data : 0.5;
-          const mcScore = 1 - idx / posts.length; // position decay (0..1)
-          return { post: p, finalScore: mcScore * 0.6 + mlScore * 0.4 };
+          if (error || typeof data !== 'number') {
+            // Fallback to v1 if v2 not yet deployed
+            const v1 = await supabase.rpc('ml_score_post', { p_user_id: userId, p_post_id: p.id });
+            const mlScore = typeof v1.data === 'number' ? v1.data : 0.5;
+            return { post: p, finalScore: mcScore * 0.6 + mlScore * 0.4 };
+          }
+          // v2 weight gives more to semantic/ML signal (50/50)
+          return { post: p, finalScore: mcScore * 0.5 + data * 0.5 };
         } catch {
-          return { post: p, finalScore: 1 - idx / posts.length };
+          return { post: p, finalScore: mcScore };
         }
       })
     );

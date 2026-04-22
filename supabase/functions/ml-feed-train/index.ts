@@ -37,6 +37,64 @@ function decay(createdAt: string, halfLifeDays: number): number {
   return Math.pow(0.5, ageDays / halfLifeDays);
 }
 
+// Generate a 768-dim semantic embedding via Gemini text-embedding-004
+async function generateEmbedding(text: string): Promise<number[] | null> {
+  const clean = (text || "").slice(0, 2000).trim();
+  if (!clean || clean.length < 5) return null;
+  try {
+    const resp = await fetch("https://ai.gateway.lovable.dev/v1/embeddings", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/text-embedding-004",
+        input: clean,
+      }),
+    });
+    if (!resp.ok) {
+      console.error("embedding HTTP error:", resp.status, await resp.text().catch(() => ""));
+      return null;
+    }
+    const data = await resp.json();
+    const emb = data?.data?.[0]?.embedding;
+    if (Array.isArray(emb) && emb.length === 768) return emb;
+    return null;
+  } catch (e) {
+    console.error("generateEmbedding error:", e);
+    return null;
+  }
+}
+
+// Convert a JS number array into the pgvector text format: "[0.1,0.2,...]"
+function toPgVector(arr: number[]): string {
+  return "[" + arr.map((n) => Number(n.toFixed(6))).join(",") + "]";
+}
+
+// Average several embeddings into a single vector (weighted)
+function averageEmbeddings(items: { emb: number[]; weight: number }[]): number[] | null {
+  if (!items.length) return null;
+  const dim = items[0].emb.length;
+  const out = new Array(dim).fill(0);
+  let totalW = 0;
+  for (const { emb, weight } of items) {
+    if (emb.length !== dim) continue;
+    const w = Math.max(0, weight);
+    if (w === 0) continue;
+    for (let i = 0; i < dim; i++) out[i] += emb[i] * w;
+    totalW += w;
+  }
+  if (totalW === 0) return null;
+  // Normalize to unit length (cosine-friendly)
+  for (let i = 0; i < dim; i++) out[i] /= totalW;
+  let norm = 0;
+  for (let i = 0; i < dim; i++) norm += out[i] * out[i];
+  norm = Math.sqrt(norm) || 1;
+  for (let i = 0; i < dim; i++) out[i] /= norm;
+  return out;
+}
+
 // Extract topics + hashtags from post body using Lovable AI
 async function extractFeatures(post: PostRow): Promise<{ topics: string[]; hashtags: string[]; sentiment: number; quality: number; language: string }> {
   const text = (post.body || "").slice(0, 1500);
@@ -156,8 +214,18 @@ Deno.serve(async (req) => {
     const toExtract = allPosts.filter((p) => !existingIds.has(p.id)).slice(0, 30);
 
     let postsProcessed = 0;
+    const postEmbeddings = new Map<string, number[]>();
     for (const post of toExtract) {
       const f = await extractFeatures(post);
+      // Build embedding input: body + topics + hashtags for richer semantics
+      const embText = [
+        post.body || "",
+        f.topics.join(" "),
+        f.hashtags.map((h) => "#" + h).join(" "),
+      ].filter(Boolean).join("\n").slice(0, 2000);
+      const emb = await generateEmbedding(embText);
+      if (emb) postEmbeddings.set(post.id, emb);
+
       await supabase.from("ml_post_features").upsert({
         post_id: post.id,
         topics: f.topics,
@@ -171,8 +239,30 @@ Deno.serve(async (req) => {
         view_count: 0,
         positive_count: 0,
         negative_count: 0,
+        ...(emb ? { embedding: toPgVector(emb), embedding_updated_at: new Date().toISOString() } : {}),
       });
       postsProcessed++;
+    }
+
+    // Also load existing embeddings for posts we already have features for (for user profile averaging)
+    if (existingIds.size > 0) {
+      const { data: existingEmb } = await supabase
+        .from("ml_post_features")
+        .select("post_id, embedding")
+        .in("post_id", Array.from(existingIds))
+        .not("embedding", "is", null);
+      for (const row of existingEmb || []) {
+        const e = (row as any).embedding;
+        // pgvector may return as string "[...]" or as array
+        if (typeof e === "string") {
+          try {
+            const arr = JSON.parse(e);
+            if (Array.isArray(arr)) postEmbeddings.set((row as any).post_id, arr);
+          } catch {}
+        } else if (Array.isArray(e)) {
+          postEmbeddings.set((row as any).post_id, e);
+        }
+      }
     }
 
     // 4) Update CTR & velocity for ALL posts with features (cheap aggregation)
@@ -223,6 +313,7 @@ Deno.serve(async (req) => {
       dwellSum: number;
       dwellCount: number;
       total: number;
+      embItems: { emb: number[]; weight: number }[];
     }>();
 
     for (const it of allInter) {
@@ -231,7 +322,7 @@ Deno.serve(async (req) => {
       const w = (signalW[it.signal_type] ?? it.weight ?? 1) * decay(it.created_at, halfLife);
       const u = userAgg.get(it.user_id) || {
         topics: {}, hashtags: {}, authors: {}, hours: {}, days: {},
-        dwellSum: 0, dwellCount: 0, total: 0,
+        dwellSum: 0, dwellCount: 0, total: 0, embItems: [],
       };
       for (const t of feat.topics) u.topics[t] = (u.topics[t] || 0) + w;
       for (const h of feat.hashtags) u.hashtags[h] = (u.hashtags[h] || 0) + w * 0.5;
@@ -241,6 +332,11 @@ Deno.serve(async (req) => {
       if (it.dwell_ms) {
         u.dwellSum += it.dwell_ms;
         u.dwellCount++;
+      }
+      // Capture post embedding for positive signals only (likes, comments, dwell, share)
+      if (w > 0.5) {
+        const postEmb = postEmbeddings.get(it.post_id);
+        if (postEmb) u.embItems.push({ emb: postEmb, weight: w });
       }
       u.total++;
       userAgg.set(it.user_id, u);
@@ -255,7 +351,10 @@ Deno.serve(async (req) => {
     };
 
     let usersProcessed = 0;
+    let usersWithEmbedding = 0;
     for (const [userId, u] of userAgg) {
+      const userEmb = averageEmbeddings(u.embItems);
+      if (userEmb) usersWithEmbedding++;
       await supabase.from("ml_user_profiles").upsert({
         user_id: userId,
         topic_weights: normalize(u.topics),
@@ -266,6 +365,7 @@ Deno.serve(async (req) => {
         avg_session_dwell_ms: u.dwellCount > 0 ? Math.round(u.dwellSum / u.dwellCount) : 0,
         total_interactions: u.total,
         last_trained_at: new Date().toISOString(),
+        ...(userEmb ? { embedding: toPgVector(userEmb), embedding_updated_at: new Date().toISOString() } : {}),
       });
       usersProcessed++;
     }
@@ -289,6 +389,8 @@ Deno.serve(async (req) => {
           total_users_with_profiles: usersProcessed,
           total_posts_with_features: postsProcessed + existingIds.size,
           avg_dwell_ms: 0,
+          users_with_embedding: usersWithEmbedding,
+          posts_with_new_embedding: postEmbeddings.size,
         },
       })
       .eq("id", runId);
