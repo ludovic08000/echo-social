@@ -140,6 +140,19 @@ export function ChatView({ conversationId }: ChatViewProps) {
     void savePlaintext(serverId, plaintext);
   }, [bumpCache]);
 
+  // When E2EE keys are restored after login, drop empty/placeholder entries
+  // and re-trigger decryption so previously-hidden messages re-appear in clear.
+  useEffect(() => {
+    const handler = () => {
+      for (const [k, v] of decryptedCache) {
+        if (!v) decryptedCache.delete(k);
+      }
+      bumpCache();
+    };
+    window.addEventListener('forsure-keys-restored', handler);
+    return () => window.removeEventListener('forsure-keys-restored', handler);
+  }, [bumpCache]);
+
   // Message queue for encrypted sending.
   // STRICT: plaintext is allowed ONLY for the Zeus bot conversation.
   // Any peer conversation MUST go through E2EE — if encryption is not ready,
