@@ -292,6 +292,14 @@ export async function tryReadDeviceCopy(messageId: string): Promise<string | nul
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
+    // Path 0: v3 ratchet — uses a previously cached device-pair session.
+    if (row.encrypted_body.startsWith(RATCHET_PREFIX_V3)) {
+      const pt = await ratchetDecrypt(user.id, myDeviceId, row.encrypted_body);
+      if (pt !== null) return pt;
+      // No cached session → return null; sender will re-X3DH on next message.
+      return null;
+    }
+
     // Path 1: X3DH-wrapped envelope (v1 = no OPK, v2 = with OPK)
     if (row.encrypted_body.startsWith(X3DH_PREFIX_V1) || row.encrypted_body.startsWith(X3DH_PREFIX_V2)) {
       const { data: senderPub } = await supabase
@@ -301,7 +309,13 @@ export async function tryReadDeviceCopy(messageId: string): Promise<string | nul
         .eq('is_active', true)
         .maybeSingle();
       if (!senderPub?.identity_key) return null;
-      const pt = await x3dhUnwrapForDevice(row.encrypted_body, user.id, senderPub.identity_key);
+      const pt = await x3dhUnwrapForDevice(
+        row.encrypted_body,
+        user.id,
+        senderPub.identity_key,
+        row.sender_user_id,
+        row.sender_device_id,
+      );
       if (pt !== null) return pt;
       // fall through to legacy attempt for safety
     }
