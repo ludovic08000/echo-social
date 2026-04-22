@@ -24,6 +24,7 @@ const iconColors: Record<string, string> = {
   privacy: 'bg-teal-500/10 text-teal-500',
   notifications: 'bg-orange-500/10 text-orange-500',
   parental: 'bg-pink-500/10 text-pink-500',
+  devices: 'bg-cyan-500/10 text-cyan-500',
 };
 
 const quickLinks = [
