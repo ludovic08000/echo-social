@@ -805,13 +805,15 @@ class MessageQueueManager {
     } catch {}
   }
 
-  private attachLocalId(encryptedBody: string, localId: string): string {
+  private attachLocalId(encryptedBody: string, localId: string, traceId?: string): string {
     if (!encryptedBody.startsWith('{')) return encryptedBody;
     try {
       const payload = JSON.parse(encryptedBody);
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return encryptedBody;
-      if (typeof payload.__lid === 'string') return encryptedBody;
-      return JSON.stringify({ ...payload, __lid: localId });
+      const next: Record<string, unknown> = { ...payload };
+      if (typeof payload.__lid !== 'string') next.__lid = localId;
+      if (traceId && typeof payload.__tid !== 'string') next.__tid = traceId;
+      return JSON.stringify(next);
     } catch {
       return encryptedBody;
     }
