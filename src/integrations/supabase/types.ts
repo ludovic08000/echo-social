@@ -2704,6 +2704,8 @@ export type Database = {
       ml_post_features: {
         Row: {
           ctr: number
+          embedding: string | null
+          embedding_updated_at: string | null
           engagement_velocity: number
           extracted_at: string
           has_media: boolean
@@ -2720,6 +2722,8 @@ export type Database = {
         }
         Insert: {
           ctr?: number
+          embedding?: string | null
+          embedding_updated_at?: string | null
           engagement_velocity?: number
           extracted_at?: string
           has_media?: boolean
@@ -2736,6 +2740,8 @@ export type Database = {
         }
         Update: {
           ctr?: number
+          embedding?: string | null
+          embedding_updated_at?: string | null
           engagement_velocity?: number
           extracted_at?: string
           has_media?: boolean
@@ -2852,6 +2858,8 @@ export type Database = {
           avg_session_dwell_ms: number
           created_at: string
           daily_activity: Json
+          embedding: string | null
+          embedding_updated_at: string | null
           hashtag_weights: Json
           hourly_activity: Json
           last_trained_at: string | null
@@ -2865,6 +2873,8 @@ export type Database = {
           avg_session_dwell_ms?: number
           created_at?: string
           daily_activity?: Json
+          embedding?: string | null
+          embedding_updated_at?: string | null
           hashtag_weights?: Json
           hourly_activity?: Json
           last_trained_at?: string | null
@@ -2878,6 +2888,8 @@ export type Database = {
           avg_session_dwell_ms?: number
           created_at?: string
           daily_activity?: Json
+          embedding?: string | null
+          embedding_updated_at?: string | null
           hashtag_weights?: Json
           hourly_activity?: Json
           last_trained_at?: string | null
@@ -5796,7 +5808,18 @@ export type Database = {
               user_id: string
             }[]
           }
+      ml_find_similar_posts: {
+        Args: { p_limit?: number; p_user_id: string }
+        Returns: {
+          post_id: string
+          similarity: number
+        }[]
+      }
       ml_score_post: {
+        Args: { p_post_id: string; p_user_id: string }
+        Returns: number
+      }
+      ml_score_post_v2: {
         Args: { p_post_id: string; p_user_id: string }
         Returns: number
       }
