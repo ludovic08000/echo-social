@@ -59,15 +59,18 @@ export function MLFeedSection() {
         .gte("created_at", new Date(Date.now() - 86400000).toISOString()),
     ]);
 
-    if (runsRes.data) setRuns(runsRes.data as any);
-    if (configRes.data?.value) setWeights(configRes.data.value as HybridWeights);
+    if (runsRes.data) setRuns(runsRes.data as unknown as ModelRun[]);
+    if (configRes.data?.value) setWeights(configRes.data.value as unknown as HybridWeights);
 
-    const lastSuccess = (runsRes.data || []).find((r: any) => r.status === "success");
+    const lastSuccess = (runsRes.data || []).find((r: any) => r.status === "success") as any;
+    const ctr = lastSuccess?.metrics && typeof lastSuccess.metrics === "object" && "global_ctr" in lastSuccess.metrics
+      ? Number(lastSuccess.metrics.global_ctr) || 0
+      : 0;
     setStats({
       profiles: profilesRes.count || 0,
       features: featuresRes.count || 0,
       interactions24h: interRes.count || 0,
-      avgCTR: lastSuccess?.metrics?.global_ctr || 0,
+      avgCTR: ctr,
     });
     setLoading(false);
   };
@@ -102,8 +105,13 @@ export function MLFeedSection() {
   };
 
   const saveWeights = async () => {
-    const sum = Object.values(weights).reduce((a, b) => a + b, 0);
-    const normalized = Object.fromEntries(Object.entries(weights).map(([k, v]) => [k, +(v / sum).toFixed(3)]));
+    const sum = Object.values(weights).reduce((a, b) => a + b, 0) || 1;
+    const normalized = {
+      collaborative: +(weights.collaborative / sum).toFixed(3),
+      content: +(weights.content / sum).toFixed(3),
+      temporal: +(weights.temporal / sum).toFixed(3),
+      quality: +(weights.quality / sum).toFixed(3),
+    };
     const { error } = await supabase
       .from("ml_model_config")
       .update({ value: normalized as any, updated_at: new Date().toISOString() })
@@ -112,7 +120,7 @@ export function MLFeedSection() {
       toast.error("Sauvegarde échouée");
     } else {
       toast.success("Poids mis à jour");
-      setWeights(normalized as HybridWeights);
+      setWeights(normalized);
     }
   };
 
