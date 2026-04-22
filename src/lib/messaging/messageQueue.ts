@@ -25,6 +25,13 @@ export type OutboundMessageStatus =
 
 export interface OutboundMessage {
   localId: string;
+  /**
+   * Stable trace identifier (UUID) attached at enqueue time and embedded
+   * inside the encrypted payload (`__tid`). Lets us follow a single message
+   * across enqueue → encrypt → send → backend ack → decrypt on receiver,
+   * even if `localId` rotates.
+   */
+  traceId: string;
   conversationId: string;
   senderId: string;
   /** Runtime-only plaintext (never persisted to IndexedDB) */
