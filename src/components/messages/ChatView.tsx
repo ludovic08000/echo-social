@@ -867,9 +867,21 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
                           {reactions.length > 0 && (
                             <div className="flex items-center gap-0.5 -mt-1 px-1 relative z-10">
-                              <div className="flex items-center gap-0 bg-background border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm">
-                                {reactions.map((r, i) => (
-                                  <span key={i} className="text-xs">{r}</span>
+                              <div className="flex items-center gap-1 bg-background border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm">
+                                {Object.entries(
+                                  reactions.reduce<Record<string, number>>((acc, r) => {
+                                    acc[r.emoji] = (acc[r.emoji] || 0) + 1;
+                                    return acc;
+                                  }, {})
+                                ).map(([emoji, count]) => (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => toggleReaction(msg.id, emoji)}
+                                    className="flex items-center gap-0.5 text-xs hover:scale-110 transition-transform"
+                                  >
+                                    <span>{emoji}</span>
+                                    {count > 1 && <span className="text-muted-foreground text-[10px]">{count}</span>}
+                                  </button>
                                 ))}
                               </div>
                             </div>
