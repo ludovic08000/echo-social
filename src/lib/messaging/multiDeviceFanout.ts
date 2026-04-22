@@ -285,6 +285,14 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
         );
       } catch (e) {
         console.warn('[FANOUT] all paths failed for device', dev.device_id, e);
+        logCryptoException('fanout', e, {
+          severity: 'error',
+          conversationId: input.conversationId,
+          myDeviceId: senderDeviceId,
+          peerUserId: dev.user_id,
+          peerDeviceId: dev.device_id,
+          metadata: { stage: 'all_paths_failed' },
+        });
         continue;
       }
     }
