@@ -1621,7 +1621,27 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         <div className="border-t border-border/30 bg-background">
           <form onSubmit={handleSend} className="flex items-center gap-1 px-2 py-1.5">
             <div className="flex items-center gap-0">
-              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+              <button
+                type="button"
+                onClick={() => {
+                  if (sendBlocked) {
+                    if (e2ee.fingerprintChanged) {
+                      toast.error('Clé de sécurité modifiée — valide d’abord le contact avant d’envoyer une photo.');
+                    } else if (e2ee.peerKeyMissing) {
+                      toast.error('Clés du contact indisponibles — impossible d’envoyer une photo pour le moment.');
+                    } else if (e2ee.initError === 'pin_unlock_required') {
+                      toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer une photo.');
+                    } else if (e2ee.initError === 'identity_lost_backup_available') {
+                      toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer une photo.');
+                    }
+                    return;
+                  }
+
+                  fileInputRef.current?.click();
+                }}
+                disabled={isUploading || sendBlocked}
+                className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors disabled:opacity-50 disabled:pointer-events-none"
+              >
                 {isUploading ? <div className="w-3.5 h-3.5 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Camera className="w-4 h-4" />}
               </button>
               <button type="button" onClick={() => { setShowGifs(v => !v); setShowEmojis(false); }} className={cn("w-7 h-7 rounded-full flex items-center justify-center transition-colors text-[11px] font-bold", showGifs ? "text-primary" : "text-muted-foreground hover:text-primary")}>
