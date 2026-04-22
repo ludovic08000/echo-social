@@ -486,7 +486,15 @@ async function decryptV4(myUserId: string, myDeviceId: string, payload: string):
     session = { ...session, ckRecvB64: ck, Nr: session.Nr + 1 };
     await saveSession(found.key, session);
     return new hardGlobals.TextDecoder().decode(pt);
-  } catch {
+  } catch (err) {
+    void logCryptoError({
+      severity: 'error',
+      context: 'decrypt',
+      errorCode: 'E_DECRYPT_V4',
+      errorMessage: err instanceof Error ? err.message : String(err),
+      myDeviceId,
+      metadata: { sessionId, Ns, PN },
+    });
     return null;
   }
 }
