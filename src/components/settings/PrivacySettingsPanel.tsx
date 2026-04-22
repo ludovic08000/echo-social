@@ -531,6 +531,24 @@ export function PrivacySettingsPanel() {
               onCheckedChange={(v) => handleUpdate('ai_personalization_enabled', v)}
             />
           </div>
+
+          <div className="flex items-center justify-between p-4 rounded-xl bg-secondary/50">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4" />
+                <Label>Partage de signaux avec l'IA</Label>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Lorsque cette option est désactivée, aucun extrait identifiant ni signal personnel
+                n'est transmis aux services IA externes (modération, recommandations). Les
+                fonctionnalités IA continuent de fonctionner avec des données strictement minimales.
+              </p>
+            </div>
+            <Switch
+              checked={settings.ai_data_sharing_enabled !== false}
+              onCheckedChange={(v) => handleUpdate('ai_data_sharing_enabled', v)}
+            />
+          </div>
         </div>
       </section>
 
