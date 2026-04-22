@@ -663,11 +663,6 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     e.preventDefault();
     if (!newMessage.trim()) return;
 
-    // Non-blocking warning when the peer's fingerprint changed (matches ChatView).
-    if (!isZeusConversation && e2ee.fingerprintChanged) {
-      toast.warning('⚠️ Clé de sécurité du contact modifiée — l’envoi continue.');
-    }
-
     const replyText = replyTo ? decryptedCacheRef.current.get(replyTo.id) || replyTo.body : null;
     const body = replyTo
       ? `↩️ ${replyTo.profile.name}: "${(replyText || '').slice(0, 40)}…"\n\n${newMessage.trim()}`
@@ -844,23 +839,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         />
       )}
 
-      {/* Fingerprint changed alert with acknowledge button */}
-      {!isZeusConversation && e2ee.fingerprintChanged && (
-        <div className="mx-2 mt-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
-          <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
-            ⚠️ La clé de sécurité du contact a changé.
-          </p>
-          <p className="text-[10px] text-muted-foreground mt-1">
-            Vérifie le contact puis valide pour réactiver l'envoi.
-          </p>
-          <button
-            onClick={e2ee.acknowledgeFingerprint}
-            className="mt-2 px-3 py-1 rounded-full bg-primary text-primary-foreground text-[10px] font-medium hover:opacity-90 transition-opacity"
-          >
-            OK — J'ai vérifié
-          </button>
-        </div>
-      )}
+      {/* Fingerprint change banner removed per user request — silent re-keying */}
 
       {/* Key lost / init error recovery banner */}
       {!isZeusConversation && e2ee.initError && (
@@ -1633,10 +1612,6 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                       toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer une photo.');
                     }
                     return;
-                  }
-
-                  if (e2ee.fingerprintChanged) {
-                    toast.warning('⚠️ Clé de sécurité du contact modifiée — envoi de la photo en cours.');
                   }
 
                   fileInputRef.current?.click();
