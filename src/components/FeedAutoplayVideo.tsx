@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { Play, VolumeX, Volume2 } from 'lucide-react';
+import { VolumeX, Volume2 } from 'lucide-react';
 
 interface FeedAutoplayVideoProps {
   src: string;
