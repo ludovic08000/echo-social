@@ -237,7 +237,8 @@ Posts : ${JSON.stringify(postSummaries)}`;
 async function aiRecommend(
   profile: UserProfile,
   candidatePosts: any[],
-  seenPostIds: Set<string>
+  seenPostIds: Set<string>,
+  aiPersonalizationAllowed: boolean
 ): Promise<string[]> {
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
   if (!LOVABLE_API_KEY || candidatePosts.length === 0) return [];
@@ -248,7 +249,7 @@ async function aiRecommend(
 
   const summaries = unseen.map((p: any) => ({
     id: p.id,
-    body_preview: (p.body || "").slice(0, 120),
+    body_preview: sanitizeForAI(p.body, aiPersonalizationAllowed),
     likes: p.likes_count || 0,
     comments: p.comments_count || 0,
     has_media: !!p.image_url,
