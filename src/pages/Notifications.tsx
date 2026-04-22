@@ -121,6 +121,8 @@ function getNotificationIcon(type: string) {
       return { icon: SmilePlus, className: 'bg-pink-500', iconClass: 'text-white' };
     case 'story_view':
       return { icon: Eye, className: 'bg-purple-500', iconClass: 'text-white' };
+    case 'new_device':
+      return { icon: ShieldAlert, className: 'bg-destructive', iconClass: 'text-destructive-foreground' };
     default:
       return { icon: MessageCircle, className: 'bg-secondary', iconClass: 'text-secondary-foreground' };
   }
