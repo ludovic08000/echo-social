@@ -287,31 +287,33 @@ Deno.serve(async (req) => {
       if (w < 0) cur.neg++;
       postInteractions.set(it.post_id, cur);
     }
-    for (const [postId, agg] of postInteractions) {
-      const ctr = agg.views > 0 ? agg.pos / agg.views : 0;
-      await supabase
-        .from("ml_post_features")
-        .update({
-          view_count: agg.views,
-          positive_count: agg.pos,
-          negative_count: agg.neg,
-          ctr: Number(ctr.toFixed(4)),
-          engagement_velocity: agg.pos + agg.neg,
-        })
-        .eq("post_id", postId);
+    // Parallelize CTR updates (10 at a time) instead of awaiting one-by-one
+    const ctrEntries = Array.from(postInteractions.entries());
+    const CTR_CONCURRENCY = 10;
+    for (let i = 0; i < ctrEntries.length; i += CTR_CONCURRENCY) {
+      const chunk = ctrEntries.slice(i, i + CTR_CONCURRENCY);
+      await Promise.all(chunk.map(([postId, agg]) => {
+        const ctr = agg.views > 0 ? agg.pos / agg.views : 0;
+        return supabase
+          .from("ml_post_features")
+          .update({
+            view_count: agg.views,
+            positive_count: agg.pos,
+            negative_count: agg.neg,
+            ctr: Number(ctr.toFixed(4)),
+            engagement_velocity: agg.pos + agg.neg,
+          })
+          .eq("post_id", postId);
+      }));
     }
 
-    // 5) Build per-user preference profiles
+    // 5) Build per-user preference profiles — read features from in-memory cache (no N+1 query)
     const postFeatureMap = new Map<string, { topics: string[]; hashtags: string[]; author: string }>();
     for (const p of allPosts) {
-      const { data: feat } = await supabase
-        .from("ml_post_features")
-        .select("topics, hashtags")
-        .eq("post_id", p.id)
-        .maybeSingle();
+      const cached = freshFeatures.get(p.id) || existingMap.get(p.id);
       postFeatureMap.set(p.id, {
-        topics: feat?.topics || [],
-        hashtags: feat?.hashtags || [],
+        topics: cached?.topics || [],
+        hashtags: cached?.hashtags || [],
         author: p.user_id,
       });
     }
