@@ -28,6 +28,7 @@
 
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import { bufferToBase64, base64ToBuffer, randomBytes } from './utils';
+import { logCryptoError } from './errorLogger';
 
 const DB_NAME = 'forsure-device-sessions';
 const DB_VERSION = 2;
