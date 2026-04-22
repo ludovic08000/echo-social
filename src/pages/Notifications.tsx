@@ -92,6 +92,8 @@ function getNotificationLink(group: GroupedNotification): string {
       return '/marketplace?sellerTab=orders';
     case 'story_view':
       return '/feed';
+    case 'new_device':
+      return '/settings?tab=devices';
     case 'like':
     case 'comment':
     case 'reaction':
