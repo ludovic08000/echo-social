@@ -375,14 +375,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
     e.target.value = '';
   };
 
+  const messageIds = useMemo(() => (messages || []).map(m => m.id), [messages]);
+  const { reactions: reactionsByMessage, toggleReaction } = useMessageReactions(conversationId, messageIds);
+
   const handleReact = (msgId: string, emoji: string) => {
-    setMessageReactions(prev => {
-      const existing = prev[msgId] || [];
-      if (existing.includes(emoji)) {
-        return { ...prev, [msgId]: existing.filter(e => e !== emoji) };
-      }
-      return { ...prev, [msgId]: [...existing, emoji] };
-    });
+    void toggleReaction(msgId, emoji);
   };
 
   const handleCopy = (msg: Message) => {
