@@ -25,6 +25,7 @@ import { useE2EE } from '@/hooks/useE2EE';
 import { generateMediaKey, encryptMedia, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
 import { compressImageForChat } from '@/lib/messaging/compressImage';
 import { MessageMedia } from './MessageMedia';
+import { rememberDecryptedMedia } from './decryptedMediaCache';
 import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { EncryptionBadge, EncryptionStatusBar } from './EncryptionBadge';
 import { DecryptedMessageBody } from './DecryptedMessageBody';
@@ -200,6 +201,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
       const encFile = new File([encryptedBlob], `${prepared.name}.enc`, { type: 'application/octet-stream' });
       const url = await rawUpload(encFile);
       if (url) {
+        // Pre-seed the cache with the local plaintext blob so the sender
+        // sees their image instantly, without R2 round-trip + decrypt.
+        try {
+          const localUrl = URL.createObjectURL(prepared);
+          rememberDecryptedMedia(url, localUrl, isVideo);
+        } catch { /* noop */ }
         const body = buildMediaMessageBody(label, keyB64);
         queue.sendMessage(body, url).catch(() => toast.error('Erreur envoi média'));
       }
