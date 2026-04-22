@@ -397,6 +397,11 @@ export async function tryReadDeviceCopy(messageId: string): Promise<string | nul
     );
   } catch (e) {
     console.warn('[FANOUT] device-copy read failed', e);
+    logCryptoException('decrypt', e, {
+      severity: 'error',
+      myDeviceId,
+      metadata: { messageId, stage: 'tryReadDeviceCopy' },
+    });
     return null;
   }
 }
