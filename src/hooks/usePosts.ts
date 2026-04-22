@@ -191,8 +191,9 @@ export function usePosts() {
             user_reaction: post.user_reaction || null,
           })) as Post[];
 
-          // Apply Monte Carlo ranking
-          return monteCarloRank(mapped, mcCtx, 50);
+          // Apply Monte Carlo ranking, then blend with ML hybrid score
+          const mcRanked = monteCarloRank(mapped, mcCtx, 50);
+          return await blendWithMLScore(mcRanked, user.id);
         }
       } catch {
         // Fall through to legacy fallback
@@ -214,8 +215,9 @@ export function usePosts() {
       const filteredPosts = posts.filter(p => !containsMutedKeyword(p.body, prefs.mutedKeywords));
       const enriched = await enrichPosts(filteredPosts.slice(0, PAGE_SIZE), user.id);
       
-      // Apply Monte Carlo ranking
-      return monteCarloRank(enriched, mcCtx, 50);
+      // Apply Monte Carlo ranking + ML hybrid blending
+      const mcRanked = monteCarloRank(enriched, mcCtx, 50);
+      return await blendWithMLScore(mcRanked, user.id);
     },
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.length < PAGE_SIZE) return undefined;
@@ -230,6 +232,37 @@ export function usePosts() {
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
   });
+}
+
+/**
+ * Blend Monte Carlo ordering with the hybrid ML score (collaborative + content + temporal + quality).
+ * Calls ml_score_post(user_id, post_id) for each post in parallel.
+ * Final score = position-decay (Monte Carlo rank) * 0.6 + ml_score * 0.4.
+ * Falls back to original order if scoring fails.
+ */
+async function blendWithMLScore(posts: Post[], userId: string): Promise<Post[]> {
+  if (!posts.length) return posts;
+  try {
+    const scores = await Promise.all(
+      posts.map(async (p, idx) => {
+        try {
+          const { data, error } = await supabase.rpc('ml_score_post', {
+            p_user_id: userId,
+            p_post_id: p.id,
+          });
+          if (error) return { post: p, finalScore: 1 - idx / posts.length };
+          const mlScore = typeof data === 'number' ? data : 0.5;
+          const mcScore = 1 - idx / posts.length; // position decay (0..1)
+          return { post: p, finalScore: mcScore * 0.6 + mlScore * 0.4 };
+        } catch {
+          return { post: p, finalScore: 1 - idx / posts.length };
+        }
+      })
+    );
+    return scores.sort((a, b) => b.finalScore - a.finalScore).map((s) => s.post);
+  } catch {
+    return posts;
+  }
 }
 
 /** Enrich posts with profiles and user reactions — shared between strategies */
@@ -485,6 +518,12 @@ export function useToggleLike() {
   return useMutation({
     mutationFn: async ({ postId, isLiked }: { postId: string; isLiked: boolean }) => {
       if (!user) throw new Error('Not authenticated');
+
+      // ML signal: track explicit like/unlike
+      try {
+        const { trackMLSignal } = await import('@/hooks/useMLTracker');
+        trackMLSignal(user.id, postId, isLiked ? 'skip_fast' : 'like');
+      } catch {}
 
       if (isLiked) {
         const { error } = await supabase.from('likes').delete().eq('user_id', user.id).eq('post_id', postId);
