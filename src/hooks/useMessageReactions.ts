@@ -125,7 +125,7 @@ export function useMessageReactions(conversationId: string | undefined, messageI
       } else {
         setReactions(prev => ({
           ...prev,
-          [messageId]: (prev[messageId] || []).map(r => (r.id === tempId ? (data as MessageReaction) : r)),
+          [messageId]: (prev[messageId] || []).map(r => (r.id === tempId ? (data as unknown as MessageReaction) : r)),
         }));
       }
     }
