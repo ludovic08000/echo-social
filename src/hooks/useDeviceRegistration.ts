@@ -38,10 +38,28 @@ export function useDeviceRegistration() {
         const keys = await getOrCreateIdentityKeys(user.id);
         const bundle = await exportPublicKeyBundle(keys);
 
+        // Validation: ensure the shared identity is fully restored before publishing
+        // anything that other users will pin against. Publishing a half-initialised
+        // bundle would let peers cache a wrong identity key for this account.
+        if (!bundle?.identityKey || !bundle?.signingKey) {
+          console.warn('[useDeviceRegistration] identity bundle incomplete — abort device publish');
+          ranRef.current = false; // allow a retry on next mount
+          return;
+        }
+        if (!keys?.privateKey || !keys?.signingPrivateKey) {
+          console.warn('[useDeviceRegistration] identity private keys missing — abort device publish');
+          ranRef.current = false;
+          return;
+        }
+
         const payload = {
           user_id: user.id,
           device_id: deviceId,
           device_name: getCurrentDeviceLabel(),
+          // ⚠️ This is the SHARED identity key, not a per-device key. The
+          // deviceWrap fallback derives ECDH from this — see deviceWrap.ts for
+          // the security implications. Per-device isolation is provided by the
+          // X3DH+Ratchet path (steps 2 & 3 below), not by this column.
           device_public_key: bundle.identityKey,
           platform: getCurrentPlatform(),
           user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
