@@ -64,13 +64,6 @@ function traceQueue(
   });
 }
 
-  | 'pending_local'
-  | 'encrypting'
-  | 'waiting_secure_channel'
-  | 'sending'
-  | 'sent'
-  | 'retry_pending'
-  | 'failed_visible';
 
 export interface OutboundMessage {
   localId: string;
