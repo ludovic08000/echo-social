@@ -52,12 +52,36 @@ export function useMessageQueue(
     messageQueue.registerHandlers(conversationId, handlerIdRef.current, {
       encrypt: async (plaintext: string, _convId: string, localId: string) => {
         if (!activeRef.current) {
+          logCryptoError({
+            severity: 'warning',
+            context: 'queue.encrypt',
+            errorCode: 'E_NOT_ACTIVE',
+            errorMessage: 'Encryption not active when queue tried to encrypt',
+            conversationId: _convId,
+            metadata: { localId },
+          });
           throw new Error('Encryption not active');
         }
         if (!encryptRef.current) {
+          logCryptoError({
+            severity: 'warning',
+            context: 'queue.encrypt',
+            errorCode: 'E_INITIALIZING',
+            errorMessage: 'Encrypt handler not yet wired (E2EE initializing)',
+            conversationId: _convId,
+            metadata: { localId },
+          });
           throw new Error('Encryption initializing');
         }
-        return encryptRef.current(plaintext, localId);
+        try {
+          return await encryptRef.current(plaintext, localId);
+        } catch (e) {
+          logCryptoException('queue.encrypt', e, {
+            conversationId: _convId,
+            metadata: { localId },
+          });
+          throw e;
+        }
       },
       send: async (msg: OutboundMessage) => {
         if (!msg.encryptedBody) {
