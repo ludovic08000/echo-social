@@ -794,7 +794,14 @@ export function ChatView({ conversationId }: ChatViewProps) {
                           )}
 
                           {isImage && (
-                            <div className="overflow-hidden mb-0.5 rounded-[18px] rounded-bl-sm">
+                            <div
+                              onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
+                              onContextMenu={(e) => { e.preventDefault(); setActiveMessageId(msg.id); }}
+                              className={cn(
+                                'overflow-hidden mb-0.5 rounded-[18px] rounded-bl-sm cursor-pointer select-none transition-all duration-100',
+                                activeMessageId === msg.id && 'scale-[0.98] opacity-80',
+                              )}
+                            >
                               <MessageMedia
                                 imageUrl={msg.image_url!}
                                 body={msg.body}
