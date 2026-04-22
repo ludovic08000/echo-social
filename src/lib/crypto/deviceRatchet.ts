@@ -320,7 +320,7 @@ export async function establishDeviceSession(
   peerDeviceId: string,
   sharedSecret: ArrayBuffer,
   sessionId?: string,
-  opts?: { peerInitialDhPubB64?: string | null; isInitiator?: boolean },
+  opts?: { peerInitialDhPubB64?: string | null; isInitiator?: boolean; peerSpkId?: number | null },
 ): Promise<string> {
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
   const finalSessionId =
@@ -342,6 +342,7 @@ export async function establishDeviceSession(
     PN: 0,
     skipped: [],
     createdAt: Date.now(),
+    peerSpkId: opts?.peerSpkId ?? null,
   };
 
   // Initiator immediately runs a DH-ratchet step against the peer's initial
