@@ -45,6 +45,7 @@ export function MLFeedSection() {
   });
   const [loading, setLoading] = useState(false);
   const [training, setTraining] = useState(false);
+  const [trainingTwoTower, setTrainingTwoTower] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -100,6 +101,20 @@ export function MLFeedSection() {
     }
   };
 
+  const triggerTwoTower = async () => {
+    setTrainingTwoTower(true);
+    try {
+      const { error } = await supabase.functions.invoke("ml-twotower-train");
+      if (error) throw error;
+      toast.success("Two-Tower : entraînement neural lancé (≈ 2-5 min)");
+      setTimeout(load, 3000);
+    } catch (e: any) {
+      toast.error("Échec Two-Tower : " + (e?.message || "erreur inconnue"));
+    } finally {
+      setTrainingTwoTower(false);
+    }
+  };
+
   const updateWeight = (key: keyof HybridWeights, value: number) => {
     setWeights((w) => ({ ...w, [key]: value }));
   };
@@ -142,7 +157,11 @@ export function MLFeedSection() {
           </Button>
           <Button size="sm" onClick={triggerTraining} disabled={training}>
             <Play className="h-4 w-4 mr-2" />
-            {training ? "Entraînement..." : "Entraîner maintenant"}
+            {training ? "Entraînement..." : "Entraîner (classique)"}
+          </Button>
+          <Button size="sm" variant="secondary" onClick={triggerTwoTower} disabled={trainingTwoTower}>
+            <Brain className="h-4 w-4 mr-2" />
+            {trainingTwoTower ? "Neural..." : "Entraîner Two-Tower"}
           </Button>
         </div>
       </div>

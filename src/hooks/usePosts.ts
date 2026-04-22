@@ -253,45 +253,48 @@ async function blendWithMLScore(posts: Post[], userId: string): Promise<Post[]> 
   } catch {}
 
   try {
-    const scores = await Promise.all(
-      posts.map(async (p, idx) => {
-        const mcScore = 1 - idx / posts.length; // position decay (0..1)
-        let mlScore = 0.5;
-        try {
-          // Try Pareto multi-head (Two-Tower + wellbeing + revenue) first
-          const { data: pData, error: pErr } = await supabase.rpc('ml_pareto_score' as any, {
-            p_user_id: userId,
-            p_post_id: p.id,
-          });
-          if (!pErr && typeof pData === 'number') {
-            mlScore = pData;
-          } else {
-            // Fallback chain: Pareto → v3 → v2 → v1
-            const v3 = await supabase.rpc('ml_score_post_v3' as any, { p_user_id: userId, p_post_id: p.id });
-            if (typeof v3.data === 'number') {
-              mlScore = v3.data;
-            } else {
-              const v2 = await supabase.rpc('ml_score_post_v2' as any, { p_user_id: userId, p_post_id: p.id });
-              if (typeof v2.data === 'number') {
-                mlScore = v2.data;
-              } else {
-                const v1 = await supabase.rpc('ml_score_post', { p_user_id: userId, p_post_id: p.id });
-                if (typeof v1.data === 'number') mlScore = v1.data;
-              }
-            }
-          }
-        } catch {}
+    // BATCH SCORING: 1 RPC for all posts (was N RPC calls)
+    const postIds = posts.map((p) => p.id);
+    const scoreMap = new Map<string, number>();
+    try {
+      const { data: batchData, error: batchErr } = await supabase.rpc('ml_pareto_score_batch' as any, {
+        p_user_id: userId,
+        p_post_ids: postIds,
+      });
+      if (!batchErr && Array.isArray(batchData)) {
+        for (const row of batchData as Array<{ post_id: string; score: number }>) {
+          scoreMap.set(row.post_id, Number(row.score) || 0.5);
+        }
+      }
+    } catch {
+      // Fallback: legacy ml_pareto_score per-post if batch unavailable
+      try {
+        const results = await Promise.all(
+          posts.map(async (p) => {
+            const { data } = await supabase.rpc('ml_pareto_score' as any, {
+              p_user_id: userId,
+              p_post_id: p.id,
+            });
+            return [p.id, typeof data === 'number' ? data : 0.5] as const;
+          })
+        );
+        for (const [id, s] of results) scoreMap.set(id, s);
+      } catch {}
+    }
 
-        // Cold start: weight more on freshness/MC, less on ML (which is unreliable)
-        const weights = isColdStart ? { mc: 0.7, ml: 0.3 } : { mc: 0.5, ml: 0.5 };
-        let finalScore = mcScore * weights.mc + mlScore * weights.ml;
+    const scores = posts.map((p, idx) => {
+      const mcScore = 1 - idx / posts.length; // position decay (0..1)
+      const mlScore = scoreMap.get(p.id) ?? 0.5;
 
-        // Live session adjustment (±0.15) based on current-session interactions
-        finalScore += getSessionAdjustment(p.user_id);
+      // Cold start: weight more on freshness/MC, less on ML (which is unreliable)
+      const weights = isColdStart ? { mc: 0.7, ml: 0.3 } : { mc: 0.5, ml: 0.5 };
+      let finalScore = mcScore * weights.mc + mlScore * weights.ml;
 
-        return { post: p, finalScore };
-      })
-    );
+      // Live session adjustment (±0.15) based on current-session interactions
+      finalScore += getSessionAdjustment(p.user_id);
+
+      return { post: p, finalScore };
+    });
 
     const sorted = scores.sort((a, b) => b.finalScore - a.finalScore).map((s) => s.post);
     // Enforce diversity: avoid same author dominating

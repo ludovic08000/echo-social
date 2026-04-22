@@ -5927,6 +5927,13 @@ export type Database = {
         }
         Returns: number
       }
+      ml_pareto_score_batch: {
+        Args: { p_post_ids: string[]; p_user_id: string }
+        Returns: {
+          post_id: string
+          score: number
+        }[]
+      }
       ml_record_watch_time: {
         Args: { p_post_id: string; p_sample_count: number; p_total_ms: number }
         Returns: undefined
