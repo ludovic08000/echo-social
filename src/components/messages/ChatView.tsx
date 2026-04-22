@@ -98,6 +98,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const peerUserId = conversation?.participant?.user_id;
   const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const e2ee = useE2EE(conversationId, peerUserId);
+  const { peerTyping, notifyTyping, notifyStopped } = useTypingPresence(
+    conversationId,
+    user?.id,
+    peerUserId,
+  );
   const [cacheVersion, setCacheVersion] = useState(0);
   const bumpCache = useCallback(() => setCacheVersion(v => v + 1), []);
   const decryptRefreshKey = `${conversationId}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.encrypted)}:${cacheVersion}`;
