@@ -30,6 +30,12 @@ import {
 import { getOrCreateIdentityKeys } from '@/lib/crypto/keyManager';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { randomBytes, bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
+import {
+  ratchetEncrypt,
+  ratchetDecrypt,
+  establishDeviceSession,
+  RATCHET_PREFIX_V3,
+} from '@/lib/crypto/deviceRatchet';
 
 interface FanoutInput {
   messageId: string;
