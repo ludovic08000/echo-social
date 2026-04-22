@@ -119,7 +119,7 @@ async function flushNow(): Promise<void> {
       peer_device_id: e.peerDeviceId ?? null,
       stack: e.stack ?? null,
       user_agent: ua,
-      metadata: e.metadata ?? null,
+      metadata: (e.metadata ?? null) as never,
       created_at: e.ts,
     }));
     const { error } = await supabase.from('crypto_error_logs').insert(rows);
