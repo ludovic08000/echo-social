@@ -39,9 +39,10 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        isVisibleRef.current = entry.isIntersecting;
+        const shouldAutoplay = entry.isIntersecting && entry.intersectionRatio >= 0.35;
+        isVisibleRef.current = shouldAutoplay;
 
-        if (entry.isIntersecting) {
+        if (shouldAutoplay) {
           if (vid.readyState < 2) {
             vid.load();
             requestAnimationFrame(() => tryPlay(vid));
@@ -53,7 +54,7 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
           setIsPlaying(false);
         }
       },
-      { threshold: 0.6 }
+      { threshold: [0, 0.2, 0.35, 0.6] }
     );
 
     const retryWhenReady = () => {
