@@ -361,6 +361,22 @@ export default function Feed() {
           <FeedRightSidebar />
         </div>
       </div>
+
+      {/* Mobile-only floating Live button — switches to TikTok-style live feed */}
+      {isMobile && (
+        <button
+          type="button"
+          onClick={() => navigate('/lives')}
+          aria-label="Passer en mode Live"
+          className="fixed right-4 bottom-24 z-40 flex items-center gap-2 pl-3 pr-4 py-2.5 rounded-full bg-gradient-to-br from-red-500 to-pink-600 text-white shadow-[0_8px_28px_-8px_hsl(0_84%_55%/0.6)] active:scale-95 transition-transform"
+        >
+          <span className="relative flex items-center justify-center w-6 h-6">
+            <span className="absolute inset-0 rounded-full bg-white/30 animate-ping" />
+            <Radio className="w-4 h-4 relative z-10" />
+          </span>
+          <span className="text-xs font-bold tracking-wide">LIVE</span>
+        </button>
+      )}
     </AppLayout>
   );
 }
