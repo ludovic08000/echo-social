@@ -131,8 +131,16 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   const [mediaKeyB64, setMediaKeyB64State] = useState<string | null>(initial.mediaKeyB64);
   const [isDecrypting, setIsDecrypting] = useState(initial.decrypting);
   const [hidden, setHidden] = useState(initial.hidden);
+  const [retryTick, setRetryTick] = useState(0);
   const onDecryptedRef = useRef(onDecrypted);
   onDecryptedRef.current = onDecrypted;
+
+  // Listen for E2EE key restoration so we re-attempt decryption after login.
+  useEffect(() => {
+    const handler = () => setRetryTick(t => t + 1);
+    window.addEventListener('forsure-decrypt-retry', handler);
+    return () => window.removeEventListener('forsure-decrypt-retry', handler);
+  }, []);
 
   useEffect(() => {
     // Re-run only when the actual identity of the message changes.
