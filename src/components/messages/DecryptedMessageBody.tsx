@@ -322,8 +322,9 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     // Deliberately exclude `decrypt`, `isEncryptionActive`, `refreshKey`, `isMe`
     // from deps: they change during E2EE auto-heal and would re-trigger the
     // "Déchiffrement…" flash even though the cached plaintext is valid.
+    // `retryTick` is included so we retry after key restoration on login.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [body, messageId, cachedPlaintext]);
+  }, [body, messageId, cachedPlaintext, retryTick]);
 
   if (hidden) return null;
 
