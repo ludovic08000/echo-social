@@ -103,7 +103,7 @@ async function x3dhWrapForDevice(
         recipientUserId, recipientDeviceId,
         result.sharedSecret,
         undefined,
-        { peerInitialDhPubB64: bundle.signedPreKey, isInitiator: true },
+        { peerInitialDhPubB64: bundle.signedPrekey, isInitiator: true },
       );
     } catch (e) {
       console.warn('[FANOUT] session cache after initiate failed (non-fatal)', e);
