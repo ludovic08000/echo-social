@@ -205,13 +205,22 @@ Deno.serve(async (req) => {
       .limit(2000);
     const allPosts = (posts || []) as PostRow[];
 
-    // 3) Extract features for posts that don't have them yet (cap to 30 per run for cost)
+    // 3) Extract features for posts that don't have them yet (cap to 60 per run for cost).
+    // Single-batch fetch — avoids N+1 queries later in the user-profile build phase.
     const { data: existing } = await supabase
       .from("ml_post_features")
-      .select("post_id")
+      .select("post_id, topics, hashtags, embedding")
       .in("post_id", allPosts.map((p) => p.id));
-    const existingIds = new Set((existing || []).map((r: any) => r.post_id));
-    const toExtract = allPosts.filter((p) => !existingIds.has(p.id)).slice(0, 30);
+    const existingMap = new Map<string, { topics: string[]; hashtags: string[]; embedding: any }>();
+    for (const r of existing || []) {
+      existingMap.set((r as any).post_id, {
+        topics: (r as any).topics || [],
+        hashtags: (r as any).hashtags || [],
+        embedding: (r as any).embedding ?? null,
+      });
+    }
+    const existingIds = new Set(existingMap.keys());
+    const toExtract = allPosts.filter((p) => !existingIds.has(p.id)).slice(0, 60);
 
     let postsProcessed = 0;
     const postEmbeddings = new Map<string, number[]>();
