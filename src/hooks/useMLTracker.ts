@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { recordSessionSignal } from "@/lib/feedDiversity";
 
 type SignalType =
   | "view"
@@ -25,34 +26,69 @@ const SIGNAL_WEIGHT: Record<SignalType, number> = {
   click: 1.0,
 };
 
+const POSITIVE_SIGNALS: SignalType[] = ["like", "comment", "share", "dwell_long", "click"];
+const NEGATIVE_SIGNALS: SignalType[] = ["hide", "report", "skip_fast"];
+
 const queue: Array<{ user_id: string; post_id: string; signal_type: SignalType; weight: number; dwell_ms?: number; scroll_depth?: number }> = [];
+const watchTimeQueue: Array<{ post_id: string; dwell_ms: number }> = [];
 let flushTimer: number | null = null;
+
+// Cache post → author for session re-ranking signal feedback (avoids extra round-trips)
+const postAuthorCache = new Map<string, string>();
+export function cachePostAuthor(postId: string, authorId: string) {
+  if (postId && authorId) postAuthorCache.set(postId, authorId);
+}
 
 function flushSoon() {
   if (flushTimer) return;
   flushTimer = window.setTimeout(async () => {
     flushTimer = null;
     const batch = queue.splice(0, queue.length);
-    if (!batch.length) return;
-    const now = new Date();
-    const rows = batch.map((b) => ({
-      ...b,
-      hour_of_day: now.getHours(),
-      day_of_week: now.getDay(),
-      is_weekend: now.getDay() === 0 || now.getDay() === 6,
-    }));
-    try {
-      await supabase.from("ml_interactions").insert(rows);
-    } catch (e) {
-      // Silent fail — never block UX for analytics
-      console.warn("[ML] Failed to flush interactions", e);
+    const watchBatch = watchTimeQueue.splice(0, watchTimeQueue.length);
+
+    if (batch.length) {
+      const now = new Date();
+      const rows = batch.map((b) => ({
+        ...b,
+        hour_of_day: now.getHours(),
+        day_of_week: now.getDay(),
+        is_weekend: now.getDay() === 0 || now.getDay() === 6,
+      }));
+      try {
+        await supabase.from("ml_interactions").insert(rows);
+      } catch (e) {
+        console.warn("[ML] Failed to flush interactions", e);
+      }
+    }
+
+    // Aggregate watch-time per post then push as running average update
+    if (watchBatch.length) {
+      const grouped = new Map<string, { sum: number; count: number }>();
+      for (const w of watchBatch) {
+        const g = grouped.get(w.post_id) || { sum: 0, count: 0 };
+        g.sum += w.dwell_ms;
+        g.count += 1;
+        grouped.set(w.post_id, g);
+      }
+      for (const [postId, g] of grouped) {
+        try {
+          // Fire-and-forget: SQL-side incremental average
+          await supabase.rpc("ml_record_watch_time" as any, {
+            p_post_id: postId,
+            p_total_ms: g.sum,
+            p_sample_count: g.count,
+          });
+        } catch {
+          // Function may not exist yet – ignore
+        }
+      }
     }
   }, 1500);
 }
 
 /**
  * Track a single ML signal for the feed learning engine.
- * Batched & non-blocking.
+ * Batched & non-blocking. Also feeds session re-ranking when author is known.
  */
 export function trackMLSignal(
   userId: string | null,
@@ -69,6 +105,19 @@ export function trackMLSignal(
     dwell_ms: extra?.dwell_ms,
     scroll_depth: extra?.scroll_depth,
   });
+
+  // Live session re-ranking: tag the author for boost/penalty in the current session
+  const authorId = postAuthorCache.get(postId);
+  if (authorId) {
+    if (POSITIVE_SIGNALS.includes(signal)) recordSessionSignal(authorId, "positive");
+    else if (NEGATIVE_SIGNALS.includes(signal)) recordSessionSignal(authorId, "negative");
+  }
+
+  // Watch-time learning: push dwell to post-level aggregate
+  if ((signal === "dwell_long" || signal === "skip_fast") && extra?.dwell_ms) {
+    watchTimeQueue.push({ post_id: postId, dwell_ms: extra.dwell_ms });
+  }
+
   flushSoon();
 }
 
