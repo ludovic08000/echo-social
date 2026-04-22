@@ -118,41 +118,53 @@ export async function wrapPlaintextForDevice(
 /**
  * Decrypt a payload addressed to THIS device.
  *
- * The sender may have wrapped against either:
- *   (a) our dedicated per-device kx public key (preferred), or
- *   (b) our shared identity public key (legacy / migration-window).
+ * Tries every (myPrivKey, senderPubKey) combination across the migration:
+ *   - my dedicated device kx  ↔  sender's current device_public_key
+ *   - my dedicated device kx  ↔  sender's legacy identity public key
+ *   - my shared identity key  ↔  sender's current device_public_key
+ *   - my shared identity key  ↔  sender's legacy identity public key
  *
- * We don't know which on the wire (same format). Strategy: try (a) first
- * because it matches the published `device_public_key` of a migrated device,
- * then fall back to (b). AES-GCM auth tag failures will surface as decrypt
- * exceptions — we swallow the first attempt and retry with the legacy key.
+ * AES-GCM auth-tag failures throw; we swallow each and try the next candidate.
+ *
+ * @param senderLegacyIdentityKeyB64 Optional sender identity pub (used to read
+ *   messages wrapped before the sender migrated to a dedicated device kx key).
  */
 export async function unwrapPlaintextForDevice(
   payload: string,
   recipientUserId: string,
   senderDevicePublicKeyB64: string,
   myDeviceId: string,
+  senderLegacyIdentityKeyB64?: string | null,
 ): Promise<string> {
   if (!payload.includes(SEP)) throw new Error('Invalid device-wrapped payload');
   const [ivB64, ctB64] = payload.split(SEP);
   const iv = new Uint8Array(base64ToBuffer(ivB64));
   const ct = base64ToBuffer(ctB64);
 
-  // (a) Try per-device kx key first
-  try {
-    const myKx = await getOrCreateDeviceKxKey(myDeviceId);
-    if (myKx?.privateKey) {
-      const aes = await deriveAesKeyWith(myKx.privateKey, senderDevicePublicKeyB64, myDeviceId);
-      const pt = await hardCrypto.decrypt({ name: 'AES-GCM', iv, tagLength: 128 }, aes, ct);
-      return new hardGlobals.TextDecoder().decode(pt);
+  const myKx = await loadDeviceKxKey(myDeviceId);
+  const identityKeys = await getOrCreateIdentityKeys(recipientUserId);
+
+  const candidates: Array<{ priv: CryptoKey; peerPubB64: string }> = [];
+  if (myKx?.privateKey) {
+    candidates.push({ priv: myKx.privateKey, peerPubB64: senderDevicePublicKeyB64 });
+    if (senderLegacyIdentityKeyB64) {
+      candidates.push({ priv: myKx.privateKey, peerPubB64: senderLegacyIdentityKeyB64 });
     }
-  } catch {
-    /* fall through to legacy identity key */
+  }
+  candidates.push({ priv: identityKeys.privateKey, peerPubB64: senderDevicePublicKeyB64 });
+  if (senderLegacyIdentityKeyB64 && senderLegacyIdentityKeyB64 !== senderDevicePublicKeyB64) {
+    candidates.push({ priv: identityKeys.privateKey, peerPubB64: senderLegacyIdentityKeyB64 });
   }
 
-  // (b) Legacy identity-key fallback
-  const identityKeys = await getOrCreateIdentityKeys(recipientUserId);
-  const aes = await deriveAesKeyWith(identityKeys.privateKey, senderDevicePublicKeyB64, myDeviceId);
-  const pt = await hardCrypto.decrypt({ name: 'AES-GCM', iv, tagLength: 128 }, aes, ct);
-  return new hardGlobals.TextDecoder().decode(pt);
+  let lastErr: unknown = null;
+  for (const c of candidates) {
+    try {
+      const aes = await deriveAesKeyWith(c.priv, c.peerPubB64, myDeviceId);
+      const pt = await hardCrypto.decrypt({ name: 'AES-GCM', iv, tagLength: 128 }, aes, ct);
+      return new hardGlobals.TextDecoder().decode(pt);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? new Error('deviceWrap: all decryption candidates failed');
 }
