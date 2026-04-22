@@ -11,3 +11,4 @@ export { PlatformHealthDashboard } from './PlatformHealthDashboard';
 export { FeedIntelligenceSection } from './FeedIntelligenceSection';
 export { MonitoringSection } from './MonitoringSection';
 export { SecurityMonitoringSection } from './SecurityMonitoringSection';
+export { CryptoErrorsSection } from './CryptoErrorsSection';
