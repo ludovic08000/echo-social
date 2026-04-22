@@ -258,21 +258,26 @@ async function blendWithMLScore(posts: Post[], userId: string): Promise<Post[]> 
         const mcScore = 1 - idx / posts.length; // position decay (0..1)
         let mlScore = 0.5;
         try {
-          // Try v3 (with watch-time predictor) first
-          const { data: v3Data, error: v3Err } = await supabase.rpc('ml_score_post_v3' as any, {
+          // Try Pareto multi-head (Two-Tower + wellbeing + revenue) first
+          const { data: pData, error: pErr } = await supabase.rpc('ml_pareto_score' as any, {
             p_user_id: userId,
             p_post_id: p.id,
           });
-          if (!v3Err && typeof v3Data === 'number') {
-            mlScore = v3Data;
+          if (!pErr && typeof pData === 'number') {
+            mlScore = pData;
           } else {
-            // Fallback chain v3 → v2 → v1
-            const v2 = await supabase.rpc('ml_score_post_v2' as any, { p_user_id: userId, p_post_id: p.id });
-            if (typeof v2.data === 'number') {
-              mlScore = v2.data;
+            // Fallback chain: Pareto → v3 → v2 → v1
+            const v3 = await supabase.rpc('ml_score_post_v3' as any, { p_user_id: userId, p_post_id: p.id });
+            if (typeof v3.data === 'number') {
+              mlScore = v3.data;
             } else {
-              const v1 = await supabase.rpc('ml_score_post', { p_user_id: userId, p_post_id: p.id });
-              if (typeof v1.data === 'number') mlScore = v1.data;
+              const v2 = await supabase.rpc('ml_score_post_v2' as any, { p_user_id: userId, p_post_id: p.id });
+              if (typeof v2.data === 'number') {
+                mlScore = v2.data;
+              } else {
+                const v1 = await supabase.rpc('ml_score_post', { p_user_id: userId, p_post_id: p.id });
+                if (typeof v1.data === 'number') mlScore = v1.data;
+              }
             }
           }
         } catch {}
