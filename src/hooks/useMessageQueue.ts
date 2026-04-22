@@ -120,7 +120,17 @@ export function useMessageQueue(
           await onMessageSent?.(msg.localId);
           return outboundId;
         }
-        if (error) throw error;
+        if (error) {
+          logCryptoError({
+            severity: 'error',
+            context: 'queue.send',
+            errorCode: 'E_INSERT',
+            errorMessage: error.message,
+            conversationId: msg.conversationId,
+            metadata: { localId: msg.localId, code: error.code },
+          });
+          throw error;
+        }
 
         // Cache plaintext so sender sees cleartext (ratchet can't decrypt own messages)
         if (msg.plaintext) onPlaintextCached?.(outboundId, msg.plaintext);
