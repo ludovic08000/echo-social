@@ -78,6 +78,8 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   // New ML pipeline tracker (auto view + dwell + skip detection)
   const mlRef = useMLViewTracker(post.id) as React.MutableRefObject<HTMLElement | null>;
   const cardRef = useRef<HTMLElement>(null);
+  // Cache author for live session re-ranking signals (boost/penalty per author)
+  useEffect(() => { cachePostAuthor(post.id, post.user_id); }, [post.id, post.user_id]);
   const setRefs = useCallback((node: HTMLElement | null) => {
     cardRef.current = node;
     mlRef.current = node;
