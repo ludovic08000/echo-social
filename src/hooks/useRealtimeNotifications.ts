@@ -48,11 +48,23 @@ export function useRealtimeNotifications() {
     if (!user) loginSoundPlayed.current = false;
   }, [user]);
 
+  // Keep latest callbacks in refs so the realtime subscription stays stable
+  const enqueueSoundRef = useRef(enqueueSound);
+  const queryClientRef = useRef(queryClient);
+  useEffect(() => {
+    enqueueSoundRef.current = enqueueSound;
+    queryClientRef.current = queryClient;
+  }, [enqueueSound, queryClient]);
+
   useEffect(() => {
     if (!user) return;
 
+    // Guard against double subscription (StrictMode, parallel mounts)
+    if (activeChannelUserId === user.id) return;
+    activeChannelUserId = user.id;
+
     const channel = supabase
-      .channel('global-notifications')
+      .channel(`global-notifications-${user.id}`)
       .on(
         'postgres_changes',
         {
@@ -63,6 +75,19 @@ export function useRealtimeNotifications() {
         },
         async (payload) => {
           const row = payload.new as any;
+
+          // Dedupe by notification id (Realtime can fire duplicate events on reconnect)
+          const notifId: string | undefined = row?.id;
+          if (notifId) {
+            if (seenNotificationIds.has(notifId)) return;
+            seenNotificationIds.add(notifId);
+            // Cap memory: keep only last 200 ids
+            if (seenNotificationIds.size > 200) {
+              const first = seenNotificationIds.values().next().value;
+              if (first) seenNotificationIds.delete(first);
+            }
+          }
+
           const type: string = row?.type;
           const actorId: string | undefined = row?.actor_id;
 
@@ -101,14 +126,17 @@ export function useRealtimeNotifications() {
             category = 'friend_request';
           }
 
-          enqueueSound(category, senderName);
-          queryClient.invalidateQueries({ queryKey: ['notifications'] });
+          enqueueSoundRef.current(category, senderName);
+          queryClientRef.current.invalidateQueries({ queryKey: ['notifications'] });
         }
       )
       .subscribe();
 
     return () => {
+      if (activeChannelUserId === user.id) {
+        activeChannelUserId = null;
+      }
       supabase.removeChannel(channel);
     };
-  }, [user, enqueueSound, queryClient]);
+  }, [user?.id]);
 }
