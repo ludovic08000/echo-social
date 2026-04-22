@@ -128,6 +128,7 @@ export default function Admin() {
       case 'monitoring': return <MonitoringSection />;
       case 'security_ai': return <SecurityMonitoringSection />;
       case 'security': return <SecuritySection />;
+      case 'crypto_errors': return <CryptoErrorsSection />;
       case 'settings': return <SettingsSection />;
     }
   };
