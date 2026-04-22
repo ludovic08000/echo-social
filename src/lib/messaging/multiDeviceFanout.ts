@@ -34,6 +34,8 @@ import {
   ratchetEncrypt,
   ratchetDecrypt,
   establishDeviceSession,
+  getSessionPeerSpkId,
+  invalidateDeviceSession,
   RATCHET_PREFIX_V3,
   RATCHET_PREFIX_V4,
 } from '@/lib/crypto/deviceRatchet';
@@ -103,7 +105,11 @@ async function x3dhWrapForDevice(
         recipientUserId, recipientDeviceId,
         result.sharedSecret,
         undefined,
-        { peerInitialDhPubB64: bundle.signedPrekey, isInitiator: true },
+        {
+          peerInitialDhPubB64: bundle.signedPrekey,
+          isInitiator: true,
+          peerSpkId: bundle.signedPrekeyId,
+        },
       );
     } catch (e) {
       console.warn('[FANOUT] session cache after initiate failed (non-fatal)', e);
@@ -213,12 +219,34 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
   if (targets.length === 0) return { inserted: 0, multiDevice: false };
 
   // 3. For each target device:
-  //    a) ratchet v3 (existing session, fastest)
-  //    b) X3DH per-device (v1/v2, also caches a session for next time)
-  //    c) deviceWrap (legacy ECDH fallback)
+  //    pre) detect peer SPK rotation → invalidate stale session (avoids
+  //         silent decryption failures on the recipient side)
+  //    a)   ratchet v3/v4 (existing session, fastest)
+  //    b)   X3DH per-device (v1/v2, also caches a session for next time)
+  //    c)   deviceWrap (legacy ECDH fallback)
   const rows: Array<Record<string, string>> = [];
   for (const dev of targets) {
     if (!dev.device_public_key) continue;
+
+    // (pre) Check whether the cached session was negotiated against an SPK
+    // that the peer has since rotated. If so, drop the session so step (b)
+    // re-runs X3DH with the fresh prekey. We only fetch the bundle when a
+    // session actually exists (cheap fast-path otherwise).
+    try {
+      const cachedSpkId = await getSessionPeerSpkId(
+        input.senderUserId, senderDeviceId, dev.user_id, dev.device_id,
+      );
+      if (cachedSpkId !== null) {
+        const bundle = await fetchPrekeyBundleForDevice(dev.user_id, dev.device_id);
+        if (bundle && bundle.signedPrekeyId !== cachedSpkId) {
+          await invalidateDeviceSession(
+            input.senderUserId, senderDeviceId, dev.user_id, dev.device_id,
+          );
+        }
+      }
+    } catch (e) {
+      console.warn('[FANOUT] SPK rotation check failed (non-fatal)', e);
+    }
 
     // (a) Try the cached device-pair ratchet first.
     let encrypted: string | null = await ratchetEncrypt(

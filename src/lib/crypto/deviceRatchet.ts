@@ -72,6 +72,14 @@ interface StoredSession {
   skipped: SkippedKey[];
   createdAt: number;
 
+  /**
+   * SPK id of the peer device used at handshake time. When the peer rotates
+   * its SignedPreKey, this no longer matches the latest bundle and the
+   * session must be invalidated to force a fresh X3DH (see
+   * `getSessionPeerSpkId` / `invalidateDeviceSession`).
+   */
+  peerSpkId?: number | null;
+
   // Legacy v3 fallback (kept for already-established sessions)
   legacySharedSecretB64?: string | null;
   legacySendCounter?: number;
@@ -312,7 +320,7 @@ export async function establishDeviceSession(
   peerDeviceId: string,
   sharedSecret: ArrayBuffer,
   sessionId?: string,
-  opts?: { peerInitialDhPubB64?: string | null; isInitiator?: boolean },
+  opts?: { peerInitialDhPubB64?: string | null; isInitiator?: boolean; peerSpkId?: number | null },
 ): Promise<string> {
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
   const finalSessionId =
@@ -334,6 +342,7 @@ export async function establishDeviceSession(
     PN: 0,
     skipped: [],
     createdAt: Date.now(),
+    peerSpkId: opts?.peerSpkId ?? null,
   };
 
   // Initiator immediately runs a DH-ratchet step against the peer's initial
@@ -521,6 +530,46 @@ async function decryptV3(myUserId: string, myDeviceId: string, payload: string):
     return new hardGlobals.TextDecoder().decode(pt);
   } catch {
     return null;
+  }
+}
+
+/**
+ * Returns the SPK id of the peer device used at handshake time, or null if
+ * the session is unknown / pre-tracking. Callers compare this with the
+ * latest published bundle to detect peer-side rotation.
+ */
+export async function getSessionPeerSpkId(
+  myUserId: string,
+  myDeviceId: string,
+  peerUserId: string,
+  peerDeviceId: string,
+): Promise<number | null> {
+  const session = await loadSession(compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId));
+  return session?.peerSpkId ?? null;
+}
+
+/**
+ * Drop the session for one peer device. Used when we detect that the peer
+ * has rotated its SignedPreKey: the cached root/chain keys are no longer
+ * derivable on the peer side, so any further v3/v4 message would silently
+ * fail to decrypt. Forcing re-X3DH heals the link.
+ */
+export async function invalidateDeviceSession(
+  myUserId: string,
+  myDeviceId: string,
+  peerUserId: string,
+  peerDeviceId: string,
+): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).delete(compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId));
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // non-fatal
   }
 }
 
