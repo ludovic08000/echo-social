@@ -62,6 +62,7 @@ const NAV_GROUPS = [
     items: [
       { key: 'security_ai', label: 'IA Sécurité', icon: ShieldAlert },
       { key: 'security', label: 'Anti-abus', icon: Lock },
+      { key: 'crypto_errors', label: 'Erreurs E2EE', icon: KeyRound },
       { key: 'audit_logs', label: 'Audit', icon: ScrollText },
     ],
   },
