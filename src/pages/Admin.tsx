@@ -6,7 +6,7 @@ import { toast } from '@/hooks/use-toast';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import {
   Shield, Users, Activity, LayoutDashboard, FileText, Flag, BarChart3, CreditCard, Lock, Settings,
-  Brain, Zap, Archive, Gauge, Monitor, ScrollText, ShieldAlert, ChevronDown, Menu, X, KeyRound,
+  Brain, Zap, Archive, Gauge, Monitor, ScrollText, ShieldAlert, ChevronDown, Menu, X, KeyRound, Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import {
   DashboardSection, UsersSection, PostsSection, ReportsSection,
   StatsSection, SubscriptionsSection, SecuritySection, SettingsSection,
   AISection, PlatformHealthDashboard, FeedIntelligenceSection, MonitoringSection,
-  SecurityMonitoringSection, CryptoErrorsSection,
+  SecurityMonitoringSection, CryptoErrorsSection, MLFeedSection,
 } from '@/components/admin';
 import { VerificationsSection } from '@/components/admin/VerificationsSection';
 import { ArchivesSection } from '@/components/admin/ArchivesSection';
@@ -53,6 +53,7 @@ const NAV_GROUPS = [
     label: 'Intelligence',
     items: [
       { key: 'feed_intelligence', label: 'Feed IA', icon: Gauge },
+      { key: 'ml_feed', label: 'ML Feed', icon: Sparkles },
       { key: 'ai', label: 'Moteur IA', icon: Brain },
       { key: 'zeus', label: 'Zeus', icon: Zap },
     ],
@@ -74,7 +75,7 @@ const NAV_GROUPS = [
   },
 ];
 
-type AdminSection = 'dashboard' | 'health' | 'stats' | 'monitoring' | 'users' | 'posts' | 'reports' | 'verifications' | 'archives' | 'subscriptions' | 'feed_intelligence' | 'ai' | 'zeus' | 'security_ai' | 'security' | 'crypto_errors' | 'audit_logs' | 'settings';
+type AdminSection = 'dashboard' | 'health' | 'stats' | 'monitoring' | 'users' | 'posts' | 'reports' | 'verifications' | 'archives' | 'subscriptions' | 'feed_intelligence' | 'ml_feed' | 'ai' | 'zeus' | 'security_ai' | 'security' | 'crypto_errors' | 'audit_logs' | 'settings';
 
 export default function Admin() {
   const [section, setSection] = useState<AdminSection>('dashboard');
@@ -115,6 +116,7 @@ export default function Admin() {
       case 'dashboard': return <DashboardSection />;
       case 'health': return <PlatformHealthDashboard />;
       case 'feed_intelligence': return <FeedIntelligenceSection />;
+      case 'ml_feed': return <MLFeedSection />;
       case 'users': return <UsersSection />;
       case 'posts': return <PostsSection />;
       case 'reports': return <ReportsSection />;
