@@ -401,13 +401,11 @@ async function tryDecryptCopy(
       row.encrypted_body.startsWith(RATCHET_PREFIX_V4) ||
       row.encrypted_body.startsWith(RATCHET_PREFIX_V3)
     ) {
-      const pt = await ratchetDecrypt(user.id, myDeviceId, row.encrypted_body);
+      const pt = await ratchetDecrypt(userId, myDeviceId, row.encrypted_body);
       if (pt !== null) return pt;
-      // No cached session → return null; sender will re-X3DH on next message.
       return null;
     }
 
-    // Path 1: X3DH-wrapped envelope (v1 = no OPK, v2 = with OPK)
     if (row.encrypted_body.startsWith(X3DH_PREFIX_V1) || row.encrypted_body.startsWith(X3DH_PREFIX_V2)) {
       const { data: senderPub } = await supabase
         .from('user_public_keys')
@@ -418,24 +416,20 @@ async function tryDecryptCopy(
       if (!senderPub?.identity_key) return null;
       const pt = await x3dhUnwrapForDevice(
         row.encrypted_body,
-        user.id,
+        userId,
         senderPub.identity_key,
         row.sender_user_id,
         row.sender_device_id,
       );
       if (pt !== null) return pt;
-      // fall through to legacy attempt for safety
     }
 
-    // Path 2: legacy deviceWrap (ECDH on sender identity ↔ recipient device key)
     const { data: senderDevices } = await supabase.rpc('list_active_devices_for_user', {
       p_user_id: row.sender_user_id,
     });
     const senderDev = (senderDevices || []).find((d: any) => d.device_id === row.sender_device_id);
     if (!senderDev?.device_public_key) return null;
 
-    // Also fetch sender's legacy identity public key so we can decrypt
-    // pre-migration messages (when device_public_key was the identity key).
     const { data: senderPubLegacy } = await supabase
       .from('user_public_keys')
       .select('identity_key')
@@ -445,18 +439,13 @@ async function tryDecryptCopy(
 
     return await unwrapPlaintextForDevice(
       row.encrypted_body,
-      user.id,
+      userId,
       senderDev.device_public_key,
       myDeviceId,
       senderPubLegacy?.identity_key ?? null,
     );
   } catch (e) {
-    console.warn('[FANOUT] device-copy read failed', e);
-    logCryptoException('decrypt', e, {
-      severity: 'error',
-      myDeviceId,
-      metadata: { messageId, stage: 'tryReadDeviceCopy' },
-    });
+    console.warn('[FANOUT] decrypt single copy failed', e);
     return null;
   }
 }
