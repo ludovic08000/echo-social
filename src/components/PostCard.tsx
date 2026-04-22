@@ -26,7 +26,7 @@ import { FeedAutoplayVideo } from './FeedAutoplayVideo';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { imagePresets } from '@/lib/imageOptimize';
 import { useMLTracking } from '@/hooks/useMLFeed';
-import { useMLViewTracker, trackMLSignal } from '@/hooks/useMLTracker';
+import { useMLViewTracker, trackMLSignal, cachePostAuthor } from '@/hooks/useMLTracker';
 import {
   DropdownMenu,
   DropdownMenuContent,
