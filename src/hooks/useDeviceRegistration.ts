@@ -22,7 +22,11 @@ import {
   getCurrentPlatform,
 } from '@/lib/messaging/currentDevice';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto/keyManager';
-import { refreshDeviceSignedPrekeyIfNeeded, refillDeviceOneTimePrekeysIfNeeded } from '@/lib/crypto/x3dh';
+import {
+  refreshDeviceSignedPrekeyIfNeeded,
+  refillDeviceOneTimePrekeysIfNeeded,
+  refreshSignedPrekeyIfNeeded,
+} from '@/lib/crypto/x3dh';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 
 export function useDeviceRegistration() {
@@ -88,7 +92,16 @@ export function useDeviceRegistration() {
           return;
         }
 
-        // 2. Ensure a per-device Signed PreKey exists & is fresh.
+        // 2. Ensure the legacy/shared Signed PreKey also exists.
+        //    The main conversation X3DH bootstrap still depends on this bundle,
+        //    so publishing it here prevents peers from seeing "Bundle X3DH ... indisponible".
+        try {
+          await refreshSignedPrekeyIfNeeded(user.id, keys.signingPrivateKey);
+        } catch (spkErr) {
+          console.warn('[useDeviceRegistration] shared SPK refresh failed (non-fatal):', spkErr);
+        }
+
+        // 3. Ensure a per-device Signed PreKey exists & is fresh.
         //    This is what makes targeted X3DH per device possible.
         try {
           await refreshDeviceSignedPrekeyIfNeeded(user.id, deviceId, keys.signingPrivateKey);
@@ -97,7 +110,7 @@ export function useDeviceRegistration() {
           console.warn('[useDeviceRegistration] device SPK refresh failed (non-fatal):', spkErr);
         }
 
-        // 3. Refill the OPK pool if low (forward secrecy on bursts).
+        // 4. Refill the OPK pool if low (forward secrecy on bursts).
         //    Non-fatal: X3DH gracefully degrades to 3-DH when no OPK is available.
         try {
           await refillDeviceOneTimePrekeysIfNeeded(user.id, deviceId);

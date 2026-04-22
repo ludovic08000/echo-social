@@ -253,10 +253,14 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
             severity: 'error',
             context: 'decrypt',
             errorCode: 'E_DECRYPT_NO_COPY',
-            errorMessage: 'Ratchet incompatible and no device copy found — message hidden from receiver',
+            errorMessage: 'Ratchet incompatible and no device copy found — showing visible placeholder',
             metadata: { messageId, bodyLen: body.length },
           });
-          const entry: CachedDecryption = { text: '', mediaKeyB64: null, hidden: true };
+          const entry: CachedDecryption = {
+            text: '🔒 Message non déchiffrable sur cet appareil',
+            mediaKeyB64: null,
+            hidden: false,
+          };
           plaintextCache.set(key, entry);
           return entry;
         }
@@ -265,10 +269,14 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
             severity: 'warning',
             context: 'decrypt',
             errorCode: 'E_DECRYPT_INCOMPATIBLE',
-            errorMessage: 'Ratchet flagged incompatible (no messageId — cannot fallback)',
+            errorMessage: 'Ratchet flagged incompatible (no messageId — showing visible placeholder)',
             metadata: { bodyLen: body.length },
           });
-          const entry: CachedDecryption = { text: '', mediaKeyB64: null, hidden: true };
+          const entry: CachedDecryption = {
+            text: '🔒 Message chiffré indisponible',
+            mediaKeyB64: null,
+            hidden: false,
+          };
           plaintextCache.set(key, entry);
           return entry;
         }
