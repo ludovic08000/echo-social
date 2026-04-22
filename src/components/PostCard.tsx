@@ -196,6 +196,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   };
 
   const handleCommentClick = () => {
+    if (user) trackMLSignal(user.id, post.id, 'comment');
     if (onCommentClick) {
       onCommentClick();
     } else {
