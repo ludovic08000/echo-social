@@ -73,6 +73,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   isMe,
   cachedPlaintext,
   messageId,
+  hasMedia,
 }: DecryptedMessageBodyProps) {
   // Compute the initial state synchronously from the cache so we never
   // flash "Déchiffrement…" on a message that's already been decrypted.
@@ -307,6 +308,12 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   // background; users only ever see plaintext, never the crypto state.
   if (isDecrypting || displayText === null) {
     return <span className="opacity-0 select-none">·</span>;
+  }
+
+  // Hide raw media labels ("📷 Photo" / "🎬 Vidéo") when a media is attached —
+  // the image/video preview itself is the content; the label is redundant noise.
+  if (hasMedia && (displayText === '📷 Photo' || displayText === '🎬 Vidéo')) {
+    return null;
   }
 
   const voice = parseVoiceMessage(displayText);
