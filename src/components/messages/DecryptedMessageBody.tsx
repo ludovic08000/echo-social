@@ -7,6 +7,7 @@ import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
 import { setMediaKey } from './mediaKeyCache';
 import type { DecryptResult } from '@/hooks/useE2EE';
+import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 
 function looksEncryptedMessage(body: string): boolean {
   return isStrictRatchetEnvelopeBody(body);
@@ -224,11 +225,25 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
             plaintextCache.set(key, entry);
             return entry;
           }
+          logCryptoError({
+            severity: 'error',
+            context: 'decrypt',
+            errorCode: 'E_DECRYPT_NO_COPY',
+            errorMessage: 'Ratchet incompatible and no device copy found — message hidden from receiver',
+            metadata: { messageId, bodyLen: body.length },
+          });
           const entry: CachedDecryption = { text: '', mediaKeyB64: null, hidden: true };
           plaintextCache.set(key, entry);
           return entry;
         }
         if (result.incompatible) {
+          logCryptoError({
+            severity: 'warning',
+            context: 'decrypt',
+            errorCode: 'E_DECRYPT_INCOMPATIBLE',
+            errorMessage: 'Ratchet flagged incompatible (no messageId — cannot fallback)',
+            metadata: { bodyLen: body.length },
+          });
           const entry: CachedDecryption = { text: '', mediaKeyB64: null, hidden: true };
           plaintextCache.set(key, entry);
           return entry;
@@ -246,6 +261,10 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
             return entry;
           }
         }
+        logCryptoException('decrypt', err, {
+          severity: 'error',
+          metadata: { messageId, bodyLen: body.length, stage: 'final_fallback' },
+        });
         throw err;
       });
       inflight.set(key, promise);
