@@ -90,8 +90,10 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
     const vid = videoRef.current;
     if (!vid) return;
     if (vid.paused) {
+      setUserPaused(false);
       vid.play().catch(() => {});
     } else {
+      setUserPaused(true);
       vid.pause();
     }
   };
