@@ -90,6 +90,20 @@ async function x3dhWrapForDevice(
       String(result.usedSPKId),
     ];
     if (result.usedOTPKId !== undefined) parts.push(String(result.usedOTPKId));
+
+    // After a successful X3DH, cache the device-pair session so subsequent
+    // messages skip the full handshake (uses the symmetric KDF chain).
+    try {
+      const myDeviceId = getCurrentDeviceId();
+      await establishDeviceSession(
+        senderUserId, myDeviceId,
+        recipientUserId, recipientDeviceId,
+        result.sharedSecret,
+      );
+    } catch (e) {
+      console.warn('[FANOUT] session cache after initiate failed (non-fatal)', e);
+    }
+
     return parts.join('.');
   } catch (e) {
     console.warn('[FANOUT] X3DH wrap failed, will fallback:', e);
