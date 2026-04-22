@@ -407,6 +407,19 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     void savePlaintext(msgId, text);
   }, [bumpCache]);
 
+  // When E2EE keys are restored after login, drop empty/placeholder entries
+  // and re-trigger decryption so previously-hidden messages re-appear in clear.
+  useEffect(() => {
+    const handler = () => {
+      for (const [k, v] of decryptedCacheRef.current) {
+        if (!v) decryptedCacheRef.current.delete(k);
+      }
+      bumpCache();
+    };
+    window.addEventListener('forsure-keys-restored', handler);
+    return () => window.removeEventListener('forsure-keys-restored', handler);
+  }, [bumpCache]);
+
   const queue = useMessageQueue(
     conversationId,
     e2ee.encrypt,
