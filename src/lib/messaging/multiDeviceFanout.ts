@@ -297,8 +297,11 @@ export async function tryReadDeviceCopy(messageId: string): Promise<string | nul
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
-    // Path 0: v3 ratchet — uses a previously cached device-pair session.
-    if (row.encrypted_body.startsWith(RATCHET_PREFIX_V3)) {
+    // Path 0: cached device-pair ratchet (v3 legacy KDF chain or v4 Double Ratchet).
+    if (
+      row.encrypted_body.startsWith(RATCHET_PREFIX_V4) ||
+      row.encrypted_body.startsWith(RATCHET_PREFIX_V3)
+    ) {
       const pt = await ratchetDecrypt(user.id, myDeviceId, row.encrypted_body);
       if (pt !== null) return pt;
       // No cached session → return null; sender will re-X3DH on next message.
