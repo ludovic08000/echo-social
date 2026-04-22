@@ -1,22 +1,9 @@
 import "@testing-library/jest-dom";
 
-// Mock indexedDB for crypto modules
-if (typeof globalThis.indexedDB === 'undefined') {
-  const mockIDB = {
-    open: () => {
-      const req = {
-        result: null,
-        error: null,
-        onsuccess: null as any,
-        onerror: null as any,
-        onupgradeneeded: null as any,
-      };
-      setTimeout(() => req.onerror?.({ target: req }), 0);
-      return req;
-    },
-  };
-  Object.defineProperty(globalThis, 'indexedDB', { value: mockIDB, writable: true });
-}
+// Real in-memory IndexedDB implementation for crypto modules that need
+// to persist sessions across calls (deviceRatchet, accountKeyBackup, …).
+// Falls back gracefully if a test never touches IndexedDB.
+import 'fake-indexeddb/auto';
 
 Object.defineProperty(window, "matchMedia", {
   writable: true,
