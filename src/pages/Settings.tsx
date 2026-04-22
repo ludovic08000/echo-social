@@ -146,6 +146,18 @@ export default function Settings() {
             </section>
           </div>
         )}
+
+        {activeTab === 'devices' && (
+          <div className="animate-fade-in">
+            <section className="premium-card p-5">
+              <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                <Smartphone className="w-4 h-4 text-primary" />
+                Appareils connectés
+              </h2>
+              <DevicesPanel />
+            </section>
+          </div>
+        )}
       </div>
     </AppLayout>
   );
