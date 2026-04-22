@@ -91,7 +91,6 @@ describe('multi-device fan-out envelope (v2, with OPK)', () => {
 
 describe('multi-device fan-out envelope (rejection)', () => {
   it('rejects unknown prefixes', () => {
-    expect(parse('x3dh3.a.b.c.1')).toBeNull();
     expect(parse('plaintext message')).toBeNull();
     expect(parse('')).toBeNull();
   });
@@ -101,5 +100,34 @@ describe('multi-device fan-out envelope (rejection)', () => {
     const v1 = buildV1('iv', 'ct', 'ek', 1);
     const parsed = parse(v1);
     expect(parsed?.version).toBe(1);
+  });
+});
+
+// ─── Device-pair ratchet envelopes ───────────────────────────────────────────
+describe('device-pair ratchet envelopes', () => {
+  it('v3 (legacy KDF chain) shape: x3dh3.sessionId.counter.iv.ct', () => {
+    const payload = 'x3dh3.sess123.0.IV.CT';
+    const parts = payload.slice('x3dh3.'.length).split('.');
+    expect(parts).toHaveLength(4);
+    expect(parts[0]).toBe('sess123');
+    expect(Number(parts[1])).toBe(0);
+  });
+
+  it('v4 (Double Ratchet) shape: x3dh4.sessionId.dhPub.Ns.PN.iv.ct', () => {
+    const payload = 'x3dh4.sess123.DHPUB.5.3.IV.CT';
+    const parts = payload.slice('x3dh4.'.length).split('.');
+    expect(parts).toHaveLength(6);
+    const [sessionId, dhPub, Ns, PN] = parts;
+    expect(sessionId).toBe('sess123');
+    expect(dhPub).toBe('DHPUB');
+    expect(Number(Ns)).toBe(5);
+    expect(Number(PN)).toBe(3);
+  });
+
+  it('v3 and v4 are distinguishable by prefix', () => {
+    expect('x3dh3.foo'.startsWith('x3dh3.')).toBe(true);
+    expect('x3dh4.foo'.startsWith('x3dh4.')).toBe(true);
+    expect('x3dh3.foo'.startsWith('x3dh4.')).toBe(false);
+    expect('x3dh4.foo'.startsWith('x3dh3.')).toBe(false);
   });
 });

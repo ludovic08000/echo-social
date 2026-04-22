@@ -1,42 +1,84 @@
 /**
- * Device-pair symmetric ratchet — additive optimization on top of X3DH.
+ * Device-pair Double Ratchet (Signal-style) — bidirectional with DH-ratchet.
  *
- * Goal: avoid running a full X3DH handshake for every message in a
- * multi-device fan-out. The first message between two devices establishes
- * a session via X3DH; subsequent messages reuse the session and derive a
- * fresh per-message key via HKDF(sharedSecret, counter).
+ * Provides:
+ *   - Forward Secrecy (FS): each message key is derived once via KDF chain
+ *     and immediately discarded (no key reuse).
+ *   - Post-Compromise Security (PCS): every message ships a fresh ephemeral
+ *     ratchet public key. When the peer replies with their own new ratchet
+ *     key, the root key is re-derived via DH(newPriv, peerNewPub), healing
+ *     past compromises.
+ *   - Out-of-order delivery: skipped message keys are cached (bounded) so
+ *     reordered messages still decrypt.
  *
- * Properties:
- *   - Forward secrecy *per message* (counter never reused, key zeroized after use)
- *   - No DH ratchet step (lighter than full Double Ratchet — acceptable trade-off
- *     since the per-conversation Double Ratchet still owns the primary device)
- *   - Strictly additive: failure to load/save a session falls back to X3DH
+ * Wire format (v4):
+ *   "x3dh4." sessionId "." dhPubB64 "." Ns "." PN "." ivB64 "." ctB64
+ *     - dhPubB64 : sender's current ratchet public key (X25519)
+ *     - Ns       : message number in current sending chain
+ *     - PN       : length of previous sending chain (lets receiver skip keys)
+ *
+ * Backwards-compat: prefix `x3dh3.` (single shared-secret HKDF) is still
+ * decoded so existing in-flight v3 messages keep working until sessions are
+ * naturally re-established.
  *
  * Storage: IndexedDB `forsure-device-sessions` / `sessions`
  *   key   = `${myUserId}::${myDeviceId}::${peerUserId}::${peerDeviceId}`
- *   value = { sessionId, sharedSecretJWK (raw 32B base64), sendCounter, recvCounter }
- *
- * Wire format (v3):
- *   "x3dh3." sessionId "." counter "." ivB64 "." ctB64
+ *   value = full DR state (root key, chains, counters, skipped keys)
  */
 
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import { bufferToBase64, base64ToBuffer, randomBytes } from './utils';
 
 const DB_NAME = 'forsure-device-sessions';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = 'sessions';
 
-export const RATCHET_PREFIX_V3 = 'x3dh3.';
+export const RATCHET_PREFIX_V3 = 'x3dh3.'; // legacy (single-secret KDF)
+export const RATCHET_PREFIX_V4 = 'x3dh4.'; // Double Ratchet w/ DH
+
+const MAX_SKIP = 256;            // max skipped message keys per chain
+const MAX_SKIPPED_TOTAL = 2048;  // hard cap across all stored skipped keys
+
+interface SkippedKey {
+  /** dhPub (peer ratchet pub) of the chain the key belongs to, base64 */
+  dhPubB64: string;
+  /** message number in that chain */
+  n: number;
+  /** raw 32B AES key, base64 */
+  keyB64: string;
+}
 
 interface StoredSession {
-  id: string; // composite key
-  sessionId: string; // short random id used on the wire
-  sharedSecretB64: string; // 32 raw bytes, base64
-  sendCounter: number;
-  recvCounter: number;
+  id: string;
+  sessionId: string;
+
+  // Root chain
+  rootKeyB64: string;            // 32 bytes
+  // Our DH ratchet pair (X25519). Private exported as JWK for re-import.
+  dhsPrivJwk: JsonWebKey | null; // null on receiver before first reply
+  dhsPubB64: string | null;
+  // Peer's latest DH ratchet public key (base64 raw)
+  dhrPubB64: string | null;
+
+  // Sending chain
+  ckSendB64: string | null;      // 32 bytes
+  Ns: number;
+  // Receiving chain
+  ckRecvB64: string | null;
+  Nr: number;
+  // Length of previous sending chain (for header)
+  PN: number;
+
+  skipped: SkippedKey[];
   createdAt: number;
+
+  // Legacy v3 fallback (kept for already-established sessions)
+  legacySharedSecretB64?: string | null;
+  legacySendCounter?: number;
+  legacyRecvCounter?: number;
 }
+
+// ─── IndexedDB helpers ──────────────────────────────────────────────────────
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -80,7 +122,7 @@ async function saveSession(key: string, session: StoredSession): Promise<void> {
       tx.onerror = () => reject(tx.error);
     });
   } catch {
-    // non-fatal — caller will fall back to X3DH
+    // non-fatal
   }
 }
 
@@ -109,25 +151,159 @@ async function lookupSessionById(
   }
 }
 
-/** HKDF derive a per-message AES-256 key from (sharedSecret, counter). */
-async function deriveMessageKey(sharedSecretB64: string, counter: number): Promise<CryptoKey> {
-  const ikm = await hardCrypto.importKey(
-    'raw', base64ToBuffer(sharedSecretB64), 'HKDF', false, ['deriveBits'],
+// ─── Crypto primitives ──────────────────────────────────────────────────────
+
+async function hkdf(ikm: ArrayBuffer, salt: ArrayBuffer, info: string, lenBits: number): Promise<ArrayBuffer> {
+  const baseKey = await hardCrypto.importKey('raw', ikm, 'HKDF', false, ['deriveBits']);
+  return hardCrypto.deriveBits(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new Uint8Array(salt),
+      info: new hardGlobals.TextEncoder().encode(info),
+    } as any,
+    baseKey,
+    lenBits,
   );
-  const info = new hardGlobals.TextEncoder().encode(`ForSureDevRatchet:${counter}`);
-  const bits = await hardCrypto.deriveBits(
-    { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info } as any,
-    ikm,
-    256,
+}
+
+/** KDF_RK(rk, dh_out) -> (rk', ck) — Signal spec. */
+async function kdfRK(rkB64: string, dhOut: ArrayBuffer): Promise<{ rk: string; ck: string }> {
+  const out = await hkdf(dhOut, base64ToBuffer(rkB64), 'ForSureDR:RootKey', 512);
+  const u8 = new Uint8Array(out);
+  return {
+    rk: bufferToBase64(u8.slice(0, 32).buffer as ArrayBuffer),
+    ck: bufferToBase64(u8.slice(32, 64).buffer as ArrayBuffer),
+  };
+}
+
+/** KDF_CK(ck) -> (ck', mk) using HMAC-SHA256 with constants 0x01 (mk) and 0x02 (ck). */
+async function kdfCK(ckB64: string): Promise<{ ck: string; mk: string }> {
+  const ckBuf = base64ToBuffer(ckB64);
+  const hmacKey = await hardCrypto.importKey(
+    'raw', ckBuf, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
   );
-  return hardCrypto.importKey('raw', bits, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  const sign = (hardCrypto as any).sign as (alg: any, key: CryptoKey, data: BufferSource) => Promise<ArrayBuffer>;
+  const mk = await sign({ name: 'HMAC' }, hmacKey, new Uint8Array([0x01]));
+  const ck = await sign({ name: 'HMAC' }, hmacKey, new Uint8Array([0x02]));
+  return {
+    mk: bufferToBase64(mk),
+    ck: bufferToBase64(ck),
+  };
+}
+
+async function importMessageKey(mkB64: string): Promise<CryptoKey> {
+  return hardCrypto.importKey(
+    'raw', base64ToBuffer(mkB64), { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'],
+  );
+}
+
+async function generateRatchetKeyPair(): Promise<{ priv: CryptoKey; privJwk: JsonWebKey; pubB64: string }> {
+  const kp = await hardCrypto.generateKey({ name: 'X25519' } as any, true, ['deriveBits']) as CryptoKeyPair;
+  const privJwk = await hardCrypto.exportKey('jwk', kp.privateKey);
+  const pubRaw = await hardCrypto.exportKey('raw', kp.publicKey);
+  return { priv: kp.privateKey, privJwk, pubB64: bufferToBase64(pubRaw as ArrayBuffer) };
+}
+
+async function importPriv(jwk: JsonWebKey): Promise<CryptoKey> {
+  return hardCrypto.importKey('jwk', jwk, { name: 'X25519' } as any, true, ['deriveBits']);
+}
+
+async function importPub(b64: string): Promise<CryptoKey> {
+  return hardCrypto.importKey('raw', base64ToBuffer(b64), { name: 'X25519' } as any, true, []);
+}
+
+async function dh(privJwk: JsonWebKey, peerPubB64: string): Promise<ArrayBuffer> {
+  const priv = await importPriv(privJwk);
+  const pub = await importPub(peerPubB64);
+  return hardCrypto.deriveBits({ name: 'X25519', public: pub } as any, priv, 256);
+}
+
+// ─── DH-ratchet step ────────────────────────────────────────────────────────
+
+/** Receiver-side DH-ratchet: peer sent a new ratchet pub. Updates root + chains. */
+async function dhRatchet(session: StoredSession, peerNewPubB64: string): Promise<StoredSession> {
+  // Save current sending chain length, then derive new receiving chain from peer's new pub.
+  const newPN = session.Ns;
+  let s: StoredSession = { ...session, PN: newPN, Ns: 0, Nr: 0 };
+
+  if (s.dhsPrivJwk) {
+    const dhOut1 = await dh(s.dhsPrivJwk, peerNewPubB64);
+    const r1 = await kdfRK(s.rootKeyB64, dhOut1);
+    s = { ...s, rootKeyB64: r1.rk, ckRecvB64: r1.ck, dhrPubB64: peerNewPubB64 };
+  } else {
+    // First-ever ratchet on this side: just remember peer pub, generate our pair below.
+    s = { ...s, dhrPubB64: peerNewPubB64 };
+  }
+
+  // Generate fresh local ratchet pair and derive new sending chain.
+  const fresh = await generateRatchetKeyPair();
+  const dhOut2 = await dh(fresh.privJwk, peerNewPubB64);
+  const r2 = await kdfRK(s.rootKeyB64, dhOut2);
+  s = {
+    ...s,
+    rootKeyB64: r2.rk,
+    ckSendB64: r2.ck,
+    dhsPrivJwk: fresh.privJwk,
+    dhsPubB64: fresh.pubB64,
+  };
+  return s;
+}
+
+// ─── Skipped-key cache ──────────────────────────────────────────────────────
+
+async function trySkippedKeys(
+  session: StoredSession,
+  dhPubB64: string,
+  n: number,
+  iv: Uint8Array,
+  ct: ArrayBuffer,
+): Promise<{ pt: string; updated: StoredSession } | null> {
+  const idx = session.skipped.findIndex(s => s.dhPubB64 === dhPubB64 && s.n === n);
+  if (idx === -1) return null;
+  const entry = session.skipped[idx];
+  try {
+    const aes = await importMessageKey(entry.keyB64);
+    const pt = await hardCrypto.decrypt(
+      { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ct,
+    );
+    const newSkipped = session.skipped.slice();
+    newSkipped.splice(idx, 1);
+    return {
+      pt: new hardGlobals.TextDecoder().decode(pt),
+      updated: { ...session, skipped: newSkipped },
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function skipMessageKeys(session: StoredSession, until: number): Promise<StoredSession> {
+  if (session.ckRecvB64 === null) return session;
+  if (session.Nr + MAX_SKIP < until) {
+    throw new Error('too_many_skipped');
+  }
+  let s = { ...session, skipped: [...session.skipped] };
+  while (s.Nr < until) {
+    const { ck, mk } = await kdfCK(s.ckRecvB64!);
+    s.skipped.push({ dhPubB64: s.dhrPubB64!, n: s.Nr, keyB64: mk });
+    s.ckRecvB64 = ck;
+    s.Nr += 1;
+  }
+  // Trim if global skipped budget exceeded (drop oldest).
+  if (s.skipped.length > MAX_SKIPPED_TOTAL) {
+    s.skipped = s.skipped.slice(s.skipped.length - MAX_SKIPPED_TOTAL);
+  }
+  return s;
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
 /**
  * Establish a new device-pair session from a freshly negotiated X3DH secret.
- * Called by both initiator (after x3dhInitiate) and responder (after x3dhRespond).
+ * Initiator passes `peerInitialDhPubB64` (peer's signed prekey acts as their
+ * initial ratchet pub); responder leaves it null until the first inbound
+ * message reveals the initiator's ratchet pub.
  */
 export async function establishDeviceSession(
   myUserId: string,
@@ -136,23 +312,52 @@ export async function establishDeviceSession(
   peerDeviceId: string,
   sharedSecret: ArrayBuffer,
   sessionId?: string,
+  opts?: { peerInitialDhPubB64?: string | null; isInitiator?: boolean },
 ): Promise<string> {
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
-  const finalSessionId = sessionId ?? bufferToBase64(randomBytes(8).buffer as ArrayBuffer).replace(/[+/=]/g, '').slice(0, 12);
-  await saveSession(key, {
+  const finalSessionId =
+    sessionId ?? bufferToBase64(randomBytes(8).buffer as ArrayBuffer).replace(/[+/=]/g, '').slice(0, 12);
+  const ss32 = sharedSecret.byteLength >= 32 ? sharedSecret.slice(0, 32) : sharedSecret;
+  const rootKeyB64 = bufferToBase64(ss32);
+
+  let session: StoredSession = {
     id: key,
     sessionId: finalSessionId,
-    sharedSecretB64: bufferToBase64(sharedSecret.slice(0, 32)),
-    sendCounter: 0,
-    recvCounter: 0,
+    rootKeyB64,
+    dhsPrivJwk: null,
+    dhsPubB64: null,
+    dhrPubB64: opts?.peerInitialDhPubB64 ?? null,
+    ckSendB64: null,
+    ckRecvB64: null,
+    Ns: 0,
+    Nr: 0,
+    PN: 0,
+    skipped: [],
     createdAt: Date.now(),
-  });
+  };
+
+  // Initiator immediately runs a DH-ratchet step against the peer's initial
+  // pub so the very first outbound message carries a fresh ratchet key.
+  if (opts?.isInitiator && opts.peerInitialDhPubB64) {
+    const fresh = await generateRatchetKeyPair();
+    const dhOut = await dh(fresh.privJwk, opts.peerInitialDhPubB64);
+    const r = await kdfRK(session.rootKeyB64, dhOut);
+    session = {
+      ...session,
+      rootKeyB64: r.rk,
+      ckSendB64: r.ck,
+      dhsPrivJwk: fresh.privJwk,
+      dhsPubB64: fresh.pubB64,
+    };
+  }
+
+  await saveSession(key, session);
   return finalSessionId;
 }
 
 /**
- * Try to encrypt with an existing session. Returns null if none exists —
- * caller MUST fall back to X3DH and call `establishDeviceSession` after.
+ * Encrypt with the device-pair ratchet. Returns null if no session — caller
+ * must fall back to X3DH (and then call `establishDeviceSession`).
  */
 export async function ratchetEncrypt(
   myUserId: string,
@@ -162,11 +367,20 @@ export async function ratchetEncrypt(
   plaintext: string,
 ): Promise<string | null> {
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
-  const session = await loadSession(key);
+  let session = await loadSession(key);
   if (!session) return null;
 
-  const counter = session.sendCounter;
-  const aes = await deriveMessageKey(session.sharedSecretB64, counter);
+  // Legacy v3 session — keep using it (no DH key material to upgrade safely).
+  if (session.legacySharedSecretB64 && !session.ckSendB64 && !session.dhsPubB64) {
+    return legacyEncryptV3(key, session, plaintext);
+  }
+
+  // If we have no sending chain yet (e.g. responder before its first reply),
+  // we cannot encrypt under DR yet → signal caller to fall back to X3DH.
+  if (!session.ckSendB64 || !session.dhsPubB64) return null;
+
+  const { ck, mk } = await kdfCK(session.ckSendB64);
+  const aes = await importMessageKey(mk);
   const iv = randomBytes(12);
   const ct = await hardCrypto.encrypt(
     { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 },
@@ -174,10 +388,101 @@ export async function ratchetEncrypt(
     new hardGlobals.TextEncoder().encode(plaintext),
   );
 
-  // Increment send counter (best-effort persist; on failure, we may reuse a
-  // counter on next call — receiver dedupes by counter so this is safe).
-  await saveSession(key, { ...session, sendCounter: counter + 1 });
+  const Ns = session.Ns;
+  await saveSession(key, { ...session, ckSendB64: ck, Ns: Ns + 1 });
 
+  return [
+    RATCHET_PREFIX_V4 + session.sessionId,
+    session.dhsPubB64,
+    String(Ns),
+    String(session.PN),
+    bufferToBase64(iv.buffer as ArrayBuffer),
+    bufferToBase64(ct as ArrayBuffer),
+  ].join('.');
+}
+
+/**
+ * Decrypt a v3 (legacy) or v4 (DR) envelope.
+ */
+export async function ratchetDecrypt(
+  myUserId: string,
+  myDeviceId: string,
+  payload: string,
+): Promise<string | null> {
+  if (payload.startsWith(RATCHET_PREFIX_V4)) {
+    return decryptV4(myUserId, myDeviceId, payload);
+  }
+  if (payload.startsWith(RATCHET_PREFIX_V3)) {
+    return decryptV3(myUserId, myDeviceId, payload);
+  }
+  return null;
+}
+
+async function decryptV4(myUserId: string, myDeviceId: string, payload: string): Promise<string | null> {
+  const parts = payload.slice(RATCHET_PREFIX_V4.length).split('.');
+  if (parts.length !== 6) return null;
+  const [sessionId, dhPubB64, NsStr, PNStr, ivB64, ctB64] = parts;
+  const Ns = parseInt(NsStr, 10);
+  const PN = parseInt(PNStr, 10);
+  if (Number.isNaN(Ns) || Number.isNaN(PN)) return null;
+
+  const found = await lookupSessionById(myUserId, myDeviceId, sessionId);
+  if (!found) return null;
+  let session = found.session;
+
+  const iv = new Uint8Array(base64ToBuffer(ivB64));
+  const ct = base64ToBuffer(ctB64);
+
+  // 1) Skipped-key fast path
+  const skipped = await trySkippedKeys(session, dhPubB64, Ns, iv, ct);
+  if (skipped) {
+    await saveSession(found.key, skipped.updated);
+    return skipped.pt;
+  }
+
+  try {
+    // 2) DH-ratchet step if peer rotated their key
+    if (session.dhrPubB64 !== dhPubB64) {
+      session = await skipMessageKeys(session, PN); // finish previous chain
+      session = await dhRatchet(session, dhPubB64);
+    }
+    // 3) Skip up to Ns in current receiving chain
+    session = await skipMessageKeys(session, Ns);
+
+    // 4) Derive next message key
+    const { ck, mk } = await kdfCK(session.ckRecvB64!);
+    const aes = await importMessageKey(mk);
+    const pt = await hardCrypto.decrypt(
+      { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ct,
+    );
+    session = { ...session, ckRecvB64: ck, Nr: session.Nr + 1 };
+    await saveSession(found.key, session);
+    return new hardGlobals.TextDecoder().decode(pt);
+  } catch {
+    return null;
+  }
+}
+
+// ─── Legacy v3 fallback (keeps in-flight messages decryptable) ──────────────
+
+async function legacyEncryptV3(key: string, session: StoredSession, plaintext: string): Promise<string | null> {
+  if (!session.legacySharedSecretB64) return null;
+  const counter = session.legacySendCounter ?? 0;
+  const ikm = await hardCrypto.importKey(
+    'raw', base64ToBuffer(session.legacySharedSecretB64), 'HKDF', false, ['deriveBits'],
+  );
+  const info = new hardGlobals.TextEncoder().encode(`ForSureDevRatchet:${counter}`);
+  const bits = await hardCrypto.deriveBits(
+    { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info } as any, ikm, 256,
+  );
+  const aes = await hardCrypto.importKey('raw', bits, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  const iv = randomBytes(12);
+  const ct = await hardCrypto.encrypt(
+    { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 },
+    aes,
+    new hardGlobals.TextEncoder().encode(plaintext),
+  );
+  await saveSession(key, { ...session, legacySendCounter: counter + 1 });
   return [
     RATCHET_PREFIX_V3 + session.sessionId,
     String(counter),
@@ -186,37 +491,32 @@ export async function ratchetEncrypt(
   ].join('.');
 }
 
-/**
- * Decrypt a v3 envelope using a cached session.
- * Returns null if no matching session — caller will not be able to decrypt
- * (this is expected when the session was wiped, e.g. browser data cleared).
- */
-export async function ratchetDecrypt(
-  myUserId: string,
-  myDeviceId: string,
-  payload: string,
-): Promise<string | null> {
-  if (!payload.startsWith(RATCHET_PREFIX_V3)) return null;
+async function decryptV3(myUserId: string, myDeviceId: string, payload: string): Promise<string | null> {
   const parts = payload.slice(RATCHET_PREFIX_V3.length).split('.');
   if (parts.length !== 4) return null;
-
   const [sessionId, counterStr, ivB64, ctB64] = parts;
   const counter = parseInt(counterStr, 10);
   if (Number.isNaN(counter)) return null;
-
   const found = await lookupSessionById(myUserId, myDeviceId, sessionId);
-  if (!found) return null;
-
+  if (!found || !found.session.legacySharedSecretB64) return null;
   try {
-    const aes = await deriveMessageKey(found.session.sharedSecretB64, counter);
+    const ikm = await hardCrypto.importKey(
+      'raw', base64ToBuffer(found.session.legacySharedSecretB64), 'HKDF', false, ['deriveBits'],
+    );
+    const info = new hardGlobals.TextEncoder().encode(`ForSureDevRatchet:${counter}`);
+    const bits = await hardCrypto.deriveBits(
+      { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info } as any, ikm, 256,
+    );
+    const aes = await hardCrypto.importKey(
+      'raw', bits, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'],
+    );
     const pt = await hardCrypto.decrypt(
       { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(ivB64)), tagLength: 128 },
       aes,
       base64ToBuffer(ctB64),
     );
-    // Track highest counter seen (cheap replay-window indicator)
-    if (counter >= found.session.recvCounter) {
-      await saveSession(found.key, { ...found.session, recvCounter: counter + 1 });
+    if (counter >= (found.session.legacyRecvCounter ?? 0)) {
+      await saveSession(found.key, { ...found.session, legacyRecvCounter: counter + 1 });
     }
     return new hardGlobals.TextDecoder().decode(pt);
   } catch {
