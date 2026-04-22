@@ -850,6 +850,16 @@ export function ChatView({ conversationId }: ChatViewProps) {
                             </div>
                           )}
 
+                          {(() => {
+                            const rawBody = msg.body || '';
+                            const isPureMediaPlaceholder = !!msg.image_url && (
+                              /^📷\s*Photo(MKEY:|$)/i.test(rawBody) ||
+                              /^🎬\s*(Video|Vidéo)(MKEY:|$)/i.test(rawBody) ||
+                              /PhotoMKEY:/i.test(rawBody) ||
+                              /VideoMKEY:/i.test(rawBody)
+                            );
+                            if (isPureMediaPlaceholder) return null;
+                            return (
                           <div
                             onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
                             onContextMenu={(e) => { e.preventDefault(); setActiveMessageId(msg.id); }}
@@ -890,6 +900,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
                               hasMedia={!!msg.image_url}
                             />
                           </div>
+                            );
+                          })()}
 
 
                           {reactions.length > 0 && (
