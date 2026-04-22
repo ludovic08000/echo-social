@@ -389,6 +389,8 @@ Deno.serve(async (req) => {
           total_users_with_profiles: usersProcessed,
           total_posts_with_features: postsProcessed + existingIds.size,
           avg_dwell_ms: 0,
+          users_with_embedding: usersWithEmbedding,
+          posts_with_new_embedding: postEmbeddings.size,
         },
       })
       .eq("id", runId);
