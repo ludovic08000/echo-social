@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { ReactionType } from '@/hooks/useReactions';
 import { loadContentPrefs, loadFeedWeights, containsMutedKeyword, monteCarloRank, loadAlgorithmConfig, type ScoringContext } from '@/lib/feedAlgorithm';
+import { enforceDiversity, getSessionAdjustment } from '@/lib/feedDiversity';
 
 export interface Post {
   id: string;
@@ -235,37 +236,61 @@ export function usePosts() {
 }
 
 /**
- * Blend Monte Carlo ordering with the hybrid ML score v2 (collab + content + temporal + quality + semantic embeddings).
- * Calls ml_score_post_v2(user_id, post_id) for each post in parallel.
- * v2 includes pgvector cosine similarity between user & post embeddings (768-dim Gemini).
- * Final score = position-decay (Monte Carlo rank) * 0.5 + ml_score_v2 * 0.5.
- * Falls back gracefully to v1 then to original order if scoring fails.
+ * Blend Monte Carlo ordering with the hybrid ML score v3.
+ * v3 = v2 (classic + semantic embeddings) + watch-time predictor bonus.
+ * Cold-start users (no signals yet) get the trending+interests-based feed instead.
+ * Then applies session re-ranking (live boost from current-session signals)
+ * and diversity (max 2 consecutive posts from same author).
  */
 async function blendWithMLScore(posts: Post[], userId: string): Promise<Post[]> {
   if (!posts.length) return posts;
+
+  // Cold start check: if user has no ML signals yet, blend trending feed
+  let isColdStart = false;
+  try {
+    const { data: cs } = await supabase.rpc('ml_is_cold_start' as any, { p_user_id: userId });
+    isColdStart = cs === true;
+  } catch {}
+
   try {
     const scores = await Promise.all(
       posts.map(async (p, idx) => {
         const mcScore = 1 - idx / posts.length; // position decay (0..1)
+        let mlScore = 0.5;
         try {
-          const { data, error } = await supabase.rpc('ml_score_post_v2' as any, {
+          // Try v3 (with watch-time predictor) first
+          const { data: v3Data, error: v3Err } = await supabase.rpc('ml_score_post_v3' as any, {
             p_user_id: userId,
             p_post_id: p.id,
           });
-          if (error || typeof data !== 'number') {
-            // Fallback to v1 if v2 not yet deployed
-            const v1 = await supabase.rpc('ml_score_post', { p_user_id: userId, p_post_id: p.id });
-            const mlScore = typeof v1.data === 'number' ? v1.data : 0.5;
-            return { post: p, finalScore: mcScore * 0.6 + mlScore * 0.4 };
+          if (!v3Err && typeof v3Data === 'number') {
+            mlScore = v3Data;
+          } else {
+            // Fallback chain v3 → v2 → v1
+            const v2 = await supabase.rpc('ml_score_post_v2' as any, { p_user_id: userId, p_post_id: p.id });
+            if (typeof v2.data === 'number') {
+              mlScore = v2.data;
+            } else {
+              const v1 = await supabase.rpc('ml_score_post', { p_user_id: userId, p_post_id: p.id });
+              if (typeof v1.data === 'number') mlScore = v1.data;
+            }
           }
-          // v2 weight gives more to semantic/ML signal (50/50)
-          return { post: p, finalScore: mcScore * 0.5 + data * 0.5 };
-        } catch {
-          return { post: p, finalScore: mcScore };
-        }
+        } catch {}
+
+        // Cold start: weight more on freshness/MC, less on ML (which is unreliable)
+        const weights = isColdStart ? { mc: 0.7, ml: 0.3 } : { mc: 0.5, ml: 0.5 };
+        let finalScore = mcScore * weights.mc + mlScore * weights.ml;
+
+        // Live session adjustment (±0.15) based on current-session interactions
+        finalScore += getSessionAdjustment(p.user_id);
+
+        return { post: p, finalScore };
       })
     );
-    return scores.sort((a, b) => b.finalScore - a.finalScore).map((s) => s.post);
+
+    const sorted = scores.sort((a, b) => b.finalScore - a.finalScore).map((s) => s.post);
+    // Enforce diversity: avoid same author dominating
+    return enforceDiversity(sorted, 2);
   } catch {
     return posts;
   }
