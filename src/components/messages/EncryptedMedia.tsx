@@ -72,10 +72,11 @@ export const EncryptedMedia = memo(function EncryptedMedia({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center gap-2 p-4 rounded-lg bg-muted/50 min-h-[100px]">
-        <Lock className="w-4 h-4 animate-pulse text-muted-foreground" />
-        <span className="text-xs text-muted-foreground">Déchiffrement du média…</span>
-      </div>
+      <div
+        className="rounded-lg bg-muted/40 animate-pulse max-w-full"
+        style={{ width: 240, height: isVideo ? 180 : 200 }}
+        aria-label="Chargement du média"
+      />
     );
   }
 
