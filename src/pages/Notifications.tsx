@@ -25,7 +25,7 @@ function groupNotifications(notifications: any[]): GroupedNotification[] {
   const groups = new Map<string, GroupedNotification>();
 
   for (const n of notifications) {
-    const shouldGroup = !['message', 'friend_request', 'friend_accepted', 'story_view'].includes(n.type);
+    const shouldGroup = !['message', 'friend_request', 'friend_accepted', 'story_view', 'new_device'].includes(n.type);
     const key = shouldGroup ? `${n.type}-${n.post_id || 'no-post'}` : `${n.type}-${n.id}`;
 
     const existing = groups.get(key);
