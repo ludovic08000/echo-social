@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 import { useMessageTranslation } from '@/hooks/useMessageTranslation';
 import { useE2EE } from '@/hooks/useE2EE';
 import { generateMediaKey, encryptMedia, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
+import { compressImageForChat } from '@/lib/messaging/compressImage';
 import { MessageMedia } from './MessageMedia';
 import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { EncryptionBadge, EncryptionStatusBar } from './EncryptionBadge';
@@ -163,8 +164,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
     const isVideo = /\.(mp4|mov|webm|avi|mkv)/i.test(file.name);
     const label = isVideo ? '🎬 Vidéo' : '📷 Photo';
 
+    // Compress still images before upload (skipped for videos / tiny files).
+    const prepared = isVideo ? file : await compressImageForChat(file);
+
     if (isZeusConversation) {
-      const url = await rawUpload(file);
+      const url = await rawUpload(prepared);
       if (url) {
         if (isZeusConversation) {
           legacySendMessage.mutate({ conversationId, body: label, imageUrl: url });
@@ -192,8 +196,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
     try {
       const { key, keyB64 } = await generateMediaKey();
-      const encryptedBlob = await encryptMedia(file, key);
-      const encFile = new File([encryptedBlob], `${file.name}.enc`, { type: 'application/octet-stream' });
+      const encryptedBlob = await encryptMedia(prepared, key);
+      const encFile = new File([encryptedBlob], `${prepared.name}.enc`, { type: 'application/octet-stream' });
       const url = await rawUpload(encFile);
       if (url) {
         const body = buildMediaMessageBody(label, keyB64);

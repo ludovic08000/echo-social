@@ -5,10 +5,11 @@
  * The media key comes from the E2EE-encrypted message body (via MKEY: tag).
  */
 
-import { useState, useEffect, useRef, memo } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { Lock } from 'lucide-react';
 import { importMediaKey, decryptMedia } from '@/lib/crypto/mediaEncrypt';
 import { fetchR2Object } from '@/lib/r2';
+import { getDecryptedMedia, rememberDecryptedMedia } from './decryptedMediaCache';
 
 interface EncryptedMediaProps {
   /** URL of the encrypted blob on R2 */
@@ -24,12 +25,20 @@ export const EncryptedMedia = memo(function EncryptedMedia({
   mediaKeyB64,
   isVideo = false,
 }: EncryptedMediaProps) {
-  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const cached = getDecryptedMedia(encryptedUrl);
+  const [objectUrl, setObjectUrl] = useState<string | null>(cached?.objectUrl ?? null);
   const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const revokeRef = useRef<string | null>(null);
+  const [loading, setLoading] = useState(!cached);
 
   useEffect(() => {
+    // Fast path — already decrypted earlier in this session.
+    const hit = getDecryptedMedia(encryptedUrl);
+    if (hit) {
+      setObjectUrl(hit.objectUrl);
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
 
     (async () => {
@@ -46,12 +55,12 @@ export const EncryptedMedia = memo(function EncryptedMedia({
 
         if (cancelled) return;
 
-        // 3. Create object URL for display
+        // 3. Create object URL for display + share via cache
         const mimeType = isVideo ? 'video/mp4' : 'image/jpeg';
         const blob = new Blob([decrypted], { type: mimeType });
         const url = URL.createObjectURL(blob);
 
-        revokeRef.current = url;
+        rememberDecryptedMedia(encryptedUrl, url, isVideo);
         setObjectUrl(url);
       } catch (err) {
         console.error('Media decryption failed:', err);
@@ -63,10 +72,7 @@ export const EncryptedMedia = memo(function EncryptedMedia({
 
     return () => {
       cancelled = true;
-      if (revokeRef.current) {
-        URL.revokeObjectURL(revokeRef.current);
-        revokeRef.current = null;
-      }
+      // Object URL is owned by the cache — do not revoke here.
     };
   }, [encryptedUrl, mediaKeyB64, isVideo]);
 
