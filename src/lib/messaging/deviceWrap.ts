@@ -1,16 +1,25 @@
 /**
- * Per-device plaintext wrap (multi-device E2EE fan-out).
+ * Per-device plaintext wrap (multi-device E2EE fan-out) — FALLBACK ONLY.
  *
- * Each recipient device has its own X25519 public key (`user_devices.device_public_key`).
- * To distribute a message to N devices, we ECDH-wrap the same plaintext N times,
- * once per device, using HKDF(ECDH) → AES-256-GCM.
+ * ⚠️ SECURITY DESIGN NOTICE (audit 2026-04):
+ * In the current hybrid model, `user_devices.device_public_key` is published as
+ * the user's SHARED identityKey (see useDeviceRegistration). As a consequence,
+ * this wrap mechanism does NOT provide true per-device cryptographic isolation:
+ * all devices of the same user derive ECDH from the same identity key pair.
+ * The `recipientDeviceId` is mixed into HKDF salt+info, which gives per-device
+ * key separation at the symmetric layer, but if the shared identity private key
+ * is ever compromised, every device fallback channel is compromised together.
  *
- * This NEVER replaces the per-conversation Double Ratchet — it only adds an
- * additional, addressable copy per device so that a user reading on a second
- * device (where the ratchet state does not exist) can still see the message.
+ * Primary path remains the per-device Double Ratchet (X3DH per device + ratchet
+ * state per device), which DOES provide per-device isolation and forward secrecy.
+ * `deviceWrap` is only used as a fallback when no ratchet session is available
+ * yet (e.g. first message to a freshly linked device).
+ *
+ * Future improvement: publish a dedicated per-device X25519 key (separate from
+ * the shared identity key) and use it here. Until then, treat this path as
+ * "shared-identity-bound" and keep the ratchet path as the source of truth.
  *
  * Format of the wrapped payload: base64(iv) "." base64(ciphertext)
- * (Same shape as callKeyEncrypt — keeps payload compact.)
  */
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { randomBytes, bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
