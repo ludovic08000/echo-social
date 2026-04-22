@@ -67,7 +67,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({});
-  const [isTyping, setIsTyping] = useState(false);
+  // peerTyping is driven by the realtime presence channel below — never by local input.
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [showSharePicker, setShowSharePicker] = useState(false);
   const [pinnedMessages, setPinnedMessages] = useState<Set<string>>(new Set());
