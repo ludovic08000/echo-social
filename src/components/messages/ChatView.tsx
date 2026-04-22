@@ -196,8 +196,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
     try {
       const { key, keyB64 } = await generateMediaKey();
-      const encryptedBlob = await encryptMedia(file, key);
-      const encFile = new File([encryptedBlob], `${file.name}.enc`, { type: 'application/octet-stream' });
+      const encryptedBlob = await encryptMedia(prepared, key);
+      const encFile = new File([encryptedBlob], `${prepared.name}.enc`, { type: 'application/octet-stream' });
       const url = await rawUpload(encFile);
       if (url) {
         const body = buildMediaMessageBody(label, keyB64);
