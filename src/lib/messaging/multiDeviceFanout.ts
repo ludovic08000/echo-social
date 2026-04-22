@@ -389,11 +389,21 @@ export async function tryReadDeviceCopy(messageId: string): Promise<string | nul
     const senderDev = (senderDevices || []).find((d: any) => d.device_id === row.sender_device_id);
     if (!senderDev?.device_public_key) return null;
 
+    // Also fetch sender's legacy identity public key so we can decrypt
+    // pre-migration messages (when device_public_key was the identity key).
+    const { data: senderPubLegacy } = await supabase
+      .from('user_public_keys')
+      .select('identity_key')
+      .eq('user_id', row.sender_user_id)
+      .eq('is_active', true)
+      .maybeSingle();
+
     return await unwrapPlaintextForDevice(
       row.encrypted_body,
       user.id,
       senderDev.device_public_key,
       myDeviceId,
+      senderPubLegacy?.identity_key ?? null,
     );
   } catch (e) {
     console.warn('[FANOUT] device-copy read failed', e);
