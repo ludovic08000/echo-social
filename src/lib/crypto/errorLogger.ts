@@ -26,6 +26,7 @@ export type CryptoErrorContext =
   | 'fanout'
   | 'queue.encrypt'
   | 'queue.send'
+  | 'queue.trace'
   | 'queue.handler_missing'
   | 'session.invalidate'
   | 'session.establish'
