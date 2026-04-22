@@ -313,6 +313,7 @@ Deno.serve(async (req) => {
       dwellSum: number;
       dwellCount: number;
       total: number;
+      embItems: { emb: number[]; weight: number }[];
     }>();
 
     for (const it of allInter) {
@@ -321,7 +322,7 @@ Deno.serve(async (req) => {
       const w = (signalW[it.signal_type] ?? it.weight ?? 1) * decay(it.created_at, halfLife);
       const u = userAgg.get(it.user_id) || {
         topics: {}, hashtags: {}, authors: {}, hours: {}, days: {},
-        dwellSum: 0, dwellCount: 0, total: 0,
+        dwellSum: 0, dwellCount: 0, total: 0, embItems: [],
       };
       for (const t of feat.topics) u.topics[t] = (u.topics[t] || 0) + w;
       for (const h of feat.hashtags) u.hashtags[h] = (u.hashtags[h] || 0) + w * 0.5;
@@ -331,6 +332,11 @@ Deno.serve(async (req) => {
       if (it.dwell_ms) {
         u.dwellSum += it.dwell_ms;
         u.dwellCount++;
+      }
+      // Capture post embedding for positive signals only (likes, comments, dwell, share)
+      if (w > 0.5) {
+        const postEmb = postEmbeddings.get(it.post_id);
+        if (postEmb) u.embItems.push({ emb: postEmb, weight: w });
       }
       u.total++;
       userAgg.set(it.user_id, u);
@@ -345,7 +351,10 @@ Deno.serve(async (req) => {
     };
 
     let usersProcessed = 0;
+    let usersWithEmbedding = 0;
     for (const [userId, u] of userAgg) {
+      const userEmb = averageEmbeddings(u.embItems);
+      if (userEmb) usersWithEmbedding++;
       await supabase.from("ml_user_profiles").upsert({
         user_id: userId,
         topic_weights: normalize(u.topics),
@@ -356,6 +365,7 @@ Deno.serve(async (req) => {
         avg_session_dwell_ms: u.dwellCount > 0 ? Math.round(u.dwellSum / u.dwellCount) : 0,
         total_interactions: u.total,
         last_trained_at: new Date().toISOString(),
+        ...(userEmb ? { embedding: toPgVector(userEmb), embedding_updated_at: new Date().toISOString() } : {}),
       });
       usersProcessed++;
     }
