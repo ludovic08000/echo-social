@@ -5844,6 +5844,16 @@ export type Database = {
           unread_count: number
         }[]
       }
+      get_device_copies_for_user: {
+        Args: { p_message_id: string }
+        Returns: {
+          created_at: string
+          encrypted_body: string
+          recipient_device_id: string
+          sender_device_id: string
+          sender_user_id: string
+        }[]
+      }
       get_device_copy_for_message: {
         Args: { p_device_id: string; p_message_id: string }
         Returns: {
