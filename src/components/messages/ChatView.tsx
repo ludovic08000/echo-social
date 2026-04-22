@@ -11,6 +11,7 @@ import { format, isSameDay } from 'date-fns';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useDeleteMessageForMe, useDeleteMessageForEveryone, useLeaveGroup, useAddGroupMembers, useRemoveGroupMember, useGroupMembers, type Message } from '@/hooks/useMessages';
+import { useMessageReactions } from '@/hooks/useMessageReactions';
 import { useFriendships } from '@/hooks/useFriendships';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
@@ -68,7 +69,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const [showEmojis, setShowEmojis] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
-  const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({});
+  // Reactions are now persisted + realtime via useMessageReactions
   // peerTyping is driven by the realtime presence channel below — never by local input.
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [showSharePicker, setShowSharePicker] = useState(false);
@@ -737,7 +738,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                     const nextMsg = mi < group.messages.length - 1 ? group.messages[mi + 1] : null;
                     const isFirstInGroup = !prevMsg || prevMsg.sender_id !== msg.sender_id;
                     const isLastInGroup = !nextMsg || nextMsg.sender_id !== msg.sender_id;
-                    const reactions = messageReactions[msg.id] || [];
+                    const reactions = reactionsByMessage[msg.id] || [];
                     const looksEncrypted = msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"'));
                     const isBigEmoji = !looksEncrypted && isSingleEmoji(msg.body);
                     const isImage = msg.image_url;
