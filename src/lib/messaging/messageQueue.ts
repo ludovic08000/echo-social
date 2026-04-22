@@ -779,6 +779,7 @@ class MessageQueueManager {
         msg.updatedAt = Date.now();
         msg.plaintext = '';
         this.volatilePlaintext.delete(msg.localId);
+        traceQueue(msg, 'reconciled', { serverId: msg.serverId });
         await this.dbDelete(msg.localId);
 
         changed = true;
