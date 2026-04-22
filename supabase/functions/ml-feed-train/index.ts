@@ -253,24 +253,16 @@ Deno.serve(async (req) => {
       postsProcessed++;
     }
 
-    // Also load existing embeddings for posts we already have features for (for user profile averaging)
-    if (existingIds.size > 0) {
-      const { data: existingEmb } = await supabase
-        .from("ml_post_features")
-        .select("post_id, embedding")
-        .in("post_id", Array.from(existingIds))
-        .not("embedding", "is", null);
-      for (const row of existingEmb || []) {
-        const e = (row as any).embedding;
-        // pgvector may return as string "[...]" or as array
-        if (typeof e === "string") {
-          try {
-            const arr = JSON.parse(e);
-            if (Array.isArray(arr)) postEmbeddings.set((row as any).post_id, arr);
-          } catch {}
-        } else if (Array.isArray(e)) {
-          postEmbeddings.set((row as any).post_id, e);
-        }
+    // Also load existing embeddings into the postEmbeddings map (already fetched above — no extra query)
+    for (const [pid, row] of existingMap) {
+      const e = row.embedding;
+      if (typeof e === "string") {
+        try {
+          const arr = JSON.parse(e);
+          if (Array.isArray(arr)) postEmbeddings.set(pid, arr);
+        } catch {}
+      } else if (Array.isArray(e)) {
+        postEmbeddings.set(pid, e);
       }
     }
 
