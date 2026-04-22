@@ -373,7 +373,7 @@ export function useMessages(conversationId: string) {
         .eq('conversation_id', conversationId)
         .in('status', ['delivered', 'pending'])
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(500);
       if (cancelled || !msgs) return;
       const ids = msgs.filter(m => isUnsupportedEncryptedBody(m.body)).map(m => m.id);
       if (ids.length > 0) {
