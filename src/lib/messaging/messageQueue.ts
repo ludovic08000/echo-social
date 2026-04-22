@@ -125,6 +125,9 @@ class MessageQueueManager {
   /** SECURITY: Plaintext stored ONLY in volatile memory, never in IndexedDB */
   private volatilePlaintext = new Map<string, string>();
   private legacyPlaintextScrubbed = false;
+  /** Debounce resumeForConversation to prevent tight loops on iOS where
+   *  React re-renders cause repeated resume calls before retry timers fire. */
+  private lastResumeAt = new Map<string, number>();
 
   // ─── DB ───
 
