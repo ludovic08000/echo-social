@@ -15,6 +15,7 @@ import { WellbeingSettingsPanel } from '@/components/settings/WellbeingSettingsP
 import { ContentPreferencesPanel } from '@/components/settings/ContentPreferencesPanel';
 import { AccessibilitySettingsPanel } from '@/components/settings/AccessibilitySettingsPanel';
 import { ParentalControlPanel } from '@/components/settings/ParentalControlPanel';
+import { DevicesPanel } from '@/components/settings/DevicesPanel';
 import { Button } from '@/components/ui/button';
 
 export default function Settings() {
