@@ -43,6 +43,13 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Rate limit per IP + per user — protects against token-spamming abuse
+    const ip = getClientIP(req);
+    const ipLimit = await checkRateLimitDB(`device-link:ip:${ip}`, 30, 300, corsHeaders);
+    if (ipLimit) return ipLimit;
+    const userLimit = await checkRateLimitDB(`device-link:user:${user.id}`, 20, 300, corsHeaders);
+    if (userLimit) return userLimit;
+
     const { action, ...params } = await req.json();
 
     // === CREATE: Generate a link token (source device) ===
