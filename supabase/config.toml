@@ -97,3 +97,5 @@ project_id = "vkpmoqfzrihcijjochks"
     verify_jwt = false
   [functions.verify-chat-pin]
     verify_jwt = false
+  [functions.login-rate-limit]
+    verify_jwt = false
