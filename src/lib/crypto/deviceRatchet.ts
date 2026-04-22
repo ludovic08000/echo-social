@@ -72,6 +72,14 @@ interface StoredSession {
   skipped: SkippedKey[];
   createdAt: number;
 
+  /**
+   * SPK id of the peer device used at handshake time. When the peer rotates
+   * its SignedPreKey, this no longer matches the latest bundle and the
+   * session must be invalidated to force a fresh X3DH (see
+   * `getSessionPeerSpkId` / `invalidateDeviceSession`).
+   */
+  peerSpkId?: number | null;
+
   // Legacy v3 fallback (kept for already-established sessions)
   legacySharedSecretB64?: string | null;
   legacySendCounter?: number;
