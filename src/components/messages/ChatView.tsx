@@ -289,6 +289,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
     setNewMessage('');
     setReplyTo(null);
     setShowEmojis(false);
+    if (!isZeusConversation) notifyStopped();
     inputRef.current?.focus();
 
     if (isZeusConversation) {
