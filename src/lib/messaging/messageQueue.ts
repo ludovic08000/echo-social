@@ -835,6 +835,10 @@ class MessageQueueManager {
   /** Remove a message from the queue (user cancels failed message) */
   async removeMessage(localId: string): Promise<void> {
     this.clearRetryTimer(localId);
+    const existing = await this.dbGet(localId).catch(() => undefined);
+    if (existing) {
+      traceQueue(existing, 'remove:user', { reason: 'user_cancel', lastStatus: existing.status });
+    }
     this.volatilePlaintext.delete(localId);
     await this.dbDelete(localId);
   }
