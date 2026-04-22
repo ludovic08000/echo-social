@@ -24,14 +24,6 @@
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { randomBytes, bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
 import { getOrCreateIdentityKeys } from '@/lib/crypto/keyManager';
-import { KX_KEY_PARAMS } from '@/lib/crypto/constants';
-
-const IV_LEN = 12;
-const SEP = '.';
-
-import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
-import { randomBytes, bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
-import { getOrCreateIdentityKeys } from '@/lib/crypto/keyManager';
 import { loadDeviceKxKey, getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { KX_KEY_PARAMS } from '@/lib/crypto/constants';
