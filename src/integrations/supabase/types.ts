@@ -5835,6 +5835,10 @@ export type Database = {
         }[]
       }
       ml_is_cold_start: { Args: { p_user_id: string }; Returns: boolean }
+      ml_record_watch_time: {
+        Args: { p_post_id: string; p_sample_count: number; p_total_ms: number }
+        Returns: undefined
+      }
       ml_score_post: {
         Args: { p_post_id: string; p_user_id: string }
         Returns: number
