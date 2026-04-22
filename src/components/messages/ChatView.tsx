@@ -406,9 +406,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   /** Callback from DecryptedMessageBody to cache decrypted text + persist it */
   const onDecrypted = useCallback((msgId: string, text: string) => {
-    decryptedCache.set(msgId, text);
+    const parsed = parseMediaMessage(text);
+    decryptedCache.set(msgId, parsed ? text : text);
     bumpCache();
-    void savePlaintext(msgId, text);
+    void savePlaintext(msgId, parsed ? text : text);
   }, [bumpCache]);
 
   // Pre-warm the in-memory cache from the persistent IndexedDB store as soon as

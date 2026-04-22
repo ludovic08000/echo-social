@@ -432,7 +432,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   );
 
   const onDecrypted = useCallback((msgId: string, text: string) => {
-    cachePlaintext(msgId, text);
+    const parsed = parseMediaMessage(text);
+    cachePlaintext(msgId, parsed ? text : text);
   }, [cachePlaintext]);
 
   // Auto-load negotiation context from conversation if not set
