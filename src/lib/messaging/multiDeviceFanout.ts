@@ -35,6 +35,7 @@ import {
   ratchetDecrypt,
   establishDeviceSession,
   RATCHET_PREFIX_V3,
+  RATCHET_PREFIX_V4,
 } from '@/lib/crypto/deviceRatchet';
 
 interface FanoutInput {
