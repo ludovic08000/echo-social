@@ -23,6 +23,7 @@ import {
 } from '@/lib/messaging/currentDevice';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto/keyManager';
 import { refreshDeviceSignedPrekeyIfNeeded, refillDeviceOneTimePrekeysIfNeeded } from '@/lib/crypto/x3dh';
+import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 
 export function useDeviceRegistration() {
   const { user } = useAuth();
@@ -52,15 +53,26 @@ export function useDeviceRegistration() {
           return;
         }
 
+        // Per-device dedicated X25519 key (true cryptographic isolation per device).
+        // Generated locally + persisted in IndexedDB; private key never leaves the
+        // browser. We publish ONLY the public part. If generation fails for any
+        // reason, we fall back to the legacy shared-identity behaviour so we never
+        // leave a device unable to receive messages.
+        let devicePublicKeyB64 = bundle.identityKey;
+        try {
+          const kx = await getOrCreateDeviceKxKey(deviceId);
+          if (kx?.publicB64) devicePublicKeyB64 = kx.publicB64;
+        } catch (kxErr) {
+          console.warn('[useDeviceRegistration] device kx key unavailable, falling back to identityKey:', kxErr);
+        }
+
         const payload = {
           user_id: user.id,
           device_id: deviceId,
           device_name: getCurrentDeviceLabel(),
-          // ⚠️ This is the SHARED identity key, not a per-device key. The
-          // deviceWrap fallback derives ECDH from this — see deviceWrap.ts for
-          // the security implications. Per-device isolation is provided by the
-          // X3DH+Ratchet path (steps 2 & 3 below), not by this column.
-          device_public_key: bundle.identityKey,
+          // Per-device X25519 public key (preferred) or shared identity key (legacy fallback).
+          // The deviceWrap fallback uses this column; see deviceWrap.ts.
+          device_public_key: devicePublicKeyB64,
           platform: getCurrentPlatform(),
           user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
           is_active: true,
