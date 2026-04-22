@@ -513,6 +513,24 @@ export function PrivacySettingsPanel() {
               onCheckedChange={(v) => handleUpdate('analytics_enabled', v)}
             />
           </div>
+
+          <div className="flex items-center justify-between p-4 rounded-xl bg-secondary/50">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4" />
+                <Label>Personnalisation IA du fil</Label>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Autoriser l'envoi d'extraits courts et anonymisés de mes publications à l'IA pour
+                personnaliser mon fil. Désactivable à tout moment — les signaux agrégés (likes,
+                temps de lecture) restent utilisés.
+              </p>
+            </div>
+            <Switch
+              checked={settings.ai_personalization_enabled !== false}
+              onCheckedChange={(v) => handleUpdate('ai_personalization_enabled', v)}
+            />
+          </div>
         </div>
       </section>
 

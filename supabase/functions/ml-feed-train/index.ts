@@ -205,63 +205,75 @@ Deno.serve(async (req) => {
       .limit(2000);
     const allPosts = (posts || []) as PostRow[];
 
-    // 3) Extract features for posts that don't have them yet (cap to 30 per run for cost)
+    // 3) Extract features for posts that don't have them yet (cap to 60 per run for cost).
+    // Single-batch fetch — avoids N+1 queries later in the user-profile build phase.
     const { data: existing } = await supabase
       .from("ml_post_features")
-      .select("post_id")
+      .select("post_id, topics, hashtags, embedding")
       .in("post_id", allPosts.map((p) => p.id));
-    const existingIds = new Set((existing || []).map((r: any) => r.post_id));
-    const toExtract = allPosts.filter((p) => !existingIds.has(p.id)).slice(0, 30);
+    const existingMap = new Map<string, { topics: string[]; hashtags: string[]; embedding: any }>();
+    for (const r of existing || []) {
+      existingMap.set((r as any).post_id, {
+        topics: (r as any).topics || [],
+        hashtags: (r as any).hashtags || [],
+        embedding: (r as any).embedding ?? null,
+      });
+    }
+    const existingIds = new Set(existingMap.keys());
+    const toExtract = allPosts.filter((p) => !existingIds.has(p.id)).slice(0, 60);
 
     let postsProcessed = 0;
     const postEmbeddings = new Map<string, number[]>();
-    for (const post of toExtract) {
-      const f = await extractFeatures(post);
-      // Build embedding input: body + topics + hashtags for richer semantics
-      const embText = [
-        post.body || "",
-        f.topics.join(" "),
-        f.hashtags.map((h) => "#" + h).join(" "),
-      ].filter(Boolean).join("\n").slice(0, 2000);
-      const emb = await generateEmbedding(embText);
-      if (emb) postEmbeddings.set(post.id, emb);
+    // Cache for freshly extracted features so we can build the user-profile phase without re-querying
+    const freshFeatures = new Map<string, { topics: string[]; hashtags: string[] }>();
 
-      await supabase.from("ml_post_features").upsert({
-        post_id: post.id,
-        topics: f.topics,
-        hashtags: f.hashtags,
-        sentiment: f.sentiment,
-        quality_score: f.quality,
-        language: f.language,
-        has_media: !!post.image_url,
-        engagement_velocity: 0,
-        ctr: 0,
-        view_count: 0,
-        positive_count: 0,
-        negative_count: 0,
-        ...(emb ? { embedding: toPgVector(emb), embedding_updated_at: new Date().toISOString() } : {}),
-      });
-      postsProcessed++;
+    // Batch AI extraction (5 posts in parallel) — keeps cost bounded but ~5x faster than serial
+    const EXTRACT_CONCURRENCY = 5;
+    for (let i = 0; i < toExtract.length; i += EXTRACT_CONCURRENCY) {
+      const chunk = toExtract.slice(i, i + EXTRACT_CONCURRENCY);
+      const results = await Promise.all(chunk.map(async (post) => {
+        const f = await extractFeatures(post);
+        const embText = [
+          post.body || "",
+          f.topics.join(" "),
+          f.hashtags.map((h) => "#" + h).join(" "),
+        ].filter(Boolean).join("\n").slice(0, 2000);
+        const emb = await generateEmbedding(embText);
+        return { post, f, emb };
+      }));
+
+      for (const { post, f, emb } of results) {
+        if (emb) postEmbeddings.set(post.id, emb);
+        freshFeatures.set(post.id, { topics: f.topics, hashtags: f.hashtags });
+        await supabase.from("ml_post_features").upsert({
+          post_id: post.id,
+          topics: f.topics,
+          hashtags: f.hashtags,
+          sentiment: f.sentiment,
+          quality_score: f.quality,
+          language: f.language,
+          has_media: !!post.image_url,
+          engagement_velocity: 0,
+          ctr: 0,
+          view_count: 0,
+          positive_count: 0,
+          negative_count: 0,
+          ...(emb ? { embedding: toPgVector(emb), embedding_updated_at: new Date().toISOString() } : {}),
+        });
+        postsProcessed++;
+      }
     }
 
-    // Also load existing embeddings for posts we already have features for (for user profile averaging)
-    if (existingIds.size > 0) {
-      const { data: existingEmb } = await supabase
-        .from("ml_post_features")
-        .select("post_id, embedding")
-        .in("post_id", Array.from(existingIds))
-        .not("embedding", "is", null);
-      for (const row of existingEmb || []) {
-        const e = (row as any).embedding;
-        // pgvector may return as string "[...]" or as array
-        if (typeof e === "string") {
-          try {
-            const arr = JSON.parse(e);
-            if (Array.isArray(arr)) postEmbeddings.set((row as any).post_id, arr);
-          } catch {}
-        } else if (Array.isArray(e)) {
-          postEmbeddings.set((row as any).post_id, e);
-        }
+    // Also load existing embeddings into the postEmbeddings map (already fetched above — no extra query)
+    for (const [pid, row] of existingMap) {
+      const e = row.embedding;
+      if (typeof e === "string") {
+        try {
+          const arr = JSON.parse(e);
+          if (Array.isArray(arr)) postEmbeddings.set(pid, arr);
+        } catch {}
+      } else if (Array.isArray(e)) {
+        postEmbeddings.set(pid, e);
       }
     }
 
@@ -275,31 +287,33 @@ Deno.serve(async (req) => {
       if (w < 0) cur.neg++;
       postInteractions.set(it.post_id, cur);
     }
-    for (const [postId, agg] of postInteractions) {
-      const ctr = agg.views > 0 ? agg.pos / agg.views : 0;
-      await supabase
-        .from("ml_post_features")
-        .update({
-          view_count: agg.views,
-          positive_count: agg.pos,
-          negative_count: agg.neg,
-          ctr: Number(ctr.toFixed(4)),
-          engagement_velocity: agg.pos + agg.neg,
-        })
-        .eq("post_id", postId);
+    // Parallelize CTR updates (10 at a time) instead of awaiting one-by-one
+    const ctrEntries = Array.from(postInteractions.entries());
+    const CTR_CONCURRENCY = 10;
+    for (let i = 0; i < ctrEntries.length; i += CTR_CONCURRENCY) {
+      const chunk = ctrEntries.slice(i, i + CTR_CONCURRENCY);
+      await Promise.all(chunk.map(([postId, agg]) => {
+        const ctr = agg.views > 0 ? agg.pos / agg.views : 0;
+        return supabase
+          .from("ml_post_features")
+          .update({
+            view_count: agg.views,
+            positive_count: agg.pos,
+            negative_count: agg.neg,
+            ctr: Number(ctr.toFixed(4)),
+            engagement_velocity: agg.pos + agg.neg,
+          })
+          .eq("post_id", postId);
+      }));
     }
 
-    // 5) Build per-user preference profiles
+    // 5) Build per-user preference profiles — read features from in-memory cache (no N+1 query)
     const postFeatureMap = new Map<string, { topics: string[]; hashtags: string[]; author: string }>();
     for (const p of allPosts) {
-      const { data: feat } = await supabase
-        .from("ml_post_features")
-        .select("topics, hashtags")
-        .eq("post_id", p.id)
-        .maybeSingle();
+      const cached = freshFeatures.get(p.id) || existingMap.get(p.id);
       postFeatureMap.set(p.id, {
-        topics: feat?.topics || [],
-        hashtags: feat?.hashtags || [],
+        topics: cached?.topics || [],
+        hashtags: cached?.hashtags || [],
         author: p.user_id,
       });
     }
