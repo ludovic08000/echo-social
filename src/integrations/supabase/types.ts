@@ -2703,6 +2703,7 @@ export type Database = {
       }
       ml_post_features: {
         Row: {
+          avg_watch_time_ms: number | null
           ctr: number
           embedding: string | null
           embedding_updated_at: string | null
@@ -2719,8 +2720,10 @@ export type Database = {
           topics: string[]
           updated_at: string
           view_count: number
+          watch_sample_count: number | null
         }
         Insert: {
+          avg_watch_time_ms?: number | null
           ctr?: number
           embedding?: string | null
           embedding_updated_at?: string | null
@@ -2737,8 +2740,10 @@ export type Database = {
           topics?: string[]
           updated_at?: string
           view_count?: number
+          watch_sample_count?: number | null
         }
         Update: {
+          avg_watch_time_ms?: number | null
           ctr?: number
           embedding?: string | null
           embedding_updated_at?: string | null
@@ -2755,6 +2760,7 @@ export type Database = {
           topics?: string[]
           updated_at?: string
           view_count?: number
+          watch_sample_count?: number | null
         }
         Relationships: []
       }
@@ -2855,6 +2861,7 @@ export type Database = {
       ml_user_profiles: {
         Row: {
           author_affinity: Json
+          avg_dwell_ms: number | null
           avg_session_dwell_ms: number
           created_at: string
           daily_activity: Json
@@ -2863,6 +2870,7 @@ export type Database = {
           hashtag_weights: Json
           hourly_activity: Json
           last_trained_at: string | null
+          preferred_content_length: string | null
           topic_weights: Json
           total_interactions: number
           updated_at: string
@@ -2870,6 +2878,7 @@ export type Database = {
         }
         Insert: {
           author_affinity?: Json
+          avg_dwell_ms?: number | null
           avg_session_dwell_ms?: number
           created_at?: string
           daily_activity?: Json
@@ -2878,6 +2887,7 @@ export type Database = {
           hashtag_weights?: Json
           hourly_activity?: Json
           last_trained_at?: string | null
+          preferred_content_length?: string | null
           topic_weights?: Json
           total_interactions?: number
           updated_at?: string
@@ -2885,6 +2895,7 @@ export type Database = {
         }
         Update: {
           author_affinity?: Json
+          avg_dwell_ms?: number | null
           avg_session_dwell_ms?: number
           created_at?: string
           daily_activity?: Json
@@ -2893,6 +2904,7 @@ export type Database = {
           hashtag_weights?: Json
           hourly_activity?: Json
           last_trained_at?: string | null
+          preferred_content_length?: string | null
           topic_weights?: Json
           total_interactions?: number
           updated_at?: string
@@ -5808,6 +5820,13 @@ export type Database = {
               user_id: string
             }[]
           }
+      ml_cold_start_feed: {
+        Args: { p_limit?: number; p_user_id: string }
+        Returns: {
+          post_id: string
+          score: number
+        }[]
+      }
       ml_find_similar_posts: {
         Args: { p_limit?: number; p_user_id: string }
         Returns: {
@@ -5815,11 +5834,16 @@ export type Database = {
           similarity: number
         }[]
       }
+      ml_is_cold_start: { Args: { p_user_id: string }; Returns: boolean }
       ml_score_post: {
         Args: { p_post_id: string; p_user_id: string }
         Returns: number
       }
       ml_score_post_v2: {
+        Args: { p_post_id: string; p_user_id: string }
+        Returns: number
+      }
+      ml_score_post_v3: {
         Args: { p_post_id: string; p_user_id: string }
         Returns: number
       }
