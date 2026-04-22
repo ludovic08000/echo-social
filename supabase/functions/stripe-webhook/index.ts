@@ -33,9 +33,23 @@ serve(async (req) => {
     const body = await req.text();
     const event: Stripe.Event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
 
-    console.log("Stripe webhook event:", event.type);
+    console.log("Stripe webhook event:", event.type, event.id);
 
-    // ── CHECKOUT SESSION COMPLETED ──
+    // ── IDEMPOTENCE: skip if event already processed ──
+    const { data: isNew, error: idemErr } = await supabase.rpc(
+      "stripe_mark_event_processed",
+      { p_event_id: event.id, p_event_type: event.type }
+    );
+    if (idemErr) {
+      console.error("[stripe-webhook] idempotence check failed", idemErr.message);
+      // Fail-open on infra error; Stripe will retry on non-200
+    } else if (isNew === false) {
+      console.log(`[stripe-webhook] event ${event.id} already processed — skipping`);
+      return new Response(JSON.stringify({ received: true, duplicate: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (event.type === "checkout_sessions.completed" || event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
       const metadataType = session.metadata?.type;
@@ -149,19 +163,13 @@ serve(async (req) => {
 
         if (orderItems) {
           for (const item of orderItems) {
-            const { data: prod } = await supabase
-              .from("products")
-              .select("stock_quantity")
-              .eq("id", item.product_id)
-              .single();
-
-            if (prod?.stock_quantity !== null && prod?.stock_quantity !== undefined) {
-              await supabase
-                .from("products")
-                .update({
-                  stock_quantity: Math.max(0, prod.stock_quantity - item.quantity),
-                })
-                .eq("id", item.product_id);
+            // Atomic decrement (no read-then-update race). NULL stock = unlimited → no-op.
+            const { error: stockErr } = await supabase.rpc("decrement_product_stock", {
+              p_product_id: item.product_id,
+              p_quantity: item.quantity,
+            });
+            if (stockErr) {
+              console.error(`[stripe-webhook] stock decrement failed for ${item.product_id}`, stockErr.message);
             }
           }
 
