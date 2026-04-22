@@ -214,15 +214,10 @@ export function useMessageQueue(
     const sanitized = isSpecial ? body : sanitizeMessageBody(body);
 
     // Case A — Zeus (server bot, no peer): plaintext is allowed by design.
-    if (!isEncryptionActive) {
-      if (!allowPlaintext) {
-        // Strict: never send plaintext for a peer conversation, even if E2EE
-        // is still initializing. The queue path below would handle this, but
-        // we treat "no encryption + not Zeus" as a hard error to surface
-        // misconfigurations early.
-        throw new Error('🔒 Chiffrement non disponible — envoi bloqué.');
-      }
-
+    // For peer conversations where E2EE is still initializing, we DO NOT block:
+    // we fall through to the queue (Case B), which will encrypt + send as soon
+    // as keys are ready. Plaintext never leaves the device in clear.
+    if (allowPlaintext && !isEncryptionActive) {
       const { error } = await supabase
         .from('messages')
         .insert({
