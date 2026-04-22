@@ -24,9 +24,18 @@ export function isStrictRatchetEnvelopeBody(body: string | null | undefined): bo
   if (!body || typeof body !== 'string' || !body.startsWith('{')) return false;
 
   try {
-    const parsed = JSON.parse(body) as Partial<StrictRatchetEnvelopeShape>;
+    const parsed = JSON.parse(body) as Partial<StrictRatchetEnvelopeShape> & { kem?: string };
+    // Accept either:
+    //   - the current strict envelope (encryptionMode === 'ratchet')
+    //   - the legacy v2 envelope that omitted `encryptionMode` but carried
+    //     the same ratchet header + X25519 kem. The decryption pipeline
+    //     handles both, so we must NOT mark legacy bodies as unsupported
+    //     (which would hide them as "anciens messages chiffrés").
+    const modeOk =
+      parsed.encryptionMode === 'ratchet' ||
+      (parsed.encryptionMode === undefined && parsed.kem === 'X25519');
     return (
-      parsed.encryptionMode === 'ratchet' &&
+      modeOk &&
       parsed.v === PROTOCOL_VERSION &&
       typeof parsed.iv === 'string' && parsed.iv.length > 0 &&
       typeof parsed.ct === 'string' && parsed.ct.length > 0 &&
