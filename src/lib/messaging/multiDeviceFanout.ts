@@ -312,6 +312,15 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
   const { error } = await supabase.from('message_device_copies').insert(rows as any);
   if (error) {
     console.warn('[FANOUT] insert failed', error.message);
+    logCryptoError({
+      severity: 'error',
+      context: 'fanout',
+      errorCode: 'E_FANOUT_INSERT',
+      errorMessage: error.message,
+      conversationId: input.conversationId,
+      myDeviceId: senderDeviceId,
+      metadata: { rows: rows.length },
+    });
     return { inserted: 0, multiDevice: true };
   }
 
