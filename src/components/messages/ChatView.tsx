@@ -164,7 +164,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
     const label = isVideo ? '🎬 Vidéo' : '📷 Photo';
 
     if (isZeusConversation) {
-      // No encryption — upload plaintext, send normally
       const url = await rawUpload(file);
       if (url) {
         if (isZeusConversation) {
@@ -176,14 +175,32 @@ export function ChatView({ conversationId }: ChatViewProps) {
       return;
     }
 
-    // E2EE active → encrypt file before upload
+    if (e2ee.fingerprintChanged) {
+      toast.error('Clé de sécurité modifiée — valide d’abord le contact avant d’envoyer une photo ou vidéo.');
+      return;
+    }
+
+    if (e2ee.peerKeyMissing) {
+      toast.error('Clés du contact indisponibles — impossible d’envoyer un média pour le moment.');
+      return;
+    }
+
+    if (e2ee.initError === 'pin_unlock_required') {
+      toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer un média.');
+      return;
+    }
+
+    if (e2ee.initError === 'identity_lost_backup_available') {
+      toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer un média.');
+      return;
+    }
+
     try {
       const { key, keyB64 } = await generateMediaKey();
       const encryptedBlob = await encryptMedia(file, key);
       const encFile = new File([encryptedBlob], `${file.name}.enc`, { type: 'application/octet-stream' });
       const url = await rawUpload(encFile);
       if (url) {
-        // Embed the per-file key in the message body — the body itself gets E2EE encrypted
         const body = buildMediaMessageBody(label, keyB64);
         queue.sendMessage(body, url).catch(() => toast.error('Erreur envoi média'));
       }
@@ -191,7 +208,16 @@ export function ChatView({ conversationId }: ChatViewProps) {
       console.error('Media encryption failed:', err);
       toast.error('Erreur de chiffrement du média');
     }
-  }, [isZeusConversation, rawUpload, conversationId, legacySendMessage, queue]);
+  }, [
+    isZeusConversation,
+    rawUpload,
+    conversationId,
+    legacySendMessage,
+    queue,
+    e2ee.fingerprintChanged,
+    e2ee.peerKeyMissing,
+    e2ee.initError,
+  ]);
 
   const {
     callState, callType, isMuted, isCameraOff, duration, isE2eeActive,
