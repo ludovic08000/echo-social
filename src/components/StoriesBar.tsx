@@ -217,9 +217,12 @@ export function StoriesBar() {
 
     try {
       const conversation = await createConversation.mutateAsync(currentStory.user_id);
+      // Attach the story media (image/video URL) so the recipient sees the
+      // exact story being replied to right inside the chat bubble.
       await sendMessage.mutateAsync({
         conversationId: conversation.id,
-        body: `Réponse à la story : ${message.trim()}`,
+        body: `↩️ Réponse à votre story : ${message.trim()}`,
+        imageUrl: currentStory.image_url || undefined,
       });
       setReplyText('');
       resumeTimer();
