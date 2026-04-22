@@ -223,24 +223,6 @@ export default function Lives() {
             <Plus className="w-4 h-4 mr-1.5" />
             Démarrer un live
           </Button>
-
-          {/* Zeus helper */}
-          <div className="mx-auto max-w-sm">
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent('open-zeus', { detail: { action: 'live-help' } }))}
-              className="w-full p-4 rounded-2xl border border-primary/15 bg-accent/50 hover:bg-accent hover:border-primary/25 transition-all duration-300 text-left group"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'var(--premium-gradient)' }}>
-                  <Sparkles className="w-5 h-5 text-primary-foreground" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-foreground">Zeus peut t'aider ⚡</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">Trouver un sujet · Générer un titre · Préparer ton live</p>
-                </div>
-              </div>
-            </button>
-          </div>
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
