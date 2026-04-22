@@ -663,10 +663,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     e.preventDefault();
     if (!newMessage.trim()) return;
 
-    // Block send if fingerprint changed
+    // Non-blocking warning when the peer's fingerprint changed (matches ChatView).
     if (!isZeusConversation && e2ee.fingerprintChanged) {
-      toast.error('Clé de sécurité modifiée — valide d\'abord le contact (bouton OK en haut).');
-      return;
+      toast.warning('⚠️ Clé de sécurité du contact modifiée — l’envoi continue.');
     }
 
     const replyText = replyTo ? decryptedCacheRef.current.get(replyTo.id) || replyTo.body : null;
@@ -690,7 +689,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     }
   };
 
-  const sendBlocked = !isZeusConversation && (e2ee.fingerprintChanged || e2ee.peerKeyMissing || e2ee.initError === 'pin_unlock_required' || e2ee.initError === 'identity_lost_backup_available');
+  // Fingerprint change is no longer a blocker — only true unrecoverable states are.
+  const sendBlocked = !isZeusConversation && (e2ee.peerKeyMissing || e2ee.initError === 'pin_unlock_required' || e2ee.initError === 'identity_lost_backup_available');
 
   const handleAI = async (action: 'correct' | 'improve' | 'translate', tone?: string) => {
     if (!newMessage.trim() || aiLoading) return;

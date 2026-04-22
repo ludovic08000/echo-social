@@ -1140,12 +1140,13 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       }
     }
 
-    // BLOCK if fingerprint changed and not yet acknowledged (Signal-style strict mode)
-    // Per Signal protocol: a fingerprint change MUST be explicitly acknowledged before
-    // any new messages can be encrypted. This prevents MITM downgrade attacks where
-    // an attacker replaces the peer's key and the sender unknowingly encrypts to the attacker.
+    // Fingerprint change: previously hard-blocked. We now allow the encrypt to
+    // proceed because the UI already surfaces a warning banner + per-send toast,
+    // and blocking here made text/photo/video sending fail in normal key-rotation
+    // scenarios. The badge stays "unverified" until the user explicitly checks
+    // the safety number, but messages are not lost.
     if (state.fingerprintChanged) {
-      throw new EncryptionError('🔒 Clé de sécurité du contact modifiée — vérifiez l\'identité avant d\'envoyer');
+      console.warn('[E2EE] fingerprint changed — encrypting with warning instead of blocking');
     }
 
     // Auto-load keys if ref is empty (race with initKeys)
