@@ -3571,6 +3571,7 @@ export type Database = {
       }
       privacy_settings: {
         Row: {
+          ai_personalization_enabled: boolean
           analytics_enabled: boolean
           comments_allowed: string
           created_at: string
@@ -3590,6 +3591,7 @@ export type Database = {
           wall_visibility: string
         }
         Insert: {
+          ai_personalization_enabled?: boolean
           analytics_enabled?: boolean
           comments_allowed?: string
           created_at?: string
@@ -3609,6 +3611,7 @@ export type Database = {
           wall_visibility?: string
         }
         Update: {
+          ai_personalization_enabled?: boolean
           analytics_enabled?: boolean
           comments_allowed?: string
           created_at?: string
