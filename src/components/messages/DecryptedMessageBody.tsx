@@ -279,8 +279,9 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       setMediaKeyB64State(entry.mediaKeyB64);
       setIsDecrypting(false);
       if (entry.mediaKeyB64 && messageId) {
-        const parsed = parseMediaMessage(entry.text);
-        if (parsed) setMediaKey(messageId, parsed.keyB64, parsed.label.startsWith('🎬'));
+        // entry.text is already the parsed label (e.g. "📷 Photo" / "🎬 Vidéo"),
+        // and entry.mediaKeyB64 is the per-file AES key. Push directly to cache.
+        setMediaKey(messageId, entry.mediaKeyB64, entry.text.startsWith('🎬'));
       }
       if (!entry.hidden) {
         void savePlaintextForCiphertext(body, entry.text);
