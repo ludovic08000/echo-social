@@ -377,7 +377,16 @@ export async function ratchetEncrypt(
 ): Promise<string | null> {
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
   let session = await loadSession(key);
-  if (!session) return null;
+  if (!session) {
+    void logCryptoError({
+      severity: 'info',
+      context: 'encrypt',
+      errorCode: 'E_NO_SESSION',
+      errorMessage: 'No device-pair session — caller must run X3DH',
+      myDeviceId, peerUserId, peerDeviceId,
+    });
+    return null;
+  }
 
   // Legacy v3 session — keep using it (no DH key material to upgrade safely).
   if (session.legacySharedSecretB64 && !session.ckSendB64 && !session.dhsPubB64) {
@@ -386,7 +395,16 @@ export async function ratchetEncrypt(
 
   // If we have no sending chain yet (e.g. responder before its first reply),
   // we cannot encrypt under DR yet → signal caller to fall back to X3DH.
-  if (!session.ckSendB64 || !session.dhsPubB64) return null;
+  if (!session.ckSendB64 || !session.dhsPubB64) {
+    void logCryptoError({
+      severity: 'info',
+      context: 'encrypt',
+      errorCode: 'E_NO_SEND_CHAIN',
+      errorMessage: 'Responder ratchet not yet primed (awaiting first reply)',
+      myDeviceId, peerUserId, peerDeviceId,
+    });
+    return null;
+  }
 
   const { ck, mk } = await kdfCK(session.ckSendB64);
   const aes = await importMessageKey(mk);
