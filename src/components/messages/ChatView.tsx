@@ -175,11 +175,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
       return;
     }
 
-    if (e2ee.fingerprintChanged) {
-      toast.error('Clé de sécurité modifiée — valide d’abord le contact avant d’envoyer une photo ou vidéo.');
-      return;
-    }
-
     if (e2ee.peerKeyMissing) {
       toast.error('Clés du contact indisponibles — impossible d’envoyer un média pour le moment.');
       return;
@@ -193,6 +188,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
     if (e2ee.initError === 'identity_lost_backup_available') {
       toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer un média.');
       return;
+    }
+
+    // Fingerprint changed: allow send with a non-blocking warning (matches text behavior).
+    if (e2ee.fingerprintChanged) {
+      toast.warning('⚠️ Clé de sécurité du contact modifiée — envoi du média en cours.');
     }
 
     try {
@@ -329,8 +329,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
     }
   };
 
+  // NOTE: `fingerprintChanged` is intentionally NOT a blocker here — `handleSend`
+  // already shows a non-blocking warning and the queue proceeds with encryption.
+  // Blocking the send button on fingerprint change made both text and media
+  // sending unusable in normal "key rotated" scenarios.
   const sendBlocked = !isZeusConversation && (
-    e2ee.fingerprintChanged ||
     e2ee.peerKeyMissing ||
     e2ee.initError === 'pin_unlock_required' ||
     e2ee.initError === 'identity_lost_backup_available'
@@ -338,9 +341,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   const handleImageUpload = () => {
     if (sendBlocked) {
-      if (e2ee.fingerprintChanged) {
-        toast.error('Clé de sécurité modifiée — valide d’abord le contact avant d’envoyer une photo ou vidéo.');
-      } else if (e2ee.peerKeyMissing) {
+      if (e2ee.peerKeyMissing) {
         toast.error('Clés du contact indisponibles — impossible d’envoyer un média pour le moment.');
       } else if (e2ee.initError === 'pin_unlock_required') {
         toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer un média.');
@@ -348,6 +349,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
         toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer un média.');
       }
       return;
+    }
+
+    if (e2ee.fingerprintChanged) {
+      toast.warning('⚠️ Clé de sécurité du contact modifiée — l’envoi continue.');
     }
 
     fileInputRef.current?.click();
