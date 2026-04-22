@@ -38,6 +38,7 @@ import { NewConversationDialog } from './NewConversationDialog';
 import { ShareContentPicker } from './ShareContentPicker';
 import { EMOJI_CATEGORIES, formatDateSeparator, isSingleEmoji } from './constants';
 import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
+import { useTypingPresence } from '@/hooks/useTypingPresence';
 
 interface ChatViewProps {
   conversationId: string;
@@ -66,7 +67,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({});
-  const [isTyping, setIsTyping] = useState(false);
+  // peerTyping is driven by the realtime presence channel below — never by local input.
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [showSharePicker, setShowSharePicker] = useState(false);
   const [pinnedMessages, setPinnedMessages] = useState<Set<string>>(new Set());
@@ -97,6 +98,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const peerUserId = conversation?.participant?.user_id;
   const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const e2ee = useE2EE(conversationId, peerUserId);
+  const { peerTyping, notifyTyping, notifyStopped } = useTypingPresence(
+    conversationId,
+    user?.id,
+    peerUserId,
+  );
   const [cacheVersion, setCacheVersion] = useState(0);
   const bumpCache = useCallback(() => setCacheVersion(v => v + 1), []);
   const decryptRefreshKey = `${conversationId}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.encrypted)}:${cacheVersion}`;
@@ -283,6 +289,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
     setNewMessage('');
     setReplyTo(null);
     setShowEmojis(false);
+    if (!isZeusConversation) notifyStopped();
     inputRef.current?.focus();
 
     if (isZeusConversation) {
@@ -882,7 +889,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
           </>
         )}
 
-        {isTyping && conversation && (
+        {peerTyping && conversation && !conversation.is_group && (
           <TypingIndicator name={conversation.participant.name} />
         )}
 
@@ -1002,7 +1009,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
             <input
               ref={inputRef}
               value={newMessage}
-              onChange={e => setNewMessage(e.target.value)}
+              onChange={e => {
+                const v = e.target.value;
+                setNewMessage(v);
+                if (!isZeusConversation) {
+                  if (v.trim().length > 0) notifyTyping();
+                  else notifyStopped();
+                }
+              }}
+              onBlur={() => { if (!newMessage.trim()) notifyStopped(); }}
               onFocus={() => setShowEmojis(false)}
               placeholder="Aa"
               className="flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground min-w-0 py-2"
