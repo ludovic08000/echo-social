@@ -266,7 +266,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                   className="w-full justify-start p-0"
                 />
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSaved(!saved)}>
+              <DropdownMenuItem onClick={() => { setSaved(!saved); if (user) trackMLSignal(user.id, post.id, saved ? 'hide' : 'click'); }}>
                 <Bookmark className={cn("w-4 h-4 mr-2", saved && "fill-current")} />
                 {saved ? 'Retirer' : 'Enregistrer'}
               </DropdownMenuItem>
