@@ -23,8 +23,57 @@ export type OutboundMessageStatus =
   | 'retry_pending'
   | 'failed_visible';
 
+import { logCryptoError } from '@/lib/crypto/errorLogger';
+
+/**
+ * Emit a low-volume "trace" entry into crypto_error_logs so we can follow a
+ * single outbound message across its full lifecycle in the admin dashboard.
+ * Always severity=info — production-safe, never throws.
+ */
+function traceQueue(
+  msg: Pick<OutboundMessage, 'traceId' | 'localId' | 'conversationId' | 'senderId' | 'retryCount' | 'serverId'>,
+  event:
+    | 'enqueue'
+    | 'status:pending_local'
+    | 'status:encrypting'
+    | 'status:waiting_secure_channel'
+    | 'status:sending'
+    | 'status:sent'
+    | 'status:retry_pending'
+    | 'status:failed_visible'
+    | 'retry:scheduled'
+    | 'retry:user'
+    | 'remove:user'
+    | 'reconciled',
+  extra: Record<string, unknown> = {},
+) {
+  logCryptoError({
+    severity: 'info',
+    context: 'queue.trace',
+    errorCode: event,
+    errorMessage: `[trace ${msg.traceId.slice(0, 8)}] ${event}`,
+    conversationId: msg.conversationId,
+    metadata: {
+      traceId: msg.traceId,
+      localId: msg.localId,
+      senderId: msg.senderId,
+      retryCount: msg.retryCount,
+      serverId: msg.serverId,
+      ...extra,
+    },
+  });
+}
+
+
 export interface OutboundMessage {
   localId: string;
+  /**
+   * Stable trace identifier (UUID) attached at enqueue time and embedded
+   * inside the encrypted payload (`__tid`). Lets us follow a single message
+   * across enqueue → encrypt → send → backend ack → decrypt on receiver,
+   * even if `localId` rotates.
+   */
+  traceId: string;
   conversationId: string;
   senderId: string;
   /** Runtime-only plaintext (never persisted to IndexedDB) */
@@ -285,6 +334,9 @@ class MessageQueueManager {
 
     const msg: OutboundMessage = {
       localId: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      traceId: (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+        ? crypto.randomUUID()
+        : `trace-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       conversationId: params.conversationId,
       senderId: params.senderId,
       plaintext: '', // NEVER stored in IndexedDB
@@ -303,7 +355,8 @@ class MessageQueueManager {
     this.volatilePlaintext.set(msg.localId, params.plaintext);
 
     await this.dbPut(msg);
-    console.log('[MSG_QUEUE] created local message', msg.localId);
+    console.log('[MSG_QUEUE] created local message', msg.localId, 'trace', msg.traceId);
+    traceQueue(msg, 'enqueue', { plaintextLen: params.plaintext.length, hasImage: !!params.imageUrl });
     this.notifyListeners(msg.conversationId);
     this.processMessage(msg);
     return msg;
@@ -350,7 +403,7 @@ class MessageQueueManager {
             setTimeout(() => reject(new Error('Timeout chiffrement (15s)')), 15_000)
           );
           const encrypted = await Promise.race([encryptPromise, timeoutPromise]);
-          const withLocalId = this.attachLocalId(encrypted, msg.localId);
+          const withLocalId = this.attachLocalId(encrypted, msg.localId, msg.traceId);
 
           // CRITICAL: Verify encryption actually produced ciphertext
           if (!withLocalId || withLocalId === plaintext || !withLocalId.startsWith('{')) {
@@ -436,6 +489,7 @@ class MessageQueueManager {
         msg.updatedAt = Date.now();
         this.clearRetryTimer(msg.localId);
         console.log('[SEND] backend success', msg.localId, serverId);
+        traceQueue(msg, 'status:sent', { serverId });
 
         // Clean up: remove volatile plaintext
         this.volatilePlaintext.delete(msg.localId);
@@ -501,6 +555,7 @@ class MessageQueueManager {
       : Math.min(BASE_RETRY_MS * Math.pow(2, msg.retryCount), MAX_RETRY_MS);
 
     console.log(`[SEND] retry scheduled for ${msg.localId} in ${delay}ms (${mode})`);
+    traceQueue(msg, 'retry:scheduled', { mode, delayMs: delay });
 
     const timer = setTimeout(async () => {
       this.retryTimers.delete(msg.localId);
@@ -526,10 +581,18 @@ class MessageQueueManager {
 
   /** Update message status and persist */
   private async updateStatus(msg: OutboundMessage, status: OutboundMessageStatus, error?: string) {
+    const previous = msg.status;
     msg.status = status;
     msg.lastError = error || null;
     msg.updatedAt = Date.now();
     await this.dbPut(msg);
+    // Trace every transition (skip no-op transitions to keep volume sane)
+    if (previous !== status) {
+      traceQueue(msg, `status:${status}` as Parameters<typeof traceQueue>[1], {
+        previous,
+        error: error || null,
+      });
+    }
     this.notifyListeners(msg.conversationId);
   }
 
@@ -545,6 +608,7 @@ class MessageQueueManager {
     msg.status = 'pending_local';
     msg.updatedAt = Date.now();
     await this.dbPut(msg);
+    traceQueue(msg, 'retry:user');
     this.notifyListeners(msg.conversationId);
     this.processMessage(msg);
   }
@@ -715,6 +779,7 @@ class MessageQueueManager {
         msg.updatedAt = Date.now();
         msg.plaintext = '';
         this.volatilePlaintext.delete(msg.localId);
+        traceQueue(msg, 'reconciled', { serverId: msg.serverId });
         await this.dbDelete(msg.localId);
 
         changed = true;
@@ -742,13 +807,15 @@ class MessageQueueManager {
     } catch {}
   }
 
-  private attachLocalId(encryptedBody: string, localId: string): string {
+  private attachLocalId(encryptedBody: string, localId: string, traceId?: string): string {
     if (!encryptedBody.startsWith('{')) return encryptedBody;
     try {
       const payload = JSON.parse(encryptedBody);
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return encryptedBody;
-      if (typeof payload.__lid === 'string') return encryptedBody;
-      return JSON.stringify({ ...payload, __lid: localId });
+      const next: Record<string, unknown> = { ...payload };
+      if (typeof payload.__lid !== 'string') next.__lid = localId;
+      if (traceId && typeof payload.__tid !== 'string') next.__tid = traceId;
+      return JSON.stringify(next);
     } catch {
       return encryptedBody;
     }
@@ -768,6 +835,10 @@ class MessageQueueManager {
   /** Remove a message from the queue (user cancels failed message) */
   async removeMessage(localId: string): Promise<void> {
     this.clearRetryTimer(localId);
+    const existing = await this.dbGet(localId).catch(() => undefined);
+    if (existing) {
+      traceQueue(existing, 'remove:user', { reason: 'user_cancel', lastStatus: existing.status });
+    }
     this.volatilePlaintext.delete(localId);
     await this.dbDelete(localId);
   }

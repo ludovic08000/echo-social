@@ -127,7 +127,7 @@ export function useMessageQueue(
             errorCode: 'E_INSERT',
             errorMessage: error.message,
             conversationId: msg.conversationId,
-            metadata: { localId: msg.localId, code: error.code },
+            metadata: { localId: msg.localId, traceId: msg.traceId, code: error.code },
           });
           throw error;
         }
