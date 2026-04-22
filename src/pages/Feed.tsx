@@ -368,7 +368,7 @@ export default function Feed() {
           type="button"
           onClick={() => navigate('/lives')}
           aria-label="Passer en mode Live"
-          className="fixed right-4 bottom-24 z-40 flex items-center gap-2 pl-3 pr-4 py-2.5 rounded-full bg-gradient-to-br from-red-500 to-pink-600 text-white shadow-[0_8px_28px_-8px_hsl(0_84%_55%/0.6)] active:scale-95 transition-transform"
+          className="fixed right-4 bottom-44 z-40 flex items-center gap-2 pl-3 pr-4 py-2.5 rounded-full bg-gradient-to-br from-red-500 to-pink-600 text-white shadow-[0_8px_28px_-8px_hsl(0_84%_55%/0.6)] active:scale-95 transition-transform"
         >
           <span className="relative flex items-center justify-center w-6 h-6">
             <span className="absolute inset-0 rounded-full bg-white/30 animate-ping" />
