@@ -489,6 +489,7 @@ class MessageQueueManager {
         msg.updatedAt = Date.now();
         this.clearRetryTimer(msg.localId);
         console.log('[SEND] backend success', msg.localId, serverId);
+        traceQueue(msg, 'status:sent', { serverId });
 
         // Clean up: remove volatile plaintext
         this.volatilePlaintext.delete(msg.localId);
