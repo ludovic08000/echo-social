@@ -17,6 +17,9 @@ function formatPreview(body: string, maxLength: number) {
   }
   if (/^🎙️\s*(?:vocal|voice):/.test(body)) return '🎙️ Message vocal';
   if (/^GIF:https?:\/\//i.test(body)) return '🖼️ GIF';
+  if (/^📷\s*Photo(MKEY:|$)/i.test(body) || /PhotoMKEY:/i.test(body)) return '📷 Photo';
+  if (/^🎬\s*(Video|Vidéo)(MKEY:|$)/i.test(body) || /VideoMKEY:/i.test(body)) return '🎬 Vidéo';
+  if (/^📎\s*(File|Fichier)(MKEY:|$)/i.test(body) || /FileMKEY:/i.test(body)) return '📎 Fichier';
   return body.length > maxLength ? `${body.substring(0, maxLength)}…` : body;
 }
 
