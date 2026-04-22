@@ -5,6 +5,11 @@ import { useRealtimeNotificationSound } from '@/hooks/useNotificationSounds';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+// Module-level guard: ensure only ONE realtime channel exists per user across the entire app,
+// even if the hook is mounted multiple times or re-rendered.
+let activeChannelUserId: string | null = null;
+const seenNotificationIds = new Set<string>();
+
 /**
  * Global hook: listens for new notifications in realtime and plays a sound.
  * Also plays a sound on initial login if there are unread notifications/messages.
