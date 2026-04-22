@@ -71,6 +71,7 @@ function getNotificationText(group: GroupedNotification): string {
     message: 'vous a envoyé un message',
     reaction: 'a réagi à votre publication',
     story_view: 'a vu votre story',
+    new_device: 'Nouvel appareil connecté à votre compte — vérifiez immédiatement',
   };
 
   const action = actionMap[group.type] || 'a interagi avec vous';
