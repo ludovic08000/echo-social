@@ -39,6 +39,7 @@ import {
   RATCHET_PREFIX_V3,
   RATCHET_PREFIX_V4,
 } from '@/lib/crypto/deviceRatchet';
+import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
 
 interface FanoutInput {
   messageId: string;
@@ -246,6 +247,14 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
       }
     } catch (e) {
       console.warn('[FANOUT] SPK rotation check failed (non-fatal)', e);
+      logCryptoException('fanout', e, {
+        severity: 'warning',
+        conversationId: input.conversationId,
+        myDeviceId: senderDeviceId,
+        peerUserId: dev.user_id,
+        peerDeviceId: dev.device_id,
+        metadata: { stage: 'spk_rotation_check' },
+      });
     }
 
     // (a) Try the cached device-pair ratchet first.
@@ -276,6 +285,14 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
         );
       } catch (e) {
         console.warn('[FANOUT] all paths failed for device', dev.device_id, e);
+        logCryptoException('fanout', e, {
+          severity: 'error',
+          conversationId: input.conversationId,
+          myDeviceId: senderDeviceId,
+          peerUserId: dev.user_id,
+          peerDeviceId: dev.device_id,
+          metadata: { stage: 'all_paths_failed' },
+        });
         continue;
       }
     }
@@ -295,6 +312,15 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
   const { error } = await supabase.from('message_device_copies').insert(rows as any);
   if (error) {
     console.warn('[FANOUT] insert failed', error.message);
+    logCryptoError({
+      severity: 'error',
+      context: 'fanout',
+      errorCode: 'E_FANOUT_INSERT',
+      errorMessage: error.message,
+      conversationId: input.conversationId,
+      myDeviceId: senderDeviceId,
+      metadata: { rows: rows.length },
+    });
     return { inserted: 0, multiDevice: true };
   }
 

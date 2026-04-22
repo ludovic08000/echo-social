@@ -18,6 +18,7 @@ import { useAuth } from '@/lib/auth';
 import { messageQueue, type OutboundMessage } from '@/lib/messaging/messageQueue';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
+import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 
 export function useMessageQueue(
   conversationId: string,
@@ -51,12 +52,36 @@ export function useMessageQueue(
     messageQueue.registerHandlers(conversationId, handlerIdRef.current, {
       encrypt: async (plaintext: string, _convId: string, localId: string) => {
         if (!activeRef.current) {
+          logCryptoError({
+            severity: 'warning',
+            context: 'queue.encrypt',
+            errorCode: 'E_NOT_ACTIVE',
+            errorMessage: 'Encryption not active when queue tried to encrypt',
+            conversationId: _convId,
+            metadata: { localId },
+          });
           throw new Error('Encryption not active');
         }
         if (!encryptRef.current) {
+          logCryptoError({
+            severity: 'warning',
+            context: 'queue.encrypt',
+            errorCode: 'E_INITIALIZING',
+            errorMessage: 'Encrypt handler not yet wired (E2EE initializing)',
+            conversationId: _convId,
+            metadata: { localId },
+          });
           throw new Error('Encryption initializing');
         }
-        return encryptRef.current(plaintext, localId);
+        try {
+          return await encryptRef.current(plaintext, localId);
+        } catch (e) {
+          logCryptoException('queue.encrypt', e, {
+            conversationId: _convId,
+            metadata: { localId },
+          });
+          throw e;
+        }
       },
       send: async (msg: OutboundMessage) => {
         if (!msg.encryptedBody) {
@@ -95,7 +120,17 @@ export function useMessageQueue(
           await onMessageSent?.(msg.localId);
           return outboundId;
         }
-        if (error) throw error;
+        if (error) {
+          logCryptoError({
+            severity: 'error',
+            context: 'queue.send',
+            errorCode: 'E_INSERT',
+            errorMessage: error.message,
+            conversationId: msg.conversationId,
+            metadata: { localId: msg.localId, code: error.code },
+          });
+          throw error;
+        }
 
         // Cache plaintext so sender sees cleartext (ratchet can't decrypt own messages)
         if (msg.plaintext) onPlaintextCached?.(outboundId, msg.plaintext);

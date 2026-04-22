@@ -1233,6 +1233,57 @@ export type Database = {
         }
         Relationships: []
       }
+      crypto_error_logs: {
+        Row: {
+          context: string
+          conversation_id: string | null
+          created_at: string
+          error_code: string
+          error_message: string
+          id: string
+          metadata: Json | null
+          my_device_id: string | null
+          peer_device_id: string | null
+          peer_user_id: string | null
+          severity: string
+          stack: string | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          context: string
+          conversation_id?: string | null
+          created_at?: string
+          error_code: string
+          error_message: string
+          id?: string
+          metadata?: Json | null
+          my_device_id?: string | null
+          peer_device_id?: string | null
+          peer_user_id?: string | null
+          severity?: string
+          stack?: string | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          context?: string
+          conversation_id?: string | null
+          created_at?: string
+          error_code?: string
+          error_message?: string
+          id?: string
+          metadata?: Json | null
+          my_device_id?: string | null
+          peer_device_id?: string | null
+          peer_user_id?: string | null
+          severity?: string
+          stack?: string | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       data_export_requests: {
         Row: {
           completed_at: string | null
@@ -5551,6 +5602,7 @@ export type Database = {
         Returns: number
       }
       purge_old_audit_logs: { Args: never; Returns: undefined }
+      purge_old_crypto_error_logs: { Args: never; Returns: number }
       push_my_fingerprint_to_peers: { Args: never; Returns: number }
       read_email_batch: {
         Args: { batch_size: number; queue_name: string; vt: number }
