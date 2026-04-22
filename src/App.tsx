@@ -224,7 +224,7 @@ function AppContent() {
               <Route path="/profile/:id" element={<Profile />} />
               <Route path="/search" element={<Search />} />
               <Route path="/videos" element={<Videos />} />
-              <Route path="/lives" element={<Lives />} />
+              <Route path="/lives" element={<LiveScreen />} />
               <Route path="/live/:id" element={<LiveWatch />} />
               <Route path="/marketplace" element={<Marketplace />} />
               <Route path="/marketplace/product/:id" element={<ProductDetailPage />} />
