@@ -645,9 +645,15 @@ export async function createRecoveryKeyBackup(userId: string): Promise<string | 
 
   try {
     await uploadBackup(_sessionRawMasterKey!, _sessionMasterKey!, _sessionPassword || '', userId, 'recovery', normalized);
+    logCryptoError({
+      severity: 'info', context: 'backup', errorCode: 'RECOVERY_BACKUP_CREATED',
+      errorMessage: 'Recovery-key wrapped backup created',
+      metadata: { userId },
+    });
     return recoveryKey;
   } catch (e) {
     console.error('[MasterKey] Recovery backup creation failed:', e);
+    logCryptoException('backup', e, { severity: 'error', metadata: { stage: 'recovery_backup_create', userId } });
     return null;
   }
 }
@@ -671,10 +677,24 @@ export async function syncBackupToServer(): Promise<boolean> {
   try {
     const secret = passwordSecret(_sessionPassword!, _sessionUserId!);
     const ok = await uploadBackup(_sessionRawMasterKey!, _sessionMasterKey!, _sessionPassword!, _sessionUserId!, 'account', secret);
-    if (ok) console.log('[MasterKey] ✅ Backup synced');
+    if (ok) {
+      console.log('[MasterKey] ✅ Backup synced');
+      logCryptoError({
+        severity: 'info', context: 'backup', errorCode: 'BACKUP_SYNCED',
+        errorMessage: 'Master Key backup synced to server',
+        metadata: { userId: _sessionUserId },
+      });
+    } else {
+      logCryptoError({
+        severity: 'warning', context: 'backup', errorCode: 'BACKUP_SYNC_NO_OP',
+        errorMessage: 'uploadBackup returned false',
+        metadata: { userId: _sessionUserId },
+      });
+    }
     return ok;
   } catch (err) {
     console.warn('[MasterKey] Sync failed:', err);
+    logCryptoException('backup', err, { severity: 'error', metadata: { stage: 'sync', userId: _sessionUserId } });
     return false;
   }
 }
