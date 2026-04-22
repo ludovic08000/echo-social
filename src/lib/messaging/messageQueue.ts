@@ -439,8 +439,18 @@ class MessageQueueManager {
             normalized.includes('rate limited') ||
             normalized.includes('exfiltration attempt') ||
             normalized.includes('opération limitée');
+          const permanentSafetyMismatch =
+            normalized.includes('clé de sécurité du contact modifiée') ||
+            normalized.includes('verification obligatoire avant envoi') ||
+            normalized.includes('vérifiez l\'identité avant d\'envoyer') ||
+            normalized.includes('fingerprint changed');
 
           console.error('[E2EE] encrypt failed', msg.localId, errMsg);
+
+          if (permanentSafetyMismatch) {
+            await this.updateStatus(msg, 'failed_visible', errMsg);
+            return;
+          }
 
           // Fail fast after 30s total elapsed time for key-waiting errors
           const age = Date.now() - msg.createdAt;
@@ -532,9 +542,9 @@ class MessageQueueManager {
         try {
           const queued = await this.dbGetByConversation(msg.conversationId);
           const next = queued
-            .filter(m => m.status !== 'sent' && m.status !== 'draft' && m.status !== 'failed_visible')
+            .filter(m => m.status === 'pending_local')
             .sort((a, b) => a.createdAt - b.createdAt)
-            .find(m => !this.processing.has(m.localId));
+            .find(m => !this.processing.has(m.localId) && !this.retryTimers.has(m.localId));
           if (next) {
             void this.processMessage(next);
           }
