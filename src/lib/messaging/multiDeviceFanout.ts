@@ -207,18 +207,32 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
   );
   if (targets.length === 0) return { inserted: 0, multiDevice: false };
 
-  // 3. For each target device: try X3DH first, then deviceWrap fallback
+  // 3. For each target device:
+  //    a) ratchet v3 (existing session, fastest)
+  //    b) X3DH per-device (v1/v2, also caches a session for next time)
+  //    c) deviceWrap (legacy ECDH fallback)
   const rows: Array<Record<string, string>> = [];
   for (const dev of targets) {
     if (!dev.device_public_key) continue;
 
-    let encrypted: string | null = await x3dhWrapForDevice(
+    // (a) Try the cached device-pair ratchet first.
+    let encrypted: string | null = await ratchetEncrypt(
+      input.senderUserId, senderDeviceId,
+      dev.user_id, dev.device_id,
       input.plaintext,
-      input.senderUserId,
-      dev.user_id,
-      dev.device_id,
     );
 
+    // (b) Fresh X3DH (v1 or v2) — this also seeds the ratchet for next time.
+    if (!encrypted) {
+      encrypted = await x3dhWrapForDevice(
+        input.plaintext,
+        input.senderUserId,
+        dev.user_id,
+        dev.device_id,
+      );
+    }
+
+    // (c) Legacy deviceWrap fallback.
     if (!encrypted) {
       try {
         encrypted = await wrapPlaintextForDevice(
@@ -228,7 +242,7 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
           dev.device_id,
         );
       } catch (e) {
-        console.warn('[FANOUT] both X3DH and deviceWrap failed for device', dev.device_id, e);
+        console.warn('[FANOUT] all paths failed for device', dev.device_id, e);
         continue;
       }
     }
