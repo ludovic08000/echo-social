@@ -19,6 +19,7 @@ export interface PrivacySettings {
   detox_schedule: any | null;
   daily_limit_minutes: number | null;
   ai_personalization_enabled: boolean;
+  ai_data_sharing_enabled: boolean;
   created_at: string;
   updated_at: string;
 }
