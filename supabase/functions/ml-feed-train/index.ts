@@ -224,33 +224,44 @@ Deno.serve(async (req) => {
 
     let postsProcessed = 0;
     const postEmbeddings = new Map<string, number[]>();
-    for (const post of toExtract) {
-      const f = await extractFeatures(post);
-      // Build embedding input: body + topics + hashtags for richer semantics
-      const embText = [
-        post.body || "",
-        f.topics.join(" "),
-        f.hashtags.map((h) => "#" + h).join(" "),
-      ].filter(Boolean).join("\n").slice(0, 2000);
-      const emb = await generateEmbedding(embText);
-      if (emb) postEmbeddings.set(post.id, emb);
+    // Cache for freshly extracted features so we can build the user-profile phase without re-querying
+    const freshFeatures = new Map<string, { topics: string[]; hashtags: string[] }>();
 
-      await supabase.from("ml_post_features").upsert({
-        post_id: post.id,
-        topics: f.topics,
-        hashtags: f.hashtags,
-        sentiment: f.sentiment,
-        quality_score: f.quality,
-        language: f.language,
-        has_media: !!post.image_url,
-        engagement_velocity: 0,
-        ctr: 0,
-        view_count: 0,
-        positive_count: 0,
-        negative_count: 0,
-        ...(emb ? { embedding: toPgVector(emb), embedding_updated_at: new Date().toISOString() } : {}),
-      });
-      postsProcessed++;
+    // Batch AI extraction (5 posts in parallel) — keeps cost bounded but ~5x faster than serial
+    const EXTRACT_CONCURRENCY = 5;
+    for (let i = 0; i < toExtract.length; i += EXTRACT_CONCURRENCY) {
+      const chunk = toExtract.slice(i, i + EXTRACT_CONCURRENCY);
+      const results = await Promise.all(chunk.map(async (post) => {
+        const f = await extractFeatures(post);
+        const embText = [
+          post.body || "",
+          f.topics.join(" "),
+          f.hashtags.map((h) => "#" + h).join(" "),
+        ].filter(Boolean).join("\n").slice(0, 2000);
+        const emb = await generateEmbedding(embText);
+        return { post, f, emb };
+      }));
+
+      for (const { post, f, emb } of results) {
+        if (emb) postEmbeddings.set(post.id, emb);
+        freshFeatures.set(post.id, { topics: f.topics, hashtags: f.hashtags });
+        await supabase.from("ml_post_features").upsert({
+          post_id: post.id,
+          topics: f.topics,
+          hashtags: f.hashtags,
+          sentiment: f.sentiment,
+          quality_score: f.quality,
+          language: f.language,
+          has_media: !!post.image_url,
+          engagement_velocity: 0,
+          ctr: 0,
+          view_count: 0,
+          positive_count: 0,
+          negative_count: 0,
+          ...(emb ? { embedding: toPgVector(emb), embedding_updated_at: new Date().toISOString() } : {}),
+        });
+        postsProcessed++;
+      }
     }
 
     // Also load existing embeddings into the postEmbeddings map (already fetched above — no extra query)
