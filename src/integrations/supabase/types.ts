@@ -2536,6 +2536,117 @@ export type Database = {
         }
         Relationships: []
       }
+      ml_interactions: {
+        Row: {
+          created_at: string
+          day_of_week: number
+          dwell_ms: number | null
+          hour_of_day: number
+          id: string
+          is_weekend: boolean
+          post_id: string
+          scroll_depth: number | null
+          signal_type: string
+          user_id: string
+          weight: number
+        }
+        Insert: {
+          created_at?: string
+          day_of_week?: number
+          dwell_ms?: number | null
+          hour_of_day?: number
+          id?: string
+          is_weekend?: boolean
+          post_id: string
+          scroll_depth?: number | null
+          signal_type: string
+          user_id: string
+          weight?: number
+        }
+        Update: {
+          created_at?: string
+          day_of_week?: number
+          dwell_ms?: number | null
+          hour_of_day?: number
+          id?: string
+          is_weekend?: boolean
+          post_id?: string
+          scroll_depth?: number | null
+          signal_type?: string
+          user_id?: string
+          weight?: number
+        }
+        Relationships: []
+      }
+      ml_model_config: {
+        Row: {
+          description: string | null
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          description?: string | null
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value: Json
+        }
+        Update: {
+          description?: string | null
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: []
+      }
+      ml_model_runs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          id: string
+          interactions_analyzed: number | null
+          metrics: Json | null
+          posts_processed: number | null
+          run_type: string
+          started_at: string
+          status: string
+          users_processed: number | null
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          interactions_analyzed?: number | null
+          metrics?: Json | null
+          posts_processed?: number | null
+          run_type?: string
+          started_at?: string
+          status?: string
+          users_processed?: number | null
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          interactions_analyzed?: number | null
+          metrics?: Json | null
+          posts_processed?: number | null
+          run_type?: string
+          started_at?: string
+          status?: string
+          users_processed?: number | null
+        }
+        Relationships: []
+      }
       ml_models: {
         Row: {
           accuracy: number | null
@@ -2587,6 +2698,57 @@ export type Database = {
           total_predictions?: number | null
           updated_at?: string
           version?: string
+        }
+        Relationships: []
+      }
+      ml_post_features: {
+        Row: {
+          ctr: number
+          engagement_velocity: number
+          extracted_at: string
+          has_media: boolean
+          hashtags: string[]
+          language: string | null
+          negative_count: number
+          positive_count: number
+          post_id: string
+          quality_score: number
+          sentiment: number
+          topics: string[]
+          updated_at: string
+          view_count: number
+        }
+        Insert: {
+          ctr?: number
+          engagement_velocity?: number
+          extracted_at?: string
+          has_media?: boolean
+          hashtags?: string[]
+          language?: string | null
+          negative_count?: number
+          positive_count?: number
+          post_id: string
+          quality_score?: number
+          sentiment?: number
+          topics?: string[]
+          updated_at?: string
+          view_count?: number
+        }
+        Update: {
+          ctr?: number
+          engagement_velocity?: number
+          extracted_at?: string
+          has_media?: boolean
+          hashtags?: string[]
+          language?: string | null
+          negative_count?: number
+          positive_count?: number
+          post_id?: string
+          quality_score?: number
+          sentiment?: number
+          topics?: string[]
+          updated_at?: string
+          view_count?: number
         }
         Relationships: []
       }
@@ -2683,6 +2845,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ml_user_profiles: {
+        Row: {
+          author_affinity: Json
+          avg_session_dwell_ms: number
+          created_at: string
+          daily_activity: Json
+          hashtag_weights: Json
+          hourly_activity: Json
+          last_trained_at: string | null
+          topic_weights: Json
+          total_interactions: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          author_affinity?: Json
+          avg_session_dwell_ms?: number
+          created_at?: string
+          daily_activity?: Json
+          hashtag_weights?: Json
+          hourly_activity?: Json
+          last_trained_at?: string | null
+          topic_weights?: Json
+          total_interactions?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          author_affinity?: Json
+          avg_session_dwell_ms?: number
+          created_at?: string
+          daily_activity?: Json
+          hashtag_weights?: Json
+          hourly_activity?: Json
+          last_trained_at?: string | null
+          topic_weights?: Json
+          total_interactions?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       negotiations: {
         Row: {
@@ -5592,6 +5796,10 @@ export type Database = {
               user_id: string
             }[]
           }
+      ml_score_post: {
+        Args: { p_post_id: string; p_user_id: string }
+        Returns: number
+      }
       move_to_dlq: {
         Args: {
           dlq_name: string
