@@ -190,11 +190,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
       return;
     }
 
-    // Fingerprint changed: allow send with a non-blocking warning (matches text behavior).
-    if (e2ee.fingerprintChanged) {
-      toast.warning('⚠️ Clé de sécurité du contact modifiée — envoi du média en cours.');
-    }
-
     try {
       const { key, keyB64 } = await generateMediaKey();
       const encryptedBlob = await encryptMedia(file, key);
@@ -302,11 +297,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
     e.preventDefault();
     if (!newMessage.trim() || isSending) return;
 
-    if (!isZeusConversation && e2ee.fingerprintChanged) {
-      // Show non-blocking warning — encryption proceeds with auto-acknowledged key
-      toast.warning('⚠️ La clé de sécurité du contact a changé.');
-    }
-
     const body = replyTo
       ? `↩️ ${replyTo.profile.name}: "${getDecryptedText(replyTo).slice(0, 50)}${getDecryptedText(replyTo).length > 50 ? '…' : ''}"\n\n${newMessage.trim()}`
       : newMessage.trim();
@@ -349,10 +339,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
         toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer un média.');
       }
       return;
-    }
-
-    if (e2ee.fingerprintChanged) {
-      toast.warning('⚠️ Clé de sécurité du contact modifiée — l’envoi continue.');
     }
 
     fileInputRef.current?.click();
@@ -498,22 +484,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
         peerName={conversation?.participant?.name || 'Contact'}
         conversationId={conversationId}
       />
-
-      {/* Fingerprint change warning */}
-      {e2ee.fingerprintChanged && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20">
-          <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-          <span className="text-[11px] text-amber-700 dark:text-amber-400 font-medium flex-1">
-            ⚠️ La clé de sécurité de ce contact a changé. Vérifiez son identité.
-          </span>
-          <button
-            onClick={e2ee.acknowledgeFingerprint}
-            className="text-[10px] font-semibold text-amber-600 underline underline-offset-2"
-          >
-            OK
-          </button>
-        </div>
-      )}
 
       {/* Key lost / init error / fingerprint change recovery banner */}
       {!isZeusConversation && e2ee.initError && (
