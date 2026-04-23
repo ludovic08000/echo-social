@@ -415,9 +415,11 @@ export function useMessages(conversationId: string) {
   }, [conversationId, user]);
 
   const messagesQuery = useQuery({
-    queryKey: ['messages', conversationId],
+    // Scope by user so the cache is never shared across accounts/sessions.
+    queryKey: ['messages', conversationId, user?.id ?? 'anon'],
     queryFn: async () => {
       if (!conversationId || !user) return [];
+      console.log('[messaging] fetching messages for conversation', conversationId);
 
       // Get hidden message IDs for this user
       const { data: deletions } = await supabase
@@ -436,7 +438,11 @@ export function useMessages(conversationId: string) {
         .order('created_at', { ascending: false })
         .limit(500);
 
-      if (error) throw error;
+      if (error) {
+        console.error('[messaging] message fetch failed:', error.message);
+        throw error;
+      }
+      console.log('[messaging] loaded', messages.length, 'messages from server');
 
       // Reverse to chronological order for display
       messages.reverse();
@@ -475,7 +481,9 @@ export function useMessages(conversationId: string) {
         },
       })) as Message[];
     },
-    enabled: !!conversationId,
+    enabled: !!conversationId && !!user,
+    refetchOnMount: 'always',
+    refetchOnReconnect: 'always',
   });
 
   return messagesQuery;
