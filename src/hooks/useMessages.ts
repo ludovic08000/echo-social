@@ -332,9 +332,7 @@ export function useMessages(conversationId: string) {
 
           // Inject directly into cache — replaces optimistic messages and prevents duplicates
           queryClient.setQueryData<Message[]>(
-            ['messages', conversationId],
-            (old) => {
-              if (!old) return [enriched];
+            messagesKey(conversationId, user?.id),
               // Remove any optimistic message for this real one, and prevent duplicates
               const filtered = old.filter(m => 
                 m.id !== enriched.id && !m.id.startsWith('optimistic-')
@@ -369,9 +367,7 @@ export function useMessages(conversationId: string) {
           const deletedId = (payload.old as any)?.id;
           if (deletedId) {
             queryClient.setQueryData<Message[]>(
-              ['messages', conversationId],
-              (old) => old?.filter(m => m.id !== deletedId) || []
-            );
+              messagesKey(conversationId, user?.id),
           }
         }
       )
