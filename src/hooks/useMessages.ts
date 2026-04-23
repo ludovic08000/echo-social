@@ -273,6 +273,10 @@ export function useConversations() {
     enabled: !!user,
     staleTime: 30_000,
     gcTime: 5 * 60_000,
+    // Force a refetch on mount + when the network reconnects so a returning
+    // user always sees the server-side truth, never an old cached empty list.
+    refetchOnMount: 'always',
+    refetchOnReconnect: 'always',
     refetchOnWindowFocus: false,
   });
 }
