@@ -8,12 +8,13 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
-import { 
-  syncBackupToServer, 
-  isAutoBackupActive, 
+import {
+  syncBackupToServer,
+  isAutoBackupActive,
   clearAccountKeySession,
   hasLocalKeys,
   computeLocalCryptoDigest,
+  restoreAccountKeysFromActiveSession,
 } from '@/lib/crypto/accountKeyBackup';
 
 const SYNC_DEBOUNCE_MS = 5_000;
@@ -35,6 +36,63 @@ export function useAccountKeySync() {
       }
     }, SYNC_DEBOUNCE_MS);
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const [{ hasWrappedKeys }, { hasRawIdentityKeys }] = await Promise.all([
+          import('@/lib/crypto/pinWrap'),
+          import('@/lib/crypto/keyManager'),
+        ]);
+
+        const [localKeysPresent, rawIdentityPresent, wrappedKeysPresent] = await Promise.all([
+          hasLocalKeys(),
+          hasRawIdentityKeys(user.id),
+          hasWrappedKeys(user.id),
+        ]);
+
+        console.log('[messaging] crypto startup check', {
+          userId: user.id,
+          localKeysPresent,
+          rawIdentityPresent,
+          wrappedKeysPresent,
+          autoBackupActive: isAutoBackupActive(),
+        });
+
+        if (cancelled || rawIdentityPresent) return;
+
+        if (wrappedKeysPresent) {
+          console.warn('[messaging] local crypto exists but is locked behind PIN — waiting for unlock');
+          return;
+        }
+
+        const restoreStatus = await restoreAccountKeysFromActiveSession(user.id);
+        if (cancelled) return;
+
+        console.log('[messaging] active-session restore status:', restoreStatus);
+
+        if (restoreStatus === 'restored') {
+          window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+            detail: { status: 'restored_active_session' },
+          }));
+          return;
+        }
+
+        if (restoreStatus === 'unavailable') {
+          console.warn('[messaging] no automatic crypto restore available in this session — explicit restore required');
+        }
+      } catch (e) {
+        console.warn('[messaging] startup crypto check failed:', e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   // Poll for IndexedDB changes using content-based digest
   useEffect(() => {
