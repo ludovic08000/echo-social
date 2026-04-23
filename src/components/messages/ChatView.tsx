@@ -764,35 +764,67 @@ export function ChatView({ conversationId }: ChatViewProps) {
             <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
           </div>
         ) : messages?.length === 0 && queue.pendingMessages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-3">
-            {conversation && !conversation.is_group && (
-              <>
-                <UserAvatar src={conversation.participant.avatar_url} alt={conversation.participant.name} size="xl" />
-                <p className="text-lg font-bold">{conversation.participant.name}</p>
-                <p className="text-sm text-muted-foreground text-center max-w-[260px]">
-                  Vous êtes amis sur Forsure. Dites bonjour ! 👋
+          (recoveryState?.serverMessageCount ?? 0) > 0 && (
+            e2ee.initError === 'pin_unlock_required' ||
+            e2ee.initError === 'identity_lost_backup_available' ||
+            recoveryState?.needsPinUnlock ||
+            recoveryState?.needsExplicitRestore
+          ) ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-4 px-6">
+              <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center">
+                <AlertTriangle className="w-7 h-7 text-primary" />
+              </div>
+              <div className="text-center max-w-[320px]">
+                <p className="text-sm font-semibold">Messages sécurisés en attente de restauration</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {recoveryState?.needsPinUnlock || e2ee.initError === 'pin_unlock_required'
+                    ? 'Vos messages existent, mais les clés locales sont verrouillées. Déverrouillez votre PIN pour les relire.'
+                    : 'Vos messages existent sur le serveur, mais les clés locales doivent être restaurées avant déchiffrement.'}
                 </p>
-              </>
-            )}
-            <div className="flex flex-wrap gap-2 justify-center max-w-[300px] mt-2">
-              {['Salut ! 👋', 'Comment ça va ? 😊', 'Quoi de neuf ? 🤔'].map(suggestion => (
-                <button
-                  key={suggestion}
-                  onClick={async () => {
-                    try {
-                      await queue.sendMessage(suggestion);
-                    } catch {
-                      toast.error('Erreur envoi');
-                    }
-                  }}
-                  className="px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 active:scale-95 transition-all"
+              </div>
+              {(recoveryState?.needsExplicitRestore || e2ee.initError === 'identity_lost_backup_available') && (
+                <Button
+                  variant="secondary"
+                  className="rounded-full"
+                  size="sm"
+                  onClick={() => navigate('/settings', { state: { tab: 'privacy', scrollTo: 'key-backup' } })}
                 >
-                  {suggestion}
-                </button>
-              ))}
+                  Restaurer mes clés
+                </Button>
+              )}
             </div>
-          </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              {conversation && !conversation.is_group && (
+                <>
+                  <UserAvatar src={conversation.participant.avatar_url} alt={conversation.participant.name} size="xl" />
+                  <p className="text-lg font-bold">{conversation.participant.name}</p>
+                  <p className="text-sm text-muted-foreground text-center max-w-[260px]">
+                    Vous êtes amis sur Forsure. Dites bonjour ! 👋
+                  </p>
+                </>
+              )}
+              <div className="flex flex-wrap gap-2 justify-center max-w-[300px] mt-2">
+                {['Salut ! 👋', 'Comment ça va ? 😊', 'Quoi de neuf ? 🤔'].map(suggestion => (
+                  <button
+                    key={suggestion}
+                    onClick={async () => {
+                      try {
+                        await queue.sendMessage(suggestion);
+                      } catch {
+                        toast.error('Erreur envoi');
+                      }
+                    }}
+                    className="px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 active:scale-95 transition-all"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
         ) : (
+
           <>
             {groupedMessages.map((group, gi) => (
               <div key={gi}>
