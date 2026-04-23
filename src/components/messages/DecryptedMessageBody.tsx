@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, memo } from 'react';
 import { Lock } from 'lucide-react';
 import { VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
-import { hasMediaKey, parseMediaMessage, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
+import { hasMediaKey, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
@@ -25,21 +25,6 @@ interface CachedDecryption {
 }
 const plaintextCache = new Map<string, CachedDecryption>();
 const inflight = new Map<string, Promise<CachedDecryption>>();
-
-// Bumped whenever the E2EE key material is restored / rotated. Components
-// listen via useEffect and re-run their decryption pipeline. We also drop
-// any cache entry that resolved to "hidden" since those were placeholders
-// produced while the keys were still missing.
-let cacheGeneration = 0;
-if (typeof window !== 'undefined') {
-  window.addEventListener('forsure-keys-restored', () => {
-    for (const [k, v] of plaintextCache) {
-      if (v.hidden) plaintextCache.delete(k);
-    }
-    cacheGeneration += 1;
-    window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
-  });
-}
 
 function cacheKey(messageId: string | undefined, body: string): string {
   return `${messageId ?? 'noid'}|${body}`;
@@ -131,16 +116,8 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   const [mediaKeyB64, setMediaKeyB64State] = useState<string | null>(initial.mediaKeyB64);
   const [isDecrypting, setIsDecrypting] = useState(initial.decrypting);
   const [hidden, setHidden] = useState(initial.hidden);
-  const [retryTick, setRetryTick] = useState(0);
   const onDecryptedRef = useRef(onDecrypted);
   onDecryptedRef.current = onDecrypted;
-
-  // Listen for E2EE key restoration so we re-attempt decryption after login.
-  useEffect(() => {
-    const handler = () => setRetryTick(t => t + 1);
-    window.addEventListener('forsure-decrypt-retry', handler);
-    return () => window.removeEventListener('forsure-decrypt-retry', handler);
-  }, []);
 
   useEffect(() => {
     // Re-run only when the actual identity of the message changes.
@@ -165,7 +142,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
           setDisplayText(parsed.label);
           setMediaKeyB64State(parsed.keyB64);
           setIsDecrypting(false);
-          onDecryptedRef.current?.(cachedPlaintext);
+          onDecryptedRef.current?.(parsed.label);
           return;
         }
       }
@@ -217,10 +194,10 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       setMediaKeyB64State(cached.mediaKeyB64);
       setIsDecrypting(false);
       if (cached.mediaKeyB64 && messageId) {
-        setMediaKey(messageId, cached.mediaKeyB64, cached.text.startsWith('🎬'));
+        const parsed = parseMediaMessage(cached.text);
+        if (parsed) setMediaKey(messageId, parsed.keyB64, parsed.label.startsWith('🎬'));
       }
-      const persistedText = cached.mediaKeyB64 ? buildMediaMessageBody(cached.text, cached.mediaKeyB64) : cached.text;
-      onDecryptedRef.current?.(persistedText);
+      onDecryptedRef.current?.(cached.text);
       return;
     }
 
@@ -253,14 +230,10 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
             severity: 'error',
             context: 'decrypt',
             errorCode: 'E_DECRYPT_NO_COPY',
-            errorMessage: 'Ratchet incompatible and no device copy found — showing visible placeholder',
+            errorMessage: 'Ratchet incompatible and no device copy found — secure placeholder shown',
             metadata: { messageId, bodyLen: body.length },
           });
-          const entry: CachedDecryption = {
-            text: '🔒 Message non déchiffrable sur cet appareil',
-            mediaKeyB64: null,
-            hidden: false,
-          };
+          const entry: CachedDecryption = { text: '🔒 Message sécurisé — restauration nécessaire', mediaKeyB64: null, hidden: false };
           plaintextCache.set(key, entry);
           return entry;
         }
@@ -269,14 +242,10 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
             severity: 'warning',
             context: 'decrypt',
             errorCode: 'E_DECRYPT_INCOMPATIBLE',
-            errorMessage: 'Ratchet flagged incompatible (no messageId — showing visible placeholder)',
+            errorMessage: 'Ratchet flagged incompatible (no messageId — cannot fallback)',
             metadata: { bodyLen: body.length },
           });
-          const entry: CachedDecryption = {
-            text: '🔒 Message chiffré indisponible',
-            mediaKeyB64: null,
-            hidden: false,
-          };
+          const entry: CachedDecryption = { text: '🔒 Message sécurisé — restauration nécessaire', mediaKeyB64: null, hidden: false };
           plaintextCache.set(key, entry);
           return entry;
         }
@@ -310,18 +279,16 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       setMediaKeyB64State(entry.mediaKeyB64);
       setIsDecrypting(false);
       if (entry.mediaKeyB64 && messageId) {
-        // entry.text is already the parsed label (e.g. "📷 Photo" / "🎬 Vidéo"),
-        // and entry.mediaKeyB64 is the per-file AES key. Push directly to cache.
-        setMediaKey(messageId, entry.mediaKeyB64, entry.text.startsWith('🎬'));
+        const parsed = parseMediaMessage(entry.text);
+        if (parsed) setMediaKey(messageId, parsed.keyB64, parsed.label.startsWith('🎬'));
       }
       if (!entry.hidden) {
-        const persistedText = entry.mediaKeyB64 ? `${entry.text}\x00MKEY:${entry.mediaKeyB64}` : entry.text;
-        void savePlaintextForCiphertext(body, persistedText);
-        onDecryptedRef.current?.(persistedText);
+        void savePlaintextForCiphertext(body, entry.text);
+        onDecryptedRef.current?.(entry.text);
       }
     }).catch(() => {
       if (!cancelled) {
-        setDisplayText('🔒 Message chiffré');
+        setDisplayText('🔒 Message sécurisé — restauration nécessaire');
         setMediaKeyB64State(null);
         setIsDecrypting(false);
       }
@@ -331,9 +298,8 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     // Deliberately exclude `decrypt`, `isEncryptionActive`, `refreshKey`, `isMe`
     // from deps: they change during E2EE auto-heal and would re-trigger the
     // "Déchiffrement…" flash even though the cached plaintext is valid.
-    // `retryTick` is included so we retry after key restoration on login.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [body, messageId, cachedPlaintext, retryTick]);
+  }, [body, messageId, cachedPlaintext]);
 
   if (hidden) return null;
 
