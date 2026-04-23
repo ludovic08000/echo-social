@@ -578,9 +578,10 @@ export function useSendMessage() {
     onMutate: async (variables) => {
       if (!user) return;
 
-      await queryClient.cancelQueries({ queryKey: ['messages', variables.conversationId] });
+      const key = messagesKey(variables.conversationId, user.id);
+      await queryClient.cancelQueries({ queryKey: key });
 
-      const previousMessages = queryClient.getQueryData<Message[]>(['messages', variables.conversationId]);
+      const previousMessages = queryClient.getQueryData<Message[]>(key);
 
       const profile = queryClient.getQueryData<any>(['profile', user.id]);
       const optimisticMessage: Message = {
@@ -598,7 +599,7 @@ export function useSendMessage() {
       };
 
       queryClient.setQueryData<Message[]>(
-        ['messages', variables.conversationId],
+        key,
         (old) => [...(old || []), optimisticMessage]
       );
 
@@ -606,7 +607,7 @@ export function useSendMessage() {
     },
     onError: (_err, variables, context) => {
       if (context?.previousMessages) {
-        queryClient.setQueryData(['messages', variables.conversationId], context.previousMessages);
+        queryClient.setQueryData(messagesKey(variables.conversationId, user?.id), context.previousMessages);
       }
     },
     onSettled: (_, __, variables) => {
@@ -623,11 +624,12 @@ export function useDeleteMessageForMe() {
 
   return useMutation({
     onMutate: async ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
-      await queryClient.cancelQueries({ queryKey: ['messages', conversationId] });
-      const previousMessages = queryClient.getQueryData<Message[]>(['messages', conversationId]);
+      const key = messagesKey(conversationId, user?.id);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previousMessages = queryClient.getQueryData<Message[]>(key);
 
       queryClient.setQueryData<Message[]>(
-        ['messages', conversationId],
+        key,
         (old) => old?.filter(m => m.id !== messageId) || []
       );
 
@@ -646,7 +648,7 @@ export function useDeleteMessageForMe() {
     },
     onError: (_err, _vars, context) => {
       if (context?.previousMessages) {
-        queryClient.setQueryData(['messages', context.conversationId], context.previousMessages);
+        queryClient.setQueryData(messagesKey(context.conversationId, user?.id), context.previousMessages);
       }
     },
     onSuccess: (conversationId) => {
@@ -663,11 +665,12 @@ export function useDeleteMessageForEveryone() {
 
   return useMutation({
     onMutate: async ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
-      await queryClient.cancelQueries({ queryKey: ['messages', conversationId] });
-      const previousMessages = queryClient.getQueryData<Message[]>(['messages', conversationId]);
+      const key = messagesKey(conversationId, user?.id);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previousMessages = queryClient.getQueryData<Message[]>(key);
 
       queryClient.setQueryData<Message[]>(
-        ['messages', conversationId],
+        key,
         (old) => old?.filter(m => m.id !== messageId) || []
       );
 
@@ -687,7 +690,7 @@ export function useDeleteMessageForEveryone() {
     },
     onError: (_err, _vars, context) => {
       if (context?.previousMessages) {
-        queryClient.setQueryData(['messages', context.conversationId], context.previousMessages);
+        queryClient.setQueryData(messagesKey(context.conversationId, user?.id), context.previousMessages);
       }
     },
     onSuccess: (conversationId) => {
