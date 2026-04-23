@@ -15,6 +15,10 @@ async function hideMessagesForUser(userId: string, messageIds: string[]) {
 
 export const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
 
+/** Build the scoped messages query key. Must mirror the key used in useMessages(). */
+const messagesKey = (conversationId: string, userId: string | undefined) =>
+  ['messages', conversationId, userId ?? 'anon'] as const;
+
 // Helper to get the user's custom AI companion name
 async function getCompanionName(userId?: string): Promise<string> {
   if (!userId) return 'Zeus ⚡';
