@@ -15,6 +15,10 @@ async function hideMessagesForUser(userId: string, messageIds: string[]) {
 
 export const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
 
+/** Build the scoped messages query key. Must mirror the key used in useMessages(). */
+const messagesKey = (conversationId: string, userId: string | undefined) =>
+  ['messages', conversationId, userId ?? 'anon'] as const;
+
 // Helper to get the user's custom AI companion name
 async function getCompanionName(userId?: string): Promise<string> {
   if (!userId) return 'Zeus ⚡';
@@ -127,11 +131,29 @@ export interface Conversation {
 
 export function useConversations() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  // Force a refetch whenever the auth user changes (login, refresh, multi-tab).
+  // Without this, a first run while user=null caches an empty list under the
+  // shared key ['conversations'] and the UI stays empty forever.
+  useEffect(() => {
+    if (!user) return;
+    const onRestored = () => {
+      console.log('[messaging] keys restored → refetch conversations');
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    };
+    window.addEventListener('forsure-keys-restored', onRestored);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    return () => window.removeEventListener('forsure-keys-restored', onRestored);
+  }, [user?.id, queryClient]);
 
   return useQuery({
-    queryKey: ['conversations'],
+    // Scope the cache to the user id so a stale empty list from a logged-out
+    // run never leaks into a logged-in session.
+    queryKey: ['conversations', user?.id ?? 'anon'],
     queryFn: async () => {
       if (!user) return [];
+      console.log('[messaging] fetching conversations for', user.id);
 
       // ── Single RPC: conversations + participants + last message + unread ──
       try {
@@ -139,7 +161,16 @@ export function useConversations() {
           p_user_id: user.id,
         });
 
-        if (!rpcError && rpcData && rpcData.length > 0) {
+        if (rpcError) {
+          console.warn('[messaging] RPC get_conversations_with_details failed, will fallback:', rpcError.message);
+        }
+
+        // Use RPC result whenever it returned without error, even if empty —
+        // an empty result from a healthy RPC means the user genuinely has 0
+        // conversations. Only fall back when the RPC itself errored.
+        if (!rpcError && rpcData) {
+          console.log('[messaging] conversations from RPC:', rpcData.length);
+          if (rpcData.length === 0) return [];
           return rpcData.map((row: any) => ({
             id: row.conv_id,
             created_at: row.conv_created_at,
@@ -246,6 +277,10 @@ export function useConversations() {
     enabled: !!user,
     staleTime: 30_000,
     gcTime: 5 * 60_000,
+    // Force a refetch on mount + when the network reconnects so a returning
+    // user always sees the server-side truth, never an old cached empty list.
+    refetchOnMount: 'always',
+    refetchOnReconnect: 'always',
     refetchOnWindowFocus: false,
   });
 }
@@ -297,11 +332,11 @@ export function useMessages(conversationId: string) {
 
           // Inject directly into cache — replaces optimistic messages and prevents duplicates
           queryClient.setQueryData<Message[]>(
-            ['messages', conversationId],
+            messagesKey(conversationId, user?.id),
             (old) => {
               if (!old) return [enriched];
               // Remove any optimistic message for this real one, and prevent duplicates
-              const filtered = old.filter(m => 
+              const filtered = old.filter(m =>
                 m.id !== enriched.id && !m.id.startsWith('optimistic-')
               );
               // Only skip if already present with same id
@@ -334,7 +369,7 @@ export function useMessages(conversationId: string) {
           const deletedId = (payload.old as any)?.id;
           if (deletedId) {
             queryClient.setQueryData<Message[]>(
-              ['messages', conversationId],
+              messagesKey(conversationId, user?.id),
               (old) => old?.filter(m => m.id !== deletedId) || []
             );
           }
@@ -384,9 +419,11 @@ export function useMessages(conversationId: string) {
   }, [conversationId, user]);
 
   const messagesQuery = useQuery({
-    queryKey: ['messages', conversationId],
+    // Scope by user so the cache is never shared across accounts/sessions.
+    queryKey: ['messages', conversationId, user?.id ?? 'anon'],
     queryFn: async () => {
       if (!conversationId || !user) return [];
+      console.log('[messaging] fetching messages for conversation', conversationId);
 
       // Get hidden message IDs for this user
       const { data: deletions } = await supabase
@@ -405,7 +442,11 @@ export function useMessages(conversationId: string) {
         .order('created_at', { ascending: false })
         .limit(500);
 
-      if (error) throw error;
+      if (error) {
+        console.error('[messaging] message fetch failed:', error.message);
+        throw error;
+      }
+      console.log('[messaging] loaded', messages.length, 'messages from server');
 
       // Reverse to chronological order for display
       messages.reverse();
@@ -444,7 +485,9 @@ export function useMessages(conversationId: string) {
         },
       })) as Message[];
     },
-    enabled: !!conversationId,
+    enabled: !!conversationId && !!user,
+    refetchOnMount: 'always',
+    refetchOnReconnect: 'always',
   });
 
   return messagesQuery;
@@ -535,9 +578,10 @@ export function useSendMessage() {
     onMutate: async (variables) => {
       if (!user) return;
 
-      await queryClient.cancelQueries({ queryKey: ['messages', variables.conversationId] });
+      const key = messagesKey(variables.conversationId, user.id);
+      await queryClient.cancelQueries({ queryKey: key });
 
-      const previousMessages = queryClient.getQueryData<Message[]>(['messages', variables.conversationId]);
+      const previousMessages = queryClient.getQueryData<Message[]>(key);
 
       const profile = queryClient.getQueryData<any>(['profile', user.id]);
       const optimisticMessage: Message = {
@@ -555,7 +599,7 @@ export function useSendMessage() {
       };
 
       queryClient.setQueryData<Message[]>(
-        ['messages', variables.conversationId],
+        key,
         (old) => [...(old || []), optimisticMessage]
       );
 
@@ -563,7 +607,7 @@ export function useSendMessage() {
     },
     onError: (_err, variables, context) => {
       if (context?.previousMessages) {
-        queryClient.setQueryData(['messages', variables.conversationId], context.previousMessages);
+        queryClient.setQueryData(messagesKey(variables.conversationId, user?.id), context.previousMessages);
       }
     },
     onSettled: (_, __, variables) => {
@@ -580,11 +624,12 @@ export function useDeleteMessageForMe() {
 
   return useMutation({
     onMutate: async ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
-      await queryClient.cancelQueries({ queryKey: ['messages', conversationId] });
-      const previousMessages = queryClient.getQueryData<Message[]>(['messages', conversationId]);
+      const key = messagesKey(conversationId, user?.id);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previousMessages = queryClient.getQueryData<Message[]>(key);
 
       queryClient.setQueryData<Message[]>(
-        ['messages', conversationId],
+        key,
         (old) => old?.filter(m => m.id !== messageId) || []
       );
 
@@ -603,7 +648,7 @@ export function useDeleteMessageForMe() {
     },
     onError: (_err, _vars, context) => {
       if (context?.previousMessages) {
-        queryClient.setQueryData(['messages', context.conversationId], context.previousMessages);
+        queryClient.setQueryData(messagesKey(context.conversationId, user?.id), context.previousMessages);
       }
     },
     onSuccess: (conversationId) => {
@@ -620,11 +665,12 @@ export function useDeleteMessageForEveryone() {
 
   return useMutation({
     onMutate: async ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
-      await queryClient.cancelQueries({ queryKey: ['messages', conversationId] });
-      const previousMessages = queryClient.getQueryData<Message[]>(['messages', conversationId]);
+      const key = messagesKey(conversationId, user?.id);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previousMessages = queryClient.getQueryData<Message[]>(key);
 
       queryClient.setQueryData<Message[]>(
-        ['messages', conversationId],
+        key,
         (old) => old?.filter(m => m.id !== messageId) || []
       );
 
@@ -644,7 +690,7 @@ export function useDeleteMessageForEveryone() {
     },
     onError: (_err, _vars, context) => {
       if (context?.previousMessages) {
-        queryClient.setQueryData(['messages', context.conversationId], context.previousMessages);
+        queryClient.setQueryData(messagesKey(context.conversationId, user?.id), context.previousMessages);
       }
     },
     onSuccess: (conversationId) => {
