@@ -5,7 +5,7 @@ import { generateFingerprint } from '@/hooks/useTrustAndSafety';
 import { startSessionGuard, stopSessionGuard } from '@/lib/sessionGuard';
 import { detectAndStoreRecoveryFromHash, isRecoveryPending, setRecoveryFlag } from '@/lib/authRecovery';
 import { getSafeRedirectUrl } from '@/lib/urlUtils';
-import { initAccountKeySync } from '@/lib/crypto/accountKeyBackup';
+import { hasLocalKeys, initAccountKeySync } from '@/lib/crypto/accountKeyBackup';
 
 /** Check URL hash for recovery tokens BEFORE any session is exposed */
 function detectRecoveryFromHash(): boolean {
@@ -25,6 +25,23 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Detect recovery from URL hash synchronously at module load
 const initialRecovery = detectRecoveryFromHash() || isRecoveryPending();
+
+
+async function inspectCryptoReadiness(userId: string | undefined, reason: 'session_restored' | 'signed_in') {
+  if (!userId) return;
+  try {
+    const hasKeys = await hasLocalKeys();
+    console.log(`[AUTH][E2EE] ${reason} user=${userId} hasLocalKeys=${hasKeys}`);
+    if (!hasKeys && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
+        detail: { userId, reason },
+      }));
+    }
+  } catch (error) {
+    console.warn('[AUTH][E2EE] readiness check failed:', error);
+  }
+}
+
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -68,6 +85,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         applySessionState(session);
 
+        if (session?.user) {
+          void inspectCryptoReadiness(session.user.id, event === 'SIGNED_IN' ? 'signed_in' : 'session_restored');
+        }
+
         if (event === 'SIGNED_IN' && session?.user) {
           if (isRecoveryPending()) return;
 
@@ -104,11 +125,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
         if (!refreshError && refreshed.session) {
           applySessionState(refreshed.session);
+          if (refreshed.session.user) void inspectCryptoReadiness(refreshed.session.user.id, 'session_restored');
           return;
         }
 
         const { data: current } = await supabase.auth.getSession();
         applySessionState(current.session);
+        if (current.session?.user) void inspectCryptoReadiness(current.session.user.id, 'session_restored');
       } catch {
         const { data: current } = await supabase.auth.getSession();
         applySessionState(current.session);
@@ -121,7 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signUp = async (email: string, password: string, name: string, dateOfBirth?: string) => {
-    const { data, error } = await supabase.auth.signUp({
+    const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -129,51 +152,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         data: { name, date_of_birth: dateOfBirth },
       },
     });
-    // Initialize account key sync immediately so backups can occur as soon as keys exist
-    if (!error && data.user) {
-      initAccountKeySync(password, data.user.id).catch(() => {});
-    }
     return { error };
   };
 
   const signIn = async (email: string, password: string) => {
-    // Server-side anti-bruteforce gate (per IP + per email). Fails open on infra error.
-    try {
-      const { data: gate } = await supabase.functions.invoke('login-rate-limit', {
-        body: { action: 'check', email },
-      });
-      if (gate && gate.allowed === false) {
-        const retry = gate.retry_after_seconds ?? 30;
-        return {
-          error: new Error(
-            `Trop de tentatives. Réessayez dans ${retry} seconde${retry > 1 ? 's' : ''}.`
-          ),
-        };
-      }
-    } catch { /* fail-open */ }
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-
-    // Record outcome (best-effort; never blocks the user)
-    supabase.functions.invoke('login-rate-limit', {
-      body: { action: 'record', email, success: !error },
-    }).catch(() => {});
-
-    // Auto-restore E2EE keys from server backup using password.
-    // CRITICAL: we await the restore so that the Messages page never tries
-    // to decrypt before the master key + ratchet states are reloaded.
-    // Without this await, messages and photos appear as "🔒 chiffré" right
-    // after a fresh login on a device whose IndexedDB was cleared.
     if (!error && data.user) {
       try {
         const status = await initAccountKeySync(password, data.user.id);
-        console.log('[AUTH] Key sync status:', status);
-        // Notify decryption components so they invalidate their cache and retry.
-        window.dispatchEvent(new CustomEvent('forsure-keys-restored', { detail: { status } }));
-      } catch (e) {
-        console.warn('[AUTH] Key sync failed:', e);
+        console.log(`[AUTH][E2EE] initAccountKeySync status=${status}`);
+      } catch (syncError) {
+        console.warn('[AUTH][E2EE] initAccountKeySync failed:', syncError);
       }
+      void inspectCryptoReadiness(data.user.id, 'signed_in');
     }
+
     return { error };
   };
 
