@@ -333,8 +333,10 @@ export function useMessages(conversationId: string) {
           // Inject directly into cache — replaces optimistic messages and prevents duplicates
           queryClient.setQueryData<Message[]>(
             messagesKey(conversationId, user?.id),
+            (old) => {
+              if (!old) return [enriched];
               // Remove any optimistic message for this real one, and prevent duplicates
-              const filtered = old.filter(m => 
+              const filtered = old.filter(m =>
                 m.id !== enriched.id && !m.id.startsWith('optimistic-')
               );
               // Only skip if already present with same id
@@ -368,6 +370,8 @@ export function useMessages(conversationId: string) {
           if (deletedId) {
             queryClient.setQueryData<Message[]>(
               messagesKey(conversationId, user?.id),
+              (old) => old?.filter(m => m.id !== deletedId) || []
+            );
           }
         }
       )
