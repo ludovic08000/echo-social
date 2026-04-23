@@ -127,11 +127,29 @@ export interface Conversation {
 
 export function useConversations() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  // Force a refetch whenever the auth user changes (login, refresh, multi-tab).
+  // Without this, a first run while user=null caches an empty list under the
+  // shared key ['conversations'] and the UI stays empty forever.
+  useEffect(() => {
+    if (!user) return;
+    const onRestored = () => {
+      console.log('[messaging] keys restored → refetch conversations');
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    };
+    window.addEventListener('forsure-keys-restored', onRestored);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    return () => window.removeEventListener('forsure-keys-restored', onRestored);
+  }, [user?.id, queryClient]);
 
   return useQuery({
-    queryKey: ['conversations'],
+    // Scope the cache to the user id so a stale empty list from a logged-out
+    // run never leaks into a logged-in session.
+    queryKey: ['conversations', user?.id ?? 'anon'],
     queryFn: async () => {
       if (!user) return [];
+      console.log('[messaging] fetching conversations for', user.id);
 
       // ── Single RPC: conversations + participants + last message + unread ──
       try {
@@ -139,7 +157,16 @@ export function useConversations() {
           p_user_id: user.id,
         });
 
-        if (!rpcError && rpcData && rpcData.length > 0) {
+        if (rpcError) {
+          console.warn('[messaging] RPC get_conversations_with_details failed, will fallback:', rpcError.message);
+        }
+
+        // Use RPC result whenever it returned without error, even if empty —
+        // an empty result from a healthy RPC means the user genuinely has 0
+        // conversations. Only fall back when the RPC itself errored.
+        if (!rpcError && rpcData) {
+          console.log('[messaging] conversations from RPC:', rpcData.length);
+          if (rpcData.length === 0) return [];
           return rpcData.map((row: any) => ({
             id: row.conv_id,
             created_at: row.conv_created_at,
