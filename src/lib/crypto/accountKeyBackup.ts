@@ -571,6 +571,68 @@ export async function initAccountKeySync(password: string, userId: string): Prom
 }
 
 /**
+ * Re-attempt restore using the in-memory password session when available.
+ *
+ * This only works inside the SAME JS lifetime as a successful password login.
+ * It is intentionally unavailable after a full refresh because the password is
+ * never persisted client-side.
+ */
+export async function restoreAccountKeysFromActiveSession(userId?: string): Promise<'restored' | 'local_ok' | 'unavailable' | 'error'> {
+  const targetUserId = userId ?? _sessionUserId;
+  const t0 = performance.now();
+
+  try {
+    const hasLocal = await hasLocalKeys();
+    if (hasLocal) {
+      console.log('[MasterKey] Active-session restore skipped: local crypto already present');
+      return 'local_ok';
+    }
+
+    if (!_sessionPassword || !targetUserId || _sessionUserId !== targetUserId) {
+      console.warn('[MasterKey] Active-session restore unavailable: no in-memory password session');
+      return 'unavailable';
+    }
+
+    console.log('[MasterKey] Active-session restore attempting password-based recovery');
+    const secret = passwordSecret(_sessionPassword, targetUserId);
+    const result = await downloadAndRestore(targetUserId, 'account', secret);
+
+    if (!result) {
+      console.warn('[MasterKey] Active-session restore unavailable: no matching backup');
+      return 'unavailable';
+    }
+
+    const validated = await hasLocalKeys();
+    if (!validated) {
+      console.error('[MasterKey] ⛔ Active-session restore succeeded but no local identity was restored');
+      logCryptoError({
+        severity: 'critical', context: 'restore', errorCode: 'RESTORE_ACTIVE_SESSION_VALIDATION_FAILED',
+        errorMessage: 'Active-session restore succeeded but no local identity was restored',
+        metadata: { userId: targetUserId, durationMs: Math.round(performance.now() - t0) },
+      });
+      return 'error';
+    }
+
+    _sessionRawMasterKey = result.masterKeyRaw;
+    _sessionMasterKey = result.masterKey;
+    console.log('[MasterKey] ✅ Keys restored from active session');
+    logCryptoError({
+      severity: 'info', context: 'restore', errorCode: 'RESTORE_ACTIVE_SESSION_SUCCESS',
+      errorMessage: 'E2EE keys restored from active in-memory session',
+      metadata: { userId: targetUserId, durationMs: Math.round(performance.now() - t0) },
+    });
+    return 'restored';
+  } catch (err) {
+    console.error('[MasterKey] Active-session restore failed:', err);
+    logCryptoException('restore', err, {
+      severity: 'error',
+      metadata: { stage: 'active_session_restore', userId: targetUserId, durationMs: Math.round(performance.now() - t0) },
+    });
+    return 'error';
+  }
+}
+
+/**
  * Restore using a recovery key (fallback when password doesn't work).
  */
 export async function restoreWithRecoveryKey(recoveryKey: string, userId: string): Promise<boolean> {

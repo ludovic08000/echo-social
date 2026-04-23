@@ -340,7 +340,7 @@ export function useChatPin() {
     }
   }, [user]);
 
-  // Check if user has a PIN and if session is unlocked
+  // Check if user has a PIN and if session is REALLY unlocked
   useEffect(() => {
     if (!user || checkedRef.current) return;
     checkedRef.current = true;
@@ -348,18 +348,44 @@ export function useChatPin() {
     (async () => {
       try {
         const sessionUnlocked = sessionStorage.getItem(SESSION_KEY) === user.id;
-        const { data: hasPin } = await supabase
-          .rpc('has_chat_pin', { p_user_id: user.id });
-        
-        const mode = !!hasPin ? await fetchPinMode() : 'every_open';
+        const [pinResult, modeResult, rawIdentityPresent, wrappedKeys] = await Promise.all([
+          supabase.rpc('has_chat_pin', { p_user_id: user.id }),
+          fetchPinMode(),
+          import('@/lib/crypto/keyManager').then(({ hasRawIdentityKeys }) => hasRawIdentityKeys(user.id)).catch(() => false),
+          loadWrappedKeys(user.id),
+        ]);
+
+        const hasPin = !!pinResult.data;
+        const mode = hasPin ? modeResult : 'every_open';
         pinModeRef.current = mode;
 
-        // For 'every_open' mode, session unlock doesn't count (must enter each time)
-        const effectiveUnlock = mode === 'every_open' ? false : (sessionUnlocked && !!hasPin);
+        // IMPORTANT: a sessionStorage flag alone is not enough after refresh.
+        // If the raw identity keys are no longer locally restored, messaging must
+        // re-lock and ask for the PIN again instead of pretending everything is ready.
+        const effectiveUnlock =
+          mode === 'every_open'
+            ? false
+            : sessionUnlocked && hasPin && rawIdentityPresent;
+
+        console.log('[PIN] startup unlock check', {
+          userId: user.id,
+          sessionUnlocked,
+          hasPin,
+          rawIdentityPresent,
+          wrappedKeysPresent: !!wrappedKeys,
+          pinMode: mode,
+          effectiveUnlock,
+        });
+
+        if (sessionUnlocked && hasPin && !effectiveUnlock) {
+          sessionStorage.removeItem(SESSION_KEY);
+          window.dispatchEvent(new CustomEvent('forsure-keys-locked'));
+          console.warn('[PIN] Cleared stale session unlock flag — crypto keys must be restored before messaging opens');
+        }
 
         setState({
           loaded: true,
-          hasPin: !!hasPin,
+          hasPin,
           unlocked: effectiveUnlock,
           error: null,
           processing: false,

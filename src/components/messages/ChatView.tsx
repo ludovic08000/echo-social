@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 import { Link, useNavigate } from 'react-router-dom';
 import {
@@ -102,6 +103,52 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const peerUserId = conversation?.participant?.user_id;
   const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const e2ee = useE2EE(conversationId, peerUserId);
+  const { data: recoveryState } = useQuery({
+    queryKey: ['conversation-recovery-state', conversationId, user?.id ?? 'anon'],
+    enabled: !!conversationId && !!user && !isZeusConversation,
+    refetchOnMount: 'always',
+    refetchOnReconnect: 'always',
+    queryFn: async () => {
+      if (!conversationId || !user) return null;
+
+      const [{ hasWrappedKeys }, { hasRawIdentityKeys }] = await Promise.all([
+        import('@/lib/crypto/pinWrap'),
+        import('@/lib/crypto/keyManager'),
+      ]);
+
+      const [wrappedKeysPresent, rawIdentityPresent, backupCountResult, messageCountResult] = await Promise.all([
+        hasWrappedKeys(user.id),
+        hasRawIdentityKeys(user.id),
+        supabase.from('user_backups' as any).select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+        supabase.from('messages').select('id', { count: 'exact', head: true }).eq('conversation_id', conversationId).in('status', ['delivered', 'pending']),
+      ]);
+
+      const serverMessageCount = messageCountResult.count ?? 0;
+      const hasServerBackup = (backupCountResult.count ?? 0) > 0;
+      const needsPinUnlock = !rawIdentityPresent && wrappedKeysPresent;
+      const needsExplicitRestore = !rawIdentityPresent && !wrappedKeysPresent && hasServerBackup;
+
+      console.log('[messaging] conversation restore state', {
+        conversationId,
+        userId: user.id,
+        serverMessageCount,
+        rawIdentityPresent,
+        wrappedKeysPresent,
+        hasServerBackup,
+        needsPinUnlock,
+        needsExplicitRestore,
+      });
+
+      return {
+        serverMessageCount,
+        rawIdentityPresent,
+        wrappedKeysPresent,
+        hasServerBackup,
+        needsPinUnlock,
+        needsExplicitRestore,
+      };
+    },
+  });
   const { peerTyping, notifyTyping, notifyStopped } = useTypingPresence(
     conversationId,
     user?.id,
