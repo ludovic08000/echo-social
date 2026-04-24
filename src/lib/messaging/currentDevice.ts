@@ -17,7 +17,8 @@
  * The actual E2EE key material lives in IndexedDB (ratchet states, identity keys).
  */
 
-import { nativeGet, nativeSet, nativeGetSync, isNativePlatform } from '@/lib/nativeStore';
+import { nativeSet, nativeGetSync, isNativePlatform } from '@/lib/nativeStore';
+import { secureGet, secureSet } from '@/lib/secureStore';
 
 const STORAGE_KEY = 'forsure-device-id-v1';
 let memoryDeviceId: string | null = null;
@@ -33,7 +34,9 @@ function persistEverywhere(id: string): string {
   memoryDeviceId = id;
   try { localStorage.setItem(STORAGE_KEY, id); } catch {}
   try { sessionStorage.setItem(STORAGE_KEY, id); } catch {}
-  // Fire-and-forget native persistence
+  // Fire-and-forget native persistence (Keychain on iOS, Keystore on Android,
+  // Preferences as a synchronous-readable mirror).
+  void secureSet(STORAGE_KEY, id).catch(() => {});
   void nativeSet(STORAGE_KEY, id).catch(() => {});
   return id;
 }
@@ -71,7 +74,9 @@ export async function hydrateDeviceId(): Promise<string> {
   if (hydrationPromise) return hydrationPromise;
   hydrationPromise = (async () => {
     try {
-      const stored = await nativeGet(STORAGE_KEY);
+      // Keychain / Keystore is the source of truth on native; falls back to
+      // Preferences then localStorage automatically.
+      const stored = await secureGet(STORAGE_KEY);
       if (stored) {
         if (memoryDeviceId && memoryDeviceId !== stored) {
           console.log('[device-id] Native store overrides in-memory id', {
