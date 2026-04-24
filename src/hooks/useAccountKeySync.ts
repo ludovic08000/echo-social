@@ -4,6 +4,8 @@
  * - On login: derives encryption key from password, auto-restores keys if missing
  * - During session: watches for key changes via content-based digest and auto-syncs
  * - On logout: clears derived key from memory
+ * - On native (iOS/Android): hydrates device id from Capacitor Preferences and
+ *   triggers a sync when the app resumes from background.
  */
 
 import { useEffect, useRef, useCallback } from 'react';
@@ -16,9 +18,12 @@ import {
   computeLocalCryptoDigest,
   restoreAccountKeysFromActiveSession,
 } from '@/lib/crypto/accountKeyBackup';
+import { hydrateDeviceId } from '@/lib/messaging/currentDevice';
+import { isNativePlatform } from '@/lib/nativeStore';
 
 const SYNC_DEBOUNCE_MS = 5_000;
-const POLL_INTERVAL_MS = 30_000;
+// Mobile WebViews can be paused — poll a bit more aggressively when foregrounded.
+const POLL_INTERVAL_MS = isNativePlatform() ? 20_000 : 30_000;
 
 export function useAccountKeySync() {
   const { user } = useAuth();
@@ -35,6 +40,13 @@ export function useAccountKeySync() {
         console.warn('[AccountKeySync] Auto-sync failed:', e);
       }
     }, SYNC_DEBOUNCE_MS);
+  }, []);
+
+  // Hydrate the persistent device id (Capacitor Preferences) once at app boot.
+  useEffect(() => {
+    void hydrateDeviceId().then((id) => {
+      console.log('[AccountKeySync] device id hydrated:', id.slice(0, 8));
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -60,6 +72,7 @@ export function useAccountKeySync() {
           rawIdentityPresent,
           wrappedKeysPresent,
           autoBackupActive: isAutoBackupActive(),
+          native: isNativePlatform(),
         });
 
         if (cancelled || rawIdentityPresent) return;
@@ -115,6 +128,62 @@ export function useAccountKeySync() {
     return () => {
       clearInterval(interval);
       if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [user, triggerSync]);
+
+  // Native: re-sync when the app resumes from background, and on visibility change.
+  useEffect(() => {
+    if (!user) return;
+
+    let unsubscribeApp: (() => void) | null = null;
+
+    const onResume = () => {
+      console.log('[AccountKeySync] app resumed — re-checking crypto');
+      void (async () => {
+        try {
+          const digest = await computeLocalCryptoDigest();
+          lastDigestRef.current = digest;
+          if (isAutoBackupActive()) {
+            // Force a sync attempt right away on resume
+            triggerSync();
+          }
+          // Re-attempt restore if local keys vanished (iOS WebView purge)
+          if (!(await hasLocalKeys())) {
+            const status = await restoreAccountKeysFromActiveSession(user.id);
+            if (status === 'restored') {
+              window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+                detail: { status: 'restored_on_resume' },
+              }));
+            }
+          }
+        } catch (e) {
+          console.warn('[AccountKeySync] resume handler failed:', e);
+        }
+      })();
+    };
+
+    // Web: visibilitychange covers tab refocus
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') onResume();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    // Native: subscribe to Capacitor App resume events
+    if (isNativePlatform()) {
+      void import('@capacitor/app').then(({ App }) => {
+        const handle = App.addListener('resume', onResume);
+        unsubscribeApp = () => {
+          // Capacitor 7 returns a promise from addListener
+          Promise.resolve(handle).then((h: any) => h?.remove?.()).catch(() => {});
+        };
+      }).catch((e) => {
+        console.warn('[AccountKeySync] @capacitor/app unavailable:', e);
+      });
+    }
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      if (unsubscribeApp) unsubscribeApp();
     };
   }, [user, triggerSync]);
 
