@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
+import { supabase } from '@/integrations/supabase/client';
 import {
   syncBackupToServer,
   isAutoBackupActive,
