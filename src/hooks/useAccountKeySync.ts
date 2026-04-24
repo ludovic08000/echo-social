@@ -43,11 +43,29 @@ export function useAccountKeySync() {
     }, SYNC_DEBOUNCE_MS);
   }, []);
 
-  // Hydrate the persistent device id (Capacitor Preferences) once at app boot.
+  // Hydrate the persistent device id + verify Keychain/Keystore health at boot.
   useEffect(() => {
-    void hydrateDeviceId().then((id) => {
-      console.log('[AccountKeySync] device id hydrated:', id.slice(0, 8));
-    }).catch(() => {});
+    void (async () => {
+      try {
+        const { verifySecureStoreHealth } = await import('@/lib/secureStore');
+        const health = await verifySecureStoreHealth([
+          'forsure-device-id-v1',
+          'forsure-key-sentinel-v1',
+        ]);
+        if (health.tier !== 'keychain' && isNativePlatform()) {
+          console.warn('[AccountKeySync] secure storage degraded — running on fallback tier:', health.tier, health.warnings);
+        }
+        if (health.driftedKeys.length > 0) {
+          console.warn('[AccountKeySync] secure storage drift reconciled:', health.driftedKeys);
+        }
+      } catch (e) {
+        console.warn('[AccountKeySync] secure store health check failed:', e);
+      }
+      try {
+        const id = await hydrateDeviceId();
+        console.log('[AccountKeySync] device id hydrated:', id.slice(0, 8));
+      } catch {}
+    })();
   }, []);
 
   useEffect(() => {
