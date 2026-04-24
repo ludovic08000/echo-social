@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
+import { supabase } from '@/integrations/supabase/client';
 import {
   syncBackupToServer,
   isAutoBackupActive,
@@ -92,6 +93,53 @@ export function useAccountKeySync() {
             detail: { status: 'restored_active_session' },
           }));
           return;
+        }
+
+        // Cold-start path (iOS/Android most often): no in-memory password,
+        // IndexedDB empty. Use the secure sentinel to detect a server backup
+        // bound to this device and surface a precise restore prompt.
+        try {
+          const { readKeySentinel } = await import('@/lib/crypto/keySentinel');
+          const sentinel = await readKeySentinel();
+
+          if (sentinel && sentinel.userId === user.id) {
+            // Confirm a backup actually exists on the server before prompting.
+            const { data: backupRow } = await supabase
+              .from('user_backups' as any)
+              .select('id, version, backup_type, created_at')
+              .eq('user_id', user.id)
+              .eq('backup_type', 'account')
+              .maybeSingle();
+
+            if (cancelled) return;
+
+            if (backupRow) {
+              console.log('[messaging] cold-start sentinel matched — server backup confirmed', {
+                userId: user.id,
+                lastSyncAt: new Date(sentinel.lastSyncAt).toISOString(),
+                native: isNativePlatform(),
+              });
+              window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
+                detail: {
+                  userId: user.id,
+                  reason: 'cold_start_sentinel',
+                  source: 'secure_sentinel',
+                  lastSyncAt: sentinel.lastSyncAt,
+                  native: isNativePlatform(),
+                },
+              }));
+              return;
+            }
+
+            console.warn('[messaging] sentinel present but no server backup row — stale sentinel');
+          } else if (sentinel && sentinel.userId !== user.id) {
+            console.warn('[messaging] sentinel bound to a different user — ignoring', {
+              sentinelUser: sentinel.userId.slice(0, 8),
+              currentUser: user.id.slice(0, 8),
+            });
+          }
+        } catch (e) {
+          console.warn('[messaging] sentinel cold-start check failed:', e);
         }
 
         if (restoreStatus === 'unavailable') {

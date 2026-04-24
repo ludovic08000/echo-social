@@ -21,6 +21,7 @@ import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
 import { supabase } from '@/integrations/supabase/client';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
+import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
@@ -413,6 +414,23 @@ async function uploadBackup(
     }, { onConflict: 'user_id,backup_type' });
 
   if (error) throw error;
+
+  // Persist a secure sentinel so cold-start on iOS/Android can detect that a
+  // server backup exists for this user and trigger an automatic restore flow.
+  if (backupType === 'account') {
+    try {
+      const digest = await computeLocalCryptoDigest();
+      await writeKeySentinel({
+        userId,
+        digest,
+        lastSyncAt: Date.now(),
+        backupVersion: BACKUP_VERSION,
+      });
+    } catch (e) {
+      console.warn('[MasterKey] sentinel write failed:', e);
+    }
+  }
+
   return true;
 }
 
@@ -772,4 +790,13 @@ export function clearAccountKeySession(): void {
   _sessionRawMasterKey = null;
   _sessionPassword = null;
   _sessionUserId = null;
+  // The sentinel is intentionally NOT cleared here — logout doesn't mean the
+  // account is gone, and we want the next cold-start on the same device to
+  // still recognise the linked user. Call `clearKeySentinelForAccount()` from
+  // an explicit "remove account from this device" action instead.
+}
+
+/** Explicit per-device account unlink — wipes the secure sentinel. */
+export async function clearKeySentinelForAccount(): Promise<void> {
+  await clearKeySentinel();
 }
