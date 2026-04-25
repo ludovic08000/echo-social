@@ -84,6 +84,47 @@ export async function secureSet(key: string, value: string): Promise<void> {
   }
 }
 
+/**
+ * Store secret material ONLY in the platform secure store.
+ * Unlike secureSet(), this intentionally does not mirror to Preferences or
+ * localStorage, so E2EE key snapshots never leak into non-secure storage.
+ */
+export async function secureSetSecret(key: string, value: string): Promise<boolean> {
+  await ensureSecure();
+  if (!_secure) {
+    console.warn('[secureStore] secret write skipped — secure plugin unavailable:', key);
+    return false;
+  }
+
+  try {
+    await _secure.set({ key, value });
+    return true;
+  } catch (e) {
+    console.warn('[secureStore] secret set failed:', key, e);
+    return false;
+  }
+}
+
+/** Read secret material from Keychain/Keystore only. No fallback mirror. */
+export async function secureGetSecret(key: string): Promise<string | null> {
+  await ensureSecure();
+  if (!_secure) return null;
+
+  try {
+    const { value } = await _secure.get({ key });
+    return value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Remove secret material from Keychain/Keystore only. */
+export async function secureRemoveSecret(key: string): Promise<void> {
+  await ensureSecure();
+  if (!_secure) return;
+  try { await _secure.remove({ key }); } catch {}
+}
+
 export async function secureRemove(key: string): Promise<void> {
   await ensureSecure();
   if (_secure) {
