@@ -190,6 +190,42 @@ async function collectAllKeys(): Promise<string | null> {
   return JSON.stringify(data);
 }
 
+async function writeKeychainSnapshot(userId: string, keysJson?: string): Promise<boolean> {
+  try {
+    const snapshot = keysJson ?? await collectAllKeys();
+    if (!snapshot) return false;
+    return await secureSetSecret(`${KEYCHAIN_SNAPSHOT_PREFIX}${userId}`, snapshot);
+  } catch (e) {
+    console.warn('[MasterKey] Keychain snapshot write failed:', e);
+    return false;
+  }
+}
+
+export async function restoreKeysFromKeychainSnapshot(userId: string): Promise<'restored' | 'unavailable' | 'error'> {
+  try {
+    if (await hasLocalKeys()) return 'restored';
+
+    const snapshot = await secureGetSecret(`${KEYCHAIN_SNAPSHOT_PREFIX}${userId}`);
+    if (!snapshot) return 'unavailable';
+
+    await restoreAllKeys(snapshot);
+    const validated = await hasLocalKeys();
+    if (!validated) return 'error';
+
+    console.log('[MasterKey] ✅ Keys restored from iOS Keychain snapshot');
+    logCryptoError({
+      severity: 'info', context: 'restore', errorCode: 'RESTORE_KEYCHAIN_SNAPSHOT_SUCCESS',
+      errorMessage: 'E2EE keys restored from native Keychain snapshot',
+      metadata: { userId },
+    });
+    return 'restored';
+  } catch (e) {
+    console.warn('[MasterKey] Keychain snapshot restore failed:', e);
+    logCryptoException('restore', e, { severity: 'error', metadata: { stage: 'keychain_snapshot_restore', userId } });
+    return 'error';
+  }
+}
+
 /**
  * Restore all local E2EE keys from backup — TRULY ATOMIC.
  */
