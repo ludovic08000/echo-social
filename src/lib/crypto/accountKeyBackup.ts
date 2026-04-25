@@ -840,5 +840,8 @@ export function clearAccountKeySession(): void {
 
 /** Explicit per-device account unlink — wipes the secure sentinel. */
 export async function clearKeySentinelForAccount(): Promise<void> {
+  if (_sessionUserId) {
+    await secureRemoveSecret(`${KEYCHAIN_SNAPSHOT_PREFIX}${_sessionUserId}`);
+  }
   await clearKeySentinel();
 }
