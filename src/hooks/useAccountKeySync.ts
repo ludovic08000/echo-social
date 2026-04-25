@@ -18,6 +18,7 @@ import {
   hasLocalKeys,
   computeLocalCryptoDigest,
   restoreAccountKeysFromActiveSession,
+  restoreKeysFromKeychainSnapshot,
 } from '@/lib/crypto/accountKeyBackup';
 import { hydrateDeviceId } from '@/lib/messaging/currentDevice';
 import { isNativePlatform } from '@/lib/nativeStore';
@@ -94,7 +95,27 @@ export function useAccountKeySync() {
           native: isNativePlatform(),
         });
 
-        if (cancelled || rawIdentityPresent) return;
+        if (rawIdentityPresent) {
+          const keychainStatus = await restoreKeysFromKeychainSnapshot(user.id);
+          if (keychainStatus === 'restored' && !cancelled) {
+            window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+              detail: { status: 'refreshed_from_keychain_snapshot' },
+            }));
+          }
+          return;
+        }
+
+        if (cancelled) return;
+
+        const keychainStatus = await restoreKeysFromKeychainSnapshot(user.id);
+        if (cancelled) return;
+
+        if (keychainStatus === 'restored') {
+          window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+            detail: { status: 'restored_from_keychain_snapshot' },
+          }));
+          return;
+        }
 
         if (wrappedKeysPresent) {
           console.warn('[messaging] local crypto exists but is locked behind PIN — waiting for unlock');
