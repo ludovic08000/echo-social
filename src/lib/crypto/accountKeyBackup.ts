@@ -22,6 +22,7 @@ import { openE2EEDB } from '@/lib/crypto/indexedDb';
 import { supabase } from '@/integrations/supabase/client';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
+import { secureGetSecret, secureSetSecret, secureRemoveSecret } from '@/lib/secureStore';
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
@@ -30,6 +31,7 @@ const MASTER_KEY_LENGTH = 32;
 const BACKUP_VERSION = 5; // v5 = Signal-style Master Key architecture
 const BACKUP_TYPE_ACCOUNT = 'account';
 const BACKUP_TYPE_RECOVERY = 'recovery';
+const KEYCHAIN_SNAPSHOT_PREFIX = 'forsure-e2ee-keychain-snapshot-v1:';
 
 // ── Session State (volatile, never persisted) ──
 let _sessionMasterKey: CryptoKey | null = null;
