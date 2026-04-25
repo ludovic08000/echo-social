@@ -236,6 +236,14 @@ export function useAccountKeySync() {
           }
           // Re-attempt restore if local keys vanished (iOS WebView purge)
           if (!(await hasLocalKeys())) {
+            const keychainStatus = await restoreKeysFromKeychainSnapshot(user.id);
+            if (keychainStatus === 'restored') {
+              window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+                detail: { status: 'restored_from_keychain_on_resume' },
+              }));
+              return;
+            }
+
             const status = await restoreAccountKeysFromActiveSession(user.id);
             if (status === 'restored') {
               window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
