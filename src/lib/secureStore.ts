@@ -31,6 +31,10 @@ let _loading: Promise<void> | null = null;
 let _pluginAvailable: boolean | null = null;
 
 const PROBE_KEY = '__forsure_secure_probe__';
+const SECRET_CHUNK_SIZE = 24_000;
+
+const secretMetaKey = (key: string) => `${key}.__chunks__`;
+const secretChunkKey = (key: string, index: number) => `${key}.__chunk_${index}__`;
 
 const isNative = (): boolean => {
   try { return Capacitor.isNativePlatform?.() === true; } catch { return false; }
