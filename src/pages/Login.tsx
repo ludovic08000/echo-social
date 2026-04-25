@@ -92,13 +92,18 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-[hsl(0,0%,98%)] flex flex-col items-center justify-between px-5 py-8 sm:py-12">
-      <div className="w-full max-w-sm flex flex-col items-center animate-fade-in">
-        {/* Logo (large, includes wordmark + tagline already) */}
-        <Link to="/" className="flex items-center justify-center mb-8 sm:mb-10">
-          <BrandLogo className="h-44 sm:h-52 w-auto" />
-        </Link>
+    <div className="min-h-screen bg-[hsl(0,0%,98%)] flex flex-col items-center pb-10">
+      {/* Full-width brand banner (logo + wordmark + tagline + trust badges) */}
+      <Link to="/" className="block w-full">
+        <img
+          src={forsureBanner}
+          alt="Forsure — Connecter · Partager · Avancer · Messagerie sécurisée · Bien-être · Réseau intelligent"
+          className="w-full h-auto select-none"
+          draggable={false}
+        />
+      </Link>
 
+      <div className="w-full max-w-sm px-5 -mt-6 animate-fade-in">
         {/* Card */}
         <div className="w-full bg-white rounded-3xl p-6 sm:p-8 shadow-[0_8px_30px_rgba(15,23,42,0.06)] border border-slate-100">
           <h1 className="text-2xl font-bold text-center text-slate-900 mb-6">
@@ -179,28 +184,6 @@ export default function Login() {
               S'inscrire
             </Link>
           </p>
-        </div>
-      </div>
-
-      {/* Trust badges */}
-      <div className="w-full max-w-sm mt-10 grid grid-cols-3 gap-2 text-slate-700">
-        <div className="flex items-center gap-2 justify-center">
-          <ShieldCheck className="w-6 h-6 text-slate-800 shrink-0" strokeWidth={1.5} />
-          <span className="text-[10px] font-semibold leading-tight tracking-wide">
-            MESSAGERIE<br />SÉCURISÉE
-          </span>
-        </div>
-        <div className="flex items-center gap-2 justify-center border-x border-slate-200">
-          <MessageCircle className="w-6 h-6 text-slate-800 shrink-0" strokeWidth={1.5} />
-          <span className="text-[10px] font-semibold leading-tight tracking-wide">
-            BIEN-ÊTRE
-          </span>
-        </div>
-        <div className="flex items-center gap-2 justify-center">
-          <Network className="w-6 h-6 text-slate-800 shrink-0" strokeWidth={1.5} />
-          <span className="text-[10px] font-semibold leading-tight tracking-wide">
-            RÉSEAU<br />INTELLIGENT
-          </span>
         </div>
       </div>
     </div>
