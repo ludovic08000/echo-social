@@ -26,6 +26,8 @@ import { useFeedPerformance } from '@/hooks/useFeedPerformance';
 import { useUXMode } from '@/hooks/useUXMode';
 import { FlowUniversalSearch } from '@/components/flow/FlowUniversalSearch';
 import { FlowDashboard } from '@/components/flow/FlowDashboard';
+import { SEOHead } from '@/components/SEOHead';
+import { buildFeedMeta } from '@/lib/seo/buildMeta';
 
 // Lazy-load heavy injection components — only loaded when scrolled into view
 const FriendSuggestions = lazy(() => import('@/components/feed/FriendSuggestions').then(m => ({ default: m.FriendSuggestions })));
@@ -181,8 +183,17 @@ export default function Feed() {
     sessionStorage.setItem('forsure-session-start', Date.now().toString());
   };
 
+  const feedMeta = buildFeedMeta();
+
   return (
     <AppLayout fullWidth>
+      <SEOHead
+        title={feedMeta.title}
+        description={feedMeta.description}
+        url={feedMeta.url}
+        image={feedMeta.image}
+        jsonLd={feedMeta.jsonLd}
+      />
       {feedBgStyle && (
         <div className="fixed inset-0 -z-10 opacity-30" style={feedBgStyle} />
       )}
