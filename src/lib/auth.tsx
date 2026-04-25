@@ -5,7 +5,7 @@ import { generateFingerprint } from '@/hooks/useTrustAndSafety';
 import { startSessionGuard, stopSessionGuard } from '@/lib/sessionGuard';
 import { detectAndStoreRecoveryFromHash, isRecoveryPending, setRecoveryFlag } from '@/lib/authRecovery';
 import { getSafeRedirectUrl } from '@/lib/urlUtils';
-import { hasLocalKeys, initAccountKeySync } from '@/lib/crypto/accountKeyBackup';
+import { hasLocalKeys, initAccountKeySync, restoreKeysFromKeychainSnapshot } from '@/lib/crypto/accountKeyBackup';
 
 /** Check URL hash for recovery tokens BEFORE any session is exposed */
 function detectRecoveryFromHash(): boolean {
@@ -32,6 +32,16 @@ async function inspectCryptoReadiness(userId: string | undefined, reason: 'sessi
   try {
     const hasKeys = await hasLocalKeys();
     console.log(`[AUTH][E2EE] ${reason} user=${userId} hasLocalKeys=${hasKeys}`);
+    if (!hasKeys) {
+      const keychainStatus = await restoreKeysFromKeychainSnapshot(userId);
+      if (keychainStatus === 'restored') {
+        window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+          detail: { status: 'restored_from_keychain_auth', reason },
+        }));
+        return;
+      }
+    }
+
     if (!hasKeys && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
         detail: { userId, reason },

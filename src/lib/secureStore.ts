@@ -31,6 +31,10 @@ let _loading: Promise<void> | null = null;
 let _pluginAvailable: boolean | null = null;
 
 const PROBE_KEY = '__forsure_secure_probe__';
+const SECRET_CHUNK_SIZE = 24_000;
+
+const secretMetaKey = (key: string) => `${key}.__chunks__`;
+const secretChunkKey = (key: string, index: number) => `${key}.__chunk_${index}__`;
 
 const isNative = (): boolean => {
   try { return Capacitor.isNativePlatform?.() === true; } catch { return false; }
@@ -82,6 +86,79 @@ export async function secureSet(key: string, value: string): Promise<void> {
   if (isNative() && !secureOk) {
     console.warn('[secureStore] value persisted to fallback only:', key);
   }
+}
+
+/**
+ * Store secret material ONLY in the platform secure store.
+ * Unlike secureSet(), this intentionally does not mirror to Preferences or
+ * localStorage, so E2EE key snapshots never leak into non-secure storage.
+ */
+export async function secureSetSecret(key: string, value: string): Promise<boolean> {
+  await ensureSecure();
+  if (!_secure) {
+    console.warn('[secureStore] secret write skipped — secure plugin unavailable:', key);
+    return false;
+  }
+
+  try {
+    const chunks = value.match(new RegExp(`.{1,${SECRET_CHUNK_SIZE}}`, 'gs')) ?? [''];
+    await _secure.set({ key, value: chunks.length === 1 ? value : '' });
+    await _secure.set({ key: secretMetaKey(key), value: String(chunks.length) });
+    await Promise.all(chunks.map((chunk, index) => _secure!.set({
+      key: secretChunkKey(key, index),
+      value: chunk,
+    })));
+    return true;
+  } catch (e) {
+    console.warn('[secureStore] secret set failed:', key, e);
+    return false;
+  }
+}
+
+/** Read secret material from Keychain/Keystore only. No fallback mirror. */
+export async function secureGetSecret(key: string): Promise<string | null> {
+  await ensureSecure();
+  if (!_secure) return null;
+
+  try {
+    let chunkCount = 0;
+    try {
+      const meta = await _secure.get({ key: secretMetaKey(key) });
+      chunkCount = Number(meta.value || 0);
+    } catch {
+      chunkCount = 0;
+    }
+
+    if (chunkCount > 1) {
+      const chunks = await Promise.all(Array.from({ length: chunkCount }, (_, index) =>
+        _secure!.get({ key: secretChunkKey(key, index) }).then((r) => r.value),
+      ));
+      return chunks.join('');
+    }
+
+    const { value } = await _secure.get({ key });
+    return value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Remove secret material from Keychain/Keystore only. */
+export async function secureRemoveSecret(key: string): Promise<void> {
+  await ensureSecure();
+  if (!_secure) return;
+  let chunkCount = 0;
+  try {
+    const meta = await _secure.get({ key: secretMetaKey(key) });
+    chunkCount = Number(meta.value || 0);
+  } catch {}
+  await Promise.all([
+    _secure.remove({ key }).catch(() => {}),
+    _secure.remove({ key: secretMetaKey(key) }).catch(() => {}),
+    ...Array.from({ length: chunkCount }, (_, index) =>
+      _secure!.remove({ key: secretChunkKey(key, index) }).catch(() => {}),
+    ),
+  ]);
 }
 
 export async function secureRemove(key: string): Promise<void> {

@@ -22,6 +22,7 @@ import { openE2EEDB } from '@/lib/crypto/indexedDb';
 import { supabase } from '@/integrations/supabase/client';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
+import { secureGetSecret, secureSetSecret, secureRemoveSecret } from '@/lib/secureStore';
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
@@ -30,6 +31,7 @@ const MASTER_KEY_LENGTH = 32;
 const BACKUP_VERSION = 5; // v5 = Signal-style Master Key architecture
 const BACKUP_TYPE_ACCOUNT = 'account';
 const BACKUP_TYPE_RECOVERY = 'recovery';
+const KEYCHAIN_SNAPSHOT_PREFIX = 'forsure-e2ee-keychain-snapshot-v1:';
 
 // ── Session State (volatile, never persisted) ──
 let _sessionMasterKey: CryptoKey | null = null;
@@ -186,6 +188,45 @@ async function collectAllKeys(): Promise<string | null> {
   };
 
   return JSON.stringify(data);
+}
+
+async function writeKeychainSnapshot(userId: string, keysJson?: string): Promise<boolean> {
+  try {
+    const snapshot = keysJson ?? await collectAllKeys();
+    if (!snapshot) return false;
+    return await secureSetSecret(`${KEYCHAIN_SNAPSHOT_PREFIX}${userId}`, snapshot);
+  } catch (e) {
+    console.warn('[MasterKey] Keychain snapshot write failed:', e);
+    return false;
+  }
+}
+
+export async function syncKeychainSnapshotFromLocal(userId: string): Promise<boolean> {
+  if (!(await hasLocalKeys())) return false;
+  return writeKeychainSnapshot(userId);
+}
+
+export async function restoreKeysFromKeychainSnapshot(userId: string): Promise<'restored' | 'unavailable' | 'error'> {
+  try {
+    const snapshot = await secureGetSecret(`${KEYCHAIN_SNAPSHOT_PREFIX}${userId}`);
+    if (!snapshot) return 'unavailable';
+
+    await restoreAllKeys(snapshot);
+    const validated = await hasLocalKeys();
+    if (!validated) return 'error';
+
+    console.log('[MasterKey] ✅ Keys restored from iOS Keychain snapshot');
+    logCryptoError({
+      severity: 'info', context: 'restore', errorCode: 'RESTORE_KEYCHAIN_SNAPSHOT_SUCCESS',
+      errorMessage: 'E2EE keys restored from native Keychain snapshot',
+      metadata: { userId },
+    });
+    return 'restored';
+  } catch (e) {
+    console.warn('[MasterKey] Keychain snapshot restore failed:', e);
+    logCryptoException('restore', e, { severity: 'error', metadata: { stage: 'keychain_snapshot_restore', userId } });
+    return 'error';
+  }
 }
 
 /**
@@ -420,6 +461,7 @@ async function uploadBackup(
   if (backupType === 'account') {
     try {
       const digest = await computeLocalCryptoDigest();
+      await writeKeychainSnapshot(userId, keysJson);
       await writeKeySentinel({
         userId,
         digest,
@@ -555,6 +597,7 @@ export async function initAccountKeySync(password: string, userId: string): Prom
         }
         _sessionRawMasterKey = result.masterKeyRaw;
         _sessionMasterKey = result.masterKey;
+        await writeKeychainSnapshot(userId);
         console.log('[MasterKey] ✅ Keys restored from server (validated)');
         logCryptoError({
           severity: 'info', context: 'restore', errorCode: 'RESTORE_SUCCESS',
@@ -633,6 +676,7 @@ export async function restoreAccountKeysFromActiveSession(userId?: string): Prom
 
     _sessionRawMasterKey = result.masterKeyRaw;
     _sessionMasterKey = result.masterKey;
+    await writeKeychainSnapshot(targetUserId);
     console.log('[MasterKey] ✅ Keys restored from active session');
     logCryptoError({
       severity: 'info', context: 'restore', errorCode: 'RESTORE_ACTIVE_SESSION_SUCCESS',
@@ -676,6 +720,7 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
       }
       _sessionRawMasterKey = result.masterKeyRaw;
       _sessionMasterKey = result.masterKey;
+      await writeKeychainSnapshot(userId);
       // Re-wrap with current password if available
       if (_sessionPassword && _sessionUserId) {
         const secret = passwordSecret(_sessionPassword, _sessionUserId);
@@ -798,5 +843,8 @@ export function clearAccountKeySession(): void {
 
 /** Explicit per-device account unlink — wipes the secure sentinel. */
 export async function clearKeySentinelForAccount(): Promise<void> {
+  if (_sessionUserId) {
+    await secureRemoveSecret(`${KEYCHAIN_SNAPSHOT_PREFIX}${_sessionUserId}`);
+  }
   await clearKeySentinel();
 }

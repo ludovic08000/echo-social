@@ -18,6 +18,8 @@ import {
   hasLocalKeys,
   computeLocalCryptoDigest,
   restoreAccountKeysFromActiveSession,
+  restoreKeysFromKeychainSnapshot,
+  syncKeychainSnapshotFromLocal,
 } from '@/lib/crypto/accountKeyBackup';
 import { hydrateDeviceId } from '@/lib/messaging/currentDevice';
 import { isNativePlatform } from '@/lib/nativeStore';
@@ -94,7 +96,28 @@ export function useAccountKeySync() {
           native: isNativePlatform(),
         });
 
-        if (cancelled || rawIdentityPresent) return;
+        if (rawIdentityPresent) {
+          await syncKeychainSnapshotFromLocal(user.id);
+          const keychainStatus = await restoreKeysFromKeychainSnapshot(user.id);
+          if (keychainStatus === 'restored' && !cancelled) {
+            window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+              detail: { status: 'refreshed_from_keychain_snapshot' },
+            }));
+          }
+          return;
+        }
+
+        if (cancelled) return;
+
+        const keychainStatus = await restoreKeysFromKeychainSnapshot(user.id);
+        if (cancelled) return;
+
+        if (keychainStatus === 'restored') {
+          window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+            detail: { status: 'restored_from_keychain_snapshot' },
+          }));
+          return;
+        }
 
         if (wrappedKeysPresent) {
           console.warn('[messaging] local crypto exists but is locked behind PIN — waiting for unlock');
@@ -215,6 +238,14 @@ export function useAccountKeySync() {
           }
           // Re-attempt restore if local keys vanished (iOS WebView purge)
           if (!(await hasLocalKeys())) {
+            const keychainStatus = await restoreKeysFromKeychainSnapshot(user.id);
+            if (keychainStatus === 'restored') {
+              window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+                detail: { status: 'restored_from_keychain_on_resume' },
+              }));
+              return;
+            }
+
             const status = await restoreAccountKeysFromActiveSession(user.id);
             if (status === 'restored') {
               window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
