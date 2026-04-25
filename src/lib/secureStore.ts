@@ -101,7 +101,13 @@ export async function secureSetSecret(key: string, value: string): Promise<boole
   }
 
   try {
-    await _secure.set({ key, value });
+    const chunks = value.match(new RegExp(`.{1,${SECRET_CHUNK_SIZE}}`, 'gs')) ?? [''];
+    await _secure.set({ key, value: chunks.length === 1 ? value : '' });
+    await _secure.set({ key: secretMetaKey(key), value: String(chunks.length) });
+    await Promise.all(chunks.map((chunk, index) => _secure!.set({
+      key: secretChunkKey(key, index),
+      value: chunk,
+    })));
     return true;
   } catch (e) {
     console.warn('[secureStore] secret set failed:', key, e);
@@ -115,6 +121,21 @@ export async function secureGetSecret(key: string): Promise<string | null> {
   if (!_secure) return null;
 
   try {
+    let chunkCount = 0;
+    try {
+      const meta = await _secure.get({ key: secretMetaKey(key) });
+      chunkCount = Number(meta.value || 0);
+    } catch {
+      chunkCount = 0;
+    }
+
+    if (chunkCount > 1) {
+      const chunks = await Promise.all(Array.from({ length: chunkCount }, (_, index) =>
+        _secure!.get({ key: secretChunkKey(key, index) }).then((r) => r.value),
+      ));
+      return chunks.join('');
+    }
+
     const { value } = await _secure.get({ key });
     return value ?? null;
   } catch {
@@ -126,7 +147,18 @@ export async function secureGetSecret(key: string): Promise<string | null> {
 export async function secureRemoveSecret(key: string): Promise<void> {
   await ensureSecure();
   if (!_secure) return;
-  try { await _secure.remove({ key }); } catch {}
+  let chunkCount = 0;
+  try {
+    const meta = await _secure.get({ key: secretMetaKey(key) });
+    chunkCount = Number(meta.value || 0);
+  } catch {}
+  await Promise.all([
+    _secure.remove({ key }).catch(() => {}),
+    _secure.remove({ key: secretMetaKey(key) }).catch(() => {}),
+    ...Array.from({ length: chunkCount }, (_, index) =>
+      _secure!.remove({ key: secretChunkKey(key, index) }).catch(() => {}),
+    ),
+  ]);
 }
 
 export async function secureRemove(key: string): Promise<void> {
