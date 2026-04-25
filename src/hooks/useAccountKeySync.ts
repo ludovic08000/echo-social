@@ -19,6 +19,7 @@ import {
   computeLocalCryptoDigest,
   restoreAccountKeysFromActiveSession,
   restoreKeysFromKeychainSnapshot,
+  syncKeychainSnapshotFromLocal,
 } from '@/lib/crypto/accountKeyBackup';
 import { hydrateDeviceId } from '@/lib/messaging/currentDevice';
 import { isNativePlatform } from '@/lib/nativeStore';
@@ -96,6 +97,7 @@ export function useAccountKeySync() {
         });
 
         if (rawIdentityPresent) {
+          await syncKeychainSnapshotFromLocal(user.id);
           const keychainStatus = await restoreKeysFromKeychainSnapshot(user.id);
           if (keychainStatus === 'restored' && !cancelled) {
             window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
