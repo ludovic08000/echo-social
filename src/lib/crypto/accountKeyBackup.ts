@@ -594,6 +594,7 @@ export async function initAccountKeySync(password: string, userId: string): Prom
         }
         _sessionRawMasterKey = result.masterKeyRaw;
         _sessionMasterKey = result.masterKey;
+        await writeKeychainSnapshot(userId);
         console.log('[MasterKey] ✅ Keys restored from server (validated)');
         logCryptoError({
           severity: 'info', context: 'restore', errorCode: 'RESTORE_SUCCESS',
@@ -672,6 +673,7 @@ export async function restoreAccountKeysFromActiveSession(userId?: string): Prom
 
     _sessionRawMasterKey = result.masterKeyRaw;
     _sessionMasterKey = result.masterKey;
+    await writeKeychainSnapshot(targetUserId);
     console.log('[MasterKey] ✅ Keys restored from active session');
     logCryptoError({
       severity: 'info', context: 'restore', errorCode: 'RESTORE_ACTIVE_SESSION_SUCCESS',
@@ -715,6 +717,7 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
       }
       _sessionRawMasterKey = result.masterKeyRaw;
       _sessionMasterKey = result.masterKey;
+      await writeKeychainSnapshot(userId);
       // Re-wrap with current password if available
       if (_sessionPassword && _sessionUserId) {
         const secret = passwordSecret(_sessionPassword, _sessionUserId);
