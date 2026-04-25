@@ -203,8 +203,6 @@ async function writeKeychainSnapshot(userId: string, keysJson?: string): Promise
 
 export async function restoreKeysFromKeychainSnapshot(userId: string): Promise<'restored' | 'unavailable' | 'error'> {
   try {
-    if (await hasLocalKeys()) return 'restored';
-
     const snapshot = await secureGetSecret(`${KEYCHAIN_SNAPSHOT_PREFIX}${userId}`);
     if (!snapshot) return 'unavailable';
 
