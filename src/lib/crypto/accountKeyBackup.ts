@@ -458,6 +458,7 @@ async function uploadBackup(
   if (backupType === 'account') {
     try {
       const digest = await computeLocalCryptoDigest();
+      await writeKeychainSnapshot(userId, keysJson);
       await writeKeySentinel({
         userId,
         digest,
