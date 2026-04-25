@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, ShieldCheck, MessageCircle, Network } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
@@ -11,7 +11,6 @@ import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { checkLoginAllowed, recordFailedLogin, resetLoginAttempts } from '@/lib/loginRateLimit';
 import { initAccountKeySync } from '@/lib/crypto/accountKeyBackup';
-import loginBg from '@/assets/login-bg.png';
 
 export default function Login() {
   const location = useLocation();
@@ -93,53 +92,60 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center px-4 overflow-hidden">
-      <div 
-        className="absolute inset-0 bg-no-repeat bg-cover animate-fade-in"
-        style={{ backgroundImage: `url(${loginBg})`, backgroundPosition: 'center 25%' }}
-      />
-      <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/40" />
-      
-      <div className="relative z-10 w-full max-w-sm animate-fade-in">
-        <Link to="/" className="flex items-center justify-center mb-8">
-          <BrandLogo className="h-12 sm:h-14 w-auto drop-shadow-[0_0_20px_hsl(220,70%,50%,0.3)]" />
+    <div className="min-h-screen bg-[hsl(0,0%,98%)] flex flex-col items-center justify-between px-5 py-8 sm:py-12">
+      <div className="w-full max-w-sm flex flex-col items-center animate-fade-in">
+        {/* Logo (large, includes wordmark + tagline already) */}
+        <Link to="/" className="flex items-center justify-center mb-8 sm:mb-10">
+          <BrandLogo className="h-44 sm:h-52 w-auto" />
         </Link>
 
-        <div className="backdrop-blur-xl bg-card/60 border border-border/50 rounded-2xl p-6 sm:p-8 shadow-2xl">
-          <h1 className="text-2xl font-bold text-center mb-6">{t('login.title')}</h1>
+        {/* Card */}
+        <div className="w-full bg-white rounded-3xl p-6 sm:p-8 shadow-[0_8px_30px_rgba(15,23,42,0.06)] border border-slate-100">
+          <h1 className="text-2xl font-bold text-center text-slate-900 mb-6">
+            {t('login.title')}
+          </h1>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email">{t('login.email')}</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder={t('login.emailPlaceholder')}
-                className="bg-background/50 border-border/50"
-                required
-              />
+              <Label htmlFor="email" className="text-slate-900 font-medium">
+                {t('login.email')}
+              </Label>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="vous@exemple.com"
+                  className="h-14 pl-12 rounded-2xl bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus-visible:ring-primary"
+                  required
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">{t('login.password')}</Label>
+              <Label htmlFor="password" className="text-slate-900 font-medium">
+                {t('login.password')}
+              </Label>
               <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder={t('login.passwordPlaceholder')}
-                  className="bg-background/50 border-border/50 pr-10"
+                  placeholder="••••••••"
+                  className="h-14 pl-12 pr-12 rounded-2xl bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus-visible:ring-primary"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
             </div>
@@ -147,7 +153,7 @@ export default function Login() {
             <Button
               type="submit"
               disabled={isLoading || lockoutSeconds > 0}
-              className="w-full"
+              className="w-full h-14 rounded-2xl text-base font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-[0_8px_24px_rgba(37,99,235,0.35)]"
             >
               {lockoutSeconds > 0
                 ? `Verrouillé (${lockoutSeconds}s)`
@@ -156,17 +162,45 @@ export default function Login() {
           </form>
 
           <div className="mt-4 text-center">
-            <Link to="/forgot-password" className="text-sm text-primary hover:underline">
+            <Link to="/forgot-password" className="text-sm font-medium text-primary hover:underline">
               Mot de passe oublié ?
             </Link>
           </div>
 
-          <p className="mt-4 text-center text-sm text-muted-foreground">
-            {t('login.noAccount')}{' '}
-            <Link to="/signup" className="text-primary hover:underline font-medium">
-              {t('login.signupLink')}
+          <div className="my-5 flex items-center gap-3">
+            <div className="flex-1 h-px bg-slate-200" />
+            <span className="text-sm text-slate-400">ou</span>
+            <div className="flex-1 h-px bg-slate-200" />
+          </div>
+
+          <p className="text-center text-sm text-slate-500">
+            Pas encore de compte ?{' '}
+            <Link to="/signup" className="text-primary hover:underline font-semibold">
+              S'inscrire
             </Link>
           </p>
+        </div>
+      </div>
+
+      {/* Trust badges */}
+      <div className="w-full max-w-sm mt-10 grid grid-cols-3 gap-2 text-slate-700">
+        <div className="flex items-center gap-2 justify-center">
+          <ShieldCheck className="w-6 h-6 text-slate-800 shrink-0" strokeWidth={1.5} />
+          <span className="text-[10px] font-semibold leading-tight tracking-wide">
+            MESSAGERIE<br />SÉCURISÉE
+          </span>
+        </div>
+        <div className="flex items-center gap-2 justify-center border-x border-slate-200">
+          <MessageCircle className="w-6 h-6 text-slate-800 shrink-0" strokeWidth={1.5} />
+          <span className="text-[10px] font-semibold leading-tight tracking-wide">
+            BIEN-ÊTRE
+          </span>
+        </div>
+        <div className="flex items-center gap-2 justify-center">
+          <Network className="w-6 h-6 text-slate-800 shrink-0" strokeWidth={1.5} />
+          <span className="text-[10px] font-semibold leading-tight tracking-wide">
+            RÉSEAU<br />INTELLIGENT
+          </span>
         </div>
       </div>
     </div>
