@@ -44,6 +44,7 @@ import { MinorReportButton } from '@/components/MinorReportButton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { SEOHead } from '@/components/SEOHead';
+import { buildProfileMeta } from '@/lib/seo/buildMeta';
 
 function NoIndexMeta() {
   useEffect(() => {
@@ -419,16 +420,25 @@ export default function Profile() {
 
   return (
     <AppLayout fullWidth>
-      {!isPrivateProfile && profile && (
-        <SEOHead
-          title={profile.name}
-          description={profile.bio || `Profil de ${profile.name} sur Forsure`}
-          image={profile.avatar_url || undefined}
-          url={`https://forsure.fans/profile/${profile.user_id}`}
-          type="profile"
-          username={profile.name}
-        />
-      )}
+      {!isPrivateProfile && profile && (() => {
+        const meta = buildProfileMeta({
+          username: (profile as any).username,
+          name: profile.name,
+          bio: profile.bio,
+          avatarUrl: profile.avatar_url,
+          city: (profile as any).city,
+        });
+        return (
+          <SEOHead
+            title={meta.title}
+            description={meta.description}
+            image={meta.image}
+            url={meta.url}
+            type="profile"
+            jsonLd={meta.jsonLd}
+          />
+        );
+      })()}
       {isPrivateProfile && <NoIndexMeta />}
       {profileBgStyle && (
         <div className="fixed inset-0 -z-10 opacity-30" style={profileBgStyle} />
