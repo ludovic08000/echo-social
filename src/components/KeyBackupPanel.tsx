@@ -50,6 +50,30 @@ export function KeyBackupPanel() {
     }
   };
 
+  const handleResync = async () => {
+    if (!user) { toast.error('Connecte-toi pour re-synchroniser'); return; }
+    setResyncing(true);
+    try {
+      const report = await resyncE2EE(user.id);
+      if (report.ok) {
+        const recovered = report.recoveredMessages;
+        toast.success(
+          recovered > 0
+            ? `Re-sync réussi · ${recovered} message${recovered > 1 ? 's' : ''} récupéré${recovered > 1 ? 's' : ''}`
+            : 'Re-sync réussi · identité republiée',
+        );
+      } else {
+        toast.warning(`Re-sync partiel · ${report.errors.length} étape(s) en échec`);
+      }
+      setHasExisting(true);
+    } catch (e) {
+      console.error('[resync] failed', e);
+      toast.error('Re-sync échoué');
+    } finally {
+      setResyncing(false);
+    }
+  };
+
   const handleCreateLink = async () => {
     const result = await deviceLink.createLink();
     if (result) {
