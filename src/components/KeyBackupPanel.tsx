@@ -15,10 +15,12 @@ import { toast } from 'sonner';
 export function KeyBackupPanel() {
   const backup = useSecureBackup();
   const deviceLink = useDeviceLink();
+  const { user } = useAuth();
   const [hasExisting, setHasExisting] = useState(false);
   const [autoBackupOn, setAutoBackupOn] = useState(false);
   const [hasLocal, setHasLocal] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [resyncing, setResyncing] = useState(false);
   // Device transfer
   const [qrData, setQrData] = useState<string | null>(null);
   const [transferPin, setTransferPin] = useState<string | null>(null);
