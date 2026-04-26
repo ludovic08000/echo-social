@@ -8,6 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSecureBackup } from '@/hooks/useSecureBackup';
 import { useDeviceLink } from '@/hooks/useDeviceLink';
 import { isAutoBackupActive, syncBackupToServer, hasLocalKeys } from '@/lib/crypto/accountKeyBackup';
+import { resyncE2EE } from '@/lib/crypto/resyncE2EE';
+import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 
 export function KeyBackupPanel() {
