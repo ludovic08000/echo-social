@@ -250,6 +250,16 @@ async function restoreAllKeys(json: string): Promise<void> {
   const rollbackOps: Array<() => Promise<void>> = [];
 
   try {
+  try {
+    // Phase 0: device_id — must be restored BEFORE any ratchet/x3dh decrypt path,
+    // otherwise iOS-purged installs generate a fresh device_id and lose access
+    // to all device-targeted message copies.
+    if (typeof data['device:id'] === 'string' && data['device:id'].length > 0) {
+      try { setCurrentDeviceId(data['device:id']); } catch (e) {
+        console.warn('[MasterKey] failed to restore device_id from backup', e);
+      }
+    }
+
     // Phase 1: E2EE stores
     for (const [key, records] of Object.entries(data)) {
       if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
