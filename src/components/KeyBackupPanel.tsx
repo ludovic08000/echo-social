@@ -184,6 +184,15 @@ export function KeyBackupPanel() {
                     Forcer la synchronisation maintenant
                   </Button>
                 )}
+                <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <Bug className="h-3.5 w-3.5 text-primary" />
+                    <Label htmlFor="diag-mode" className="text-xs cursor-pointer">
+                      Mode diagnostic (trace détaillée)
+                    </Label>
+                  </div>
+                  <Switch id="diag-mode" checked={diagMode} onCheckedChange={setDiagMode} />
+                </div>
                 <Button
                   onClick={handleResync}
                   disabled={resyncing || syncing || !user}
@@ -196,7 +205,108 @@ export function KeyBackupPanel() {
                 </Button>
                 <p className="text-[10px] text-muted-foreground leading-snug">
                   Republie ton identité, renouvelle les clés à usage unique, invalide les anciens canaux et tente de récupérer les messages illisibles.
+                  {diagMode && ' Le mode diagnostic capture chaque étape, les erreurs de déchiffrement et les device-copies récupérées (utile pour iOS).'}
                 </p>
+              </div>
+            )}
+
+            {/* Diagnostic report viewer */}
+            {lastReport && (
+              <div className="rounded-lg border border-border/60 bg-muted/30 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowTrace(v => !v)}
+                  className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium hover:bg-muted/60 transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <Bug className="h-3.5 w-3.5 text-primary" />
+                    Dernier rapport · {lastReport.ok ? '✅ ok' : `⚠️ ${lastReport.errors.length} erreur(s)`} · {lastReport.recoveredMessages}/{lastReport.scannedMessages} récupéré(s) · {lastReport.durationMs}ms
+                  </span>
+                  {showTrace ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                </button>
+                {showTrace && (
+                  <div className="px-3 py-2 space-y-2 border-t border-border/60">
+                    <div className="grid grid-cols-2 gap-1 text-[10px]">
+                      {Object.entries(lastReport.steps).map(([step, status]) => (
+                        <div key={step} className="flex items-center gap-1.5">
+                          <span className={
+                            status === 'ok' ? 'text-green-500' :
+                            status === 'error' ? 'text-destructive' :
+                            'text-muted-foreground'
+                          }>
+                            {status === 'ok' ? '●' : status === 'error' ? '✕' : '○'}
+                          </span>
+                          <span className="font-mono">{step}</span>
+                          <span className="text-muted-foreground">{status}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {lastReport.deviceId && (
+                      <p className="text-[10px] text-muted-foreground font-mono">
+                        device {lastReport.deviceId.slice(0, 12)}… · {lastReport.platform}
+                      </p>
+                    )}
+                    {lastReport.errors.length > 0 && (
+                      <div className="rounded bg-destructive/10 px-2 py-1.5 space-y-0.5">
+                        {lastReport.errors.map((err, i) => (
+                          <p key={i} className="text-[10px] text-destructive font-mono break-all">
+                            ✕ {err}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    {lastReport.trace && lastReport.trace.length > 0 && (
+                      <div className="rounded bg-background/60 p-2 max-h-56 overflow-auto space-y-0.5">
+                        {lastReport.trace.map((entry, i) => (
+                          <p
+                            key={i}
+                            className={`text-[10px] font-mono leading-snug break-all ${
+                              entry.level === 'error' ? 'text-destructive' :
+                              entry.level === 'warn' ? 'text-yellow-500' :
+                              entry.level === 'success' ? 'text-green-500' :
+                              'text-muted-foreground'
+                            }`}
+                          >
+                            <span className="opacity-60">[{entry.step}]</span> {entry.message}
+                            {entry.data && Object.keys(entry.data).length > 0 && (
+                              <span className="opacity-60"> · {JSON.stringify(entry.data)}</span>
+                            )}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    {lastReport.replayDetails && lastReport.replayDetails.length > 0 && (
+                      <details className="text-[10px]">
+                        <summary className="cursor-pointer text-muted-foreground">
+                          Détails messages ({lastReport.replayDetails.length})
+                        </summary>
+                        <div className="mt-1 max-h-40 overflow-auto space-y-0.5 font-mono">
+                          {lastReport.replayDetails.map((d, i) => (
+                            <p
+                              key={i}
+                              className={
+                                d.outcome === 'recovered' ? 'text-green-500' :
+                                d.outcome === 'failed' ? 'text-destructive' :
+                                'text-muted-foreground'
+                              }
+                            >
+                              {d.outcome === 'recovered' ? '✓' : d.outcome === 'failed' ? '✕' : '○'} {d.messageId.slice(0, 8)} · {d.bodyKind ?? 'plain'} · {d.durationMs}ms
+                              {d.error && <span className="opacity-80"> — {d.error}</span>}
+                            </p>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                    <Button
+                      onClick={copyDiagReport}
+                      size="sm"
+                      variant="ghost"
+                      className="w-full h-7 gap-1 text-[10px]"
+                    >
+                      <Copy className="h-3 w-3" /> Copier le rapport JSON
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 
