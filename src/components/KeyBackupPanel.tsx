@@ -23,6 +23,9 @@ export function KeyBackupPanel() {
   const [hasLocal, setHasLocal] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [resyncing, setResyncing] = useState(false);
+  const [diagMode, setDiagMode] = useState(false);
+  const [lastReport, setLastReport] = useState<ResyncReport | null>(null);
+  const [showTrace, setShowTrace] = useState(false);
   // Device transfer
   const [qrData, setQrData] = useState<string | null>(null);
   const [transferPin, setTransferPin] = useState<string | null>(null);
