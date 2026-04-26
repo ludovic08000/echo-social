@@ -154,18 +154,35 @@ export function KeyBackupPanel() {
               )}
             </div>
 
-            {/* Manual sync button */}
-            {autoBackupOn && hasLocal && (
-              <Button
-                onClick={handleForceSync}
-                disabled={syncing}
-                size="sm"
-                variant="outline"
-                className="w-full gap-1"
-              >
-                {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                Forcer la synchronisation maintenant
-              </Button>
+            {/* Manual sync + resync buttons */}
+            {hasLocal && (
+              <div className="grid grid-cols-1 gap-2">
+                {autoBackupOn && (
+                  <Button
+                    onClick={handleForceSync}
+                    disabled={syncing || resyncing}
+                    size="sm"
+                    variant="outline"
+                    className="w-full gap-1"
+                  >
+                    {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                    Forcer la synchronisation maintenant
+                  </Button>
+                )}
+                <Button
+                  onClick={handleResync}
+                  disabled={resyncing || syncing || !user}
+                  size="sm"
+                  variant="secondary"
+                  className="w-full gap-1"
+                >
+                  {resyncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Shield className="h-3 w-3" />}
+                  Re-sync clés E2EE après restauration
+                </Button>
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  Republie ton identité, renouvelle les clés à usage unique, invalide les anciens canaux et tente de récupérer les messages illisibles.
+                </p>
+              </div>
             )}
 
             {/* Info */}
