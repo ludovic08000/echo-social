@@ -58,8 +58,10 @@ export function KeyBackupPanel() {
   const handleResync = async () => {
     if (!user) { toast.error('Connecte-toi pour re-synchroniser'); return; }
     setResyncing(true);
+    setShowTrace(false);
     try {
-      const report = await resyncE2EE(user.id);
+      const report = await resyncE2EE(user.id, { diagnostic: diagMode });
+      setLastReport(report);
       if (report.ok) {
         const recovered = report.recoveredMessages;
         toast.success(
@@ -70,6 +72,7 @@ export function KeyBackupPanel() {
       } else {
         toast.warning(`Re-sync partiel · ${report.errors.length} étape(s) en échec`);
       }
+      if (diagMode) setShowTrace(true);
       setHasExisting(true);
     } catch (e) {
       console.error('[resync] failed', e);
@@ -77,6 +80,13 @@ export function KeyBackupPanel() {
     } finally {
       setResyncing(false);
     }
+  };
+
+  const copyDiagReport = () => {
+    if (!lastReport) return;
+    const payload = JSON.stringify(lastReport, null, 2);
+    navigator.clipboard.writeText(payload);
+    toast.success('Trace diagnostic copiée');
   };
 
   const handleCreateLink = async () => {
