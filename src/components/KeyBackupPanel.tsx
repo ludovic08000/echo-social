@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
-import { Shield, QrCode, Download, Upload, Loader2, Check, AlertCircle, Copy, Key, RefreshCw, Cloud } from 'lucide-react';
+import { Shield, QrCode, Download, Upload, Loader2, Check, AlertCircle, Copy, Key, RefreshCw, Cloud, Bug, ChevronDown, ChevronUp } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { useSecureBackup } from '@/hooks/useSecureBackup';
 import { useDeviceLink } from '@/hooks/useDeviceLink';
 import { isAutoBackupActive, syncBackupToServer, hasLocalKeys } from '@/lib/crypto/accountKeyBackup';
-import { resyncE2EE } from '@/lib/crypto/resyncE2EE';
+import { resyncE2EE, type ResyncReport } from '@/lib/crypto/resyncE2EE';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 
