@@ -31,6 +31,25 @@ import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 
 export type ResyncStep = 'identity' | 'spk' | 'opks' | 'ratchets' | 'replay' | 'snapshot' | 'backup';
 
+export type DiagLevel = 'info' | 'warn' | 'error' | 'success';
+
+export interface DiagEntry {
+  ts: number;
+  step: ResyncStep | 'init' | 'done';
+  level: DiagLevel;
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+export interface MessageReplayDetail {
+  messageId: string;
+  conversationId: string;
+  bodyKind: string | null;
+  outcome: 'recovered' | 'failed' | 'empty';
+  error?: string;
+  durationMs: number;
+}
+
 export interface ResyncReport {
   ok: boolean;
   steps: Record<ResyncStep, 'ok' | 'skipped' | 'error'>;
@@ -38,9 +57,31 @@ export interface ResyncReport {
   scannedMessages: number;
   errors: string[];
   durationMs: number;
+  /** Full chronological diagnostic trace (only populated when diagnostic=true). */
+  trace?: DiagEntry[];
+  /** Per-message replay details (only populated when diagnostic=true). */
+  replayDetails?: MessageReplayDetail[];
+  deviceId?: string;
+  platform?: string;
 }
 
 const RECENT_MESSAGE_WINDOW = 50;
+
+/** Lightweight diagnostic recorder. Pass-through when diagnostic mode is off. */
+class DiagRecorder {
+  private entries: DiagEntry[] = [];
+  constructor(private enabled: boolean) {}
+  push(step: DiagEntry['step'], level: DiagLevel, message: string, data?: Record<string, unknown>) {
+    if (!this.enabled) return;
+    this.entries.push({ ts: Date.now(), step, level, message, data });
+    // Mirror to console with a unique tag so it's easy to filter in iOS web inspector.
+    const tag = `[e2ee-diag:${step}]`;
+    if (level === 'error') console.error(tag, message, data ?? '');
+    else if (level === 'warn') console.warn(tag, message, data ?? '');
+    else console.log(tag, message, data ?? '');
+  }
+  drain(): DiagEntry[] { return this.entries.slice(); }
+}
 
 /**
  * Republish identity bundle + per-device SPK + OPK pool. Without this, peers
