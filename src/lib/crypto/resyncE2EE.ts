@@ -31,6 +31,25 @@ import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 
 export type ResyncStep = 'identity' | 'spk' | 'opks' | 'ratchets' | 'replay' | 'snapshot' | 'backup';
 
+export type DiagLevel = 'info' | 'warn' | 'error' | 'success';
+
+export interface DiagEntry {
+  ts: number;
+  step: ResyncStep | 'init' | 'done';
+  level: DiagLevel;
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+export interface MessageReplayDetail {
+  messageId: string;
+  conversationId: string;
+  bodyKind: string | null;
+  outcome: 'recovered' | 'failed' | 'empty';
+  error?: string;
+  durationMs: number;
+}
+
 export interface ResyncReport {
   ok: boolean;
   steps: Record<ResyncStep, 'ok' | 'skipped' | 'error'>;
@@ -38,9 +57,31 @@ export interface ResyncReport {
   scannedMessages: number;
   errors: string[];
   durationMs: number;
+  /** Full chronological diagnostic trace (only populated when diagnostic=true). */
+  trace?: DiagEntry[];
+  /** Per-message replay details (only populated when diagnostic=true). */
+  replayDetails?: MessageReplayDetail[];
+  deviceId?: string;
+  platform?: string;
 }
 
 const RECENT_MESSAGE_WINDOW = 50;
+
+/** Lightweight diagnostic recorder. Pass-through when diagnostic mode is off. */
+class DiagRecorder {
+  private entries: DiagEntry[] = [];
+  constructor(private enabled: boolean) {}
+  push(step: DiagEntry['step'], level: DiagLevel, message: string, data?: Record<string, unknown>) {
+    if (!this.enabled) return;
+    this.entries.push({ ts: Date.now(), step, level, message, data });
+    // Mirror to console with a unique tag so it's easy to filter in iOS web inspector.
+    const tag = `[e2ee-diag:${step}]`;
+    if (level === 'error') console.error(tag, message, data ?? '');
+    else if (level === 'warn') console.warn(tag, message, data ?? '');
+    else console.log(tag, message, data ?? '');
+  }
+  drain(): DiagEntry[] { return this.entries.slice(); }
+}
 
 /**
  * Republish identity bundle + per-device SPK + OPK pool. Without this, peers
@@ -111,50 +152,115 @@ async function republishDeviceIdentity(userId: string, deviceId: string): Promis
  * delegated to {@link tryReadDeviceCopy}; we only count successes here so the
  * UI can surface what was healed.
  */
-async function replayRecentDeviceCopies(userId: string): Promise<{ scanned: number; recovered: number }> {
+async function replayRecentDeviceCopies(
+  userId: string,
+  diag: DiagRecorder,
+  details: MessageReplayDetail[] | null,
+): Promise<{ scanned: number; recovered: number }> {
   let scanned = 0;
   let recovered = 0;
 
-  const { data: convos } = await supabase
+  const { data: convos, error: convErr } = await supabase
     .from('conversation_participants')
     .select('conversation_id')
     .eq('user_id', userId);
 
-  if (!convos || convos.length === 0) return { scanned, recovered };
+  if (convErr) {
+    diag.push('replay', 'error', 'failed to list conversations', { error: convErr.message });
+    throw convErr;
+  }
+  if (!convos || convos.length === 0) {
+    diag.push('replay', 'info', 'no conversations to scan');
+    return { scanned, recovered };
+  }
+  diag.push('replay', 'info', `scanning ${convos.length} conversation(s)`);
 
   for (const c of convos as Array<{ conversation_id: string }>) {
-    const { data: rows } = await supabase
+    const { data: rows, error: msgErr } = await supabase
       .from('messages')
       .select('id, body, body_kind, sender_id')
       .eq('conversation_id', c.conversation_id)
       .order('created_at', { ascending: false })
       .limit(RECENT_MESSAGE_WINDOW);
 
+    if (msgErr) {
+      diag.push('replay', 'warn', 'message fetch failed', {
+        conversationId: c.conversation_id,
+        error: msgErr.message,
+      });
+      continue;
+    }
     if (!rows) continue;
+
+    let convScanned = 0;
+    let convRecovered = 0;
 
     for (const row of rows as Array<{ id: string; body: string | null; body_kind?: string | null; sender_id: string }>) {
       if (row.sender_id === userId) continue;
       const body = row.body ?? '';
-      // Heuristic: only retry rows that look like an encrypted envelope or are
-      // explicitly tagged as multi-device copies. Plain placeholders / system
-      // messages are skipped to keep the replay cheap.
       const looksEncrypted = body.startsWith('v') || body.startsWith('{') || row.body_kind === 'multi_device';
       if (!looksEncrypted) continue;
       scanned += 1;
+      convScanned += 1;
+      const t = Date.now();
       try {
         const pt = await tryReadDeviceCopy(row.id);
-        if (pt !== null && pt.length > 0) recovered += 1;
-      } catch {
-        // ignored — best-effort
+        const dur = Date.now() - t;
+        if (pt !== null && pt.length > 0) {
+          recovered += 1;
+          convRecovered += 1;
+          details?.push({
+            messageId: row.id,
+            conversationId: c.conversation_id,
+            bodyKind: row.body_kind ?? null,
+            outcome: 'recovered',
+            durationMs: dur,
+          });
+        } else {
+          details?.push({
+            messageId: row.id,
+            conversationId: c.conversation_id,
+            bodyKind: row.body_kind ?? null,
+            outcome: 'empty',
+            durationMs: dur,
+          });
+        }
+      } catch (e) {
+        const dur = Date.now() - t;
+        const errMsg = e instanceof Error ? e.message : String(e);
+        details?.push({
+          messageId: row.id,
+          conversationId: c.conversation_id,
+          bodyKind: row.body_kind ?? null,
+          outcome: 'failed',
+          error: errMsg,
+          durationMs: dur,
+        });
+        diag.push('replay', 'warn', `decrypt failed for message ${row.id.slice(0, 8)}`, {
+          error: errMsg,
+        });
       }
+    }
+
+    if (convScanned > 0) {
+      diag.push('replay', 'info', `conversation ${c.conversation_id.slice(0, 8)} → ${convRecovered}/${convScanned} recovered`);
     }
   }
 
   return { scanned, recovered };
 }
 
-export async function resyncE2EE(userId: string): Promise<ResyncReport> {
+export interface ResyncOptions {
+  /** Capture full diagnostic trace + per-message details on the returned report. */
+  diagnostic?: boolean;
+}
+
+export async function resyncE2EE(userId: string, options: ResyncOptions = {}): Promise<ResyncReport> {
   const t0 = Date.now();
+  const diagnostic = options.diagnostic === true;
+  const diag = new DiagRecorder(diagnostic);
+  const replayDetails: MessageReplayDetail[] | null = diagnostic ? [] : null;
+
   const report: ResyncReport = {
     ok: false,
     steps: {
@@ -172,73 +278,122 @@ export async function resyncE2EE(userId: string): Promise<ResyncReport> {
     durationMs: 0,
   };
 
+  diag.push('init', 'info', 'starting E2EE resync', { userId, diagnostic });
+
   if (!userId) {
     report.errors.push('missing userId');
     report.durationMs = Date.now() - t0;
+    diag.push('init', 'error', 'missing userId — abort');
+    if (diagnostic) { report.trace = diag.drain(); report.replayDetails = replayDetails ?? []; }
     return report;
   }
 
   if (!(await hasLocalKeys())) {
     report.errors.push('no local keys to resync — restore first');
     report.durationMs = Date.now() - t0;
+    diag.push('init', 'error', 'no local keys — abort (restore first)');
+    if (diagnostic) { report.trace = diag.drain(); report.replayDetails = replayDetails ?? []; }
     return report;
   }
 
   const deviceId = getCurrentDeviceId();
+  const platform = getCurrentPlatform();
+  report.deviceId = deviceId;
+  report.platform = platform;
+  diag.push('init', 'info', 'context resolved', { deviceId, platform });
 
   // 1. Republish identity / SPK / OPKs
+  const tIdent = Date.now();
   try {
     const pub = await republishDeviceIdentity(userId, deviceId);
     report.steps.identity = pub.identity ? 'ok' : 'error';
     report.steps.spk = pub.spk ? 'ok' : 'error';
     report.steps.opks = pub.opks ? 'ok' : 'error';
+    diag.push('identity', pub.identity ? 'success' : 'error', 'identity bundle published', {
+      durationMs: Date.now() - tIdent,
+      ...pub,
+    });
   } catch (e) {
     report.steps.identity = 'error';
-    report.errors.push(`republish: ${e instanceof Error ? e.message : String(e)}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    report.errors.push(`republish: ${msg}`);
+    diag.push('identity', 'error', 'identity republish failed', { error: msg });
     logCryptoException('restore', e, { severity: 'error', metadata: { stage: 'resync_republish', userId } });
   }
 
   // 2. Drop stale device-pair ratchets so the next outbound message renegotiates X3DH.
+  const tRatch = Date.now();
   try {
     await clearAllDeviceSessions();
     report.steps.ratchets = 'ok';
+    diag.push('ratchets', 'success', 'cleared stale device ratchets', { durationMs: Date.now() - tRatch });
   } catch (e) {
     report.steps.ratchets = 'error';
-    report.errors.push(`ratchet clear: ${e instanceof Error ? e.message : String(e)}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    report.errors.push(`ratchet clear: ${msg}`);
+    diag.push('ratchets', 'error', 'ratchet clear failed', { error: msg });
   }
 
   // 3. Replay device-copy fallback on recent inbox to recover what we can.
+  const tReplay = Date.now();
   try {
-    const replay = await replayRecentDeviceCopies(userId);
+    const replay = await replayRecentDeviceCopies(userId, diag, replayDetails);
     report.scannedMessages = replay.scanned;
     report.recoveredMessages = replay.recovered;
     report.steps.replay = 'ok';
+    diag.push('replay', 'success', `replay complete: ${replay.recovered}/${replay.scanned} recovered`, {
+      durationMs: Date.now() - tReplay,
+    });
   } catch (e) {
     report.steps.replay = 'error';
-    report.errors.push(`replay: ${e instanceof Error ? e.message : String(e)}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    report.errors.push(`replay: ${msg}`);
+    diag.push('replay', 'error', 'replay failed', { error: msg });
   }
 
   // 4. Refresh the on-device Keychain snapshot so the new state survives a
   //    WebView wipe.
+  const tSnap = Date.now();
   try {
     const ok = await syncKeychainSnapshotFromLocal(userId);
     report.steps.snapshot = ok ? 'ok' : 'skipped';
+    diag.push('snapshot', ok ? 'success' : 'info', ok ? 'Keychain snapshot updated' : 'snapshot skipped (no native store)', {
+      durationMs: Date.now() - tSnap,
+    });
   } catch (e) {
     report.steps.snapshot = 'error';
-    report.errors.push(`snapshot: ${e instanceof Error ? e.message : String(e)}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    report.errors.push(`snapshot: ${msg}`);
+    diag.push('snapshot', 'error', 'snapshot failed', { error: msg });
   }
 
   // 5. Push the fresh state to the encrypted server backup (debounced inside).
+  const tBack = Date.now();
   try {
     const ok = await syncBackupToServer();
     report.steps.backup = ok ? 'ok' : 'skipped';
+    diag.push('backup', ok ? 'success' : 'info', ok ? 'server backup synced' : 'backup skipped (debounced or no keys)', {
+      durationMs: Date.now() - tBack,
+    });
   } catch (e) {
     report.steps.backup = 'error';
-    report.errors.push(`backup: ${e instanceof Error ? e.message : String(e)}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    report.errors.push(`backup: ${msg}`);
+    diag.push('backup', 'error', 'backup failed', { error: msg });
   }
 
   report.durationMs = Date.now() - t0;
   report.ok = report.errors.length === 0;
+  diag.push('done', report.ok ? 'success' : 'warn', `resync finished in ${report.durationMs}ms`, {
+    ok: report.ok,
+    errors: report.errors.length,
+    recovered: report.recoveredMessages,
+  });
+
+  if (diagnostic) {
+    report.trace = diag.drain();
+    report.replayDetails = replayDetails ?? [];
+  }
 
   logCryptoError({
     severity: report.ok ? 'info' : 'warning',
@@ -248,11 +403,13 @@ export async function resyncE2EE(userId: string): Promise<ResyncReport> {
     metadata: {
       userId,
       deviceId,
+      platform,
       recovered: report.recoveredMessages,
       scanned: report.scannedMessages,
       durationMs: report.durationMs,
       steps: report.steps,
       errors: report.errors,
+      diagnostic,
     },
   });
 
@@ -267,3 +424,4 @@ export async function resyncE2EE(userId: string): Promise<ResyncReport> {
 
   return report;
 }
+
