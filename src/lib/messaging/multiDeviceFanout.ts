@@ -345,22 +345,29 @@ export async function tryReadDeviceCopy(messageId: string): Promise<string | nul
 
   try {
     // Primary: copy explicitly addressed to this device_id.
-    let rows: Array<{ encrypted_body: string; sender_user_id: string; sender_device_id: string }> = [];
+    type CopyRow = {
+      encrypted_body: string;
+      sender_user_id: string;
+      sender_device_id: string;
+      recipient_device_id?: string;
+    };
+    let rows: CopyRow[] = [];
     const { data: targeted } = await supabase.rpc('get_device_copy_for_message', {
       p_message_id: messageId,
       p_device_id: myDeviceId,
     });
     if (targeted && targeted.length > 0) {
-      rows = targeted as typeof rows;
+      rows = (targeted as CopyRow[]).map(r => ({ ...r, recipient_device_id: r.recipient_device_id ?? myDeviceId }));
     } else {
-      // Fallback: device_id changed (localStorage cleared, new browser session).
-      // Try every copy addressed to this user — cryptographic decryption gates
-      // which one actually opens. This recovers messages after a session reset.
+      // Fallback: device_id changed (localStorage/Keychain wiped on iOS).
+      // Try every copy addressed to this user — and for each one, attempt
+      // decryption using the ORIGINAL recipient_device_id from the row, since
+      // that's the device id the message was actually encrypted for.
       const { data: allCopies } = await supabase.rpc('get_device_copies_for_user', {
         p_message_id: messageId,
       });
       if (!allCopies || allCopies.length === 0) return null;
-      rows = allCopies as typeof rows;
+      rows = allCopies as CopyRow[];
       logCryptoError({
         severity: 'info',
         context: 'decrypt',
@@ -372,8 +379,11 @@ export async function tryReadDeviceCopy(messageId: string): Promise<string | nul
     }
 
     // Try each candidate row in order; first successful decryption wins.
+    // Use the row's recipient_device_id (when present) so iOS-restored installs
+    // can still decrypt copies originally targeted at the previous device id.
     for (const row of rows) {
-      const pt = await tryDecryptCopy(row, user.id, myDeviceId);
+      const targetDeviceId = row.recipient_device_id || myDeviceId;
+      const pt = await tryDecryptCopy(row, user.id, targetDeviceId);
       if (pt !== null) return pt;
     }
     return null;
