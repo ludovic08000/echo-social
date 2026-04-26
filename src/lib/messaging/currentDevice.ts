@@ -47,6 +47,19 @@ function persistEverywhere(id: string): string {
  * if hydration hasn't completed yet. Call `hydrateDeviceId()` once at app
  * startup to guarantee the persisted native value wins.
  */
+/**
+ * Force a specific device id to become the current one (memory + native + secure stores).
+ * Used by the backup/restore path to recover the original device id of an account
+ * after iOS purges IndexedDB/Keychain — otherwise message device-copies become
+ * undecryptable because they target the previous device_id.
+ */
+export function setCurrentDeviceId(id: string): string {
+  if (!id || typeof id !== 'string') return getCurrentDeviceId();
+  if (memoryDeviceId === id) return id;
+  console.log('[device-id] forcing device id from backup', { previous: memoryDeviceId?.slice(0, 8) ?? 'none', next: id.slice(0, 8) });
+  return persistEverywhere(id);
+}
+
 export function getCurrentDeviceId(): string {
   if (memoryDeviceId) return memoryDeviceId;
 

@@ -23,6 +23,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
 import { secureGetSecret, secureSetSecret, secureRemoveSecret } from '@/lib/secureStore';
+import { getCurrentDeviceId, setCurrentDeviceId } from '@/lib/messaging/currentDevice';
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
@@ -181,6 +182,11 @@ async function collectAllKeys(): Promise<string | null> {
   const hasIdentity = data['e2ee:identity-keys']?.length > 0 || data['pinwrap:keys']?.length > 0;
   if (!hasIdentity) return null;
 
+  try {
+    const did = getCurrentDeviceId();
+    if (did) data['device:id'] = did;
+  } catch {}
+
   data['_meta'] = {
     version: BACKUP_VERSION,
     createdAt: new Date().toISOString(),
@@ -244,6 +250,15 @@ async function restoreAllKeys(json: string): Promise<void> {
   const rollbackOps: Array<() => Promise<void>> = [];
 
   try {
+    // Phase 0: device_id — must be restored BEFORE any ratchet/x3dh decrypt path,
+    // otherwise iOS-purged installs generate a fresh device_id and lose access
+    // to all device-targeted message copies.
+    if (typeof data['device:id'] === 'string' && data['device:id'].length > 0) {
+      try { setCurrentDeviceId(data['device:id']); } catch (e) {
+        console.warn('[MasterKey] failed to restore device_id from backup', e);
+      }
+    }
+
     // Phase 1: E2EE stores
     for (const [key, records] of Object.entries(data)) {
       if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
