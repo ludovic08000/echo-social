@@ -250,7 +250,6 @@ async function restoreAllKeys(json: string): Promise<void> {
   const rollbackOps: Array<() => Promise<void>> = [];
 
   try {
-  try {
     // Phase 0: device_id — must be restored BEFORE any ratchet/x3dh decrypt path,
     // otherwise iOS-purged installs generate a fresh device_id and lose access
     // to all device-targeted message copies.
