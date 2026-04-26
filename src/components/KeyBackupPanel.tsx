@@ -8,15 +8,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSecureBackup } from '@/hooks/useSecureBackup';
 import { useDeviceLink } from '@/hooks/useDeviceLink';
 import { isAutoBackupActive, syncBackupToServer, hasLocalKeys } from '@/lib/crypto/accountKeyBackup';
+import { resyncE2EE } from '@/lib/crypto/resyncE2EE';
+import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 
 export function KeyBackupPanel() {
   const backup = useSecureBackup();
   const deviceLink = useDeviceLink();
+  const { user } = useAuth();
   const [hasExisting, setHasExisting] = useState(false);
   const [autoBackupOn, setAutoBackupOn] = useState(false);
   const [hasLocal, setHasLocal] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [resyncing, setResyncing] = useState(false);
   // Device transfer
   const [qrData, setQrData] = useState<string | null>(null);
   const [transferPin, setTransferPin] = useState<string | null>(null);
@@ -43,6 +47,30 @@ export function KeyBackupPanel() {
       toast.error('Échec de la synchronisation');
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleResync = async () => {
+    if (!user) { toast.error('Connecte-toi pour re-synchroniser'); return; }
+    setResyncing(true);
+    try {
+      const report = await resyncE2EE(user.id);
+      if (report.ok) {
+        const recovered = report.recoveredMessages;
+        toast.success(
+          recovered > 0
+            ? `Re-sync réussi · ${recovered} message${recovered > 1 ? 's' : ''} récupéré${recovered > 1 ? 's' : ''}`
+            : 'Re-sync réussi · identité republiée',
+        );
+      } else {
+        toast.warning(`Re-sync partiel · ${report.errors.length} étape(s) en échec`);
+      }
+      setHasExisting(true);
+    } catch (e) {
+      console.error('[resync] failed', e);
+      toast.error('Re-sync échoué');
+    } finally {
+      setResyncing(false);
     }
   };
 
@@ -126,18 +154,35 @@ export function KeyBackupPanel() {
               )}
             </div>
 
-            {/* Manual sync button */}
-            {autoBackupOn && hasLocal && (
-              <Button
-                onClick={handleForceSync}
-                disabled={syncing}
-                size="sm"
-                variant="outline"
-                className="w-full gap-1"
-              >
-                {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                Forcer la synchronisation maintenant
-              </Button>
+            {/* Manual sync + resync buttons */}
+            {hasLocal && (
+              <div className="grid grid-cols-1 gap-2">
+                {autoBackupOn && (
+                  <Button
+                    onClick={handleForceSync}
+                    disabled={syncing || resyncing}
+                    size="sm"
+                    variant="outline"
+                    className="w-full gap-1"
+                  >
+                    {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                    Forcer la synchronisation maintenant
+                  </Button>
+                )}
+                <Button
+                  onClick={handleResync}
+                  disabled={resyncing || syncing || !user}
+                  size="sm"
+                  variant="secondary"
+                  className="w-full gap-1"
+                >
+                  {resyncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Shield className="h-3 w-3" />}
+                  Re-sync clés E2EE après restauration
+                </Button>
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  Republie ton identité, renouvelle les clés à usage unique, invalide les anciens canaux et tente de récupérer les messages illisibles.
+                </p>
+              </div>
             )}
 
             {/* Info */}

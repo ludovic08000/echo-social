@@ -284,6 +284,35 @@ export function useAccountKeySync() {
     };
   }, [user, triggerSync]);
 
+  // Auto-trigger a full E2EE re-sync whenever keys have just been restored.
+  // Runs once per event, debounced via the inFlight ref so a noisy restore
+  // (Keychain + active session in the same boot) doesn't fire it twice.
+  useEffect(() => {
+    if (!user) return;
+    let inFlight = false;
+
+    const onKeysRestored = (ev: Event) => {
+      if (inFlight) return;
+      inFlight = true;
+      const detail = (ev as CustomEvent).detail ?? {};
+      console.log('[AccountKeySync] keys restored — running E2EE resync', detail);
+      void (async () => {
+        try {
+          const { resyncE2EE } = await import('@/lib/crypto/resyncE2EE');
+          const report = await resyncE2EE(user.id);
+          console.log('[AccountKeySync] resync report:', report);
+        } catch (e) {
+          console.warn('[AccountKeySync] resync failed:', e);
+        } finally {
+          inFlight = false;
+        }
+      })();
+    };
+
+    window.addEventListener('forsure-keys-restored', onKeysRestored as EventListener);
+    return () => window.removeEventListener('forsure-keys-restored', onKeysRestored as EventListener);
+  }, [user?.id]);
+
   // Cleanup on logout
   useEffect(() => {
     if (!user) {
