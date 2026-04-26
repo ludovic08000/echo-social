@@ -182,6 +182,11 @@ async function collectAllKeys(): Promise<string | null> {
   const hasIdentity = data['e2ee:identity-keys']?.length > 0 || data['pinwrap:keys']?.length > 0;
   if (!hasIdentity) return null;
 
+  try {
+    const did = getCurrentDeviceId();
+    if (did) data['device:id'] = did;
+  } catch {}
+
   data['_meta'] = {
     version: BACKUP_VERSION,
     createdAt: new Date().toISOString(),
