@@ -241,7 +241,7 @@ export async function resyncE2EE(userId: string): Promise<ResyncReport> {
   report.ok = report.errors.length === 0;
 
   logCryptoError({
-    severity: report.ok ? 'info' : 'warn',
+    severity: report.ok ? 'info' : 'warning',
     context: 'restore',
     errorCode: 'E2EE_RESYNC_DONE',
     errorMessage: `E2EE resync ${report.ok ? 'succeeded' : 'completed with errors'} (${report.recoveredMessages}/${report.scannedMessages} recovered)`,
