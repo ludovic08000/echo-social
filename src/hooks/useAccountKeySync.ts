@@ -21,7 +21,7 @@ import {
   restoreKeysFromKeychainSnapshot,
   syncKeychainSnapshotFromLocal,
 } from '@/lib/crypto/accountKeyBackup';
-import { hydrateDeviceId } from '@/lib/messaging/currentDevice';
+import { hydrateDeviceId, getCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { isNativePlatform } from '@/lib/nativeStore';
 
 const SYNC_DEBOUNCE_MS = 5_000;
