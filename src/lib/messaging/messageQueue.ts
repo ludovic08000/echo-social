@@ -298,7 +298,7 @@ class MessageQueueManager {
     return latest?.handlers || null;
   }
 
-  /** Return a handler whose secure channel is ready, fallback to latest registered */
+  /** Return a handler only when its secure channel is ready. */
   private getReadyAwareHandlers(conversationId: string): QueueHandlers | null {
     const entries = this.handlersByConversation.get(conversationId);
     if (!entries || entries.size === 0) return null;
@@ -309,11 +309,11 @@ class MessageQueueManager {
           return entry.handlers;
         }
       } catch {
-        // continue to fallback
+        // continue checking other mounted handlers
       }
     }
 
-    return this.getHandlers(conversationId);
+    return null;
   }
 
   /** Enqueue a new outbound message */
