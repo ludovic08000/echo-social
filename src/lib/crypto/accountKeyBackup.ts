@@ -424,6 +424,7 @@ export async function computeLocalCryptoDigest(): Promise<string> {
     ['forsure-ratchet', 'ratchet-states'],
     ['forsure-pin-wrap', 'pin-wrapped-keys'],
     ['forsure-prekeys', 'private-prekeys'],
+    ['forsure-spk', 'signed-prekeys'],
   ]) {
     try {
       const db = await openDB(dbName, 1);
