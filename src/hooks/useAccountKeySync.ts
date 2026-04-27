@@ -21,7 +21,7 @@ import {
   restoreKeysFromKeychainSnapshot,
   syncKeychainSnapshotFromLocal,
 } from '@/lib/crypto/accountKeyBackup';
-import { hydrateDeviceId } from '@/lib/messaging/currentDevice';
+import { hydrateDeviceId, getCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { isNativePlatform } from '@/lib/nativeStore';
 
 const SYNC_DEBOUNCE_MS = 5_000;
@@ -285,32 +285,91 @@ export function useAccountKeySync() {
   }, [user, triggerSync]);
 
   // Auto-trigger a full E2EE re-sync whenever keys have just been restored.
-  // Runs once per event, debounced via the inFlight ref so a noisy restore
-  // (Keychain + active session in the same boot) doesn't fire it twice.
+  //
+  // Robustness layers — all three are needed because the restore event can
+  // fire BEFORE this listener mounts (it's emitted from auth.tsx during password
+  // unwrap, or from earlier effects in this same hook):
+  //   1) live event listener for in-session restores
+  //   2) sessionStorage marker so a restore that fired before mount is replayed
+  //   3) safety net that runs a resync once per session if the device id is
+  //      not yet registered server-side (covers the "no event ever fired" case)
   useEffect(() => {
     if (!user) return;
+    let cancelled = false;
     let inFlight = false;
 
-    const onKeysRestored = (ev: Event) => {
+    const RESYNC_PENDING_KEY = `forsure:e2ee-resync-pending:${user.id}`;
+    const RESYNC_DONE_KEY = `forsure:e2ee-resync-done:${user.id}`;
+
+    const runResync = async (reason: string, detail: unknown = {}) => {
       if (inFlight) return;
       inFlight = true;
-      const detail = (ev as CustomEvent).detail ?? {};
-      console.log('[AccountKeySync] keys restored — running E2EE resync', detail);
-      void (async () => {
+      console.log('[AccountKeySync] running E2EE resync', { reason, detail });
+      try {
+        // Make sure the persisted device id from native storage wins before
+        // we re-publish anything to the server.
+        try { await hydrateDeviceId(); } catch {}
+        const { resyncE2EE } = await import('@/lib/crypto/resyncE2EE');
+        const report = await resyncE2EE(user.id);
+        console.log('[AccountKeySync] resync report:', report);
         try {
-          const { resyncE2EE } = await import('@/lib/crypto/resyncE2EE');
-          const report = await resyncE2EE(user.id);
-          console.log('[AccountKeySync] resync report:', report);
-        } catch (e) {
-          console.warn('[AccountKeySync] resync failed:', e);
-        } finally {
-          inFlight = false;
-        }
-      })();
+          sessionStorage.setItem(RESYNC_DONE_KEY, String(Date.now()));
+          sessionStorage.removeItem(RESYNC_PENDING_KEY);
+        } catch {}
+      } catch (e) {
+        console.warn('[AccountKeySync] resync failed:', e);
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const onKeysRestored = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail ?? {};
+      try { sessionStorage.setItem(RESYNC_PENDING_KEY, JSON.stringify({ at: Date.now(), detail })); } catch {}
+      void runResync('keys-restored-event', detail);
     };
 
     window.addEventListener('forsure-keys-restored', onKeysRestored as EventListener);
-    return () => window.removeEventListener('forsure-keys-restored', onKeysRestored as EventListener);
+
+    // Replay any pending restore event that fired before this listener mounted.
+    void (async () => {
+      try {
+        const pending = sessionStorage.getItem(RESYNC_PENDING_KEY);
+        if (pending) {
+          await runResync('pending-on-mount', JSON.parse(pending));
+          return;
+        }
+      } catch {}
+
+      // Safety net: if there are local keys but we've never resynced this
+      // session AND the current device id isn't registered server-side,
+      // run one resync to publish identity/SPK/OPK.
+      try {
+        if (cancelled) return;
+        const done = sessionStorage.getItem(RESYNC_DONE_KEY);
+        if (done) return;
+        if (!(await hasLocalKeys())) return;
+        const did = getCurrentDeviceId();
+        const { data: row } = await supabase
+          .from('user_devices')
+          .select('device_id')
+          .eq('user_id', user.id)
+          .eq('device_id', did)
+          .maybeSingle();
+        if (cancelled) return;
+        if (!row) {
+          console.warn('[AccountKeySync] current device_id not registered server-side — auto-resync', { did: did.slice(0, 8) });
+          await runResync('device-not-registered');
+        }
+      } catch (e) {
+        console.warn('[AccountKeySync] safety-net resync check failed:', e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('forsure-keys-restored', onKeysRestored as EventListener);
+    };
   }, [user?.id]);
 
   // Cleanup on logout
