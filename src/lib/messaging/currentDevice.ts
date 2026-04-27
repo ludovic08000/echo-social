@@ -23,6 +23,7 @@ import { secureGet, secureSet } from '@/lib/secureStore';
 const STORAGE_KEY = 'forsure-device-id-v1';
 let memoryDeviceId: string | null = null;
 let hydrationPromise: Promise<string> | null = null;
+let memoryDeviceIdIsTemporary = false;
 
 function generateId(): string {
   // 32-char hex (128 bits of entropy)
@@ -32,6 +33,7 @@ function generateId(): string {
 
 function persistEverywhere(id: string): string {
   memoryDeviceId = id;
+  memoryDeviceIdIsTemporary = false;
   try { localStorage.setItem(STORAGE_KEY, id); } catch {}
   try { sessionStorage.setItem(STORAGE_KEY, id); } catch {}
   // Fire-and-forget native persistence (Keychain on iOS, Keystore on Android,
@@ -73,6 +75,17 @@ export function getCurrentDeviceId(): string {
 
   // Last-resort fallback: create a new ID immediately
   const fresh = generateId();
+  // On native, do NOT immediately persist a synchronous fallback to Keychain.
+  // Capacitor Preferences/Keychain are async; if WebView storage was wiped,
+  // persisting here can overwrite the surviving Keychain id before
+  // hydrateDeviceId() has a chance to read it, causing device_id drift.
+  if (isNativePlatform()) {
+    memoryDeviceId = fresh;
+    memoryDeviceIdIsTemporary = true;
+    try { sessionStorage.setItem(STORAGE_KEY, fresh); } catch {}
+    console.log('[device-id] Generated temporary device id pending native hydration');
+    return fresh;
+  }
   console.log('[device-id] Generated new device id (no persisted value found)');
   return persistEverywhere(fresh);
 }
@@ -95,6 +108,7 @@ export async function hydrateDeviceId(): Promise<string> {
           console.log('[device-id] Native store overrides in-memory id', {
             memory: memoryDeviceId.slice(0, 8),
             native: stored.slice(0, 8),
+            temporary: memoryDeviceIdIsTemporary,
           });
         }
         return persistEverywhere(stored);
