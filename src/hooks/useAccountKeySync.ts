@@ -300,6 +300,7 @@ export function useAccountKeySync() {
 
     const RESYNC_PENDING_KEY = `forsure:e2ee-resync-pending:${user.id}`;
     const RESYNC_DONE_KEY = `forsure:e2ee-resync-done:${user.id}`;
+    const RESYNC_HEALTH_KEY = `forsure:e2ee-resync-health:${user.id}`;
 
     const runResync = async (reason: string, detail: unknown = {}) => {
       if (inFlight) return;
@@ -349,17 +350,33 @@ export function useAccountKeySync() {
         const done = sessionStorage.getItem(RESYNC_DONE_KEY);
         if (done) return;
         if (!(await hasLocalKeys())) return;
-        const did = getCurrentDeviceId();
+        const did = await hydrateDeviceId();
         const { data: row } = await supabase
           .from('user_devices')
           .select('device_id')
           .eq('user_id', user.id)
           .eq('device_id', did)
           .maybeSingle();
+
+        const { data: spkRow } = await supabase
+          .from('device_signed_prekeys' as any)
+          .select('spk_id')
+          .eq('user_id', user.id)
+          .eq('device_id', did)
+          .eq('is_active', true)
+          .maybeSingle();
         if (cancelled) return;
-        if (!row) {
-          console.warn('[AccountKeySync] current device_id not registered server-side — auto-resync', { did: did.slice(0, 8) });
-          await runResync('device-not-registered');
+
+        const previousHealth = sessionStorage.getItem(RESYNC_HEALTH_KEY);
+        const currentHealth = JSON.stringify({ did, registered: !!row, spk: !!spkRow });
+        if (!row || !spkRow || previousHealth !== currentHealth) {
+          console.warn('[AccountKeySync] E2EE device health incomplete — auto-resync', {
+            did: did.slice(0, 8),
+            registered: !!row,
+            deviceSpk: !!spkRow,
+          });
+          await runResync(!row ? 'device-not-registered' : 'device-prekeys-missing');
+          sessionStorage.setItem(RESYNC_HEALTH_KEY, currentHealth);
         }
       } catch (e) {
         console.warn('[AccountKeySync] safety-net resync check failed:', e);
