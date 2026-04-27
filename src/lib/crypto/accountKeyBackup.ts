@@ -175,6 +175,12 @@ async function collectAllKeys(): Promise<string | null> {
   } catch {}
 
   try {
+    const db = await openDB('forsure-spk', 1);
+    data['spk:private'] = await getAllFromStore(db, 'signed-prekeys');
+    db.close();
+  } catch {}
+
+  try {
     const fps = localStorage.getItem('forsure-known-fps');
     if (fps) data['fingerprints'] = fps;
   } catch {}
@@ -317,6 +323,19 @@ async function restoreAllKeys(json: string): Promise<void> {
       });
     }
 
+    // Phase 4b: Signed prekey private halves (required to decrypt X3DH/device copies)
+    if (Array.isArray(data['spk:private'])) {
+      const db = await openDB('forsure-spk', 1, ['signed-prekeys']);
+      const existing = await getAllFromStore(db, 'signed-prekeys');
+      await putAllInStore(db, 'signed-prekeys', data['spk:private']);
+      db.close();
+      rollbackOps.push(async () => {
+        const rdb = await openDB('forsure-spk', 1);
+        await putAllInStore(rdb, 'signed-prekeys', existing);
+        rdb.close();
+      });
+    }
+
     // Phase 5: Fingerprints
     if (data['fingerprints']) {
       const oldFps = localStorage.getItem('forsure-known-fps');
@@ -405,6 +424,7 @@ export async function computeLocalCryptoDigest(): Promise<string> {
     ['forsure-ratchet', 'ratchet-states'],
     ['forsure-pin-wrap', 'pin-wrapped-keys'],
     ['forsure-prekeys', 'private-prekeys'],
+    ['forsure-spk', 'signed-prekeys'],
   ]) {
     try {
       const db = await openDB(dbName, 1);
