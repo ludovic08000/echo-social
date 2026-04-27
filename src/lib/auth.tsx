@@ -35,6 +35,12 @@ async function inspectCryptoReadiness(userId: string | undefined, reason: 'sessi
     if (!hasKeys) {
       const keychainStatus = await restoreKeysFromKeychainSnapshot(userId);
       if (keychainStatus === 'restored') {
+        try {
+          sessionStorage.setItem(
+            `forsure:e2ee-resync-pending:${userId}`,
+            JSON.stringify({ at: Date.now(), detail: { status: 'restored_from_keychain_auth', reason } }),
+          );
+        } catch {}
         window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
           detail: { status: 'restored_from_keychain_auth', reason },
         }));
