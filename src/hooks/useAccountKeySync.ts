@@ -348,7 +348,6 @@ export function useAccountKeySync() {
       try {
         if (cancelled) return;
         const done = sessionStorage.getItem(RESYNC_DONE_KEY);
-        if (done) return;
         if (!(await hasLocalKeys())) return;
         const did = await hydrateDeviceId();
         const { data: row } = await supabase
@@ -369,7 +368,7 @@ export function useAccountKeySync() {
 
         const previousHealth = sessionStorage.getItem(RESYNC_HEALTH_KEY);
         const currentHealth = JSON.stringify({ did, registered: !!row, spk: !!spkRow });
-        if (!row || !spkRow || previousHealth !== currentHealth) {
+        if (!row || !spkRow || (!done && previousHealth !== currentHealth)) {
           console.warn('[AccountKeySync] E2EE device health incomplete — auto-resync', {
             did: did.slice(0, 8),
             registered: !!row,
