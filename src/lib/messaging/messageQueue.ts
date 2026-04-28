@@ -466,9 +466,11 @@ class MessageQueueManager {
             return;
           }
 
-          // Fail fast after 30s total elapsed time for key-waiting errors
+          // Fail only after the full hard timeout window for key-waiting errors.
+          // (Was 30s — far too short for iOS cold starts and PWA wake.)
           const age = Date.now() - msg.createdAt;
-          if (waitingForKeys && age > 30_000) {
+          if (waitingForKeys && age > SECURE_CHANNEL_HARD_TIMEOUT_MS) {
+            console.warn('[MSG_QUEUE] giving up — peer keys still missing after 5min', msg.localId);
             await this.updateStatus(msg, 'failed_visible', 'Chiffrement impossible — clés du contact indisponibles. Réessayez.');
             return;
           }
