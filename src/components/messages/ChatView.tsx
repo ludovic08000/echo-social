@@ -421,7 +421,14 @@ export function ChatView({ conversationId }: ChatViewProps) {
   // already shows a non-blocking warning and the queue proceeds with encryption.
   // Blocking the send button on fingerprint change made both text and media
   // sending unusable in normal "key rotated" scenarios.
+  //
+  // We DO however block the send when E2EE is not yet ready: the plaintext
+  // lives in volatile memory only, and iOS routinely kills tabs in the
+  // background, which would silently lose the message. Refusing the send
+  // here is safer than enqueuing a payload we may never be able to encrypt.
+  const encryptionReady = isZeusConversation || e2ee.isReady();
   const sendBlocked = !isZeusConversation && (
+    !encryptionReady ||
     e2ee.peerKeyMissing ||
     e2ee.initError === 'pin_unlock_required' ||
     e2ee.initError === 'identity_lost_backup_available'
@@ -435,6 +442,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
         toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer un média.');
       } else if (e2ee.initError === 'identity_lost_backup_available') {
         toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer un média.');
+      } else if (!encryptionReady) {
+        toast.error('Canal sécurisé en cours d’initialisation — réessaie dans quelques secondes.');
       }
       return;
     }

@@ -249,9 +249,12 @@ export async function ratchetDecrypt(
   envelope: RatchetEnvelope,
   peerSigningKeyBase64?: string,
 ): Promise<{ plaintext: string; verified: boolean; newState: RatchetState }> {
-  // Replay protection
-  if (Date.now() - envelope.ts > 7 * 24 * 60 * 60 * 1000) {
-    throw new Error('Message too old');
+  // Anti-replay: handled by Double Ratchet header counters (pn/n) +
+  // skippedKeys cache below. Timestamps are sanity-checked but never used
+  // as a hard cutoff, so historical messages remain decryptable after
+  // restoration (PIN re-unlock, device re-sync, key backup restore).
+  if (typeof envelope.ts !== 'number' || envelope.ts <= 0) {
+    throw new Error('Ratchet envelope timestamp invalide');
   }
 
   const headerDhRaw = base64ToBuffer(envelope.hdr.dh);

@@ -1451,8 +1451,25 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const isReady = useCallback((): boolean => {
     if (isZeus) return true;
     // Ready if we have peer keys and our own keys, and no fingerprint block
-    return state.encrypted && !!keysRef.current && !!peerKeyRef.current && !state.fingerprintChanged;
-  }, [state.encrypted, state.fingerprintChanged, isZeus]);
+    const ready =
+      state.encrypted &&
+      !!keysRef.current &&
+      !!peerKeyRef.current &&
+      !state.fingerprintChanged;
+    if (!ready) {
+      // High-signal debug breadcrumb — surfaces in iOS Web Inspector.
+      console.debug('[E2EE.isReady] NOT ready', {
+        conversationId,
+        encrypted: state.encrypted,
+        hasOwnKeys: !!keysRef.current,
+        hasPeerKey: !!peerKeyRef.current,
+        fingerprintChanged: state.fingerprintChanged,
+        peerKeyMissing: state.peerKeyMissing,
+        initError: state.initError,
+      });
+    }
+    return ready;
+  }, [state.encrypted, state.fingerprintChanged, state.peerKeyMissing, state.initError, isZeus, conversationId]);
 
   /** Acknowledge fingerprint change — user explicitly trusts new key */
   const acknowledgeFingerprint = useCallback(async () => {

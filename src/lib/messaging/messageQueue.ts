@@ -112,6 +112,17 @@ const STORE_NAME = 'outbound';
 const MAX_RETRIES = 10;
 const BASE_RETRY_MS = 2000;
 const MAX_RETRY_MS = 60000;
+/**
+ * Maximum time we keep retrying to find a ready secure channel before
+ * surfacing a hard failure to the user. Was 30s — too aggressive on iOS,
+ * where Safari/PWA can take well over a minute to rehydrate IndexedDB,
+ * fetch peer X3DH bundles, and run the ratchet bootstrap after wake.
+ *
+ * 5 min is enough to cover cold starts + slow networks while still
+ * eventually freeing the user from a stuck queue. Plaintext stays in
+ * volatile memory the whole time.
+ */
+const SECURE_CHANNEL_HARD_TIMEOUT_MS = 5 * 60_000;
 
 // ─── Singleton Queue Manager ───
 
@@ -379,13 +390,16 @@ class MessageQueueManager {
 
         const handlers = this.getReadyAwareHandlers(msg.conversationId);
         if (!handlers?.encrypt) {
-          // Fail fast: if no handler is registered after 30s, mark as failed
+          // Wait up to SECURE_CHANNEL_HARD_TIMEOUT_MS (5min) before failing.
+          // This covers iOS cold start + slow X3DH bootstrap reliably.
           const age = Date.now() - msg.createdAt;
-          if (age > 30_000) {
+          if (age > SECURE_CHANNEL_HARD_TIMEOUT_MS) {
+            console.warn('[MSG_QUEUE] secure channel still unavailable after 5min', msg.localId);
             await this.updateStatus(msg, 'failed_visible', 'Canal sécurisé indisponible — réessayez plus tard');
             return;
           }
-          await this.updateStatus(msg, 'waiting_secure_channel', 'Canal sécurisé indisponible');
+          console.log('[MSG_QUEUE] waiting for secure channel', msg.localId, 'age=', age, 'ms');
+          await this.updateStatus(msg, 'waiting_secure_channel', 'En attente du canal sécurisé');
           this.scheduleRetry(msg, 'secure_wait');
           return;
         }
@@ -452,9 +466,11 @@ class MessageQueueManager {
             return;
           }
 
-          // Fail fast after 30s total elapsed time for key-waiting errors
+          // Fail only after the full hard timeout window for key-waiting errors.
+          // (Was 30s — far too short for iOS cold starts and PWA wake.)
           const age = Date.now() - msg.createdAt;
-          if (waitingForKeys && age > 30_000) {
+          if (waitingForKeys && age > SECURE_CHANNEL_HARD_TIMEOUT_MS) {
+            console.warn('[MSG_QUEUE] giving up — peer keys still missing after 5min', msg.localId);
             await this.updateStatus(msg, 'failed_visible', 'Chiffrement impossible — clés du contact indisponibles. Réessayez.');
             return;
           }
