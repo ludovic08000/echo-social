@@ -25,8 +25,12 @@ export type PinMode = 'every_open' | 'once_per_session' | 'on_inactivity' | 'on_
 
 const SESSION_KEY = 'forsure-pin-unlocked';
 const PIN_WRAP_DB = 'forsure-pin-wrap';
-const PIN_WRAP_VERSION = 1;
-const PIN_WRAP_STORE = 'wrapped-keys';
+// CRITICAL: Bumped to v2 to add the unified store. v1 used a single store
+// "wrapped-keys" which was incompatible with pinWrap.ts ("pin-wrapped-keys").
+// We keep BOTH stores in v2 so we can migrate legacy blobs lazily.
+const PIN_WRAP_VERSION = 2;
+const PIN_WRAP_STORE = 'pin-wrapped-keys';   // unified store (matches pinWrap.ts)
+const PIN_WRAP_LEGACY_STORE = 'wrapped-keys'; // read-only fallback for migration
 const PBKDF2_ITERATIONS = 600_000;
 const INACTIVITY_TIMEOUT = 5 * 60_000; // 5 minutes
 
