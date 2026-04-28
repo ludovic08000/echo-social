@@ -46,16 +46,21 @@ async function deriveWrappingKey(pin: string, salt: Uint8Array): Promise<CryptoK
   );
 }
 
-/** Open/create the PIN wrap IndexedDB store */
+/** Open/create the PIN wrap IndexedDB store (shared with useChatPin) */
 function openPinDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = hardGlobals.idbOpen('forsure-pin-wrap', 1);
+    // Bump in lockstep with useChatPin.ts (PIN_WRAP_VERSION = 2)
+    const req = hardGlobals.idbOpen('forsure-pin-wrap', 2);
     req.onerror = () => reject(req.error);
     req.onsuccess = () => resolve(req.result);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(PIN_WRAP_STORE)) {
         db.createObjectStore(PIN_WRAP_STORE, { keyPath: 'id' });
+      }
+      // Keep legacy useChatPin store so coexistence works during upgrade
+      if (!db.objectStoreNames.contains('wrapped-keys')) {
+        db.createObjectStore('wrapped-keys', { keyPath: 'id' });
       }
     };
   });
