@@ -112,6 +112,17 @@ const STORE_NAME = 'outbound';
 const MAX_RETRIES = 10;
 const BASE_RETRY_MS = 2000;
 const MAX_RETRY_MS = 60000;
+/**
+ * Maximum time we keep retrying to find a ready secure channel before
+ * surfacing a hard failure to the user. Was 30s — too aggressive on iOS,
+ * where Safari/PWA can take well over a minute to rehydrate IndexedDB,
+ * fetch peer X3DH bundles, and run the ratchet bootstrap after wake.
+ *
+ * 5 min is enough to cover cold starts + slow networks while still
+ * eventually freeing the user from a stuck queue. Plaintext stays in
+ * volatile memory the whole time.
+ */
+const SECURE_CHANNEL_HARD_TIMEOUT_MS = 5 * 60_000;
 
 // ─── Singleton Queue Manager ───
 
