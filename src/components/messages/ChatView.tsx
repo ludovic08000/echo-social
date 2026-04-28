@@ -395,6 +395,22 @@ export function ChatView({ conversationId }: ChatViewProps) {
     e.preventDefault();
     if (!newMessage.trim() || isSending) return;
 
+    // Hard blockers — show a clear reason and abort
+    if (!isZeusConversation) {
+      if (e2ee.peerKeyMissing) {
+        toast.error('Clés du contact indisponibles — réessaie dans un instant.');
+        return;
+      }
+      if (e2ee.initError === 'pin_unlock_required') {
+        toast.error('Déverrouille la messagerie sécurisée pour envoyer.');
+        return;
+      }
+      if (e2ee.initError === 'identity_lost_backup_available') {
+        toast.error('Restaure ton identité sécurisée avant d’envoyer.');
+        return;
+      }
+    }
+
     const body = replyTo
       ? `↩️ ${replyTo.profile.name}: "${getDecryptedText(replyTo).slice(0, 50)}${getDecryptedText(replyTo).length > 50 ? '…' : ''}"\n\n${newMessage.trim()}`
       : newMessage.trim();
@@ -409,6 +425,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
     if (isZeusConversation) {
       legacySendMessage.mutate({ conversationId, body });
     } else {
+      // If E2EE not yet ready: queue the message — it will encrypt + send
+      // as soon as the secure channel is established. Show a soft hint so
+      // the user knows it's pending (avoids the iOS "dead button" feeling).
+      if (!e2ee.isReady()) {
+        toast.message('Message en file — envoi dès que le canal sécurisé est prêt.');
+      }
       // Fire-and-forget: queue handles retry/encryption in background
       queue.sendMessage(body).catch(err => {
         const msg = err instanceof Error ? err.message : 'Erreur envoi';
@@ -417,18 +439,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
     }
   };
 
-  // NOTE: `fingerprintChanged` is intentionally NOT a blocker here — `handleSend`
-  // already shows a non-blocking warning and the queue proceeds with encryption.
-  // Blocking the send button on fingerprint change made both text and media
-  // sending unusable in normal "key rotated" scenarios.
-  //
-  // We DO however block the send when E2EE is not yet ready: the plaintext
-  // lives in volatile memory only, and iOS routinely kills tabs in the
-  // background, which would silently lose the message. Refusing the send
-  // here is safer than enqueuing a payload we may never be able to encrypt.
+  // Hard blockers ONLY disable the UI. We intentionally do NOT disable the
+  // send button while E2EE is merely "initializing" — on iOS the channel can
+  // take 10-60s to come up and a disabled button looks broken. The queue
+  // safely holds the message and encrypts it when keys are ready.
   const encryptionReady = isZeusConversation || e2ee.isReady();
   const sendBlocked = !isZeusConversation && (
-    !encryptionReady ||
     e2ee.peerKeyMissing ||
     e2ee.initError === 'pin_unlock_required' ||
     e2ee.initError === 'identity_lost_backup_available'
