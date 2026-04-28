@@ -390,13 +390,16 @@ class MessageQueueManager {
 
         const handlers = this.getReadyAwareHandlers(msg.conversationId);
         if (!handlers?.encrypt) {
-          // Fail fast: if no handler is registered after 30s, mark as failed
+          // Wait up to SECURE_CHANNEL_HARD_TIMEOUT_MS (5min) before failing.
+          // This covers iOS cold start + slow X3DH bootstrap reliably.
           const age = Date.now() - msg.createdAt;
-          if (age > 30_000) {
+          if (age > SECURE_CHANNEL_HARD_TIMEOUT_MS) {
+            console.warn('[MSG_QUEUE] secure channel still unavailable after 5min', msg.localId);
             await this.updateStatus(msg, 'failed_visible', 'Canal sécurisé indisponible — réessayez plus tard');
             return;
           }
-          await this.updateStatus(msg, 'waiting_secure_channel', 'Canal sécurisé indisponible');
+          console.log('[MSG_QUEUE] waiting for secure channel', msg.localId, 'age=', age, 'ms');
+          await this.updateStatus(msg, 'waiting_secure_channel', 'En attente du canal sécurisé');
           this.scheduleRetry(msg, 'secure_wait');
           return;
         }
