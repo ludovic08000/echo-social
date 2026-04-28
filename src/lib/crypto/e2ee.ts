@@ -165,9 +165,14 @@ export async function decryptMessage(
     throw new Error('Unsupported encryption protocol version');
   }
 
-  // Replay protection: reject > 7 days
-  if (Date.now() - envelope.ts > 7 * 24 * 60 * 60 * 1000) {
-    throw new Error('Message too old (possible replay attack)');
+  // NOTE: We intentionally do NOT reject by absolute timestamp anymore.
+  // Anti-replay is enforced by the per-conversation `seq` counter (this file)
+  // and by Double Ratchet header counters (pn/n) — both refuse duplicate or
+  // out-of-window numbers. A timestamp-based cutoff broke historical reads
+  // after a key restore (PIN re-unlock, multi-device sync) without adding
+  // any real protection beyond what the counters already provide.
+  if (typeof envelope.ts !== 'number' || envelope.ts <= 0) {
+    throw new Error('Envelope timestamp invalide');
   }
 
   const ivBytes = base64ToBuffer(envelope.iv);
