@@ -4,6 +4,8 @@ import { hasMediaKey, parseMediaMessage, buildMediaMessageBody } from '@/lib/cry
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
+import { routeIncoming } from '@/e2ee-session';
+import { supabase } from '@/integrations/supabase/client';
 import { setMediaKey } from './mediaKeyCache';
 import type { DecryptResult } from '@/hooks/useE2EE';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
@@ -247,6 +249,32 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
         };
       };
 
+      // Last-resort fallback used by both branches below: try the e2ee-session
+      // façade (multi-session ratchet enumeration + pending queue) before
+      // surfacing the "restauration nécessaire" placeholder. Never throws.
+      const sessionFallback = async (): Promise<CachedDecryption | null> => {
+        if (!messageId) return null;
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return null;
+          const { data: row } = await supabase
+            .from('messages')
+            .select('sender_id')
+            .eq('id', messageId)
+            .maybeSingle();
+          const r = await routeIncoming({
+            encryptedBody: body,
+            recipientUserId: user.id,
+            senderUserId: (row as { sender_id?: string } | null)?.sender_id,
+            messageId,
+          });
+          if (r.ok && r.plaintext !== null) return buildEntryFromText(r.plaintext);
+        } catch {
+          /* swallow */
+        }
+        return null;
+      };
+
       promise = decrypt(body)
         .then(async (result) => {
           if (result.incompatible && messageId) {
@@ -255,6 +283,14 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
               const entry = buildEntryFromText(copyText);
               plaintextCache.set(key, entry);
               return entry;
+            }
+
+            // NEW: ask the session façade to try every known ratchet session
+            // (covers iOS Keychain rotation + multi-device drift).
+            const facade = await sessionFallback();
+            if (facade) {
+              plaintextCache.set(key, facade);
+              return facade;
             }
 
             logCryptoError({
@@ -303,6 +339,12 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
               const entry = buildEntryFromText(copyText);
               plaintextCache.set(key, entry);
               return entry;
+            }
+            // NEW: session façade fallback also on hard errors
+            const facade = await sessionFallback();
+            if (facade) {
+              plaintextCache.set(key, facade);
+              return facade;
             }
           }
 

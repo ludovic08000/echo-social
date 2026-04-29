@@ -84,12 +84,23 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
  * Wire the pending queue's retry handler to the router itself. Idempotent —
  * call once at app startup.
  */
+/**
+ * Wire the pending queue's retry handler to the router itself. Idempotent —
+ * call once at app startup. On a successful retry we dispatch the existing
+ * `forsure-decrypt-retry` event so any mounted `DecryptedMessageBody`
+ * re-runs its decryption pipeline and picks up the now-readable plaintext.
+ */
 let wired = false;
 export function wirePendingQueue(): void {
   if (wired) return;
   wired = true;
   pendingMessageQueue.setRetryHandler(async (envelope) => {
     const r = await routeIncoming(envelope as RouteInput);
+    if (r.ok && typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
+      } catch { /* SSR safe */ }
+    }
     return r.ok;
   });
 }
