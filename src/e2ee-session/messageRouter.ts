@@ -1,0 +1,95 @@
+/**
+ * Message router — single entry point for decrypting an inbound payload.
+ *
+ * Decision tree:
+ *   1. If `encryptedBody` is a known v3/v4 ratchet ciphertext → ratchetDecrypt
+ *      (with `tryEveryRatchetSession` fallback).
+ *   2. Else if a `messageId` is provided and a `message_device_copies` row
+ *      exists for this device → `legacyDecryptByMessageId` (covers X3DH
+ *      bootstrap, deviceWrap, and Keychain-rotation).
+ *   3. Else if it's a JSON conversation-level envelope → caller delegates
+ *      to the existing per-conversation ratchet (we don't duplicate that
+ *      decoder here).
+ *   4. Else → enqueue in `pendingMessageQueue` (might be out-of-order).
+ *
+ * Never throws. Never returns ciphertext to the UI.
+ */
+import {
+  RATCHET_PREFIX_V3,
+  RATCHET_PREFIX_V4,
+  ratchetDecrypt as deviceRatchetDecrypt,
+} from '@/lib/crypto/deviceRatchet';
+import { selfDeviceId } from './deviceRegistry';
+import { tryEveryRatchetSession } from './fallbackDecrypt';
+import { legacyDecryptByMessageId, isKnownLegacyFormat } from './legacyDecryptRouter';
+import { pendingMessageQueue } from './pendingMessageQueue';
+import type { DecryptResult, UserId } from './types';
+
+interface RouteInput {
+  encryptedBody: string;
+  recipientUserId: UserId;
+  /** Sender (used by fallbackDecrypt to enumerate peer devices). */
+  senderUserId?: UserId;
+  /** Original `messages.id` — required for legacy device-copy fallback. */
+  messageId?: string;
+}
+
+export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
+  const { encryptedBody, recipientUserId, senderUserId, messageId } = input;
+  const me = selfDeviceId();
+
+  // 1) Ratchet v3/v4 fast path.
+  if (
+    encryptedBody.startsWith(RATCHET_PREFIX_V4) ||
+    encryptedBody.startsWith(RATCHET_PREFIX_V3)
+  ) {
+    try {
+      const pt = await deviceRatchetDecrypt(recipientUserId, me, encryptedBody);
+      if (pt !== null) {
+        return {
+          ok: true,
+          plaintext: pt,
+          via: encryptedBody.startsWith(RATCHET_PREFIX_V4) ? 'ratchet-v4' : 'ratchet-v3',
+        };
+      }
+    } catch {
+      /* fall through to fallback */
+    }
+
+    // 1b) Try every known session (covers Keychain rotation, multi-device).
+    if (senderUserId) {
+      const fb = await tryEveryRatchetSession(recipientUserId, senderUserId, encryptedBody);
+      if (fb.ok) return fb;
+    }
+
+    // 1c) Out-of-order? Enqueue for retry.
+    if (messageId) {
+      pendingMessageQueue.enqueue(messageId, input);
+    }
+    return { ok: false, plaintext: null, errorCode: 'RATCHET_DECRYPT_FAILED' };
+  }
+
+  // 2) Any other known legacy format with a messageId → router.
+  if (messageId && isKnownLegacyFormat(encryptedBody)) {
+    const r = await legacyDecryptByMessageId(messageId);
+    if (r.ok) return r;
+    pendingMessageQueue.enqueue(messageId, input);
+    return r;
+  }
+
+  return { ok: false, plaintext: null, errorCode: 'UNKNOWN_FORMAT' };
+}
+
+/**
+ * Wire the pending queue's retry handler to the router itself. Idempotent —
+ * call once at app startup.
+ */
+let wired = false;
+export function wirePendingQueue(): void {
+  if (wired) return;
+  wired = true;
+  pendingMessageQueue.setRetryHandler(async (envelope) => {
+    const r = await routeIncoming(envelope as RouteInput);
+    return r.ok;
+  });
+}
