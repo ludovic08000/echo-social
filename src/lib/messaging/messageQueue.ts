@@ -24,6 +24,7 @@ export type OutboundMessageStatus =
   | 'failed_visible';
 
 import { logCryptoError } from '@/lib/crypto/errorLogger';
+import { safeUUID } from '@/e2ee-session/safeUuid';
 
 /**
  * Emit a low-volume "trace" entry into crypto_error_logs so we can follow a
@@ -348,9 +349,7 @@ class MessageQueueManager {
 
     const msg: OutboundMessage = {
       localId: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      traceId: (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
-        ? crypto.randomUUID()
-        : `trace-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      traceId: safeUUID(),
       conversationId: params.conversationId,
       senderId: params.senderId,
       plaintext: '', // NEVER stored in IndexedDB

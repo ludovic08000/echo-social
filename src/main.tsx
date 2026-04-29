@@ -28,6 +28,10 @@ import { hardenPrototypes } from '@/lib/crypto';
 
 hardenPrototypes();
 
+// ─── E2EE Session façade: wire pending message retry loop (Sesame-style) ───
+import { wirePendingQueue } from '@/e2ee-session';
+wirePendingQueue();
+
 createRoot(document.getElementById("root")!).render(
   <HelmetProvider>
     <App />

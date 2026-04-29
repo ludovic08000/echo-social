@@ -19,6 +19,7 @@ import { messageQueue, type OutboundMessage } from '@/lib/messaging/messageQueue
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
+import { safeUUID } from '@/e2ee-session';
 
 export function useMessageQueue(
   conversationId: string,
@@ -35,7 +36,7 @@ export function useMessageQueue(
   const [rawPendingMessages, setRawPendingMessages] = useState<OutboundMessage[]>([]);
   // Volatile plaintext cache — never persisted, survives only in memory
   const plaintextCacheRef = useRef<Map<string, string>>(new Map());
-  const handlerIdRef = useRef(crypto.randomUUID());
+  const handlerIdRef = useRef(safeUUID());
   const encryptRef = useRef(encrypt);
   const readyRef = useRef(isEncryptionReady);
   const activeRef = useRef(isEncryptionActive);
@@ -98,10 +99,10 @@ export function useMessageQueue(
             currentUser: user?.id ?? null,
           });
           await messageQueue.removeMessage(msg.localId);
-          return msg.serverId ?? crypto.randomUUID();
+          return msg.serverId ?? safeUUID();
         }
 
-        const outboundId = msg.serverId ?? crypto.randomUUID();
+        const outboundId = msg.serverId ?? safeUUID();
         msg.serverId = outboundId;
 
         const { error } = await supabase
