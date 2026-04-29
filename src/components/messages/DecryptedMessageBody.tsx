@@ -4,6 +4,8 @@ import { hasMediaKey, parseMediaMessage, buildMediaMessageBody } from '@/lib/cry
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
+import { routeIncoming } from '@/e2ee-session';
+import { supabase } from '@/integrations/supabase/client';
 import { setMediaKey } from './mediaKeyCache';
 import type { DecryptResult } from '@/hooks/useE2EE';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
