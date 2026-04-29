@@ -19,6 +19,7 @@ import { messageQueue, type OutboundMessage } from '@/lib/messaging/messageQueue
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
+import { safeUUID } from '@/e2ee-session';
 
 export function useMessageQueue(
   conversationId: string,

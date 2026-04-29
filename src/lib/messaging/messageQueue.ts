@@ -24,6 +24,7 @@ export type OutboundMessageStatus =
   | 'failed_visible';
 
 import { logCryptoError } from '@/lib/crypto/errorLogger';
+import { safeUUID } from '@/e2ee-session/safeUuid';
 
 /**
  * Emit a low-volume "trace" entry into crypto_error_logs so we can follow a
