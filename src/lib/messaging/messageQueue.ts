@@ -348,9 +348,7 @@ class MessageQueueManager {
 
     const msg: OutboundMessage = {
       localId: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      traceId: (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
-        ? crypto.randomUUID()
-        : `trace-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      traceId: safeUUID(),
       conversationId: params.conversationId,
       senderId: params.senderId,
       plaintext: '', // NEVER stored in IndexedDB
