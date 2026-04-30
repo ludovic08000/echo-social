@@ -135,10 +135,18 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   onDecryptedRef.current = onDecrypted;
 
   useEffect(() => {
-    const handler = () => setRetryTick((t) => t + 1);
+    const handler = () => {
+      // Drop any cached placeholder so the next render forces a real attempt.
+      const k = cacheKey(messageId, body);
+      const cached = plaintextCache.get(k);
+      if (cached && cached.text === '🔒 Message sécurisé — restauration nécessaire') {
+        plaintextCache.delete(k);
+      }
+      setRetryTick((t) => t + 1);
+    };
     window.addEventListener('forsure-decrypt-retry', handler);
     return () => window.removeEventListener('forsure-decrypt-retry', handler);
-  }, []);
+  }, [messageId, body]);
 
   useEffect(() => {
     if (cachedPlaintext) {

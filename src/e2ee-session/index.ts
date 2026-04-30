@@ -28,3 +28,4 @@ export {
 export { tryEveryRatchetSession } from './fallbackDecrypt';
 export { routeIncoming, wirePendingQueue } from './messageRouter';
 export { pendingMessageQueue } from './pendingMessageQueue';
+export { listKnownSessionIds } from '@/lib/crypto/deviceRatchet';

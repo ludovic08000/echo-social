@@ -600,6 +600,43 @@ export async function invalidateDeviceSession(
   }
 }
 
+/**
+ * Read-only enumeration of every (peerUserId, peerDeviceId, sessionId)
+ * tuple known locally for the given self device. Used by the e2ee-session
+ * router to diagnose unknown-sessionId ciphertexts and to log multi-device
+ * mismatches without touching crypto state.
+ */
+export async function listKnownSessionIds(
+  myUserId: string,
+  myDeviceId: string,
+): Promise<Array<{ peerUserId: string; peerDeviceId: string; sessionId: string; lastUsedAt: number }>> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).getAll();
+    const all = await new Promise<StoredSession[]>((resolve, reject) => {
+      req.onsuccess = () => resolve((req.result as StoredSession[]) ?? []);
+      req.onerror = () => reject(req.error);
+    });
+    const prefix = `${myUserId}::${myDeviceId}::`;
+    const out: Array<{ peerUserId: string; peerDeviceId: string; sessionId: string; lastUsedAt: number }> = [];
+    for (const s of all) {
+      if (!s.id.startsWith(prefix)) continue;
+      const parts = s.id.split('::');
+      if (parts.length < 4) continue;
+      out.push({
+        peerUserId: parts[2],
+        peerDeviceId: parts[3],
+        sessionId: s.sessionId,
+        lastUsedAt: (s as unknown as { lastUsedAt?: number }).lastUsedAt ?? 0,
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 /** Drop all device-pair sessions (e.g. on logout / key rotation). */
 export async function clearAllDeviceSessions(): Promise<void> {
   try {
