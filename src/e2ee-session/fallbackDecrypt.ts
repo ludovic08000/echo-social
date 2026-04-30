@@ -33,20 +33,21 @@ export async function tryEveryRatchetSession(
     return { ok: false, plaintext: null, errorCode: 'NO_PEER_DEVICES' };
   }
 
-  // ratchetDecrypt() looks the session up by sessionId embedded in the
-  // ciphertext header — but in the v3 path the matching session might be
-  // stored under a different peerDeviceId after a Keychain rotation. We
-  // therefore call it once per known peer device; the first that returns
-  // a plaintext wins.
-  void me;
-  for (const dev of peerDevices) {
-    void dev; // current ratchetDecrypt API is global per (selfUser, selfDevice)
-    try {
-      const pt = await ratchetDecrypt(recipientUserId, me, encryptedBody);
-      if (pt !== null) {
-        return { ok: true, plaintext: pt, via: 'fallback-session' };
-      }
-    } catch { /* try next */ }
-  }
+  // ratchetDecrypt() looks up the session via the sessionId embedded in the
+  // ciphertext header itself — it scans every stored session for this
+  // (selfUser, selfDevice). Calling it once is therefore sufficient; we keep
+  // the peerDevices probe only to confirm the peer actually has devices and
+  // to log a precise diagnostic when none of them yields a session.
+  try {
+    const pt = await ratchetDecrypt(recipientUserId, me, encryptedBody);
+    if (pt !== null) {
+      return { ok: true, plaintext: pt, via: 'fallback-session' };
+    }
+  } catch { /* swallow — never surface crypto errors to UI */ }
+
+  console.warn('[e2ee-session] fallback ratchet decrypt exhausted', {
+    peerUserId,
+    peerDevices: peerDevices.length,
+  });
   return { ok: false, plaintext: null, errorCode: 'ALL_RATCHET_SESSIONS_FAILED' };
 }
