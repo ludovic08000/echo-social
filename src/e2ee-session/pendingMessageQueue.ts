@@ -2,19 +2,24 @@
  * Pending message queue — keeps out-of-order or transiently-undecryptable
  * envelopes in MEMORY only and retries them on a short tick.
  *
- * Why memory only:
- *   - Plaintext is never persisted to IndexedDB (project rule).
- *   - Encrypted blobs are already on the server (`messages` /
- *     `message_device_copies`); we don't need to persist them again.
- *   - Avoids growing local state across reloads if the peer never sends
- *     the missing chain message.
+ * Strategy (per user pick "RAM + refetch from server on reload"):
+ *   - Live retries: 30 attempts × 1500 ms ≈ 45 s (covers wifi/4G handoffs,
+ *     long Double Ratchet skip-windows, peer reconnect bursts).
+ *   - On reload: nothing is persisted locally. The message-list refetch
+ *     re-supplies the ciphertext from `messages` / `message_device_copies`
+ *     and `routeIncoming` re-enqueues automatically. Plaintext is never
+ *     stored on disk (project rule: keys+plaintext live in RAM only).
  *
- * Triggers a retry callback (provided by the caller) on a 1.5s interval,
- * up to MAX_ATTEMPTS times per envelope.
+ * Concurrency: tick() walks a snapshot of entries so retries can mutate the
+ * map safely. Each retry is awaited sequentially to avoid fan-out storms
+ * against the ratchet store (IndexedDB is single-writer per tx).
  */
 import type { PendingEnvelope } from './types';
 
-const MAX_ATTEMPTS = 8;
+// Why 30 × 1.5 s: enough to cross a typical iOS Safari background→foreground
+// resume + a peer ratchet catch-up, while still bounded so we don't keep
+// "permanently undeliverable" ciphertexts spinning forever.
+const MAX_ATTEMPTS = 30;
 const RETRY_INTERVAL_MS = 1500;
 
 type RetryFn = (envelope: unknown) => Promise<boolean>;
@@ -41,8 +46,24 @@ class PendingQueue {
     });
   }
 
+  /** UI hook: a freshly-fetched message id is in flight again — give it a fresh budget. */
+  refresh(envelopeId: string, envelope: unknown): void {
+    const prev = this.items.get(envelopeId);
+    if (prev) {
+      prev.attempts = 0;
+      prev.envelope = envelope;
+      prev.enqueuedAt = Date.now();
+      return;
+    }
+    this.enqueue(envelopeId, envelope);
+  }
+
   remove(envelopeId: string): void {
     this.items.delete(envelopeId);
+  }
+
+  has(envelopeId: string): boolean {
+    return this.items.has(envelopeId);
   }
 
   size(): number {
