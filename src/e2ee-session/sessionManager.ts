@@ -31,8 +31,8 @@ import {
 import {
   fetchPrekeyBundleForDevice,
   x3dhInitiate,
-  type IdentityKeyPair,
 } from '@/lib/crypto/x3dh';
+import type { IdentityKeyPair } from '@/lib/crypto/keyManager';
 import type { DeviceDescriptor, SessionDescriptor, UserId } from './types';
 import { describeSession, markSessionUsed } from './sessionStore';
 import { selfDeviceId } from './deviceRegistry';
