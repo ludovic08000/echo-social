@@ -31,8 +31,8 @@ import {
 import {
   fetchPrekeyBundleForDevice,
   x3dhInitiate,
-  type LocalKeys,
-} from '@/lib/crypto/keyManager';
+  type IdentityKeyPair,
+} from '@/lib/crypto/x3dh';
 import type { DeviceDescriptor, SessionDescriptor, UserId } from './types';
 import { describeSession, markSessionUsed } from './sessionStore';
 import { selfDeviceId } from './deviceRegistry';
@@ -83,7 +83,7 @@ export async function encryptForDevice(
 export async function ensureSession(
   senderUserId: UserId,
   peer: DeviceDescriptor,
-  myKeys: LocalKeys,
+  myKeys: IdentityKeyPair,
 ): Promise<SessionDescriptor> {
   const me = selfDeviceId();
   const desc = describeSession(senderUserId, me, peer.userId, peer.deviceId);
@@ -112,8 +112,8 @@ export async function ensureSession(
     undefined,
     {
       isInitiator: true,
-      peerInitialDhPubB64: bundle.signedPreKey?.publicKey ?? null,
-      peerSpkId: bundle.signedPreKey?.id ?? null,
+      peerInitialDhPubB64: bundle.signedPrekey ?? null,
+      peerSpkId: bundle.signedPrekeyId ?? null,
     },
   );
   markSessionUsed(desc.sessionId, 'x3dh-bootstrap');
