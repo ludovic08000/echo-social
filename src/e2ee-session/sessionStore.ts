@@ -30,9 +30,27 @@ function loadStatusMap(): Record<SessionId, StatusEntry> {
   }
 }
 
+/**
+ * Persist the status map atomically. Reads the on-disk version first and
+ * merges so that concurrent tabs cannot trample each other's lastUsedAt /
+ * status updates. Strict last-write-wins on `lastUsedAt`.
+ */
 function saveStatusMap(map: Record<SessionId, StatusEntry>): void {
   try {
-    localStorage.setItem(STATUS_KEY, JSON.stringify(map));
+    let onDisk: Record<SessionId, StatusEntry> = {};
+    try {
+      const raw = localStorage.getItem(STATUS_KEY);
+      onDisk = raw ? JSON.parse(raw) : {};
+    } catch { /* corrupt map — overwrite */ }
+
+    const merged: Record<SessionId, StatusEntry> = { ...onDisk };
+    for (const [id, entry] of Object.entries(map)) {
+      const prev = merged[id];
+      if (!prev || (entry.lastUsedAt ?? 0) >= (prev.lastUsedAt ?? 0)) {
+        merged[id] = entry;
+      }
+    }
+    localStorage.setItem(STATUS_KEY, JSON.stringify(merged));
   } catch {
     /* quota — non-fatal */
   }
