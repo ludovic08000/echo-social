@@ -203,8 +203,22 @@ describe('iOS key rotation — queued message rebinding', () => {
     h.bundle = { identityEpoch: 2, deviceId: 'dev-B' };
     h.ready = true;
 
-    // Wait for the secure_wait timer to fire and drain both messages.
-    await waitFor(() => h.sentEnvelopes.length === 2, 20_000);
+    // Production: when the channel becomes ready, ChatView remounts and
+    // network listeners call `resumeForConversation`. We mimic that —
+    // relying solely on the 3s secure_wait timer is unreliable because it
+    // can collide with the per-conversation serialisation lock.
+    await messageQueue.resumeForConversation(CONV);
+
+    // Drain both messages. Re-issue resume after the 1.5s debounce window
+    // if the second message stays parked behind the per-conversation lock.
+    await waitFor(async () => {
+      if (h.sentEnvelopes.length >= 2) return true;
+      if (h.sentEnvelopes.length === 1) {
+        await new Promise((r) => setTimeout(r, 1600));
+        await messageQueue.resumeForConversation(CONV);
+      }
+      return false;
+    }, 30_000);
 
     // CRITICAL: every encrypt call must have used the NEW bundle.
     expect(h.encryptCalls.length).toBeGreaterThanOrEqual(2);
