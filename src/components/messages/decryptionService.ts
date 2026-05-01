@@ -93,6 +93,56 @@ export function cacheKey(messageId: string | undefined, body: string): string {
   return `${messageId ?? 'noid'}|${body}`;
 }
 
+/**
+ * Batched sender_id lookup — when many bubbles mount in a single chat
+ * scroll, fold all `messages.id → sender_id` queries into one round-trip
+ * (≤50 ms window). Removes the N+1 Supabase chatter on the decrypt path.
+ */
+const BATCH_WINDOW_MS = 50;
+const senderBatchPending = new Map<string, Array<(v: string | null) => void>>();
+const senderCache = new LruMap<string, string | null>(500);
+let senderBatchTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function flushSenderBatch(): Promise<void> {
+  senderBatchTimer = null;
+  const localWaiters = new Map(senderBatchPending);
+  senderBatchPending.clear();
+  const ids = Array.from(localWaiters.keys());
+  if (ids.length === 0) return;
+  try {
+    const { data } = await supabase
+      .from('messages')
+      .select('id,sender_id')
+      .in('id', ids);
+    const map = new Map<string, string | null>();
+    for (const row of (data as Array<{ id: string; sender_id: string | null }> | null) ?? []) {
+      map.set(row.id, row.sender_id ?? null);
+    }
+    for (const id of ids) {
+      const v = map.get(id) ?? null;
+      senderCache.set(id, v);
+      (localWaiters.get(id) ?? []).forEach((fn) => fn(v));
+    }
+  } catch {
+    for (const id of ids) {
+      (localWaiters.get(id) ?? []).forEach((fn) => fn(null));
+    }
+  }
+}
+
+function getSenderIdBatched(messageId: string): Promise<string | null> {
+  const cached = senderCache.get(messageId);
+  if (cached !== undefined) return Promise.resolve(cached);
+  return new Promise<string | null>((resolve) => {
+    const arr = senderBatchPending.get(messageId) ?? [];
+    arr.push(resolve);
+    senderBatchPending.set(messageId, arr);
+    if (!senderBatchTimer) {
+      senderBatchTimer = setTimeout(() => void flushSenderBatch(), BATCH_WINDOW_MS);
+    }
+  });
+}
+
 export function readCache(messageId: string | undefined, body: string): DecryptionOutcome | undefined {
   return cache.get(cacheKey(messageId, body));
 }
