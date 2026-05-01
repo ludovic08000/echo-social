@@ -29,6 +29,7 @@ import {
   listKnownSessionIds,
 } from '@/lib/crypto/deviceRatchet';
 import { listDevicesForUser, selfDeviceId } from './deviceRegistry';
+import { legacyDecryptByMessageId } from './legacyDecryptRouter';
 import type { DecryptResult, UserId } from './types';
 
 /** Extract the sessionId from a v3/v4 ciphertext header. Returns null on parse failure. */
@@ -49,6 +50,7 @@ export async function tryEveryRatchetSession(
   recipientUserId: UserId,
   peerUserId: UserId,
   encryptedBody: string,
+  messageId?: string,
 ): Promise<DecryptResult> {
   if (
     !encryptedBody.startsWith(RATCHET_PREFIX_V3) &&
@@ -63,21 +65,34 @@ export async function tryEveryRatchetSession(
   try {
     const pt = await ratchetDecrypt(recipientUserId, me, encryptedBody);
     if (pt !== null) return { ok: true, plaintext: pt, via: 'fallback-session' };
-  } catch { /* keep diagnosing */ }
+  } catch { /* keep trying */ }
 
-  // 2) Diagnose: do we even have a session for any of this peer's devices?
+  // 2) Diagnose locally: do we even have a session for any of this peer's devices?
   const headerSessionId = readSessionIdFromHeader(encryptedBody);
   const knownSessions = await listKnownSessionIds(recipientUserId, me);
   const knownForPeer = knownSessions.filter(s => s.peerUserId === peerUserId);
   const peerDevices = await listDevicesForUser(peerUserId);
-
-  // 3) Header sessionId is unknown but we DO have other sessions with this
-  //    peer → either the peer rotated SPK (re-bootstrap needed) or the
-  //    message comes from a peer device we have never talked to.
   const headerKnown = headerSessionId
     ? knownForPeer.some(s => s.sessionId === headerSessionId)
     : false;
 
+  // 3) REAL multi-session test: ratchetDecrypt locks onto the header sessionId,
+  //    so looping the same call cannot help. The orthogonal path is the
+  //    per-message device-copy fan-out: each device-copy row is independently
+  //    encrypted (X3DH bootstrap, deviceWrap, or another ratchet). If ANY
+  //    copy decrypts, surface the plaintext immediately.
+  if (messageId) {
+    try {
+      const r = await legacyDecryptByMessageId(messageId);
+      if (r.ok && r.plaintext !== null) {
+        return { ok: true, plaintext: r.plaintext, via: 'fallback-device-copy' };
+      }
+    } catch { /* keep trying */ }
+  }
+
+  // 4) Header sessionId unknown but we DO have other sessions with this peer
+  //    → peer rotated SPK or new peer device. Caller must re-bootstrap on
+  //    the next outbound fan-out.
   if (!headerKnown && knownForPeer.length > 0) {
     console.warn('[e2ee-session] sessionId mismatch — peer likely rotated or new device', {
       peerUserId,
@@ -93,8 +108,7 @@ export async function tryEveryRatchetSession(
     return { ok: false, plaintext: null, errorCode: 'NO_PEER_DEVICES' };
   }
 
-  // 4) We have the right sessionId locally, ratchet still failed → likely
-  //    out-of-order delivery. Caller should enqueue for retry.
+  // 5) Right sessionId locally + ratchet still failed → out-of-order delivery.
   console.warn('[e2ee-session] ratchet decrypt exhausted for known session', {
     peerUserId,
     headerSessionId,

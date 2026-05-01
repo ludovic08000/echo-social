@@ -136,12 +136,12 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
   useEffect(() => {
     const handler = () => {
-      // Drop any cached placeholder so the next render forces a real attempt.
+      // Drop any stale cached entry so the next render forces a real attempt.
+      // We never store a "restoration needed" placeholder anymore — the
+      // pending queue keeps retrying silently — but legacy entries from a
+      // prior version may still be in memory.
       const k = cacheKey(messageId, body);
-      const cached = plaintextCache.get(k);
-      if (cached && cached.text === '🔒 Message sécurisé — restauration nécessaire') {
-        plaintextCache.delete(k);
-      }
+      plaintextCache.delete(k);
       setRetryTick((t) => t + 1);
     };
     window.addEventListener('forsure-decrypt-retry', handler);
@@ -192,23 +192,13 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       return;
     }
 
+    // For our own messages we rely entirely on the volatile plaintext cache
+    // populated by the send pipeline. If it isn't there yet, stay silently
+    // decrypting (transparent dot) — the cache will populate within a tick
+    // and a re-render will show the text. We NEVER surface a placeholder.
     if (isMe) {
       setIsDecrypting(true);
-
-      const fallbackTimer = setTimeout(() => {
-        const entry: CachedDecryption = {
-          text: '🔒 Message sécurisé — restauration nécessaire',
-          mediaKeyB64: null,
-          hidden: false,
-        };
-        plaintextCache.set(cacheKey(messageId, body), entry);
-        setHidden(false);
-        setDisplayText(entry.text);
-        setMediaKeyB64State(null);
-        setIsDecrypting(false);
-      }, 800);
-
-      return () => clearTimeout(fallbackTimer);
+      return;
     }
 
     const key = cacheKey(messageId, body);
@@ -242,24 +232,17 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
         if (hasMediaKey(text)) {
           const parsed = parseMediaMessage(text);
           if (parsed) {
-            return {
-              text: parsed.label,
-              mediaKeyB64: parsed.keyB64,
-              hidden: false,
-            };
+            return { text: parsed.label, mediaKeyB64: parsed.keyB64, hidden: false };
           }
         }
-
-        return {
-          text,
-          mediaKeyB64: null,
-          hidden: false,
-        };
+        return { text, mediaKeyB64: null, hidden: false };
       };
 
-      // Last-resort fallback used by both branches below: try the e2ee-session
-      // façade (multi-session ratchet enumeration + pending queue) before
-      // surfacing the "restauration nécessaire" placeholder. Never throws.
+      // Single delegate: try the conversation-level decrypt first, then the
+      // e2ee-session façade (which itself tries multi-session ratchet
+      // enumeration + per-message device-copy fan-out + enqueues for retry).
+      // Returns null when no path produced plaintext — the UI then stays in
+      // a silent "decrypting" state until `forsure-decrypt-retry` fires.
       const sessionFallback = async (): Promise<CachedDecryption | null> => {
         if (!messageId) return null;
         try {
@@ -277,70 +260,19 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
             messageId,
           });
           if (r.ok && r.plaintext !== null) return buildEntryFromText(r.plaintext);
-        } catch {
-          /* swallow */
-        }
+        } catch { /* swallow */ }
         return null;
       };
 
       promise = decrypt(body)
         .then(async (result) => {
-          if (result.incompatible && messageId) {
-            const copyText = await tryReadDeviceCopy(messageId);
-            if (copyText !== null) {
-              const entry = buildEntryFromText(copyText);
-              plaintextCache.set(key, entry);
-              return entry;
-            }
-
-            // NEW: ask the session façade to try every known ratchet session
-            // (covers iOS Keychain rotation + multi-device drift).
-            const facade = await sessionFallback();
-            if (facade) {
-              plaintextCache.set(key, facade);
-              return facade;
-            }
-
-            logCryptoError({
-              severity: 'error',
-              context: 'decrypt',
-              errorCode: 'E_DECRYPT_NO_COPY',
-              errorMessage: 'Ratchet incompatible and no device copy found — secure placeholder shown',
-              metadata: { messageId, bodyLen: body.length },
-            });
-
-            const entry: CachedDecryption = {
-              text: '🔒 Message sécurisé — restauration nécessaire',
-              mediaKeyB64: null,
-              hidden: false,
-            };
+          if (!result.incompatible) {
+            const entry = buildEntryFromText(result.text);
             plaintextCache.set(key, entry);
             return entry;
           }
 
-          if (result.incompatible) {
-            logCryptoError({
-              severity: 'warning',
-              context: 'decrypt',
-              errorCode: 'E_DECRYPT_INCOMPATIBLE',
-              errorMessage: 'Ratchet flagged incompatible (no messageId — cannot fallback)',
-              metadata: { bodyLen: body.length },
-            });
-
-            const entry: CachedDecryption = {
-              text: '🔒 Message sécurisé — restauration nécessaire',
-              mediaKeyB64: null,
-              hidden: false,
-            };
-            plaintextCache.set(key, entry);
-            return entry;
-          }
-
-          const entry = buildEntryFromText(result.text);
-          plaintextCache.set(key, entry);
-          return entry;
-        })
-        .catch(async (err) => {
+          // Conv-ratchet incompatible — try device-copy then full façade.
           if (messageId) {
             const copyText = await tryReadDeviceCopy(messageId);
             if (copyText !== null) {
@@ -348,20 +280,36 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
               plaintextCache.set(key, entry);
               return entry;
             }
-            // NEW: session façade fallback also on hard errors
-            const facade = await sessionFallback();
-            if (facade) {
-              plaintextCache.set(key, facade);
-              return facade;
-            }
           }
 
+          const facade = await sessionFallback();
+          if (facade) {
+            plaintextCache.set(key, facade);
+            return facade;
+          }
+
+          logCryptoError({
+            severity: 'warning',
+            context: 'decrypt',
+            errorCode: 'E_DECRYPT_PENDING',
+            errorMessage: 'No path decrypted — staying silent, pending queue will retry',
+            metadata: { messageId, bodyLen: body.length },
+          });
+          // Returning null tells the UI to stay in silent decrypting state.
+          return null;
+        })
+        .catch(async (err) => {
+          // Hard error from conv-ratchet — try façade once.
+          const facade = await sessionFallback();
+          if (facade) {
+            plaintextCache.set(key, facade);
+            return facade;
+          }
           logCryptoException('decrypt', err, {
             severity: 'error',
             metadata: { messageId, bodyLen: body.length, stage: 'final_fallback' },
           });
-
-          throw err;
+          return null;
         });
 
       inflight.set(key, promise);
@@ -371,6 +319,15 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     promise
       .then((entry) => {
         if (cancelled) return;
+
+        if (!entry) {
+          // Stay silently decrypting — pending queue + retry event will resolve.
+          setHidden(false);
+          setDisplayText(null);
+          setMediaKeyB64State(null);
+          setIsDecrypting(true);
+          return;
+        }
 
         setHidden(entry.hidden);
         setDisplayText(entry.hidden ? null : entry.text);
@@ -392,10 +349,8 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       })
       .catch(() => {
         if (!cancelled) {
-          setHidden(false);
-          setDisplayText('🔒 Message sécurisé — restauration nécessaire');
-          setMediaKeyB64State(null);
-          setIsDecrypting(false);
+          // Stay silent on unexpected errors too.
+          setIsDecrypting(true);
         }
       });
 
