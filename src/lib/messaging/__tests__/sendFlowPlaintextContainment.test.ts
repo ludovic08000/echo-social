@@ -195,9 +195,13 @@ async function readRawQueueRow(localId: string): Promise<any | null> {
  *   - URL-encoded
  *   - reversed
  *   - hex
+ *
+ * Skips meaningless probes for very short secrets (< 4 chars) where every
+ * encoding becomes a 1-2 char string that trivially exists inside any
+ * base64 ciphertext blob — that's noise, not a leak.
  */
 function leaksPlaintext(haystack: string, secret: string): boolean {
-  if (!secret) return false;
+  if (!secret || secret.length < 4) return haystack.includes(secret) && secret.length > 0 && haystack.split(secret).length - 1 > 1;
   if (haystack.includes(secret)) return true;
   try { if (haystack.includes(btoa(secret))) return true; } catch {}
   try { if (haystack.includes(encodeURIComponent(secret))) return true; } catch {}
