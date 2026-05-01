@@ -16,11 +16,15 @@
  */
 import type { PendingEnvelope } from './types';
 
-// Why 30 × 1.5 s: enough to cross a typical iOS Safari background→foreground
-// resume + a peer ratchet catch-up, while still bounded so we don't keep
-// "permanently undeliverable" ciphertexts spinning forever.
-const MAX_ATTEMPTS = 30;
+// Why 20 × 1.5 s ≈ 30 s: enough to cross a typical iOS Safari background→
+// foreground resume + a peer ratchet catch-up, while bounded so we don't
+// keep "permanently undeliverable" ciphertexts spinning forever. Lowered
+// from 30 to reduce battery drain on iOS PWA when peer is offline long-term.
+const MAX_ATTEMPTS = 20;
 const RETRY_INTERVAL_MS = 1500;
+// Soft cap on simultaneous retries per tick — prevents stampedes when many
+// out-of-order messages land at once (large group chat catch-up).
+const MAX_RETRIES_PER_TICK = 8;
 
 type RetryFn = (envelope: unknown) => Promise<boolean>;
 
@@ -72,7 +76,16 @@ class PendingQueue {
 
   private async tick(): Promise<void> {
     if (!this.retry || this.items.size === 0) return;
-    for (const [id, item] of Array.from(this.items.entries())) {
+
+    // Skip retries when the tab is hidden — saves CPU/battery on iOS PWA
+    // while still resuming on the next visibilitychange (forsure-decrypt-
+    // retry event in the router fires the moment a message decrypts).
+    if (typeof document !== 'undefined' && document.hidden) return;
+
+    // Process the OLDEST entries first (FIFO), capped per tick to bound
+    // bursts. Remaining entries roll over to the next interval naturally.
+    const entries = Array.from(this.items.entries()).slice(0, MAX_RETRIES_PER_TICK);
+    for (const [id, item] of entries) {
       item.attempts += 1;
       let ok = false;
       try {

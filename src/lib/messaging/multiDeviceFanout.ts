@@ -112,13 +112,14 @@ async function x3dhWrapForDevice(
           peerSpkId: bundle.signedPrekeyId,
         },
       );
-    } catch (e) {
-      console.warn('[FANOUT] session cache after initiate failed (non-fatal)', e);
+    } catch {
+      // Non-fatal: session cache write failure means the next message will
+      // re-run X3DH. Silenced to keep the hot path quiet.
     }
 
     return parts.join('.');
-  } catch (e) {
-    console.warn('[FANOUT] X3DH wrap failed, will fallback:', e);
+  } catch {
+    // X3DH wrap failed → caller falls back to deviceWrap. Silent.
     return null;
   }
 }
@@ -185,13 +186,14 @@ async function x3dhUnwrapForDevice(
           selfInitialDhPubB64: spkPubB64,
         },
       );
-    } catch (e) {
-      console.warn('[FANOUT] session cache after respond failed (non-fatal)', e);
+    } catch {
+      // Non-fatal: session cache write failure means the next message will
+      // re-run X3DH. Silenced to keep the hot path quiet.
     }
 
     return new hardGlobals.TextDecoder().decode(pt);
-  } catch (e) {
-    console.warn('[FANOUT] X3DH unwrap failed:', e);
+  } catch {
+    // X3DH unwrap failed — caller will try deviceWrap legacy path. Silent.
     return null;
   }
 }
@@ -204,7 +206,7 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
   // the real one. Skip fan-out entirely; the per-conv ratchet still
   // delivers to the primary device.
   if (isDeviceIdTemporary()) {
-    console.warn('[FANOUT] device id still pending native hydration — skipping fan-out');
+    // Silent skip: per-conv ratchet still delivers to the primary device.
     return { inserted: 0, multiDevice: false };
   }
   const senderDeviceId = getCurrentDeviceId();
@@ -268,7 +270,6 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
         }
       }
     } catch (e) {
-      console.warn('[FANOUT] SPK rotation check failed (non-fatal)', e);
       logCryptoException('fanout', e, {
         severity: 'warning',
         conversationId: input.conversationId,
@@ -306,7 +307,6 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
           dev.device_id,
         );
       } catch (e) {
-        console.warn('[FANOUT] all paths failed for device', dev.device_id, e);
         logCryptoException('fanout', e, {
           severity: 'error',
           conversationId: input.conversationId,
@@ -333,7 +333,6 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
 
   const { error } = await supabase.from('message_device_copies').insert(rows as any);
   if (error) {
-    console.warn('[FANOUT] insert failed', error.message);
     logCryptoError({
       severity: 'error',
       context: 'fanout',
@@ -410,7 +409,6 @@ export async function tryReadDeviceCopy(messageId: string): Promise<string | nul
     }
     return null;
   } catch (e) {
-    console.warn('[FANOUT] device-copy read failed', e);
     logCryptoException('decrypt', e, {
       severity: 'error',
       myDeviceId,
@@ -476,8 +474,8 @@ async function tryDecryptCopy(
       myDeviceId,
       senderPubLegacy?.identity_key ?? null,
     );
-  } catch (e) {
-    console.warn('[FANOUT] decrypt single copy failed', e);
+  } catch {
+    // Single-copy decrypt failure — caller iterates remaining rows. Silent.
     return null;
   }
 }

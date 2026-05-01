@@ -5,6 +5,7 @@ import {
   resolvePlaintext,
   readCache,
   dropCache,
+  clearNegativeCache,
   persistOutcome,
   looksEncrypted,
   type DecryptionOutcome,
@@ -90,6 +91,9 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   // success. Drop any stale RAM entry so the effect below re-resolves.
   useEffect(() => {
     const handler = () => {
+      // A successful queue retry/key restore wipes the negative cache so
+      // every silent bubble re-attempts on the next render pass.
+      clearNegativeCache();
       dropCache(messageId, body);
       setRetryTick((t) => t + 1);
     };

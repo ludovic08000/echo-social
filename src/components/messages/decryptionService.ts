@@ -66,8 +66,81 @@ class LruMap<K, V> {
 const cache = new LruMap<string, DecryptionOutcome>(CACHE_CAP);
 const inflight = new Map<string, Promise<DecryptionOutcome | null>>();
 
+/**
+ * Negative cache — when a decrypt round produces no plaintext we remember
+ * the failure for `NEG_TTL_MS` so a re-render storm (50 bubbles re-mount on
+ * scroll) does not re-fire the full decrypt cascade for each one.
+ *
+ * The cache is invalidated by the global `forsure-decrypt-retry` event
+ * (dispatched after key restoration / pending-queue success).
+ */
+const NEG_TTL_MS = 5_000;
+const negCache = new Map<string, number>();
+function negCacheHit(k: string): boolean {
+  const at = negCache.get(k);
+  if (at === undefined) return false;
+  if (Date.now() - at > NEG_TTL_MS) {
+    negCache.delete(k);
+    return false;
+  }
+  return true;
+}
+export function clearNegativeCache(): void {
+  negCache.clear();
+}
+
 export function cacheKey(messageId: string | undefined, body: string): string {
   return `${messageId ?? 'noid'}|${body}`;
+}
+
+/**
+ * Batched sender_id lookup — when many bubbles mount in a single chat
+ * scroll, fold all `messages.id → sender_id` queries into one round-trip
+ * (≤50 ms window). Removes the N+1 Supabase chatter on the decrypt path.
+ */
+const BATCH_WINDOW_MS = 50;
+const senderBatchPending = new Map<string, Array<(v: string | null) => void>>();
+const senderCache = new LruMap<string, string | null>(500);
+let senderBatchTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function flushSenderBatch(): Promise<void> {
+  senderBatchTimer = null;
+  const localWaiters = new Map(senderBatchPending);
+  senderBatchPending.clear();
+  const ids = Array.from(localWaiters.keys());
+  if (ids.length === 0) return;
+  try {
+    const { data } = await supabase
+      .from('messages')
+      .select('id,sender_id')
+      .in('id', ids);
+    const map = new Map<string, string | null>();
+    for (const row of (data as Array<{ id: string; sender_id: string | null }> | null) ?? []) {
+      map.set(row.id, row.sender_id ?? null);
+    }
+    for (const id of ids) {
+      const v = map.get(id) ?? null;
+      senderCache.set(id, v);
+      (localWaiters.get(id) ?? []).forEach((fn) => fn(v));
+    }
+  } catch {
+    for (const id of ids) {
+      (localWaiters.get(id) ?? []).forEach((fn) => fn(null));
+    }
+  }
+}
+
+function getSenderIdBatched(messageId: string): Promise<string | null> {
+  const cached = senderCache.get(messageId);
+  if (cached !== undefined) return Promise.resolve(cached);
+  return new Promise<string | null>((resolve) => {
+    const arr = senderBatchPending.get(messageId) ?? [];
+    arr.push(resolve);
+    senderBatchPending.set(messageId, arr);
+    if (!senderBatchTimer) {
+      senderBatchTimer = setTimeout(() => void flushSenderBatch(), BATCH_WINDOW_MS);
+    }
+  });
 }
 
 export function readCache(messageId: string | undefined, body: string): DecryptionOutcome | undefined {
@@ -116,11 +189,18 @@ export async function resolvePlaintext(opts: {
   const cached = cache.get(key);
   if (cached) return cached;
 
+  // Negative cache — avoid re-running a full decrypt cascade after a recent
+  // failure. Bypassed by the retry event which calls clearNegativeCache().
+  if (negCacheHit(key)) return null;
+
   // Self-messages: only the persisted plaintext store can answer (sender
   // ratchet state ≠ receiver state). Stay silent on miss.
   if (isMe) {
     const stored = await loadPlaintextForCiphertext(body).catch(() => null);
-    if (!stored) return null;
+    if (!stored) {
+      negCache.set(key, Date.now());
+      return null;
+    }
     const outcome = buildOutcomeFromText(stored);
     cache.set(key, outcome);
     return outcome;
@@ -156,15 +236,11 @@ export async function resolvePlaintext(opts: {
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (user) {
-            const { data: row } = await supabase
-              .from('messages')
-              .select('sender_id')
-              .eq('id', messageId)
-              .maybeSingle();
+            const senderId = await getSenderIdBatched(messageId);
             const r = await routeIncoming({
               encryptedBody: body,
               recipientUserId: user.id,
-              senderUserId: (row as { sender_id?: string } | null)?.sender_id,
+              senderUserId: senderId ?? undefined,
               messageId,
             });
             if (r.ok && r.plaintext !== null) {
@@ -178,7 +254,8 @@ export async function resolvePlaintext(opts: {
         }
       }
 
-      // 4) Nothing produced plaintext. Stay silent.
+      // 4) Nothing produced plaintext. Mark negative + stay silent.
+      negCache.set(key, Date.now());
       return null;
     })();
     inflight.set(key, promise);

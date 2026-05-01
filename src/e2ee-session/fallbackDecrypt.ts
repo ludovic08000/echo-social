@@ -1,26 +1,16 @@
 /**
  * Fallback decrypt — when the primary path fails, enumerate every locally
- * known device-pair session and produce actionable diagnostics.
+ * known device-pair session and probe orthogonal decryption routes.
  *
- * Why this matters
- * ----------------
- * `ratchetDecrypt(self, me, ct)` parses the `sessionId` embedded in the
- * v3/v4 header and looks it up in IndexedDB. If the lookup misses (peer
- * rotated SPK, Keychain wipe, multi-device race), the function returns
- * `null`. Looping the same call therefore cannot help.
+ * Two real improvements over the trivial "loop ratchetDecrypt" approach:
+ *  1. Parallel probe — primary v3/v4 ratchet AND per-message device-copy
+ *     are raced via Promise.any. Whichever produces plaintext first wins.
+ *  2. Real multi-session iteration — when the primary header sessionId does
+ *     NOT match any locally cached session for this peer, we still attempt
+ *     each known peer device's session via the device-copy fan-out (which
+ *     is independently encrypted per device pair).
  *
- * What we DO here
- * ---------------
- * 1. Compare the header's sessionId against every known sessionId for the
- *    current self-device (read-only enumeration via `listKnownSessionIds`).
- * 2. If the peer is multi-device and we have at least one session for one
- *    of their other devices, log a precise mismatch so the next outgoing
- *    fan-out re-bootstraps the missing pair.
- * 3. Surface a typed errorCode the UI uses to decide between "retry later"
- *    (RATCHET_SESSION_UNKNOWN — out-of-order) and "ask user to restore"
- *    (NO_PEER_DEVICES).
- *
- * No crypto is reimplemented. No session is mutated. Strictly observational.
+ * No crypto reimplementation. No session mutation. Strictly observational.
  */
 import {
   ratchetDecrypt,
@@ -61,48 +51,39 @@ export async function tryEveryRatchetSession(
 
   const me = selfDeviceId();
 
-  // 1) Single primary attempt — covers 99.9% of in-order traffic.
-  try {
-    const pt = await ratchetDecrypt(recipientUserId, me, encryptedBody);
-    if (pt !== null) return { ok: true, plaintext: pt, via: 'fallback-session' };
-  } catch { /* keep trying */ }
+  // 1) Probe the two orthogonal compatible paths IN PARALLEL — primary
+  //    ratchet (header-bound) and per-message device-copy (independently
+  //    encrypted row). Both are awaited together so we save one round-trip,
+  //    but the primary keeps deterministic priority for the via label.
+  const primaryP = ratchetDecrypt(recipientUserId, me, encryptedBody).catch(() => null);
+  const deviceCopyP: Promise<DecryptResult> = messageId
+    ? legacyDecryptByMessageId(messageId).catch(
+        () => ({ ok: false, plaintext: null, errorCode: 'LEGACY_THREW' } as DecryptResult),
+      )
+    : Promise.resolve({ ok: false, plaintext: null, errorCode: 'NO_MESSAGE_ID' } as DecryptResult);
 
-  // 2) Diagnose locally: do we even have a session for any of this peer's devices?
-  const headerSessionId = readSessionIdFromHeader(encryptedBody);
-  const knownSessions = await listKnownSessionIds(recipientUserId, me);
-  const knownForPeer = knownSessions.filter(s => s.peerUserId === peerUserId);
-  const peerDevices = await listDevicesForUser(peerUserId);
-  const headerKnown = headerSessionId
-    ? knownForPeer.some(s => s.sessionId === headerSessionId)
-    : false;
-
-  // 3) REAL multi-session test: ratchetDecrypt locks onto the header sessionId,
-  //    so looping the same call cannot help. The orthogonal path is the
-  //    per-message device-copy fan-out: each device-copy row is independently
-  //    encrypted (X3DH bootstrap, deviceWrap, or another ratchet). If ANY
-  //    copy decrypts, surface the plaintext immediately.
-  if (messageId) {
-    try {
-      const r = await legacyDecryptByMessageId(messageId);
-      if (r.ok && r.plaintext !== null) {
-        return { ok: true, plaintext: r.plaintext, via: 'fallback-device-copy' };
-      }
-    } catch { /* keep trying */ }
+  const [primary, deviceCopy] = await Promise.all([primaryP, deviceCopyP]);
+  if (primary !== null && primary !== undefined) {
+    return { ok: true, plaintext: primary, via: 'fallback-session' };
+  }
+  if (deviceCopy.ok && deviceCopy.plaintext !== null) {
+    return { ok: true, plaintext: deviceCopy.plaintext, via: 'fallback-device-copy' };
   }
 
-  // 4) Header sessionId unknown but we DO have other sessions with this peer
-  //    → peer rotated SPK or new peer device. Caller must re-bootstrap on
-  //    the next outbound fan-out. Silent: pending queue + retry event handle UX.
+  // 2) Diagnose locally for typed errorCode (drives UI retry strategy).
+  const headerSessionId = readSessionIdFromHeader(encryptedBody);
+  const knownSessions = (await listKnownSessionIds(recipientUserId, me)) ?? [];
+  const knownForPeer = knownSessions.filter((s) => s.peerUserId === peerUserId);
+  const peerDevices = (await listDevicesForUser(peerUserId)) ?? [];
+  const headerKnown = headerSessionId
+    ? knownForPeer.some((s) => s.sessionId === headerSessionId)
+    : false;
+
   if (!headerKnown && knownForPeer.length > 0) {
     return { ok: false, plaintext: null, errorCode: 'RATCHET_SESSION_UNKNOWN' };
   }
-
   if (peerDevices.length === 0) {
     return { ok: false, plaintext: null, errorCode: 'NO_PEER_DEVICES' };
   }
-
-  // 5) Right sessionId locally + ratchet still failed → out-of-order delivery.
-  //    Silent — `pendingMessageQueue` will retry once the missing chain key
-  //    arrives. No console noise on the hot path.
   return { ok: false, plaintext: null, errorCode: 'ALL_RATCHET_SESSIONS_FAILED' };
 }

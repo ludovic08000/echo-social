@@ -1193,9 +1193,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     if (x3dhInfoRef.current && !peerHasRespondedRef.current) {
       taggedEnvelope.x3dh = x3dhInfoRef.current;
-      console.info('[E2EE] ✅ encrypt with PreKey header (awaiting peer response)');
-    } else {
-      console.info('[E2EE] ✅ encrypt via Double Ratchet');
     }
 
     const serializedPayload = hardGlobals.jsonStringify(taggedEnvelope);
