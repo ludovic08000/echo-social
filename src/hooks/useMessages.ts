@@ -6,6 +6,7 @@ import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/m
 import { messageQueue } from '@/lib/messaging/messageQueue';
 import { isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { pendingMessageQueue, routeIncoming } from '@/e2ee-session';
+import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 
 async function hideMessagesForUser(userId: string, messageIds: string[]) {
   if (!userId || messageIds.length === 0) return;
