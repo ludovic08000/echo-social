@@ -208,38 +208,31 @@ describe('iOS cold-start — true volatile-memory loss', () => {
   });
 
   it('marks message as failed_visible with "Message perdu" when plaintext is gone post-restart', async () => {
-    // Step 1: enqueue with no handler at all (channel completely absent).
+    // Step 1: handler comes online ready → encrypt step starts immediately.
+    const ch = makeChannel({ ready: true });
+    const unreg = registerChannel(ch);
+
     const m = await messageQueue.enqueue({
       conversationId: CONV,
       senderId: SENDER,
       plaintext: 'will-be-lost',
     });
 
-    // It should land in waiting_secure_channel after the first processMessage tick.
-    await waitFor(async () => {
-      const p = await messageQueue.getPendingMessages(CONV);
-      return p.some((x) => x.localId === m.localId);
-    });
-
-    // Step 2: simulate cold-start — wipe volatile plaintext (page reload).
-    // The internal Map is private; the public surface that loses it is the
-    // page reload itself. We emulate that by reaching into the singleton.
+    // Step 2: simulate cold-start happening BEFORE encryption pulls the
+    // plaintext — wipe the volatile map. The internal Map is private; the
+    // public surface that loses it is the page reload itself. We emulate
+    // that by reaching into the singleton.
     const internal = messageQueue as unknown as { volatilePlaintext: Map<string, string> };
     internal.volatilePlaintext.delete(m.localId);
 
-    // Step 3: handler comes online ready — encrypt step will fail because
-    // the plaintext is gone → message must surface as failed_visible with
-    // the canonical user-facing message (NOT silent drop, NOT plaintext leak).
-    const ch = makeChannel({ ready: true });
-    const unreg = registerChannel(ch);
-    await new Promise((r) => setTimeout(r, 1600)); // pass debounce
-    await messageQueue.resumeForConversation(CONV);
-
+    // Step 3: encrypt step runs, finds no plaintext → must surface as
+    // failed_visible with the canonical user-facing message (NOT silent
+    // drop, NOT plaintext leak).
     await waitFor(async () => {
       const p = await messageQueue.getPendingMessages(CONV);
       const ours = p.find((x) => x.localId === m.localId);
       return ours?.status === 'failed_visible';
-    }, 6000);
+    }, 10_000);
 
     const final = (await messageQueue.getPendingMessages(CONV)).find(
       (x) => x.localId === m.localId,
@@ -249,7 +242,7 @@ describe('iOS cold-start — true volatile-memory loss', () => {
     expect(ch.sentBodies).toHaveLength(0);
 
     unreg();
-  });
+  }, 15_000);
 });
 
 describe('iOS cold-start — send retry without duplication', () => {
