@@ -66,6 +66,29 @@ class LruMap<K, V> {
 const cache = new LruMap<string, DecryptionOutcome>(CACHE_CAP);
 const inflight = new Map<string, Promise<DecryptionOutcome | null>>();
 
+/**
+ * Negative cache — when a decrypt round produces no plaintext we remember
+ * the failure for `NEG_TTL_MS` so a re-render storm (50 bubbles re-mount on
+ * scroll) does not re-fire the full decrypt cascade for each one.
+ *
+ * The cache is invalidated by the global `forsure-decrypt-retry` event
+ * (dispatched after key restoration / pending-queue success).
+ */
+const NEG_TTL_MS = 5_000;
+const negCache = new Map<string, number>();
+function negCacheHit(k: string): boolean {
+  const at = negCache.get(k);
+  if (at === undefined) return false;
+  if (Date.now() - at > NEG_TTL_MS) {
+    negCache.delete(k);
+    return false;
+  }
+  return true;
+}
+export function clearNegativeCache(): void {
+  negCache.clear();
+}
+
 export function cacheKey(messageId: string | undefined, body: string): string {
   return `${messageId ?? 'noid'}|${body}`;
 }
@@ -116,11 +139,18 @@ export async function resolvePlaintext(opts: {
   const cached = cache.get(key);
   if (cached) return cached;
 
+  // Negative cache — avoid re-running a full decrypt cascade after a recent
+  // failure. Bypassed by the retry event which calls clearNegativeCache().
+  if (negCacheHit(key)) return null;
+
   // Self-messages: only the persisted plaintext store can answer (sender
   // ratchet state ≠ receiver state). Stay silent on miss.
   if (isMe) {
     const stored = await loadPlaintextForCiphertext(body).catch(() => null);
-    if (!stored) return null;
+    if (!stored) {
+      negCache.set(key, Date.now());
+      return null;
+    }
     const outcome = buildOutcomeFromText(stored);
     cache.set(key, outcome);
     return outcome;
