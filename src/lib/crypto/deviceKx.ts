@@ -127,8 +127,8 @@ export async function generateDeviceKxKey(deviceId: string): Promise<DeviceKxKey
 
   // Re-import private as non-extractable for runtime use
   const safePriv = await importKeyFromJWK(privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits'], false);
-  const raw = await hardCrypto.exportKey('raw', publicKey);
-  return { publicKey, privateKey: safePriv, publicB64: bufferToBase64(raw) };
+  const raw = await publicKeyToBase64(publicKey);
+  return { publicKey, privateKey: safePriv, publicB64: raw };
 }
 
 /**
