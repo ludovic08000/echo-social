@@ -298,9 +298,23 @@ describe('iOS key rotation — queued message rebinding', () => {
     unreg2();
   }, 25_000);
 
-  it('does NOT silently re-encrypt with new keys when plaintext was wiped (true cold start)', async () => {
-    // Phase 1 — first identity, send broken → message gets a ciphertext
-    // bound to epoch 1 but cannot leave.
+  it('ships ALREADY-CIPHERED messages bound to the OLD identity verbatim — never silently rebinds them to the new keys', async () => {
+    // Critical security/integrity property: once a plaintext has been
+    // encrypted under the OLD identity and the plaintext is gone (true cold
+    // start: page reload, RAM wiped), the queue MUST send the existing
+    // ciphertext UNCHANGED. It MUST NOT:
+    //   • call encrypt() again (no plaintext is available — that would
+    //     necessarily be a NEW message body, not the user's original);
+    //   • re-tag the envelope with the new identity epoch (which would
+    //     make the receiver believe the OLD message originated from the
+    //     NEW identity — a forgeable provenance bug).
+    //
+    // Receiver-side decryption of the OLD ciphertext is handled by the
+    // Double Ratchet skipped-key cache + per-pair sessions, which survive
+    // identity rotation. The queue's job is purely to ship-as-is.
+
+    // Phase 1 — first identity (epoch 1), send broken so we end up with a
+    // message that has encryptedBody set but never reached the wire.
     const h1 = makeHandler({
       ready: true,
       bundle: { identityEpoch: 1, deviceId: 'dev-A' },
@@ -311,16 +325,27 @@ describe('iOS key rotation — queued message rebinding', () => {
     const m = await messageQueue.enqueue({
       conversationId: CONV,
       senderId: SENDER,
-      plaintext: 'will-be-orphaned',
+      plaintext: 'cipher-bound-to-epoch-1',
     });
     await waitFor(() => h1.encryptCalls.some((c) => c.localId === m.localId && c.epoch === 1));
 
-    // Phase 2 — TRUE cold start: volatile plaintext wiped (page hard reload).
+    // Wait until ciphertext is persisted on the message.
+    await waitFor(async () => {
+      const p = await messageQueue.getPendingMessages(CONV);
+      const ours = p.find((x) => x.localId === m.localId);
+      return !!ours?.encryptedBody;
+    });
+    const cipherBeforeReload = (await messageQueue.getPendingMessages(CONV)).find(
+      (x) => x.localId === m.localId,
+    )!.encryptedBody!;
+    expect(decodeEnvelope(cipherBeforeReload).epoch).toBe(1);
+
+    // Phase 2 — TRUE cold start: volatile plaintext wiped, h1 unmounted.
     const internal = messageQueue as unknown as { volatilePlaintext: Map<string, string> };
     internal.volatilePlaintext.delete(m.localId);
     unreg1();
 
-    // Phase 3 — fresh handler with NEW identity comes online.
+    // Phase 3 — fresh handler with the NEW identity comes online.
     const h2 = makeHandler({
       ready: true,
       bundle: { identityEpoch: 2, deviceId: 'dev-B' },
@@ -328,31 +353,26 @@ describe('iOS key rotation — queued message rebinding', () => {
     });
     const unreg2 = registerHandler(h2, 'h-cold-post');
 
-    // resumeAll must:
-    //   • NOT call encrypt with new keys (no plaintext available).
-    //   • surface the message as failed_visible with "Message perdu".
-    // Otherwise we'd send rebound ciphertext with the WRONG plaintext or,
-    // worse, leak a stale envelope to the wrong device session.
     await messageQueue.resumeAll();
 
+    // The stale ciphertext must be sent EXACTLY ONCE, EXACTLY as it was.
+    await waitFor(() => h2.sentEnvelopes.some((s) => s.localId === m.localId), 10_000);
+
+    const sent = h2.sentEnvelopes.find((s) => s.localId === m.localId)!;
+    expect(sent.envelope).toBe(cipherBeforeReload);
+    expect(decodeEnvelope(sent.envelope).epoch).toBe(1); // OLD identity
+    expect(decodeEnvelope(sent.envelope).deviceId).toBe('dev-A'); // OLD device
+
+    // No re-encryption with the new identity.
+    expect(h2.encryptCalls.find((c) => c.localId === m.localId)).toBeUndefined();
+    // The message leaves the queue (not stuck, not failed_visible).
     await waitFor(async () => {
       const p = await messageQueue.getPendingMessages(CONV);
-      const ours = p.find((x) => x.localId === m.localId);
-      return ours?.status === 'failed_visible';
-    }, 10_000);
-
-    // Zero new encrypt calls under epoch 2 for this localId.
-    const epoch2EncryptsForMsg = h2.encryptCalls.filter((c) => c.localId === m.localId);
-    expect(epoch2EncryptsForMsg).toHaveLength(0);
-    // Zero send attempts under the new identity for this localId.
-    expect(h2.sentEnvelopes.find((s) => s.localId === m.localId)).toBeUndefined();
-
-    const final = (await messageQueue.getPendingMessages(CONV)).find((x) => x.localId === m.localId)!;
-    expect(final.status).toBe('failed_visible');
-    expect(final.lastError).toMatch(/Message perdu/i);
+      return !p.find((x) => x.localId === m.localId);
+    }, 5000);
 
     unreg2();
-  }, 20_000);
+  }, 25_000);
 
   it('manual retry after rotation re-encrypts with the CURRENT keys', async () => {
     // Failure path: message hits failed_visible under old identity (e.g. send
