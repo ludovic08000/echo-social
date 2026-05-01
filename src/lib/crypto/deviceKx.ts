@@ -100,8 +100,8 @@ export async function loadDeviceKxKey(deviceId: string): Promise<DeviceKxKey | n
     importKeyFromJWK(stored.privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits'], false),
   ]);
 
-  const raw = await hardCrypto.exportKey('raw', publicKey);
-  return { publicKey, privateKey, publicB64: bufferToBase64(raw) };
+  const raw = await publicKeyToBase64(publicKey);
+  return { publicKey, privateKey, publicB64: raw };
 }
 
 /**
