@@ -220,13 +220,36 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       return;
     }
 
-    // For our own messages we rely entirely on the volatile plaintext cache
-    // populated by the send pipeline. If it isn't there yet, stay silently
-    // decrypting (transparent dot) — the cache will populate within a tick
-    // and a re-render will show the text. We NEVER surface a placeholder.
+    // For our own messages we cannot use the conv-level Double Ratchet to
+    // decrypt (Signal design — sender state ≠ receiver state). The send
+    // pipeline persists plaintext to `plaintextStore` (IndexedDB, encrypted
+    // at rest by the keystore layer). Try a one-shot lookup; if missing,
+    // stay silently decrypting (no placeholder).
     if (isMe) {
       setIsDecrypting(true);
-      return;
+      let cancelledMe = false;
+      void loadPlaintextForCiphertext(body)
+        .then((stored) => {
+          if (cancelledMe || !stored) return;
+          const entry: CachedDecryption = hasMediaKey(stored)
+            ? (() => {
+                const parsed = parseMediaMessage(stored);
+                return parsed
+                  ? { text: parsed.label, mediaKeyB64: parsed.keyB64, hidden: false }
+                  : { text: stored, mediaKeyB64: null, hidden: false };
+              })()
+            : { text: stored, mediaKeyB64: null, hidden: false };
+          plaintextCache.set(cacheKey(messageId, body), entry);
+          setHidden(entry.hidden);
+          setDisplayText(entry.text);
+          setMediaKeyB64State(entry.mediaKeyB64);
+          setIsDecrypting(false);
+          if (entry.mediaKeyB64 && messageId) {
+            setMediaKey(messageId, entry.mediaKeyB64, entry.text.startsWith('🎬'));
+          }
+        })
+        .catch(() => { /* keep silent decrypting */ });
+      return () => { cancelledMe = true; };
     }
 
     const key = cacheKey(messageId, body);
