@@ -180,20 +180,18 @@ describe('iOS WebKit exportKey raw → jwk fallback', () => {
     expect(bundle.fingerprint).toBe(original2.fingerprint);
   });
 
-  it('exportPublicKeyBundle() falls back even when public key is NON-EXTRACTABLE', async () => {
-    // Some hardened deployments import the public key as non-extractable.
-    // In that case `raw` may throw OperationError on iOS, and `jwk` may also
-    // fail on truly non-extractable keys → we must fail loudly with a clear
-    // message rather than silently publishing junk. Verify both branches.
+  it('exportPublicKeyBundle() FAILS LOUDLY when both raw and jwk are unavailable (no silent junk)', async () => {
+    // Defense-in-depth: if a hardened build ever imports the public key as
+    // non-extractable AND iOS rejects the raw path, we MUST throw with a
+    // descriptive error rather than publish a malformed bundle that would
+    // permanently lock the user's queue.
     const baseKeys = await generateIdentityKeys();
     const idJwk = await hardCrypto.exportKey('jwk', baseKeys.publicKey) as JsonWebKey;
+    const sigJwk = await hardCrypto.exportKey('jwk', baseKeys.signingPublicKey) as JsonWebKey;
 
-    // Re-import as NON-EXTRACTABLE public key.
     const nonExtractablePub = await globalThis.crypto.subtle.importKey(
       'jwk', idJwk, { name: 'X25519' } as any, false, [],
     );
-
-    const sigJwk = await hardCrypto.exportKey('jwk', baseKeys.signingPublicKey) as JsonWebKey;
     const nonExtractableSig = await globalThis.crypto.subtle.importKey(
       'jwk', sigJwk, { name: 'Ed25519' } as any, false, ['verify'],
     );
@@ -204,11 +202,9 @@ describe('iOS WebKit exportKey raw → jwk fallback', () => {
       signingPublicKey: nonExtractableSig,
     };
 
-    // jwk export works for public keys regardless of extractable flag in WebCrypto,
-    // so the fallback should still produce the correct base64.
-    const bundle = await exportPublicKeyBundle(hardenedKeys as any);
-    expect(bundle.identityKey).toBe(await trueRawB64(idJwk, 'X25519'));
-    expect(bundle.signingKey).toBe(await trueRawB64(sigJwk, 'Ed25519'));
+    await expect(exportPublicKeyBundle(hardenedKeys as any)).rejects.toThrow(
+      /exportPublicKey failed/,
+    );
   });
 
   it('getOrCreateDeviceKxKey() falls back to JWK and persists publicB64', async () => {
