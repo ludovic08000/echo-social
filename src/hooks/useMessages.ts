@@ -484,6 +484,26 @@ export function useMessages(conversationId: string) {
         })),
       ).catch(() => {});
 
+      // After a refetch (cold reload, reconnect, focus), give every still-
+      // encrypted incoming row a fresh retry budget on the e2ee-session
+      // pending queue. This implements the "RAM + refetch from server on
+      // reload" persistence strategy: the ciphertext is re-supplied by this
+      // very query, and `pendingMessageQueue.refresh()` resets the attempt
+      // counter so 30 × 1.5s of retries fire from now, even for messages
+      // that exhausted their budget before the reload.
+      if (user) {
+        for (const m of compatibleMessages) {
+          if (m.sender_id === user.id) continue;
+          if (!isStrictRatchetEnvelopeBody(m.body)) continue;
+          pendingMessageQueue.refresh(m.id, {
+            encryptedBody: m.body,
+            recipientUserId: user.id,
+            senderUserId: m.sender_id,
+            messageId: m.id,
+          });
+        }
+      }
+
       const senderIds = [...new Set(compatibleMessages.map(m => m.sender_id))];
       const { data: profiles } = await supabase
         .from('profiles')
