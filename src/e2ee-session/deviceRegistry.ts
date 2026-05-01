@@ -7,12 +7,21 @@
  * already returns the canonical device list with `device_public_key`.
  */
 import { supabase } from '@/integrations/supabase/client';
-import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
 import type { DeviceDescriptor, UserId, DeviceId } from './types';
 
 /** Stable device id of the current installation. Persisted in Keychain on iOS. */
 export function selfDeviceId(): DeviceId {
   return getCurrentDeviceId();
+}
+
+/**
+ * True when `selfDeviceId()` is still a hydration-pending fallback. Callers
+ * that would otherwise pin a long-lived session (X3DH respond, ratchet
+ * establish) should wait for `hydrateDeviceId()` to complete first.
+ */
+export function isSelfDeviceIdTemporary(): boolean {
+  return isDeviceIdTemporary();
 }
 
 /**
