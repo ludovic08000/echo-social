@@ -36,14 +36,14 @@ function readSessionIdFromHeader(encryptedBody: string): string | null {
   return rest.slice(0, dot);
 }
 
-/** First non-null wins; never throws. */
-async function firstNonNull<T>(promises: Array<Promise<T | null>>): Promise<T | null> {
+/** First truthy non-null value wins; never throws. */
+async function firstNonNull<T>(promises: Array<Promise<T | null | undefined>>): Promise<T | null> {
   return new Promise<T | null>((resolve) => {
     let pending = promises.length;
     if (pending === 0) return resolve(null);
     promises.forEach((p) => {
       p.then((v) => {
-        if (v !== null) resolve(v);
+        if (v !== null && v !== undefined) resolve(v as T);
         else if (--pending === 0) resolve(null);
       }).catch(() => {
         if (--pending === 0) resolve(null);
