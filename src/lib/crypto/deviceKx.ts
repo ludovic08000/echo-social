@@ -40,6 +40,26 @@ function storageKey(deviceId: string): string {
   return `device-kx::${deviceId}`;
 }
 
+/**
+ * iOS Safari fallback: WebKit sometimes throws `DataError` on
+ * `exportKey('raw', publicKey)` for X25519/Ed25519 keys. JWK export is
+ * always supported and `x` is the base64url raw point, so we convert it
+ * to standard base64 ourselves.
+ */
+async function publicKeyToBase64(publicKey: CryptoKey): Promise<string> {
+  try {
+    const raw = await hardCrypto.exportKey('raw', publicKey);
+    return bufferToBase64(raw as ArrayBuffer);
+  } catch {
+    const jwk = (await hardCrypto.exportKey('jwk', publicKey)) as JsonWebKey;
+    const x = jwk?.x;
+    if (typeof x !== 'string' || !x) throw new Error('jwk export missing x component');
+    const b64 = x.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
+    return b64 + pad;
+  }
+}
+
 function dbGet<T>(key: string): Promise<T | undefined> {
   return openE2EEDB().then(db => new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_KEYS, 'readonly');
