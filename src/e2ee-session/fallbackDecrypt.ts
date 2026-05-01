@@ -29,6 +29,7 @@ import {
   listKnownSessionIds,
 } from '@/lib/crypto/deviceRatchet';
 import { listDevicesForUser, selfDeviceId } from './deviceRegistry';
+import { legacyDecryptByMessageId } from './legacyDecryptRouter';
 import type { DecryptResult, UserId } from './types';
 
 /** Extract the sessionId from a v3/v4 ciphertext header. Returns null on parse failure. */
