@@ -97,15 +97,23 @@ beforeAll(() => {
 });
 
 beforeEach(async () => {
-  // Clean IndexedDB between tests so each scenario starts cold.
-  const dbs = ['forsure-e2ee'];
-  for (const name of dbs) {
-    await new Promise<void>((resolve) => {
-      const req = indexedDB.deleteDatabase(name);
-      req.onsuccess = () => resolve();
-      req.onerror = () => resolve();
-      req.onblocked = () => resolve();
+  // Clear E2EE store between tests so each scenario starts cold.
+  // We clear stores rather than deleteDatabase() to avoid `onblocked` deadlock
+  // from open connections still held by the modules under test (fake-indexeddb).
+  try {
+    const { openE2EEDB } = await import('../indexedDb');
+    const { STORE_KEYS, STORE_SESSION, STORE_PREKEYS } = await import('../constants');
+    const db = await openE2EEDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([STORE_KEYS, STORE_SESSION, STORE_PREKEYS], 'readwrite');
+      tx.objectStore(STORE_KEYS).clear();
+      tx.objectStore(STORE_SESSION).clear();
+      tx.objectStore(STORE_PREKEYS).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
     });
+  } catch {
+    /* first run — DB does not exist yet */
   }
 });
 
