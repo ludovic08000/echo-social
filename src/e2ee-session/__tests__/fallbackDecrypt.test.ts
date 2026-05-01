@@ -106,6 +106,7 @@ describe('fallbackDecrypt.tryEveryRatchetSession', () => {
 
   it('reports NO_PEER_DEVICES when the peer has no published devices', async () => {
     (ratchetDecrypt as any).mockResolvedValueOnce(null);
+    (legacyDecryptByMessageId as any).mockResolvedValueOnce({ ok: false, plaintext: null });
     (listKnownSessionIds as any).mockResolvedValueOnce([]);
     (listDevicesForUser as any).mockResolvedValueOnce([]);
 
@@ -117,13 +118,15 @@ describe('fallbackDecrypt.tryEveryRatchetSession', () => {
 
   it('reports ALL_RATCHET_SESSIONS_FAILED on out-of-order with known sessionId', async () => {
     (ratchetDecrypt as any).mockResolvedValueOnce(null);
+    (legacyDecryptByMessageId as any).mockResolvedValueOnce({ ok: false, plaintext: null });
     (listKnownSessionIds as any).mockResolvedValueOnce([
       { peerUserId: PEER, peerDeviceId: 'dev-bob-1', sessionId: 'sess-OK', lastUsedAt: 0 },
     ]);
     (listDevicesForUser as any).mockResolvedValueOnce([
       { userId: PEER, deviceId: 'dev-bob-1', devicePublicKey: 'k' },
     ]);
-    // No messageId → device-copy fallback skipped → falls through to last branch.
+    // Header sessionId matches a known session AND peer has devices →
+    // out-of-order delivery, pending queue will retry.
     const r = await tryEveryRatchetSession(ME, PEER, makeV4Ciphertext('sess-OK'));
     expect(r).toEqual({
       ok: false, plaintext: null, errorCode: 'ALL_RATCHET_SESSIONS_FAILED',
