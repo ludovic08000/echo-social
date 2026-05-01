@@ -800,11 +800,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
                 <AlertTriangle className="w-7 h-7 text-primary" />
               </div>
               <div className="text-center max-w-[320px]">
-                <p className="text-sm font-semibold">Messages sécurisés en attente de restauration</p>
+                <p className="text-sm font-semibold">Conversation prête à se charger</p>
                 <p className="text-xs text-muted-foreground mt-1">
                   {recoveryState?.needsPinUnlock || e2ee.initError === 'pin_unlock_required'
-                    ? 'Vos messages existent, mais les clés locales sont verrouillées. Déverrouillez votre PIN pour les relire.'
-                    : 'Vos messages existent sur le serveur, mais les clés locales doivent être restaurées avant déchiffrement.'}
+                    ? 'Déverrouillez votre PIN pour accéder à vos messages.'
+                    : 'Vos messages sont disponibles. Synchronisez vos clés pour continuer.'}
                 </p>
               </div>
               {(recoveryState?.needsExplicitRestore || e2ee.initError === 'identity_lost_backup_available') && (
@@ -814,7 +814,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                   size="sm"
                   onClick={() => navigate('/settings', { state: { tab: 'privacy', scrollTo: 'key-backup' } })}
                 >
-                  Restaurer mes clés
+                  Synchroniser mes clés
                 </Button>
               )}
             </div>

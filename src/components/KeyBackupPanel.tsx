@@ -201,7 +201,7 @@ export function KeyBackupPanel() {
                   className="w-full gap-1"
                 >
                   {resyncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Shield className="h-3 w-3" />}
-                  Re-sync clés E2EE après restauration
+                  Synchroniser mes clés E2EE
                 </Button>
                 <p className="text-[10px] text-muted-foreground leading-snug">
                   Republie ton identité, renouvelle les clés à usage unique, invalide les anciens canaux et tente de récupérer les messages illisibles.
