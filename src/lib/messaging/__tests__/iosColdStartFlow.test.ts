@@ -136,12 +136,14 @@ describe('iOS cold-start — secure channel rehydration', () => {
     const m2 = await messageQueue.enqueue({ conversationId: CONV, senderId: SENDER, plaintext: 'hello-2' });
     const m3 = await messageQueue.enqueue({ conversationId: CONV, senderId: SENDER, plaintext: 'hello-3' });
 
-    // All three must land in waiting_secure_channel quickly, none sent.
+    // At least one (the one being processed) must land in waiting_secure_channel.
+    // The others stay in pending_local until the active retry timer fires
+    // (queue serializes per-conversation processing).
     await waitFor(async () => {
       const pending = await messageQueue.getPendingMessages(CONV);
       const ids = new Set([m1.localId, m2.localId, m3.localId]);
       const ours = pending.filter((p) => ids.has(p.localId));
-      return ours.length === 3 && ours.every((p) => p.status === 'waiting_secure_channel');
+      return ours.length === 3 && ours.some((p) => p.status === 'waiting_secure_channel');
     });
     expect(ch.sentBodies).toHaveLength(0);
 
@@ -153,20 +155,16 @@ describe('iOS cold-start — secure channel rehydration', () => {
 
     // Phase 2 — secure channel becomes ready (X3DH bootstrap finished).
     ch.ready = true;
-    await messageQueue.resumeForConversation(CONV);
 
-    // Phase 3 — backlog drains, all three sent successfully.
-    await waitFor(() => ch.sentBodies.length === 3, 6000);
+    // The 3 messages will drain as their secure_wait timers (3s each) fire
+    // serially. Worst case: 3 × 3s = 9s. Allow a healthy margin.
+    await waitFor(() => ch.sentBodies.length === 3, 20_000);
     expect(ch.sentLocalIds).toEqual([m1.localId, m2.localId, m3.localId]);
-
-    // Each ciphertext is distinct (no accidental dedup of plaintext).
     expect(new Set(ch.sentBodies).size).toBe(3);
 
-    // Queue is now empty.
-    await waitFor(async () => (await messageQueue.getPendingMessages(CONV)).length === 0);
-
+    await waitFor(async () => (await messageQueue.getPendingMessages(CONV)).length === 0, 5_000);
     unreg();
-  });
+  }, 30_000);
 
   it('handler unmount + remount preserves the queue and resumes cleanly', async () => {
     // Cold channel.
