@@ -90,9 +90,9 @@ export async function tryEveryRatchetSession(
 
   // 2) Diagnose locally for typed errorCode (drives UI retry strategy).
   const headerSessionId = readSessionIdFromHeader(encryptedBody);
-  const knownSessions = await listKnownSessionIds(recipientUserId, me);
+  const knownSessions = (await listKnownSessionIds(recipientUserId, me)) ?? [];
   const knownForPeer = knownSessions.filter((s) => s.peerUserId === peerUserId);
-  const peerDevices = await listDevicesForUser(peerUserId);
+  const peerDevices = (await listDevicesForUser(peerUserId)) ?? [];
   const headerKnown = headerSessionId
     ? knownForPeer.some((s) => s.sessionId === headerSessionId)
     : false;
