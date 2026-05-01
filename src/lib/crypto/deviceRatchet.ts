@@ -273,8 +273,14 @@ async function trySkippedKeys(
   const entry = session.skipped[idx];
   try {
     const aes = await importMessageKey(entry.keyB64);
+    // Defensive copy of IV + ciphertext: WebCrypto implementations are free to
+    // detach or otherwise mutate the underlying buffer. If decryption fails we
+    // must keep the originals intact for the next attempt path.
+    const ivCopy = new Uint8Array(iv.byteLength);
+    ivCopy.set(iv);
+    const ctCopy = (ct as ArrayBuffer).slice(0);
     const pt = await hardCrypto.decrypt(
-      { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ct,
+      { name: 'AES-GCM', iv: ivCopy as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ctCopy,
     );
     const newSkipped = session.skipped.slice();
     newSkipped.splice(idx, 1);
