@@ -8,6 +8,7 @@ export * from './types';
 export { safeUUID, shortId } from './safeUuid';
 export {
   selfDeviceId,
+  isSelfDeviceIdTemporary,
   listDevicesForUser,
   listFanoutTargets,
 } from './deviceRegistry';
