@@ -372,6 +372,11 @@ export function useMessages(conversationId: string) {
               recipientUserId: user.id,
               senderUserId: newMsg.sender_id,
               messageId: newMsg.id,
+            }).then((r) => {
+              if (r.ok && r.plaintext !== null) {
+                void savePlaintextForCiphertext(newMsg.body, r.plaintext);
+                try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
+              }
             }).catch(() => {});
           }
         }
