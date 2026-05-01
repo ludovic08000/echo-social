@@ -199,6 +199,14 @@ async function x3dhUnwrapForDevice(
 // ─── Public API ─────────────────────────────────────────────────────────────
 
 export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserted: number; multiDevice: boolean }> {
+  // SAFETY: Never bind a fresh ratchet session to a temporary device id —
+  // doing so would orphan all session state once Keychain hydrates with
+  // the real one. Skip fan-out entirely; the per-conv ratchet still
+  // delivers to the primary device.
+  if (isDeviceIdTemporary()) {
+    console.warn('[FANOUT] device id still pending native hydration — skipping fan-out');
+    return { inserted: 0, multiDevice: false };
+  }
   const senderDeviceId = getCurrentDeviceId();
 
   // 1. Get all participants of the conversation
