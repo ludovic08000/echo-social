@@ -467,29 +467,77 @@ export async function ratchetDecrypt(
 async function decryptV4(myUserId: string, myDeviceId: string, payload: string): Promise<string | null> {
   const parts = payload.slice(RATCHET_PREFIX_V4.length).split('.');
   if (parts.length !== 6) return null;
+  const [sessionId] = parts;
+  const found = await lookupSessionById(myUserId, myDeviceId, sessionId);
+  if (!found) return null;
+  return decryptV4WithStored(found.key, found.session, parts);
+}
+
+/**
+ * Public escape hatch: attempt v4 decryption against a *specific* locally
+ * stored session, ignoring the sessionId in the payload header. Used by the
+ * multi-session fallback router when the header sessionId points to an
+ * unknown / rotated session but the peer still has a valid prior session
+ * locally that may decrypt the message (e.g. multi-device peer where one
+ * device's session was bootstrapped under a different sessionId).
+ *
+ * Returns null on parse failure or AES-GCM tag mismatch — never throws.
+ */
+export async function ratchetDecryptWithSession(
+  myUserId: string,
+  myDeviceId: string,
+  peerUserId: string,
+  peerDeviceId: string,
+  payload: string,
+): Promise<string | null> {
+  if (!payload.startsWith(RATCHET_PREFIX_V4)) {
+    // v3 has no DH state to ratchet — re-route through the standard path.
+    if (payload.startsWith(RATCHET_PREFIX_V3)) {
+      return decryptV3(myUserId, myDeviceId, payload);
+    }
+    return null;
+  }
+  const parts = payload.slice(RATCHET_PREFIX_V4.length).split('.');
+  if (parts.length !== 6) return null;
+  const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
+  const session = await loadSession(key);
+  if (!session) return null;
+  return decryptV4WithStored(key, session, parts);
+}
+
+/**
+ * Core v4 decrypt loop, factored out so both header-routed and
+ * session-forced callers share the exact same crypto path.
+ *
+ * IMPORTANT: state is only persisted on full success. Probe attempts that
+ * fail (wrong session, AES tag mismatch) leave IndexedDB untouched, which
+ * is what makes session-by-session probing safe.
+ */
+async function decryptV4WithStored(
+  key: string,
+  initialSession: StoredSession,
+  parts: string[],
+): Promise<string | null> {
   const [sessionId, dhPubB64, NsStr, PNStr, ivB64, ctB64] = parts;
   const Ns = parseInt(NsStr, 10);
   const PN = parseInt(PNStr, 10);
   if (Number.isNaN(Ns) || Number.isNaN(PN)) return null;
 
-  const found = await lookupSessionById(myUserId, myDeviceId, sessionId);
-  if (!found) return null;
-  let session = found.session;
-
+  let session = initialSession;
   const iv = new Uint8Array(base64ToBuffer(ivB64));
   const ct = base64ToBuffer(ctB64);
 
   // 1) Skipped-key fast path
   const skipped = await trySkippedKeys(session, dhPubB64, Ns, iv, ct);
   if (skipped) {
-    await saveSession(found.key, skipped.updated);
+    await saveSession(key, skipped.updated);
     return skipped.pt;
   }
 
   try {
     // 2) DH-ratchet step if peer rotated their key
     if (session.dhrPubB64 !== dhPubB64) {
-      session = await skipMessageKeys(session, PN); // finish previous chain
+      session = await skipMessageKeys(session, PN);
       session = await dhRatchet(session, dhPubB64);
     }
     // 3) Skip up to Ns in current receiving chain
@@ -502,7 +550,7 @@ async function decryptV4(myUserId: string, myDeviceId: string, payload: string):
       { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ct,
     );
     session = { ...session, ckRecvB64: ck, Nr: session.Nr + 1 };
-    await saveSession(found.key, session);
+    await saveSession(key, session);
     return new hardGlobals.TextDecoder().decode(pt);
   } catch (err) {
     void logCryptoError({
@@ -510,7 +558,7 @@ async function decryptV4(myUserId: string, myDeviceId: string, payload: string):
       context: 'decrypt',
       errorCode: 'E_DECRYPT_V4',
       errorMessage: err instanceof Error ? err.message : String(err),
-      myDeviceId,
+      myDeviceId: key.split('::')[1] ?? 'unknown',
       metadata: { sessionId, Ns, PN },
     });
     return null;
