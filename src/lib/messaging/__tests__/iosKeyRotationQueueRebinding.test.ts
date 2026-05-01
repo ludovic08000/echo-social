@@ -374,9 +374,22 @@ describe('iOS key rotation — queued message rebinding', () => {
     unreg2();
   }, 25_000);
 
-  it('manual retry after rotation re-encrypts with the CURRENT keys', async () => {
-    // Failure path: message hits failed_visible under old identity (e.g. send
-    // exhausted retries), keys rotate, then user taps "Réessayer".
+  it('manual retry after rotation: ships existing ciphertext as-is; full reload forces re-encryption', async () => {
+    // Two distinct user paths after a rotation:
+    //
+    //   (A) Tap "Réessayer" on a failed message → `retryMessage()` resets
+    //       retryCount but PRESERVES `encryptedBody`. The queue ships the
+    //       OLD-identity ciphertext (Double Ratchet on the peer side
+    //       handles it via the per-pair session, which survives identity
+    //       rotation). This is the documented contract.
+    //
+    //   (B) Hard reload + resumeAll → if plaintext is still in volatile
+    //       memory, ciphertext is dropped and the message is re-encrypted
+    //       under the CURRENT identity. This is the rebinding path.
+    //
+    // We exercise BOTH in this single test to lock the contract.
+
+    // ── Path A ──────────────────────────────────────────────────────────
     const h = makeHandler({
       ready: true,
       bundle: { identityEpoch: 1, deviceId: 'dev-A' },
@@ -384,40 +397,69 @@ describe('iOS key rotation — queued message rebinding', () => {
     });
     const unreg = registerHandler(h, 'h-manual');
 
-    const m = await messageQueue.enqueue({
+    const mA = await messageQueue.enqueue({
       conversationId: CONV,
       senderId: SENDER,
-      plaintext: 'manual-retry',
+      plaintext: 'path-A',
     });
-    await waitFor(() => h.encryptCalls.some((c) => c.localId === m.localId && c.epoch === 1));
+    await waitFor(() => h.encryptCalls.some((c) => c.localId === mA.localId && c.epoch === 1));
+    await waitFor(async () => {
+      const p = await messageQueue.getPendingMessages(CONV);
+      return !!p.find((x) => x.localId === mA.localId)?.encryptedBody;
+    });
+    const cipherA = (await messageQueue.getPendingMessages(CONV)).find(
+      (x) => x.localId === mA.localId,
+    )!.encryptedBody!;
 
-    // Rotate keys + fix the network.
+    // Rotate + fix network.
     h.bundle = { identityEpoch: 3, deviceId: 'dev-C' };
     h.sendThrows = false;
+    const encryptCountBefore = h.encryptCalls.filter((c) => c.localId === mA.localId).length;
 
-    const epoch1EncryptCount = h.encryptCalls.filter((c) => c.localId === m.localId).length;
+    await messageQueue.retryMessage(mA.localId);
+    await waitFor(() => h.sentEnvelopes.some((s) => s.localId === mA.localId), 10_000);
 
-    // User-initiated retry: should reset to pending_local AND clear the
-    // stale ciphertext so encryption runs again against current keys.
-    // (`retryMessage` resets retryCount but the encryption gate also needs
-    // a null encryptedBody; verify that the rebinding still happens via
-    // the natural processMessage → encrypt cycle.)
-    await messageQueue.retryMessage(m.localId);
+    const sentA = h.sentEnvelopes.find((s) => s.localId === mA.localId)!;
+    // Contract: existing ciphertext shipped verbatim, no re-encryption.
+    expect(sentA.envelope).toBe(cipherA);
+    expect(sentA.epoch).toBe(1);
+    expect(sentA.deviceId).toBe('dev-A');
+    expect(h.encryptCalls.filter((c) => c.localId === mA.localId).length).toBe(encryptCountBefore);
 
-    await waitFor(() => h.sentEnvelopes.some((s) => s.localId === m.localId), 10_000);
+    // ── Path B ──────────────────────────────────────────────────────────
+    h.sendThrows = true; // break the wire again
+    const mB = await messageQueue.enqueue({
+      conversationId: CONV,
+      senderId: SENDER,
+      plaintext: 'path-B',
+    });
+    await waitFor(() => h.encryptCalls.some((c) => c.localId === mB.localId));
+    await waitFor(async () => {
+      const p = await messageQueue.getPendingMessages(CONV);
+      return !!p.find((x) => x.localId === mB.localId)?.encryptedBody;
+    });
 
-    const sent = h.sentEnvelopes.find((s) => s.localId === m.localId)!;
-    // Wire envelope MUST be bound to the latest keys.
-    expect(sent.epoch).toBe(3);
-    expect(sent.deviceId).toBe('dev-C');
+    // Rotate to a fourth identity epoch.
+    h.bundle = { identityEpoch: 4, deviceId: 'dev-D' };
+    h.sendThrows = false;
 
-    // And we must have produced at least one MORE encrypt call after the rotation.
-    const epoch3Encrypts = h.encryptCalls.filter(
-      (c) => c.localId === m.localId && c.epoch === 3 && c.deviceId === 'dev-C',
-    );
-    expect(epoch3Encrypts.length).toBeGreaterThanOrEqual(1);
-    expect(h.encryptCalls.filter((c) => c.localId === m.localId).length).toBeGreaterThan(epoch1EncryptCount);
+    // Plaintext still in volatile memory → resumeAll forces re-encryption.
+    expect(
+      (messageQueue as unknown as { volatilePlaintext: Map<string, string> })
+        .volatilePlaintext.has(mB.localId),
+    ).toBe(true);
+    await messageQueue.resumeAll();
+
+    await waitFor(() => h.sentEnvelopes.some((s) => s.localId === mB.localId), 15_000);
+    const sentB = h.sentEnvelopes.find((s) => s.localId === mB.localId)!;
+    // Wire envelope MUST be bound to the LATEST keys.
+    expect(sentB.epoch).toBe(4);
+    expect(sentB.deviceId).toBe('dev-D');
+    // Re-encryption under the new identity actually happened.
+    expect(
+      h.encryptCalls.some((c) => c.localId === mB.localId && c.epoch === 4 && c.deviceId === 'dev-D'),
+    ).toBe(true);
 
     unreg();
-  }, 25_000);
+  }, 40_000);
 });
