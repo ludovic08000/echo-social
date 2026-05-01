@@ -92,15 +92,8 @@ export async function tryEveryRatchetSession(
 
   // 4) Header sessionId unknown but we DO have other sessions with this peer
   //    → peer rotated SPK or new peer device. Caller must re-bootstrap on
-  //    the next outbound fan-out.
+  //    the next outbound fan-out. Silent: pending queue + retry event handle UX.
   if (!headerKnown && knownForPeer.length > 0) {
-    console.warn('[e2ee-session] sessionId mismatch — peer likely rotated or new device', {
-      peerUserId,
-      headerSessionId,
-      knownSessionIds: knownForPeer.map(s => s.sessionId),
-      knownPeerDevices: knownForPeer.map(s => s.peerDeviceId),
-      peerDeviceCount: peerDevices.length,
-    });
     return { ok: false, plaintext: null, errorCode: 'RATCHET_SESSION_UNKNOWN' };
   }
 
@@ -109,11 +102,7 @@ export async function tryEveryRatchetSession(
   }
 
   // 5) Right sessionId locally + ratchet still failed → out-of-order delivery.
-  console.warn('[e2ee-session] ratchet decrypt exhausted for known session', {
-    peerUserId,
-    headerSessionId,
-    headerKnown,
-    knownSessionsForPeer: knownForPeer.length,
-  });
+  //    Silent — `pendingMessageQueue` will retry once the missing chain key
+  //    arrives. No console noise on the hot path.
   return { ok: false, plaintext: null, errorCode: 'ALL_RATCHET_SESSIONS_FAILED' };
 }
