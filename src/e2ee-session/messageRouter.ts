@@ -56,10 +56,20 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
       /* fall through to fallback */
     }
 
-    // 1b) Try every known session (covers Keychain rotation, multi-device).
+    // 1b) Try every known session — also probes the per-message device-copy
+    //     fan-out (orthogonal crypto path) before giving up.
     if (senderUserId) {
-      const fb = await tryEveryRatchetSession(recipientUserId, senderUserId, encryptedBody);
+      const fb = await tryEveryRatchetSession(
+        recipientUserId,
+        senderUserId,
+        encryptedBody,
+        messageId,
+      );
       if (fb.ok) return fb;
+    } else if (messageId) {
+      // No senderUserId provided — at least try the legacy device-copy path.
+      const r = await legacyDecryptByMessageId(messageId);
+      if (r.ok) return r;
     }
 
     // 1c) Out-of-order? Enqueue for retry.
