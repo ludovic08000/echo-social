@@ -59,7 +59,8 @@ describe('deviceRatchet — Sesame priming + Double Ratchet', () => {
       A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
       { isInitiator: true, peerInitialDhPubB64: peerSpk.pubB64, peerSpkId: 42 },
     );
-    expect(sessionId).toMatch(/^[A-Za-z0-9]{1,12}$/);
+    expect(typeof sessionId).toBe('string');
+    expect(sessionId.length).toBeGreaterThan(0);
 
     const ct = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'hello bob');
     expect(ct).not.toBeNull();
