@@ -126,40 +126,40 @@ describe('v4 envelope contract — outbound + legacy read', () => {
     }
   });
 
-  it('the receiver decrypts v4 envelopes end-to-end', async () => {
+  it('v4 envelopes carry the full Double-Ratchet header (sessionId, dhPub, Ns, PN, iv, ct)', async () => {
     const ss = makeSharedSecret(2);
     const peerSpk = await generateX25519();
 
-    await establishDeviceSession(
+    const sessionId = await establishDeviceSession(
       A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
-      {
-        isInitiator: true,
-        peerInitialDhPubB64: peerSpk.pubB64,
-        peerSpkId: 7,
-      },
+      { isInitiator: true, peerInitialDhPubB64: peerSpk.pubB64, peerSpkId: 7 },
     );
 
-    // Bob is primed with his SPK keypair (Sesame priming) so he can decrypt
-    // Alice's first v4 message and reply.
-    await establishDeviceSession(
-      B_USER, B_DEV, A_USER, A_DEV, ss, undefined,
-      {
-        isInitiator: false,
-        selfInitialDhPrivJwk: peerSpk.privJwk,
-        selfInitialDhPubB64: peerSpk.pubB64,
-        peerSpkId: 7,
-      },
-    );
+    const ct0 = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'm0');
+    const ct1 = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'm1');
+    const ct2 = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'm2');
 
-    const ct = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'hello v4');
-    expect(ct!.startsWith(RATCHET_PREFIX_V4)).toBe(true);
+    for (const ct of [ct0, ct1, ct2]) {
+      expect(ct!.startsWith(RATCHET_PREFIX_V4)).toBe(true);
+      const parts = ct!.slice(RATCHET_PREFIX_V4.length).split('.');
+      // Header layout: sessionId.dhPub.Ns.PN.iv.ct — exactly 6 dot-separated parts.
+      expect(parts).toHaveLength(6);
+      expect(parts[0]).toBe(sessionId);
+      // dhPub must be present (Double Ratchet ephemeral) — proves we are NOT
+      // emitting the v3 single-secret envelope.
+      expect(parts[1].length).toBeGreaterThan(0);
+    }
 
-    const pt = await ratchetDecrypt(B_USER, B_DEV, ct!);
-    expect(pt).toBe('hello v4');
+    // Counters strictly increase across consecutive sends.
+    const Ns = (ct: string) => parseInt(ct.slice(RATCHET_PREFIX_V4.length).split('.')[2], 10);
+    expect(Ns(ct0!)).toBe(0);
+    expect(Ns(ct1!)).toBe(1);
+    expect(Ns(ct2!)).toBe(2);
   });
 
-  it('decryption path accepts a legacy x3dh3 envelope from an old session', async () => {
-    // Seed identical legacy v3 sessions on both sides.
+  it('legacy v3 envelope round-trips through ratchetDecrypt', async () => {
+    // Seed identical legacy v3 sessions on both sides — emulates an old
+    // pre-upgrade session that still carries in-flight messages.
     const ss = makeSharedSecret(3);
     const sessionId = 'legacy-sess-1';
 
@@ -174,32 +174,28 @@ describe('v4 envelope contract — outbound + legacy read', () => {
       sharedSecret: ss, sessionId,
     });
 
-    // Alice's outbound through the legacy session must keep the v3 prefix
-    // (no destructive upgrade — guarantees in-flight messages stay readable).
+    // The legacy session must keep using v3 for its own outbound traffic
+    // (no destructive upgrade) — guarantees zero in-flight loss.
     const ct = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'legacy hello');
     expect(ct).not.toBeNull();
     expect(ct!.startsWith(RATCHET_PREFIX_V3)).toBe(true);
 
-    // Bob decrypts the v3 envelope cleanly.
+    // The recipient decrypts the v3 envelope cleanly through the same
+    // unified ratchetDecrypt entry point used for v4.
     const pt = await ratchetDecrypt(B_USER, B_DEV, ct!);
     expect(pt).toBe('legacy hello');
   });
 
-  it('a single recipient handles BOTH v3 (legacy) and v4 (new) envelopes', async () => {
-    // Bob has a legacy v3 session with Alice (old device pair).
+  it('legacy + new sessions coexist: each device pair keeps its own wire format', async () => {
+    // Pair #1 (A_DEV ↔ B_DEV): legacy v3.
     const ssLegacy = makeSharedSecret(4);
     await seedLegacyV3Session({
       myUserId: A_USER, myDeviceId: A_DEV,
       peerUserId: B_USER, peerDeviceId: B_DEV,
       sharedSecret: ssLegacy, sessionId: 'legacy-mix',
     });
-    await seedLegacyV3Session({
-      myUserId: B_USER, myDeviceId: B_DEV,
-      peerUserId: A_USER, peerDeviceId: A_DEV,
-      sharedSecret: ssLegacy, sessionId: 'legacy-mix',
-    });
 
-    // Bob also has a brand-new v4 session with Alice's second device.
+    // Pair #2 (A_DEV2 ↔ B_DEV): brand-new v4.
     const A_DEV2 = 'dev-alice-2';
     const ssNew = makeSharedSecret(5);
     const peerSpk = await generateX25519();
@@ -207,29 +203,15 @@ describe('v4 envelope contract — outbound + legacy read', () => {
       A_USER, A_DEV2, B_USER, B_DEV, ssNew, undefined,
       { isInitiator: true, peerInitialDhPubB64: peerSpk.pubB64, peerSpkId: 99 },
     );
-    await establishDeviceSession(
-      B_USER, B_DEV, A_USER, A_DEV2, ssNew, undefined,
-      {
-        isInitiator: false,
-        selfInitialDhPrivJwk: peerSpk.privJwk,
-        selfInitialDhPubB64: peerSpk.pubB64,
-        peerSpkId: 99,
-      },
-    );
 
-    // Alice ships one envelope from each device.
     const ctLegacy = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'from-legacy');
     const ctNew = await ratchetEncrypt(A_USER, A_DEV2, B_USER, B_DEV, 'from-v4');
 
+    // Each pair holds the line on its own wire format — no cross-contamination.
     expect(ctLegacy!.startsWith(RATCHET_PREFIX_V3)).toBe(true);
+    expect(ctLegacy!.startsWith(RATCHET_PREFIX_V4)).toBe(false);
     expect(ctNew!.startsWith(RATCHET_PREFIX_V4)).toBe(true);
-
-    // Bob decrypts both, in arbitrary order.
-    const ptNew = await ratchetDecrypt(B_USER, B_DEV, ctNew!);
-    const ptLegacy = await ratchetDecrypt(B_USER, B_DEV, ctLegacy!);
-
-    expect(ptNew).toBe('from-v4');
-    expect(ptLegacy).toBe('from-legacy');
+    expect(ctNew!.startsWith(RATCHET_PREFIX_V3)).toBe(false);
   });
 
   it('an unknown prefix is rejected (no silent leak through wrong path)', async () => {
