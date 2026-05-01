@@ -68,6 +68,7 @@ export interface DecryptResult {
     | 'x3dh-bootstrap'
     | 'device-wrap'
     | 'fallback-session'
+    | 'fallback-device-copy'
     | 'legacy-router'
     | 'plaintext-cache';
   /** Internal error code — never surfaced to UI. */
