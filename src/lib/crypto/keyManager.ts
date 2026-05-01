@@ -248,16 +248,40 @@ export async function exportPublicKeyBundle(keys: IdentityKeyPair): Promise<{
   signingKey: string;
   fingerprint: string;
 }> {
-  const [identityRaw, signingRaw] = await Promise.all([
-    hardCrypto.exportKey('raw', keys.publicKey),
-    hardCrypto.exportKey('raw', keys.signingPublicKey),
+  const exportPublic = async (key: CryptoKey): Promise<string> => {
+    // Primary path: raw export (32 bytes for Ed25519/X25519).
+    try {
+      const raw = await hardCrypto.exportKey('raw', key);
+      return bufferToBase64(raw as ArrayBuffer);
+    } catch (rawErr) {
+      // iOS Safari fallback: some WebKit builds reject `raw` export of
+      // Ed25519/X25519 public keys with DataError ("Data provided to an
+      // operation does not meet requirements"). The JWK form ALWAYS works
+      // for public keys, and `x` is the base64url-encoded raw point.
+      try {
+        const jwk = (await hardCrypto.exportKey('jwk', key)) as JsonWebKey;
+        const xB64Url = jwk?.x;
+        if (typeof xB64Url !== 'string' || xB64Url.length === 0) {
+          throw new Error(`jwk export produced no x component: ${JSON.stringify({ kty: jwk?.kty, crv: jwk?.crv })}`);
+        }
+        // base64url → base64
+        const b64 = xB64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
+        return b64 + pad;
+      } catch (jwkErr) {
+        const rawMsg = rawErr instanceof Error ? rawErr.message : String(rawErr);
+        const jwkMsg = jwkErr instanceof Error ? jwkErr.message : String(jwkErr);
+        throw new Error(`exportPublicKey failed (raw: ${rawMsg}; jwk: ${jwkMsg})`);
+      }
+    }
+  };
+
+  const [identityKey, signingKey] = await Promise.all([
+    exportPublic(keys.publicKey),
+    exportPublic(keys.signingPublicKey),
   ]);
 
-  return {
-    identityKey: bufferToBase64(identityRaw),
-    signingKey: bufferToBase64(signingRaw),
-    fingerprint: keys.fingerprint,
-  };
+  return { identityKey, signingKey, fingerprint: keys.fingerprint };
 }
 
 /** Save a session key (JWK stored for persistence, re-imported as non-extractable) */
