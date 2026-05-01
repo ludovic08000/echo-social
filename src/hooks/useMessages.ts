@@ -356,6 +356,23 @@ export function useMessages(conversationId: string) {
             body: newMsg.body,
             createdAt: newMsg.created_at,
           }]).catch(() => {});
+
+          // Proactively prime the e2ee-session router for incoming encrypted
+          // bodies. This catches out-of-order Double Ratchet deliveries before
+          // the user even mounts a `DecryptedMessageBody` for the row, so the
+          // retry budget starts ticking immediately on arrival.
+          if (
+            user &&
+            newMsg.sender_id !== user.id &&
+            isStrictRatchetEnvelopeBody(newMsg.body)
+          ) {
+            void routeIncoming({
+              encryptedBody: newMsg.body,
+              recipientUserId: user.id,
+              senderUserId: newMsg.sender_id,
+              messageId: newMsg.id,
+            }).catch(() => {});
+          }
         }
       )
       .on(
