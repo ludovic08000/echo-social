@@ -68,6 +68,7 @@ export interface DecryptResult {
     | 'x3dh-bootstrap'
     | 'device-wrap'
     | 'fallback-session'
+    | 'fallback-session-probe'
     | 'fallback-device-copy'
     | 'legacy-router'
     | 'plaintext-cache';

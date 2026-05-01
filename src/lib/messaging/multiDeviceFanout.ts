@@ -280,12 +280,18 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
       });
     }
 
-    // (a) Try the cached device-pair ratchet first.
+    // (a) Try the cached device-pair ratchet first. STRICT v4 — if the
+    //     cache returns a v3 envelope (legacy session that hasn't been
+    //     re-bootstrapped yet), drop it and force fresh X3DH below so new
+    //     traffic stays on Double Ratchet w/ DH ratchet.
     let encrypted: string | null = await ratchetEncrypt(
       input.senderUserId, senderDeviceId,
       dev.user_id, dev.device_id,
       input.plaintext,
     );
+    if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V4)) {
+      encrypted = null;
+    }
 
     // (b) Fresh X3DH (v1 or v2) — this also seeds the ratchet for next time.
     if (!encrypted) {

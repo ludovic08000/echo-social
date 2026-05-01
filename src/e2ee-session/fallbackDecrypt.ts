@@ -14,6 +14,7 @@
  */
 import {
   ratchetDecrypt,
+  ratchetDecryptWithSession,
   RATCHET_PREFIX_V3,
   RATCHET_PREFIX_V4,
   listKnownSessionIds,
@@ -70,10 +71,41 @@ export async function tryEveryRatchetSession(
     return { ok: true, plaintext: deviceCopy.plaintext, via: 'fallback-device-copy' };
   }
 
-  // 2) Diagnose locally for typed errorCode (drives UI retry strategy).
+  // 2) REAL multi-session probe — ratchetDecrypt's lookup is keyed on the
+  //    header sessionId. If the peer rotated SPK and re-bootstrapped under a
+  //    new sessionId, OR if a multi-device peer encrypted with a different
+  //    device's session, the header-bound lookup misses entirely. Here we
+  //    iterate every locally cached (peerUserId, peerDeviceId) session and
+  //    force a v4 decrypt against each one, ignoring the header sessionId.
+  //
+  //    Failed probes don't mutate state — `decryptV4WithStored` only
+  //    persists on AES-GCM success — so this is safe to spray.
   const headerSessionId = readSessionIdFromHeader(encryptedBody);
   const knownSessions = (await listKnownSessionIds(recipientUserId, me)) ?? [];
   const knownForPeer = knownSessions.filter((s) => s.peerUserId === peerUserId);
+
+  // Skip the session whose id matches the header — already attempted above.
+  const candidates = knownForPeer.filter((s) => s.sessionId !== headerSessionId);
+  if (candidates.length > 0 && encryptedBody.startsWith(RATCHET_PREFIX_V4)) {
+    // Race them in parallel — first success wins. AbortController-style
+    // early-exit isn't worth it: each attempt is a single AES-GCM op.
+    const probes = candidates.map((s) =>
+      ratchetDecryptWithSession(
+        recipientUserId,
+        me,
+        s.peerUserId,
+        s.peerDeviceId,
+        encryptedBody,
+      ).catch(() => null),
+    );
+    const results = await Promise.all(probes);
+    const hit = results.find((r) => r !== null && r !== undefined) ?? null;
+    if (hit) {
+      return { ok: true, plaintext: hit, via: 'fallback-session-probe' };
+    }
+  }
+
+  // 3) Diagnose locally for typed errorCode (drives UI retry strategy).
   const peerDevices = (await listDevicesForUser(peerUserId)) ?? [];
   const headerKnown = headerSessionId
     ? knownForPeer.some((s) => s.sessionId === headerSessionId)
