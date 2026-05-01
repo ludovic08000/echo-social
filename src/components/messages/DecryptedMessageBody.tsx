@@ -136,12 +136,12 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
   useEffect(() => {
     const handler = () => {
-      // Drop any cached placeholder so the next render forces a real attempt.
+      // Drop any stale cached entry so the next render forces a real attempt.
+      // We never store a "restoration needed" placeholder anymore — the
+      // pending queue keeps retrying silently — but legacy entries from a
+      // prior version may still be in memory.
       const k = cacheKey(messageId, body);
-      const cached = plaintextCache.get(k);
-      if (cached && cached.text === '🔒 Message sécurisé — restauration nécessaire') {
-        plaintextCache.delete(k);
-      }
+      plaintextCache.delete(k);
       setRetryTick((t) => t + 1);
     };
     window.addEventListener('forsure-decrypt-retry', handler);
