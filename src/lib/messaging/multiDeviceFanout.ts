@@ -19,7 +19,7 @@
  * legacy single-device ratchet path.
  */
 import { supabase } from '@/integrations/supabase/client';
-import { getCurrentDeviceId } from './currentDevice';
+import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
 import { wrapPlaintextForDevice, unwrapPlaintextForDevice } from './deviceWrap';
 import {
   fetchPrekeyBundleForDevice,
