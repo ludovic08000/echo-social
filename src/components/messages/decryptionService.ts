@@ -236,15 +236,11 @@ export async function resolvePlaintext(opts: {
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (user) {
-            const { data: row } = await supabase
-              .from('messages')
-              .select('sender_id')
-              .eq('id', messageId)
-              .maybeSingle();
+            const senderId = await getSenderIdBatched(messageId);
             const r = await routeIncoming({
               encryptedBody: body,
               recipientUserId: user.id,
-              senderUserId: (row as { sender_id?: string } | null)?.sender_id,
+              senderUserId: senderId ?? undefined,
               messageId,
             });
             if (r.ok && r.plaintext !== null) {
