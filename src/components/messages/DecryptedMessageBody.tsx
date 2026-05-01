@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, memo } from 'react';
 import { VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { hasMediaKey, parseMediaMessage, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
-import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
+import { savePlaintextForCiphertext, loadPlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
 import { routeIncoming } from '@/e2ee-session';
 import { supabase } from '@/integrations/supabase/client';
