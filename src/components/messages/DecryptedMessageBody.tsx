@@ -20,8 +20,36 @@ interface CachedDecryption {
   hidden: boolean;
 }
 
-const plaintextCache = new Map<string, CachedDecryption>();
-const inflight = new Map<string, Promise<CachedDecryption>>();
+/**
+ * Bounded LRU plaintext cache. Without a cap this grows unbounded across
+ * long sessions on iOS PWA (where message bodies stay in RAM for days),
+ * eventually triggering OOM kills. 500 entries ≈ a few MB worst-case.
+ */
+const PLAINTEXT_CACHE_CAP = 500;
+class LruMap<K, V> {
+  private m = new Map<K, V>();
+  constructor(private readonly cap: number) {}
+  get(k: K): V | undefined {
+    const v = this.m.get(k);
+    if (v !== undefined) {
+      this.m.delete(k);
+      this.m.set(k, v);
+    }
+    return v;
+  }
+  set(k: K, v: V): void {
+    if (this.m.has(k)) this.m.delete(k);
+    this.m.set(k, v);
+    while (this.m.size > this.cap) {
+      const oldest = this.m.keys().next().value;
+      if (oldest === undefined) break;
+      this.m.delete(oldest);
+    }
+  }
+  delete(k: K): void { this.m.delete(k); }
+}
+const plaintextCache = new LruMap<string, CachedDecryption>(PLAINTEXT_CACHE_CAP);
+const inflight = new Map<string, Promise<CachedDecryption | null>>();
 
 function cacheKey(messageId: string | undefined, body: string): string {
   return `${messageId ?? 'noid'}|${body}`;
