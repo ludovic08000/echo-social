@@ -4,7 +4,8 @@ import { useAuth } from '@/lib/auth';
 import { useEffect } from 'react';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { messageQueue } from '@/lib/messaging/messageQueue';
-import { isUnsupportedEncryptedBody } from '@/lib/messaging/messageCompatibility';
+import { isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import { pendingMessageQueue, routeIncoming } from '@/e2ee-session';
 
 async function hideMessagesForUser(userId: string, messageIds: string[]) {
   if (!userId || messageIds.length === 0) return;
