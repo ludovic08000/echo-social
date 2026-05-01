@@ -208,7 +208,8 @@ export async function resolvePlaintext(opts: {
         }
       }
 
-      // 4) Nothing produced plaintext. Stay silent.
+      // 4) Nothing produced plaintext. Mark negative + stay silent.
+      negCache.set(key, Date.now());
       return null;
     })();
     inflight.set(key, promise);
