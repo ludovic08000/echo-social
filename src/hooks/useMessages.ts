@@ -506,7 +506,8 @@ export function useMessages(conversationId: string) {
               senderUserId: m.sender_id,
               messageId: m.id,
             });
-            if (r.ok) {
+            if (r.ok && r.plaintext !== null) {
+              void savePlaintextForCiphertext(m.body, r.plaintext);
               anyDecrypted = true;
               continue;
             }
