@@ -49,7 +49,18 @@ function makeV4Ciphertext(sessionId = 'sess-1'): string {
 
 describe('fallbackDecrypt.tryEveryRatchetSession', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    // Hard reset of all mock state, including pending mockResolvedValueOnce
+    // queues left over from earlier tests (avoids cross-test bleed).
+    vi.resetAllMocks();
+    (ratchetDecrypt as any).mockReset();
+    (listKnownSessionIds as any).mockReset();
+    (listDevicesForUser as any).mockReset();
+    (legacyDecryptByMessageId as any).mockReset();
+    // Default safe baselines — overridden per-test as needed.
+    (ratchetDecrypt as any).mockResolvedValue(null);
+    (listKnownSessionIds as any).mockResolvedValue([]);
+    (listDevicesForUser as any).mockResolvedValue([]);
+    (legacyDecryptByMessageId as any).mockResolvedValue({ ok: false, plaintext: null });
   });
 
   it('returns NOT_RATCHET_CIPHERTEXT for non-ratchet payloads', async () => {
