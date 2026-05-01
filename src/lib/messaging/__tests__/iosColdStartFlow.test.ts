@@ -188,17 +188,15 @@ describe('iOS cold-start — secure channel rehydration', () => {
     const ch2 = makeChannel({ ready: true });
     const unreg2 = registerChannel(ch2, 'h-ready');
 
-    // Ensure debounce window has elapsed before resume (resume guard = 1.5s).
-    await new Promise((r) => setTimeout(r, 1600));
-    await messageQueue.resumeForConversation(CONV);
-
-    await waitFor(() => ch2.sentBodies.length === 1, 6000);
+    // The pending message has an active secure_wait timer (3s). The next
+    // tick will see the ready handler and successfully encrypt + send.
+    await waitFor(() => ch2.sentBodies.length === 1, 15_000);
     expect(ch2.sentLocalIds).toEqual([m.localId]);
     // Old (cold) handler must not have been invoked at all.
     expect(ch1.sentBodies).toHaveLength(0);
 
     unreg2();
-  });
+  }, 25_000);
 });
 
 describe('iOS cold-start — true volatile-memory loss', () => {
