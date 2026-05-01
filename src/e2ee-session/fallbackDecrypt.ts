@@ -36,22 +36,6 @@ function readSessionIdFromHeader(encryptedBody: string): string | null {
   return rest.slice(0, dot);
 }
 
-/** First truthy non-null value wins; never throws. */
-async function firstNonNull<T>(promises: Array<Promise<T | null | undefined>>): Promise<T | null> {
-  return new Promise<T | null>((resolve) => {
-    let pending = promises.length;
-    if (pending === 0) return resolve(null);
-    promises.forEach((p) => {
-      p.then((v) => {
-        if (v !== null && v !== undefined) resolve(v as T);
-        else if (--pending === 0) resolve(null);
-      }).catch(() => {
-        if (--pending === 0) resolve(null);
-      });
-    });
-  });
-}
-
 export async function tryEveryRatchetSession(
   recipientUserId: UserId,
   peerUserId: UserId,
@@ -67,25 +51,23 @@ export async function tryEveryRatchetSession(
 
   const me = selfDeviceId();
 
-  // 1) Race the two orthogonal compatible paths in parallel:
-  //      a) primary ratchet (v3/v4) bound to header sessionId
-  //      b) per-message device-copy router (independently encrypted row)
-  //    Whichever succeeds first wins — no wasted serial latency.
-  const primary = ratchetDecrypt(recipientUserId, me, encryptedBody)
-    .then((pt) => (pt !== null ? { plaintext: pt, via: 'fallback-session' as const } : null))
-    .catch(() => null);
+  // 1) Probe the two orthogonal compatible paths IN PARALLEL — primary
+  //    ratchet (header-bound) and per-message device-copy (independently
+  //    encrypted row). Both are awaited together so we save one round-trip,
+  //    but the primary keeps deterministic priority for the via label.
+  const primaryP = ratchetDecrypt(recipientUserId, me, encryptedBody).catch(() => null);
+  const deviceCopyP: Promise<DecryptResult> = messageId
+    ? legacyDecryptByMessageId(messageId).catch(
+        () => ({ ok: false, plaintext: null, errorCode: 'LEGACY_THREW' } as DecryptResult),
+      )
+    : Promise.resolve({ ok: false, plaintext: null, errorCode: 'NO_MESSAGE_ID' } as DecryptResult);
 
-  const deviceCopy = messageId
-    ? legacyDecryptByMessageId(messageId)
-        .then((r) => (r.ok && r.plaintext !== null
-          ? { plaintext: r.plaintext, via: 'fallback-device-copy' as const }
-          : null))
-        .catch(() => null)
-    : Promise.resolve(null);
-
-  const winner = await firstNonNull([primary, deviceCopy]);
-  if (winner) {
-    return { ok: true, plaintext: winner.plaintext, via: winner.via };
+  const [primary, deviceCopy] = await Promise.all([primaryP, deviceCopyP]);
+  if (primary !== null && primary !== undefined) {
+    return { ok: true, plaintext: primary, via: 'fallback-session' };
+  }
+  if (deviceCopy.ok && deviceCopy.plaintext !== null) {
+    return { ok: true, plaintext: deviceCopy.plaintext, via: 'fallback-device-copy' };
   }
 
   // 2) Diagnose locally for typed errorCode (drives UI retry strategy).
