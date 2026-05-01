@@ -4,7 +4,8 @@ import { useAuth } from '@/lib/auth';
 import { useEffect } from 'react';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { messageQueue } from '@/lib/messaging/messageQueue';
-import { isUnsupportedEncryptedBody } from '@/lib/messaging/messageCompatibility';
+import { isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import { pendingMessageQueue, routeIncoming } from '@/e2ee-session';
 
 async function hideMessagesForUser(userId: string, messageIds: string[]) {
   if (!userId || messageIds.length === 0) return;
@@ -355,6 +356,23 @@ export function useMessages(conversationId: string) {
             body: newMsg.body,
             createdAt: newMsg.created_at,
           }]).catch(() => {});
+
+          // Proactively prime the e2ee-session router for incoming encrypted
+          // bodies. This catches out-of-order Double Ratchet deliveries before
+          // the user even mounts a `DecryptedMessageBody` for the row, so the
+          // retry budget starts ticking immediately on arrival.
+          if (
+            user &&
+            newMsg.sender_id !== user.id &&
+            isStrictRatchetEnvelopeBody(newMsg.body)
+          ) {
+            void routeIncoming({
+              encryptedBody: newMsg.body,
+              recipientUserId: user.id,
+              senderUserId: newMsg.sender_id,
+              messageId: newMsg.id,
+            }).catch(() => {});
+          }
         }
       )
       .on(
@@ -465,6 +483,26 @@ export function useMessages(conversationId: string) {
           createdAt: m.created_at,
         })),
       ).catch(() => {});
+
+      // After a refetch (cold reload, reconnect, focus), give every still-
+      // encrypted incoming row a fresh retry budget on the e2ee-session
+      // pending queue. This implements the "RAM + refetch from server on
+      // reload" persistence strategy: the ciphertext is re-supplied by this
+      // very query, and `pendingMessageQueue.refresh()` resets the attempt
+      // counter so 30 × 1.5s of retries fire from now, even for messages
+      // that exhausted their budget before the reload.
+      if (user) {
+        for (const m of compatibleMessages) {
+          if (m.sender_id === user.id) continue;
+          if (!isStrictRatchetEnvelopeBody(m.body)) continue;
+          pendingMessageQueue.refresh(m.id, {
+            encryptedBody: m.body,
+            recipientUserId: user.id,
+            senderUserId: m.sender_id,
+            messageId: m.id,
+          });
+        }
+      }
 
       const senderIds = [...new Set(compatibleMessages.map(m => m.sender_id))];
       const { data: profiles } = await supabase
