@@ -321,7 +321,19 @@ export async function establishDeviceSession(
   peerDeviceId: string,
   sharedSecret: ArrayBuffer,
   sessionId?: string,
-  opts?: { peerInitialDhPubB64?: string | null; isInitiator?: boolean; peerSpkId?: number | null },
+  opts?: {
+    peerInitialDhPubB64?: string | null;
+    isInitiator?: boolean;
+    peerSpkId?: number | null;
+    /**
+     * Responder priming: seed the local DH ratchet pair with the device SPK
+     * keypair so the very first inbound v4 message can complete a DH-ratchet
+     * step (DH(SPK_priv, initiatorRatchetPub)). Without this, the responder
+     * stays unable to encrypt and every reply triggers a fresh X3DH burst.
+     */
+    selfInitialDhPrivJwk?: JsonWebKey | null;
+    selfInitialDhPubB64?: string | null;
+  },
 ): Promise<string> {
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
   const finalSessionId =
