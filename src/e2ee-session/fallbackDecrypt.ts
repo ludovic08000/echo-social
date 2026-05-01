@@ -72,20 +72,20 @@ export async function tryEveryRatchetSession(
   //      b) per-message device-copy router (independently encrypted row)
   //    Whichever succeeds first wins — no wasted serial latency.
   const primary = ratchetDecrypt(recipientUserId, me, encryptedBody)
-    .then((pt) => (pt !== null ? { plaintext: pt, via: 'ratchet-primary' as const } : null))
+    .then((pt) => (pt !== null ? { plaintext: pt, via: 'fallback-session' as const } : null))
     .catch(() => null);
 
   const deviceCopy = messageId
     ? legacyDecryptByMessageId(messageId)
         .then((r) => (r.ok && r.plaintext !== null
-          ? { plaintext: r.plaintext, via: 'device-copy' as const }
+          ? { plaintext: r.plaintext, via: 'fallback-device-copy' as const }
           : null))
         .catch(() => null)
     : Promise.resolve(null);
 
   const winner = await firstNonNull([primary, deviceCopy]);
   if (winner) {
-    return { ok: true, plaintext: winner.plaintext, via: `fallback-${winner.via}` };
+    return { ok: true, plaintext: winner.plaintext, via: winner.via };
   }
 
   // 2) Diagnose locally for typed errorCode (drives UI retry strategy).
