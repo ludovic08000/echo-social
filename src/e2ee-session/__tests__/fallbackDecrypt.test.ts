@@ -49,7 +49,7 @@ function makeV4Ciphertext(sessionId = 'sess-1'): string {
 
 describe('fallbackDecrypt.tryEveryRatchetSession', () => {
   beforeEach(() => {
-    // Hard reset of all mock state, including pending mockResolvedValueOnce
+    // Hard reset of all mock state, including pending mockResolvedValue
     // queues left over from earlier tests (avoids cross-test bleed).
     vi.resetAllMocks();
     (ratchetDecrypt as any).mockReset();
@@ -69,7 +69,7 @@ describe('fallbackDecrypt.tryEveryRatchetSession', () => {
   });
 
   it('returns plaintext when the primary ratchet decrypt succeeds', async () => {
-    (ratchetDecrypt as any).mockResolvedValueOnce('hello world');
+    (ratchetDecrypt as any).mockResolvedValue('hello world');
     const r = await tryEveryRatchetSession(ME, PEER, makeV4Ciphertext());
     expect(r.ok).toBe(true);
     if (r.ok) {
@@ -79,14 +79,14 @@ describe('fallbackDecrypt.tryEveryRatchetSession', () => {
   });
 
   it('falls back to the device-copy path when the ratchet returns null', async () => {
-    (ratchetDecrypt as any).mockResolvedValueOnce(null);
-    (listKnownSessionIds as any).mockResolvedValueOnce([
+    (ratchetDecrypt as any).mockResolvedValue(null);
+    (listKnownSessionIds as any).mockResolvedValue([
       { peerUserId: PEER, peerDeviceId: 'dev-bob-1', sessionId: 'sess-1', lastUsedAt: 0 },
     ]);
-    (listDevicesForUser as any).mockResolvedValueOnce([
+    (listDevicesForUser as any).mockResolvedValue([
       { userId: PEER, deviceId: 'dev-bob-1', devicePublicKey: 'k' },
     ]);
-    (legacyDecryptByMessageId as any).mockResolvedValueOnce({
+    (legacyDecryptByMessageId as any).mockResolvedValue({
       ok: true, plaintext: 'recovered via copy', via: 'device-copy',
     });
 
@@ -100,12 +100,12 @@ describe('fallbackDecrypt.tryEveryRatchetSession', () => {
   });
 
   it('reports RATCHET_SESSION_UNKNOWN when peer rotated SPK / sessionId mismatch', async () => {
-    (ratchetDecrypt as any).mockResolvedValueOnce(null);
-    (listKnownSessionIds as any).mockResolvedValueOnce([
+    (ratchetDecrypt as any).mockResolvedValue(null);
+    (listKnownSessionIds as any).mockResolvedValue([
       // We have a session with this peer, but under a DIFFERENT id.
       { peerUserId: PEER, peerDeviceId: 'dev-bob-1', sessionId: 'sess-OLD', lastUsedAt: 0 },
     ]);
-    (listDevicesForUser as any).mockResolvedValueOnce([
+    (listDevicesForUser as any).mockResolvedValue([
       { userId: PEER, deviceId: 'dev-bob-1', devicePublicKey: 'k' },
     ]);
 
@@ -116,10 +116,10 @@ describe('fallbackDecrypt.tryEveryRatchetSession', () => {
   });
 
   it('reports NO_PEER_DEVICES when the peer has no published devices', async () => {
-    (ratchetDecrypt as any).mockResolvedValueOnce(null);
-    (legacyDecryptByMessageId as any).mockResolvedValueOnce({ ok: false, plaintext: null });
-    (listKnownSessionIds as any).mockResolvedValueOnce([]);
-    (listDevicesForUser as any).mockResolvedValueOnce([]);
+    (ratchetDecrypt as any).mockResolvedValue(null);
+    (legacyDecryptByMessageId as any).mockResolvedValue({ ok: false, plaintext: null });
+    (listKnownSessionIds as any).mockResolvedValue([]);
+    (listDevicesForUser as any).mockResolvedValue([]);
 
     const r = await tryEveryRatchetSession(ME, PEER, makeV4Ciphertext('sess-X'));
     expect(r).toEqual({
@@ -128,12 +128,12 @@ describe('fallbackDecrypt.tryEveryRatchetSession', () => {
   });
 
   it('reports ALL_RATCHET_SESSIONS_FAILED on out-of-order with known sessionId', async () => {
-    (ratchetDecrypt as any).mockResolvedValueOnce(null);
-    (legacyDecryptByMessageId as any).mockResolvedValueOnce({ ok: false, plaintext: null });
-    (listKnownSessionIds as any).mockResolvedValueOnce([
+    (ratchetDecrypt as any).mockResolvedValue(null);
+    (legacyDecryptByMessageId as any).mockResolvedValue({ ok: false, plaintext: null });
+    (listKnownSessionIds as any).mockResolvedValue([
       { peerUserId: PEER, peerDeviceId: 'dev-bob-1', sessionId: 'sess-OK', lastUsedAt: 0 },
     ]);
-    (listDevicesForUser as any).mockResolvedValueOnce([
+    (listDevicesForUser as any).mockResolvedValue([
       { userId: PEER, deviceId: 'dev-bob-1', devicePublicKey: 'k' },
     ]);
     // Header sessionId matches a known session AND peer has devices →
@@ -145,9 +145,9 @@ describe('fallbackDecrypt.tryEveryRatchetSession', () => {
   });
 
   it('does not throw when the primary ratchet rejects', async () => {
-    (ratchetDecrypt as any).mockRejectedValueOnce(new Error('boom'));
-    (listKnownSessionIds as any).mockResolvedValueOnce([]);
-    (listDevicesForUser as any).mockResolvedValueOnce([]);
+    (ratchetDecrypt as any).mockRejectedValue(new Error('boom'));
+    (listKnownSessionIds as any).mockResolvedValue([]);
+    (listDevicesForUser as any).mockResolvedValue([]);
     const r = await tryEveryRatchetSession(ME, PEER, makeV4Ciphertext());
     expect(r.ok).toBe(false);
   });
