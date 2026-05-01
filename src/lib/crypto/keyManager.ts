@@ -89,8 +89,32 @@ function dbDelete(storeName: string, key: string): Promise<void> {
 
 // ─── Fingerprint (safety numbers) ───
 
+/**
+ * Export a public key's raw 32-byte point.
+ * iOS Safari fallback: WebKit rejects `exportKey('raw', ...)` for X25519 /
+ * Ed25519 public keys with DataError. JWK export ALWAYS works for public
+ * keys; `x` is the base64url-encoded raw point.
+ */
+async function exportPublicKeyRaw(publicKey: CryptoKey): Promise<ArrayBuffer> {
+  try {
+    return await hardCrypto.exportKey('raw', publicKey) as ArrayBuffer;
+  } catch {
+    const jwk = (await hardCrypto.exportKey('jwk', publicKey)) as JsonWebKey;
+    const xB64Url = jwk?.x;
+    if (typeof xB64Url !== 'string' || xB64Url.length === 0) {
+      throw new Error('exportPublicKeyRaw: jwk export missing x component');
+    }
+    const b64 = xB64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
+    const bin = atob(b64 + pad);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  }
+}
+
 async function computeFingerprint(publicKey: CryptoKey): Promise<string> {
-  const raw = await hardCrypto.exportKey('raw', publicKey);
+  const raw = await exportPublicKeyRaw(publicKey);
   const hash = await hardCrypto.digest('SHA-256', raw);
   const bytes = new Uint8Array(hash);
   let fp = '';
