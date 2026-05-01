@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, memo } from 'react';
 import { VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { hasMediaKey, parseMediaMessage, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
-import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
+import { savePlaintextForCiphertext, loadPlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
 import { routeIncoming } from '@/e2ee-session';
 import { supabase } from '@/integrations/supabase/client';
@@ -20,8 +20,36 @@ interface CachedDecryption {
   hidden: boolean;
 }
 
-const plaintextCache = new Map<string, CachedDecryption>();
-const inflight = new Map<string, Promise<CachedDecryption>>();
+/**
+ * Bounded LRU plaintext cache. Without a cap this grows unbounded across
+ * long sessions on iOS PWA (where message bodies stay in RAM for days),
+ * eventually triggering OOM kills. 500 entries ≈ a few MB worst-case.
+ */
+const PLAINTEXT_CACHE_CAP = 500;
+class LruMap<K, V> {
+  private m = new Map<K, V>();
+  constructor(private readonly cap: number) {}
+  get(k: K): V | undefined {
+    const v = this.m.get(k);
+    if (v !== undefined) {
+      this.m.delete(k);
+      this.m.set(k, v);
+    }
+    return v;
+  }
+  set(k: K, v: V): void {
+    if (this.m.has(k)) this.m.delete(k);
+    this.m.set(k, v);
+    while (this.m.size > this.cap) {
+      const oldest = this.m.keys().next().value;
+      if (oldest === undefined) break;
+      this.m.delete(oldest);
+    }
+  }
+  delete(k: K): void { this.m.delete(k); }
+}
+const plaintextCache = new LruMap<string, CachedDecryption>(PLAINTEXT_CACHE_CAP);
+const inflight = new Map<string, Promise<CachedDecryption | null>>();
 
 function cacheKey(messageId: string | undefined, body: string): string {
   return `${messageId ?? 'noid'}|${body}`;
@@ -192,13 +220,36 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       return;
     }
 
-    // For our own messages we rely entirely on the volatile plaintext cache
-    // populated by the send pipeline. If it isn't there yet, stay silently
-    // decrypting (transparent dot) — the cache will populate within a tick
-    // and a re-render will show the text. We NEVER surface a placeholder.
+    // For our own messages we cannot use the conv-level Double Ratchet to
+    // decrypt (Signal design — sender state ≠ receiver state). The send
+    // pipeline persists plaintext to `plaintextStore` (IndexedDB, encrypted
+    // at rest by the keystore layer). Try a one-shot lookup; if missing,
+    // stay silently decrypting (no placeholder).
     if (isMe) {
       setIsDecrypting(true);
-      return;
+      let cancelledMe = false;
+      void loadPlaintextForCiphertext(body)
+        .then((stored) => {
+          if (cancelledMe || !stored) return;
+          const entry: CachedDecryption = hasMediaKey(stored)
+            ? (() => {
+                const parsed = parseMediaMessage(stored);
+                return parsed
+                  ? { text: parsed.label, mediaKeyB64: parsed.keyB64, hidden: false }
+                  : { text: stored, mediaKeyB64: null, hidden: false };
+              })()
+            : { text: stored, mediaKeyB64: null, hidden: false };
+          plaintextCache.set(cacheKey(messageId, body), entry);
+          setHidden(entry.hidden);
+          setDisplayText(entry.text);
+          setMediaKeyB64State(entry.mediaKeyB64);
+          setIsDecrypting(false);
+          if (entry.mediaKeyB64 && messageId) {
+            setMediaKey(messageId, entry.mediaKeyB64, entry.text.startsWith('🎬'));
+          }
+        })
+        .catch(() => { /* keep silent decrypting */ });
+      return () => { cancelledMe = true; };
     }
 
     const key = cacheKey(messageId, body);

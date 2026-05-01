@@ -421,8 +421,22 @@ class MessageQueueManager {
           const encrypted = await Promise.race([encryptPromise, timeoutPromise]);
           const withLocalId = this.attachLocalId(encrypted, msg.localId, msg.traceId);
 
-          // CRITICAL: Verify encryption actually produced ciphertext
-          if (!withLocalId || withLocalId === plaintext || !withLocalId.startsWith('{')) {
+          // CRITICAL: Verify the encrypt handler actually produced a known
+          // ciphertext envelope. We check explicit protocol prefixes (JSON
+          // conv envelope `{` or device-pair v3/v4 ratchet) instead of a
+          // loose JSON-only heuristic — a multi-line plaintext starting
+          // with `{` would otherwise sneak through.
+          const looksCiphertext =
+            !!withLocalId &&
+            withLocalId !== plaintext &&
+            (
+              withLocalId.startsWith('{') ||                  // conv-level JSON envelope
+              withLocalId.startsWith('x3dh4.') ||             // device Double Ratchet
+              withLocalId.startsWith('x3dh3.') ||             // legacy device ratchet
+              withLocalId.startsWith('x3dh2.') ||             // X3DH per-device with OPK
+              withLocalId.startsWith('x3dh1.')                // X3DH per-device w/o OPK
+            );
+          if (!looksCiphertext) {
             console.error('[E2EE] encrypt failed — output is plaintext or empty', msg.localId);
             await this.updateStatus(msg, 'waiting_secure_channel', 'Canal sécurisé indisponible');
             this.scheduleRetry(msg, 'secure_wait');

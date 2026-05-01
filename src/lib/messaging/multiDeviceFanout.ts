@@ -19,7 +19,7 @@
  * legacy single-device ratchet path.
  */
 import { supabase } from '@/integrations/supabase/client';
-import { getCurrentDeviceId } from './currentDevice';
+import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
 import { wrapPlaintextForDevice, unwrapPlaintextForDevice } from './deviceWrap';
 import {
   fetchPrekeyBundleForDevice,
@@ -150,7 +150,7 @@ async function x3dhUnwrapForDevice(
     const myDeviceId = getCurrentDeviceId();
 
     // Per-device responder: loads device-scoped SPK private + (optionally) the OPK private.
-    const { sharedSecret } = await x3dhRespondForDevice(myKeys, recipientUserId, myDeviceId, {
+    const { sharedSecret, spkKeyPair } = await x3dhRespondForDevice(myKeys, recipientUserId, myDeviceId, {
       ik: senderIdentityKeyB64,
       ek: ekB64,
       spkId,
@@ -165,11 +165,25 @@ async function x3dhUnwrapForDevice(
 
     // Cache the device-pair session so the NEXT message from this peer device
     // can be decrypted via the v3 fast path (no X3DH respond needed).
+    // SESAME PRIMING: seed our local DH ratchet pair with the device SPK
+    // keypair. This mirrors what the initiator did
+    // (`DH(initiatorEphemeral, SPK_pub)`) so the very first inbound v4
+    // message can complete a DH-ratchet step without us having to send first.
     try {
+      const spkPrivJwk = await hardCrypto.exportKey('jwk', spkKeyPair.privateKey);
+      const spkPubRaw = await hardCrypto.exportKey('raw', spkKeyPair.publicKey);
+      const spkPubB64 = bufferToBase64(spkPubRaw as ArrayBuffer);
       await establishDeviceSession(
         recipientUserId, myDeviceId,
         senderUserId, senderDeviceId,
         sharedSecret,
+        undefined,
+        {
+          isInitiator: false,
+          peerSpkId: spkId,
+          selfInitialDhPrivJwk: spkPrivJwk,
+          selfInitialDhPubB64: spkPubB64,
+        },
       );
     } catch (e) {
       console.warn('[FANOUT] session cache after respond failed (non-fatal)', e);
@@ -185,6 +199,14 @@ async function x3dhUnwrapForDevice(
 // ─── Public API ─────────────────────────────────────────────────────────────
 
 export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserted: number; multiDevice: boolean }> {
+  // SAFETY: Never bind a fresh ratchet session to a temporary device id —
+  // doing so would orphan all session state once Keychain hydrates with
+  // the real one. Skip fan-out entirely; the per-conv ratchet still
+  // delivers to the primary device.
+  if (isDeviceIdTemporary()) {
+    console.warn('[FANOUT] device id still pending native hydration — skipping fan-out');
+    return { inserted: 0, multiDevice: false };
+  }
   const senderDeviceId = getCurrentDeviceId();
 
   // 1. Get all participants of the conversation

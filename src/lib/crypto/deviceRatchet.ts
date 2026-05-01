@@ -273,8 +273,14 @@ async function trySkippedKeys(
   const entry = session.skipped[idx];
   try {
     const aes = await importMessageKey(entry.keyB64);
+    // Defensive copy of IV + ciphertext: WebCrypto implementations are free to
+    // detach or otherwise mutate the underlying buffer. If decryption fails we
+    // must keep the originals intact for the next attempt path.
+    const ivCopy = new Uint8Array(iv.byteLength);
+    ivCopy.set(iv);
+    const ctCopy = (ct as ArrayBuffer).slice(0);
     const pt = await hardCrypto.decrypt(
-      { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ct,
+      { name: 'AES-GCM', iv: ivCopy as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ctCopy,
     );
     const newSkipped = session.skipped.slice();
     newSkipped.splice(idx, 1);
@@ -321,7 +327,19 @@ export async function establishDeviceSession(
   peerDeviceId: string,
   sharedSecret: ArrayBuffer,
   sessionId?: string,
-  opts?: { peerInitialDhPubB64?: string | null; isInitiator?: boolean; peerSpkId?: number | null },
+  opts?: {
+    peerInitialDhPubB64?: string | null;
+    isInitiator?: boolean;
+    peerSpkId?: number | null;
+    /**
+     * Responder priming: seed the local DH ratchet pair with the device SPK
+     * keypair so the very first inbound v4 message can complete a DH-ratchet
+     * step (DH(SPK_priv, initiatorRatchetPub)). Without this, the responder
+     * stays unable to encrypt and every reply triggers a fresh X3DH burst.
+     */
+    selfInitialDhPrivJwk?: JsonWebKey | null;
+    selfInitialDhPubB64?: string | null;
+  },
 ): Promise<string> {
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
   const finalSessionId =
@@ -333,8 +351,8 @@ export async function establishDeviceSession(
     id: key,
     sessionId: finalSessionId,
     rootKeyB64,
-    dhsPrivJwk: null,
-    dhsPubB64: null,
+    dhsPrivJwk: opts?.selfInitialDhPrivJwk ?? null,
+    dhsPubB64: opts?.selfInitialDhPubB64 ?? null,
     dhrPubB64: opts?.peerInitialDhPubB64 ?? null,
     ckSendB64: null,
     ckRecvB64: null,

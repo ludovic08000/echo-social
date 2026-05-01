@@ -91,6 +91,16 @@ export function getCurrentDeviceId(): string {
 }
 
 /**
+ * True when the in-memory id was generated as a fallback while native
+ * hydration is still pending. Crypto layers should defer X3DH bootstrap
+ * (which would otherwise pin a session to an ephemeral id) until this
+ * returns false.
+ */
+export function isDeviceIdTemporary(): boolean {
+  return memoryDeviceIdIsTemporary;
+}
+
+/**
  * Hydrate the device id from native storage at app startup.
  * On iOS/Android, the native Preferences value is the source of truth and
  * may differ from a freshly-generated WebView id if IndexedDB/localStorage
