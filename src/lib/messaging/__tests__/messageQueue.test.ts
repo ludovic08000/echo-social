@@ -21,9 +21,11 @@ import { messageQueue, type OutboundMessage } from '@/lib/messaging/messageQueue
 const CONV = 'conv-1';
 const SENDER = 'user-1';
 
-async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 2000): Promise<void> {
   const start = Date.now();
-  while (!predicate()) {
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    if (await predicate()) return;
     if (Date.now() - start > timeoutMs) throw new Error('waitFor timeout');
     await new Promise(r => setTimeout(r, 25));
   }
