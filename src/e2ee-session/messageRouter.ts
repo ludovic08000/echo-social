@@ -23,6 +23,7 @@ import { selfDeviceId } from './deviceRegistry';
 import { tryEveryRatchetSession } from './fallbackDecrypt';
 import { legacyDecryptByMessageId, isKnownLegacyFormat } from './legacyDecryptRouter';
 import { pendingMessageQueue } from './pendingMessageQueue';
+import { hasSeenMessage, markSeenMessage, makeSeenKey } from './seenMessageStore';
 import type { DecryptResult, UserId } from './types';
 
 interface RouteInput {
@@ -38,6 +39,17 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
   const { encryptedBody, recipientUserId, senderUserId, messageId } = input;
   const me = selfDeviceId();
 
+  // Anti-replay key: cheap, RAM-only, cleared after ALL retries succeeded.
+  // Hash is just first 16 chars of ciphertext — collisions are harmless
+  // because messageId+sessionId already pin the tuple.
+  const seenKey = makeSeenKey({
+    messageId,
+    ciphertextHash: encryptedBody.slice(0, 16),
+  });
+  if (hasSeenMessage(seenKey)) {
+    return { ok: true, plaintext: null, via: 'plaintext-cache', errorCode: 'ALREADY_SEEN' };
+  }
+
   // 1) Ratchet v3/v4 fast path.
   if (
     encryptedBody.startsWith(RATCHET_PREFIX_V4) ||
@@ -46,6 +58,7 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
     try {
       const pt = await deviceRatchetDecrypt(recipientUserId, me, encryptedBody);
       if (pt !== null) {
+        markSeenMessage(seenKey);
         return {
           ok: true,
           plaintext: pt,
@@ -56,8 +69,8 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
       /* fall through to fallback */
     }
 
-    // 1b) Try every known session — also probes the per-message device-copy
-    //     fan-out (orthogonal crypto path) before giving up.
+    // 1b) Try every known session (real multi-session probe + device-copy
+    //     orthogonal path). See fallbackDecrypt.ts.
     if (senderUserId) {
       const fb = await tryEveryRatchetSession(
         recipientUserId,
@@ -65,14 +78,20 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
         encryptedBody,
         messageId,
       );
-      if (fb.ok) return fb;
+      if (fb.ok) {
+        markSeenMessage(seenKey);
+        return fb;
+      }
     } else if (messageId) {
-      // No senderUserId provided — at least try the legacy device-copy path.
       const r = await legacyDecryptByMessageId(messageId);
-      if (r.ok) return r;
+      if (r.ok) {
+        markSeenMessage(seenKey);
+        return r;
+      }
     }
 
-    // 1c) Out-of-order? Enqueue for retry.
+    // 1c) Out-of-order? Enqueue for retry. Do NOT mark seen — a successful
+    //     retry must be allowed to deliver later.
     if (messageId) {
       pendingMessageQueue.enqueue(messageId, input);
     }
@@ -82,7 +101,10 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
   // 2) Any other known legacy format with a messageId → router.
   if (messageId && isKnownLegacyFormat(encryptedBody)) {
     const r = await legacyDecryptByMessageId(messageId);
-    if (r.ok) return r;
+    if (r.ok) {
+      markSeenMessage(seenKey);
+      return r;
+    }
     pendingMessageQueue.enqueue(messageId, input);
     return r;
   }

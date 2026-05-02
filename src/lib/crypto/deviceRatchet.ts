@@ -642,10 +642,17 @@ export async function getSessionPeerSpkId(
 }
 
 /**
- * Drop the session for one peer device. Used when we detect that the peer
+ * Drop the session for ONE peer device. Used when we detect that the peer
  * has rotated its SignedPreKey: the cached root/chain keys are no longer
  * derivable on the peer side, so any further v3/v4 message would silently
  * fail to decrypt. Forcing re-X3DH heals the link.
+ *
+ * SECURITY: do NOT call this automatically as an "error recovery" hack.
+ * Active sessions may be required to decrypt in-flight messages from the
+ * pending queue. Only call when:
+ *   - the peer has demonstrably rotated SPK (see multiDeviceFanout)
+ *   - the user explicitly resets the chat from settings
+ *   - a verified key restore from backup is in progress
  */
 export async function invalidateDeviceSession(
   myUserId: string,
@@ -703,7 +710,18 @@ export async function listKnownSessionIds(
   }
 }
 
-/** Drop all device-pair sessions (e.g. on logout / key rotation). */
+/**
+ * Drop ALL device-pair sessions.
+ *
+ * SECURITY: this is destructive — old sessions may still be needed to read
+ * in-flight messages currently sitting in `pendingMessageQueue`. Reserved
+ * STRICTLY for explicit user-initiated flows:
+ *   - logout
+ *   - manual "reset E2EE" from settings
+ *   - verified key restore from encrypted backup (`resyncE2EE`)
+ *
+ * Never call as part of an automatic error-recovery path.
+ */
 export async function clearAllDeviceSessions(): Promise<void> {
   try {
     const db = await openDB();

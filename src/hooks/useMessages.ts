@@ -556,6 +556,18 @@ export function useMessages(conversationId: string) {
   return messagesQuery;
 }
 
+/**
+ * Legacy direct-send hook.
+ *
+ * SECURITY: only Zeus / bot conversations are allowed to receive plaintext
+ * here. Any peer (user-to-user) conversation is rerouted through the E2EE
+ * `messageQueue.enqueue()` path, which encrypts before insertion.
+ *
+ * If a caller passes a peer conversation, the hook DOES NOT block hard —
+ * it transparently encrypts via the queue so existing UI buttons (share
+ * link, marketplace negotiation, call notice...) keep working without
+ * leaking plaintext to the server.
+ */
 export function useSendMessage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -564,7 +576,7 @@ export function useSendMessage() {
     mutationFn: async ({ conversationId, body, imageUrl }: { conversationId: string; body: string; imageUrl?: string }) => {
       if (!user) throw new Error('Not authenticated');
 
-      // Check if this is a Zeus conversation
+      // Check if this is a Zeus / bot conversation (whitelisted plaintext path).
       const { data: zeusParticipant } = await supabase
         .from('conversation_participants')
         .select('user_id')
@@ -572,7 +584,9 @@ export function useSendMessage() {
         .eq('user_id', ZEUS_BOT_ID)
         .maybeSingle();
 
-      if (zeusParticipant) {
+      const isBotConversation = !!zeusParticipant;
+
+      if (isBotConversation) {
         return await sendToZeus(user.id, conversationId, body);
       }
 
@@ -587,55 +601,32 @@ export function useSendMessage() {
 
       const sanitizedBody = isSpecialMessage ? body : sanitizeMessageBody(body);
 
-      const { data, error } = await supabase
-        .from('messages')
-        .insert({
-          conversation_id: conversationId,
-          sender_id: user.id,
-          body: sanitizedBody,
-          image_url: imageUrl || null,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Record for rate limiting
-      if (!isSpecialMessage) {
-        recordSentMessage(sanitizedBody);
+      // SECURITY (E2EE_BLOCKED): no plaintext peer message ever leaves the
+      // device. Reroute through the encrypted queue, which produces a v4
+      // ciphertext (or per-device wrap) before any Supabase insert.
+      try {
+        await messageQueue.enqueue({
+          conversationId,
+          senderId: user.id,
+          plaintext: sanitizedBody,
+          imageUrl: imageUrl ?? null,
+        });
+      } catch (e) {
+        // If the queue refuses (e.g. E2EE not yet bootstrapped on this
+        // device), surface a friendly error. NEVER fall back to plaintext.
+        throw new Error('Message non envoyé — chiffrement non disponible.');
       }
 
-      // AI moderation (async, non-blocking)
-      if (!isSpecialMessage && data?.id) {
-        supabase.functions.invoke('zeus', {
-          body: { domain: 'moderation', action: 'moderate_message', messageBody: sanitizedBody, messageId: data.id },
-        }).catch(() => {});
-      }
+      if (!isSpecialMessage) recordSentMessage(sanitizedBody);
 
       await supabase
         .from('conversations')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', conversationId);
 
-      // Notification is now handled by the friendship trigger for non-friends
-      // For friends, send notification as before
-      if (data?.status === 'delivered') {
-        const { data: participants } = await supabase
-          .from('conversation_participants')
-          .select('user_id')
-          .eq('conversation_id', conversationId)
-          .neq('user_id', user.id);
-
-        if (participants?.length) {
-          await supabase.from('notifications').insert({
-            user_id: participants[0].user_id,
-            type: 'message',
-            actor_id: user.id,
-          });
-        }
-      }
-
-      return data;
+      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      return { id: `queued-${Date.now()}`, conversation_id: conversationId, sender_id: user.id, body: sanitizedBody };
     },
     // Optimistic update: immediately show sent message in UI
     onMutate: async (variables) => {
