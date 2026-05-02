@@ -628,61 +628,6 @@ export function useSendMessage() {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       return { id: `queued-${Date.now()}`, conversation_id: conversationId, sender_id: user.id, body: sanitizedBody };
     },
-    // The original Supabase insert path below is unreachable for peer
-    // conversations (kept for type compatibility with the optimistic update).
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _unused_fallback: async ({ conversationId, body, imageUrl }: { conversationId: string; body: string; imageUrl?: string }) => {
-      const sanitizedBody = body;
-      const { data, error } = await supabase
-        .from('messages')
-        .insert({
-          conversation_id: conversationId,
-          sender_id: user!.id,
-          body: sanitizedBody,
-          image_url: imageUrl || null,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Record for rate limiting
-      if (!isSpecialMessage) {
-        recordSentMessage(sanitizedBody);
-      }
-
-      // AI moderation (async, non-blocking)
-      if (!isSpecialMessage && data?.id) {
-        supabase.functions.invoke('zeus', {
-          body: { domain: 'moderation', action: 'moderate_message', messageBody: sanitizedBody, messageId: data.id },
-        }).catch(() => {});
-      }
-
-      await supabase
-        .from('conversations')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', conversationId);
-
-      // Notification is now handled by the friendship trigger for non-friends
-      // For friends, send notification as before
-      if (data?.status === 'delivered') {
-        const { data: participants } = await supabase
-          .from('conversation_participants')
-          .select('user_id')
-          .eq('conversation_id', conversationId)
-          .neq('user_id', user.id);
-
-        if (participants?.length) {
-          await supabase.from('notifications').insert({
-            user_id: participants[0].user_id,
-            type: 'message',
-            actor_id: user.id,
-          });
-        }
-      }
-
-      return data;
-    },
     // Optimistic update: immediately show sent message in UI
     onMutate: async (variables) => {
       if (!user) return;
