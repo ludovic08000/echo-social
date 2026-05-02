@@ -710,7 +710,18 @@ export async function listKnownSessionIds(
   }
 }
 
-/** Drop all device-pair sessions (e.g. on logout / key rotation). */
+/**
+ * Drop ALL device-pair sessions.
+ *
+ * SECURITY: this is destructive — old sessions may still be needed to read
+ * in-flight messages currently sitting in `pendingMessageQueue`. Reserved
+ * STRICTLY for explicit user-initiated flows:
+ *   - logout
+ *   - manual "reset E2EE" from settings
+ *   - verified key restore from encrypted backup (`resyncE2EE`)
+ *
+ * Never call as part of an automatic error-recovery path.
+ */
 export async function clearAllDeviceSessions(): Promise<void> {
   try {
     const db = await openDB();
