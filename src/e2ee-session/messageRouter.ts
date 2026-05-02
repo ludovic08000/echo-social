@@ -23,6 +23,7 @@ import { selfDeviceId } from './deviceRegistry';
 import { tryEveryRatchetSession } from './fallbackDecrypt';
 import { legacyDecryptByMessageId, isKnownLegacyFormat } from './legacyDecryptRouter';
 import { pendingMessageQueue } from './pendingMessageQueue';
+import { hasSeenMessage, markSeenMessage, makeSeenKey } from './seenMessageStore';
 import type { DecryptResult, UserId } from './types';
 
 interface RouteInput {
