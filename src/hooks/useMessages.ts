@@ -556,6 +556,18 @@ export function useMessages(conversationId: string) {
   return messagesQuery;
 }
 
+/**
+ * Legacy direct-send hook.
+ *
+ * SECURITY: only Zeus / bot conversations are allowed to receive plaintext
+ * here. Any peer (user-to-user) conversation is rerouted through the E2EE
+ * `messageQueue.enqueue()` path, which encrypts before insertion.
+ *
+ * If a caller passes a peer conversation, the hook DOES NOT block hard —
+ * it transparently encrypts via the queue so existing UI buttons (share
+ * link, marketplace negotiation, call notice...) keep working without
+ * leaking plaintext to the server.
+ */
 export function useSendMessage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -564,7 +576,7 @@ export function useSendMessage() {
     mutationFn: async ({ conversationId, body, imageUrl }: { conversationId: string; body: string; imageUrl?: string }) => {
       if (!user) throw new Error('Not authenticated');
 
-      // Check if this is a Zeus conversation
+      // Check if this is a Zeus / bot conversation (whitelisted plaintext path).
       const { data: zeusParticipant } = await supabase
         .from('conversation_participants')
         .select('user_id')
@@ -572,7 +584,9 @@ export function useSendMessage() {
         .eq('user_id', ZEUS_BOT_ID)
         .maybeSingle();
 
-      if (zeusParticipant) {
+      const isBotConversation = !!zeusParticipant;
+
+      if (isBotConversation) {
         return await sendToZeus(user.id, conversationId, body);
       }
 
@@ -587,11 +601,43 @@ export function useSendMessage() {
 
       const sanitizedBody = isSpecialMessage ? body : sanitizeMessageBody(body);
 
+      // SECURITY (E2EE_BLOCKED): no plaintext peer message ever leaves the
+      // device. Reroute through the encrypted queue, which produces a v4
+      // ciphertext (or per-device wrap) before any Supabase insert.
+      try {
+        await messageQueue.enqueue({
+          conversationId,
+          senderId: user.id,
+          plaintext: sanitizedBody,
+          imageUrl: imageUrl ?? null,
+        });
+      } catch (e) {
+        // If the queue refuses (e.g. E2EE not yet bootstrapped on this
+        // device), surface a friendly error. NEVER fall back to plaintext.
+        throw new Error('Message non envoyé — chiffrement non disponible.');
+      }
+
+      if (!isSpecialMessage) recordSentMessage(sanitizedBody);
+
+      await supabase
+        .from('conversations')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', conversationId);
+
+      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      return { id: `queued-${Date.now()}`, conversation_id: conversationId, sender_id: user.id, body: sanitizedBody };
+    },
+    // The original Supabase insert path below is unreachable for peer
+    // conversations (kept for type compatibility with the optimistic update).
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _unused_fallback: async ({ conversationId, body, imageUrl }: { conversationId: string; body: string; imageUrl?: string }) => {
+      const sanitizedBody = body;
       const { data, error } = await supabase
         .from('messages')
         .insert({
           conversation_id: conversationId,
-          sender_id: user.id,
+          sender_id: user!.id,
           body: sanitizedBody,
           image_url: imageUrl || null,
         })
