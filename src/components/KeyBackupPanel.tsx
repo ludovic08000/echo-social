@@ -158,7 +158,7 @@ export function KeyBackupPanel() {
 
               {!hasLocal && hasExisting && (
                 <p className="text-[10px] text-muted-foreground">
-                  ☁️ Sauvegarde disponible sur le serveur — reconnecte-toi pour restaurer automatiquement
+                  ☁️ Sauvegarde disponible — reconnecte-toi pour synchroniser automatiquement
                 </p>
               )}
 
