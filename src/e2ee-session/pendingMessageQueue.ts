@@ -1,44 +1,38 @@
 /**
  * Pending message queue — keeps out-of-order or transiently-undecryptable
- * envelopes in MEMORY only and retries them on a short tick.
+ * envelopes in MEMORY only and retries them.
  *
- * Strategy (per user pick "RAM + refetch from server on reload"):
- *   - Live retries: 30 attempts × 1500 ms ≈ 45 s (covers wifi/4G handoffs,
- *     long Double Ratchet skip-windows, peer reconnect bursts).
- *   - On reload: nothing is persisted locally. The message-list refetch
- *     re-supplies the ciphertext from `messages` / `message_device_copies`
- *     and `routeIncoming` re-enqueues automatically. Plaintext is never
- *     stored on disk (project rule: keys+plaintext live in RAM only).
+ * iOS Safari nuance: this tab is regularly suspended. We therefore drive
+ * retries from `online` / `focus` / `pageshow` / `visibilitychange` events
+ * in addition to the periodic tick, so a backgrounded conversation is
+ * processed *immediately* when the user returns instead of waiting for the
+ * next tick.
  *
- * Concurrency: tick() walks a snapshot of entries so retries can mutate the
- * map safely. Each retry is awaited sequentially to avoid fan-out storms
- * against the ratchet store (IndexedDB is single-writer per tx).
+ * On reload nothing is persisted locally. The message-list refetch
+ * re-supplies the ciphertext from `messages` / `message_device_copies`
+ * and `routeIncoming` re-enqueues automatically. Plaintext is never
+ * stored on disk (project rule: keys+plaintext live in RAM only).
  */
 import type { PendingEnvelope } from './types';
 
-// Why 20 × 1.5 s ≈ 30 s: enough to cross a typical iOS Safari background→
-// foreground resume + a peer ratchet catch-up, while bounded so we don't
-// keep "permanently undeliverable" ciphertexts spinning forever.
-const MAX_ATTEMPTS = 20;
+// 30 attempts × 1500 ms ≈ 45 s of live-retry budget, enough to cross an iOS
+// background→foreground resume + a peer ratchet catch-up burst.
+const MAX_ATTEMPTS = 30;
 const RETRY_INTERVAL_MS = 1500;
 const MAX_RETRIES_PER_TICK = 8;
 
-// Hard ceiling on `refresh()` cycles. Without this, a stuck message that
-// keeps coming back from the server refetch would loop forever (Supabase
-// returns the row → UI re-supplies it → attempts reset → drain fails →
-// repeat). Capping at 4 refresh cycles × 20 attempts ≈ 2 minutes of total
-// retry budget per envelope, after which we drop it entirely.
-const MAX_REFRESH_CYCLES = 4;
-
-// Idempotency window — refetch handlers should never re-enqueue the same
-// envelopeId twice within 2 s (tight loop in realtime + initial fetch race).
+// Refresh cycles allow a server refetch to re-arm a parked envelope. Bounded
+// so a permanently-undeliverable ciphertext can't loop forever.
+const MAX_REFRESH_CYCLES = 6;
 const REFRESH_DEBOUNCE_MS = 2000;
+
+// Event-driven kick debounce — avoid stacking 4 ticks in a row when iOS
+// fires online + focus + pageshow + visibilitychange back to back.
+const KICK_DEBOUNCE_MS = 250;
 
 interface InternalEnvelope extends PendingEnvelope {
   refreshCycles: number;
-  /** Wall-clock ms of last `refresh()` — drives REFRESH_DEBOUNCE_MS. */
   lastRefreshAt: number;
-  /** Permanently dropped — refuse re-enqueue under the same id. */
   burned?: boolean;
 }
 
@@ -49,12 +43,44 @@ class PendingQueue {
   private burned = new Set<string>();
   private retry: RetryFn | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private lastKickAt = 0;
+  private listenersWired = false;
 
   setRetryHandler(fn: RetryFn) {
     this.retry = fn;
     if (!this.timer) {
       this.timer = setInterval(() => void this.tick(), RETRY_INTERVAL_MS);
     }
+    this.wireResumeListeners();
+  }
+
+  /**
+   * Wire `online` / `focus` / `pageshow` / `visibilitychange` so the queue
+   * drains *immediately* when iOS returns from background instead of waiting
+   * for the next periodic tick. Idempotent.
+   */
+  private wireResumeListeners() {
+    if (this.listenersWired) return;
+    if (typeof window === 'undefined') return;
+    this.listenersWired = true;
+
+    const kick = () => this.kick();
+    window.addEventListener('online', kick);
+    window.addEventListener('focus', kick);
+    window.addEventListener('pageshow', kick);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) this.kick();
+      });
+    }
+  }
+
+  /** External hook — UI may also call this after a successful key restore. */
+  kick(): void {
+    const now = Date.now();
+    if (now - this.lastKickAt < KICK_DEBOUNCE_MS) return;
+    this.lastKickAt = now;
+    void this.tick();
   }
 
   enqueue(envelopeId: string, envelope: unknown): void {
@@ -71,11 +97,7 @@ class PendingQueue {
   }
 
   /**
-   * UI hook: a freshly-fetched message id is in flight again. Bounded refresh:
-   *   - Debounced (REFRESH_DEBOUNCE_MS) to absorb realtime+fetch races.
-   *   - Capped at MAX_REFRESH_CYCLES so a permanently-undeliverable message
-   *     can't keep resetting its attempts counter forever.
-   *   - On overflow the envelope is "burned" — re-enqueue is a no-op.
+   * Re-arm an envelope after a server refetch. Bounded by MAX_REFRESH_CYCLES.
    */
   refresh(envelopeId: string, envelope: unknown): void {
     if (this.burned.has(envelopeId)) return;
@@ -100,8 +122,6 @@ class PendingQueue {
 
   remove(envelopeId: string): void {
     this.items.delete(envelopeId);
-    // Successful drain — clear the burn list entry so a future genuine
-    // re-delivery (different sessionId, key restore...) can re-enqueue.
     this.burned.delete(envelopeId);
   }
 
@@ -115,6 +135,8 @@ class PendingQueue {
 
   private async tick(): Promise<void> {
     if (!this.retry || this.items.size === 0) return;
+    // While the tab is hidden we DEFER (don't drop) — a kick on the next
+    // visibilitychange/pageshow will drain the queue at that point.
     if (typeof document !== 'undefined' && document.hidden) return;
 
     const entries = Array.from(this.items.entries()).slice(0, MAX_RETRIES_PER_TICK);
@@ -130,26 +152,29 @@ class PendingQueue {
         this.items.delete(id);
         this.burned.delete(id);
       } else if (item.attempts >= MAX_ATTEMPTS) {
-        // Exhausted in-cycle attempts. If we still have refresh budget,
-        // leave it in place so a server refetch can re-arm it; otherwise
-        // burn it permanently.
+        // Park the envelope. If we still have refresh budget, the next
+        // server refetch can re-arm it; otherwise it's burned.
         if (item.refreshCycles >= MAX_REFRESH_CYCLES) {
           this.items.delete(id);
           this.burned.add(id);
         } else {
-          // Park: clear attempts so refresh() can pick it up again, but
-          // gate that pickup behind REFRESH_DEBOUNCE_MS + cycle counter.
           this.items.delete(id);
         }
       }
     }
   }
 
-  /** Test helper — flush everything (no-op in production). */
+  /** Test helper. */
   _reset(): void {
     this.items.clear();
     this.burned.clear();
+    this.lastKickAt = 0;
   }
 }
 
 export const pendingMessageQueue = new PendingQueue();
+
+/** Public API mirror — `processPendingMessages()` triggers a drain. */
+export function processPendingMessages(): void {
+  pendingMessageQueue.kick();
+}
