@@ -642,10 +642,17 @@ export async function getSessionPeerSpkId(
 }
 
 /**
- * Drop the session for one peer device. Used when we detect that the peer
+ * Drop the session for ONE peer device. Used when we detect that the peer
  * has rotated its SignedPreKey: the cached root/chain keys are no longer
  * derivable on the peer side, so any further v3/v4 message would silently
  * fail to decrypt. Forcing re-X3DH heals the link.
+ *
+ * SECURITY: do NOT call this automatically as an "error recovery" hack.
+ * Active sessions may be required to decrypt in-flight messages from the
+ * pending queue. Only call when:
+ *   - the peer has demonstrably rotated SPK (see multiDeviceFanout)
+ *   - the user explicitly resets the chat from settings
+ *   - a verified key restore from backup is in progress
  */
 export async function invalidateDeviceSession(
   myUserId: string,
