@@ -1389,6 +1389,63 @@ export type Database = {
         }
         Relationships: []
       }
+      device_keys: {
+        Row: {
+          city: string | null
+          country: string | null
+          created_at: string
+          device_hash: string
+          device_label: string | null
+          id: string
+          ip_address: string | null
+          last_seen_at: string
+          region: string | null
+          revoked_at: string | null
+          status: string
+          trusted_at: string | null
+          user_agent: string | null
+          user_id: string
+          verification_sent_at: string | null
+          verification_token: string | null
+        }
+        Insert: {
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          device_hash: string
+          device_label?: string | null
+          id?: string
+          ip_address?: string | null
+          last_seen_at?: string
+          region?: string | null
+          revoked_at?: string | null
+          status?: string
+          trusted_at?: string | null
+          user_agent?: string | null
+          user_id: string
+          verification_sent_at?: string | null
+          verification_token?: string | null
+        }
+        Update: {
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          device_hash?: string
+          device_label?: string | null
+          id?: string
+          ip_address?: string | null
+          last_seen_at?: string
+          region?: string | null
+          revoked_at?: string | null
+          status?: string
+          trusted_at?: string | null
+          user_agent?: string | null
+          user_id?: string
+          verification_sent_at?: string | null
+          verification_token?: string | null
+        }
+        Relationships: []
+      }
       device_link_tokens: {
         Row: {
           claimed_at: string | null
@@ -2358,6 +2415,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      login_alerts: {
+        Row: {
+          city: string | null
+          country: string | null
+          created_at: string
+          device_hash: string
+          email_sent: boolean
+          id: string
+          ip_address: string | null
+          region: string | null
+          resolved: string | null
+          resolved_at: string | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          device_hash: string
+          email_sent?: boolean
+          id?: string
+          ip_address?: string | null
+          region?: string | null
+          resolved?: string | null
+          resolved_at?: string | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          device_hash?: string
+          email_sent?: boolean
+          id?: string
+          ip_address?: string | null
+          region?: string | null
+          resolved?: string | null
+          resolved_at?: string | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       login_attempts: {
         Row: {
