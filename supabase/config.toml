@@ -99,3 +99,5 @@ project_id = "vkpmoqfzrihcijjochks"
     verify_jwt = false
   [functions.login-rate-limit]
     verify_jwt = false
+  [functions.device-security]
+    verify_jwt = false
