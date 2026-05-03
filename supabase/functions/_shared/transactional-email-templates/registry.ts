@@ -10,7 +10,9 @@ export interface TemplateEntry {
 }
 
 import { template as pinResetCode } from './pin-reset-code.tsx'
+import { template as newDeviceLogin } from './new-device-login.tsx'
 
 export const TEMPLATES: Record<string, TemplateEntry> = {
   'pin-reset-code': pinResetCode,
+  'new-device-login': newDeviceLogin,
 }
