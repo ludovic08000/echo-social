@@ -1,34 +1,35 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
-import { useAuth } from '@/lib/auth';
 import { toast } from '@/hooks/use-toast';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import {
-  Shield, Users, LayoutDashboard, FileText, Flag, BarChart3, CreditCard, Settings,
-  Brain, Archive, ScrollText, ShieldAlert, ChevronDown, Menu, X, Sparkles,
+  Shield, Users, Activity, LayoutDashboard, FileText, Flag, BarChart3, CreditCard, Lock, Settings,
+  Brain, Zap, Archive, Gauge, Monitor, ScrollText, ShieldAlert, ChevronDown, Menu, X, KeyRound, Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
-  PostsSection, ReportsSection, StatsSection, SubscriptionsSection, SettingsSection,
+  DashboardSection, UsersSection, PostsSection, ReportsSection,
+  StatsSection, SubscriptionsSection, SecuritySection, SettingsSection,
+  AISection, PlatformHealthDashboard, FeedIntelligenceSection, MonitoringSection,
+  SecurityMonitoringSection, CryptoErrorsSection, MLFeedSection,
 } from '@/components/admin';
-import { UsersSection } from '@/components/admin/UsersSection';
 import { VerificationsSection } from '@/components/admin/VerificationsSection';
 import { ArchivesSection } from '@/components/admin/ArchivesSection';
+import { ZeusSection } from '@/components/admin/ZeusSection';
 import { AuditLogsSection } from '@/components/admin/AuditLogsSection';
-import { OverviewSection } from '@/components/admin/merged/OverviewSection';
-import { FeedIntelligenceMerged, AIMerged } from '@/components/admin/merged/IntelligenceSections';
-import { SecurityMerged } from '@/components/admin/merged/SecurityMerged';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const NAV_GROUPS = [
   {
-    label: 'Vue',
+    label: 'Général',
     items: [
-      { key: 'overview', label: "Vue d'ensemble", icon: LayoutDashboard },
+      { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { key: 'health', label: 'Santé', icon: Activity },
       { key: 'stats', label: 'Statistiques', icon: BarChart3 },
+      { key: 'monitoring', label: 'Monitoring', icon: Monitor },
     ],
   },
   {
@@ -50,14 +51,18 @@ const NAV_GROUPS = [
   {
     label: 'Intelligence',
     items: [
-      { key: 'feed_intelligence', label: 'Feed IA', icon: Sparkles },
-      { key: 'ai', label: 'IA & Zeus', icon: Brain },
+      { key: 'feed_intelligence', label: 'Feed IA', icon: Gauge },
+      { key: 'ml_feed', label: 'ML Feed', icon: Sparkles },
+      { key: 'ai', label: 'Moteur IA', icon: Brain },
+      { key: 'zeus', label: 'Zeus', icon: Zap },
     ],
   },
   {
     label: 'Sécurité',
     items: [
-      { key: 'security', label: 'Sécurité', icon: ShieldAlert },
+      { key: 'security_ai', label: 'IA Sécurité', icon: ShieldAlert },
+      { key: 'security', label: 'Anti-abus', icon: Lock },
+      { key: 'crypto_errors', label: 'Erreurs E2EE', icon: KeyRound },
       { key: 'audit_logs', label: 'Audit', icon: ScrollText },
     ],
   },
@@ -69,16 +74,10 @@ const NAV_GROUPS = [
   },
 ];
 
-type AdminSection =
-  | 'overview' | 'stats'
-  | 'users' | 'posts' | 'reports' | 'verifications' | 'archives'
-  | 'subscriptions'
-  | 'feed_intelligence' | 'ai'
-  | 'security' | 'audit_logs'
-  | 'settings';
+type AdminSection = 'dashboard' | 'health' | 'stats' | 'monitoring' | 'users' | 'posts' | 'reports' | 'verifications' | 'archives' | 'subscriptions' | 'feed_intelligence' | 'ml_feed' | 'ai' | 'zeus' | 'security_ai' | 'security' | 'crypto_errors' | 'audit_logs' | 'settings';
 
 export default function Admin() {
-  const [section, setSection] = useState<AdminSection>('overview');
+  const [section, setSection] = useState<AdminSection>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const navigate = useNavigate();
@@ -93,7 +92,7 @@ export default function Admin() {
 
   if (isLoading) {
     return (
-      <AppLayout>
+      <AppLayout fullWidth>
         <div className="flex items-center justify-center h-[60vh]">
           <div className="flex flex-col items-center gap-3">
             <Shield className="w-8 h-8 text-primary animate-pulse" />
@@ -113,18 +112,24 @@ export default function Admin() {
 
   const renderSection = () => {
     switch (section) {
-      case 'overview': return <OverviewSection />;
-      case 'stats': return <StatsSection />;
+      case 'dashboard': return <DashboardSection />;
+      case 'health': return <PlatformHealthDashboard />;
+      case 'feed_intelligence': return <FeedIntelligenceSection />;
+      case 'ml_feed': return <MLFeedSection />;
       case 'users': return <UsersSection />;
       case 'posts': return <PostsSection />;
       case 'reports': return <ReportsSection />;
       case 'verifications': return <VerificationsSection />;
       case 'archives': return <ArchivesSection />;
+      case 'stats': return <StatsSection />;
       case 'subscriptions': return <SubscriptionsSection />;
-      case 'feed_intelligence': return <FeedIntelligenceMerged />;
-      case 'ai': return <AIMerged />;
-      case 'security': return <SecurityMerged />;
+      case 'ai': return <AISection />;
+      case 'zeus': return <ZeusSection />;
       case 'audit_logs': return <AuditLogsSection />;
+      case 'monitoring': return <MonitoringSection />;
+      case 'security_ai': return <SecurityMonitoringSection />;
+      case 'security': return <SecuritySection />;
+      case 'crypto_errors': return <CryptoErrorsSection />;
       case 'settings': return <SettingsSection />;
     }
   };
@@ -178,10 +183,10 @@ export default function Admin() {
   );
 
   return (
-    <AppLayout>
-      <div className="flex min-h-[calc(100vh-4rem)]">
+    <AppLayout fullWidth>
+      <div className="flex min-h-[calc(100vh-4rem)] w-full">
         {/* Desktop Sidebar */}
-        <aside className="w-56 shrink-0 border-r border-border/40 bg-card/30 backdrop-blur-xl hidden lg:flex flex-col">
+        <aside className="w-60 shrink-0 border-r border-border/40 bg-card/30 backdrop-blur-xl hidden lg:flex flex-col sticky top-12 h-[calc(100vh-3rem)]">
           <div className="flex items-center gap-2.5 px-4 py-4 border-b border-border/30">
             <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-md shadow-primary/20">
               <Shield className="w-4 h-4 text-primary-foreground" />
@@ -197,7 +202,7 @@ export default function Admin() {
         </aside>
 
         {/* Mobile Header */}
-        <div className="lg:hidden fixed top-[4rem] left-0 right-0 z-30 bg-background/70 backdrop-blur-xl border-b border-border/40 px-4 py-2.5 flex items-center justify-between">
+        <div className="lg:hidden fixed top-[3rem] left-0 right-0 z-30 bg-background/70 backdrop-blur-xl border-b border-border/40 px-4 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
             <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shrink-0">
               <Shield className="w-3.5 h-3.5 text-primary-foreground" />
@@ -244,8 +249,8 @@ export default function Admin() {
         </AnimatePresence>
 
         {/* Main */}
-        <main className="flex-1 overflow-auto">
-          <div className="p-4 lg:p-6 lg:pt-6 pt-16 max-w-7xl mx-auto">
+        <main className="flex-1 min-w-0 overflow-x-hidden">
+          <div className="px-4 lg:px-8 py-6 lg:pt-6 pt-16 w-full max-w-none">
             {renderSection()}
           </div>
         </main>
