@@ -58,6 +58,7 @@ const Profile = lazyWithOneRetry(() => import("./pages/Profile"), 'r-profile');
 const Search = lazyWithOneRetry(() => import("./pages/Search"), 'r-search');
 const Notifications = lazyWithOneRetry(() => import("./pages/Notifications"), 'r-notifs');
 const Settings = lazyWithOneRetry(() => import("./pages/Settings"), 'r-settings');
+const SecurityDeviceVerify = lazyWithOneRetry(() => import("./pages/SecurityDeviceVerify"), 'r-secdev');
 const Messages = lazyWithOneRetry(() => import("./pages/Messages"), 'r-messages');
 const Friends = lazyWithOneRetry(() => import("./pages/Friends"), 'r-friends');
 const Groups = lazyWithOneRetry(() => import("./pages/Groups"), 'r-groups');
