@@ -362,6 +362,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [isSending] = useState(false);
   const { translations, translating, translate: translateMsg, autoTranslateMessages } = useMessageTranslation();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showScrollDown, setShowScrollDown] = useState(false);
+  const shouldAutoScrollRef = useRef(true);
+  const lastScrollSigRef = useRef('');
 
   // Auto-translate non-French messages
   // Auto-translate disabled
@@ -672,8 +676,40 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   }, [isZeusConversation, rawUpload, conversationId, sendMessage, queue]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, queue.pendingMessages]);
+    lastScrollSigRef.current = '';
+    shouldAutoScrollRef.current = true;
+    setShowScrollDown(false);
+  }, [conversationId]);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+    shouldAutoScrollRef.current = true;
+    setShowScrollDown(false);
+  }, []);
+
+  const handleMessagesScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    shouldAutoScrollRef.current = distanceFromBottom < 80;
+    setShowScrollDown(distanceFromBottom > 120);
+  }, []);
+
+  useEffect(() => {
+    const lastMsg = messages?.length ? messages[messages.length - 1] : undefined;
+    const lastPending = queue.pendingMessages.length
+      ? queue.pendingMessages[queue.pendingMessages.length - 1]
+      : undefined;
+    const sig = `${messages?.length ?? 0}:${lastMsg?.id ?? ''}|${queue.pendingMessages.length}:${lastPending?.localId ?? ''}`;
+    if (sig === lastScrollSigRef.current) return;
+
+    const isInitialLoad = lastScrollSigRef.current === '';
+    lastScrollSigRef.current = sig;
+
+    if (isInitialLoad || shouldAutoScrollRef.current || lastMsg?.sender_id === user?.id || lastPending) {
+      requestAnimationFrame(() => scrollToBottom(isInitialLoad ? 'auto' : 'smooth'));
+    }
+  }, [messages, queue.pendingMessages, scrollToBottom, user?.id]);
 
   useEffect(() => {
     if (!messages?.length) return;
@@ -711,6 +747,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     setNewMessage('');
     setReplyTo(null);
     setShowEmojis(false);
+    shouldAutoScrollRef.current = true;
     inputRef.current?.focus();
 
     if (isZeusConversation) {
@@ -765,7 +802,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   }, [messages]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="relative flex flex-col h-full">
       {/* Call overlay */}
       <CallOverlay
         callState={call.callState}
@@ -792,6 +829,14 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30 bg-primary text-primary-foreground rounded-t-lg">
+        <button
+          onClick={goBack}
+          className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors flex-shrink-0"
+          title="Retour aux conversations"
+          aria-label="Retour aux conversations"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+        </button>
         <div className="flex items-center gap-2 flex-1 min-w-0">
           {conversation && (
             <>
@@ -938,7 +983,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto overflow-x-visible px-3 py-2 space-y-0.5 relative">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleMessagesScroll}
+        className="flex-1 overflow-y-auto overflow-x-visible px-3 py-2 space-y-0.5 relative"
+      >
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <div className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
@@ -1310,6 +1359,17 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {showScrollDown && (
+        <button
+          onClick={() => scrollToBottom()}
+          className="absolute bottom-[74px] right-3 z-30 w-8 h-8 rounded-full bg-background shadow-lg border border-border/40 flex items-center justify-center hover:bg-secondary transition-colors"
+          title="Revenir aux derniers messages"
+          aria-label="Revenir aux derniers messages"
+        >
+          <ChevronDown className="w-4 h-4 text-muted-foreground" />
+        </button>
+      )}
 
       {/* Negotiation product banner - bottom */}
       {negotiationProduct && (
