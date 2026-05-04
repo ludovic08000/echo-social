@@ -833,7 +833,7 @@ export async function x3dhInitiate(
     KX_KEY_PARAMS as any, true, ['deriveBits'],
   ) as CryptoKeyPair;
 
-  const ephPubRaw = await hardCrypto.exportKey('raw', ephemeralPair.publicKey);
+  const ephPubRaw = await exportPublicKeyRaw(ephemeralPair.publicKey);
   const ephemeralKey = bufferToBase64(ephPubRaw);
 
   // 4. Compute DH operations
