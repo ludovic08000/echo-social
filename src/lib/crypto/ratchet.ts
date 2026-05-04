@@ -195,7 +195,7 @@ export async function ratchetEncrypt(
   const { nextChainKey, messageKey } = await kdfChainStep(state.sendingChainKey);
 
   // Build header
-  const dhPubRaw = await hardCrypto.exportKey('raw', state.dhSendingPair.publicKey);
+  const dhPubRaw = await exportPublicKeyRaw(state.dhSendingPair.publicKey);
   const header: RatchetHeader = {
     dh: bufferToBase64(dhPubRaw),
     pn: state.prevSendCount,
