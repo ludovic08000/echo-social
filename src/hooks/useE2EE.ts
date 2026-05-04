@@ -42,7 +42,7 @@ import {
   type X3DHInitialMessage,
 } from '@/lib/crypto';
 import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
-import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
+import { base64ToBuffer, bufferToBase64, constantTimeEqual } from '@/lib/crypto/utils';
 import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
 import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/lib/crypto/cryptoIntegrity';
 import { KX_KEY_PARAMS, STORE_PREKEYS, STORE_SESSION } from '@/lib/crypto/constants';
@@ -334,13 +334,25 @@ function saveKnownFingerprint(userId: string, fp: string) {
   localStorage.setItem(KNOWN_FP_KEY, hardGlobals.jsonStringify(known));
 }
 
+type FingerprintCheckResult = { changed: boolean; previousFp: string | null };
+
+const _fpCheckCache = new Map<string, { result: FingerprintCheckResult; ts: number }>();
+
+function invalidateFingerprintCheckCache(peerUserId: string) {
+  for (const key of _fpCheckCache.keys()) {
+    if (key.includes(`:${peerUserId}:`)) {
+      _fpCheckCache.delete(key);
+    }
+  }
+}
+
 /** Save fingerprint to server for cross-device verification (deduplicated) */
 const _fpSaveCache = new Map<string, number>();
-async function saveKnownFingerprintServer(peerUserId: string, fp: string) {
+async function saveKnownFingerprintServer(peerUserId: string, fp: string, force = false) {
   // Deduplicate: skip if same fp was saved in the last 60s
   const cacheKey = `${peerUserId}:${fp}`;
   const lastSaved = _fpSaveCache.get(cacheKey);
-  if (lastSaved && Date.now() - lastSaved < 60_000) return;
+  if (!force && lastSaved && Date.now() - lastSaved < 60_000) return;
   _fpSaveCache.set(cacheKey, Date.now());
 
   try {
@@ -355,18 +367,18 @@ async function saveKnownFingerprintServer(peerUserId: string, fp: string) {
         last_seen_at: new Date().toISOString(),
         acknowledged: true,
       }, { onConflict: 'user_id,peer_user_id' });
+    invalidateFingerprintCheckCache(peerUserId);
   } catch (e) {
     console.warn('[E2EE] Server fingerprint save failed:', e);
   }
 }
 
 /** Check fingerprint against both local AND server records (with cache) */
-const _fpCheckCache = new Map<string, { result: { changed: boolean; previousFp: string | null }; ts: number }>();
 async function checkFingerprintChangeWithServer(
   currentUserId: string,
   peerUserId: string,
   currentFp: string
-): Promise<{ changed: boolean; previousFp: string | null }> {
+): Promise<FingerprintCheckResult> {
   const known = getKnownFingerprints();
   const localPrevious = known[peerUserId];
   if (localPrevious && localPrevious !== currentFp) {
@@ -383,13 +395,20 @@ async function checkFingerprintChangeWithServer(
   try {
     const { data } = await supabase
       .from('user_known_fingerprints')
-      .select('fingerprint')
+      .select('fingerprint, acknowledged')
       .eq('user_id', currentUserId)
       .eq('peer_user_id', peerUserId)
       .maybeSingle();
 
     if (data && data.fingerprint !== currentFp) {
       console.warn('[PEER_KEY] ⚠️ Server-side fingerprint mismatch for', peerUserId);
+      const result = { changed: true, previousFp: data.fingerprint };
+      _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
+      return result;
+    }
+
+    if (data && data.fingerprint === currentFp && data.acknowledged === false) {
+      console.warn('[PEER_KEY] Server-side fingerprint is pending acknowledgement for', peerUserId);
       const result = { changed: true, previousFp: data.fingerprint };
       _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
       return result;
@@ -410,6 +429,17 @@ function checkFingerprintChange(userId: string, currentFp: string): boolean {
     return true;
   }
   return false;
+}
+
+function base64KeysEqual(a?: string | null, b?: string | null): boolean {
+  if (!a || !b) return false;
+  try {
+    const left = new Uint8Array(base64ToBuffer(a));
+    const right = new Uint8Array(base64ToBuffer(b));
+    return constantTimeEqual(left, right);
+  } catch {
+    return false;
+  }
 }
 
 // Clean up legacy localStorage ratchet data
@@ -898,7 +928,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
   // Retry peer key fetch when peerKeyMissing — contact may have come online
   useEffect(() => {
-    if (!state.peerKeyMissing || !peerUserId || isZeus) return;
+    if (!state.peerKeyMissing || !peerUserId || !user || isZeus) return;
     const interval = setInterval(async () => {
       try {
         // Invalidate cache before retry to get fresh data
@@ -906,11 +936,26 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         const data = await fetchPeerPublicKeys(peerUserId);
         if (data) {
           console.log('[PEER_KEY] ✅ Peer keys now available — upgrading to encrypted mode');
+          const { changed: fpChanged } = await checkFingerprintChangeWithServer(user.id, peerUserId, data.fingerprint);
           peerKeyRef.current = {
             identityKey: data.identity_key,
             signingKey: data.signing_key,
             fingerprint: data.fingerprint,
           };
+          if (fpChanged) {
+            console.warn('[PEER_KEY] Fingerprint changed while retrying peer keys - blocking until acknowledgement');
+            setState(s => ({
+              ...s,
+              peerFingerprint: data.fingerprint,
+              encrypted: true,
+              ready: false,
+              fingerprintChanged: true,
+              peerKeyMissing: false,
+              ratchetActive: false,
+              initError: 'fingerprint_changed',
+            }));
+            return;
+          }
           saveKnownFingerprint(peerUserId, data.fingerprint);
           saveKnownFingerprintServer(peerUserId, data.fingerprint);
           
@@ -927,7 +972,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       } catch {}
     }, 30_000); // retry every 30s
     return () => clearInterval(interval);
-  }, [state.peerKeyMissing, peerUserId, isZeus, conversationId]);
+  }, [state.peerKeyMissing, peerUserId, user, isZeus, conversationId]);
 
   // Legacy per-conversation session helper removed — Double Ratchet only.
 
@@ -946,7 +991,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     }
 
     if (peerKeyRef.current && !forceSessionRefresh) {
-      return true;
+      return !state.fingerprintChanged;
     }
 
     try {
@@ -974,10 +1019,48 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         fingerprint: freshPeerKey.fingerprint,
       };
 
+      if (fingerprintChanged) {
+        if (conversationId) {
+          try {
+            const db = await openRatchetDB();
+            const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
+            tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
+            await new Promise<void>((resolve, reject) => {
+              tx.oncomplete = () => resolve();
+              tx.onerror = () => reject(tx.error);
+            });
+            db.close();
+          } catch {}
+
+          ratchetRef.current = null;
+          peerHasRespondedRef.current = false;
+          x3dhInfoRef.current = null;
+          pendingPayloadRef.current.clear();
+
+          try {
+            const { deleteSessionKey } = await import('@/lib/crypto/keyManager');
+            await deleteSessionKey(conversationId);
+          } catch {}
+        }
+
+        setState(s => ({
+          ...s,
+          peerFingerprint: freshPeerKey.fingerprint,
+          encrypted: true,
+          ready: false,
+          ratchetActive: false,
+          fingerprintChanged: true,
+          peerKeyMissing: false,
+          initError: 'fingerprint_changed',
+        }));
+
+        return false;
+      }
+
       saveKnownFingerprint(peerUserId, freshPeerKey.fingerprint);
       void saveKnownFingerprintServer(peerUserId, freshPeerKey.fingerprint);
 
-      if (conversationId && (forceSessionRefresh || fingerprintChanged)) {
+      if (conversationId && forceSessionRefresh) {
         try {
           const db = await openRatchetDB();
           const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
@@ -1007,8 +1090,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         peerFingerprint: freshPeerKey.fingerprint,
         encrypted: true,
         ready: true,
-        ratchetActive: fingerprintChanged ? false : s.ratchetActive,
-        fingerprintChanged,
+        ratchetActive: s.ratchetActive,
+        fingerprintChanged: false,
         peerKeyMissing: false,
         initError: null,
       }));
@@ -1018,7 +1101,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       console.warn('[E2EE] Peer key sync failed:', error);
       return false;
     }
-  }, [conversationId, isZeus, peerUserId, user]);
+  }, [conversationId, isZeus, peerUserId, user, state.fingerprintChanged]);
 
   const resetRatchetBootstrapState = useCallback(async (reason: string) => {
     if (!conversationId) return;
@@ -1080,10 +1163,22 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     // X3DH key agreement (Signal spec) — NO legacy fallback
     console.info(`[X3DH] init initiator — fetching bundle for peer ${peerUserId}`);
 
+    const peerSynced = await ensureKeysAndPeerSync(true);
+    if (!peerSynced || !peerKeyRef.current) {
+      throw new EncryptionError('Cle de securite du contact modifiee - verification obligatoire avant envoi');
+    }
+
     const bundle = await fetchPrekeyBundle(peerUserId);
     if (!bundle) {
       console.error('[X3DH] ⛔ Bundle pair absent, expiré ou incohérent — impossible d\'initialiser X3DH');
       throw new EncryptionError('🔒 Bundle X3DH du contact indisponible ou incohérent — message en attente chiffrée');
+    }
+
+    if (
+      !base64KeysEqual(bundle.identityKey, peerKeyRef.current.identityKey) ||
+      !base64KeysEqual(bundle.signingKey, peerKeyRef.current.signingKey)
+    ) {
+      throw new EncryptionError('Cle de securite du contact modifiee - verification obligatoire avant envoi');
     }
 
     const x3dhResult = await x3dhInitiate(keysRef.current, bundle);
@@ -1122,7 +1217,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     await saveRatchetLocal(conversationId, ratchet, x3dhInfoRef.current);
     console.info('[RATCHET] ✅ init with X3DH (initiator) — ready for encrypt');
     return ratchet;
-  }, [conversationId, peerUserId, resetRatchetBootstrapState]);
+  }, [conversationId, peerUserId, resetRatchetBootstrapState, ensureKeysAndPeerSync]);
 
   /**
    * Encrypt — NEVER returns plaintext.
@@ -1140,13 +1235,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       }
     }
 
-    // Fingerprint change: previously hard-blocked. We now allow the encrypt to
-    // proceed because the UI already surfaces a warning banner + per-send toast,
-    // and blocking here made text/photo/video sending fail in normal key-rotation
-    // scenarios. The badge stays "unverified" until the user explicitly checks
-    // the safety number, but messages are not lost.
+    // Fingerprint changes are a safety stop: no outbound plaintext or
+    // ciphertext is produced until the user explicitly trusts the new key.
     if (state.fingerprintChanged) {
-      console.warn('[E2EE] fingerprint changed — encrypting with warning instead of blocking');
+      throw new EncryptionError('Cle de securite du contact modifiee - verification obligatoire avant envoi');
     }
 
     // Auto-load keys if ref is empty (race with initKeys)
@@ -1230,7 +1322,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           const p = ensureKeysAndPeerSync(false).finally(() => _peerSyncPromise.delete(syncKey));
           _peerSyncPromise.set(syncKey, p);
         }
-        await _peerSyncPromise.get(syncKey);
+        const synced = await _peerSyncPromise.get(syncKey);
+        if (!synced) {
+          return { text: '', encrypted: true, verified: false, incompatible: true };
+        }
       }
 
       if (!cryptoRateCheck('decrypt')) {
@@ -1254,12 +1349,17 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         return { text: '', encrypted: true, verified: false, incompatible: true };
       }
     });
-  }, [conversationId, ensureKeysAndPeerSync, isZeus, user, peerUserId]);
+  }, [conversationId, ensureKeysAndPeerSync, isZeus, user, peerUserId, state.fingerprintChanged]);
 
   const decryptRatchetMessage = useCallback(async (
     parsed: any,
     rawBody: string,
   ): Promise<DecryptResult> => {
+    if (!isZeus && state.fingerprintChanged) {
+      console.warn('[E2EE] Blocking decrypt until fingerprint change is acknowledged');
+      return { text: '', encrypted: true, verified: false, incompatible: true };
+    }
+
     if (hasRatchetTerminalFailure(conversationId, rawBody)) {
       if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
       return { text: '', encrypted: true, verified: false, incompatible: true };
@@ -1269,11 +1369,25 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     const x3dhHeader: X3DHInitialMessage | undefined = parsed.x3dh;
     let ratchet = ratchetRef.current;
 
+    const rejectUnverified = (verified: boolean, stage: string): boolean => {
+      if (verified) return false;
+      console.error('[E2EE] Blocking ratchet plaintext with invalid or missing signature', {
+        conversationId,
+        stage,
+        hasPeerSigningKey: !!peerKeyRef.current?.signingKey,
+      });
+      return true;
+    };
+
     const bootstrapResponderFromHeader = async (reason: string): Promise<RatchetState | null> => {
       if (!conversationId || !keysRef.current || !user || !x3dhHeader) return null;
 
       console.warn(`[E2EE] Rebootstrapping responder ratchet (${reason}) for ${conversationId}`);
       await resetRatchetBootstrapState(`responder_rebootstrap:${reason}`);
+
+      if (!base64KeysEqual(x3dhHeader.ik, peerKeyRef.current?.identityKey)) {
+        throw new Error('X3DH identity key mismatch for peer');
+      }
 
       const { sharedSecret, spkKeyPair } = await x3dhRespond(
         keysRef.current,
@@ -1334,6 +1448,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
               const { plaintext, verified, newState } = await ratchetDecrypt(
                 healed, envelope, peerKeyRef.current?.signingKey,
               );
+              if (rejectUnverified(verified, 'readiness_self_heal')) {
+                return { text: '', encrypted: true, verified: false, incompatible: true };
+              }
               ratchetRef.current = newState;
               await saveRatchetLocal(conversationId!, newState, null);
               setState(s => ({ ...s, ratchetActive: true }));
@@ -1355,6 +1472,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         const { plaintext, verified, newState } = await ratchetDecrypt(
           ratchet, envelope, peerKeyRef.current?.signingKey,
         );
+        if (rejectUnverified(verified, 'primary')) {
+          return { text: '', encrypted: true, verified: false, incompatible: true };
+        }
         ratchetRef.current = newState;
         if (!peerHasRespondedRef.current) {
           peerHasRespondedRef.current = true;
@@ -1378,6 +1498,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
               const { plaintext, verified, newState } = await ratchetDecrypt(
                 healed, envelope, peerKeyRef.current?.signingKey,
               );
+              if (rejectUnverified(verified, 'decrypt_self_heal')) {
+                return { text: '', encrypted: true, verified: false, incompatible: true };
+              }
               ratchetRef.current = newState;
               await saveRatchetLocal(conversationId!, newState, null);
               setState(s => ({ ...s, ratchetActive: true }));
@@ -1440,7 +1563,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     markRatchetTerminalFailure(conversationId, rawBody);
     if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
     return { text: '', encrypted: true, verified: false, incompatible: true };
-  }, [conversationId, user, resetRatchetBootstrapState]);
+  }, [conversationId, user, resetRatchetBootstrapState, isZeus, state.fingerprintChanged]);
 
   // Legacy message decrypt path removed — incompatible bodies are auto-purged.
 
@@ -1472,7 +1595,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const acknowledgeFingerprint = useCallback(async () => {
     if (peerKeyRef.current && peerUserId) {
       saveKnownFingerprint(peerUserId, peerKeyRef.current.fingerprint);
-      saveKnownFingerprintServer(peerUserId, peerKeyRef.current.fingerprint);
+      saveKnownFingerprintServer(peerUserId, peerKeyRef.current.fingerprint, true);
     }
     if (conversationId) {
       // Clear old ratchet state

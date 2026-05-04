@@ -83,7 +83,7 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
         return fb;
       }
     } else if (messageId) {
-      const r = await legacyDecryptByMessageId(messageId);
+      const r = await legacyDecryptByMessageId(messageId, senderUserId);
       if (r.ok) {
         markSeenMessage(seenKey);
         return r;
@@ -100,7 +100,7 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
 
   // 2) Any other known legacy format with a messageId → router.
   if (messageId && isKnownLegacyFormat(encryptedBody)) {
-    const r = await legacyDecryptByMessageId(messageId);
+    const r = await legacyDecryptByMessageId(messageId, senderUserId);
     if (r.ok) {
       markSeenMessage(seenKey);
       return r;

@@ -119,11 +119,11 @@ const MAX_RETRY_MS = 60000;
  * where Safari/PWA can take well over a minute to rehydrate IndexedDB,
  * fetch peer X3DH bundles, and run the ratchet bootstrap after wake.
  *
- * 5 min is enough to cover cold starts + slow networks while still
+ * 15 min covers cold starts + slow networks + iOS background suspension while still
  * eventually freeing the user from a stuck queue. Plaintext stays in
  * volatile memory the whole time.
  */
-const SECURE_CHANNEL_HARD_TIMEOUT_MS = 5 * 60_000;
+const SECURE_CHANNEL_HARD_TIMEOUT_MS = 15 * 60_000;
 
 // ─── Singleton Queue Manager ───
 
@@ -389,11 +389,11 @@ class MessageQueueManager {
 
         const handlers = this.getReadyAwareHandlers(msg.conversationId);
         if (!handlers?.encrypt) {
-          // Wait up to SECURE_CHANNEL_HARD_TIMEOUT_MS (5min) before failing.
+          // Wait up to SECURE_CHANNEL_HARD_TIMEOUT_MS before failing.
           // This covers iOS cold start + slow X3DH bootstrap reliably.
           const age = Date.now() - msg.createdAt;
           if (age > SECURE_CHANNEL_HARD_TIMEOUT_MS) {
-            console.warn('[MSG_QUEUE] secure channel still unavailable after 5min', msg.localId);
+            console.warn('[MSG_QUEUE] secure channel still unavailable after hard timeout', msg.localId);
             await this.updateStatus(msg, 'failed_visible', 'Canal sécurisé indisponible — réessayez plus tard');
             return;
           }
@@ -483,7 +483,7 @@ class MessageQueueManager {
           // (Was 30s — far too short for iOS cold starts and PWA wake.)
           const age = Date.now() - msg.createdAt;
           if (waitingForKeys && age > SECURE_CHANNEL_HARD_TIMEOUT_MS) {
-            console.warn('[MSG_QUEUE] giving up — peer keys still missing after 5min', msg.localId);
+            console.warn('[MSG_QUEUE] giving up - peer keys still missing after hard timeout', msg.localId);
             await this.updateStatus(msg, 'failed_visible', 'Chiffrement impossible — clés du contact indisponibles. Réessayez.');
             return;
           }

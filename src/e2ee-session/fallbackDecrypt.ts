@@ -58,7 +58,7 @@ export async function tryEveryRatchetSession(
   //    but the primary keeps deterministic priority for the via label.
   const primaryP = ratchetDecrypt(recipientUserId, me, encryptedBody).catch(() => null);
   const deviceCopyP: Promise<DecryptResult> = messageId
-    ? legacyDecryptByMessageId(messageId).catch(
+    ? legacyDecryptByMessageId(messageId, peerUserId).catch(
         () => ({ ok: false, plaintext: null, errorCode: 'LEGACY_THREW' } as DecryptResult),
       )
     : Promise.resolve({ ok: false, plaintext: null, errorCode: 'NO_MESSAGE_ID' } as DecryptResult);

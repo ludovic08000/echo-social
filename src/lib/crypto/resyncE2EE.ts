@@ -17,7 +17,7 @@ import {
   getCurrentDeviceLabel,
   getCurrentPlatform,
 } from '@/lib/messaging/currentDevice';
-import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto/keyManager';
+import { getOrCreateIdentityKeys, exportPublicKeyBundle, PinUnlockRequiredError } from '@/lib/crypto/keyManager';
 import {
   refreshSignedPrekeyIfNeeded,
   refreshDeviceSignedPrekeyIfNeeded,
@@ -52,6 +52,8 @@ export interface MessageReplayDetail {
 
 export interface ResyncReport {
   ok: boolean;
+  /** True when keys exist but are locked behind the messaging PIN. */
+  needsPinUnlock?: boolean;
   steps: Record<ResyncStep, 'ok' | 'skipped' | 'error'>;
   recoveredMessages: number;
   scannedMessages: number;
@@ -257,7 +259,7 @@ async function replayRecentDeviceCopies(
       convScanned += 1;
       const t = Date.now();
       try {
-        const pt = await tryReadDeviceCopy(row.id);
+        const pt = await tryReadDeviceCopy(row.id, row.sender_id);
         const dur = Date.now() - t;
         if (pt !== null && pt.length > 0) {
           recovered += 1;
@@ -372,6 +374,25 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
     report.errors.push(`republish: ${msg}`);
     diag.push('identity', 'error', 'identity republish failed', { error: msg });
     logCryptoException('restore', e, { severity: 'error', metadata: { stage: 'resync_republish', userId } });
+
+    if (e instanceof PinUnlockRequiredError || msg.toLowerCase().includes('pin unlock required')) {
+      report.needsPinUnlock = true;
+      report.durationMs = Date.now() - t0;
+      diag.push('done', 'warn', 'resync paused until PIN unlock', {
+        ok: false,
+        errors: report.errors.length,
+      });
+      if (diagnostic) {
+        report.trace = diag.drain();
+        report.replayDetails = replayDetails ?? [];
+      }
+      try {
+        window.dispatchEvent(
+          new CustomEvent('forsure:e2ee-pin-unlock-required', { detail: report }),
+        );
+      } catch {}
+      return report;
+    }
   }
 
   // 2. Drop stale device-pair ratchets so the next outbound message renegotiates X3DH.

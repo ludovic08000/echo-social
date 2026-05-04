@@ -189,20 +189,11 @@ export function useMessageQueue(
       setRawPendingMessages(forConv);
     });
 
-    // Clean up stuck messages older than 5 minutes on mount (was 30s — too aggressive)
+    // Do not auto-delete waiting messages on mount. iOS/Safari can suspend a
+    // tab long enough to make a healthy secure-channel wait look stuck.
     messageQueue.getPendingMessages(conversationId).then(async (msgs) => {
-      const now = Date.now();
-      const stuckThreshold = 300_000; // 5 minutes
-      for (const msg of msgs) {
-        if ((msg.status === 'waiting_secure_channel' || msg.status === 'retry_pending') &&
-            now - msg.createdAt > stuckThreshold) {
-          await messageQueue.removeMessage(msg.localId);
-        }
-      }
-      const remaining = msgs.filter(m =>
-        !((m.status === 'waiting_secure_channel' || m.status === 'retry_pending') && now - m.createdAt > stuckThreshold)
-      );
-      setRawPendingMessages(remaining);
+      setRawPendingMessages(msgs);
+      messageQueue.resumeForConversation(conversationId);
     });
 
     return unsub;

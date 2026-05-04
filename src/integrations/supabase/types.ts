@@ -5961,6 +5961,7 @@ export type Database = {
         Returns: {
           created_at: string
           encrypted_body: string
+          recipient_device_id: string
           sender_device_id: string
           sender_user_id: string
         }[]

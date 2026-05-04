@@ -651,7 +651,16 @@ export function useChatPin() {
           const rawBlob = new TextDecoder().decode(plainBuffer);
           await restoreAllCryptoBlob(user.id, rawBlob);
           console.log('[PIN] All keys unwrapped and restored');
+          try {
+            sessionStorage.setItem(
+              `forsure:e2ee-resync-pending:${user.id}`,
+              JSON.stringify({ at: Date.now(), detail: { status: 'pin_unlocked' } }),
+            );
+          } catch {}
           window.dispatchEvent(new CustomEvent('forsure-keys-unlocked'));
+          window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+            detail: { status: 'pin_unlocked' },
+          }));
         } catch (unwrapErr) {
           console.warn('[PIN] Key unwrap failed:', unwrapErr);
           setState(s => ({

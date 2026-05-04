@@ -209,10 +209,16 @@ export async function resolvePlaintext(opts: {
   let promise = inflight.get(key);
   if (!promise) {
     promise = (async (): Promise<DecryptionOutcome | null> => {
+      let senderId: string | null = null;
+
       // 1) Conversation-level Double Ratchet (primary).
       try {
         const result = await decrypt(body);
         if (!result.incompatible) {
+          if (result.encrypted && !result.verified) {
+            negCache.set(key, Date.now());
+            return null;
+          }
           const outcome = buildOutcomeFromText(result.text);
           cache.set(key, outcome);
           return outcome;
@@ -223,11 +229,14 @@ export async function resolvePlaintext(opts: {
 
       // 2) Per-message device-copy fan-out.
       if (messageId) {
-        const copyText = await tryReadDeviceCopy(messageId).catch(() => null);
-        if (copyText !== null) {
-          const outcome = buildOutcomeFromText(copyText);
-          cache.set(key, outcome);
-          return outcome;
+        senderId = await getSenderIdBatched(messageId);
+        if (senderId) {
+          const copyText = await tryReadDeviceCopy(messageId, senderId).catch(() => null);
+          if (copyText !== null) {
+            const outcome = buildOutcomeFromText(copyText);
+            cache.set(key, outcome);
+            return outcome;
+          }
         }
       }
 
@@ -235,12 +244,11 @@ export async function resolvePlaintext(opts: {
       if (messageId) {
         try {
           const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
-            const senderId = await getSenderIdBatched(messageId);
+          if (user && senderId) {
             const r = await routeIncoming({
               encryptedBody: body,
               recipientUserId: user.id,
-              senderUserId: senderId ?? undefined,
+              senderUserId: senderId,
               messageId,
             });
             if (r.ok && r.plaintext !== null) {

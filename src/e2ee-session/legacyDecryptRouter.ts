@@ -32,6 +32,7 @@ import { supabase } from '@/integrations/supabase/client';
 export async function legacyDecryptDeviceCopy(args: {
   encryptedBody: string;
   recipientUserId: string;
+  senderUserId?: string;
   /** Filled when the caller already knows the original message id. */
   messageId?: string;
 }): Promise<DecryptResult> {
@@ -58,7 +59,7 @@ export async function legacyDecryptDeviceCopy(args: {
   // implementation for those legacy paths.
   if (args.messageId) {
     try {
-      const pt = await tryReadDeviceCopy(args.messageId);
+      const pt = await tryReadDeviceCopy(args.messageId, args.senderUserId);
       if (pt !== null) return { ok: true, plaintext: pt, via: 'legacy-router' };
     } catch { /* fall through */ }
   }
@@ -70,9 +71,9 @@ export async function legacyDecryptDeviceCopy(args: {
  * Try every device-copy row of `messageId` (covers the case where the local
  * `device_id` rotated — see iOS Keychain wipe scenario).
  */
-export async function legacyDecryptByMessageId(messageId: string): Promise<DecryptResult> {
+export async function legacyDecryptByMessageId(messageId: string, expectedSenderUserId?: string): Promise<DecryptResult> {
   try {
-    const pt = await tryReadDeviceCopy(messageId);
+    const pt = await tryReadDeviceCopy(messageId, expectedSenderUserId);
     if (pt !== null) return { ok: true, plaintext: pt, via: 'legacy-router' };
   } catch { /* fall through */ }
   return { ok: false, plaintext: null, errorCode: 'NO_DEVICE_COPY_DECRYPTED' };

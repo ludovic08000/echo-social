@@ -96,7 +96,7 @@ describe('fallbackDecrypt.tryEveryRatchetSession', () => {
       expect(r.plaintext).toBe('recovered via copy');
       expect(r.via).toBe('fallback-device-copy');
     }
-    expect(legacyDecryptByMessageId).toHaveBeenCalledWith('msg-123');
+    expect(legacyDecryptByMessageId).toHaveBeenCalledWith('msg-123', PEER);
   });
 
   it('reports RATCHET_SESSION_UNKNOWN when peer rotated SPK / sessionId mismatch', async () => {

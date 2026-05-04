@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useZeusSettings, useZeusAgentId, useContentStrikes } from '@/hooks/useZeusCompanion';
 import { useZeusConversations, useZeusMessages } from '@/hooks/useZeusConversations';
+import { useSendMessage } from '@/hooks/useMessages';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { SafeMarkdown } from '@/components/SafeMarkdown';
@@ -393,6 +394,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const secureSendMessage = useSendMessage();
   const { zeusName, updateName } = useZeusSettings();
   const { data: zeusAgentId } = useZeusAgentId();
   const { unacknowledged } = useContentStrikes();
@@ -510,15 +512,10 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
           toast.error('Données de message incomplètes');
           return;
         }
-        // Send message via Supabase insert
-        const { error: msgError } = await supabase.from('messages').insert({
-          conversation_id: action.conversation_id,
-          sender_id: user.id,
+        await secureSendMessage.mutateAsync({
+          conversationId: action.conversation_id,
           body: action.message_text,
         });
-        if (msgError) throw msgError;
-        // Update conversation timestamp
-        await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', action.conversation_id);
         queryClient.invalidateQueries({ queryKey: ['messages', action.conversation_id] });
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
         setExecutedActions(prev => new Set([...prev, msgIndex]));
@@ -557,7 +554,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     } finally {
       setExecutingAction(null);
     }
-  }, [user, queryClient]);
+  }, [user, queryClient, secureSendMessage]);
 
   const sendMessage = useCallback(async (overrideText?: string) => {
     const text = overrideText || input.trim();

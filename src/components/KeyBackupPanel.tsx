@@ -45,6 +45,8 @@ export function KeyBackupPanel() {
       if (ok) {
         toast.success('Clés synchronisées avec le serveur ✅');
         setHasExisting(true);
+      } else if (report.needsPinUnlock) {
+        toast.warning('Deverrouille le PIN de messagerie, puis la re-sync reprendra automatiquement');
       } else {
         toast.error('Aucune clé locale à sauvegarder');
       }

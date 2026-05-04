@@ -365,7 +365,7 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
  * Returns plaintext or null. Used by DecryptedMessageBody as fallback when the
  * ratchet decrypt fails (typical case: secondary device).
  */
-export async function tryReadDeviceCopy(messageId: string): Promise<string | null> {
+export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?: string): Promise<string | null> {
   const myDeviceId = getCurrentDeviceId();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
@@ -403,6 +403,22 @@ export async function tryReadDeviceCopy(messageId: string): Promise<string | nul
         myDeviceId,
         metadata: { messageId, candidates: rows.length },
       });
+    }
+
+    if (expectedSenderUserId) {
+      const before = rows.length;
+      rows = rows.filter(row => row.sender_user_id === expectedSenderUserId);
+      if (before !== rows.length) {
+        logCryptoError({
+          severity: 'warning',
+          context: 'decrypt',
+          errorCode: 'DEVICE_COPY_SENDER_MISMATCH',
+          errorMessage: 'Rejected device copies whose sender does not match parent message',
+          myDeviceId,
+          metadata: { messageId, expectedSenderUserId, rejected: before - rows.length },
+        });
+      }
+      if (rows.length === 0) return null;
     }
 
     // Try each candidate row in order; first successful decryption wins.

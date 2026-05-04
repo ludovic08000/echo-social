@@ -15,15 +15,15 @@
  */
 import type { PendingEnvelope } from './types';
 
-// 30 attempts × 1500 ms ≈ 45 s of live-retry budget, enough to cross an iOS
-// background→foreground resume + a peer ratchet catch-up burst.
-const MAX_ATTEMPTS = 30;
+// 80 attempts x 1500 ms gives about 2 minutes of live-retry budget, enough
+// to cross iOS background/foreground resume + a peer ratchet catch-up burst.
+const MAX_ATTEMPTS = 80;
 const RETRY_INTERVAL_MS = 1500;
 const MAX_RETRIES_PER_TICK = 8;
 
 // Refresh cycles allow a server refetch to re-arm a parked envelope. Bounded
 // so a permanently-undeliverable ciphertext can't loop forever.
-const MAX_REFRESH_CYCLES = 6;
+const MAX_REFRESH_CYCLES = 12;
 const REFRESH_DEBOUNCE_MS = 2000;
 
 // Event-driven kick debounce — avoid stacking 4 ticks in a row when iOS
