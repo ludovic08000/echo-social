@@ -18,6 +18,7 @@ import { bufferToBase64, base64ToBuffer, encodeString, randomBytes, decodeString
 import { exportKeyToJWK, importKeyFromJWK } from './utils';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import { AES_ALGO, IV_LENGTH, PROTOCOL_VERSION, CLASSICAL_KEM_ID, KX_KEY_PARAMS } from './constants';
+import { exportPublicKeyRaw } from './keyManager';
 
 // ─── Types ───
 
