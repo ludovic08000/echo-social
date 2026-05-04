@@ -88,40 +88,93 @@ class DiagRecorder {
  * keep encrypting against a stale prekey bundle and every new message lands
  * as undecryptable.
  */
+const ALLOWED_PLATFORMS = new Set(['ios', 'android', 'web']);
+
+function normalizePlatform(p: string | null | undefined): 'ios' | 'android' | 'web' {
+  const v = (p || '').toLowerCase();
+  if (v === 'ios' || v === 'android' || v === 'web') return v;
+  // 'mobile' or anything else → fall back to a safe value the table accepts.
+  if (typeof navigator !== 'undefined') {
+    const ua = navigator.userAgent || '';
+    if (/Android/i.test(ua)) return 'android';
+    if (/iPhone|iPad|iPod/i.test(ua)) return 'ios';
+  }
+  return 'web';
+}
+
+function isNonEmptyB64(s: unknown): s is string {
+  return typeof s === 'string' && s.length > 0 && /^[A-Za-z0-9+/_\-=]+$/.test(s);
+}
+
 async function republishDeviceIdentity(userId: string, deviceId: string): Promise<{ identity: boolean; spk: boolean; opks: boolean }> {
   const result = { identity: false, spk: false, opks: false };
 
   const keys = await getOrCreateIdentityKeys(userId);
   const bundle = await exportPublicKeyBundle(keys);
   if (!bundle?.identityKey || !bundle?.signingKey || !keys?.signingPrivateKey) {
-    throw new Error('identity bundle incomplete');
+    throw new Error('identity bundle incomplete (identityKey/signingKey missing)');
   }
 
-  let devicePublicKeyB64 = bundle.identityKey;
+  let devicePublicKeyB64: string = bundle.identityKey;
   try {
     const kx = await getOrCreateDeviceKxKey(deviceId);
-    if (kx?.publicB64) devicePublicKeyB64 = kx.publicB64;
-  } catch {
-    // fall back silently to the shared identity key
+    if (kx?.publicB64 && isNonEmptyB64(kx.publicB64)) devicePublicKeyB64 = kx.publicB64;
+  } catch (e) {
+    console.warn('[resync] device kx unavailable, fallback to identity key:', e);
   }
+
+  // Hard validation BEFORE the upsert — these are the most common causes of
+  // the cryptic "Data provided to an operation does not meet requirements".
+  if (!userId || typeof userId !== 'string') {
+    throw new Error(`invalid user_id type=${typeof userId}`);
+  }
+  if (!deviceId || typeof deviceId !== 'string' || deviceId.length < 8) {
+    throw new Error(`invalid device_id (len=${deviceId?.length ?? 0})`);
+  }
+  if (!isNonEmptyB64(devicePublicKeyB64)) {
+    throw new Error(`invalid device_public_key type=${typeof devicePublicKeyB64} len=${(devicePublicKeyB64 as any)?.length ?? 0}`);
+  }
+
+  const platform = normalizePlatform(getCurrentPlatform());
+  const deviceName = (getCurrentDeviceLabel() || 'Unknown device').slice(0, 120);
+  const userAgent = typeof navigator !== 'undefined' ? (navigator.userAgent || '').slice(0, 500) : null;
+
+  const payload = {
+    user_id: userId,
+    device_id: deviceId,
+    device_name: deviceName,
+    device_public_key: devicePublicKeyB64,
+    platform,
+    user_agent: userAgent,
+    is_active: true,
+    last_seen_at: new Date().toISOString(),
+  };
+
+  // Diagnostic log — NEVER log private key material.
+  console.log('[resync] user_devices.upsert payload', {
+    user_id: payload.user_id,
+    device_id: payload.device_id,
+    device_id_len: payload.device_id.length,
+    platform: payload.platform,
+    device_name: payload.device_name,
+    device_public_key_type: typeof payload.device_public_key,
+    device_public_key_len: payload.device_public_key.length,
+    user_agent_len: payload.user_agent?.length ?? 0,
+  });
 
   const { error: devErr } = await supabase
     .from('user_devices')
-    .upsert(
-      {
-        user_id: userId,
-        device_id: deviceId,
-        device_name: getCurrentDeviceLabel(),
-        device_public_key: devicePublicKeyB64,
-        platform: getCurrentPlatform(),
-        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
-        is_active: true,
-        last_seen_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id,device_id' },
-    );
-  result.identity = !devErr;
-  if (devErr) throw new Error(`user_devices upsert failed: ${devErr.message}`);
+    .upsert(payload, { onConflict: 'user_id,device_id' });
+  if (devErr) {
+    console.error('[resync] user_devices.upsert failed', {
+      code: (devErr as any).code,
+      message: devErr.message,
+      details: (devErr as any).details,
+      hint: (devErr as any).hint,
+    });
+    throw new Error(`user_devices upsert failed: ${devErr.message} (code=${(devErr as any).code ?? 'n/a'}, details=${(devErr as any).details ?? 'n/a'})`);
+  }
+  result.identity = true;
 
   try {
     await refreshSignedPrekeyIfNeeded(userId, keys.signingPrivateKey);
@@ -322,16 +375,23 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
   }
 
   // 2. Drop stale device-pair ratchets so the next outbound message renegotiates X3DH.
+  //    Skip if identity republish failed — clearing sessions while peers still
+  //    pin our old prekeys would lock conversations into an undecryptable state.
   const tRatch = Date.now();
-  try {
-    await clearAllDeviceSessions();
-    report.steps.ratchets = 'ok';
-    diag.push('ratchets', 'success', 'cleared stale device ratchets', { durationMs: Date.now() - tRatch });
-  } catch (e) {
-    report.steps.ratchets = 'error';
-    const msg = e instanceof Error ? e.message : String(e);
-    report.errors.push(`ratchet clear: ${msg}`);
-    diag.push('ratchets', 'error', 'ratchet clear failed', { error: msg });
+  if (report.steps.identity !== 'ok') {
+    report.steps.ratchets = 'skipped';
+    diag.push('ratchets', 'warn', 'skipped: identity republish failed', {});
+  } else {
+    try {
+      await clearAllDeviceSessions();
+      report.steps.ratchets = 'ok';
+      diag.push('ratchets', 'success', 'cleared stale device ratchets', { durationMs: Date.now() - tRatch });
+    } catch (e) {
+      report.steps.ratchets = 'error';
+      const msg = e instanceof Error ? e.message : String(e);
+      report.errors.push(`ratchet clear: ${msg}`);
+      diag.push('ratchets', 'error', 'ratchet clear failed', { error: msg });
+    }
   }
 
   // 3. Replay device-copy fallback on recent inbox to recover what we can.
