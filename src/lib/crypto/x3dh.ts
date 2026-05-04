@@ -30,7 +30,7 @@ import {
   AES_ALGO, AES_KEY_LENGTH, PROTOCOL_VERSION,
 } from './constants';
 import { supabase } from '@/integrations/supabase/client';
-import type { IdentityKeyPair } from './keyManager';
+import { type IdentityKeyPair, exportPublicKeyRaw } from './keyManager';
 
 // ─── Types ───
 
