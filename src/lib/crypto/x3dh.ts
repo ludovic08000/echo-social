@@ -207,7 +207,7 @@ export async function generateAndUploadSignedPrekey(
     KX_KEY_PARAMS as any, true, ['deriveBits'],
   ) as CryptoKeyPair;
 
-  const publicRaw = await hardCrypto.exportKey('raw', spkPair.publicKey);
+  const publicRaw = await exportPublicKeyRaw(spkPair.publicKey);
   const publicBase64 = bufferToBase64(publicRaw);
 
   // Sign the SPK public key with Ed25519 identity key
