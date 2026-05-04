@@ -211,8 +211,8 @@ async function importMessageKey(mkB64: string): Promise<CryptoKey> {
 async function generateRatchetKeyPair(): Promise<{ priv: CryptoKey; privJwk: JsonWebKey; pubB64: string }> {
   const kp = await hardCrypto.generateKey({ name: 'X25519' } as any, true, ['deriveBits']) as CryptoKeyPair;
   const privJwk = await hardCrypto.exportKey('jwk', kp.privateKey);
-  const pubRaw = await hardCrypto.exportKey('raw', kp.publicKey);
-  return { priv: kp.privateKey, privJwk, pubB64: bufferToBase64(pubRaw as ArrayBuffer) };
+  const pubRaw = await exportPublicKeyRaw(kp.publicKey);
+  return { priv: kp.privateKey, privJwk, pubB64: bufferToBase64(pubRaw) };
 }
 
 async function importPriv(jwk: JsonWebKey): Promise<CryptoKey> {
