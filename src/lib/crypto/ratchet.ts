@@ -276,7 +276,7 @@ export async function ratchetDecrypt(
 
   // Check if DH ratchet step needed
   const currentDhPub = newState.dhReceivingKey
-    ? bufferToBase64(await hardCrypto.exportKey('raw', newState.dhReceivingKey))
+    ? bufferToBase64(await exportPublicKeyRaw(newState.dhReceivingKey))
     : null;
 
   if (currentDhPub !== envelope.hdr.dh) {
