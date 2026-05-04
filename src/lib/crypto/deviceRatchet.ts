@@ -27,7 +27,7 @@
  */
 
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
-import { bufferToBase64, base64ToBuffer, randomBytes, importKeyFromJWK } from './utils';
+import { bufferToBase64, base64ToBuffer, randomBytes, importKeyFromJWK, importOkpPublicKeyFromBase64 } from './utils';
 import { logCryptoError } from './errorLogger';
 import { exportPublicKeyRaw } from './keyManager';
 
@@ -220,12 +220,7 @@ async function importPriv(jwk: JsonWebKey): Promise<CryptoKey> {
 }
 
 async function importPub(b64: string): Promise<CryptoKey> {
-  try {
-    return await hardCrypto.importKey('raw', base64ToBuffer(b64), { name: 'X25519' } as any, true, []);
-  } catch {
-    const x = b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-    return importKeyFromJWK({ kty: 'OKP', crv: 'X25519', x }, { name: 'X25519' } as any, [], true);
-  }
+  return importOkpPublicKeyFromBase64(b64, 'X25519', [], true);
 }
 
 async function dh(privJwk: JsonWebKey, peerPubB64: string): Promise<ArrayBuffer> {
@@ -499,7 +494,12 @@ export async function ratchetDecryptWithSession(
   if (!payload.startsWith(RATCHET_PREFIX_V4)) {
     // v3 has no DH state to ratchet — re-route through the standard path.
     if (payload.startsWith(RATCHET_PREFIX_V3)) {
-      return decryptV3(myUserId, myDeviceId, payload);
+      const parts = payload.slice(RATCHET_PREFIX_V3.length).split('.');
+      if (parts.length !== 4) return null;
+      const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
+      const session = await loadSession(key);
+      if (!session) return null;
+      return decryptV3WithStored(key, session, parts);
     }
     return null;
   }
@@ -602,14 +602,23 @@ async function legacyEncryptV3(key: string, session: StoredSession, plaintext: s
 async function decryptV3(myUserId: string, myDeviceId: string, payload: string): Promise<string | null> {
   const parts = payload.slice(RATCHET_PREFIX_V3.length).split('.');
   if (parts.length !== 4) return null;
-  const [sessionId, counterStr, ivB64, ctB64] = parts;
-  const counter = parseInt(counterStr, 10);
-  if (Number.isNaN(counter)) return null;
+  const [sessionId] = parts;
   const found = await lookupSessionById(myUserId, myDeviceId, sessionId);
   if (!found || !found.session.legacySharedSecretB64) return null;
+  return decryptV3WithStored(found.key, found.session, parts);
+}
+
+async function decryptV3WithStored(
+  key: string,
+  session: StoredSession,
+  parts: string[],
+): Promise<string | null> {
+  const [, counterStr, ivB64, ctB64] = parts;
+  const counter = parseInt(counterStr, 10);
+  if (Number.isNaN(counter) || !session.legacySharedSecretB64) return null;
   try {
     const ikm = await hardCrypto.importKey(
-      'raw', base64ToBuffer(found.session.legacySharedSecretB64), 'HKDF', false, ['deriveBits'],
+      'raw', base64ToBuffer(session.legacySharedSecretB64), 'HKDF', false, ['deriveBits'],
     );
     const info = new hardGlobals.TextEncoder().encode(`ForSureDevRatchet:${counter}`);
     const bits = await hardCrypto.deriveBits(
@@ -623,8 +632,8 @@ async function decryptV3(myUserId: string, myDeviceId: string, payload: string):
       aes,
       base64ToBuffer(ctB64),
     );
-    if (counter >= (found.session.legacyRecvCounter ?? 0)) {
-      await saveSession(found.key, { ...found.session, legacyRecvCounter: counter + 1 });
+    if (counter >= (session.legacyRecvCounter ?? 0)) {
+      await saveSession(key, { ...session, legacyRecvCounter: counter + 1 });
     }
     return new hardGlobals.TextDecoder().decode(pt);
   } catch {

@@ -29,6 +29,10 @@ export function base64ToBuffer(base64: string): ArrayBuffer {
   return bytes.slice().buffer;
 }
 
+function base64ToBase64Url(base64: string): string {
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
 /** Generate cryptographically secure random bytes */
 export function randomBytes(length: number): Uint8Array {
   return hardCrypto.getRandomValues(new Uint8Array(length));
@@ -116,5 +120,36 @@ export async function importKeyFromJWK(
       const fallback = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
       throw new Error(`JWK import failed (normalized: ${primary}; relaxed: ${fallback})`);
     }
+  }
+}
+
+/**
+ * Import an OKP public key from the app's base64 wire format.
+ *
+ * Safari/WebKit can be stricter than Chromium for raw X25519/Ed25519 imports.
+ * JWK `x` is the same public point encoded as base64url, so this fallback keeps
+ * device handshakes and SPK signature checks portable across browsers.
+ */
+export async function importOkpPublicKeyFromBase64(
+  publicKeyBase64: string,
+  crv: 'X25519' | 'Ed25519',
+  usages: KeyUsage[] = [],
+  extractable: boolean = true,
+): Promise<CryptoKey> {
+  try {
+    return await hardCrypto.importKey(
+      'raw',
+      base64ToBuffer(publicKeyBase64),
+      { name: crv } as any,
+      extractable,
+      usages,
+    );
+  } catch {
+    return importKeyFromJWK(
+      { kty: 'OKP', crv, x: base64ToBase64Url(publicKeyBase64) },
+      { name: crv } as any,
+      usages,
+      extractable,
+    );
   }
 }

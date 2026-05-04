@@ -14,7 +14,14 @@
  */
 
 import { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
-import { bufferToBase64, base64ToBuffer, encodeString, randomBytes, decodeString } from './utils';
+import {
+  bufferToBase64,
+  base64ToBuffer,
+  encodeString,
+  randomBytes,
+  decodeString,
+  importOkpPublicKeyFromBase64,
+} from './utils';
 import { exportKeyToJWK, importKeyFromJWK } from './utils';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import { AES_ALGO, IV_LENGTH, PROTOCOL_VERSION, CLASSICAL_KEM_ID, KX_KEY_PARAMS } from './constants';
@@ -386,13 +393,7 @@ async function decryptWithKey(
   let verified = false;
   if (peerSigningKeyBase64) {
     try {
-      const sigKey = await hardCrypto.importKey(
-        'raw',
-        base64ToBuffer(peerSigningKeyBase64),
-        { name: 'Ed25519' } as any,
-        true,
-        ['verify'],
-      );
+      const sigKey = await importOkpPublicKeyFromBase64(peerSigningKeyBase64, 'Ed25519', ['verify'], true);
       const sigData = new Uint8Array([
         ...new Uint8Array(encodeString(hardGlobals.jsonStringify(envelope.hdr))),
         ...new Uint8Array(iv),

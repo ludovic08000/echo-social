@@ -15,18 +15,17 @@
  * `deviceWrap` is only used as a fallback when no ratchet session is available
  * yet (e.g. first message to a freshly linked device).
  *
- * Future improvement: publish a dedicated per-device X25519 key (separate from
- * the shared identity key) and use it here. Until then, treat this path as
- * "shared-identity-bound" and keep the ratchet path as the source of truth.
+ * Current preferred path: publish a dedicated per-device X25519 key (separate
+ * from the shared identity key) and use it here. Legacy devices can still
+ * decrypt old identity-bound wraps during the rolling migration window.
  *
  * Format of the wrapped payload: base64(iv) "." base64(ciphertext)
  */
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
-import { randomBytes, bufferToBase64, base64ToBuffer, importKeyFromJWK } from '@/lib/crypto/utils';
+import { randomBytes, bufferToBase64, base64ToBuffer, importOkpPublicKeyFromBase64 } from '@/lib/crypto/utils';
 import { getOrCreateIdentityKeys } from '@/lib/crypto/keyManager';
 import { loadDeviceKxKey, getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
-import { KX_KEY_PARAMS } from '@/lib/crypto/constants';
 
 const IV_LEN = 12;
 const SEP = '.';
@@ -46,14 +45,7 @@ async function deriveAesKeyWith(
   peerPublicKxB64: string,
   recipientDeviceId: string,
 ): Promise<CryptoKey> {
-  let peerPub: CryptoKey;
-  try {
-    const peerRaw = base64ToBuffer(peerPublicKxB64);
-    peerPub = await hardCrypto.importKey('raw', peerRaw, KX_KEY_PARAMS as any, true, []);
-  } catch {
-    const x = peerPublicKxB64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-    peerPub = await importKeyFromJWK({ kty: 'OKP', crv: 'X25519', x }, KX_KEY_PARAMS as any, [], true);
-  }
+  const peerPub = await importOkpPublicKeyFromBase64(peerPublicKxB64, 'X25519', [], true);
 
   const sharedBits = await hardCrypto.deriveBits(
     { name: 'X25519', public: peerPub } as any,

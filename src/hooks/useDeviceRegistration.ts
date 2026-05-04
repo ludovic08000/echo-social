@@ -20,6 +20,8 @@ import {
   getCurrentDeviceId,
   getCurrentDeviceLabel,
   getCurrentPlatform,
+  hydrateDeviceId,
+  isDeviceIdTemporary,
 } from '@/lib/messaging/currentDevice';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto/keyManager';
 import {
@@ -39,7 +41,12 @@ export function useDeviceRegistration() {
 
     void (async () => {
       try {
-        const deviceId = getCurrentDeviceId();
+        const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+        if (isDeviceIdTemporary()) {
+          console.warn('[useDeviceRegistration] device id still temporary - delaying device publish');
+          ranRef.current = false;
+          return;
+        }
         const keys = await getOrCreateIdentityKeys(user.id);
         const bundle = await exportPublicKeyBundle(keys);
 

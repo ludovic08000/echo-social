@@ -23,6 +23,7 @@ import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
 import { wrapPlaintextForDevice, unwrapPlaintextForDevice } from './deviceWrap';
 import {
   fetchPrekeyBundleForDevice,
+  peekDeviceSignedPrekey,
   x3dhInitiate,
   x3dhRespond,
   x3dhRespondForDevice,
@@ -32,7 +33,7 @@ import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { randomBytes, bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
 import {
   ratchetEncrypt,
-  ratchetDecrypt,
+  ratchetDecryptWithSession,
   establishDeviceSession,
   getSessionPeerSpkId,
   invalidateDeviceSession,
@@ -262,8 +263,8 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
         input.senderUserId, senderDeviceId, dev.user_id, dev.device_id,
       );
       if (cachedSpkId !== null) {
-        const bundle = await fetchPrekeyBundleForDevice(dev.user_id, dev.device_id);
-        if (bundle && bundle.signedPrekeyId !== cachedSpkId) {
+        const spk = await peekDeviceSignedPrekey(dev.user_id, dev.device_id);
+        if (spk && spk.signedPrekeyId !== cachedSpkId) {
           await invalidateDeviceSession(
             input.senderUserId, senderDeviceId, dev.user_id, dev.device_id,
           );
@@ -453,7 +454,13 @@ async function tryDecryptCopy(
       row.encrypted_body.startsWith(RATCHET_PREFIX_V4) ||
       row.encrypted_body.startsWith(RATCHET_PREFIX_V3)
     ) {
-      const pt = await ratchetDecrypt(userId, myDeviceId, row.encrypted_body);
+      const pt = await ratchetDecryptWithSession(
+        userId,
+        myDeviceId,
+        row.sender_user_id,
+        row.sender_device_id,
+        row.encrypted_body,
+      );
       if (pt !== null) return pt;
       return null;
     }

@@ -21,7 +21,7 @@ import {
 } from './constants';
 import {
   randomBytes, bufferToBase64, base64ToBuffer,
-  concatBuffers, encodeString, decodeString,
+  concatBuffers, encodeString, decodeString, importOkpPublicKeyFromBase64,
 } from './utils';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import {
@@ -198,9 +198,9 @@ export async function decryptMessage(
         ? { name: 'Ed25519' } as any
         : { name: 'ECDSA', namedCurve: 'P-384' };
 
-      const peerSigningKey = await hardCrypto.importKey(
-        'raw', peerSigningRaw, importAlgo, true, ['verify']
-      );
+      const peerSigningKey = envelope.v >= 2
+        ? await importOkpPublicKeyFromBase64(peerSigningKeyBase64, 'Ed25519', ['verify'], true)
+        : await hardCrypto.importKey('raw', peerSigningRaw, importAlgo, true, ['verify']);
 
       const signatureData = concatBuffers(
         ivBytes,

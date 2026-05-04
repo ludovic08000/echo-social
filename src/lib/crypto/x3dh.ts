@@ -24,7 +24,14 @@
  */
 
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
-import { bufferToBase64, base64ToBuffer, concatBuffers, encodeString, importKeyFromJWK } from './utils';
+import {
+  bufferToBase64,
+  base64ToBuffer,
+  concatBuffers,
+  encodeString,
+  importKeyFromJWK,
+  importOkpPublicKeyFromBase64,
+} from './utils';
 import {
   KX_KEY_PARAMS, SIG_KEY_PARAMS, HKDF_HASH,
   AES_ALGO, AES_KEY_LENGTH, PROTOCOL_VERSION,
@@ -283,10 +290,7 @@ export async function refreshSignedPrekeyIfNeeded(
         .maybeSingle();
 
       if (pubKeyData) {
-        const signingPubKey = await hardCrypto.importKey(
-          'raw', base64ToBuffer(pubKeyData.signing_key),
-          { name: 'Ed25519' } as any, true, ['verify'],
-        );
+        const signingPubKey = await importEd25519Public(pubKeyData.signing_key);
         signatureValid = await hardCrypto.verify(
           'Ed25519' as any, signingPubKey, sigRaw, spkRaw,
         );
@@ -663,6 +667,78 @@ async function claimPeerDeviceOPK(
   }
 }
 
+async function fetchDevicePrekeyMaterial(
+  peerUserId: string,
+  peerDeviceId: string,
+): Promise<{
+  identityKey: string;
+  signingKey: string;
+  spkId: number;
+  publicKey: string;
+  signature: string;
+} | null> {
+  const { data: pubKeys } = await supabase
+    .from('user_public_keys')
+    .select('identity_key, signing_key')
+    .eq('user_id', peerUserId)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (!pubKeys) return null;
+
+  const { data: spkRows, error } = await supabase
+    .rpc('get_device_prekey_bundle', { p_user_id: peerUserId, p_device_id: peerDeviceId });
+  if (error || !spkRows || spkRows.length === 0) return null;
+
+  const spk = spkRows[0] as { spk_id: number; public_key: string; signature: string };
+  return {
+    identityKey: pubKeys.identity_key,
+    signingKey: pubKeys.signing_key,
+    spkId: spk.spk_id,
+    publicKey: spk.public_key,
+    signature: spk.signature,
+  };
+}
+
+async function verifySignedPrekey(
+  signingKeyB64: string,
+  spkPublicB64: string,
+  signatureB64: string,
+): Promise<boolean> {
+  try {
+    const peerSigningKey = await importEd25519Public(signingKeyB64);
+    return await hardCrypto.verify(
+      'Ed25519' as any,
+      peerSigningKey,
+      base64ToBuffer(signatureB64),
+      base64ToBuffer(spkPublicB64),
+    );
+  } catch (e) {
+    console.warn('[X3DH] SPK signature check error:', e);
+    return false;
+  }
+}
+
+/**
+ * Read active device SPK metadata without consuming an OPK.
+ * This mirrors Sesame's "prep" step: inspect current device state first, and
+ * only claim one-time prekeys when a fresh X3DH initiation is really needed.
+ */
+export async function peekDeviceSignedPrekey(
+  peerUserId: string,
+  peerDeviceId: string,
+): Promise<{ signedPrekeyId: number } | null> {
+  const material = await fetchDevicePrekeyMaterial(peerUserId, peerDeviceId);
+  if (!material) return null;
+
+  const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature);
+  if (!sigValid) {
+    console.warn(`[X3DH-DEV] device SPK signature INVALID for ${peerUserId}/${peerDeviceId}`);
+    return null;
+  }
+
+  return { signedPrekeyId: material.spkId };
+}
+
 /**
  * Fetch a per-DEVICE prekey bundle (multi-device fan-out path).
  * Returns null if the target device has not yet published a SPK — caller should
@@ -672,35 +748,10 @@ export async function fetchPrekeyBundleForDevice(
   peerUserId: string,
   peerDeviceId: string,
 ): Promise<X3DHPrekeyBundle | null> {
-  // 1. Identity + signing key are still per-user (hybrid model)
-  const { data: pubKeys } = await supabase
-    .from('user_public_keys')
-    .select('identity_key, signing_key')
-    .eq('user_id', peerUserId)
-    .eq('is_active', true)
-    .maybeSingle();
-  if (!pubKeys) return null;
+  const material = await fetchDevicePrekeyMaterial(peerUserId, peerDeviceId);
+  if (!material) return null;
 
-  // 2. Per-device SPK bundle via SECURITY DEFINER RPC
-  const { data: spkRows, error } = await supabase
-    .rpc('get_device_prekey_bundle', { p_user_id: peerUserId, p_device_id: peerDeviceId });
-  if (error || !spkRows || spkRows.length === 0) return null;
-  const spk = spkRows[0] as { spk_id: number; public_key: string; signature: string };
-
-  // 3. Verify signature against per-user signing key
-  let sigValid = false;
-  try {
-    const peerSigningKey = await hardCrypto.importKey(
-      'raw', base64ToBuffer(pubKeys.signing_key),
-      { name: 'Ed25519' } as any, true, ['verify'],
-    );
-    sigValid = await hardCrypto.verify(
-      'Ed25519' as any, peerSigningKey,
-      base64ToBuffer(spk.signature), base64ToBuffer(spk.public_key),
-    );
-  } catch (e) {
-    console.warn('[X3DH-DEV] device SPK signature check error:', e);
-  }
+  const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature);
   if (!sigValid) {
     console.warn(`[X3DH-DEV] ⛔ device SPK signature INVALID for ${peerUserId}/${peerDeviceId}`);
     return null;
@@ -715,11 +766,11 @@ export async function fetchPrekeyBundleForDevice(
   }
 
   return {
-    identityKey: pubKeys.identity_key,
-    signingKey: pubKeys.signing_key,
-    signedPrekey: spk.public_key,
-    signedPrekeySignature: spk.signature,
-    signedPrekeyId: spk.spk_id,
+    identityKey: material.identityKey,
+    signingKey: material.signingKey,
+    signedPrekey: material.publicKey,
+    signedPrekeySignature: material.signature,
+    signedPrekeyId: material.spkId,
     oneTimePrekey: opk?.publicKey,
     oneTimePrekeyId: opk?.opkId,
   };
@@ -762,10 +813,7 @@ export async function fetchPrekeyBundle(peerUserId: string): Promise<X3DHPrekeyB
   try {
     const spkRaw = base64ToBuffer(spk.public_key);
     const sigRaw = base64ToBuffer(spk.signature);
-    const peerSigningKey = await hardCrypto.importKey(
-      'raw', base64ToBuffer(pubKeys.signing_key),
-      { name: 'Ed25519' } as any, true, ['verify'],
-    );
+    const peerSigningKey = await importEd25519Public(pubKeys.signing_key);
     sigValid = await hardCrypto.verify('Ed25519' as any, peerSigningKey, sigRaw, spkRaw);
   } catch (verifyErr) {
     console.error('[X3DH] ⚠️ SPK signature verification error in fetchPrekeyBundle:', verifyErr);
@@ -801,10 +849,7 @@ export async function x3dhInitiate(
   // 1. Signature already verified in fetchPrekeyBundle, but double-check
   const spkRaw = base64ToBuffer(bundle.signedPrekey);
   const sigRaw = base64ToBuffer(bundle.signedPrekeySignature);
-  const peerSigningKey = await hardCrypto.importKey(
-    'raw', base64ToBuffer(bundle.signingKey),
-    { name: 'Ed25519' } as any, true, ['verify'],
-  );
+  const peerSigningKey = await importEd25519Public(bundle.signingKey);
 
   const sigValid = await hardCrypto.verify(
     'Ed25519' as any, peerSigningKey, sigRaw, spkRaw,
@@ -1060,20 +1105,11 @@ export function isPQXDHAvailable(): boolean {
 // ─── Internal Helpers ───
 
 async function importX25519Public(base64: string): Promise<CryptoKey> {
-  try {
-    return await hardCrypto.importKey(
-      'raw', base64ToBuffer(base64),
-      KX_KEY_PARAMS as any, true, [],
-    );
-  } catch {
-    const x = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-    return importKeyFromJWK(
-      { kty: 'OKP', crv: 'X25519', x },
-      KX_KEY_PARAMS as any,
-      [],
-      true,
-    );
-  }
+  return importOkpPublicKeyFromBase64(base64, 'X25519', [], true);
+}
+
+async function importEd25519Public(base64: string): Promise<CryptoKey> {
+  return importOkpPublicKeyFromBase64(base64, 'Ed25519', ['verify'], true);
 }
 
 /**
