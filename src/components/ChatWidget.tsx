@@ -21,9 +21,10 @@ import { trackAICall } from '@/lib/aiEngine';
 import { cn } from '@/lib/utils';
 import { useChatWidget } from './ChatWidgetContext';
 import { useImageUpload } from '@/hooks/useImageUpload';
-import { generateMediaKey, encryptMedia, buildMediaMessageBody, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
+import { generateMediaKey, encryptMedia, buildMediaMessageBody, parseMediaMessage, isVideoMediaLabel } from '@/lib/crypto/mediaEncrypt';
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
 import { MessageMedia } from '@/components/messages/MessageMedia';
+import { EncryptedMedia } from '@/components/messages/EncryptedMedia';
 import { useCall, formatCallDuration, type CallEndInfo, generateCallE2EEKey } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
 import { signalOutgoingCall, endActiveCall } from '@/hooks/useIncomingCall';
@@ -1268,7 +1269,32 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                   'px-3 py-1.5 text-xs break-words leading-relaxed rounded-2xl bg-primary/70 text-primary-foreground',
                   pm.status === 'failed_visible' && 'bg-destructive/20 text-destructive border border-destructive/30',
                 )}>
-                  {pm.plaintext || '…'}
+                  {(() => {
+                    const text = pm.plaintext || '';
+                    const media = parseMediaMessage(text);
+                    if (pm.imageUrl && media) {
+                      return (
+                        <EncryptedMedia
+                          encryptedUrl={pm.imageUrl}
+                          mediaKeyB64={media.keyB64}
+                          isVideo={isVideoMediaLabel(media.label)}
+                        />
+                      );
+                    }
+                    if (isGifMessage(text)) {
+                      const gifUrl = sanitizeUrl(getGifUrl(text));
+                      return gifUrl === '#'
+                        ? null
+                        : <img src={gifUrl} alt="GIF" className="max-w-full max-h-[150px] object-cover rounded-xl" />;
+                    }
+                    if (isVoiceMessage(text)) {
+                      const vd = getVoiceData(text);
+                      return vd
+                        ? <VoiceMessagePlayer audioUrl={vd.url} duration={vd.duration} isMe />
+                        : 'Message vocal';
+                    }
+                    return media?.label || text || '...';
+                  })()}
                 </div>
                 <OutboundStatusIndicator
                   status={pm.status}

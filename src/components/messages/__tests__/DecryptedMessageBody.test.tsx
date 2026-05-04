@@ -43,6 +43,8 @@ vi.mock('@/lib/crypto/errorLogger', () => ({
 }));
 
 import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
+import { buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
+import { clearMediaKey, getMediaKey } from '@/components/messages/mediaKeyCache';
 
 const RATCHET_BODY = 'x3dh4.sess-id.AAAA.0.0.IV.CT';
 
@@ -72,6 +74,42 @@ describe('DecryptedMessageBody', () => {
     );
     expect(await screen.findByText('bonjour')).toBeInTheDocument();
     expect(decrypt).not.toHaveBeenCalled();
+  });
+
+  it('normalizes cached media plaintext and never renders the embedded key', async () => {
+    const messageId = 'msg-media-cache';
+    const mediaKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+    const cachedPlaintext = buildMediaMessageBody('Photo', mediaKey);
+    clearMediaKey(messageId);
+
+    const { container } = render(
+      <DecryptedMessageBody
+        body={RATCHET_BODY}
+        decrypt={vi.fn()}
+        isEncryptionActive={true}
+        cachedPlaintext={cachedPlaintext}
+        messageId={messageId}
+        hasMedia={true}
+      />,
+    );
+
+    await waitFor(() => expect(getMediaKey(messageId)?.mediaKeyB64).toBe(mediaKey));
+    expect(container.textContent || '').not.toContain('MKEY:');
+    expect(container.textContent || '').not.toContain(mediaKey);
+  });
+
+  it('renders cached GIF plaintext as media instead of raw text', async () => {
+    render(
+      <DecryptedMessageBody
+        body={RATCHET_BODY}
+        decrypt={vi.fn()}
+        isEncryptionActive={true}
+        cachedPlaintext="GIF:https://example.com/a.gif"
+      />,
+    );
+
+    expect(await screen.findByAltText('GIF')).toHaveAttribute('src', 'https://example.com/a.gif');
+    expect(screen.queryByText(/GIF:https/)).not.toBeInTheDocument();
   });
 
   it.skip('renders the decrypted text when decrypt resolves', async () => {

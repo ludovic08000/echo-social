@@ -8,7 +8,7 @@
 
 import { useState, useEffect, memo } from 'react';
 import { EncryptedMedia } from './EncryptedMedia';
-import { parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
+import { isVideoMediaLabel, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { getMediaKey, subscribeMediaKey } from './mediaKeyCache';
 import type { DecryptResult } from '@/hooks/useE2EE';
@@ -85,11 +85,11 @@ export const MessageMedia = memo(function MessageMedia({
       if (messageId && getMediaKey(messageId)) return;
       decrypt(body).then(result => {
         if (cancelled) return;
-        if (result.incompatible) { setResolved(true); return; }
+        if (result.incompatible || (result.encrypted && !result.verified)) { setResolved(true); return; }
         const parsed = parseMediaMessage(result.text);
         if (parsed) {
           setMediaKey(parsed.keyB64);
-          setIsVideo(parsed.label.startsWith('🎬'));
+          setIsVideo(isVideoMediaLabel(parsed.label));
         }
         setResolved(true);
       }).catch(() => {

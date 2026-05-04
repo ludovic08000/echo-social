@@ -24,10 +24,11 @@ import { useImageUpload } from '@/hooks/useImageUpload';
 import { toast } from 'sonner';
 import { useMessageTranslation } from '@/hooks/useMessageTranslation';
 import { useE2EE } from '@/hooks/useE2EE';
-import { generateMediaKey, encryptMedia, buildMediaMessageBody, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
+import { generateMediaKey, encryptMedia, buildMediaMessageBody, parseMediaMessage, isImageMediaLabel, isVideoMediaLabel } from '@/lib/crypto/mediaEncrypt';
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
 import { compressImageForChat } from '@/lib/messaging/compressImage';
 import { MessageMedia } from './MessageMedia';
+import { EncryptedMedia } from './EncryptedMedia';
 import { rememberDecryptedMedia } from './decryptedMediaCache';
 import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { EncryptionBadge, EncryptionStatusBar } from './EncryptionBadge';
@@ -36,7 +37,7 @@ import { OutboundStatusIndicator } from './OutboundStatus';
 
 import { MessageActions } from './MessageActions';
 import { TypingIndicator } from './TypingIndicator';
-import { VoiceRecorder } from '@/components/chat/VoiceRecorder';
+import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { Mic } from 'lucide-react';
 import { ForwardMessageDialog } from './ForwardMessageDialog';
 import { NewConversationDialog } from './NewConversationDialog';
@@ -44,9 +45,20 @@ import { ShareContentPicker } from './ShareContentPicker';
 import { EMOJI_CATEGORIES, formatDateSeparator, isSingleEmoji } from './constants';
 import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
 import { useTypingPresence } from '@/hooks/useTypingPresence';
+import { sanitizeUrl } from '@/lib/sanitizeUrl';
 
 interface ChatViewProps {
   conversationId: string;
+}
+
+function parseGifMessage(text: string): string | null {
+  const match = text.match(/^GIF:(https?:\/\/.+)$/i);
+  return match ? match[1] : null;
+}
+
+function parseVoiceMessage(text: string): { url: string; duration: number } | null {
+  const match = text.match(/(?:vocal|voice):(.*?)\|(?:dur:)?(\d+)$/i);
+  return match ? { url: match[1], duration: parseInt(match[2], 10) } : null;
 }
 
 /**
@@ -955,12 +967,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
                           )}
 
                           {(() => {
-                            const rawBody = msg.body || '';
+                            const rawBody = decryptedCache.get(msg.id) || msg.body || '';
+                            const media = parseMediaMessage(rawBody);
+                            const label = media?.label ?? rawBody;
                             const isPureMediaPlaceholder = !!msg.image_url && (
                               /^📷\s*Photo(MKEY:|$)/i.test(rawBody) ||
                               /^🎬\s*(Video|Vidéo)(MKEY:|$)/i.test(rawBody) ||
-                              /PhotoMKEY:/i.test(rawBody) ||
-                              /VideoMKEY:/i.test(rawBody)
+                              !!media ||
+                              isImageMediaLabel(label) ||
+                              isVideoMediaLabel(label)
                             );
                             if (isPureMediaPlaceholder) return null;
                             return (
@@ -1073,7 +1088,31 @@ export function ChatView({ conversationId }: ChatViewProps) {
                     'bg-primary/70 text-primary-foreground',
                     (pm.status === 'failed_visible') && 'bg-destructive/20 text-destructive border border-destructive/30',
                   )}>
-                    {pm.plaintext || '…'}
+                    {(() => {
+                      const text = pm.plaintext || '';
+                      const media = parseMediaMessage(text);
+                      if (pm.imageUrl && media) {
+                        return (
+                          <EncryptedMedia
+                            encryptedUrl={pm.imageUrl}
+                            mediaKeyB64={media.keyB64}
+                            isVideo={isVideoMediaLabel(media.label)}
+                          />
+                        );
+                      }
+                      const gif = parseGifMessage(text);
+                      if (gif) {
+                        const gifUrl = sanitizeUrl(gif);
+                        return gifUrl === '#'
+                          ? null
+                          : <img src={gifUrl} alt="GIF" className="max-w-full max-h-[220px] rounded-[14px] object-cover" />;
+                      }
+                      const voice = parseVoiceMessage(text);
+                      if (voice) {
+                        return <VoiceMessagePlayer audioUrl={voice.url} duration={voice.duration} isMe />;
+                      }
+                      return media?.label || text || '...';
+                    })()}
                   </div>
                   <OutboundStatusIndicator
                     status={pm.status}

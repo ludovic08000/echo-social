@@ -38,6 +38,30 @@ export function parseMediaMessage(plaintext: string): { label: string; keyB64: s
   };
 }
 
+export function isVideoMediaLabel(label: string): boolean {
+  const lower = label.toLowerCase().trim();
+  return (
+    label.includes('\u{1F3AC}') ||
+    lower === 'video' ||
+    lower === 'vidéo' ||
+    lower === 'vidã©o' ||
+    lower.endsWith(' video') ||
+    lower.endsWith(' vidéo') ||
+    lower.endsWith(' vidã©o')
+  );
+}
+
+export function isImageMediaLabel(label: string): boolean {
+  const lower = label.toLowerCase().trim();
+  return (
+    label.includes('\u{1F4F7}') ||
+    lower === 'photo' ||
+    lower === 'image' ||
+    lower.endsWith(' photo') ||
+    lower.endsWith(' image')
+  );
+}
+
 /** Build a message body with an embedded media key */
 export function buildMediaMessageBody(label: string, keyB64: string): string {
   return `${label}${MEDIA_KEY_SEPARATOR}${keyB64}`;

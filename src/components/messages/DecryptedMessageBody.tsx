@@ -8,8 +8,10 @@ import {
   clearNegativeCache,
   persistOutcome,
   looksEncrypted,
+  buildOutcomeFromText,
   type DecryptionOutcome,
 } from './decryptionService';
+import { isImageMediaLabel, isVideoMediaLabel } from '@/lib/crypto/mediaEncrypt';
 import type { DecryptResult } from '@/hooks/useE2EE';
 
 /**
@@ -64,12 +66,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   // first paint never flashes a placeholder when plaintext is already known.
   const initial: { outcome: DecryptionOutcome | null; pending: boolean } = (() => {
     if (cachedPlaintext) {
-      const outcome = looksEncrypted(cachedPlaintext)
-        ? { text: cachedPlaintext, mediaKeyB64: null, hidden: false }
-        : (() => {
-            // cachedPlaintext might be a media-encoded body — normalize.
-            return { text: cachedPlaintext, mediaKeyB64: null, hidden: false };
-          })();
+      const outcome = buildOutcomeFromText(cachedPlaintext);
       return { outcome, pending: false };
     }
     if (!looksEncrypted(body)) {
@@ -106,10 +103,15 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
     // cachedPlaintext provided by parent always wins (post-send echo).
     if (cachedPlaintext) {
-      const next: DecryptionOutcome = { text: cachedPlaintext, mediaKeyB64: null, hidden: false };
+      const next = buildOutcomeFromText(cachedPlaintext);
       setOutcome(next);
       setPending(false);
-      onDecryptedRef.current?.(cachedPlaintext);
+      if (next.mediaKeyB64 && messageId) {
+        setMediaKey(messageId, next.mediaKeyB64, isVideoMediaLabel(next.text));
+      }
+      if (!next.hidden) {
+        onDecryptedRef.current?.(cachedPlaintext);
+      }
       return;
     }
 
@@ -132,7 +134,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
         setOutcome(next);
         setPending(false);
         if (next.mediaKeyB64 && messageId) {
-          setMediaKey(messageId, next.mediaKeyB64, next.text.startsWith('🎬'));
+          setMediaKey(messageId, next.mediaKeyB64, isVideoMediaLabel(next.text));
         }
         if (!next.hidden) {
           const persisted = persistOutcome(body, next);
@@ -160,7 +162,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
   const { text, mediaKeyB64 } = outcome;
 
-  if (hasMedia && (text === '📷 Photo' || text === '🎬 Vidéo')) return null;
+  if (hasMedia && (isImageMediaLabel(text) || isVideoMediaLabel(text))) return null;
 
   const voice = parseVoiceMessage(text);
   if (voice) {
