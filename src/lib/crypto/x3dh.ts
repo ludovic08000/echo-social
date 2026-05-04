@@ -30,7 +30,7 @@ import {
   AES_ALGO, AES_KEY_LENGTH, PROTOCOL_VERSION,
 } from './constants';
 import { supabase } from '@/integrations/supabase/client';
-import type { IdentityKeyPair } from './keyManager';
+import { type IdentityKeyPair, exportPublicKeyRaw } from './keyManager';
 
 // ─── Types ───
 
@@ -207,7 +207,7 @@ export async function generateAndUploadSignedPrekey(
     KX_KEY_PARAMS as any, true, ['deriveBits'],
   ) as CryptoKeyPair;
 
-  const publicRaw = await hardCrypto.exportKey('raw', spkPair.publicKey);
+  const publicRaw = await exportPublicKeyRaw(spkPair.publicKey);
   const publicBase64 = bufferToBase64(publicRaw);
 
   // Sign the SPK public key with Ed25519 identity key
@@ -423,7 +423,7 @@ export async function generateAndUploadDeviceSignedPrekey(
     KX_KEY_PARAMS as any, true, ['deriveBits'],
   ) as CryptoKeyPair;
 
-  const publicRaw = await hardCrypto.exportKey('raw', spkPair.publicKey);
+  const publicRaw = await exportPublicKeyRaw(spkPair.publicKey);
   const publicBase64 = bufferToBase64(publicRaw);
 
   const signature = await hardCrypto.sign('Ed25519' as any, signingPrivateKey, publicRaw);
@@ -638,7 +638,7 @@ export async function refillDeviceOneTimePrekeysIfNeeded(
       const pair = await hardCrypto.generateKey(
         KX_KEY_PARAMS as any, true, ['deriveBits'],
       ) as CryptoKeyPair;
-      const pubRaw = await hardCrypto.exportKey('raw', pair.publicKey);
+      const pubRaw = await exportPublicKeyRaw(pair.publicKey);
       const pubB64 = bufferToBase64(pubRaw);
       await saveDeviceOPKPrivate(userId, deviceId, opkId, pair.privateKey, pubB64);
       rows.push({ user_id: userId, device_id: deviceId, opk_id: opkId, public_key: pubB64 });
@@ -833,7 +833,7 @@ export async function x3dhInitiate(
     KX_KEY_PARAMS as any, true, ['deriveBits'],
   ) as CryptoKeyPair;
 
-  const ephPubRaw = await hardCrypto.exportKey('raw', ephemeralPair.publicKey);
+  const ephPubRaw = await exportPublicKeyRaw(ephemeralPair.publicKey);
   const ephemeralKey = bufferToBase64(ephPubRaw);
 
   // 4. Compute DH operations

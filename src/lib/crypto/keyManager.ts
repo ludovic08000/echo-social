@@ -95,7 +95,7 @@ function dbDelete(storeName: string, key: string): Promise<void> {
  * Ed25519 public keys with DataError. JWK export ALWAYS works for public
  * keys; `x` is the base64url-encoded raw point.
  */
-async function exportPublicKeyRaw(publicKey: CryptoKey): Promise<ArrayBuffer> {
+export async function exportPublicKeyRaw(publicKey: CryptoKey): Promise<ArrayBuffer> {
   try {
     return await hardCrypto.exportKey('raw', publicKey) as ArrayBuffer;
   } catch {
