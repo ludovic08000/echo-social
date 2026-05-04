@@ -8,7 +8,7 @@
  *      future messages re-handshake cleanly.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Smartphone, Monitor, Tablet, ShieldOff, BadgeCheck, Trash2 } from 'lucide-react';
+import { Loader2, Smartphone, Monitor, Tablet, ShieldOff, BadgeCheck, Trash2, AlertTriangle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -39,6 +39,9 @@ interface DeviceRow {
   last_seen_at: string;
   created_at: string;
   is_active: boolean;
+  stale_at: string | null;
+  revoked_at: string | null;
+  revoke_reason: string | null;
 }
 
 function platformIcon(platform: string | null, ua: string | null) {
@@ -60,7 +63,7 @@ export function DevicesPanel() {
     setLoading(true);
     const { data, error } = await supabase
       .from('user_devices')
-      .select('id, device_id, device_name, platform, user_agent, last_seen_at, created_at, is_active')
+      .select('id, device_id, device_name, platform, user_agent, last_seen_at, created_at, is_active, stale_at, revoked_at, revoke_reason')
       .eq('user_id', user.id)
       .eq('is_active', true)
       .order('last_seen_at', { ascending: false });
@@ -87,7 +90,11 @@ export function DevicesPanel() {
     try {
       const { error } = await supabase
         .from('user_devices')
-        .update({ is_active: false } as any)
+        .update({
+          is_active: false,
+          revoked_at: new Date().toISOString(),
+          revoke_reason: 'manual',
+        } as any)
         .eq('user_id', user.id)
         .eq('device_id', dev.device_id);
       if (error) throw error;
@@ -136,6 +143,7 @@ export function DevicesPanel() {
         {devices.map((dev) => {
           const Icon = platformIcon(dev.platform, dev.user_agent);
           const isCurrent = dev.device_id === currentDeviceId;
+          const isStale = !!dev.stale_at;
           const lastSeen = formatDistanceToNow(new Date(dev.last_seen_at), {
             addSuffix: true,
             locale: fr,
@@ -169,6 +177,12 @@ export function DevicesPanel() {
                     <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded-md">
                       <BadgeCheck className="w-3 h-3" />
                       Actuel
+                    </span>
+                  )}
+                  {isStale && !isCurrent && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-500/10 px-1.5 py-0.5 rounded-md">
+                      <AlertTriangle className="w-3 h-3" />
+                      Inactif
                     </span>
                   )}
                 </div>

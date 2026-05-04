@@ -5085,6 +5085,9 @@ export type Database = {
           is_active: boolean
           last_seen_at: string
           platform: string | null
+          revoke_reason: string | null
+          revoked_at: string | null
+          stale_at: string | null
           updated_at: string
           user_agent: string | null
           user_id: string
@@ -5098,6 +5101,9 @@ export type Database = {
           is_active?: boolean
           last_seen_at?: string
           platform?: string | null
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          stale_at?: string | null
           updated_at?: string
           user_agent?: string | null
           user_id: string
@@ -5111,6 +5117,9 @@ export type Database = {
           is_active?: boolean
           last_seen_at?: string
           platform?: string | null
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          stale_at?: string | null
           updated_at?: string
           user_agent?: string | null
           user_id?: string
@@ -5928,6 +5937,16 @@ export type Database = {
       cleanup_old_behavior_signals: { Args: never; Returns: undefined }
       cleanup_old_fingerprints: { Args: never; Returns: undefined }
       cleanup_old_login_attempts: { Args: never; Returns: undefined }
+      cleanup_stale_user_devices: {
+        Args: {
+          p_revoke_after?: unknown
+          p_stale_after?: unknown
+        }
+        Returns: {
+          action: string
+          device_id: string
+        }[]
+      }
       complete_onboarding: { Args: { _user_id: string }; Returns: boolean }
       consume_device_link_token: {
         Args: { p_token_hash: string }

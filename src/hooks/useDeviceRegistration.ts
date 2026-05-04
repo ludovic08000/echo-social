@@ -30,6 +30,7 @@ import {
   refreshSignedPrekeyIfNeeded,
 } from '@/lib/crypto/x3dh';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
+import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
 
 export function useDeviceRegistration() {
   const { user } = useAuth();
@@ -97,6 +98,20 @@ export function useDeviceRegistration() {
         if (devErr) {
           console.warn('[useDeviceRegistration] device upsert failed:', devErr.message);
           return;
+        }
+
+        // Mark stale/revoke old devices and delete our local sessions to
+        // devices that crossed the long inactivity threshold.
+        try {
+          const { data } = await supabase.rpc('cleanup_stale_user_devices');
+          const lifecycleRows = (data || []) as Array<{ device_id: string; action: string }>;
+          await Promise.all(
+            lifecycleRows
+              .filter(row => row.action === 'revoked' && row.device_id !== deviceId)
+              .map(row => invalidateDeviceSession(user.id, deviceId, user.id, row.device_id)),
+          );
+        } catch (cleanupErr) {
+          console.warn('[useDeviceRegistration] stale device cleanup failed (non-fatal):', cleanupErr);
         }
 
         // 2. Ensure the legacy/shared Signed PreKey also exists.
