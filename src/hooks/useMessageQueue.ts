@@ -18,6 +18,7 @@ import { useAuth } from '@/lib/auth';
 import { messageQueue, type OutboundMessage } from '@/lib/messaging/messageQueue';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
+import { processDeviceCopyRetryRequests } from '@/lib/messaging/deviceCopyRetryProcessor';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { safeUUID } from '@/e2ee-session';
 
@@ -147,6 +148,7 @@ export function useMessageQueue(
             senderUserId: msg.senderId,
             plaintext: msg.plaintext,
           }).catch(err => console.warn('[FANOUT] non-fatal failure', err));
+          processDeviceCopyRetryRequests().catch(() => {});
         }
 
         await supabase

@@ -2564,6 +2564,53 @@ export type Database = {
           },
         ]
       }
+      message_device_retry_requests: {
+        Row: {
+          attempt_count: number
+          created_at: string
+          id: string
+          last_error: string | null
+          message_id: string
+          requester_device_id: string
+          requester_user_id: string
+          sender_user_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempt_count?: number
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          message_id: string
+          requester_device_id: string
+          requester_user_id: string
+          sender_user_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempt_count?: number
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          message_id?: string
+          requester_device_id?: string
+          requester_user_id?: string
+          sender_user_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_device_retry_requests_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_reactions: {
         Row: {
           created_at: string
@@ -5966,6 +6013,14 @@ export type Database = {
           sender_user_id: string
         }[]
       }
+      complete_device_copy_retry: {
+        Args: {
+          p_encrypted_body: string
+          p_request_id: string
+          p_sender_device_id: string
+        }
+        Returns: boolean
+      }
       get_device_prekey_bundle: {
         Args: { p_device_id: string; p_user_id: string }
         Returns: {
@@ -6094,6 +6149,24 @@ export type Database = {
           last_seen_at: string
         }[]
       }
+      list_pending_device_copy_retries: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempt_count: number
+          conversation_id: string
+          created_at: string
+          message_body: string
+          message_id: string
+          request_id: string
+          requester_device_id: string
+          requester_device_public_key: string
+          requester_user_id: string
+        }[]
+      }
+      mark_device_copy_retry_failed: {
+        Args: { p_error: string; p_request_id: string }
+        Returns: boolean
+      }
       match_contacts_by_phone:
         | {
             Args: { p_phone_numbers: string[] }
@@ -6198,6 +6271,14 @@ export type Database = {
           p_user_agent?: string
         }
         Returns: undefined
+      }
+      request_device_copy_retry: {
+        Args: {
+          p_message_id: string
+          p_requester_device_id: string
+          p_sender_user_id: string
+        }
+        Returns: string
       }
       stripe_mark_event_processed: {
         Args: { p_event_id: string; p_event_type: string }

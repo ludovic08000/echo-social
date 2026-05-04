@@ -75,7 +75,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const { user } = useAuth();
   const { data: conversations } = useConversations();
   const { data: messages, isLoading } = useMessages(conversationId);
-  const legacySendMessage = useSendMessage();
+  // Plaintext DB send is reserved for Zeus bot conversations only.
+  const botPlaintextSend = useSendMessage();
   const deleteForMe = useDeleteMessageForMe();
   const deleteForEveryone = useDeleteMessageForEveryone();
   const markRead = useMarkConversationRead();
@@ -245,11 +246,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
     if (isZeusConversation) {
       const url = await rawUpload(prepared);
       if (url) {
-        if (isZeusConversation) {
-          legacySendMessage.mutate({ conversationId, body: label, imageUrl: url });
-        } else {
-          queue.sendMessage(label, url).catch(() => toast.error('Erreur envoi média'));
-        }
+        botPlaintextSend.mutate({ conversationId, body: label, imageUrl: url });
       }
       return;
     }
@@ -314,7 +311,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
     isZeusConversation,
     rawUpload,
     conversationId,
-    legacySendMessage,
+    botPlaintextSend,
     queue,
     e2ee.fingerprintChanged,
     e2ee.peerKeyMissing,
@@ -435,7 +432,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
     inputRef.current?.focus();
 
     if (isZeusConversation) {
-      legacySendMessage.mutate({ conversationId, body });
+      botPlaintextSend.mutate({ conversationId, body });
     } else {
       // If E2EE not yet ready: queue the message — it will encrypt + send
       // as soon as the secure channel is established. Show a soft hint so

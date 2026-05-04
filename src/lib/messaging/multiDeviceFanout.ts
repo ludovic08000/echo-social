@@ -21,6 +21,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
 import { wrapPlaintextForDevice, unwrapPlaintextForDevice } from './deviceWrap';
+import { requestDeviceCopyRetry } from './deviceCopyRetryRequest';
 import {
   fetchPrekeyBundleForDevice,
   peekDeviceSignedPrekey,
@@ -53,6 +54,16 @@ interface ActiveDevice {
   user_id: string;
   device_id: string;
   device_public_key: string;
+}
+
+interface DeviceEncryptTargetInput {
+  conversationId?: string;
+  senderUserId: string;
+  senderDeviceId?: string;
+  recipientUserId: string;
+  recipientDeviceId: string;
+  recipientDevicePublicKey: string;
+  plaintext: string;
 }
 
 // ─── X3DH-wrapped envelopes ─────────────────────────────────────────────────
@@ -200,6 +211,99 @@ async function x3dhUnwrapForDevice(
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
+
+export async function encryptPlaintextForDeviceTarget(
+  input: DeviceEncryptTargetInput,
+): Promise<{ encryptedBody: string; senderDeviceId: string } | null> {
+  if (!input.recipientDevicePublicKey) return null;
+  if (isDeviceIdTemporary()) return null;
+
+  const senderDeviceId = input.senderDeviceId ?? getCurrentDeviceId();
+
+  try {
+    const cachedSpkId = await getSessionPeerSpkId(
+      input.senderUserId,
+      senderDeviceId,
+      input.recipientUserId,
+      input.recipientDeviceId,
+    );
+    if (cachedSpkId !== null) {
+      const spk = await peekDeviceSignedPrekey(input.recipientUserId, input.recipientDeviceId);
+      if (spk && spk.signedPrekeyId !== cachedSpkId) {
+        await invalidateDeviceSession(
+          input.senderUserId,
+          senderDeviceId,
+          input.recipientUserId,
+          input.recipientDeviceId,
+        );
+      }
+    }
+  } catch (e) {
+    logCryptoException('fanout', e, {
+      severity: 'warning',
+      conversationId: input.conversationId,
+      myDeviceId: senderDeviceId,
+      peerUserId: input.recipientUserId,
+      peerDeviceId: input.recipientDeviceId,
+      metadata: { stage: 'spk_rotation_check' },
+    });
+  }
+
+  let encrypted: string | null = null;
+  try {
+    encrypted = await ratchetEncrypt(
+      input.senderUserId,
+      senderDeviceId,
+      input.recipientUserId,
+      input.recipientDeviceId,
+      input.plaintext,
+    );
+    if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V4)) {
+      encrypted = null;
+    }
+  } catch (e) {
+    logCryptoException('fanout', e, {
+      severity: 'warning',
+      conversationId: input.conversationId,
+      myDeviceId: senderDeviceId,
+      peerUserId: input.recipientUserId,
+      peerDeviceId: input.recipientDeviceId,
+      metadata: { stage: 'ratchet_encrypt' },
+    });
+  }
+
+  if (!encrypted) {
+    encrypted = await x3dhWrapForDevice(
+      input.plaintext,
+      input.senderUserId,
+      input.recipientUserId,
+      input.recipientDeviceId,
+    );
+  }
+
+  if (!encrypted) {
+    try {
+      encrypted = await wrapPlaintextForDevice(
+        input.plaintext,
+        input.senderUserId,
+        input.recipientDevicePublicKey,
+        input.recipientDeviceId,
+      );
+    } catch (e) {
+      logCryptoException('fanout', e, {
+        severity: 'error',
+        conversationId: input.conversationId,
+        myDeviceId: senderDeviceId,
+        peerUserId: input.recipientUserId,
+        peerDeviceId: input.recipientDeviceId,
+        metadata: { stage: 'all_paths_failed' },
+      });
+      return null;
+    }
+  }
+
+  return encrypted ? { encryptedBody: encrypted, senderDeviceId } : null;
+}
 
 export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserted: number; multiDevice: boolean }> {
   // SAFETY: Never bind a fresh ratchet session to a temporary device id —
@@ -394,7 +498,12 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       const { data: allCopies } = await supabase.rpc('get_device_copies_for_user', {
         p_message_id: messageId,
       });
-      if (!allCopies || allCopies.length === 0) return null;
+      if (!allCopies || allCopies.length === 0) {
+        if (expectedSenderUserId) {
+          void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
+        }
+        return null;
+      }
       rows = allCopies as CopyRow[];
       logCryptoError({
         severity: 'info',
@@ -419,7 +528,10 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
           metadata: { messageId, expectedSenderUserId, rejected: before - rows.length },
         });
       }
-      if (rows.length === 0) return null;
+      if (rows.length === 0) {
+        void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
+        return null;
+      }
     }
 
     // Try each candidate row in order; first successful decryption wins.
@@ -430,6 +542,9 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       const pt = await tryDecryptCopy(row, user.id, targetDeviceId);
       if (pt !== null) return pt;
     }
+    if (expectedSenderUserId) {
+      void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
+    }
     return null;
   } catch (e) {
     logCryptoException('decrypt', e, {
@@ -437,6 +552,9 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       myDeviceId,
       metadata: { messageId, stage: 'tryReadDeviceCopy' },
     });
+    if (expectedSenderUserId) {
+      void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
+    }
     return null;
   }
 }
