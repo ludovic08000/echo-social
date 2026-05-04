@@ -1696,18 +1696,13 @@ async function scheduleLegacyCleanup(conversationId: string, userId?: string): P
       return;
     }
 
-    const { error: delErr } = await supabase
-      .from('message_deletions')
-      .insert(idsToDelete.map((message_id) => ({ message_id, user_id: userId })) as any);
-
-    if (delErr && delErr.code !== '23505') {
-      console.warn('[E2EE] Legacy cleanup delete failed:', delErr);
-      return;
-    }
-
-    console.log(`[E2EE] 🧹 Hidden ${idsToDelete.length} incompatible crypto message(s) in ${conversationId}`);
-    // Notify UI to reload the conversation
-    window.dispatchEvent(new CustomEvent('forsure-conversation-cleaned', { detail: { conversationId, removed: idsToDelete.length } }));
+    // Never persist crypto failures as "delete for me". A session restore can
+    // temporarily lack keys/PIN/device copies, and hiding rows in the database
+    // makes a recoverable conversation look empty on every future visit.
+    console.warn('[E2EE] Legacy cleanup found incompatible crypto rows; leaving them visible for recovery', {
+      conversationId,
+      count: idsToDelete.length,
+    });
   } catch (e) {
     console.warn('[E2EE] Legacy cleanup error:', e);
   }

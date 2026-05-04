@@ -52,6 +52,51 @@ export function isStrictRatchetEnvelopeBody(body: string | null | undefined): bo
   }
 }
 
+export function isKnownCryptoEnvelopeBody(body: string | null | undefined): boolean {
+  if (!isCryptoJsonBody(body)) return false;
+
+  try {
+    const parsed = JSON.parse(body);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+
+    if (isStrictRatchetEnvelopeBody(body)) return true;
+
+    const hdr = parsed.hdr;
+    const hasRatchetHeader =
+      !!hdr &&
+      typeof hdr === 'object' &&
+      typeof hdr.dh === 'string' &&
+      typeof hdr.n === 'number' &&
+      typeof hdr.pn === 'number';
+
+    // Legacy conversation-level ratchet payloads may have older `v` values
+    // or miss the newer encryptionMode tag. They are still recoverable through
+    // device-copy / plaintext-cache fallbacks, so they must not be persisted as
+    // "deleted for me" just because the current strict parser cannot decrypt
+    // them immediately after a session restore.
+    if (
+      typeof parsed.ct === 'string' &&
+      typeof parsed.iv === 'string' &&
+      hasRatchetHeader
+    ) {
+      return true;
+    }
+
+    // Structured v4 facade used by e2ee-session diagnostics/router.
+    if (
+      parsed.version === 4 &&
+      typeof parsed.ciphertext === 'string' &&
+      typeof parsed.sessionId === 'string'
+    ) {
+      return true;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export function isUnsupportedEncryptedBody(body: string | null | undefined): boolean {
-  return isCryptoJsonBody(body) && !isStrictRatchetEnvelopeBody(body);
+  return isCryptoJsonBody(body) && !isKnownCryptoEnvelopeBody(body);
 }

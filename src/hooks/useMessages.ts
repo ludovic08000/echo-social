@@ -4,7 +4,7 @@ import { useAuth } from '@/lib/auth';
 import { useEffect } from 'react';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { messageQueue } from '@/lib/messaging/messageQueue';
-import { isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import { isCryptoJsonBody, isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { pendingMessageQueue, routeIncoming } from '@/e2ee-session';
 import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 
@@ -13,6 +13,50 @@ async function hideMessagesForUser(userId: string, messageIds: string[]) {
   const rows = messageIds.map((message_id) => ({ message_id, user_id: userId }));
   const { error } = await supabase.from('message_deletions').insert(rows as any);
   if (error && error.code !== '23505') throw error;
+}
+
+async function repairConversationHiddenMessages(
+  userId: string,
+  conversationId: string,
+  messages: Array<{ id: string; conversation_id: string; body: string | null }>,
+  hiddenIds: Set<string>,
+): Promise<boolean> {
+  if (!userId || !conversationId || messages.length === 0) return false;
+
+  const hiddenConversationMessages = messages.filter((m) => hiddenIds.has(m.id));
+  const visibleConversationMessages = messages.filter((m) => !hiddenIds.has(m.id));
+  const hasCryptoRows = messages.some((m) => isCryptoJsonBody(m.body));
+
+  // Auto-cleanup used to persist crypto failures as "delete for me". When a
+  // returning session finds every fetched row hidden, prefer restoring the
+  // conversation over showing an empty chat. Manual single-message deletions
+  // remain untouched because this only repairs the all-hidden failure mode.
+  if (
+    visibleConversationMessages.length > 0 ||
+    hiddenConversationMessages.length !== messages.length ||
+    !hasCryptoRows
+  ) {
+    return false;
+  }
+
+  const ids = hiddenConversationMessages.map((m) => m.id);
+  const { error } = await supabase
+    .from('message_deletions')
+    .delete()
+    .eq('user_id', userId)
+    .in('message_id', ids);
+
+  if (error) {
+    console.warn('[messaging] failed to repair hidden conversation messages:', error.message);
+    return false;
+  }
+
+  ids.forEach((id) => hiddenIds.delete(id));
+  console.warn('[messaging] restored hidden messages after session return', {
+    conversationId,
+    count: ids.length,
+  });
+  return true;
 }
 
 export const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
@@ -307,9 +351,7 @@ export function useMessages(conversationId: string) {
         async (payload) => {
           const newMsg = payload.new as any;
           if (isUnsupportedEncryptedBody(newMsg.body)) {
-            if (user) {
-              hideMessagesForUser(user.id, [newMsg.id]).catch(() => {});
-            }
+            console.warn('[messaging] ignoring unsupported encrypted message without hiding it', newMsg.id);
             return;
           }
 
@@ -420,8 +462,9 @@ export function useMessages(conversationId: string) {
     return () => window.removeEventListener('forsure-conversation-cleaned', handleCleaned as EventListener);
   }, [conversationId, queryClient]);
 
-  // Background cleanup: hide incompatible messages once per conversation visit.
-  // Runs OUTSIDE the queryFn so it never triggers a re-render loop.
+  // Background cleanup: keep this non-destructive. Older builds inserted
+  // message_deletions here, which could make a whole chat look empty after
+  // returning to a session if a crypto envelope was misclassified.
   useEffect(() => {
     if (!conversationId || !user) return;
     let cancelled = false;
@@ -436,7 +479,10 @@ export function useMessages(conversationId: string) {
       if (cancelled || !msgs) return;
       const ids = msgs.filter(m => isUnsupportedEncryptedBody(m.body)).map(m => m.id);
       if (ids.length > 0) {
-        hideMessagesForUser(user.id, ids).catch(() => {});
+        console.warn('[messaging] unsupported encrypted messages left visible for recovery', {
+          conversationId,
+          count: ids.length,
+        });
       }
     })();
     return () => { cancelled = true; };
@@ -474,6 +520,16 @@ export function useMessages(conversationId: string) {
 
       // Reverse to chronological order for display
       messages.reverse();
+
+      const repairedHiddenRows = await repairConversationHiddenMessages(
+        user.id,
+        conversationId,
+        messages,
+        hiddenIds,
+      );
+      if (repairedHiddenRows) {
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      }
 
       // Filter out hidden + incompatible messages locally — no DB writes here.
       const visibleMessages = messages.filter(m => !hiddenIds.has(m.id));
