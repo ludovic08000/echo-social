@@ -638,7 +638,7 @@ export async function refillDeviceOneTimePrekeysIfNeeded(
       const pair = await hardCrypto.generateKey(
         KX_KEY_PARAMS as any, true, ['deriveBits'],
       ) as CryptoKeyPair;
-      const pubRaw = await hardCrypto.exportKey('raw', pair.publicKey);
+      const pubRaw = await exportPublicKeyRaw(pair.publicKey);
       const pubB64 = bufferToBase64(pubRaw);
       await saveDeviceOPKPrivate(userId, deviceId, opkId, pair.privateKey, pubB64);
       rows.push({ user_id: userId, device_id: deviceId, opk_id: opkId, public_key: pubB64 });
