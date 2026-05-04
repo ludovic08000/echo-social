@@ -77,6 +77,23 @@ export async function exportKeyToJWK(key: CryptoKey): Promise<JsonWebKey> {
   return hardCrypto.exportKey('jwk', key);
 }
 
+function normalizeJWKForImport(
+  jwk: JsonWebKey,
+  usages: KeyUsage[],
+  extractable: boolean,
+): JsonWebKey {
+  const normalized: JsonWebKey = { ...jwk };
+
+  // Safari/iOS is stricter than Chromium when JWK metadata disagrees with the
+  // import arguments. Key material is the same; these fields only describe how
+  // WebCrypto should expose the imported CryptoKey.
+  normalized.key_ops = [...usages];
+  normalized.ext = extractable;
+  delete normalized.alg;
+
+  return normalized;
+}
+
 /** Import CryptoKey from JWK */
 export async function importKeyFromJWK(
   jwk: JsonWebKey,
@@ -84,5 +101,20 @@ export async function importKeyFromJWK(
   usages: KeyUsage[],
   extractable: boolean = true,
 ): Promise<CryptoKey> {
-  return hardCrypto.importKey('jwk', jwk, algorithm, extractable, usages);
+  const normalized = normalizeJWKForImport(jwk, usages, extractable);
+  try {
+    return await hardCrypto.importKey('jwk', normalized, algorithm, extractable, usages);
+  } catch (primaryErr) {
+    const relaxed: JsonWebKey = { ...jwk };
+    delete relaxed.key_ops;
+    delete relaxed.ext;
+    delete relaxed.alg;
+    try {
+      return await hardCrypto.importKey('jwk', relaxed, algorithm, extractable, usages);
+    } catch (fallbackErr) {
+      const primary = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+      const fallback = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+      throw new Error(`JWK import failed (normalized: ${primary}; relaxed: ${fallback})`);
+    }
+  }
 }

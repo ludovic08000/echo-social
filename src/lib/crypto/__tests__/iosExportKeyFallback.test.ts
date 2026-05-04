@@ -38,28 +38,49 @@ import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 // This is exactly the iOS Safari behaviour we observed in production logs.
 
 const nativeSubtleExportKey = globalThis.crypto.subtle.exportKey.bind(globalThis.crypto.subtle);
+const nativeSubtleImportKey = globalThis.crypto.subtle.importKey.bind(globalThis.crypto.subtle);
 
 vi.mock('../cryptoIntegrity', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../cryptoIntegrity')>();
+  const dataError = (message: string) => {
+    const err = new Error(message);
+    err.name = 'DataError';
+    return err;
+  };
   const wrappedExport = async (format: any, key: CryptoKey) => {
     if (format === 'raw') {
       const algName = (key.algorithm as any)?.name as string | undefined;
       const isCurveKey = algName === 'X25519' || algName === 'Ed25519';
       if (isCurveKey && key.type === 'public') {
-        const err = new Error(
-          'iOS-sim: Data provided to an operation does not meet requirements',
-        );
-        err.name = 'DataError';
-        throw err;
+        throw dataError('iOS-sim: Data provided to an operation does not meet requirements');
       }
     }
     return nativeSubtleExportKey(format, key);
+  };
+  const wrappedImport = async (
+    format: any,
+    keyData: any,
+    algorithm: any,
+    extractable: boolean,
+    usages: KeyUsage[],
+  ) => {
+    if (format === 'jwk' && keyData && typeof keyData === 'object') {
+      const jwk = keyData as JsonWebKey;
+      if (jwk.ext === false && extractable) {
+        throw dataError('iOS-sim: JWK ext=false cannot be imported extractable');
+      }
+      if (Array.isArray(jwk.key_ops) && usages.some((usage) => !jwk.key_ops!.includes(usage))) {
+        throw dataError('iOS-sim: JWK key_ops do not satisfy requested usages');
+      }
+    }
+    return nativeSubtleImportKey(format, keyData, algorithm, extractable, usages);
   };
   return {
     ...actual,
     hardCrypto: {
       ...actual.hardCrypto,
       exportKey: wrappedExport,
+      importKey: wrappedImport,
     },
   };
 });
@@ -77,7 +98,8 @@ import {
   loadDeviceKxKey,
   deleteDeviceKxKey,
 } from '../deviceKx';
-import { bufferToBase64 } from '../utils';
+import { bufferToBase64, importKeyFromJWK } from '../utils';
+import { KX_KEY_PARAMS, SIG_KEY_PARAMS } from '../constants';
 
 // Helper: compute the TRUE raw base64 of a public key by using the native
 // subtle on a freshly imported EXTRACTABLE copy from JWK. Bypasses our mock.
@@ -178,6 +200,26 @@ describe('iOS WebKit exportKey raw → jwk fallback', () => {
     expect(bundle.identityKey).toBe(original2.identityKey);
     expect(bundle.signingKey).toBe(original2.signingKey);
     expect(bundle.fingerprint).toBe(original2.fingerprint);
+  });
+
+  it('normalizes restored JWK metadata before importing on strict iOS WebCrypto', async () => {
+    const keys = await generateIdentityKeys();
+    const idJwk = await hardCrypto.exportKey('jwk', keys.publicKey) as JsonWebKey;
+    const sigJwk = await hardCrypto.exportKey('jwk', keys.signingPublicKey) as JsonWebKey;
+
+    await expect(importKeyFromJWK(
+      { ...idJwk, ext: false },
+      KX_KEY_PARAMS as any,
+      [],
+      true,
+    )).resolves.toBeTruthy();
+
+    await expect(importKeyFromJWK(
+      { ...sigJwk, key_ops: ['sign'] },
+      SIG_KEY_PARAMS as any,
+      ['verify'],
+      true,
+    )).resolves.toBeTruthy();
   });
 
   it('exportPublicKeyBundle() FAILS LOUDLY when both raw and jwk are unavailable (no silent junk)', async () => {
