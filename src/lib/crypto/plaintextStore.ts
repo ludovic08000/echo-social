@@ -86,6 +86,11 @@ interface StoredEntry {
   ts: number;
 }
 
+export interface PlaintextCacheExportEntry {
+  id: string;
+  plaintext: string;
+}
+
 function bufferToHex(buffer: ArrayBuffer): string {
   return Array.from(new Uint8Array(buffer))
     .map((byte) => byte.toString(16).padStart(2, '0'))
@@ -137,6 +142,40 @@ async function loadEntry(id: string): Promise<string | null> {
     entry.ct,
   );
   return new TextDecoder().decode(pt);
+}
+
+export async function exportPlaintextCache(): Promise<PlaintextCacheExportEntry[]> {
+  try {
+    const db = await openDB();
+    const entries = await new Promise<StoredEntry[]>((resolve, reject) => {
+      const tx = db.transaction(STORE_MESSAGES, 'readonly');
+      const req = tx.objectStore(STORE_MESSAGES).getAll();
+      req.onsuccess = () => resolve(req.result as StoredEntry[]);
+      req.onerror = () => reject(req.error);
+    });
+
+    const exported: PlaintextCacheExportEntry[] = [];
+    for (const entry of entries) {
+      try {
+        const plaintext = await loadEntry(entry.id);
+        if (plaintext) exported.push({ id: entry.id, plaintext });
+      } catch {
+        // Skip entries that belong to a stale local cache key.
+      }
+    }
+    return exported;
+  } catch (e) {
+    console.warn('[plaintextStore] exportPlaintextCache failed', e);
+    return [];
+  }
+}
+
+export async function importPlaintextCache(entries: PlaintextCacheExportEntry[]): Promise<void> {
+  if (!Array.isArray(entries) || entries.length === 0) return;
+  for (const entry of entries) {
+    if (!entry || typeof entry.id !== 'string' || typeof entry.plaintext !== 'string') continue;
+    await saveEntry(entry.id, entry.plaintext);
+  }
 }
 
 /**

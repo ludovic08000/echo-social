@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, QrCode, Download, Upload, Loader2, Check, AlertCircle, Copy, Key, RefreshCw, Cloud, Bug, ChevronDown, ChevronUp } from 'lucide-react';
+import { Shield, QrCode, Download, Upload, Loader2, Check, AlertCircle, Copy, RefreshCw, Cloud, Bug, ChevronDown, ChevronUp } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,9 +28,8 @@ export function KeyBackupPanel() {
   const [showTrace, setShowTrace] = useState(false);
   // Device transfer
   const [qrData, setQrData] = useState<string | null>(null);
-  const [transferPin, setTransferPin] = useState<string | null>(null);
   const [scanInput, setScanInput] = useState('');
-  const [pinInput, setPinInput] = useState('');
+  const [approvalInput, setApprovalInput] = useState('');
 
   useEffect(() => {
     backup.hasBackup().then(setHasExisting);
@@ -92,22 +91,35 @@ export function KeyBackupPanel() {
   };
 
   const handleCreateLink = async () => {
-    const result = await deviceLink.createLink();
+    const result = await deviceLink.createLinkRequest();
     if (result) {
       setQrData(result.qrData);
-      setTransferPin(result.pin);
-      toast.success('Lien de transfert créé (expire dans 5 min)');
+      setScanInput(result.qrData);
+      toast.success('Demande de liaison creee (expire dans 10 min)');
     } else {
       toast.error(deviceLink.error || 'Erreur');
     }
   };
 
-  const handleClaimLink = async () => {
-    if (!scanInput.trim()) { toast.error('Colle le code de transfert'); return; }
-    if (!pinInput.trim()) { toast.error('Entre le code PIN de vérification'); return; }
-    const ok = await deviceLink.claimLink(scanInput, pinInput);
+  const handleApproveLink = async () => {
+    if (!approvalInput.trim()) { toast.error('Colle le code QR du nouvel appareil'); return; }
+    const ok = await deviceLink.approveLinkRequest(approvalInput);
     if (ok) {
-      toast.success('Clés transférées avec succès ✅');
+      toast.success('Nouvel appareil approuve. Le transfert chiffre est pret.');
+      setApprovalInput('');
+    } else {
+      toast.error(deviceLink.error || 'Erreur d approbation');
+    }
+  };
+
+  const handleClaimLink = async () => {
+    const code = scanInput.trim() || qrData || '';
+    if (!code) { toast.error('Genere ou colle le code de liaison'); return; }
+    const ok = await deviceLink.claimApprovedLink(code);
+    if (ok) {
+      toast.success('Cles transferees avec succes');
+    } else if ((deviceLink.error || '').toLowerCase().includes('attente')) {
+      toast.info(deviceLink.error || 'En attente d approbation');
     } else {
       toast.error(deviceLink.error || 'Erreur de transfert');
     }
@@ -328,7 +340,7 @@ export function KeyBackupPanel() {
 
           <TabsContent value="device" className="space-y-3 mt-3">
             <div className="space-y-2">
-              <p className="text-xs font-medium">Depuis cet appareil → Nouvel appareil</p>
+              <p className="text-xs font-medium">Nouvel appareil</p>
               <Button
                 onClick={handleCreateLink}
                 disabled={deviceLink.isLoading}
@@ -336,7 +348,7 @@ export function KeyBackupPanel() {
                 className="w-full gap-1"
               >
                 {deviceLink.isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <QrCode className="h-3 w-3" />}
-                Générer un lien de transfert
+                Generer une demande de liaison
               </Button>
               {qrData && (
                 <div className="p-3 bg-muted rounded-lg space-y-3">
@@ -346,7 +358,7 @@ export function KeyBackupPanel() {
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground text-center">
-                    Scanne ce QR ou copie le code ci-dessous (expire dans 5 min)
+                    Scanne ce QR depuis un appareil deja connecte, puis reviens ici recuperer les cles.
                   </p>
                   <div className="flex gap-1">
                     <code className="text-[10px] bg-background p-2 rounded flex-1 break-all max-h-16 overflow-auto">
@@ -356,47 +368,60 @@ export function KeyBackupPanel() {
                       <Copy className="h-3 w-3" />
                     </Button>
                   </div>
-                  {transferPin && (
-                    <div className="border-t pt-2 space-y-1">
-                      <p className="text-xs font-medium flex items-center gap-1">
-                        <Key className="h-3 w-3 text-primary" /> Code PIN de vérification
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Communique ce code séparément (oral, SMS…) — il est nécessaire pour déchiffrer.
-                      </p>
-                      <code className="block text-center text-lg font-bold tracking-[0.3em] bg-background p-2 rounded select-all">
-                        {transferPin}
-                      </code>
-                    </div>
-                  )}
+                  <Button
+                    onClick={handleClaimLink}
+                    disabled={deviceLink.isLoading}
+                    size="sm"
+                    variant="outline"
+                    className="w-full gap-1"
+                  >
+                    {deviceLink.isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                    Recuperer les cles approuvees
+                  </Button>
                 </div>
               )}
             </div>
 
             <div className="border-t pt-3 space-y-2">
-              <p className="text-xs font-medium">Sur le nouvel appareil</p>
+              <p className="text-xs font-medium">Appareil deja connecte</p>
               <Input
-                placeholder="Colle le code de transfert ici"
-                value={scanInput}
-                onChange={e => setScanInput(e.target.value)}
+                placeholder="Colle ici le QR/code du nouvel appareil"
+                value={approvalInput}
+                onChange={e => setApprovalInput(e.target.value)}
                 className="h-9 text-xs font-mono"
               />
-              <Input
-                placeholder="Code PIN de vérification"
-                value={pinInput}
-                onChange={e => setPinInput(e.target.value)}
-                className="h-9 text-xs font-mono tracking-widest text-center"
-                maxLength={8}
-              />
               <Button
-                onClick={handleClaimLink}
-                disabled={deviceLink.isLoading || !scanInput.trim() || !pinInput.trim()}
+                onClick={handleApproveLink}
+                disabled={deviceLink.isLoading || !approvalInput.trim()}
                 size="sm"
                 variant="outline"
                 className="w-full gap-1"
               >
+                {deviceLink.isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
+                Approuver et envoyer le transfert chiffre
+              </Button>
+              <p className="text-[10px] text-muted-foreground leading-snug">
+                L appareil approuve chiffre les cles et le cache d historique pour la cle publique du nouvel appareil. Le serveur ne voit que du ciphertext.
+              </p>
+            </div>
+
+            <div className="border-t pt-3 space-y-2">
+              <p className="text-xs font-medium">Apres rechargement du nouvel appareil</p>
+              <Input
+                placeholder="Colle le code de liaison si le QR a disparu"
+                value={scanInput}
+                onChange={e => setScanInput(e.target.value)}
+                className="h-9 text-xs font-mono"
+              />
+              <Button
+                onClick={handleClaimLink}
+                disabled={deviceLink.isLoading || (!scanInput.trim() && !qrData)}
+                size="sm"
+                variant="secondary"
+                className="w-full gap-1"
+              >
                 {deviceLink.isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-                Récupérer les clés
+                Verifier l approbation
               </Button>
             </div>
 
