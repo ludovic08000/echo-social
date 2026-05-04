@@ -375,16 +375,23 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
   }
 
   // 2. Drop stale device-pair ratchets so the next outbound message renegotiates X3DH.
+  //    Skip if identity republish failed — clearing sessions while peers still
+  //    pin our old prekeys would lock conversations into an undecryptable state.
   const tRatch = Date.now();
-  try {
-    await clearAllDeviceSessions();
-    report.steps.ratchets = 'ok';
-    diag.push('ratchets', 'success', 'cleared stale device ratchets', { durationMs: Date.now() - tRatch });
-  } catch (e) {
-    report.steps.ratchets = 'error';
-    const msg = e instanceof Error ? e.message : String(e);
-    report.errors.push(`ratchet clear: ${msg}`);
-    diag.push('ratchets', 'error', 'ratchet clear failed', { error: msg });
+  if (report.steps.identity !== 'ok') {
+    report.steps.ratchets = 'skipped';
+    diag.push('ratchets', 'warn', 'skipped: identity republish failed', {});
+  } else {
+    try {
+      await clearAllDeviceSessions();
+      report.steps.ratchets = 'ok';
+      diag.push('ratchets', 'success', 'cleared stale device ratchets', { durationMs: Date.now() - tRatch });
+    } catch (e) {
+      report.steps.ratchets = 'error';
+      const msg = e instanceof Error ? e.message : String(e);
+      report.errors.push(`ratchet clear: ${msg}`);
+      diag.push('ratchets', 'error', 'ratchet clear failed', { error: msg });
+    }
   }
 
   // 3. Replay device-copy fallback on recent inbox to recover what we can.
