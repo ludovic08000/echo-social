@@ -22,7 +22,7 @@
  * Format of the wrapped payload: base64(iv) "." base64(ciphertext)
  */
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
-import { randomBytes, bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
+import { randomBytes, bufferToBase64, base64ToBuffer, importKeyFromJWK } from '@/lib/crypto/utils';
 import { getOrCreateIdentityKeys } from '@/lib/crypto/keyManager';
 import { loadDeviceKxKey, getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
@@ -46,8 +46,14 @@ async function deriveAesKeyWith(
   peerPublicKxB64: string,
   recipientDeviceId: string,
 ): Promise<CryptoKey> {
-  const peerRaw = base64ToBuffer(peerPublicKxB64);
-  const peerPub = await hardCrypto.importKey('raw', peerRaw, KX_KEY_PARAMS as any, true, []);
+  let peerPub: CryptoKey;
+  try {
+    const peerRaw = base64ToBuffer(peerPublicKxB64);
+    peerPub = await hardCrypto.importKey('raw', peerRaw, KX_KEY_PARAMS as any, true, []);
+  } catch {
+    const x = peerPublicKxB64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    peerPub = await importKeyFromJWK({ kty: 'OKP', crv: 'X25519', x }, KX_KEY_PARAMS as any, [], true);
+  }
 
   const sharedBits = await hardCrypto.deriveBits(
     { name: 'X25519', public: peerPub } as any,

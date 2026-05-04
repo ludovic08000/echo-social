@@ -24,7 +24,7 @@
  */
 
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
-import { bufferToBase64, base64ToBuffer, concatBuffers, encodeString } from './utils';
+import { bufferToBase64, base64ToBuffer, concatBuffers, encodeString, importKeyFromJWK } from './utils';
 import {
   KX_KEY_PARAMS, SIG_KEY_PARAMS, HKDF_HASH,
   AES_ALGO, AES_KEY_LENGTH, PROTOCOL_VERSION,
@@ -138,12 +138,7 @@ async function loadSPKPrivate(userId: string, spkId: number): Promise<CryptoKey 
       req.onerror = () => reject(req.error);
     });
     if (!result) return null;
-    return hardCrypto.importKey(
-      'jwk', result.privateKeyJWK,
-      KX_KEY_PARAMS as any,
-      false,
-      ['deriveBits'],
-    );
+    return importKeyFromJWK(result.privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits'], false);
   } catch {
     return null;
   }
@@ -562,12 +557,7 @@ async function loadDeviceOPKPrivate(
       req.onerror = () => reject(req.error);
     });
     if (!result) return null;
-    return hardCrypto.importKey(
-      'jwk', result.privateKeyJWK,
-      KX_KEY_PARAMS as any,
-      false,
-      ['deriveBits'],
-    );
+    return importKeyFromJWK(result.privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits'], false);
   } catch {
     return null;
   }
@@ -918,19 +908,14 @@ export async function x3dhRespond(
 
   console.info(`[X3DH] SPK #${initialMessage.spkId} loaded — public=${spkRecord.publicKeyBase64.slice(0, 12)}…`);
 
-  const spkPrivate = await hardCrypto.importKey(
-    'jwk', spkRecord.privateKeyJWK,
+  const spkPrivate = await importKeyFromJWK(
+    spkRecord.privateKeyJWK,
     KX_KEY_PARAMS as any,
-    true, // extractable: needed for CryptoKeyPair usage in ratchet
     ['deriveBits'],
+    true, // extractable: needed for CryptoKeyPair usage in ratchet
   );
 
-  const spkPublic = await hardCrypto.importKey(
-    'raw', base64ToBuffer(spkRecord.publicKeyBase64),
-    KX_KEY_PARAMS as any,
-    true,
-    [],
-  );
+  const spkPublic = await importX25519Public(spkRecord.publicKeyBase64);
 
   // 3. Compute DH operations (Bob's perspective, reversed)
   // DH1 = DH(SPKb_priv, IKa_pub)
@@ -1000,12 +985,13 @@ export async function x3dhRespondForDevice(
     );
   }
 
-  const spkPrivate = await hardCrypto.importKey(
-    'jwk', spkRecord.privateKeyJWK, KX_KEY_PARAMS as any, true, ['deriveBits'],
+  const spkPrivate = await importKeyFromJWK(
+    spkRecord.privateKeyJWK,
+    KX_KEY_PARAMS as any,
+    ['deriveBits'],
+    true,
   );
-  const spkPublic = await hardCrypto.importKey(
-    'raw', base64ToBuffer(spkRecord.publicKeyBase64), KX_KEY_PARAMS as any, true, [],
-  );
+  const spkPublic = await importX25519Public(spkRecord.publicKeyBase64);
 
   // DH1..DH3 — Bob's perspective
   const dh1 = await hardCrypto.deriveBits(
@@ -1074,10 +1060,20 @@ export function isPQXDHAvailable(): boolean {
 // ─── Internal Helpers ───
 
 async function importX25519Public(base64: string): Promise<CryptoKey> {
-  return hardCrypto.importKey(
-    'raw', base64ToBuffer(base64),
-    KX_KEY_PARAMS as any, true, [],
-  );
+  try {
+    return await hardCrypto.importKey(
+      'raw', base64ToBuffer(base64),
+      KX_KEY_PARAMS as any, true, [],
+    );
+  } catch {
+    const x = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    return importKeyFromJWK(
+      { kty: 'OKP', crv: 'X25519', x },
+      KX_KEY_PARAMS as any,
+      [],
+      true,
+    );
+  }
 }
 
 /**

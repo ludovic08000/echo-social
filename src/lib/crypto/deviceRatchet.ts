@@ -27,7 +27,7 @@
  */
 
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
-import { bufferToBase64, base64ToBuffer, randomBytes } from './utils';
+import { bufferToBase64, base64ToBuffer, randomBytes, importKeyFromJWK } from './utils';
 import { logCryptoError } from './errorLogger';
 import { exportPublicKeyRaw } from './keyManager';
 
@@ -216,11 +216,16 @@ async function generateRatchetKeyPair(): Promise<{ priv: CryptoKey; privJwk: Jso
 }
 
 async function importPriv(jwk: JsonWebKey): Promise<CryptoKey> {
-  return hardCrypto.importKey('jwk', jwk, { name: 'X25519' } as any, true, ['deriveBits']);
+  return importKeyFromJWK(jwk, { name: 'X25519' } as any, ['deriveBits'], true);
 }
 
 async function importPub(b64: string): Promise<CryptoKey> {
-  return hardCrypto.importKey('raw', base64ToBuffer(b64), { name: 'X25519' } as any, true, []);
+  try {
+    return await hardCrypto.importKey('raw', base64ToBuffer(b64), { name: 'X25519' } as any, true, []);
+  } catch {
+    const x = b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    return importKeyFromJWK({ kty: 'OKP', crv: 'X25519', x }, { name: 'X25519' } as any, [], true);
+  }
 }
 
 async function dh(privJwk: JsonWebKey, peerPubB64: string): Promise<ArrayBuffer> {

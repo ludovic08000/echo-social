@@ -14,7 +14,7 @@ import {
   KX_KEY_PARAMS, SIG_KEY_PARAMS,
 } from './constants';
 import { openE2EEDB } from './indexedDb';
-import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, randomBytes } from './utils';
+import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, base64ToBuffer, randomBytes } from './utils';
 import { hardCrypto, hardGlobals, scrubBuffer } from './cryptoIntegrity';
 
 export interface IdentityKeyPair {
@@ -113,8 +113,7 @@ export async function exportPublicKeyRaw(publicKey: CryptoKey): Promise<ArrayBuf
   }
 }
 
-async function computeFingerprint(publicKey: CryptoKey): Promise<string> {
-  const raw = await exportPublicKeyRaw(publicKey);
+async function computeFingerprintFromRaw(raw: ArrayBuffer): Promise<string> {
   const hash = await hardCrypto.digest('SHA-256', raw);
   const bytes = new Uint8Array(hash);
   let fp = '';
@@ -123,6 +122,21 @@ async function computeFingerprint(publicKey: CryptoKey): Promise<string> {
     fp += bytes[i].toString(16).padStart(2, '0');
   }
   return fp.toUpperCase();
+}
+
+async function computeFingerprint(publicKey: CryptoKey): Promise<string> {
+  const raw = await exportPublicKeyRaw(publicKey);
+  return computeFingerprintFromRaw(raw);
+}
+
+function jwkXToBase64(jwk: JsonWebKey, label: string): string {
+  const x = jwk?.x;
+  if (typeof x !== 'string' || x.length === 0) {
+    throw new Error(`${label} JWK missing x component`);
+  }
+  const b64 = x.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
+  return b64 + pad;
 }
 
 // ─── Public API ───
@@ -308,6 +322,28 @@ export async function exportPublicKeyBundle(keys: IdentityKeyPair): Promise<{
   return { identityKey, signingKey, fingerprint: keys.fingerprint };
 }
 
+/**
+ * Export the public identity bundle directly from the persisted public JWKs.
+ *
+ * Safari/iOS can refuse `exportKey()` on a restored CryptoKey even when the
+ * public JWK is valid. Public JWK `x` is the same 32-byte raw point we publish
+ * to the server, so this fallback avoids rebuilding the CryptoKey.
+ */
+export async function exportPublicKeyBundleFromStoredKeys(userId: string): Promise<{
+  identityKey: string;
+  signingKey: string;
+  fingerprint: string;
+} | null> {
+  const stored = await dbGet<StoredKeyPair & { id: string }>(STORE_KEYS, userId);
+  if (!stored) return null;
+
+  const identityKey = jwkXToBase64(stored.publicKeyJWK, 'identity public key');
+  const signingKey = jwkXToBase64(stored.signingPublicKeyJWK, 'signing public key');
+  const fingerprint = stored.fingerprint || await computeFingerprintFromRaw(base64ToBuffer(identityKey));
+
+  return { identityKey, signingKey, fingerprint };
+}
+
 /** Save a session key (JWK stored for persistence, re-imported as non-extractable) */
 export async function saveSessionKey(session: SessionKey): Promise<void> {
   // Session secret must be extractable for storage — we re-import from JWK at load time as non-extractable
@@ -338,11 +374,11 @@ export async function loadSessionKey(conversationId: string): Promise<SessionKey
   const stored = await dbGet<StoredSessionKey>(STORE_SESSION, conversationId);
   if (!stored) return null;
 
-  const sharedSecret = await hardCrypto.importKey(
-    'jwk', stored.keyJWK,
+  const sharedSecret = await importKeyFromJWK(
+    stored.keyJWK,
     { name: 'AES-GCM', length: 256 },
-    false,  // NON-EXTRACTABLE at runtime
-    ['encrypt', 'decrypt']
+    ['encrypt', 'decrypt'],
+    false, // NON-EXTRACTABLE at runtime
   );
 
   return {

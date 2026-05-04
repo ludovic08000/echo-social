@@ -16,8 +16,14 @@ import {
   getCurrentDeviceId,
   getCurrentDeviceLabel,
   getCurrentPlatform,
+  hydrateDeviceId,
 } from '@/lib/messaging/currentDevice';
-import { getOrCreateIdentityKeys, exportPublicKeyBundle, PinUnlockRequiredError } from '@/lib/crypto/keyManager';
+import {
+  getOrCreateIdentityKeys,
+  exportPublicKeyBundle,
+  exportPublicKeyBundleFromStoredKeys,
+  PinUnlockRequiredError,
+} from '@/lib/crypto/keyManager';
 import {
   refreshSignedPrekeyIfNeeded,
   refreshDeviceSignedPrekeyIfNeeded,
@@ -68,6 +74,15 @@ export interface ResyncReport {
 }
 
 const RECENT_MESSAGE_WINDOW = 50;
+const RESYNC_BUILD = 'e2ee-ios-device-v3';
+
+function describeError(error: unknown): string {
+  if (error instanceof Error) {
+    const name = error.name && error.name !== 'Error' ? `${error.name}: ` : '';
+    return `${name}${error.message}`;
+  }
+  return String(error);
+}
 
 /** Lightweight diagnostic recorder. Pass-through when diagnostic mode is off. */
 class DiagRecorder {
@@ -108,20 +123,48 @@ function isNonEmptyB64(s: unknown): s is string {
   return typeof s === 'string' && s.length > 0 && /^[A-Za-z0-9+/_\-=]+$/.test(s);
 }
 
-async function republishDeviceIdentity(userId: string, deviceId: string): Promise<{ identity: boolean; spk: boolean; opks: boolean }> {
+async function republishDeviceIdentity(
+  userId: string,
+  deviceId: string,
+  diag?: DiagRecorder,
+): Promise<{ identity: boolean; spk: boolean; opks: boolean }> {
   const result = { identity: false, spk: false, opks: false };
 
-  const keys = await getOrCreateIdentityKeys(userId);
-  const bundle = await exportPublicKeyBundle(keys);
+  diag?.push('identity', 'info', 'stage load_identity_keys');
+  const keys = await getOrCreateIdentityKeys(userId).catch((e) => {
+    throw new Error(`load_identity_keys: ${describeError(e)}`);
+  });
+
+  diag?.push('identity', 'info', 'stage export_public_bundle');
+  let bundle: { identityKey: string; signingKey: string; fingerprint: string };
+  try {
+    bundle = await exportPublicKeyBundle(keys);
+  } catch (e) {
+    const original = describeError(e);
+    diag?.push('identity', 'warn', 'public CryptoKey export failed, trying stored JWK fallback', {
+      error: original,
+    });
+    const storedBundle = await exportPublicKeyBundleFromStoredKeys(userId).catch((storedErr) => {
+      throw new Error(`export_public_bundle: ${original}; stored_jwk_fallback: ${describeError(storedErr)}`);
+    });
+    if (!storedBundle) {
+      throw new Error(`export_public_bundle: ${original}; stored_jwk_fallback: missing stored identity`);
+    }
+    bundle = storedBundle;
+  }
   if (!bundle?.identityKey || !bundle?.signingKey || !keys?.signingPrivateKey) {
     throw new Error('identity bundle incomplete (identityKey/signingKey missing)');
   }
 
   let devicePublicKeyB64: string = bundle.identityKey;
   try {
+    diag?.push('identity', 'info', 'stage device_kx');
     const kx = await getOrCreateDeviceKxKey(deviceId);
     if (kx?.publicB64 && isNonEmptyB64(kx.publicB64)) devicePublicKeyB64 = kx.publicB64;
   } catch (e) {
+    diag?.push('identity', 'warn', 'device kx unavailable, fallback to identity key', {
+      error: describeError(e),
+    });
     console.warn('[resync] device kx unavailable, fallback to identity key:', e);
   }
 
@@ -153,6 +196,26 @@ async function republishDeviceIdentity(userId: string, deviceId: string): Promis
   };
 
   // Diagnostic log — NEVER log private key material.
+  diag?.push('identity', 'info', 'stage user_public_keys.upsert', {
+    identityKeyLen: bundle.identityKey.length,
+    signingKeyLen: bundle.signingKey.length,
+    fingerprint: bundle.fingerprint,
+  });
+  const { error: pubErr } = await supabase
+    .from('user_public_keys')
+    .upsert({
+      user_id: userId,
+      identity_key: bundle.identityKey,
+      signing_key: bundle.signingKey,
+      fingerprint: bundle.fingerprint,
+      kem_type: 'X25519',
+      is_active: true,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,is_active' });
+  if (pubErr) {
+    throw new Error(`user_public_keys upsert failed: ${pubErr.message} (code=${(pubErr as any).code ?? 'n/a'}, details=${(pubErr as any).details ?? 'n/a'})`);
+  }
+
   console.log('[resync] user_devices.upsert payload', {
     user_id: payload.user_id,
     device_id: payload.device_id,
@@ -164,6 +227,11 @@ async function republishDeviceIdentity(userId: string, deviceId: string): Promis
     user_agent_len: payload.user_agent?.length ?? 0,
   });
 
+  diag?.push('identity', 'info', 'stage user_devices.upsert', {
+    deviceIdLen: payload.device_id.length,
+    platform: payload.platform,
+    devicePublicKeyLen: payload.device_public_key.length,
+  });
   const { error: devErr } = await supabase
     .from('user_devices')
     .upsert(payload, { onConflict: 'user_id,device_id' });
@@ -333,7 +401,7 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
     durationMs: 0,
   };
 
-  diag.push('init', 'info', 'starting E2EE resync', { userId, diagnostic });
+  diag.push('init', 'info', 'starting E2EE resync', { userId, diagnostic, build: RESYNC_BUILD });
 
   if (!userId) {
     report.errors.push('missing userId');
@@ -351,7 +419,7 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
     return report;
   }
 
-  const deviceId = getCurrentDeviceId();
+  const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
   const platform = getCurrentPlatform();
   report.deviceId = deviceId;
   report.platform = platform;
@@ -360,7 +428,7 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
   // 1. Republish identity / SPK / OPKs
   const tIdent = Date.now();
   try {
-    const pub = await republishDeviceIdentity(userId, deviceId);
+    const pub = await republishDeviceIdentity(userId, deviceId, diag);
     report.steps.identity = pub.identity ? 'ok' : 'error';
     report.steps.spk = pub.spk ? 'ok' : 'error';
     report.steps.opks = pub.opks ? 'ok' : 'error';
@@ -370,7 +438,7 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
     });
   } catch (e) {
     report.steps.identity = 'error';
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = describeError(e);
     report.errors.push(`republish: ${msg}`);
     diag.push('identity', 'error', 'identity republish failed', { error: msg });
     logCryptoException('restore', e, { severity: 'error', metadata: { stage: 'resync_republish', userId } });

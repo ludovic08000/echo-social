@@ -9,7 +9,7 @@
  */
 
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
-import { randomBytes, bufferToBase64, base64ToBuffer, encodeString, decodeString } from './utils';
+import { randomBytes, bufferToBase64, base64ToBuffer, encodeString, decodeString, importKeyFromJWK } from './utils';
 import { loadSessionKey, getOrCreateIdentityKeys } from './keyManager';
 import { supabase } from '@/integrations/supabase/client';
 import { KX_KEY_PARAMS } from './constants';
@@ -43,10 +43,14 @@ async function ensureFreshCallSession(
   const identityKeys = await getOrCreateIdentityKeys(localUserId);
 
   // Derive shared secret from current key material (both sides)
-  const peerRaw = base64ToBuffer(peerKey.identity_key);
-  const peerPub = await hardCrypto.importKey(
-    'raw', peerRaw, KX_KEY_PARAMS as any, true, []
-  );
+  let peerPub: CryptoKey;
+  try {
+    const peerRaw = base64ToBuffer(peerKey.identity_key);
+    peerPub = await hardCrypto.importKey('raw', peerRaw, KX_KEY_PARAMS as any, true, []);
+  } catch {
+    const x = peerKey.identity_key.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    peerPub = await importKeyFromJWK({ kty: 'OKP', crv: 'X25519', x }, KX_KEY_PARAMS as any, [], true);
+  }
 
   const sharedBits = await hardCrypto.deriveBits(
     { name: 'X25519', public: peerPub } as any,
