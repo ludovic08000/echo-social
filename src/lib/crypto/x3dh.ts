@@ -423,7 +423,7 @@ export async function generateAndUploadDeviceSignedPrekey(
     KX_KEY_PARAMS as any, true, ['deriveBits'],
   ) as CryptoKeyPair;
 
-  const publicRaw = await hardCrypto.exportKey('raw', spkPair.publicKey);
+  const publicRaw = await exportPublicKeyRaw(spkPair.publicKey);
   const publicBase64 = bufferToBase64(publicRaw);
 
   const signature = await hardCrypto.sign('Ed25519' as any, signingPrivateKey, publicRaw);
