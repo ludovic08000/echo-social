@@ -10,6 +10,7 @@ import { ChatWidgetProvider, useChatWidget } from "@/components/ChatWidgetContex
 import { ChatWidget } from "@/components/ChatWidget";
 import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
 import { RecoveryFlowGuard } from "@/components/RecoveryFlowGuard";
+import { DeviceKxRestoreGuard } from "@/components/DeviceKxRestoreGuard";
 import { CookieConsentBanner } from "@/components/CookieConsentBanner";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
 import { useIncomingCall, endActiveCall } from "@/hooks/useIncomingCall";
@@ -24,7 +25,6 @@ import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
 
-// Eager-load critical routes
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -33,7 +33,6 @@ import Dashboard from "./pages/Dashboard";
 import AdsManager from "./pages/AdsManager";
 import NotFound from "./pages/NotFound";
 
-// Lazy-load with auto-retry on chunk errors (deploy / cache invalidation)
 const lazyWithOneRetry = <TModule extends { default: React.ComponentType<any> }>(
   importer: () => Promise<TModule>,
   retryKey: string
@@ -59,7 +58,6 @@ const Search = lazyWithOneRetry(() => import("./pages/Search"), 'r-search');
 const Notifications = lazyWithOneRetry(() => import("./pages/Notifications"), 'r-notifs');
 const Settings = lazyWithOneRetry(() => import("./pages/Settings"), 'r-settings');
 const SecurityDeviceVerify = lazyWithOneRetry(() => import("./pages/SecurityDeviceVerify"), 'r-secdev');
-// The standalone Messages page is intentionally disabled: ChatWidget is the single messaging runtime.
 const Friends = lazyWithOneRetry(() => import("./pages/Friends"), 'r-friends');
 const Groups = lazyWithOneRetry(() => import("./pages/Groups"), 'r-groups');
 const GroupDetail = lazyWithOneRetry(() => import("./pages/GroupDetail"), 'r-groupd');
@@ -79,7 +77,6 @@ const ProductDetailPage = lazyWithOneRetry(() => import("./pages/ProductDetail")
 const LegalTerms = lazyWithOneRetry(() => import("./pages/LegalTerms"), 'r-legal');
 const PrivacyPolicy = lazyWithOneRetry(() => import("./pages/PrivacyPolicy"), 'r-privacy');
 const AIEngine = lazyWithOneRetry(() => import("./pages/AIEngine"), 'r-ai');
-
 const AIAgents = lazyWithOneRetry(() => import("./pages/AIAgents"), 'r-agents');
 const Admin = lazyWithOneRetry(() => import("./pages/Admin"), 'r-admin');
 const CreatorUpgrade = lazyWithOneRetry(() => import("./pages/CreatorUpgrade"), 'r-creator');
@@ -94,11 +91,9 @@ const SEOSecurity = lazyWithOneRetry(() => import("./pages/seo/SEOSecurity"), 'r
 const SEOModeration = lazyWithOneRetry(() => import("./pages/seo/SEOModeration"), 'r-seo-mod');
 const SEOProtection = lazyWithOneRetry(() => import("./pages/seo/SEOProtection"), 'r-seo-prot');
 const SEOFeed = lazyWithOneRetry(() => import("./pages/seo/SEOFeed"), 'r-seo-feed');
-// Dashboard is now eagerly loaded above
 
 const queryClient = new QueryClient();
 
-/** Global incoming call listener — renders the ringing UI + handles accept */
 function IncomingCallHandler() {
   const { user } = useAuth();
   const { incomingCall, acceptCall, declineCall } = useIncomingCall();
@@ -195,97 +190,88 @@ function AccountKeySyncRunner() {
 function AppContent() {
   useSettingsInit();
   return (
-      <AuthProvider>
-        <ParentalGateProvider>
+    <AuthProvider>
+      <ParentalGateProvider>
         <ChatWidgetProvider>
           <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <RecoveryFlowGuard />
-            <AccountKeySyncRunner />
-            <IncomingCallHandler />
-            <ErrorBoundary>
-            <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
-            <Routes>
-              {/* Public routes */}
-              <Route path="/" element={<Navigate to="/feed" replace />} />
-              <Route path="/landing" element={<Landing />} />
-              <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
-              <Route path="/signup" element={<PublicOnlyRoute><Signup /></PublicOnlyRoute>} />
-              <Route path="/legal" element={<LegalTerms />} />
-              <Route path="/legal/terms" element={<LegalTerms />} />
-              <Route path="/legal/privacy" element={<PrivacyPolicy />} />
-              <Route path="/privacy" element={<PrivacyPolicy />} />
-              <Route path="/a-propos" element={<SEOLanding />} />
-              <Route path="/reseau-social-securise" element={<SEOSecurity />} />
-              <Route path="/messagerie-chiffree" element={<SEOMessaging />} />
-              <Route path="/ia-moderation" element={<SEOModeration />} />
-              <Route path="/protection-donnees" element={<SEOProtection />} />
-              <Route path="/feed-intelligent" element={<SEOFeed />} />
-              {/* Legacy SEO redirects */}
-              <Route path="/fonctionnalites/messagerie-chiffree" element={<SEOMessaging />} />
-              <Route path="/fonctionnalites/securite" element={<SEOSecurity />} />
-              <Route path="/fonctionnalites/moderation-ia" element={<SEOModeration />} />
-              <Route path="/fonctionnalites/protection-utilisateurs" element={<SEOProtection />} />
-              <Route path="/fonctionnalites/feed-intelligent" element={<SEOFeed />} />
-              <Route path="/forgot-password" element={<PublicOnlyRoute><ForgotPassword /></PublicOnlyRoute>} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/onboarding" element={<Onboarding />} />
-              <Route path="/auth/confirm" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}><AuthConfirmPage /></Suspense>} />
-              
-              {/* Browsable routes (guest-friendly) */}
-              <Route path="/feed" element={<Feed />} />
-              <Route path="/post/:id" element={<PostDetail />} />
-              <Route path="/profile/:id" element={<Profile />} />
-              <Route path="/search" element={<Search />} />
-              <Route path="/videos" element={<Videos />} />
-              <Route path="/lives" element={<LiveScreen />} />
-              <Route path="/live/:id" element={<LiveWatch />} />
-              <Route path="/marketplace" element={<Marketplace />} />
-              <Route path="/marketplace/product/:id" element={<ProductDetailPage />} />
-              <Route path="/challenges" element={<Challenges />} />
-              <Route path="/channels" element={<Channels />} />
-              <Route path="/games" element={<Games />} />
-
-              {/* Protected routes (require auth) */}
-              <Route path="/create" element={<ProtectedRoute><CreatePostPage /></ProtectedRoute>} />
-              <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-              <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
-              <Route path="/security/device" element={<ProtectedRoute><SecurityDeviceVerify /></ProtectedRoute>} />
-              <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-              <Route path="/messages" element={<ProtectedRoute><MessagesWidgetRoute /></ProtectedRoute>} />
-              <Route path="/messages/:conversationId" element={<ProtectedRoute><MessagesWidgetRoute /></ProtectedRoute>} />
-              <Route path="/friends" element={<ProtectedRoute><Friends /></ProtectedRoute>} />
-              <Route path="/groups" element={<ProtectedRoute><Groups /></ProtectedRoute>} />
-              <Route path="/groups/:id" element={<ProtectedRoute><GroupDetail /></ProtectedRoute>} />
-              <Route path="/pages" element={<ProtectedRoute><Pages /></ProtectedRoute>} />
-              <Route path="/pages/:id" element={<ProtectedRoute><PageDetail /></ProtectedRoute>} />
-              <Route path="/live" element={<ProtectedRoute><LiveScreen /></ProtectedRoute>} />
-              <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
-              <Route path="/friend-match" element={<ProtectedRoute><FriendMatch /></ProtectedRoute>} />
-              <Route path="/ai-engine" element={<ProtectedRoute><AIEngine /></ProtectedRoute>} />
-              <Route path="/ads" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
-              <Route path="/publicites" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
-              <Route path="/ai-agents" element={<ProtectedRoute><AIAgents /></ProtectedRoute>} />
-              <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
-              <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />
-              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-              
-              {/* Public utility */}
-              <Route path="/unsubscribe" element={<Unsubscribe />} />
-              
-              {/* 404 */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-            </Suspense>
-            </ErrorBoundary>
-            <ChatWidget />
-            <CookieConsentBanner />
-          </BrowserRouter>
-        </TooltipProvider>
-      </ChatWidgetProvider>
-        </ParentalGateProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <RecoveryFlowGuard />
+              <DeviceKxRestoreGuard />
+              <AccountKeySyncRunner />
+              <IncomingCallHandler />
+              <ErrorBoundary>
+                <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
+                  <Routes>
+                    <Route path="/" element={<Navigate to="/feed" replace />} />
+                    <Route path="/landing" element={<Landing />} />
+                    <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
+                    <Route path="/signup" element={<PublicOnlyRoute><Signup /></PublicOnlyRoute>} />
+                    <Route path="/legal" element={<LegalTerms />} />
+                    <Route path="/legal/terms" element={<LegalTerms />} />
+                    <Route path="/legal/privacy" element={<PrivacyPolicy />} />
+                    <Route path="/privacy" element={<PrivacyPolicy />} />
+                    <Route path="/a-propos" element={<SEOLanding />} />
+                    <Route path="/reseau-social-securise" element={<SEOSecurity />} />
+                    <Route path="/messagerie-chiffree" element={<SEOMessaging />} />
+                    <Route path="/ia-moderation" element={<SEOModeration />} />
+                    <Route path="/protection-donnees" element={<SEOProtection />} />
+                    <Route path="/feed-intelligent" element={<SEOFeed />} />
+                    <Route path="/fonctionnalites/messagerie-chiffree" element={<SEOMessaging />} />
+                    <Route path="/fonctionnalites/securite" element={<SEOSecurity />} />
+                    <Route path="/fonctionnalites/moderation-ia" element={<SEOModeration />} />
+                    <Route path="/fonctionnalites/protection-utilisateurs" element={<SEOProtection />} />
+                    <Route path="/fonctionnalites/feed-intelligent" element={<SEOFeed />} />
+                    <Route path="/forgot-password" element={<PublicOnlyRoute><ForgotPassword /></PublicOnlyRoute>} />
+                    <Route path="/reset-password" element={<ResetPassword />} />
+                    <Route path="/onboarding" element={<Onboarding />} />
+                    <Route path="/auth/confirm" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}><AuthConfirmPage /></Suspense>} />
+                    <Route path="/feed" element={<Feed />} />
+                    <Route path="/post/:id" element={<PostDetail />} />
+                    <Route path="/profile/:id" element={<Profile />} />
+                    <Route path="/search" element={<Search />} />
+                    <Route path="/videos" element={<Videos />} />
+                    <Route path="/lives" element={<LiveScreen />} />
+                    <Route path="/live/:id" element={<LiveWatch />} />
+                    <Route path="/marketplace" element={<Marketplace />} />
+                    <Route path="/marketplace/product/:id" element={<ProductDetailPage />} />
+                    <Route path="/challenges" element={<Challenges />} />
+                    <Route path="/channels" element={<Channels />} />
+                    <Route path="/games" element={<Games />} />
+                    <Route path="/create" element={<ProtectedRoute><CreatePostPage /></ProtectedRoute>} />
+                    <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                    <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+                    <Route path="/security/device" element={<ProtectedRoute><SecurityDeviceVerify /></ProtectedRoute>} />
+                    <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                    <Route path="/messages" element={<ProtectedRoute><MessagesWidgetRoute /></ProtectedRoute>} />
+                    <Route path="/messages/:conversationId" element={<ProtectedRoute><MessagesWidgetRoute /></ProtectedRoute>} />
+                    <Route path="/friends" element={<ProtectedRoute><Friends /></ProtectedRoute>} />
+                    <Route path="/groups" element={<ProtectedRoute><Groups /></ProtectedRoute>} />
+                    <Route path="/groups/:id" element={<ProtectedRoute><GroupDetail /></ProtectedRoute>} />
+                    <Route path="/pages" element={<ProtectedRoute><Pages /></ProtectedRoute>} />
+                    <Route path="/pages/:id" element={<ProtectedRoute><PageDetail /></ProtectedRoute>} />
+                    <Route path="/live" element={<ProtectedRoute><LiveScreen /></ProtectedRoute>} />
+                    <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
+                    <Route path="/friend-match" element={<ProtectedRoute><FriendMatch /></ProtectedRoute>} />
+                    <Route path="/ai-engine" element={<ProtectedRoute><AIEngine /></ProtectedRoute>} />
+                    <Route path="/ads" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
+                    <Route path="/publicites" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
+                    <Route path="/ai-agents" element={<ProtectedRoute><AIAgents /></ProtectedRoute>} />
+                    <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+                    <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />
+                    <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                    <Route path="/unsubscribe" element={<Unsubscribe />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </Suspense>
+              </ErrorBoundary>
+              <ChatWidget />
+              <CookieConsentBanner />
+            </BrowserRouter>
+          </TooltipProvider>
+        </ChatWidgetProvider>
+      </ParentalGateProvider>
     </AuthProvider>
   );
 }
