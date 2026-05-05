@@ -299,20 +299,24 @@ export async function generateAndUploadSignedPrekey(
   // Store private half locally
   await saveSPKPrivate(userId, spkId, spkPair.privateKey, publicBase64);
 
+  const payload = {
+    user_id: userId,
+    spk_id: spkId,
+    public_key: publicBase64,
+    signature: signatureBase64,
+    is_active: true,
+  };
+  validatePayloadForDB(payload, 'user_signed_prekeys');
+  logDBPayloadBeforeUpsert('user_signed_prekeys', payload);
+
   // Upload to server
   const { error } = await supabase
     .from('user_signed_prekeys')
-    .upsert({
-      user_id: userId,
-      spk_id: spkId,
-      public_key: publicBase64,
-      signature: signatureBase64,
-      is_active: true,
-    }, { onConflict: 'user_id,spk_id' });
+    .upsert(payload, { onConflict: 'user_id,spk_id' });
 
   if (error) {
-    console.error('[X3DH] SPK upload failed:', error);
-    throw new Error('Failed to upload signed prekey');
+    const dbDiag = logDBUpsertError('user_signed_prekeys', 'user_signed_prekeys_upsert', error, payload);
+    throw new Error(`X3DH_DB_UPSERT_FAILED table=user_signed_prekeys step=user_signed_prekeys_upsert code=${dbDiag.code ?? 'n/a'} rejected_column=${dbDiag.rejected_column} details=${dbDiag.details ?? 'n/a'} hint=${dbDiag.hint ?? 'n/a'} supabase_message=${dbDiag.message ?? 'n/a'}`);
   }
 
   // Deactivate previous SPKs on server but keep local private keys
@@ -506,20 +510,24 @@ export async function generateAndUploadDeviceSignedPrekey(
 
   await saveDeviceSPKPrivate(userId, deviceId, spkId, spkPair.privateKey, publicBase64);
 
+  const payload = {
+    user_id: userId,
+    device_id: deviceId,
+    spk_id: spkId,
+    public_key: publicBase64,
+    signature: signatureBase64,
+    is_active: true,
+  };
+  validatePayloadForDB(payload, 'device_signed_prekeys');
+  logDBPayloadBeforeUpsert('device_signed_prekeys', payload);
+
   const { error } = await supabase
     .from('device_signed_prekeys')
-    .upsert({
-      user_id: userId,
-      device_id: deviceId,
-      spk_id: spkId,
-      public_key: publicBase64,
-      signature: signatureBase64,
-      is_active: true,
-    }, { onConflict: 'user_id,device_id,spk_id' });
+    .upsert(payload, { onConflict: 'user_id,device_id,spk_id' });
 
   if (error) {
-    console.error('[X3DH-DEV] device SPK upload failed:', error);
-    throw new Error('Failed to upload device signed prekey');
+    const dbDiag = logDBUpsertError('device_signed_prekeys', 'device_signed_prekeys_upsert', error, payload);
+    throw new Error(`X3DH_DB_UPSERT_FAILED table=device_signed_prekeys step=device_signed_prekeys_upsert code=${dbDiag.code ?? 'n/a'} rejected_column=${dbDiag.rejected_column} details=${dbDiag.details ?? 'n/a'} hint=${dbDiag.hint ?? 'n/a'} supabase_message=${dbDiag.message ?? 'n/a'}`);
   }
 
   // Deactivate previous device SPKs server-side (local privates kept for in-flight)
