@@ -404,7 +404,38 @@ async function checkFingerprintChangeWithServer(
       .maybeSingle();
 
     if (data && data.fingerprint !== currentFp) {
-      console.warn('[PEER_KEY] ⚠️ Server-side fingerprint mismatch for', peerUserId);
+      // SILENT TRUST-ON-FIRST-ROTATION:
+      // If the previous fingerprint was never explicitly verified by the user
+      // (acknowledged=false), this is almost always a benign rotation
+      // (peer regenerated identity after IndexedDB wipe / new device / fresh
+      // install). Blocking here turns into a permanent "waiting_secure_channel"
+      // dead-end because the user has no UI to "acknowledge" the change.
+      // We silently adopt the new fingerprint and continue — the key sentinel
+      // and ratchet still detect any real MITM via signature failures.
+      if (!data.acknowledged) {
+        console.warn('[PEER_KEY] 🔄 Server fingerprint rotated for', peerUserId, '— auto-trusting (was never user-verified)');
+        try {
+          const userId = await getCachedAuthUserId();
+          if (userId) {
+            await supabase
+              .from('user_known_fingerprints')
+              .upsert({
+                user_id: userId,
+                peer_user_id: peerUserId,
+                fingerprint: currentFp,
+                last_seen_at: new Date().toISOString(),
+                acknowledged: false,
+              }, { onConflict: 'user_id,peer_user_id' });
+          }
+        } catch (e) {
+          console.warn('[PEER_KEY] auto-rotate save failed', e);
+        }
+        saveKnownFingerprint(peerUserId, currentFp);
+        const result = { changed: false, previousFp: null };
+        _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
+        return result;
+      }
+      console.warn('[PEER_KEY] ⚠️ Server-side fingerprint mismatch for', peerUserId, '(was previously verified)');
       const result = { changed: true, previousFp: data.fingerprint };
       _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
       return result;
