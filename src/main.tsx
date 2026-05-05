@@ -21,6 +21,9 @@ import "./index.css";
 import { activateRuntimeShield } from '@/lib/runtimeShield';
 activateRuntimeShield();
 
+// ─── Build marker — confirms the new diagnostics build is active in runtime ───
+console.info('[E2EE][BUILD] diagnostics-v3 active', { ts: new Date().toISOString() });
+
 // Console guard disabled for debugging
 
 // ─── Crypto hardening: prototype lock only (integrity monitor disabled — LiveKit legitimately wraps crypto.subtle) ───
