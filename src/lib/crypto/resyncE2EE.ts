@@ -152,6 +152,13 @@ function inferRejectedColumn(error: any, payload: DBPayload): string | undefined
   return Object.keys(payload).find((key) => new RegExp(`\\b${key}\\b`, 'i').test(haystack));
 }
 
+function inferViolatedConstraint(error: any): string | undefined {
+  const haystack = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ');
+  return haystack.match(/constraint "([^"]+)"/i)?.[1]
+    ?? haystack.match(/violates ([^\s]+) constraint/i)?.[1]
+    ?? undefined;
+}
+
 function logPayloadBeforeUpsert(table: DBTableName, payload: DBPayload) {
   console.log('[E2EE][DB][UPSERT_PAYLOAD]', {
     table,
@@ -169,6 +176,7 @@ function formatSupabaseError(table: DBTableName, step: string, error: any, paylo
     message: error?.message,
     details: error?.details,
     hint: error?.hint,
+    constraint_violated: inferViolatedConstraint(error) ?? 'unknown_from_supabase_error',
     rejected_column: rejectedColumn ?? 'unknown_from_supabase_error',
     rejected_value: rejectedColumn ? describeValueForLog(rejectedColumn, payload[rejectedColumn]) : undefined,
     payload_keys: Object.keys(payload),
