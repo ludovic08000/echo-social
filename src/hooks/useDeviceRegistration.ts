@@ -103,7 +103,7 @@ export function useDeviceRegistration() {
         // Mark stale/revoke old devices and delete our local sessions to
         // devices that crossed the long inactivity threshold.
         try {
-          const { data } = await supabase.rpc('cleanup_stale_user_devices');
+          const { data } = await (supabase as any).rpc("cleanup_stale_user_devices");
           const lifecycleRows = (data || []) as Array<{ device_id: string; action: string }>;
           await Promise.all(
             lifecycleRows

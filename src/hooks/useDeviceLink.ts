@@ -236,7 +236,7 @@ export function useDeviceLink() {
         createdAt: Date.now(),
       });
 
-      const { error: rpcError } = await supabase.rpc('create_device_link_request', {
+      const { error: rpcError } = await (supabase as any).rpc("create_device_link_request", {
         p_token_hash: tokenHash,
         p_requester_device_id: requesterDeviceId,
         p_requester_public_key: pair.publicJwk as any,
@@ -267,7 +267,7 @@ export function useDeviceLink() {
       const tokenHash = await hashDeviceLinkToken(token);
       const currentDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
 
-      const { data, error: lookupError } = await supabase.rpc('get_device_link_request_for_approval', {
+      const { data, error: lookupError } = await (supabase as any).rpc("get_device_link_request_for_approval", {
         p_token_hash: tokenHash,
       });
       if (lookupError) throw lookupError;
@@ -288,7 +288,7 @@ export function useDeviceLink() {
         encryptedPayload = JSON.stringify(envelope);
       }
 
-      const { data: approved, error: approveError } = await supabase.rpc('approve_device_link_request', {
+      const { data: approved, error: approveError } = await (supabase as any).rpc("approve_device_link_request", {
         p_token_hash: tokenHash,
         p_approver_device_id: currentDeviceId,
         p_encrypted_payload: encryptedPayload,
@@ -322,7 +322,7 @@ export function useDeviceLink() {
       }
 
       const tokenHash = await hashDeviceLinkToken(token);
-      const { data, error: payloadError } = await supabase.rpc('get_approved_device_link_payload', {
+      const { data, error: payloadError } = await (supabase as any).rpc("get_approved_device_link_payload", {
         p_token_hash: tokenHash,
         p_requester_device_id: pending.requesterDeviceId,
       });
@@ -337,7 +337,7 @@ export function useDeviceLink() {
       const keysJson = await decryptDeviceLinkPayload(envelope, pending.privateJwk);
       await restoreLocalKeys(keysJson);
 
-      await supabase.rpc('complete_device_link_request', {
+      await (supabase as any).rpc("complete_device_link_request", {
         p_token_hash: tokenHash,
         p_requester_device_id: pending.requesterDeviceId,
       });

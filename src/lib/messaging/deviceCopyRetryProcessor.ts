@@ -26,7 +26,7 @@ let inFlight: Promise<RetryProcessingResult> | null = null;
 
 async function markRetryFailed(requestId: string, errorMessage: string): Promise<void> {
   try {
-    await supabase.rpc('mark_device_copy_retry_failed', {
+    await (supabase as any).rpc("mark_device_copy_retry_failed", {
       p_request_id: requestId,
       p_error: errorMessage,
     });
@@ -52,7 +52,7 @@ export async function processDeviceCopyRetryRequests(limit = 20): Promise<RetryP
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return result;
 
-    const { data, error } = await supabase.rpc('list_pending_device_copy_retries', {
+    const { data, error } = await (supabase as any).rpc("list_pending_device_copy_retries", {
       p_limit: limit,
     });
 
@@ -106,7 +106,7 @@ export async function processDeviceCopyRetryRequests(limit = 20): Promise<RetryP
           continue;
         }
 
-        const { error: completeError } = await supabase.rpc('complete_device_copy_retry', {
+        const { error: completeError } = await (supabase as any).rpc("complete_device_copy_retry", {
           p_request_id: row.request_id,
           p_encrypted_body: encrypted.encryptedBody,
           p_sender_device_id: encrypted.senderDeviceId,
