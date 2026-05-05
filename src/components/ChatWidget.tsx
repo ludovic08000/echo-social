@@ -1815,10 +1815,10 @@ export function ChatWidget() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  if (!user || !state.isOpen || isMobile) return null;
+  if (!user || !state.isOpen) return null;
 
-  // Minimized state - show a small bubble
-  if (state.isMinimized) {
+  // Minimized state - show a small bubble (desktop only)
+  if (state.isMinimized && !isMobile) {
     return (
       <button
         onClick={restoreChat}
@@ -1826,6 +1826,22 @@ export function ChatWidget() {
       >
         <Send className="w-5 h-5" />
       </button>
+    );
+  }
+
+  // Mobile: full-screen overlay so the unique ChatWidget runtime is reachable on phones
+  if (isMobile) {
+    if (state.isMinimized) return null;
+    return (
+      <div className="fixed inset-0 z-[80] bg-background flex flex-col animate-in slide-in-from-right-4 duration-200 overflow-hidden">
+        <MessagingPinGate compact>
+          {state.conversationId ? (
+            <WidgetChatView conversationId={state.conversationId} />
+          ) : (
+            <WidgetConversationList />
+          )}
+        </MessagingPinGate>
+      </div>
     );
   }
 
