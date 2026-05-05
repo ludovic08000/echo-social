@@ -113,6 +113,7 @@ const STORE_NAME = 'outbound';
 const MAX_RETRIES = 10;
 const BASE_RETRY_MS = 2000;
 const MAX_RETRY_MS = 60000;
+const MULTI_DEVICE_FALLBACK_PREFIX = '🔒 Bundle X3DH du contact indisponible ou incohérent';
 /**
  * Maximum time we keep retrying to find a ready secure channel before
  * surfacing a hard failure to the user. Was 30s — too aggressive on iOS,
@@ -481,8 +482,12 @@ class MessageQueueManager {
             normalized.includes('verification obligatoire avant envoi') ||
             normalized.includes('vérifiez l\'identité avant d\'envoyer') ||
             normalized.includes('fingerprint changed');
+          const canUseMultiDeviceFallback =
+            errMsg.startsWith(MULTI_DEVICE_FALLBACK_PREFIX) &&
+            typeof plaintext === 'string' &&
+            plaintext.length > 0;
 
-          trace('✗ encrypt() THROW', { errMsg, waitingForKeys, transientCryptoPressure, permanentSafetyMismatch });
+          trace('✗ encrypt() THROW', { errMsg, waitingForKeys, transientCryptoPressure, permanentSafetyMismatch, canUseMultiDeviceFallback });
           console.error('[E2EE] encrypt failed', msg.localId, errMsg);
 
           if (permanentSafetyMismatch) {
@@ -490,26 +495,33 @@ class MessageQueueManager {
             return;
           }
 
-          const age = Date.now() - msg.createdAt;
-          if (waitingForKeys && age > SECURE_CHANNEL_HARD_TIMEOUT_MS) {
-            trace('✗ FAIL — peer keys missing after hard timeout');
-            await this.updateStatus(msg, 'failed_visible', 'Chiffrement impossible — clés du contact indisponibles. Réessayez.');
+          if (canUseMultiDeviceFallback) {
+            msg.encryptedBody = this.buildMultiDeviceEnvelope(msg.localId, msg.traceId);
+            trace('↪ fallback multi-device copies — parent envelope prepared');
+            await this.dbPut(msg);
+          } else {
+
+            const age = Date.now() - msg.createdAt;
+            if (waitingForKeys && age > SECURE_CHANNEL_HARD_TIMEOUT_MS) {
+              trace('✗ FAIL — peer keys missing after hard timeout');
+              await this.updateStatus(msg, 'failed_visible', 'Chiffrement impossible — clés du contact indisponibles. Réessayez.');
+              return;
+            }
+
+            if (waitingForKeys || transientCryptoPressure) {
+              await this.updateStatus(msg, 'waiting_secure_channel', errMsg);
+              this.scheduleRetry(msg, 'secure_wait');
+            } else {
+              if (msg.retryCount >= 3) {
+                trace('✗ FAIL — non-key error, retry budget exhausted');
+                await this.updateStatus(msg, 'failed_visible', `Échec chiffrement: ${errMsg}`);
+              } else {
+                await this.updateStatus(msg, 'retry_pending', errMsg);
+                this.scheduleRetry(msg);
+              }
+            }
             return;
           }
-
-          if (waitingForKeys || transientCryptoPressure) {
-            await this.updateStatus(msg, 'waiting_secure_channel', errMsg);
-            this.scheduleRetry(msg, 'secure_wait');
-          } else {
-            if (msg.retryCount >= 3) {
-              trace('✗ FAIL — non-key error, retry budget exhausted');
-              await this.updateStatus(msg, 'failed_visible', `Échec chiffrement: ${errMsg}`);
-            } else {
-              await this.updateStatus(msg, 'retry_pending', errMsg);
-              this.scheduleRetry(msg);
-            }
-          }
-          return;
         }
       } else {
         trace('STEP 1 ▸ already encrypted, skipping');
