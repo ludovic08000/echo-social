@@ -190,7 +190,6 @@ export function ConversationList() {
                   </Button>
                 )}
               </div>
-            )
           ) : (
             filtered.map(conv => (
               <div key={conv.id} className="relative group">
