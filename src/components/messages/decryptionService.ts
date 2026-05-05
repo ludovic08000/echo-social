@@ -16,7 +16,7 @@
  * the neutral placeholder. No console noise on the hot path either.
  */
 import { hasMediaKey, parseMediaMessage, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
-import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import { isMultiDeviceEnvelopeBody, isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import {
   loadPlaintextForCiphertext,
   savePlaintextForCiphertext,
@@ -36,7 +36,7 @@ export interface DecryptionOutcome {
 }
 
 export function looksEncrypted(body: string): boolean {
-  return isStrictRatchetEnvelopeBody(body);
+  return isStrictRatchetEnvelopeBody(body) || isMultiDeviceEnvelopeBody(body);
 }
 
 /** Bounded LRU plaintext cache shared across mounted bubbles. */
@@ -211,20 +211,23 @@ export async function resolvePlaintext(opts: {
     promise = (async (): Promise<DecryptionOutcome | null> => {
       let senderId: string | null = null;
 
-      // 1) Conversation-level Double Ratchet (primary).
-      try {
-        const result = await decrypt(body);
-        if (!result.incompatible) {
-          if (result.encrypted && !result.verified) {
-            negCache.set(key, Date.now());
-            return null;
+      // 1) Conversation-level Double Ratchet (primary). Multi-device-only
+      // envelopes intentionally skip this path and resolve via device copies.
+      if (!isMultiDeviceEnvelopeBody(body)) {
+        try {
+          const result = await decrypt(body);
+          if (!result.incompatible) {
+            if (result.encrypted && !result.verified) {
+              negCache.set(key, Date.now());
+              return null;
+            }
+            const outcome = buildOutcomeFromText(result.text);
+            cache.set(key, outcome);
+            return outcome;
           }
-          const outcome = buildOutcomeFromText(result.text);
-          cache.set(key, outcome);
-          return outcome;
+        } catch {
+          /* fall through to alternate paths */
         }
-      } catch {
-        /* fall through to alternate paths */
       }
 
       // 2) Per-message device-copy fan-out.
