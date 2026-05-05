@@ -332,6 +332,11 @@ export async function generateAndUploadSignedPrekey(
     .neq('spk_id', spkId);
 
   console.log(`[X3DH] ✅ Signed prekey #${spkId} generated & uploaded`);
+  // Reactive backup so the new SPK private half is included server-side ASAP
+  try {
+    const { requestBackgroundBackup } = await import('@/lib/crypto/accountKeyBackup');
+    requestBackgroundBackup('spk-rotated');
+  } catch {}
   return { spkId, publicKey: publicBase64, signature: signatureBase64 };
 }
 
@@ -550,6 +555,10 @@ export async function generateAndUploadDeviceSignedPrekey(
     .neq('spk_id', spkId);
 
   console.log(`[X3DH-DEV] ✅ device SPK #${spkId} for ${deviceId.slice(0, 8)}… uploaded`);
+  try {
+    const { requestBackgroundBackup } = await import('@/lib/crypto/accountKeyBackup');
+    requestBackgroundBackup('device-spk-rotated');
+  } catch {}
   return { spkId, publicKey: publicBase64, signature: signatureBase64 };
 }
 
@@ -780,6 +789,13 @@ export async function refillDeviceOneTimePrekeysIfNeeded(
       return;
     }
     console.log(`[X3DH-OPK] ✅ ${OPK_BATCH_SIZE} new OPKs published for ${deviceId.slice(0, 8)}…`);
+    // Reactive backup: OPK private halves only live in IndexedDB, so we MUST
+    // back them up immediately or peers will fail to initiate X3DH after a
+    // storage purge.
+    try {
+      const { requestBackgroundBackup } = await import('@/lib/crypto/accountKeyBackup');
+      requestBackgroundBackup('opk-refilled');
+    } catch {}
   } catch (e) {
     console.warn('[X3DH-OPK] refill failed (non-fatal):', e);
   }
