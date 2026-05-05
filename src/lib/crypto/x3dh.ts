@@ -554,7 +554,7 @@ export async function refreshDeviceSignedPrekeyIfNeeded(
   try {
     const { data } = await supabase
       .from('device_signed_prekeys')
-      .select('created_at, expires_at, spk_id')
+      .select('created_at, expires_at, spk_id, public_key, signature')
       .eq('user_id', userId)
       .eq('device_id', deviceId)
       .eq('is_active', true)
@@ -563,6 +563,45 @@ export async function refreshDeviceSignedPrekeyIfNeeded(
       .maybeSingle();
 
     if (!data) {
+      await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
+      return;
+    }
+
+    const { data: pubKeyData, error: pubKeyErr } = await supabase
+      .from('user_public_keys')
+      .select('identity_key, signing_key')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .maybeSingle();
+    if (pubKeyErr || !pubKeyData?.signing_key) {
+      console.warn('[X3DH] SPK INVALID → regeneration required', {
+        reason: 'missing_current_user_public_signing_key',
+        user_id: userId,
+        device_id: deviceId,
+        spk_id: data.spk_id,
+        supabase_error: pubKeyErr ? { code: pubKeyErr.code, message: pubKeyErr.message, details: pubKeyErr.details, hint: pubKeyErr.hint } : null,
+      });
+      await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
+      return;
+    }
+
+    const currentSignatureValid = await verifySignedPrekey(pubKeyData.signing_key, data.public_key, data.signature, {
+      source: 'refreshDeviceSignedPrekeyIfNeeded.current_device_spk',
+      identityKeyB64: pubKeyData.identity_key,
+      userId,
+      deviceId,
+      spkId: data.spk_id,
+    });
+    if (!currentSignatureValid) {
+      console.warn('[X3DH] SPK INVALID → regeneration required', {
+        user_id: userId,
+        device_id: deviceId,
+        spk_id: data.spk_id,
+        identity_len: pubKeyData.identity_key?.length ?? null,
+        spk_len: data.public_key?.length ?? null,
+        sig_len: data.signature?.length ?? null,
+        valid: false,
+      });
       await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
       return;
     }
