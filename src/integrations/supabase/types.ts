@@ -6108,6 +6108,12 @@ export type Database = {
           last_seen_at: string
         }[]
       }
+      list_predecessor_device_ids: {
+        Args: { p_fingerprints: string[] }
+        Returns: {
+          device_id: string
+        }[]
+      }
       match_contacts_by_phone:
         | {
             Args: { p_phone_numbers: string[] }
