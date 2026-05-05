@@ -13,7 +13,7 @@ interface OutboundStatusProps {
 const STATUS_LABELS: Record<string, string> = {
   encrypting: 'Chiffrement…',
   sending: 'Envoi…',
-  waiting_secure_channel: 'Canal sécurisé…',
+  waiting_secure_channel: 'Envoi en cours…',
   retry_pending: 'Nouvelle tentative…',
   sent: 'Envoyé · chiffré',
   failed_visible: 'Échec d\'envoi',

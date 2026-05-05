@@ -23,8 +23,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
 import { secureGetSecret, secureSetSecret, secureRemoveSecret } from '@/lib/secureStore';
-// device_id continuity is now handled exclusively via the server-side
-// fingerprint binding in hydrateDeviceId() — never restored from backup.
+import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
@@ -182,6 +181,10 @@ async function collectAllKeys(): Promise<string | null> {
   } catch {}
 
   try {
+    const db = await openE2EEDB();
+    data['device:kx'] = (await getAllFromStore(db, 'identity-keys'))
+      .filter((r: any) => typeof r?.id === 'string' && r.id.startsWith('device-kx::'));
+    db.close();
     const fps = localStorage.getItem('forsure-known-fps');
     if (fps) data['fingerprints'] = fps;
   } catch {}
@@ -189,12 +192,9 @@ async function collectAllKeys(): Promise<string | null> {
   const hasIdentity = data['e2ee:identity-keys']?.length > 0 || data['pinwrap:keys']?.length > 0;
   if (!hasIdentity) return null;
 
-  // NOTE: device:id is intentionally NOT backed up anymore. Restoring an old
-  // device id forced the account back to a stale identity on every login,
-  // making messages addressed to the *current* device undecipherable and
-  // re-triggering the "Restaurer mes clés" banner. Server-side fingerprint
-  // binding (resolve_device_id_by_fingerprint) now handles cross-session
-  // device id continuity reliably.
+  try {
+    data['device:id'] = getCurrentDeviceId();
+  } catch {}
 
   data['_meta'] = {
     version: BACKUP_VERSION,
@@ -259,12 +259,9 @@ async function restoreAllKeys(json: string): Promise<void> {
   const rollbackOps: Array<() => Promise<void>> = [];
 
   try {
-    // Phase 0: device_id is intentionally NOT restored from the backup blob
-    // anymore. Doing so caused the account to revert to a stale device id on
-    // every cold-start, which made messages addressed to the *current* device
-    // permanently undecipherable. Continuity is now guaranteed by the server
-    // fingerprint binding (resolve_device_id_by_fingerprint) executed in
-    // hydrateDeviceId() before any crypto bootstrap.
+    // Phase 0: keep device continuity when the server/fingerprint resolver
+    // already selected the same physical device. We restore only the matching
+    // per-device private key, never arbitrary stale device ids.
 
     // Phase 1: E2EE stores
     for (const [key, records] of Object.entries(data)) {
@@ -283,6 +280,17 @@ async function restoreAllKeys(json: string): Promise<void> {
         });
       }
       db.close();
+    }
+
+    if (Array.isArray(data['device:kx'])) {
+      const currentDeviceKxId = `device-kx::${getCurrentDeviceId()}`;
+      const deviceKx = data['device:kx'].filter((r: any) => r?.id === currentDeviceKxId);
+      if (deviceKx.length > 0) {
+        const db = await openE2EEDB();
+        const existing = await getAllFromStore(db, 'identity-keys');
+        await putAllInStore(db, 'identity-keys', [...existing.filter((r: any) => r?.id !== currentDeviceKxId), ...deviceKx]);
+        db.close();
+      }
     }
 
     // Phase 2: Ratchet states

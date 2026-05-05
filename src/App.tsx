@@ -189,11 +189,7 @@ function AccountKeySyncRunner() {
   useEffect(() => {
     const onRestoreNeeded = (e: Event) => {
       const detail = (e as CustomEvent).detail || {};
-      console.warn('[App] device-kx restore required:', detail);
-      toast.error(
-        "Cet appareil n'est plus reconnu. Restaurez vos clés depuis Réglages → Sécurité.",
-        { duration: 8000 },
-      );
+      console.warn('[App] device-kx restore deferred:', detail);
     };
     window.addEventListener('forsure:device-kx-restore-required', onRestoreNeeded);
     return () => window.removeEventListener('forsure:device-kx-restore-required', onRestoreNeeded);
