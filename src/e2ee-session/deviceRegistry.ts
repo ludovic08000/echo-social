@@ -34,13 +34,15 @@ export async function listDevicesForUser(userId: UserId): Promise<DeviceDescript
       p_user_id: userId,
     });
     if (error || !data) return [];
-    return (data as Array<{ device_id: string; device_public_key: string; last_seen?: string }>)
+    return (data as Array<{ device_id: string; device_public_key: string; last_seen_at?: string; last_seen?: string }>)
       .filter(d => !!d.device_public_key)
       .map(d => ({
         userId,
         deviceId: d.device_id,
         devicePublicKey: d.device_public_key,
-        lastSeen: d.last_seen ? new Date(d.last_seen).getTime() : undefined,
+        lastSeen: d.last_seen_at
+          ? new Date(d.last_seen_at).getTime()
+          : (d.last_seen ? new Date(d.last_seen).getTime() : undefined),
       }));
   } catch {
     return [];
