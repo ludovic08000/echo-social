@@ -25,6 +25,7 @@ export type OutboundMessageStatus =
 
 import { logCryptoError } from '@/lib/crypto/errorLogger';
 import { safeUUID } from '@/e2ee-session/safeUuid';
+import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 
 /**
  * Emit a low-volume "trace" entry into crypto_error_logs so we can follow a
@@ -907,6 +908,17 @@ class MessageQueueManager {
     } catch {
       return null;
     }
+  }
+
+  private buildMultiDeviceEnvelope(localId: string, traceId?: string): string {
+    return JSON.stringify({
+      encryptionMode: 'multi_device',
+      v: PROTOCOL_VERSION,
+      ct: 'device_copies',
+      ts: Date.now(),
+      __lid: localId,
+      ...(traceId ? { __tid: traceId } : {}),
+    });
   }
 
   /** Remove a message from the queue (user cancels failed message) */
