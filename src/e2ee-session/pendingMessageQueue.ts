@@ -15,15 +15,15 @@
  */
 import type { PendingEnvelope } from './types';
 
-// 80 attempts x 1500 ms gives about 2 minutes of live-retry budget, enough
-// to cross iOS background/foreground resume + a peer ratchet catch-up burst.
-const MAX_ATTEMPTS = 80;
+// Keep retries short and bounded. Missing historical copies must settle into a
+// stable parked state instead of burning CPU/network in the background.
+const MAX_ATTEMPTS = 12;
 const RETRY_INTERVAL_MS = 1500;
 const MAX_RETRIES_PER_TICK = 8;
 
 // Refresh cycles allow a server refetch to re-arm a parked envelope. Bounded
 // so a permanently-undeliverable ciphertext can't loop forever.
-const MAX_REFRESH_CYCLES = 12;
+const MAX_REFRESH_CYCLES = 2;
 const REFRESH_DEBOUNCE_MS = 2000;
 
 // Event-driven kick debounce — avoid stacking 4 ticks in a row when iOS
@@ -41,6 +41,7 @@ type RetryFn = (envelope: unknown) => Promise<boolean>;
 class PendingQueue {
   private items = new Map<string, InternalEnvelope>();
   private burned = new Set<string>();
+  private refreshCounts = new Map<string, number>();
   private retry: RetryFn | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private lastKickAt = 0;
@@ -86,12 +87,13 @@ class PendingQueue {
   enqueue(envelopeId: string, envelope: unknown): void {
     if (this.burned.has(envelopeId)) return;
     if (this.items.has(envelopeId)) return;
+    const refreshCycles = this.refreshCounts.get(envelopeId) ?? 0;
     this.items.set(envelopeId, {
       envelopeId,
       envelope,
       enqueuedAt: Date.now(),
       attempts: 0,
-      refreshCycles: 0,
+      refreshCycles,
       lastRefreshAt: 0,
     });
   }
@@ -101,28 +103,37 @@ class PendingQueue {
    */
   refresh(envelopeId: string, envelope: unknown): void {
     if (this.burned.has(envelopeId)) return;
+    const previousRefreshCycles = this.refreshCounts.get(envelopeId) ?? 0;
+    if (previousRefreshCycles >= MAX_REFRESH_CYCLES) {
+      this.burned.add(envelopeId);
+      this.items.delete(envelopeId);
+      return;
+    }
+
     const prev = this.items.get(envelopeId);
     if (prev) {
       const now = Date.now();
       if (now - prev.lastRefreshAt < REFRESH_DEBOUNCE_MS) return;
-      if (prev.refreshCycles >= MAX_REFRESH_CYCLES) {
-        this.burned.add(envelopeId);
-        this.items.delete(envelopeId);
-        return;
-      }
+      const nextRefreshCycles = previousRefreshCycles + 1;
+      this.refreshCounts.set(envelopeId, nextRefreshCycles);
       prev.attempts = 0;
       prev.envelope = envelope;
       prev.enqueuedAt = now;
       prev.lastRefreshAt = now;
-      prev.refreshCycles += 1;
+      prev.refreshCycles = nextRefreshCycles;
       return;
     }
+    const now = Date.now();
+    this.refreshCounts.set(envelopeId, previousRefreshCycles + 1);
     this.enqueue(envelopeId, envelope);
+    const next = this.items.get(envelopeId);
+    if (next) next.lastRefreshAt = now;
   }
 
   remove(envelopeId: string): void {
     this.items.delete(envelopeId);
     this.burned.delete(envelopeId);
+    this.refreshCounts.delete(envelopeId);
   }
 
   has(envelopeId: string): boolean {
@@ -151,10 +162,12 @@ class PendingQueue {
       if (ok) {
         this.items.delete(id);
         this.burned.delete(id);
+        this.refreshCounts.delete(id);
       } else if (item.attempts >= MAX_ATTEMPTS) {
         // Park the envelope. If we still have refresh budget, the next
         // server refetch can re-arm it; otherwise it's burned.
-        if (item.refreshCycles >= MAX_REFRESH_CYCLES) {
+        const refreshCycles = this.refreshCounts.get(id) ?? item.refreshCycles;
+        if (refreshCycles >= MAX_REFRESH_CYCLES) {
           this.items.delete(id);
           this.burned.add(id);
         } else {
@@ -168,6 +181,7 @@ class PendingQueue {
   _reset(): void {
     this.items.clear();
     this.burned.clear();
+    this.refreshCounts.clear();
     this.lastKickAt = 0;
   }
 }

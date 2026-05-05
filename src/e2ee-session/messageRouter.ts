@@ -33,10 +33,12 @@ interface RouteInput {
   senderUserId?: UserId;
   /** Original `messages.id` — required for legacy device-copy fallback. */
   messageId?: string;
+  /** Set false when the caller already owns retry scheduling. */
+  enqueueOnFailure?: boolean;
 }
 
 export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
-  const { encryptedBody, recipientUserId, senderUserId, messageId } = input;
+  const { encryptedBody, recipientUserId, senderUserId, messageId, enqueueOnFailure = true } = input;
   const me = selfDeviceId();
 
   // Anti-replay key: cheap, RAM-only, cleared after ALL retries succeeded.
@@ -92,7 +94,7 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
 
     // 1c) Out-of-order? Enqueue for retry. Do NOT mark seen — a successful
     //     retry must be allowed to deliver later.
-    if (messageId) {
+    if (messageId && enqueueOnFailure) {
       pendingMessageQueue.enqueue(messageId, input);
     }
     return { ok: false, plaintext: null, errorCode: 'RATCHET_DECRYPT_FAILED' };
@@ -105,7 +107,9 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
       markSeenMessage(seenKey);
       return r;
     }
-    pendingMessageQueue.enqueue(messageId, input);
+    if (enqueueOnFailure) {
+      pendingMessageQueue.enqueue(messageId, input);
+    }
     return r;
   }
 
@@ -127,7 +131,7 @@ export function wirePendingQueue(): void {
   if (wired) return;
   wired = true;
   pendingMessageQueue.setRetryHandler(async (envelope) => {
-    const r = await routeIncoming(envelope as RouteInput);
+    const r = await routeIncoming({ ...(envelope as RouteInput), enqueueOnFailure: false });
     if (r.ok && typeof window !== 'undefined') {
       try {
         window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));

@@ -77,12 +77,16 @@ export async function processDeviceCopyRetryRequests(limit = 20): Promise<RetryP
           (row.message_body ? await loadPlaintextForCiphertext(row.message_body) : null);
 
         if (!plaintext) {
-          result.skipped += 1;
+          result.failed += 1;
+          await markRetryFailed(
+            row.request_id,
+            'PLAINTEXT_UNAVAILABLE: sender device has no local plaintext cache for this historical message',
+          );
           logCryptoError({
             severity: 'info',
             context: 'fanout',
             errorCode: 'DEVICE_COPY_RETRY_PLAINTEXT_UNAVAILABLE',
-            errorMessage: 'Sender device does not have local plaintext cache for retry',
+            errorMessage: 'Sender device has no local plaintext cache; retry request is terminal',
             conversationId: row.conversation_id,
             myDeviceId: senderDeviceId,
             metadata: { messageId: row.message_id, requestId: row.request_id },

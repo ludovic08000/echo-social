@@ -126,9 +126,10 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       .then((next) => {
         if (cancelled) return;
         if (!next) {
-          // Silent pending — UI shows neutral placeholder, queue will retry.
-          setOutcome(null);
-          setPending(true);
+          // Settle silently for this render pass. The row stays intact; a
+          // later restore/device-copy retry can trigger another attempt.
+          setOutcome({ text: '', mediaKeyB64: null, hidden: true });
+          setPending(false);
           return;
         }
         setOutcome(next);
@@ -143,8 +144,8 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       })
       .catch(() => {
         if (!cancelled) {
-          setOutcome(null);
-          setPending(true);
+          setOutcome({ text: '', mediaKeyB64: null, hidden: true });
+          setPending(false);
         }
       });
 

@@ -567,6 +567,7 @@ export function useMessages(conversationId: string) {
               recipientUserId: user.id,
               senderUserId: m.sender_id,
               messageId: m.id,
+              enqueueOnFailure: false,
             });
             if (r.ok && r.plaintext !== null) {
               void savePlaintextForCiphertext(m.body, r.plaintext);
