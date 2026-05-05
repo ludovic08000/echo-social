@@ -38,26 +38,32 @@ import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
 
 export function useDeviceRegistration() {
   const { user } = useAuth();
-  const ranRef = useRef(false);
+  const registeredRef = useRef(false);
+  const runningRef = useRef(false);
 
   useEffect(() => {
-    if (!user || ranRef.current) return;
-    ranRef.current = true;
+    if (!user) return;
 
-    void (async () => {
+    const registerDeviceAndPrekeys = async (reason: string) => {
+      if (runningRef.current) return;
+      if (registeredRef.current && reason !== 'manual-retry') return;
+      runningRef.current = true;
+
       try {
         const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
         if (isDeviceIdTemporary()) {
           console.warn('[useDeviceRegistration] device id still temporary - delaying device publish');
-          ranRef.current = false;
+          registeredRef.current = false;
           return;
         }
+
         const serverIdentity = await fetchServerIdentityState(user.id);
         if (!serverIdentity) {
           console.info('[useDeviceRegistration] no server E2EE identity yet - first setup must publish identity before device registration');
-          ranRef.current = false;
+          registeredRef.current = false;
           return;
         }
+
         const keys = await getOrCreateIdentityKeys(user.id);
         const bundle = await exportPublicKeyBundle(keys);
 
@@ -66,12 +72,12 @@ export function useDeviceRegistration() {
         // bundle would let peers cache a wrong identity key for this account.
         if (!bundle?.identityKey || !bundle?.signingKey) {
           console.warn('[useDeviceRegistration] identity bundle incomplete — abort device publish');
-          ranRef.current = false; // allow a retry on next mount
+          registeredRef.current = false;
           return;
         }
         if (!keys?.privateKey || !keys?.signingPrivateKey) {
           console.warn('[useDeviceRegistration] identity private keys missing — abort device publish');
-          ranRef.current = false;
+          registeredRef.current = false;
           return;
         }
 
@@ -107,6 +113,7 @@ export function useDeviceRegistration() {
           .upsert(payload, { onConflict: 'user_id,device_id' });
         if (devErr) {
           console.warn('[useDeviceRegistration] device upsert failed:', devErr.message);
+          registeredRef.current = false;
           return;
         }
 
@@ -149,9 +156,33 @@ export function useDeviceRegistration() {
         } catch (opkErr) {
           console.warn('[useDeviceRegistration] OPK refill failed (non-fatal):', opkErr);
         }
+
+        registeredRef.current = true;
+        console.info('[useDeviceRegistration] device + X3DH prekeys published', { reason, deviceId });
       } catch (err) {
+        registeredRef.current = false;
         console.warn('[useDeviceRegistration] failed (non-fatal):', err);
+      } finally {
+        runningRef.current = false;
       }
-    })();
+    };
+
+    void registerDeviceAndPrekeys('mount');
+
+    const retryAfterUnlock = () => {
+      registeredRef.current = false;
+      void registerDeviceAndPrekeys('pin-unlock');
+    };
+
+    // Critical: first mount can happen while E2EE is LOCKED. In that case
+    // getOrCreateIdentityKeys() correctly refuses to create or use keys.
+    // Once PIN restore succeeds, retry device registration + SPK/OPK publish.
+    window.addEventListener('forsure-keys-unlocked', retryAfterUnlock);
+    window.addEventListener('forsure-keys-restored', retryAfterUnlock);
+
+    return () => {
+      window.removeEventListener('forsure-keys-unlocked', retryAfterUnlock);
+      window.removeEventListener('forsure-keys-restored', retryAfterUnlock);
+    };
   }, [user]);
 }
