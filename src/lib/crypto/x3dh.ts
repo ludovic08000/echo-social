@@ -991,18 +991,23 @@ export async function fetchPrekeyBundle(peerUserId: string): Promise<X3DHPrekeyB
 
   // 3. Verify SPK signature BEFORE consuming any OPK
   // This prevents wasting a one-time prekey on a stale/invalid bundle
-  let sigValid = false;
-  try {
-    const spkRaw = base64ToBuffer(spk.public_key);
-    const sigRaw = base64ToBuffer(spk.signature);
-    const peerSigningKey = await importEd25519Public(pubKeys.signing_key);
-    sigValid = await hardCrypto.verify('Ed25519' as any, peerSigningKey, sigRaw, spkRaw);
-  } catch (verifyErr) {
-    console.error('[X3DH] ⚠️ SPK signature verification error in fetchPrekeyBundle:', verifyErr);
-  }
+  const sigValid = await verifySignedPrekey(pubKeys.signing_key, spk.public_key, spk.signature, {
+    source: 'fetchPrekeyBundle.legacy_user_spk',
+    identityKeyB64: pubKeys.identity_key,
+    userId: peerUserId,
+    spkId: spk.spk_id,
+  });
 
   if (!sigValid) {
-    console.error(`[X3DH] ⛔ SPK #${spk.spk_id} signature INVALID for peer ${peerUserId} — bundle REJECTED (possible stale SPK or signing key mismatch)`);
+    console.error('[X3DH] ⛔ SPK signature INVALID — bundle REJECTED', {
+      user_id: peerUserId,
+      spk_id: spk.spk_id,
+      identity_len: pubKeys.identity_key?.length ?? null,
+      spk_len: spk.public_key?.length ?? null,
+      sig_len: spk.signature?.length ?? null,
+      valid: false,
+      encoding: 'base64(raw Ed25519 signature over raw X25519 SPK public key)',
+    });
     return null;
   }
 
@@ -1029,16 +1034,14 @@ export async function x3dhInitiate(
   bundle: X3DHPrekeyBundle,
 ): Promise<X3DHResult> {
   // 1. Signature already verified in fetchPrekeyBundle, but double-check
-  const spkRaw = base64ToBuffer(bundle.signedPrekey);
-  const sigRaw = base64ToBuffer(bundle.signedPrekeySignature);
-  const peerSigningKey = await importEd25519Public(bundle.signingKey);
-
-  const sigValid = await hardCrypto.verify(
-    'Ed25519' as any, peerSigningKey, sigRaw, spkRaw,
-  );
+  const sigValid = await verifySignedPrekey(bundle.signingKey, bundle.signedPrekey, bundle.signedPrekeySignature, {
+    source: 'x3dhInitiate.bundle_double_check',
+    identityKeyB64: bundle.identityKey,
+    spkId: bundle.signedPrekeyId,
+  });
 
   if (!sigValid) {
-    throw new Error('X3DH: Signed prekey signature verification FAILED — possible MITM');
+    throw new Error(`X3DH: Signed prekey signature verification FAILED — identity_len=${bundle.identityKey?.length ?? 0} spk_len=${bundle.signedPrekey?.length ?? 0} sig_len=${bundle.signedPrekeySignature?.length ?? 0} encoding=base64(raw Ed25519 signature over raw X25519 SPK public key)`);
   }
 
   // 2. Import peer keys
