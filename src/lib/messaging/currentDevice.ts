@@ -152,8 +152,7 @@ export async function hydrateDeviceId(): Promise<string> {
   if (hydrationPromise) return hydrationPromise;
   hydrationPromise = (async () => {
     try {
-      // Keychain / Keystore is the source of truth on native; falls back to
-      // Preferences then localStorage automatically.
+      // 1) Native Keychain / Keystore is the strongest source of truth.
       const stored = await secureGet(STORAGE_KEY);
       if (stored) {
         if (memoryDeviceId && memoryDeviceId !== stored) {
@@ -165,7 +164,38 @@ export async function hydrateDeviceId(): Promise<string> {
         }
         return persistEverywhere(stored);
       }
-      const current = memoryDeviceId || nativeGetSync(STORAGE_KEY) || generateId();
+
+      // 2) Local storage / sessionStorage may already hold the id.
+      const local = nativeGetSync(STORAGE_KEY);
+      if (local) {
+        return persistEverywhere(local);
+      }
+
+      // 3) Fall back to the SERVER fingerprint binding so iOS reuses the
+      //    same device_id after Safari purges everything (ITP). This is
+      //    what stops anciens messages from becoming undecipherable on
+      //    every cold start.
+      try {
+        const fp = await computeDeviceFingerprint();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: serverId, error } = await supabase.rpc(
+            'resolve_device_id_by_fingerprint',
+            { p_fingerprint: fp },
+          );
+          if (!error && typeof serverId === 'string' && serverId.length >= 16) {
+            console.log('[device-id] Recovered from server fingerprint binding', {
+              recovered: serverId.slice(0, 8),
+            });
+            return persistEverywhere(serverId);
+          }
+        }
+      } catch (e) {
+        console.warn('[device-id] server fingerprint lookup failed:', e);
+      }
+
+      // 4) Last resort: keep memory id or generate a fresh one.
+      const current = memoryDeviceId || generateId();
       return persistEverywhere(current);
     } catch (e) {
       console.warn('[device-id] hydration failed:', e);
