@@ -785,6 +785,13 @@ export async function refillDeviceOneTimePrekeysIfNeeded(
       return;
     }
     console.log(`[X3DH-OPK] ✅ ${OPK_BATCH_SIZE} new OPKs published for ${deviceId.slice(0, 8)}…`);
+    // Reactive backup: OPK private halves only live in IndexedDB, so we MUST
+    // back them up immediately or peers will fail to initiate X3DH after a
+    // storage purge.
+    try {
+      const { requestBackgroundBackup } = await import('@/lib/crypto/accountKeyBackup');
+      requestBackgroundBackup('opk-refilled');
+    } catch {}
   } catch (e) {
     console.warn('[X3DH-OPK] refill failed (non-fatal):', e);
   }
