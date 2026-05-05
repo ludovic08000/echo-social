@@ -102,6 +102,53 @@ async function toCiphertextLookupKey(ciphertextBody: string): Promise<string> {
   return `cipher:${bufferToHex(digest)}`;
 }
 
+/**
+ * Short-term sessionStorage mirror — survives soft reloads even when iOS
+ * Safari ITP wipes IndexedDB (the encrypted store above). Bounded to 24h
+ * and ~200 entries to keep memory pressure low. Plaintext stays local —
+ * the server never sees it.
+ */
+const SESSION_MIRROR_KEY = 'forsure-pt-mirror-v1';
+const SESSION_MIRROR_TTL_MS = 24 * 60 * 60 * 1000;
+const SESSION_MIRROR_CAP = 200;
+
+interface SessionMirrorEntry { p: string; t: number }
+
+function readSessionMirror(): Record<string, SessionMirrorEntry> {
+  try {
+    const raw = sessionStorage.getItem(SESSION_MIRROR_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as Record<string, SessionMirrorEntry>;
+  } catch { return {}; }
+}
+
+function writeSessionMirror(map: Record<string, SessionMirrorEntry>) {
+  try {
+    const cutoff = Date.now() - SESSION_MIRROR_TTL_MS;
+    const entries = Object.entries(map)
+      .filter(([, v]) => v.t > cutoff)
+      .sort(([, a], [, b]) => b.t - a.t)
+      .slice(0, SESSION_MIRROR_CAP);
+    sessionStorage.setItem(SESSION_MIRROR_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch {}
+}
+
+function mirrorSet(id: string, plaintext: string) {
+  if (typeof sessionStorage === 'undefined') return;
+  const map = readSessionMirror();
+  map[id] = { p: plaintext, t: Date.now() };
+  writeSessionMirror(map);
+}
+
+function mirrorGet(id: string): string | null {
+  if (typeof sessionStorage === 'undefined') return null;
+  const map = readSessionMirror();
+  const entry = map[id];
+  if (!entry) return null;
+  if (Date.now() - entry.t > SESSION_MIRROR_TTL_MS) return null;
+  return entry.p;
+}
+
 async function saveEntry(id: string, plaintext: string): Promise<void> {
   if (!id || !plaintext) return;
   const key = await getOrCreateDeviceKey();
