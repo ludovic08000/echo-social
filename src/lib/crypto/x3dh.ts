@@ -555,6 +555,10 @@ export async function generateAndUploadDeviceSignedPrekey(
     .neq('spk_id', spkId);
 
   console.log(`[X3DH-DEV] ✅ device SPK #${spkId} for ${deviceId.slice(0, 8)}… uploaded`);
+  try {
+    const { requestBackgroundBackup } = await import('@/lib/crypto/accountKeyBackup');
+    requestBackgroundBackup('device-spk-rotated');
+  } catch {}
   return { spkId, publicKey: publicBase64, signature: signatureBase64 };
 }
 
