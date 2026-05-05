@@ -156,6 +156,9 @@ function logDBPayloadBeforeUpsert(table: 'device_signed_prekeys' | 'user_signed_
 function logDBUpsertError(table: 'device_signed_prekeys' | 'user_signed_prekeys', step: string, error: any, payload: Record<string, unknown>) {
   const haystack = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ');
   const rejectedColumn = Object.keys(payload).find((key) => new RegExp(`\\b${key}\\b`, 'i').test(haystack));
+  const violatedConstraint = haystack.match(/constraint "([^"]+)"/i)?.[1]
+    ?? haystack.match(/violates ([^\s]+) constraint/i)?.[1]
+    ?? undefined;
   const diagnostic = {
     table,
     step,
@@ -163,6 +166,7 @@ function logDBUpsertError(table: 'device_signed_prekeys' | 'user_signed_prekeys'
     message: error?.message,
     details: error?.details,
     hint: error?.hint,
+    constraint_violated: violatedConstraint ?? 'unknown_from_supabase_error',
     rejected_column: rejectedColumn ?? 'unknown_from_supabase_error',
     rejected_value: rejectedColumn ? describeDBValue(rejectedColumn, payload[rejectedColumn]) : undefined,
     payload_keys: Object.keys(payload),
