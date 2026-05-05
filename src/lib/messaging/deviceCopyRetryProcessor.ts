@@ -67,7 +67,7 @@ export async function processDeviceCopyRetryRequests(limit = 20): Promise<RetryP
       return result;
     }
 
-    const rows = (data || []) as PendingDeviceCopyRetry[];
+    const rows = ((data as unknown) || []) as PendingDeviceCopyRetry[];
     result.scanned = rows.length;
 
     for (const row of rows) {
