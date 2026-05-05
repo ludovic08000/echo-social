@@ -924,40 +924,12 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
       {/* Fingerprint change banner removed per user request — silent re-keying */}
 
-      {/* Key lost / init error recovery banner */}
-      {!isZeusConversation && e2ee.initError && (
-        <div className="mx-2 mt-2 bg-destructive/10 border border-destructive/30 rounded-xl px-3 py-2.5">
-          <p className="text-xs font-semibold text-destructive">
-            {e2ee.initError === 'identity_lost_backup_available'
-              ? '🔑 Clés perdues — sauvegarde disponible'
-              : e2ee.initError === 'pin_unlock_required'
-                ? '🔐 PIN requis pour déverrouiller vos clés'
-                : '⚠️ Erreur de chiffrement'}
-          </p>
-          <p className="text-[10px] text-muted-foreground mt-1">
-            {e2ee.initError === 'identity_lost_backup_available'
-              ? 'Restaurez votre sauvegarde pour retrouver vos conversations chiffrées.'
-              : e2ee.initError === 'pin_unlock_required'
-                ? 'Entrez votre PIN pour accéder à vos messages.'
-                : 'Restaurez vos clés depuis les paramètres pour reprendre vos conversations.'}
-          </p>
-          <button
-            onClick={() => navigate('/settings', { state: { tab: 'privacy', scrollTo: 'key-backup' } })}
-            className="mt-2 px-3 py-1 rounded-full bg-primary text-primary-foreground text-[10px] font-medium hover:opacity-90 transition-opacity"
-          >
-            🔑 Restaurer mes clés
-          </button>
-        </div>
-      )}
-
-      {/* Peer has no keys */}
-      {!isZeusConversation && e2ee.peerKeyMissing && !e2ee.initError && (
-        <div className="mx-2 mt-2 bg-muted/50 border border-border/30 rounded-xl px-3 py-2">
-          <p className="text-[10px] text-muted-foreground">
-            🔒 Ce contact n'a pas encore de clés — les messages ne peuvent pas être envoyés pour l'instant.
-          </p>
-        </div>
-      )}
+      {/* Key recovery banners removed — restore happens silently in background
+          via useAccountKeySync (auto-restore from password-derived backup),
+          realtimeKeySync (peer key publish triggers messageQueue.resumeAll),
+          and messageQueue (idempotent retry). The user only sees plaintext
+          when keys arrive, never an instruction to "restore". The dedicated
+          backup/restore UI lives in Settings → Privacy → Key Backup. */}
 
       {/* Pending message request banner */}
       {hasPending && (
