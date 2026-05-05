@@ -51,18 +51,17 @@ export async function listDevicesForUser(userId: UserId): Promise<DeviceDescript
 
 /**
  * List every device that should receive a copy of a message sent by
- * `senderUserId` to `recipientUserIds`. Excludes the sender's CURRENT device
- * (it already keeps the plaintext locally) but INCLUDES the sender's other
- * devices so they sync the conversation.
+ * `senderUserId` to `recipientUserIds`. Includes ALL of the sender's own
+ * devices — even the current one — so that after an iOS Safari ITP storage
+ * purge (which wipes the local plaintext mirror) the sender can still
+ * recover their own outgoing messages from the encrypted device-copy
+ * fan-out once their identity keys are restored.
  */
 export async function listFanoutTargets(
   senderUserId: UserId,
   recipientUserIds: UserId[],
 ): Promise<DeviceDescriptor[]> {
-  const me = selfDeviceId();
   const userIds = Array.from(new Set([...recipientUserIds, senderUserId]));
   const lists = await Promise.all(userIds.map(listDevicesForUser));
-  return lists
-    .flat()
-    .filter(d => !(d.userId === senderUserId && d.deviceId === me));
+  return lists.flat();
 }
