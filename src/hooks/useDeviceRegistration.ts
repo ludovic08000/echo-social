@@ -70,17 +70,92 @@ export function useDeviceRegistration() {
           return;
         }
 
-        // Per-device dedicated X25519 key (true cryptographic isolation per device).
-        // Generated locally + persisted in IndexedDB; private key never leaves the
-        // browser. We publish ONLY the public part. If generation fails for any
-        // reason, we fall back to the legacy shared-identity behaviour so we never
-        // leave a device unable to receive messages.
-        let devicePublicKeyB64 = bundle.identityKey;
+        // Per-device dedicated X25519 key (TRUE cryptographic isolation per device).
+        //
+        // STABILITY CONTRACT (PR #13):
+        //   - identity key   = immutable for the account, lives in shared vault
+        //   - device key     = immutable for this physical device once published
+        //   - SPK / OPK      = rotatable
+        //
+        // Before generating or publishing anything, we read what the SERVER
+        // already knows about this device_id. If a public key is already
+        // pinned server-side and our local material doesn't match, we MUST
+        // NOT overwrite it — peers may be encrypting against the published
+        // key right now. Instead we block and ask the user to restore.
+        let devicePublicKeyB64: string | null = null;
+        let serverDevicePublicKey: string | null = null;
         try {
-          const kx = await getOrCreateDeviceKxKey(deviceId);
-          if (kx?.publicB64) devicePublicKeyB64 = kx.publicB64;
-        } catch (kxErr) {
-          console.warn('[useDeviceRegistration] device kx key unavailable, falling back to identityKey:', kxErr);
+          const { data: existing } = await supabase
+            .from('user_devices')
+            .select('device_public_key')
+            .eq('user_id', user.id)
+            .eq('device_id', deviceId)
+            .maybeSingle();
+          serverDevicePublicKey = (existing?.device_public_key as string | null) ?? null;
+        } catch (lookupErr) {
+          console.warn('[useDeviceRegistration] server device lookup failed:', lookupErr);
+        }
+
+        let localKx: Awaited<ReturnType<typeof getOrCreateDeviceKxKey>> | null = null;
+        if (serverDevicePublicKey) {
+          // Server already published a device key for this device_id.
+          // ONLY load the local one — never auto-generate / overwrite.
+          try {
+            const { loadDeviceKxKey } = await import('@/lib/crypto/deviceKx');
+            localKx = await loadDeviceKxKey(deviceId);
+          } catch (loadErr) {
+            console.warn('[useDeviceRegistration] loadDeviceKxKey failed:', loadErr);
+          }
+
+          if (!localKx) {
+            console.warn('[useDeviceRegistration] BLOCKED: server device key exists but local material missing — restore required');
+            try {
+              window.dispatchEvent(new CustomEvent('forsure:device-kx-restore-required', {
+                detail: { deviceId, reason: 'local-missing', serverPublicKey: serverDevicePublicKey },
+              }));
+            } catch {}
+            ranRef.current = false; // allow retry once user has restored
+            return;
+          }
+
+          if (localKx.publicB64 !== serverDevicePublicKey) {
+            // Legacy migration window: the server may still hold the shared
+            // identity key from the pre-per-device-kx era. In that case we
+            // upgrade to the per-device kx and republish — that is allowed
+            // because the previous entry was the shared key, not a device-
+            // specific one. Anything else is a hard mismatch → BLOCK.
+            const isLegacyShared = serverDevicePublicKey === bundle.identityKey;
+            if (!isLegacyShared) {
+              console.warn('[useDeviceRegistration] BLOCKED: server/local device key mismatch — restore required');
+              try {
+                window.dispatchEvent(new CustomEvent('forsure:device-kx-restore-required', {
+                  detail: {
+                    deviceId,
+                    reason: 'mismatch',
+                    serverPublicKey: serverDevicePublicKey,
+                    localPublicKey: localKx.publicB64,
+                  },
+                }));
+              } catch {}
+              ranRef.current = false;
+              return;
+            }
+            console.log('[useDeviceRegistration] migrating legacy shared-identity device entry → per-device kx');
+          }
+
+          devicePublicKeyB64 = localKx.publicB64;
+        } else {
+          // First-time publish for this device_id → generation allowed.
+          try {
+            const kx = await getOrCreateDeviceKxKey(deviceId);
+            if (kx?.publicB64) {
+              devicePublicKeyB64 = kx.publicB64;
+              localKx = kx;
+            }
+          } catch (kxErr) {
+            console.warn('[useDeviceRegistration] device kx key generation failed, falling back to identityKey:', kxErr);
+          }
+          if (!devicePublicKeyB64) devicePublicKeyB64 = bundle.identityKey;
         }
 
         // Stable device fingerprint — lets the server-side
