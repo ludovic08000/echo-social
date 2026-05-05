@@ -68,7 +68,21 @@ export function useCryptoMaintenance() {
           console.warn('[CRYPTO-MAINT] SPK refresh failed:', spkErr);
         }
 
-        // OPK system removed — only SPK rotation is needed.
+        // 3. Per-device SPK + OPK pool (WhatsApp-style: keep peers always able
+        //    to initiate a fresh X3DH session against THIS device).
+        try {
+          const did = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+          if (did) {
+            await refreshDeviceSignedPrekeyIfNeeded(user.id, did, keys.signingPrivateKey).catch((e) =>
+              console.warn('[CRYPTO-MAINT] device SPK refresh failed:', e),
+            );
+            await refillDeviceOneTimePrekeysIfNeeded(user.id, did).catch((e) =>
+              console.warn('[CRYPTO-MAINT] OPK refill failed:', e),
+            );
+          }
+        } catch (devErr) {
+          console.warn('[CRYPTO-MAINT] device prekey maintenance failed:', devErr);
+        }
 
         try {
           localStorage.setItem(STORAGE_KEY, String(Date.now()));
