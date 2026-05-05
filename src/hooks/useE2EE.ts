@@ -616,19 +616,17 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         console.warn('[E2EE] SPK refresh failed:', e),
       );
 
-      // Auto-scrub: once keys are loaded into memory as non-extractable CryptoKeys,
-      // delete raw JWKs from IndexedDB if PIN wrap is active (keys already protected)
-      import('@/lib/crypto/pinWrap').then(async ({ hasWrappedKeys }) => {
-        const hasWrap = await hasWrappedKeys(user.id);
-        if (hasWrap) {
-          const { deleteRawIdentityKeys } = await import('@/lib/crypto/keyManager');
-          const { hasRawIdentityKeys } = await import('@/lib/crypto/keyManager');
-          if (await hasRawIdentityKeys(user.id)) {
-            await deleteRawIdentityKeys(user.id);
-            console.log('[E2EE] Auto-scrubbed raw JWKs (PIN wrap active)');
-          }
-        }
-      }).catch(() => {});
+      // IMPORTANT: do NOT auto-delete raw identity JWKs immediately after a
+      // successful PIN unlock. Device registration + resyncE2EE call
+      // getOrCreateIdentityKeys() after this hook initializes; deleting here
+      // recreates the observed loop:
+      //   PIN ok → raw keys restored → useE2EE init → raw keys deleted →
+      //   resync/device publish sees only wrapped keys → PinUnlockRequiredError.
+      // Raw keys are still purged by the explicit PIN lock path
+      // (lockWithoutWiping: blur/idle/return), after the latest snapshot is
+      // re-wrapped. During the unlocked session they must remain available to
+      // the E2EE maintenance pipeline.
+      console.log('[E2EE] PIN-unlocked raw identity retained for device registration/resync until next lock');
 
       setState(s => ({
         ...s,
