@@ -19,11 +19,53 @@
 
 import { nativeSet, nativeGetSync, isNativePlatform } from '@/lib/nativeStore';
 import { secureGet, secureSet } from '@/lib/secureStore';
+import { supabase } from '@/integrations/supabase/client';
 
 const STORAGE_KEY = 'forsure-device-id-v1';
+const FINGERPRINT_KEY = 'forsure-device-fingerprint-v1';
 let memoryDeviceId: string | null = null;
 let hydrationPromise: Promise<string> | null = null;
 let memoryDeviceIdIsTemporary = false;
+let cachedFingerprint: string | null = null;
+
+/**
+ * Stable per-installation fingerprint (UA + screen + lang + tz). Survives
+ * Safari ITP storage purges because it's recomputed from the environment,
+ * never read from cleared storage. Used by the server-side
+ * `resolve_device_id_by_fingerprint` RPC to recover the previous
+ * `device_id` after iOS wipes IndexedDB / localStorage / Keychain.
+ */
+async function computeDeviceFingerprint(): Promise<string> {
+  if (cachedFingerprint) return cachedFingerprint;
+  const parts: string[] = [];
+  try {
+    if (typeof navigator !== 'undefined') {
+      parts.push(navigator.userAgent || '');
+      parts.push(navigator.language || '');
+      parts.push(String((navigator as any).hardwareConcurrency || ''));
+      parts.push(String((navigator as any).deviceMemory || ''));
+    }
+    if (typeof screen !== 'undefined') {
+      parts.push(`${screen.width}x${screen.height}x${screen.colorDepth}`);
+    }
+    parts.push(Intl.DateTimeFormat().resolvedOptions().timeZone || '');
+  } catch {}
+  const raw = parts.join('|');
+  try {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+    cachedFingerprint = Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
+  } catch {
+    // crypto.subtle missing — fall back to a non-crypto hash so RPC still works.
+    let h = 0;
+    for (let i = 0; i < raw.length; i++) h = ((h << 5) - h + raw.charCodeAt(i)) | 0;
+    cachedFingerprint = `fp${(h >>> 0).toString(16)}`;
+  }
+  return cachedFingerprint;
+}
+
+export async function getDeviceFingerprint(): Promise<string> {
+  return computeDeviceFingerprint();
+}
 
 function generateId(): string {
   // 32-char hex (128 bits of entropy)
@@ -110,8 +152,7 @@ export async function hydrateDeviceId(): Promise<string> {
   if (hydrationPromise) return hydrationPromise;
   hydrationPromise = (async () => {
     try {
-      // Keychain / Keystore is the source of truth on native; falls back to
-      // Preferences then localStorage automatically.
+      // 1) Native Keychain / Keystore is the strongest source of truth.
       const stored = await secureGet(STORAGE_KEY);
       if (stored) {
         if (memoryDeviceId && memoryDeviceId !== stored) {
@@ -123,7 +164,38 @@ export async function hydrateDeviceId(): Promise<string> {
         }
         return persistEverywhere(stored);
       }
-      const current = memoryDeviceId || nativeGetSync(STORAGE_KEY) || generateId();
+
+      // 2) Local storage / sessionStorage may already hold the id.
+      const local = nativeGetSync(STORAGE_KEY);
+      if (local) {
+        return persistEverywhere(local);
+      }
+
+      // 3) Fall back to the SERVER fingerprint binding so iOS reuses the
+      //    same device_id after Safari purges everything (ITP). This is
+      //    what stops anciens messages from becoming undecipherable on
+      //    every cold start.
+      try {
+        const fp = await computeDeviceFingerprint();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: serverId, error } = await supabase.rpc(
+            'resolve_device_id_by_fingerprint',
+            { p_fingerprint: fp },
+          );
+          if (!error && typeof serverId === 'string' && serverId.length >= 16) {
+            console.log('[device-id] Recovered from server fingerprint binding', {
+              recovered: serverId.slice(0, 8),
+            });
+            return persistEverywhere(serverId);
+          }
+        }
+      } catch (e) {
+        console.warn('[device-id] server fingerprint lookup failed:', e);
+      }
+
+      // 4) Last resort: keep memory id or generate a fresh one.
+      const current = memoryDeviceId || generateId();
       return persistEverywhere(current);
     } catch (e) {
       console.warn('[device-id] hydration failed:', e);

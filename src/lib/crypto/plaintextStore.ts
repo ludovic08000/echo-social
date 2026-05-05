@@ -102,6 +102,53 @@ async function toCiphertextLookupKey(ciphertextBody: string): Promise<string> {
   return `cipher:${bufferToHex(digest)}`;
 }
 
+/**
+ * Short-term sessionStorage mirror — survives soft reloads even when iOS
+ * Safari ITP wipes IndexedDB (the encrypted store above). Bounded to 24h
+ * and ~200 entries to keep memory pressure low. Plaintext stays local —
+ * the server never sees it.
+ */
+const SESSION_MIRROR_KEY = 'forsure-pt-mirror-v1';
+const SESSION_MIRROR_TTL_MS = 24 * 60 * 60 * 1000;
+const SESSION_MIRROR_CAP = 200;
+
+interface SessionMirrorEntry { p: string; t: number }
+
+function readSessionMirror(): Record<string, SessionMirrorEntry> {
+  try {
+    const raw = sessionStorage.getItem(SESSION_MIRROR_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as Record<string, SessionMirrorEntry>;
+  } catch { return {}; }
+}
+
+function writeSessionMirror(map: Record<string, SessionMirrorEntry>) {
+  try {
+    const cutoff = Date.now() - SESSION_MIRROR_TTL_MS;
+    const entries = Object.entries(map)
+      .filter(([, v]) => v.t > cutoff)
+      .sort(([, a], [, b]) => b.t - a.t)
+      .slice(0, SESSION_MIRROR_CAP);
+    sessionStorage.setItem(SESSION_MIRROR_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch {}
+}
+
+function mirrorSet(id: string, plaintext: string) {
+  if (typeof sessionStorage === 'undefined') return;
+  const map = readSessionMirror();
+  map[id] = { p: plaintext, t: Date.now() };
+  writeSessionMirror(map);
+}
+
+function mirrorGet(id: string): string | null {
+  if (typeof sessionStorage === 'undefined') return null;
+  const map = readSessionMirror();
+  const entry = map[id];
+  if (!entry) return null;
+  if (Date.now() - entry.t > SESSION_MIRROR_TTL_MS) return null;
+  return entry.p;
+}
+
 async function saveEntry(id: string, plaintext: string): Promise<void> {
   if (!id || !plaintext) return;
   const key = await getOrCreateDeviceKey();
@@ -183,6 +230,7 @@ export async function importPlaintextCache(entries: PlaintextCacheExportEntry[])
  */
 export async function savePlaintext(messageId: string, plaintext: string): Promise<void> {
   if (!messageId || !plaintext) return;
+  mirrorSet(messageId, plaintext);
   try {
     await saveEntry(messageId, plaintext);
   } catch (e) {
@@ -193,18 +241,18 @@ export async function savePlaintext(messageId: string, plaintext: string): Promi
 export async function savePlaintextForCiphertext(ciphertextBody: string, plaintext: string): Promise<void> {
   if (!ciphertextBody || !plaintext) return;
   try {
-    await saveEntry(await toCiphertextLookupKey(ciphertextBody), plaintext);
+    const id = await toCiphertextLookupKey(ciphertextBody);
+    mirrorSet(id, plaintext);
+    await saveEntry(id, plaintext);
   } catch (e) {
     console.warn('[plaintextStore] savePlaintextForCiphertext failed', e);
   }
 }
 
-/**
- * Load plaintext for a message id. Returns null if not found or device key
- * is unavailable.
- */
 export async function loadPlaintext(messageId: string): Promise<string | null> {
   if (!messageId) return null;
+  const mirror = mirrorGet(messageId);
+  if (mirror !== null) return mirror;
   try {
     return await loadEntry(messageId);
   } catch (e) {
@@ -216,18 +264,20 @@ export async function loadPlaintext(messageId: string): Promise<string | null> {
 export async function loadPlaintextForCiphertext(ciphertextBody: string): Promise<string | null> {
   if (!ciphertextBody) return null;
   try {
-    return await loadEntry(await toCiphertextLookupKey(ciphertextBody));
+    const id = await toCiphertextLookupKey(ciphertextBody);
+    const mirror = mirrorGet(id);
+    if (mirror !== null) return mirror;
+    return await loadEntry(id);
   } catch (e) {
     console.warn('[plaintextStore] loadPlaintextForCiphertext failed', e);
     return null;
   }
 }
 
-/**
- * Remove a plaintext entry (e.g. when the user deletes a message for me).
- */
 export async function removePlaintext(messageId: string): Promise<void> {
   try {
+    const map = readSessionMirror();
+    if (map[messageId]) { delete map[messageId]; writeSessionMirror(map); }
     const db = await openDB();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_MESSAGES, 'readwrite');
@@ -244,6 +294,7 @@ export async function removePlaintext(messageId: string): Promise<void> {
  * Wipe everything — used on logout for hygiene.
  */
 export async function wipePlaintextStore(): Promise<void> {
+  try { sessionStorage.removeItem(SESSION_MIRROR_KEY); } catch {}
   try {
     const db = await openDB();
     await new Promise<void>((resolve, reject) => {
