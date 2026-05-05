@@ -265,7 +265,40 @@ export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityK
     // PIN wrap module error — continue to generation
   }
 
-  // 3. No local keys at all — generate new identity
+  // 3. Server continuity guard: never create a fresh account identity when
+  // the backend already knows this user. iOS can wipe IndexedDB at any time;
+  // blindly regenerating here would rotate the fingerprint, make old messages
+  // unreadable, and trigger false "key changed" warnings. Let the silent
+  // recovery pipeline (Keychain → PIN/account backup) restore the real keys.
+  try {
+    const { supabase } = await import('@/integrations/supabase/client');
+    const [{ data: activeKey }, { data: backup }] = await Promise.all([
+      supabase
+        .from('user_public_keys')
+        .select('fingerprint')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .maybeSingle(),
+      supabase
+        .from('user_backups' as any)
+        .select('id')
+        .eq('user_id', userId)
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if (activeKey || backup) {
+      console.warn('[KEY_MGR] Local identity missing but server continuity exists — blocking regeneration until restore');
+      throw new PinUnlockRequiredError('Existing E2EE identity must be restored before use');
+    }
+  } catch (e) {
+    if (e instanceof PinUnlockRequiredError) throw e;
+    // Network/RLS failure must not create a replacement identity for an
+    // established account. Fail closed; callers will retry/restore silently.
+    console.warn('[KEY_MGR] Continuity guard unavailable — refusing unsafe identity regeneration:', e);
+    throw new PinUnlockRequiredError('E2EE identity continuity check unavailable');
+  }
+
+  // 4. No local keys and no server continuity — true first-time identity.
   console.log('[KEY_MGR] No local keys found — generating new identity');
   const newKeys = await generateIdentityKeys();
   await saveIdentityKeys(userId, newKeys);
