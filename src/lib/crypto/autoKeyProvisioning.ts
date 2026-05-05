@@ -1,4 +1,4 @@
-import { getCurrentDeviceId, hydrateDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
+import { getCurrentDeviceId, hydrateDeviceId, isDeviceIdTemporary, setCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle, fetchServerIdentityState, PinUnlockRequiredError } from '@/lib/crypto/keyManager';
 import { refreshSignedPrekeyIfNeeded, refreshDeviceSignedPrekeyIfNeeded, refillDeviceOneTimePrekeysIfNeeded } from '@/lib/crypto/x3dh';
 import { getOrCreateDeviceKxKey, loadDeviceKxKey } from '@/lib/crypto/deviceKx';
@@ -9,7 +9,7 @@ export type AutoKeyProvisioningStatus =
   | 'locked'
   | 'blocked_temp_device'
   | 'blocked_missing_identity'
-  | 'blocked_device_key_restore_required'
+  | 'recreated_device'
   | 'blocked_error';
 
 export interface AutoKeyProvisioningResult {
@@ -19,14 +19,14 @@ export interface AutoKeyProvisioningResult {
   reason?: string;
 }
 
-function emitRestoreRequired(userId: string, deviceId: string, reason: string) {
+function randomDeviceId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function emitRetry(detail: Record<string, unknown>) {
   try {
-    window.dispatchEvent(new CustomEvent('forsure:device-kx-restore-required', {
-      detail: { userId, deviceId, reason },
-    }));
-    window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
-      detail: { userId, deviceId, reason },
-    }));
+    window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail }));
   } catch {
     // non-browser/test
   }
@@ -35,13 +35,16 @@ function emitRestoreRequired(userId: string, deviceId: string, reason: string) {
 /**
  * Publishes this account/device receiving material after local E2EE is unlocked.
  *
- * Security rule: if the server already knows a device_public_key for this
- * device_id, the local private device key must exist and match. Otherwise we
- * stop and ask restore; we never overwrite the server with a new device key.
+ * Critical browser rule:
+ * If this browser has no private key for the server device_public_key, it cannot
+ * decrypt messages addressed to that old device. Instead of endlessly asking for
+ * PIN and keeping the app broken, create a NEW device_id and publish fresh device
+ * keys/prekeys. Old undecryptable copies remain hidden; future sends use the new
+ * valid bundle.
  */
 export async function ensureOwnReceivingKeysPublished(userId: string): Promise<AutoKeyProvisioningResult> {
   try {
-    const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+    let deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
     if (isDeviceIdTemporary()) {
       return { ok: false, status: 'blocked_temp_device', deviceId, reason: 'temporary_device_id' };
     }
@@ -65,6 +68,7 @@ export async function ensureOwnReceivingKeysPublished(userId: string): Promise<A
       return { ok: false, status: 'blocked_error', deviceId, reason: `device_lookup_failed:${existingErr.message}` };
     }
 
+    let status: AutoKeyProvisioningStatus = 'ready';
     let devicePublicKey = bundle.identityKey;
     const serverDevicePublicKey = typeof existingDevice?.device_public_key === 'string'
       ? existingDevice.device_public_key
@@ -72,21 +76,39 @@ export async function ensureOwnReceivingKeysPublished(userId: string): Promise<A
 
     if (serverDevicePublicKey) {
       const localKx = await loadDeviceKxKey(deviceId);
-      if (!localKx) {
-        emitRestoreRequired(userId, deviceId, 'missing_local_device_kx_private');
-        return { ok: false, status: 'blocked_device_key_restore_required', deviceId, reason: 'missing_local_device_kx_private' };
+
+      if (!localKx || localKx.publicB64 !== serverDevicePublicKey) {
+        const oldDeviceId = deviceId;
+        deviceId = setCurrentDeviceId(randomDeviceId());
+        status = 'recreated_device';
+
+        console.warn('[E2EE] Local device key missing/mismatch for existing server device. Creating a fresh browser device.', {
+          oldDeviceId: oldDeviceId.slice(0, 8),
+          newDeviceId: deviceId.slice(0, 8),
+          reason: !localKx ? 'missing_local_device_kx_private' : 'device_kx_public_mismatch',
+        });
+
+        try {
+          await supabase
+            .from('user_devices')
+            .update({ is_active: false })
+            .eq('user_id', userId)
+            .eq('device_id', oldDeviceId);
+        } catch {
+          // non-fatal; RLS may refuse, but new device still becomes active
+        }
+
+        const freshKx = await getOrCreateDeviceKxKey(deviceId);
+        devicePublicKey = freshKx.publicB64 || bundle.identityKey;
+      } else {
+        devicePublicKey = localKx.publicB64;
       }
-      if (localKx.publicB64 !== serverDevicePublicKey) {
-        emitRestoreRequired(userId, deviceId, 'device_kx_public_mismatch');
-        return { ok: false, status: 'blocked_device_key_restore_required', deviceId, reason: 'device_kx_public_mismatch' };
-      }
-      devicePublicKey = localKx.publicB64;
     } else {
       const localKx = await getOrCreateDeviceKxKey(deviceId);
       if (localKx?.publicB64) devicePublicKey = localKx.publicB64;
     }
 
-    await supabase
+    const { error: upsertError } = await supabase
       .from('user_devices')
       .upsert({
         user_id: userId,
@@ -99,18 +121,22 @@ export async function ensureOwnReceivingKeysPublished(userId: string): Promise<A
         last_seen_at: new Date().toISOString(),
       }, { onConflict: 'user_id,device_id' });
 
+    if (upsertError) {
+      return { ok: false, status: 'blocked_error', deviceId, reason: `device_upsert_failed:${upsertError.message}` };
+    }
+
     await refreshSignedPrekeyIfNeeded(userId, keys.signingPrivateKey);
     await refreshDeviceSignedPrekeyIfNeeded(userId, deviceId, keys.signingPrivateKey);
     await refillDeviceOneTimePrekeysIfNeeded(userId, deviceId);
 
+    emitRetry({ userId, deviceId, reason: status });
     try {
-      window.dispatchEvent(new CustomEvent('forsure:own-receiving-keys-ready', { detail: { userId, deviceId } }));
-      window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail: { userId, deviceId, reason: 'own_keys_ready' } }));
+      window.dispatchEvent(new CustomEvent('forsure:own-receiving-keys-ready', { detail: { userId, deviceId, status } }));
     } catch {
       // non-browser/test
     }
 
-    return { ok: true, status: 'ready', deviceId };
+    return { ok: true, status, deviceId };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     if (error instanceof PinUnlockRequiredError || msg.toLowerCase().includes('pin unlock required')) {
