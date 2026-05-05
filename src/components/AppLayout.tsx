@@ -80,7 +80,7 @@ function MobileHeader() {
 
           {/* Messages button — glassmorphism capsule */}
           <button 
-            onClick={() => isMobile ? navigate('/messages') : openChat()}
+            onClick={() => openChat()}
             className="relative group w-9 h-9 rounded-2xl bg-gradient-to-br from-accent/60 to-secondary/40 backdrop-blur-md border border-border/15 flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/25 hover:shadow-[0_0_12px_hsl(var(--primary)/0.12)] transition-all duration-300 active:scale-90"
           >
             <MessageCircle className="w-[17px] h-[17px] transition-transform duration-300 group-hover:scale-110" strokeWidth={1.8} />
