@@ -230,6 +230,7 @@ export async function importPlaintextCache(entries: PlaintextCacheExportEntry[])
  */
 export async function savePlaintext(messageId: string, plaintext: string): Promise<void> {
   if (!messageId || !plaintext) return;
+  mirrorSet(messageId, plaintext);
   try {
     await saveEntry(messageId, plaintext);
   } catch (e) {
@@ -240,18 +241,18 @@ export async function savePlaintext(messageId: string, plaintext: string): Promi
 export async function savePlaintextForCiphertext(ciphertextBody: string, plaintext: string): Promise<void> {
   if (!ciphertextBody || !plaintext) return;
   try {
-    await saveEntry(await toCiphertextLookupKey(ciphertextBody), plaintext);
+    const id = await toCiphertextLookupKey(ciphertextBody);
+    mirrorSet(id, plaintext);
+    await saveEntry(id, plaintext);
   } catch (e) {
     console.warn('[plaintextStore] savePlaintextForCiphertext failed', e);
   }
 }
 
-/**
- * Load plaintext for a message id. Returns null if not found or device key
- * is unavailable.
- */
 export async function loadPlaintext(messageId: string): Promise<string | null> {
   if (!messageId) return null;
+  const mirror = mirrorGet(messageId);
+  if (mirror !== null) return mirror;
   try {
     return await loadEntry(messageId);
   } catch (e) {
@@ -263,18 +264,20 @@ export async function loadPlaintext(messageId: string): Promise<string | null> {
 export async function loadPlaintextForCiphertext(ciphertextBody: string): Promise<string | null> {
   if (!ciphertextBody) return null;
   try {
-    return await loadEntry(await toCiphertextLookupKey(ciphertextBody));
+    const id = await toCiphertextLookupKey(ciphertextBody);
+    const mirror = mirrorGet(id);
+    if (mirror !== null) return mirror;
+    return await loadEntry(id);
   } catch (e) {
     console.warn('[plaintextStore] loadPlaintextForCiphertext failed', e);
     return null;
   }
 }
 
-/**
- * Remove a plaintext entry (e.g. when the user deletes a message for me).
- */
 export async function removePlaintext(messageId: string): Promise<void> {
   try {
+    const map = readSessionMirror();
+    if (map[messageId]) { delete map[messageId]; writeSessionMirror(map); }
     const db = await openDB();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_MESSAGES, 'readwrite');
