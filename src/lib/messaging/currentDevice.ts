@@ -200,16 +200,18 @@ export async function hydrateDeviceId(): Promise<string> {
       //    what stops anciens messages from becoming undecipherable on
       //    every cold start.
       try {
-        const fp = await computeDeviceFingerprint();
+        const candidates = await getDeviceFingerprintCandidates();
+        const platform = getCurrentPlatform();
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           const { data: serverId, error } = await supabase.rpc(
-            'resolve_device_id_by_fingerprint',
-            { p_fingerprint: fp },
+            'resolve_device_id_by_fingerprints' as any,
+            { p_fingerprints: candidates, p_platform: platform },
           );
           if (!error && typeof serverId === 'string' && serverId.length >= 16) {
             console.log('[device-id] Recovered from server fingerprint binding', {
               recovered: serverId.slice(0, 8),
+              platform,
             });
             return persistEverywhere(serverId);
           }
