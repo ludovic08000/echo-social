@@ -381,9 +381,6 @@ async function checkFingerprintChangeWithServer(
 ): Promise<FingerprintCheckResult> {
   const known = getKnownFingerprints();
   const localPrevious = known[peerUserId];
-  if (localPrevious && localPrevious !== currentFp) {
-    return { changed: true, previousFp: localPrevious };
-  }
 
   // Cache server check for 60s to avoid request storms
   const cacheKey = `${currentUserId}:${peerUserId}:${currentFp}`;
@@ -406,7 +403,18 @@ async function checkFingerprintChangeWithServer(
       _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
       return result;
     }
+
+    if (data && data.fingerprint === currentFp) {
+      if (localPrevious !== currentFp) saveKnownFingerprint(peerUserId, currentFp);
+      const result = { changed: false, previousFp: null };
+      _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
+      return result;
+    }
   } catch {
+  }
+
+  if (localPrevious && localPrevious !== currentFp) {
+    return { changed: true, previousFp: localPrevious };
   }
 
   const result = { changed: false, previousFp: null };
