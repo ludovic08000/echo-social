@@ -377,7 +377,21 @@ class MessageQueueManager {
 
   /** Process a single message through the state machine */
   private async processMessage(msg: OutboundMessage): Promise<void> {
-    if (this.processing.has(msg.localId) || this.processingConversations.has(msg.conversationId)) return;
+    const trace = (step: string, extra: Record<string, unknown> = {}) => {
+      const ageMs = Date.now() - msg.createdAt;
+      console.log(`%c[MSG_TRACE]%c ${step}`, 'color:#fff;background:#002395;padding:2px 6px;border-radius:3px;font-weight:bold', 'color:#002395;font-weight:bold', {
+        traceId: msg.traceId.slice(0, 8),
+        localId: msg.localId,
+        conv: msg.conversationId.slice(0, 8),
+        retry: msg.retryCount,
+        ageMs,
+        status: msg.status,
+        ...extra,
+      });
+    };
+    if (this.processing.has(msg.localId)) { trace('SKIP (already processing localId)'); return; }
+    if (this.processingConversations.has(msg.conversationId)) { trace('SKIP (conv busy)'); return; }
+    trace('▶ processMessage START');
     this.processing.add(msg.localId);
     this.processingConversations.add(msg.conversationId);
     this.clearRetryTimer(msg.localId);
@@ -385,58 +399,54 @@ class MessageQueueManager {
     try {
       // Step 1: Encrypt
       if (!msg.encryptedBody) {
+        trace('STEP 1 ▸ encrypt required');
         await this.updateStatus(msg, 'encrypting');
 
         const handlers = this.getReadyAwareHandlers(msg.conversationId);
         if (!handlers?.encrypt) {
-          // Wait up to SECURE_CHANNEL_HARD_TIMEOUT_MS before failing.
-          // This covers iOS cold start + slow X3DH bootstrap reliably.
           const age = Date.now() - msg.createdAt;
+          trace('⚠ encrypt handler NOT ready', { ageMs: age, hardTimeoutMs: SECURE_CHANNEL_HARD_TIMEOUT_MS });
           if (age > SECURE_CHANNEL_HARD_TIMEOUT_MS) {
             console.warn('[MSG_QUEUE] secure channel still unavailable after hard timeout', msg.localId);
+            trace('✗ FAIL — secure channel hard timeout');
             await this.updateStatus(msg, 'failed_visible', 'Canal sécurisé indisponible — réessayez plus tard');
             return;
           }
-          console.log('[MSG_QUEUE] waiting for secure channel', msg.localId, 'age=', age, 'ms');
           await this.updateStatus(msg, 'waiting_secure_channel', 'En attente du canal sécurisé');
           this.scheduleRetry(msg, 'secure_wait');
           return;
         }
 
-        // Read plaintext from volatile memory
         const plaintext = this.volatilePlaintext.get(msg.localId);
         if (!plaintext) {
-          // Plaintext lost (page reload) — message cannot be recovered
+          trace('✗ FAIL — plaintext lost from RAM');
           await this.updateStatus(msg, 'failed_visible', 'Message perdu (rechargement de page)');
           return;
         }
+        trace('  plaintext present, calling handlers.encrypt()', { ptLen: plaintext.length });
 
         try {
-          console.log('[E2EE] encrypt start', msg.localId);
-          // Timeout: if encryption takes more than 15s, abort
+          const t0 = Date.now();
           const encryptPromise = handlers.encrypt(plaintext, msg.conversationId, msg.localId);
           const timeoutPromise = new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error('Timeout chiffrement (15s)')), 15_000)
           );
           const encrypted = await Promise.race([encryptPromise, timeoutPromise]);
           const withLocalId = this.attachLocalId(encrypted, msg.localId, msg.traceId);
+          trace('  encrypt() returned', { tookMs: Date.now() - t0, ctLen: withLocalId?.length ?? 0, prefix: withLocalId?.slice(0, 8) });
 
-          // CRITICAL: Verify the encrypt handler actually produced a known
-          // ciphertext envelope. We check explicit protocol prefixes (JSON
-          // conv envelope `{` or device-pair v3/v4 ratchet) instead of a
-          // loose JSON-only heuristic — a multi-line plaintext starting
-          // with `{` would otherwise sneak through.
           const looksCiphertext =
             !!withLocalId &&
             withLocalId !== plaintext &&
             (
-              withLocalId.startsWith('{') ||                  // conv-level JSON envelope
-              withLocalId.startsWith('x3dh4.') ||             // device Double Ratchet
-              withLocalId.startsWith('x3dh3.') ||             // legacy device ratchet
-              withLocalId.startsWith('x3dh2.') ||             // X3DH per-device with OPK
-              withLocalId.startsWith('x3dh1.')                // X3DH per-device w/o OPK
+              withLocalId.startsWith('{') ||
+              withLocalId.startsWith('x3dh4.') ||
+              withLocalId.startsWith('x3dh3.') ||
+              withLocalId.startsWith('x3dh2.') ||
+              withLocalId.startsWith('x3dh1.')
             );
           if (!looksCiphertext) {
+            trace('✗ encrypt output is NOT ciphertext — schedule retry');
             console.error('[E2EE] encrypt failed — output is plaintext or empty', msg.localId);
             await this.updateStatus(msg, 'waiting_secure_channel', 'Canal sécurisé indisponible');
             this.scheduleRetry(msg, 'secure_wait');
@@ -444,7 +454,7 @@ class MessageQueueManager {
           }
 
           msg.encryptedBody = withLocalId;
-          console.log('[E2EE] encrypt success', msg.localId);
+          trace('✓ STEP 1 done — ciphertext stored');
           await this.dbPut(msg);
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
@@ -472,6 +482,7 @@ class MessageQueueManager {
             normalized.includes('vérifiez l\'identité avant d\'envoyer') ||
             normalized.includes('fingerprint changed');
 
+          trace('✗ encrypt() THROW', { errMsg, waitingForKeys, transientCryptoPressure, permanentSafetyMismatch });
           console.error('[E2EE] encrypt failed', msg.localId, errMsg);
 
           if (permanentSafetyMismatch) {
@@ -479,11 +490,9 @@ class MessageQueueManager {
             return;
           }
 
-          // Fail only after the full hard timeout window for key-waiting errors.
-          // (Was 30s — far too short for iOS cold starts and PWA wake.)
           const age = Date.now() - msg.createdAt;
           if (waitingForKeys && age > SECURE_CHANNEL_HARD_TIMEOUT_MS) {
-            console.warn('[MSG_QUEUE] giving up - peer keys still missing after hard timeout', msg.localId);
+            trace('✗ FAIL — peer keys missing after hard timeout');
             await this.updateStatus(msg, 'failed_visible', 'Chiffrement impossible — clés du contact indisponibles. Réessayez.');
             return;
           }
@@ -492,8 +501,8 @@ class MessageQueueManager {
             await this.updateStatus(msg, 'waiting_secure_channel', errMsg);
             this.scheduleRetry(msg, 'secure_wait');
           } else {
-            // Non-key errors: fail after 3 retries instead of 10
             if (msg.retryCount >= 3) {
+              trace('✗ FAIL — non-key error, retry budget exhausted');
               await this.updateStatus(msg, 'failed_visible', `Échec chiffrement: ${errMsg}`);
             } else {
               await this.updateStatus(msg, 'retry_pending', errMsg);
@@ -502,44 +511,43 @@ class MessageQueueManager {
           }
           return;
         }
+      } else {
+        trace('STEP 1 ▸ already encrypted, skipping');
       }
 
       // Step 2: Send encrypted payload
-      // CRITICAL FIX: Hydrate msg.plaintext from volatile memory BEFORE sending.
-      // The send handler needs plaintext to cache it for the sender's own display
-      // (Double Ratchet can't decrypt own messages — Signal design).
-      // This is safe because dbPut() always strips plaintext via toPersistedMessage().
       const volatilePt = this.volatilePlaintext.get(msg.localId);
       if (volatilePt) {
         msg.plaintext = volatilePt;
       }
 
+      trace('STEP 2 ▸ sending', { ctLen: msg.encryptedBody?.length ?? 0 });
       await this.updateStatus(msg, 'sending');
 
       const handlers = this.getHandlers(msg.conversationId);
       if (!handlers?.send) {
+        trace('⚠ send handler NOT registered — retry');
         await this.updateStatus(msg, 'retry_pending', 'Send handler not registered');
         this.scheduleRetry(msg);
         return;
       }
 
       try {
-        console.log('[SEND] sending encrypted payload', msg.localId);
+        const t1 = Date.now();
         const serverId = await handlers.send(msg);
+        trace('✓ STEP 2 done — backend ACK', { serverId, tookMs: Date.now() - t1 });
         msg.serverId = serverId;
         msg.status = 'sent';
         msg.updatedAt = Date.now();
         this.clearRetryTimer(msg.localId);
-        console.log('[SEND] backend success', msg.localId, serverId);
         traceQueue(msg, 'status:sent', { serverId });
 
-        // Clean up: remove volatile plaintext
         this.volatilePlaintext.delete(msg.localId);
         msg.plaintext = '';
         try {
           await this.dbPut(msg);
         } catch (persistErr) {
-          // Do not keep a false pending state when backend already accepted the message
+          trace('⚠ local persist failed after ACK — deleting from queue', { err: String(persistErr) });
           console.warn('[SEND] local persistence failed after backend success', msg.localId, persistErr);
           try {
             await this.dbDelete(msg.localId);
@@ -548,15 +556,14 @@ class MessageQueueManager {
           return;
         }
 
-        // Remove from queue immediately — realtime subscription handles display
         this.dbDelete(msg.localId).catch(() => {});
-
+        trace('🏁 message removed from local queue (realtime takes over)');
         this.notifyListeners(msg.conversationId);
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
+        trace('✗ STEP 2 send THROW', { errMsg, retryCount: msg.retryCount, maxRetries: msg.maxRetries });
         console.error('[SEND] failed', msg.localId, errMsg);
 
-        // Network error: retry. Other errors: check retry count.
         if (msg.retryCount >= msg.maxRetries) {
           await this.updateStatus(msg, 'failed_visible', `Échec après ${msg.maxRetries} tentatives: ${errMsg}`);
         } else {
@@ -564,6 +571,7 @@ class MessageQueueManager {
           this.scheduleRetry(msg);
         }
       }
+
     } finally {
       this.processing.delete(msg.localId);
       this.processingConversations.delete(msg.conversationId);
