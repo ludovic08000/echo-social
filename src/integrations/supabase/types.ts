@@ -3278,6 +3278,7 @@ export type Database = {
           actor_id: string
           created_at: string
           id: string
+          metadata: Json | null
           post_id: string | null
           read_at: string | null
           type: Database["public"]["Enums"]["notification_type"]
@@ -3287,6 +3288,7 @@ export type Database = {
           actor_id: string
           created_at?: string
           id?: string
+          metadata?: Json | null
           post_id?: string | null
           read_at?: string | null
           type: Database["public"]["Enums"]["notification_type"]
@@ -3296,6 +3298,7 @@ export type Database = {
           actor_id?: string
           created_at?: string
           id?: string
+          metadata?: Json | null
           post_id?: string | null
           read_at?: string | null
           type?: Database["public"]["Enums"]["notification_type"]
@@ -6215,6 +6218,7 @@ export type Database = {
         | "message"
         | "story_view"
         | "sale"
+        | "new_device"
       order_status:
         | "pending"
         | "paid"
@@ -6363,6 +6367,7 @@ export const Constants = {
         "message",
         "story_view",
         "sale",
+        "new_device",
       ],
       order_status: [
         "pending",
