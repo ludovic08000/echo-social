@@ -98,6 +98,8 @@ export {
   fetchPrekeyBundle,
   generateAndUploadSignedPrekey,
   refreshSignedPrekeyIfNeeded,
+  refreshDeviceSignedPrekeyIfNeeded,
+  refillDeviceOneTimePrekeysIfNeeded,
   isPQXDHAvailable,
   type X3DHPrekeyBundle,
   type X3DHResult,
