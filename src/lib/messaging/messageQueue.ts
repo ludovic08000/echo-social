@@ -411,10 +411,10 @@ class MessageQueueManager {
           if (age > SECURE_CHANNEL_HARD_TIMEOUT_MS) {
             console.warn('[MSG_QUEUE] secure channel still unavailable after hard timeout', msg.localId);
             trace('✗ FAIL — secure channel hard timeout');
-            await this.updateStatus(msg, 'failed_visible', 'Canal sécurisé indisponible — réessayez plus tard');
+            await this.updateStatus(msg, 'retry_pending', 'Envoi différé');
             return;
           }
-          await this.updateStatus(msg, 'waiting_secure_channel', 'En attente du canal sécurisé');
+          await this.updateStatus(msg, 'waiting_secure_channel', 'Envoi en cours');
           this.scheduleRetry(msg, 'secure_wait');
           return;
         }
@@ -450,7 +450,7 @@ class MessageQueueManager {
           if (!looksCiphertext) {
             trace('✗ encrypt output is NOT ciphertext — schedule retry');
             console.error('[E2EE] encrypt failed — output is plaintext or empty', msg.localId);
-            await this.updateStatus(msg, 'waiting_secure_channel', 'Canal sécurisé indisponible');
+            await this.updateStatus(msg, 'waiting_secure_channel', 'Envoi en cours');
             this.scheduleRetry(msg, 'secure_wait');
             return;
           }
