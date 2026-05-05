@@ -467,8 +467,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
         toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer un média.');
       } else if (e2ee.initError === 'identity_lost_backup_available') {
         toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer un média.');
-      } else if (!encryptionReady) {
-        toast.error('Canal sécurisé en cours d’initialisation — réessaie dans quelques secondes.');
       }
       return;
     }
