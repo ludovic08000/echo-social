@@ -32,6 +32,11 @@ import {
 } from '@/lib/crypto/x3dh';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
+import {
+  restoreAccountKeysFromActiveSession,
+  restoreFromInMemoryMasterKey,
+  restoreKeysFromKeychainSnapshot,
+} from '@/lib/crypto/accountKeyBackup';
 
 export function useDeviceRegistration() {
   const { user } = useAuth();
@@ -108,10 +113,23 @@ export function useDeviceRegistration() {
           }
 
           if (!localKx) {
-            console.warn('[useDeviceRegistration] BLOCKED: server device key exists but local material missing — restore required');
+            const restored =
+              (await restoreKeysFromKeychainSnapshot(user.id).catch(() => 'error')) === 'restored' ||
+              (await restoreFromInMemoryMasterKey(user.id).catch(() => 'error')) === 'restored' ||
+              (await restoreAccountKeysFromActiveSession(user.id).catch(() => 'error')) === 'restored';
+            if (restored) {
+              try {
+                const { loadDeviceKxKey } = await import('@/lib/crypto/deviceKx');
+                localKx = await loadDeviceKxKey(deviceId);
+              } catch {}
+            }
+          }
+
+          if (!localKx) {
+            console.warn('[useDeviceRegistration] server device key exists but local material is still unavailable — waiting silently for restore');
             try {
-              window.dispatchEvent(new CustomEvent('forsure:device-kx-restore-required', {
-                detail: { deviceId, reason: 'local-missing', serverPublicKey: serverDevicePublicKey },
+              window.dispatchEvent(new CustomEvent('forsure:e2ee-silent-restore-retry', {
+                detail: { source: 'device-registration', deviceId, reason: 'local-missing' },
               }));
             } catch {}
             ranRef.current = false; // allow retry once user has restored
