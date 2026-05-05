@@ -22,6 +22,7 @@ import {
   getCurrentPlatform,
   hydrateDeviceId,
   isDeviceIdTemporary,
+  getDeviceFingerprint,
 } from '@/lib/messaging/currentDevice';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle, PinUnlockRequiredError } from '@/lib/crypto/keyManager';
 import {
