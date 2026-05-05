@@ -95,6 +95,82 @@ const SPK_ROTATION_DAYS = 7;
 const SPK_DB_NAME = 'forsure-spk';
 const SPK_DB_VERSION = 1;
 const SPK_STORE = 'signed-prekeys';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const STABLE_DEVICE_ID_RE = /^[A-Za-z0-9._:-]{8,128}$/;
+const B64_RE = /^[A-Za-z0-9+/_\-=]+$/;
+const DB_KEY_FIELDS = new Set(['identity_key', 'signing_key', 'device_public_key', 'public_key', 'signature']);
+
+function describeDBValue(field: string, value: unknown) {
+  const type = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+  if (typeof value !== 'string') return { field, type, value };
+  return {
+    field,
+    type,
+    length: value.length,
+    preview: `${value.slice(0, 10)}${value.length > 10 ? '…' : ''}`,
+    ...(DB_KEY_FIELDS.has(field) ? { redacted: 'public_key_truncated' } : { value }),
+  };
+}
+
+function sanitizeDBPayload(payload: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(payload).map(([field, value]) => [field, describeDBValue(field, value)]));
+}
+
+function validatePayloadForDB(payload: Record<string, unknown>, tableName: 'device_signed_prekeys' | 'user_signed_prekeys'): void {
+  const required = tableName === 'device_signed_prekeys'
+    ? ['user_id', 'device_id', 'spk_id', 'public_key', 'signature', 'is_active']
+    : ['user_id', 'spk_id', 'public_key', 'signature', 'is_active'];
+
+  for (const [field, value] of Object.entries(payload)) {
+    if (value === undefined) throw new Error(`[X3DH][DB][VALIDATION] ${tableName}.${field}: undefined interdit`);
+  }
+  for (const field of required) {
+    if (payload[field] === null || payload[field] === undefined || payload[field] === '') {
+      throw new Error(`[X3DH][DB][VALIDATION] ${tableName}.${field}: valeur obligatoire absente (${payload[field]})`);
+    }
+  }
+  if (typeof payload.user_id !== 'string' || !UUID_RE.test(payload.user_id)) {
+    throw new Error(`[X3DH][DB][VALIDATION] ${tableName}.user_id: UUID invalide (${JSON.stringify(describeDBValue('user_id', payload.user_id))})`);
+  }
+  if ('device_id' in payload && (typeof payload.device_id !== 'string' || !STABLE_DEVICE_ID_RE.test(payload.device_id))) {
+    throw new Error(`[X3DH][DB][VALIDATION] ${tableName}.device_id: string stable invalide (${JSON.stringify(describeDBValue('device_id', payload.device_id))})`);
+  }
+  if (typeof payload.spk_id !== 'number' || !Number.isInteger(payload.spk_id) || payload.spk_id <= 0) {
+    throw new Error(`[X3DH][DB][VALIDATION] ${tableName}.spk_id: integer positif invalide (${payload.spk_id})`);
+  }
+  for (const field of ['public_key', 'signature']) {
+    if (typeof payload[field] !== 'string' || !B64_RE.test(payload[field] as string)) {
+      throw new Error(`[X3DH][DB][VALIDATION] ${tableName}.${field}: base64 string invalide (${JSON.stringify(describeDBValue(field, payload[field]))})`);
+    }
+  }
+}
+
+function logDBPayloadBeforeUpsert(table: 'device_signed_prekeys' | 'user_signed_prekeys', payload: Record<string, unknown>) {
+  console.log('[X3DH][DB][UPSERT_PAYLOAD]', {
+    table,
+    payload_keys: Object.keys(payload),
+    fields: sanitizeDBPayload(payload),
+  });
+}
+
+function logDBUpsertError(table: 'device_signed_prekeys' | 'user_signed_prekeys', step: string, error: any, payload: Record<string, unknown>) {
+  const haystack = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ');
+  const rejectedColumn = Object.keys(payload).find((key) => new RegExp(`\\b${key}\\b`, 'i').test(haystack));
+  const diagnostic = {
+    table,
+    step,
+    code: error?.code,
+    message: error?.message,
+    details: error?.details,
+    hint: error?.hint,
+    rejected_column: rejectedColumn ?? 'unknown_from_supabase_error',
+    rejected_value: rejectedColumn ? describeDBValue(rejectedColumn, payload[rejectedColumn]) : undefined,
+    payload_keys: Object.keys(payload),
+    payload: sanitizeDBPayload(payload),
+  };
+  console.error('[X3DH][DB][UPSERT_FAIL]', diagnostic);
+  return diagnostic;
+}
 
 function openSPKDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
