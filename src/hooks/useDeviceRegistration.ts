@@ -1,188 +1,81 @@
-/**
- * useDeviceRegistration — registers the current browser as an active device
- * for the logged-in user, and publishes a per-device Signed PreKey so that
- * other users can perform a targeted X3DH handshake against THIS device.
- *
- * Hybrid multi-device model:
- *   - identity key (IK) and signing key (SIG) are SHARED across the user's
- *     devices (legacy compatible — kept in IndexedDB by getOrCreateIdentityKeys);
- *   - each device has its OWN Signed PreKey + Double Ratchet state, so that
- *     a sender can negotiate an independent secure channel per device.
- *
- * Failure here is NEVER fatal — the legacy single-device flow continues to
- * work even if device or device-SPK registration fails.
- */
-
-import { useEffect, useRef } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
-import {
-  getCurrentDeviceId,
-  getCurrentDeviceLabel,
-  getCurrentPlatform,
-  hydrateDeviceId,
-  isDeviceIdTemporary,
-} from '@/lib/messaging/currentDevice';
-import {
-  getOrCreateIdentityKeys,
-  exportPublicKeyBundle,
-  fetchServerIdentityState,
-} from '@/lib/crypto/keyManager';
-import {
-  refreshDeviceSignedPrekeyIfNeeded,
-  refillDeviceOneTimePrekeysIfNeeded,
-  refreshSignedPrekeyIfNeeded,
-} from '@/lib/crypto/x3dh';
-import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
-import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
+import { supabase } from '@/integrations/supabase/client';
+import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import { getOrCreateDeviceKxKey, loadDeviceKxKey } from '@/lib/crypto/deviceKx';
+import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
 
 export function useDeviceRegistration() {
   const { user } = useAuth();
-  const registeredRef = useRef(false);
-  const runningRef = useRef(false);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) return;
 
-    const registerDeviceAndPrekeys = async (reason: string) => {
-      if (runningRef.current) return;
-      if (registeredRef.current && reason !== 'manual-retry') return;
-      runningRef.current = true;
+    const run = async () => {
+      const deviceId = getCurrentDeviceId();
 
       try {
-        const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
-        if (isDeviceIdTemporary()) {
-          console.warn('[useDeviceRegistration] device id still temporary - delaying device publish');
-          registeredRef.current = false;
+        const { data: existing, error } = await supabase
+          .from('user_devices')
+          .select('device_public_key')
+          .eq('user_id', user.id)
+          .eq('device_id', deviceId)
+          .maybeSingle();
+
+        if (error) {
+          console.error('[DeviceReg] lookup failed → STOP', error);
           return;
         }
 
-        const serverIdentity = await fetchServerIdentityState(user.id);
-        if (!serverIdentity) {
-          console.info('[useDeviceRegistration] no server E2EE identity yet - first setup must publish identity before device registration');
-          registeredRef.current = false;
+        const serverKey = existing?.device_public_key || null;
+        const local = await loadDeviceKxKey(deviceId);
+
+        // 🔴 CAS CRITIQUE : serveur a une clé mais local ne l’a plus
+        if (serverKey) {
+          if (!local) {
+            console.error('[DeviceReg] missing local device key → restore required');
+            window.dispatchEvent(new CustomEvent('forsure:device-kx-restore-required'));
+            return;
+          }
+
+          if (local.publicB64 !== serverKey) {
+            console.error('[DeviceReg] device key mismatch → BLOCK');
+            window.dispatchEvent(new CustomEvent('forsure:device-kx-restore-required'));
+            return;
+          }
+
+          // OK → rien à faire
           return;
         }
 
-        const keys = await getOrCreateIdentityKeys(user.id);
-        const bundle = await exportPublicKeyBundle(keys);
+        // 🟢 PREMIÈRE CRÉATION
+        const newKey = await getOrCreateDeviceKxKey(deviceId);
 
-        // Validation: ensure the shared identity is fully restored before publishing
-        // anything that other users will pin against. Publishing a half-initialised
-        // bundle would let peers cache a wrong identity key for this account.
-        if (!bundle?.identityKey || !bundle?.signingKey) {
-          console.warn('[useDeviceRegistration] identity bundle incomplete — abort device publish');
-          registeredRef.current = false;
-          return;
-        }
-        if (!keys?.privateKey || !keys?.signingPrivateKey) {
-          console.warn('[useDeviceRegistration] identity private keys missing — abort device publish');
-          registeredRef.current = false;
+        if (!newKey?.publicB64) {
+          console.error('[DeviceReg] no key generated');
           return;
         }
 
-        // Per-device dedicated X25519 key (true cryptographic isolation per device).
-        // Generated locally + persisted in IndexedDB; private key never leaves the
-        // browser. We publish ONLY the public part. If generation fails for any
-        // reason, we fall back to the legacy shared-identity behaviour so we never
-        // leave a device unable to receive messages.
-        let devicePublicKeyB64 = bundle.identityKey;
-        try {
-          const kx = await getOrCreateDeviceKxKey(deviceId);
-          if (kx?.publicB64) devicePublicKeyB64 = kx.publicB64;
-        } catch (kxErr) {
-          console.warn('[useDeviceRegistration] device kx key unavailable, falling back to identityKey:', kxErr);
-        }
-
-        const payload = {
+        await supabase.from('user_devices').upsert({
           user_id: user.id,
           device_id: deviceId,
-          device_name: getCurrentDeviceLabel(),
-          // Per-device X25519 public key (preferred) or shared identity key (legacy fallback).
-          // The deviceWrap fallback uses this column; see deviceWrap.ts.
-          device_public_key: devicePublicKeyB64,
-          platform: getCurrentPlatform(),
-          user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
+          device_public_key: newKey.publicB64,
           is_active: true,
           last_seen_at: new Date().toISOString(),
-        };
+        });
 
-        // 1. Register the device (idempotent upsert)
-        const { error: devErr } = await supabase
-          .from('user_devices')
-          .upsert(payload, { onConflict: 'user_id,device_id' });
-        if (devErr) {
-          console.warn('[useDeviceRegistration] device upsert failed:', devErr.message);
-          registeredRef.current = false;
+        console.log('[DeviceReg] device key created');
+
+      } catch (e) {
+        if (e instanceof PinUnlockRequiredError) {
+          console.warn('[DeviceReg] PIN locked → STOP');
           return;
         }
 
-        // Mark stale/revoke old devices and delete our local sessions to
-        // devices that crossed the long inactivity threshold.
-        try {
-          const { data } = await supabase.rpc('cleanup_stale_user_devices');
-          const lifecycleRows = (data || []) as Array<{ device_id: string; action: string }>;
-          await Promise.all(
-            lifecycleRows
-              .filter(row => row.action === 'revoked' && row.device_id !== deviceId)
-              .map(row => invalidateDeviceSession(user.id, deviceId, user.id, row.device_id)),
-          );
-        } catch (cleanupErr) {
-          console.warn('[useDeviceRegistration] stale device cleanup failed (non-fatal):', cleanupErr);
-        }
-
-        // 2. Ensure the legacy/shared Signed PreKey also exists.
-        //    The main conversation X3DH bootstrap still depends on this bundle,
-        //    so publishing it here prevents peers from seeing "Bundle X3DH ... indisponible".
-        try {
-          await refreshSignedPrekeyIfNeeded(user.id, keys.signingPrivateKey);
-        } catch (spkErr) {
-          console.warn('[useDeviceRegistration] shared SPK refresh failed (non-fatal):', spkErr);
-        }
-
-        // 3. Ensure a per-device Signed PreKey exists & is fresh.
-        //    This is what makes targeted X3DH per device possible.
-        try {
-          await refreshDeviceSignedPrekeyIfNeeded(user.id, deviceId, keys.signingPrivateKey);
-        } catch (spkErr) {
-          // Non-fatal: fan-out can still fall back to deviceWrap or legacy ratchet.
-          console.warn('[useDeviceRegistration] device SPK refresh failed (non-fatal):', spkErr);
-        }
-
-        // 4. Refill the OPK pool if low (forward secrecy on bursts).
-        //    Non-fatal: X3DH gracefully degrades to 3-DH when no OPK is available.
-        try {
-          await refillDeviceOneTimePrekeysIfNeeded(user.id, deviceId);
-        } catch (opkErr) {
-          console.warn('[useDeviceRegistration] OPK refill failed (non-fatal):', opkErr);
-        }
-
-        registeredRef.current = true;
-        console.info('[useDeviceRegistration] device + X3DH prekeys published', { reason, deviceId });
-      } catch (err) {
-        registeredRef.current = false;
-        console.warn('[useDeviceRegistration] failed (non-fatal):', err);
-      } finally {
-        runningRef.current = false;
+        console.error('[DeviceReg] fatal error', e);
       }
     };
 
-    void registerDeviceAndPrekeys('mount');
-
-    const retryAfterUnlock = () => {
-      registeredRef.current = false;
-      void registerDeviceAndPrekeys('pin-unlock');
-    };
-
-    // Critical: first mount can happen while E2EE is LOCKED. In that case
-    // getOrCreateIdentityKeys() correctly refuses to create or use keys.
-    // Once PIN restore succeeds, retry device registration + SPK/OPK publish.
-    window.addEventListener('forsure-keys-unlocked', retryAfterUnlock);
-    window.addEventListener('forsure-keys-restored', retryAfterUnlock);
-
-    return () => {
-      window.removeEventListener('forsure-keys-unlocked', retryAfterUnlock);
-      window.removeEventListener('forsure-keys-restored', retryAfterUnlock);
-    };
-  }, [user]);
+    run();
+  }, [user?.id]);
 }
