@@ -918,6 +918,38 @@ export function isAutoBackupActive(): boolean {
   return _sessionPassword !== null && _sessionUserId !== null;
 }
 
+// ── Reactive background backup (WhatsApp-style) ──
+//
+// Any key mutation (new ratchet step, SPK rotation, OPK refill) should call
+// `requestBackgroundBackup()`. Calls are debounced (1.5 s) and coalesced so a
+// burst of mutations only produces a single network upload. This guarantees
+// the server-side backup tracks the local state within ~2 s, which is what
+// keeps history readable on iOS even if Safari purges IndexedDB.
+let _bgBackupTimer: ReturnType<typeof setTimeout> | null = null;
+let _bgBackupInFlight = false;
+let _bgBackupPendingReason: string | null = null;
+const BG_BACKUP_DEBOUNCE_MS = 1_500;
+
+export function requestBackgroundBackup(reason: string = 'mutation'): void {
+  if (!isAutoBackupActive()) return;
+  _bgBackupPendingReason = reason;
+  if (_bgBackupTimer) clearTimeout(_bgBackupTimer);
+  _bgBackupTimer = setTimeout(() => {
+    _bgBackupTimer = null;
+    if (_bgBackupInFlight) {
+      // Re-arm shortly after — current upload will pick up the latest state
+      _bgBackupTimer = setTimeout(() => requestBackgroundBackup(reason), BG_BACKUP_DEBOUNCE_MS);
+      return;
+    }
+    _bgBackupInFlight = true;
+    const why = _bgBackupPendingReason ?? 'mutation';
+    _bgBackupPendingReason = null;
+    syncBackupToServer()
+      .catch((e) => console.warn(`[MasterKey] background backup (${why}) failed:`, e))
+      .finally(() => { _bgBackupInFlight = false; });
+  }, BG_BACKUP_DEBOUNCE_MS);
+}
+
 /** Clear session state (on logout) */
 export function clearAccountKeySession(): void {
   _sessionMasterKey = null;
