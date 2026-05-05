@@ -171,9 +171,33 @@ function IncomingCallHandler() {
 }
 
 function AccountKeySyncRunner() {
+  const { user } = useAuth();
   useAccountKeySync();
   useCryptoMaintenance();
   useDeviceRegistration();
+
+  // PR #14 — Realtime key sync: when any party publishes / rotates a key,
+  // silently retry queued messages so the user never sees "waiting for key".
+  useEffect(() => {
+    if (!user?.id) return;
+    const stop = startRealtimeKeySync({ userId: user.id });
+    return () => stop();
+  }, [user?.id]);
+
+  // PR #13 — listen for forced device-kx restore (server has a key we can't match)
+  useEffect(() => {
+    const onRestoreNeeded = (e: Event) => {
+      const detail = (e as CustomEvent).detail || {};
+      console.warn('[App] device-kx restore required:', detail);
+      toast.error(
+        "Cet appareil n'est plus reconnu. Restaurez vos clés depuis Réglages → Sécurité.",
+        { duration: 8000 },
+      );
+    };
+    window.addEventListener('forsure:device-kx-restore-required', onRestoreNeeded);
+    return () => window.removeEventListener('forsure:device-kx-restore-required', onRestoreNeeded);
+  }, []);
+
   return null;
 }
 
