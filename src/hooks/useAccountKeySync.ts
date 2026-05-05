@@ -197,12 +197,43 @@ export function useAccountKeySync() {
     };
   }, [user?.id]);
 
-  // Poll for IndexedDB changes using content-based digest
+  // Poll for IndexedDB changes + WATCHDOG: detect mid-session storage purge.
+  // iOS Safari/PWA can wipe IndexedDB silently while the app stays open
+  // (ITP, low storage, "Clear data"). We poll fast (8 s) and silently rebuild
+  // local keys from in-RAM Master Key → Keychain → password. No UI surface.
   useEffect(() => {
-    if (!user || !isAutoBackupActive()) return;
+    if (!user) return;
+
+    const PURGE_WATCHDOG_MS = 8_000;
 
     const checkForChanges = async () => {
       try {
+        // Watchdog first: if IndexedDB lost the identity, recover NOW.
+        if (!(await hasLocalKeys())) {
+          // Try keychain → in-RAM master key → password (all silent).
+          let recovered = false;
+          try {
+            recovered = (await restoreKeysFromKeychainSnapshot(user.id)) === 'restored';
+          } catch {}
+          if (!recovered) {
+            try {
+              recovered = (await restoreFromInMemoryMasterKey(user.id)) === 'restored';
+            } catch {}
+          }
+          if (!recovered) {
+            try {
+              recovered = (await restoreAccountKeysFromActiveSession(user.id)) === 'restored';
+            } catch {}
+          }
+          if (recovered) {
+            console.log('[AccountKeySync] watchdog: silent re-hydration succeeded');
+            window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+              detail: { status: 'watchdog_silent_restore' },
+            }));
+          }
+        }
+
+        if (!isAutoBackupActive()) return;
         const digest = await computeLocalCryptoDigest();
         if (lastDigestRef.current && digest !== lastDigestRef.current) {
           console.log('[AccountKeySync] Crypto state changed, triggering sync');
@@ -212,7 +243,7 @@ export function useAccountKeySync() {
       } catch {}
     };
 
-    const interval = setInterval(checkForChanges, POLL_INTERVAL_MS);
+    const interval = setInterval(checkForChanges, PURGE_WATCHDOG_MS);
     checkForChanges();
 
     return () => {
