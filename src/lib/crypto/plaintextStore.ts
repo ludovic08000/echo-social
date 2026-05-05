@@ -294,6 +294,7 @@ export async function removePlaintext(messageId: string): Promise<void> {
  * Wipe everything — used on logout for hygiene.
  */
 export async function wipePlaintextStore(): Promise<void> {
+  try { sessionStorage.removeItem(SESSION_MIRROR_KEY); } catch {}
   try {
     const db = await openDB();
     await new Promise<void>((resolve, reject) => {
