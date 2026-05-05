@@ -498,7 +498,7 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
         severity: 'info',
         context: 'decrypt',
         errorCode: 'DEVICE_COPY_FALLBACK',
-        errorMessage: `Trying ${rows.length} device copies (current device_id has no targeted copy)`,
+        errorMessage: `Trying ${rows.length} device copies for message ${messageId} (current device_id ${myDeviceId} has no targeted copy)`,
         myDeviceId,
         metadata: { messageId, candidates: rows.length },
       });
