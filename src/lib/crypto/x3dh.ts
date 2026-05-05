@@ -651,8 +651,8 @@ export async function refreshDeviceSignedPrekeyIfNeeded(
 // window will get different OPKs → different shared secrets.
 // Pool is refilled in batches of OPK_BATCH_SIZE when count drops below OPK_LOW_THRESHOLD.
 
-const OPK_BATCH_SIZE = 50;
-const OPK_LOW_THRESHOLD = 10;
+const OPK_BATCH_SIZE = 100;
+const OPK_LOW_THRESHOLD = 25;
 
 function deviceOPKKey(userId: string, deviceId: string, opkId: number): string {
   return `${userId}::dev::${deviceId}::opk::${opkId}`;
