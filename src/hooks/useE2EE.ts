@@ -406,13 +406,6 @@ async function checkFingerprintChangeWithServer(
       _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
       return result;
     }
-
-    if (data && data.fingerprint === currentFp && data.acknowledged === false) {
-      console.warn('[PEER_KEY] Server-side fingerprint is pending acknowledgement for', peerUserId);
-      const result = { changed: true, previousFp: data.fingerprint };
-      _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
-      return result;
-    }
   } catch {
   }
 
