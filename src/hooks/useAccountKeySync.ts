@@ -20,6 +20,7 @@ import {
   restoreAccountKeysFromActiveSession,
   restoreKeysFromKeychainSnapshot,
   syncKeychainSnapshotFromLocal,
+  restoreFromInMemoryMasterKey,
 } from '@/lib/crypto/accountKeyBackup';
 import { hydrateDeviceId, getCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { isNativePlatform } from '@/lib/nativeStore';
