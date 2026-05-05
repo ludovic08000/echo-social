@@ -29,7 +29,7 @@ import {
   x3dhRespond,
   x3dhRespondForDevice,
 } from '@/lib/crypto/x3dh';
-import { getOrCreateIdentityKeys } from '@/lib/crypto/keyManager';
+import { getOrCreateIdentityKeys, PinUnlockRequiredError } from '@/lib/crypto/keyManager';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { randomBytes, bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
 import {
@@ -130,8 +130,13 @@ async function x3dhWrapForDevice(
     }
 
     return parts.join('.');
-  } catch {
-    // X3DH wrap failed → caller falls back to deviceWrap. Silent.
+  } catch (e) {
+    // Bubble PIN-unlock signal up so the UI can prompt the user; never swallow it
+    // (otherwise fanout silently downgrades and the message is sent without per-device copies).
+    if (e instanceof PinUnlockRequiredError || String(e).toLowerCase().includes('pin unlock required')) {
+      throw e;
+    }
+    // Other errors → caller falls back to deviceWrap. Silent.
     return null;
   }
 }

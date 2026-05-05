@@ -1446,57 +1446,6 @@ export type Database = {
         }
         Relationships: []
       }
-      device_link_requests: {
-        Row: {
-          approved_at: string | null
-          approver_device_id: string | null
-          claimed_at: string | null
-          created_at: string
-          encrypted_payload: string | null
-          expires_at: string
-          id: string
-          requester_device_id: string
-          requester_label: string | null
-          requester_public_key: Json
-          status: string
-          token_hash: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          approved_at?: string | null
-          approver_device_id?: string | null
-          claimed_at?: string | null
-          created_at?: string
-          encrypted_payload?: string | null
-          expires_at?: string
-          id?: string
-          requester_device_id: string
-          requester_label?: string | null
-          requester_public_key: Json
-          status?: string
-          token_hash: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          approved_at?: string | null
-          approver_device_id?: string | null
-          claimed_at?: string | null
-          created_at?: string
-          encrypted_payload?: string | null
-          expires_at?: string
-          id?: string
-          requester_device_id?: string
-          requester_label?: string | null
-          requester_public_key?: Json
-          status?: string
-          token_hash?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       device_link_tokens: {
         Row: {
           claimed_at: string | null
@@ -2615,53 +2564,6 @@ export type Database = {
           },
         ]
       }
-      message_device_retry_requests: {
-        Row: {
-          attempt_count: number
-          created_at: string
-          id: string
-          last_error: string | null
-          message_id: string
-          requester_device_id: string
-          requester_user_id: string
-          sender_user_id: string
-          status: string
-          updated_at: string
-        }
-        Insert: {
-          attempt_count?: number
-          created_at?: string
-          id?: string
-          last_error?: string | null
-          message_id: string
-          requester_device_id: string
-          requester_user_id: string
-          sender_user_id: string
-          status?: string
-          updated_at?: string
-        }
-        Update: {
-          attempt_count?: number
-          created_at?: string
-          id?: string
-          last_error?: string | null
-          message_id?: string
-          requester_device_id?: string
-          requester_user_id?: string
-          sender_user_id?: string
-          status?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "message_device_retry_requests_message_id_fkey"
-            columns: ["message_id"]
-            isOneToOne: false
-            referencedRelation: "messages"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       message_reactions: {
         Row: {
           created_at: string
@@ -3376,6 +3278,7 @@ export type Database = {
           actor_id: string
           created_at: string
           id: string
+          metadata: Json | null
           post_id: string | null
           read_at: string | null
           type: Database["public"]["Enums"]["notification_type"]
@@ -3385,6 +3288,7 @@ export type Database = {
           actor_id: string
           created_at?: string
           id?: string
+          metadata?: Json | null
           post_id?: string | null
           read_at?: string | null
           type: Database["public"]["Enums"]["notification_type"]
@@ -3394,6 +3298,7 @@ export type Database = {
           actor_id?: string
           created_at?: string
           id?: string
+          metadata?: Json | null
           post_id?: string | null
           read_at?: string | null
           type?: Database["public"]["Enums"]["notification_type"]
@@ -5136,9 +5041,6 @@ export type Database = {
           is_active: boolean
           last_seen_at: string
           platform: string | null
-          revoke_reason: string | null
-          revoked_at: string | null
-          stale_at: string | null
           updated_at: string
           user_agent: string | null
           user_id: string
@@ -5152,9 +5054,6 @@ export type Database = {
           is_active?: boolean
           last_seen_at?: string
           platform?: string | null
-          revoke_reason?: string | null
-          revoked_at?: string | null
-          stale_at?: string | null
           updated_at?: string
           user_agent?: string | null
           user_id: string
@@ -5168,9 +5067,6 @@ export type Database = {
           is_active?: boolean
           last_seen_at?: string
           platform?: string | null
-          revoke_reason?: string | null
-          revoked_at?: string | null
-          stale_at?: string | null
           updated_at?: string
           user_agent?: string | null
           user_id?: string
@@ -5975,14 +5871,6 @@ export type Database = {
           fingerprint: string
         }[]
       }
-      approve_device_link_request: {
-        Args: {
-          p_approver_device_id: string
-          p_encrypted_payload: string
-          p_token_hash: string
-        }
-        Returns: boolean
-      }
       claim_device_one_time_prekey: {
         Args: { p_device_id: string; p_user_id: string }
         Returns: {
@@ -5992,26 +5880,11 @@ export type Database = {
       }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_expired_device_links: { Args: never; Returns: undefined }
-      cleanup_expired_device_link_requests: { Args: never; Returns: number }
       cleanup_expired_device_prekeys: { Args: never; Returns: undefined }
       cleanup_old_behavior_signals: { Args: never; Returns: undefined }
       cleanup_old_fingerprints: { Args: never; Returns: undefined }
       cleanup_old_login_attempts: { Args: never; Returns: undefined }
-      cleanup_stale_user_devices: {
-        Args: {
-          p_revoke_after?: unknown
-          p_stale_after?: unknown
-        }
-        Returns: {
-          action: string
-          device_id: string
-        }[]
-      }
       complete_onboarding: { Args: { _user_id: string }; Returns: boolean }
-      complete_device_link_request: {
-        Args: { p_requester_device_id: string; p_token_hash: string }
-        Returns: boolean
-      }
       consume_device_link_token: {
         Args: { p_token_hash: string }
         Returns: {
@@ -6022,15 +5895,6 @@ export type Database = {
       count_device_one_time_prekeys: {
         Args: { p_device_id: string; p_user_id: string }
         Returns: number
-      }
-      create_device_link_request: {
-        Args: {
-          p_requester_device_id: string
-          p_requester_label?: string
-          p_requester_public_key: Json
-          p_token_hash: string
-        }
-        Returns: string
       }
       create_group_conversation: {
         Args: { p_member_ids: string[]; p_name: string }
@@ -6067,14 +5931,6 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: boolean
       }
-      get_approved_device_link_payload: {
-        Args: { p_requester_device_id: string; p_token_hash: string }
-        Returns: {
-          approved_at: string | null
-          approver_device_id: string | null
-          encrypted_payload: string
-        }[]
-      }
       get_conversations_with_details: {
         Args: { p_user_id: string }
         Returns: {
@@ -6108,29 +5964,9 @@ export type Database = {
         Returns: {
           created_at: string
           encrypted_body: string
-          recipient_device_id: string
           sender_device_id: string
           sender_user_id: string
         }[]
-      }
-      get_device_link_request_for_approval: {
-        Args: { p_token_hash: string }
-        Returns: {
-          created_at: string
-          expires_at: string
-          request_id: string
-          requester_device_id: string
-          requester_label: string | null
-          requester_public_key: Json
-        }[]
-      }
-      complete_device_copy_retry: {
-        Args: {
-          p_encrypted_body: string
-          p_request_id: string
-          p_sender_device_id: string
-        }
-        Returns: boolean
       }
       get_device_prekey_bundle: {
         Args: { p_device_id: string; p_user_id: string }
@@ -6260,24 +6096,6 @@ export type Database = {
           last_seen_at: string
         }[]
       }
-      list_pending_device_copy_retries: {
-        Args: { p_limit?: number }
-        Returns: {
-          attempt_count: number
-          conversation_id: string
-          created_at: string
-          message_body: string
-          message_id: string
-          request_id: string
-          requester_device_id: string
-          requester_device_public_key: string
-          requester_user_id: string
-        }[]
-      }
-      mark_device_copy_retry_failed: {
-        Args: { p_error: string; p_request_id: string }
-        Returns: boolean
-      }
       match_contacts_by_phone:
         | {
             Args: { p_phone_numbers: string[] }
@@ -6383,14 +6201,6 @@ export type Database = {
         }
         Returns: undefined
       }
-      request_device_copy_retry: {
-        Args: {
-          p_message_id: string
-          p_requester_device_id: string
-          p_sender_user_id: string
-        }
-        Returns: string
-      }
       stripe_mark_event_processed: {
         Args: { p_event_id: string; p_event_type: string }
         Returns: boolean
@@ -6408,6 +6218,7 @@ export type Database = {
         | "message"
         | "story_view"
         | "sale"
+        | "new_device"
       order_status:
         | "pending"
         | "paid"
@@ -6556,6 +6367,7 @@ export const Constants = {
         "message",
         "story_view",
         "sale",
+        "new_device",
       ],
       order_status: [
         "pending",

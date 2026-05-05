@@ -22,7 +22,7 @@ export async function requestDeviceCopyRetry(input: RetryRequestInput): Promise<
   lastRequestAt.set(key, now);
 
   try {
-    const { error } = await supabase.rpc('request_device_copy_retry', {
+    const { error } = await (supabase as any).rpc("request_device_copy_retry", {
       p_message_id: input.messageId,
       p_sender_user_id: input.senderUserId,
       p_requester_device_id: requesterDeviceId,

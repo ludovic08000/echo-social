@@ -27,7 +27,7 @@ export interface DeviceLinkTransferEnvelope {
 }
 
 function bytesToBase64Url(bytes: Uint8Array): string {
-  const b64 = bufferToBase64(bytes.buffer);
+  const b64 = bufferToBase64(bytes.buffer as ArrayBuffer);
   return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
