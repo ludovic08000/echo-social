@@ -95,6 +95,86 @@ const SPK_ROTATION_DAYS = 7;
 const SPK_DB_NAME = 'forsure-spk';
 const SPK_DB_VERSION = 1;
 const SPK_STORE = 'signed-prekeys';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const STABLE_DEVICE_ID_RE = /^[A-Za-z0-9._:-]{8,128}$/;
+const B64_RE = /^[A-Za-z0-9+/_\-=]+$/;
+const DB_KEY_FIELDS = new Set(['identity_key', 'signing_key', 'device_public_key', 'public_key', 'signature']);
+
+function describeDBValue(field: string, value: unknown) {
+  const type = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+  if (typeof value !== 'string') return { field, type, value };
+  return {
+    field,
+    type,
+    length: value.length,
+    preview: `${value.slice(0, 10)}${value.length > 10 ? '…' : ''}`,
+    ...(DB_KEY_FIELDS.has(field) ? { redacted: 'public_key_truncated' } : { value }),
+  };
+}
+
+function sanitizeDBPayload(payload: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(payload).map(([field, value]) => [field, describeDBValue(field, value)]));
+}
+
+function validatePayloadForDB(payload: Record<string, unknown>, tableName: 'device_signed_prekeys' | 'user_signed_prekeys'): void {
+  const required = tableName === 'device_signed_prekeys'
+    ? ['user_id', 'device_id', 'spk_id', 'public_key', 'signature', 'is_active']
+    : ['user_id', 'spk_id', 'public_key', 'signature', 'is_active'];
+
+  for (const [field, value] of Object.entries(payload)) {
+    if (value === undefined) throw new Error(`[X3DH][DB][VALIDATION] ${tableName}.${field}: undefined interdit`);
+  }
+  for (const field of required) {
+    if (payload[field] === null || payload[field] === undefined || payload[field] === '') {
+      throw new Error(`[X3DH][DB][VALIDATION] ${tableName}.${field}: valeur obligatoire absente (${payload[field]})`);
+    }
+  }
+  if (typeof payload.user_id !== 'string' || !UUID_RE.test(payload.user_id)) {
+    throw new Error(`[X3DH][DB][VALIDATION] ${tableName}.user_id: UUID invalide (${JSON.stringify(describeDBValue('user_id', payload.user_id))})`);
+  }
+  if ('device_id' in payload && (typeof payload.device_id !== 'string' || !STABLE_DEVICE_ID_RE.test(payload.device_id))) {
+    throw new Error(`[X3DH][DB][VALIDATION] ${tableName}.device_id: string stable invalide (${JSON.stringify(describeDBValue('device_id', payload.device_id))})`);
+  }
+  if (typeof payload.spk_id !== 'number' || !Number.isInteger(payload.spk_id) || payload.spk_id <= 0) {
+    throw new Error(`[X3DH][DB][VALIDATION] ${tableName}.spk_id: integer positif invalide (${payload.spk_id})`);
+  }
+  for (const field of ['public_key', 'signature']) {
+    if (typeof payload[field] !== 'string' || !B64_RE.test(payload[field] as string)) {
+      throw new Error(`[X3DH][DB][VALIDATION] ${tableName}.${field}: base64 string invalide (${JSON.stringify(describeDBValue(field, payload[field]))})`);
+    }
+  }
+}
+
+function logDBPayloadBeforeUpsert(table: 'device_signed_prekeys' | 'user_signed_prekeys', payload: Record<string, unknown>) {
+  console.log('[X3DH][DB][UPSERT_PAYLOAD]', {
+    table,
+    payload_keys: Object.keys(payload),
+    fields: sanitizeDBPayload(payload),
+  });
+}
+
+function logDBUpsertError(table: 'device_signed_prekeys' | 'user_signed_prekeys', step: string, error: any, payload: Record<string, unknown>) {
+  const haystack = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ');
+  const rejectedColumn = Object.keys(payload).find((key) => new RegExp(`\\b${key}\\b`, 'i').test(haystack));
+  const violatedConstraint = haystack.match(/constraint "([^"]+)"/i)?.[1]
+    ?? haystack.match(/violates ([^\s]+) constraint/i)?.[1]
+    ?? undefined;
+  const diagnostic = {
+    table,
+    step,
+    code: error?.code,
+    message: error?.message,
+    details: error?.details,
+    hint: error?.hint,
+    constraint_violated: violatedConstraint ?? 'unknown_from_supabase_error',
+    rejected_column: rejectedColumn ?? 'unknown_from_supabase_error',
+    rejected_value: rejectedColumn ? describeDBValue(rejectedColumn, payload[rejectedColumn]) : undefined,
+    payload_keys: Object.keys(payload),
+    payload: sanitizeDBPayload(payload),
+  };
+  console.error('[X3DH][DB][UPSERT_FAIL]', diagnostic);
+  return diagnostic;
+}
 
 function openSPKDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -223,20 +303,24 @@ export async function generateAndUploadSignedPrekey(
   // Store private half locally
   await saveSPKPrivate(userId, spkId, spkPair.privateKey, publicBase64);
 
+  const payload = {
+    user_id: userId,
+    spk_id: spkId,
+    public_key: publicBase64,
+    signature: signatureBase64,
+    is_active: true,
+  };
+  validatePayloadForDB(payload, 'user_signed_prekeys');
+  logDBPayloadBeforeUpsert('user_signed_prekeys', payload);
+
   // Upload to server
   const { error } = await supabase
     .from('user_signed_prekeys')
-    .upsert({
-      user_id: userId,
-      spk_id: spkId,
-      public_key: publicBase64,
-      signature: signatureBase64,
-      is_active: true,
-    }, { onConflict: 'user_id,spk_id' });
+    .upsert(payload, { onConflict: 'user_id,spk_id' });
 
   if (error) {
-    console.error('[X3DH] SPK upload failed:', error);
-    throw new Error('Failed to upload signed prekey');
+    const dbDiag = logDBUpsertError('user_signed_prekeys', 'user_signed_prekeys_upsert', error, payload);
+    throw new Error(`X3DH_DB_UPSERT_FAILED table=user_signed_prekeys step=user_signed_prekeys_upsert code=${dbDiag.code ?? 'n/a'} rejected_column=${dbDiag.rejected_column} details=${dbDiag.details ?? 'n/a'} hint=${dbDiag.hint ?? 'n/a'} supabase_message=${dbDiag.message ?? 'n/a'}`);
   }
 
   // Deactivate previous SPKs on server but keep local private keys
@@ -279,25 +363,32 @@ export async function refreshSignedPrekeyIfNeeded(
     // against the new signing key → must regenerate SPK.
     let signatureValid = false;
     try {
-      const spkRaw = base64ToBuffer(data.public_key);
-      const sigRaw = base64ToBuffer(data.signature);
-
       const { data: pubKeyData } = await supabase
         .from('user_public_keys')
-        .select('signing_key')
+        .select('identity_key, signing_key')
         .eq('user_id', userId)
         .eq('is_active', true)
         .maybeSingle();
 
       if (pubKeyData) {
-        const signingPubKey = await importEd25519Public(pubKeyData.signing_key);
-        signatureValid = await hardCrypto.verify(
-          'Ed25519' as any, signingPubKey, sigRaw, spkRaw,
-        );
+        signatureValid = await verifySignedPrekey(pubKeyData.signing_key, data.public_key, data.signature, {
+          source: 'refreshSignedPrekeyIfNeeded.current_user_spk',
+          identityKeyB64: pubKeyData.identity_key,
+          userId,
+          spkId: data.spk_id,
+        });
       }
 
       if (!signatureValid) {
-        console.warn('[X3DH] ⚠️ SPK signature verification FAILED against current signing key — SPK out of sync');
+        console.warn('[X3DH] SPK INVALID → regeneration required', {
+          source: 'refreshSignedPrekeyIfNeeded',
+          user_id: userId,
+          spk_id: data.spk_id,
+          identity_len: pubKeyData?.identity_key?.length ?? null,
+          spk_len: data.public_key?.length ?? null,
+          sig_len: data.signature?.length ?? null,
+          valid: false,
+        });
       }
     } catch (verifyErr) {
       console.warn('[X3DH] ⚠️ SPK signature verification error:', verifyErr);
@@ -430,20 +521,24 @@ export async function generateAndUploadDeviceSignedPrekey(
 
   await saveDeviceSPKPrivate(userId, deviceId, spkId, spkPair.privateKey, publicBase64);
 
+  const payload = {
+    user_id: userId,
+    device_id: deviceId,
+    spk_id: spkId,
+    public_key: publicBase64,
+    signature: signatureBase64,
+    is_active: true,
+  };
+  validatePayloadForDB(payload, 'device_signed_prekeys');
+  logDBPayloadBeforeUpsert('device_signed_prekeys', payload);
+
   const { error } = await supabase
     .from('device_signed_prekeys')
-    .upsert({
-      user_id: userId,
-      device_id: deviceId,
-      spk_id: spkId,
-      public_key: publicBase64,
-      signature: signatureBase64,
-      is_active: true,
-    }, { onConflict: 'user_id,device_id,spk_id' });
+    .upsert(payload, { onConflict: 'user_id,device_id,spk_id' });
 
   if (error) {
-    console.error('[X3DH-DEV] device SPK upload failed:', error);
-    throw new Error('Failed to upload device signed prekey');
+    const dbDiag = logDBUpsertError('device_signed_prekeys', 'device_signed_prekeys_upsert', error, payload);
+    throw new Error(`X3DH_DB_UPSERT_FAILED table=device_signed_prekeys step=device_signed_prekeys_upsert code=${dbDiag.code ?? 'n/a'} rejected_column=${dbDiag.rejected_column} details=${dbDiag.details ?? 'n/a'} hint=${dbDiag.hint ?? 'n/a'} supabase_message=${dbDiag.message ?? 'n/a'}`);
   }
 
   // Deactivate previous device SPKs server-side (local privates kept for in-flight)
@@ -470,7 +565,7 @@ export async function refreshDeviceSignedPrekeyIfNeeded(
   try {
     const { data } = await supabase
       .from('device_signed_prekeys')
-      .select('created_at, expires_at, spk_id')
+      .select('created_at, expires_at, spk_id, public_key, signature')
       .eq('user_id', userId)
       .eq('device_id', deviceId)
       .eq('is_active', true)
@@ -479,6 +574,45 @@ export async function refreshDeviceSignedPrekeyIfNeeded(
       .maybeSingle();
 
     if (!data) {
+      await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
+      return;
+    }
+
+    const { data: pubKeyData, error: pubKeyErr } = await supabase
+      .from('user_public_keys')
+      .select('identity_key, signing_key')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .maybeSingle();
+    if (pubKeyErr || !pubKeyData?.signing_key) {
+      console.warn('[X3DH] SPK INVALID → regeneration required', {
+        reason: 'missing_current_user_public_signing_key',
+        user_id: userId,
+        device_id: deviceId,
+        spk_id: data.spk_id,
+        supabase_error: pubKeyErr ? { code: pubKeyErr.code, message: pubKeyErr.message, details: pubKeyErr.details, hint: pubKeyErr.hint } : null,
+      });
+      await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
+      return;
+    }
+
+    const currentSignatureValid = await verifySignedPrekey(pubKeyData.signing_key, data.public_key, data.signature, {
+      source: 'refreshDeviceSignedPrekeyIfNeeded.current_device_spk',
+      identityKeyB64: pubKeyData.identity_key,
+      userId,
+      deviceId,
+      spkId: data.spk_id,
+    });
+    if (!currentSignatureValid) {
+      console.warn('[X3DH] SPK INVALID → regeneration required', {
+        user_id: userId,
+        device_id: deviceId,
+        spk_id: data.spk_id,
+        identity_len: pubKeyData.identity_key?.length ?? null,
+        spk_len: data.public_key?.length ?? null,
+        sig_len: data.signature?.length ?? null,
+        valid: false,
+      });
       await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
       return;
     }
@@ -699,21 +833,43 @@ async function fetchDevicePrekeyMaterial(
   };
 }
 
+function safeBase64BytesLength(value: string): number | 'invalid_base64' {
+  try { return base64ToBuffer(value).byteLength; } catch { return 'invalid_base64'; }
+}
+
 async function verifySignedPrekey(
   signingKeyB64: string,
   spkPublicB64: string,
   signatureB64: string,
+  context: { source: string; identityKeyB64?: string; userId?: string; deviceId?: string; spkId?: number | string } = { source: 'unknown' },
 ): Promise<boolean> {
+  const diagBase = {
+    source: context.source,
+    user_id: context.userId,
+    device_id: context.deviceId,
+    spk_id: context.spkId,
+    encoding: 'base64(raw Ed25519 signature over raw X25519 SPK public key)',
+    identity_len: context.identityKeyB64?.length ?? null,
+    signing_len: signingKeyB64?.length ?? null,
+    spk_len: spkPublicB64?.length ?? null,
+    sig_len: signatureB64?.length ?? null,
+    identity_bytes: context.identityKeyB64 ? safeBase64BytesLength(context.identityKeyB64) : null,
+    signing_bytes: signingKeyB64 ? safeBase64BytesLength(signingKeyB64) : null,
+    spk_bytes: spkPublicB64 ? safeBase64BytesLength(spkPublicB64) : null,
+    sig_bytes: signatureB64 ? safeBase64BytesLength(signatureB64) : null,
+  };
   try {
     const peerSigningKey = await importEd25519Public(signingKeyB64);
-    return await hardCrypto.verify(
+    const valid = await hardCrypto.verify(
       'Ed25519' as any,
       peerSigningKey,
       base64ToBuffer(signatureB64),
       base64ToBuffer(spkPublicB64),
     );
+    console.log('[X3DH][SPK_VERIFY]', { ...diagBase, valid });
+    return valid;
   } catch (e) {
-    console.warn('[X3DH] SPK signature check error:', e);
+    console.warn('[X3DH][SPK_VERIFY_ERROR]', { ...diagBase, valid: false, error: e });
     return false;
   }
 }
@@ -730,9 +886,24 @@ export async function peekDeviceSignedPrekey(
   const material = await fetchDevicePrekeyMaterial(peerUserId, peerDeviceId);
   if (!material) return null;
 
-  const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature);
+  const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature, {
+    source: 'peekDeviceSignedPrekey',
+    identityKeyB64: material.identityKey,
+    userId: peerUserId,
+    deviceId: peerDeviceId,
+    spkId: material.spkId,
+  });
   if (!sigValid) {
-    console.warn(`[X3DH-DEV] device SPK signature INVALID for ${peerUserId}/${peerDeviceId}`);
+    console.warn('[X3DH-DEV] device SPK signature INVALID', {
+      user_id: peerUserId,
+      device_id: peerDeviceId,
+      spk_id: material.spkId,
+      identity_len: material.identityKey?.length ?? null,
+      spk_len: material.publicKey?.length ?? null,
+      sig_len: material.signature?.length ?? null,
+      valid: false,
+      encoding: 'base64(raw Ed25519 signature over raw X25519 SPK public key)',
+    });
     return null;
   }
 
@@ -751,9 +922,24 @@ export async function fetchPrekeyBundleForDevice(
   const material = await fetchDevicePrekeyMaterial(peerUserId, peerDeviceId);
   if (!material) return null;
 
-  const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature);
+  const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature, {
+    source: 'fetchPrekeyBundleForDevice',
+    identityKeyB64: material.identityKey,
+    userId: peerUserId,
+    deviceId: peerDeviceId,
+    spkId: material.spkId,
+  });
   if (!sigValid) {
-    console.warn(`[X3DH-DEV] ⛔ device SPK signature INVALID for ${peerUserId}/${peerDeviceId}`);
+    console.warn('[X3DH-DEV] ⛔ device SPK signature INVALID', {
+      user_id: peerUserId,
+      device_id: peerDeviceId,
+      spk_id: material.spkId,
+      identity_len: material.identityKey?.length ?? null,
+      spk_len: material.publicKey?.length ?? null,
+      sig_len: material.signature?.length ?? null,
+      valid: false,
+      encoding: 'base64(raw Ed25519 signature over raw X25519 SPK public key)',
+    });
     return null;
   }
 
@@ -809,18 +995,23 @@ export async function fetchPrekeyBundle(peerUserId: string): Promise<X3DHPrekeyB
 
   // 3. Verify SPK signature BEFORE consuming any OPK
   // This prevents wasting a one-time prekey on a stale/invalid bundle
-  let sigValid = false;
-  try {
-    const spkRaw = base64ToBuffer(spk.public_key);
-    const sigRaw = base64ToBuffer(spk.signature);
-    const peerSigningKey = await importEd25519Public(pubKeys.signing_key);
-    sigValid = await hardCrypto.verify('Ed25519' as any, peerSigningKey, sigRaw, spkRaw);
-  } catch (verifyErr) {
-    console.error('[X3DH] ⚠️ SPK signature verification error in fetchPrekeyBundle:', verifyErr);
-  }
+  const sigValid = await verifySignedPrekey(pubKeys.signing_key, spk.public_key, spk.signature, {
+    source: 'fetchPrekeyBundle.legacy_user_spk',
+    identityKeyB64: pubKeys.identity_key,
+    userId: peerUserId,
+    spkId: spk.spk_id,
+  });
 
   if (!sigValid) {
-    console.error(`[X3DH] ⛔ SPK #${spk.spk_id} signature INVALID for peer ${peerUserId} — bundle REJECTED (possible stale SPK or signing key mismatch)`);
+    console.error('[X3DH] ⛔ SPK signature INVALID — bundle REJECTED', {
+      user_id: peerUserId,
+      spk_id: spk.spk_id,
+      identity_len: pubKeys.identity_key?.length ?? null,
+      spk_len: spk.public_key?.length ?? null,
+      sig_len: spk.signature?.length ?? null,
+      valid: false,
+      encoding: 'base64(raw Ed25519 signature over raw X25519 SPK public key)',
+    });
     return null;
   }
 
@@ -847,16 +1038,14 @@ export async function x3dhInitiate(
   bundle: X3DHPrekeyBundle,
 ): Promise<X3DHResult> {
   // 1. Signature already verified in fetchPrekeyBundle, but double-check
-  const spkRaw = base64ToBuffer(bundle.signedPrekey);
-  const sigRaw = base64ToBuffer(bundle.signedPrekeySignature);
-  const peerSigningKey = await importEd25519Public(bundle.signingKey);
-
-  const sigValid = await hardCrypto.verify(
-    'Ed25519' as any, peerSigningKey, sigRaw, spkRaw,
-  );
+  const sigValid = await verifySignedPrekey(bundle.signingKey, bundle.signedPrekey, bundle.signedPrekeySignature, {
+    source: 'x3dhInitiate.bundle_double_check',
+    identityKeyB64: bundle.identityKey,
+    spkId: bundle.signedPrekeyId,
+  });
 
   if (!sigValid) {
-    throw new Error('X3DH: Signed prekey signature verification FAILED — possible MITM');
+    throw new Error(`X3DH: Signed prekey signature verification FAILED — identity_len=${bundle.identityKey?.length ?? 0} spk_len=${bundle.signedPrekey?.length ?? 0} sig_len=${bundle.signedPrekeySignature?.length ?? 0} encoding=base64(raw Ed25519 signature over raw X25519 SPK public key)`);
   }
 
   // 2. Import peer keys

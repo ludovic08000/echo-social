@@ -123,6 +123,101 @@ function isNonEmptyB64(s: unknown): s is string {
   return typeof s === 'string' && s.length > 0 && /^[A-Za-z0-9+/_\-=]+$/.test(s);
 }
 
+type DBTableName = 'user_public_keys' | 'user_devices' | 'device_signed_prekeys';
+type DBPayload = Record<string, unknown>;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const STABLE_DEVICE_ID_RE = /^[A-Za-z0-9._:-]{8,128}$/;
+const KEY_FIELDS = new Set(['identity_key', 'signing_key', 'device_public_key', 'public_key', 'signature']);
+
+function describeValueForLog(field: string, value: unknown) {
+  const type = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+  if (typeof value !== 'string') return { field, type, value };
+  const redacted = KEY_FIELDS.has(field);
+  return {
+    field,
+    type,
+    length: value.length,
+    preview: `${value.slice(0, 10)}${value.length > 10 ? '…' : ''}`,
+    ...(redacted ? { redacted: 'public_key_truncated' } : { value }),
+  };
+}
+
+function sanitizePayloadForLog(payload: DBPayload) {
+  return Object.fromEntries(Object.entries(payload).map(([field, value]) => [field, describeValueForLog(field, value)]));
+}
+
+function inferRejectedColumn(error: any, payload: DBPayload): string | undefined {
+  const haystack = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ');
+  return Object.keys(payload).find((key) => new RegExp(`\\b${key}\\b`, 'i').test(haystack));
+}
+
+function inferViolatedConstraint(error: any): string | undefined {
+  const haystack = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ');
+  return haystack.match(/constraint "([^"]+)"/i)?.[1]
+    ?? haystack.match(/violates ([^\s]+) constraint/i)?.[1]
+    ?? undefined;
+}
+
+function logPayloadBeforeUpsert(table: DBTableName, payload: DBPayload) {
+  console.log('[E2EE][DB][UPSERT_PAYLOAD]', {
+    table,
+    payload_keys: Object.keys(payload),
+    fields: sanitizePayloadForLog(payload),
+  });
+}
+
+function formatSupabaseError(table: DBTableName, step: string, error: any, payload: DBPayload) {
+  const rejectedColumn = inferRejectedColumn(error, payload);
+  const diagnostic = {
+    table,
+    step,
+    code: error?.code,
+    message: error?.message,
+    details: error?.details,
+    hint: error?.hint,
+    constraint_violated: inferViolatedConstraint(error) ?? 'unknown_from_supabase_error',
+    rejected_column: rejectedColumn ?? 'unknown_from_supabase_error',
+    rejected_value: rejectedColumn ? describeValueForLog(rejectedColumn, payload[rejectedColumn]) : undefined,
+    payload_keys: Object.keys(payload),
+    payload: sanitizePayloadForLog(payload),
+  };
+  console.error('[E2EE][DB][UPSERT_FAIL]', diagnostic);
+  return diagnostic;
+}
+
+function validatePayloadForDB(payload: DBPayload, tableName: DBTableName): void {
+  for (const [field, value] of Object.entries(payload)) {
+    if (value === undefined) throw new Error(`[E2EE][DB][VALIDATION] ${tableName}.${field}: undefined interdit`);
+  }
+
+  const requiredByTable: Record<DBTableName, string[]> = {
+    user_public_keys: ['user_id', 'identity_key', 'signing_key', 'fingerprint', 'kem_type', 'is_active', 'updated_at'],
+    user_devices: ['user_id', 'device_id', 'device_public_key', 'platform', 'is_active', 'last_seen_at'],
+    device_signed_prekeys: ['user_id', 'device_id', 'spk_id', 'public_key', 'signature', 'is_active'],
+  };
+
+  for (const field of requiredByTable[tableName]) {
+    if (payload[field] === null || payload[field] === undefined || payload[field] === '') {
+      throw new Error(`[E2EE][DB][VALIDATION] ${tableName}.${field}: valeur obligatoire absente (${payload[field]})`);
+    }
+  }
+  if (typeof payload.user_id !== 'string' || !UUID_RE.test(payload.user_id)) {
+    throw new Error(`[E2EE][DB][VALIDATION] ${tableName}.user_id: UUID invalide (${describeValueForLog('user_id', payload.user_id).value})`);
+  }
+  if ('device_id' in payload && (typeof payload.device_id !== 'string' || !STABLE_DEVICE_ID_RE.test(payload.device_id))) {
+    throw new Error(`[E2EE][DB][VALIDATION] ${tableName}.device_id: string stable invalide (${JSON.stringify(describeValueForLog('device_id', payload.device_id))})`);
+  }
+  if ('platform' in payload && !ALLOWED_PLATFORMS.has(String(payload.platform))) {
+    throw new Error(`[E2EE][DB][VALIDATION] ${tableName}.platform: valeur interdite (${String(payload.platform)}), attendu ios|web|android`);
+  }
+  for (const field of ['identity_key', 'signing_key', 'device_public_key', 'public_key', 'signature']) {
+    if (field in payload && !isNonEmptyB64(payload[field])) {
+      throw new Error(`[E2EE][DB][VALIDATION] ${tableName}.${field}: base64 string invalide (${JSON.stringify(describeValueForLog(field, payload[field]))})`);
+    }
+  }
+}
+
 async function republishDeviceIdentity(
   userId: string,
   deviceId: string,
@@ -195,25 +290,43 @@ async function republishDeviceIdentity(
     last_seen_at: new Date().toISOString(),
   };
 
+  const publicPayload = {
+    user_id: userId,
+    identity_key: bundle.identityKey,
+    signing_key: bundle.signingKey,
+    fingerprint: bundle.fingerprint,
+    kem_type: 'X25519',
+    is_active: true,
+    updated_at: new Date().toISOString(),
+  };
+
+  validatePayloadForDB(publicPayload, 'user_public_keys');
+  logPayloadBeforeUpsert('user_public_keys', publicPayload);
+
+  validatePayloadForDB(payload, 'user_devices');
+  logPayloadBeforeUpsert('user_devices', payload);
+
   // Diagnostic log — NEVER log private key material.
   diag?.push('identity', 'info', 'stage user_public_keys.upsert', {
     identityKeyLen: bundle.identityKey.length,
     signingKeyLen: bundle.signingKey.length,
     fingerprint: bundle.fingerprint,
   });
-  const { error: pubErr } = await supabase
-    .from('user_public_keys')
-    .upsert({
-      user_id: userId,
-      identity_key: bundle.identityKey,
-      signing_key: bundle.signingKey,
-      fingerprint: bundle.fingerprint,
-      kem_type: 'X25519',
-      is_active: true,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id,is_active' });
-  if (pubErr) {
-    throw new Error(`user_public_keys upsert failed: ${pubErr.message} (code=${(pubErr as any).code ?? 'n/a'}, details=${(pubErr as any).details ?? 'n/a'})`);
+  try {
+    const { error: pubErr } = await supabase
+      .from('user_public_keys')
+      .upsert(publicPayload, { onConflict: 'user_id,is_active' });
+    if (pubErr) {
+      const dbDiag = formatSupabaseError('user_public_keys', 'user_public_keys_upsert', pubErr, publicPayload);
+      throw new Error(`E2EE_DB_UPSERT_FAILED table=user_public_keys step=user_public_keys_upsert code=${dbDiag.code ?? 'n/a'} rejected_column=${dbDiag.rejected_column} details=${dbDiag.details ?? 'n/a'} hint=${dbDiag.hint ?? 'n/a'} supabase_message=${dbDiag.message ?? 'n/a'}`);
+    }
+  } catch (e) {
+    console.error('[E2EE][IDENTITY][FAIL]', {
+      step: 'user_public_keys_upsert',
+      error: e,
+      payload: sanitizePayloadForLog(publicPayload),
+    });
+    throw e;
   }
 
   console.log('[resync] user_devices.upsert payload', {
@@ -232,17 +345,21 @@ async function republishDeviceIdentity(
     platform: payload.platform,
     devicePublicKeyLen: payload.device_public_key.length,
   });
-  const { error: devErr } = await supabase
-    .from('user_devices')
-    .upsert(payload, { onConflict: 'user_id,device_id' });
-  if (devErr) {
-    console.error('[resync] user_devices.upsert failed', {
-      code: (devErr as any).code,
-      message: devErr.message,
-      details: (devErr as any).details,
-      hint: (devErr as any).hint,
+  try {
+    const { error: devErr } = await supabase
+      .from('user_devices')
+      .upsert(payload, { onConflict: 'user_id,device_id' });
+    if (devErr) {
+      const dbDiag = formatSupabaseError('user_devices', 'user_devices_upsert', devErr, payload);
+      throw new Error(`E2EE_DB_UPSERT_FAILED table=user_devices step=user_devices_upsert code=${dbDiag.code ?? 'n/a'} rejected_column=${dbDiag.rejected_column} details=${dbDiag.details ?? 'n/a'} hint=${dbDiag.hint ?? 'n/a'} supabase_message=${dbDiag.message ?? 'n/a'}`);
+    }
+  } catch (e) {
+    console.error('[E2EE][IDENTITY][FAIL]', {
+      step: 'user_devices_upsert',
+      error: e,
+      payload: sanitizePayloadForLog(payload),
     });
-    throw new Error(`user_devices upsert failed: ${devErr.message} (code=${(devErr as any).code ?? 'n/a'}, details=${(devErr as any).details ?? 'n/a'})`);
+    throw e;
   }
   result.identity = true;
 
