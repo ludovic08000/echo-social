@@ -293,7 +293,7 @@ async function republishDeviceIdentity(
     deviceFingerprint = await getDeviceFingerprint();
   } catch {}
 
-  const payload: Record<string, unknown> = {
+  const payload = {
     user_id: userId,
     device_id: deviceId,
     device_name: deviceName,
@@ -302,8 +302,8 @@ async function republishDeviceIdentity(
     user_agent: userAgent,
     is_active: true,
     last_seen_at: new Date().toISOString(),
+    device_fingerprint: deviceFingerprint,
   };
-  if (deviceFingerprint) payload.device_fingerprint = deviceFingerprint;
 
   const publicPayload = {
     user_id: userId,
