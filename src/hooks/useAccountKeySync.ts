@@ -227,33 +227,49 @@ export function useAccountKeySync() {
 
     let unsubscribeApp: (() => void) | null = null;
 
+    const attemptSilentRestore = async (origin: string): Promise<boolean> => {
+      if (await hasLocalKeys()) return true;
+      // 1) Native Keychain snapshot (survives IndexedDB purge on iOS)
+      try {
+        const k = await restoreKeysFromKeychainSnapshot(user.id);
+        if (k === 'restored') {
+          window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+            detail: { status: `restored_from_keychain_${origin}` },
+          }));
+          return true;
+        }
+      } catch {}
+      // 2) In-RAM Master Key (no password prompt — works mid-session)
+      try {
+        const m = await restoreFromInMemoryMasterKey(user.id);
+        if (m === 'restored') {
+          window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+            detail: { status: `restored_from_inmem_mk_${origin}` },
+          }));
+          return true;
+        }
+      } catch {}
+      // 3) In-memory password session
+      try {
+        const p = await restoreAccountKeysFromActiveSession(user.id);
+        if (p === 'restored') {
+          window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+            detail: { status: `restored_from_password_${origin}` },
+          }));
+          return true;
+        }
+      } catch {}
+      return false;
+    };
+
     const onResume = () => {
       console.log('[AccountKeySync] app resumed — re-checking crypto');
       void (async () => {
         try {
           const digest = await computeLocalCryptoDigest();
           lastDigestRef.current = digest;
-          if (isAutoBackupActive()) {
-            // Force a sync attempt right away on resume
-            triggerSync();
-          }
-          // Re-attempt restore if local keys vanished (iOS WebView purge)
-          if (!(await hasLocalKeys())) {
-            const keychainStatus = await restoreKeysFromKeychainSnapshot(user.id);
-            if (keychainStatus === 'restored') {
-              window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
-                detail: { status: 'restored_from_keychain_on_resume' },
-              }));
-              return;
-            }
-
-            const status = await restoreAccountKeysFromActiveSession(user.id);
-            if (status === 'restored') {
-              window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
-                detail: { status: 'restored_on_resume' },
-              }));
-            }
-          }
+          if (isAutoBackupActive()) triggerSync();
+          await attemptSilentRestore('resume');
         } catch (e) {
           console.warn('[AccountKeySync] resume handler failed:', e);
         }
