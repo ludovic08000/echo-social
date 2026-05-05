@@ -14,7 +14,6 @@ import { useConversations } from '@/hooks/useMessages';
 import { useScreenSize } from '@/hooks/useScreenSize';
 import { useChatWidget } from '@/components/ChatWidgetContext';
 import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
-import { useDeviceSecurity } from '@/hooks/useDeviceSecurity';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { UXModeSwitchCompact } from '@/components/UXModeSwitch';
 import { useUXMode } from '@/hooks/useUXMode';
@@ -110,7 +109,6 @@ export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
   const { user, loading } = useAuth();
   const { isFlow } = useUXMode();
   useRealtimeNotifications();
-  useDeviceSecurity();
 
   if (loading) {
     return (
