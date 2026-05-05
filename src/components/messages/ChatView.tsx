@@ -455,14 +455,20 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const encryptionReady = isZeusConversation || e2ee.isReady();
   const sendBlocked = !isZeusConversation && (
     e2ee.peerKeyMissing ||
+    e2ee.initError === 'pin_setup_required' ||
     e2ee.initError === 'pin_unlock_required' ||
-    e2ee.initError === 'identity_lost_backup_available'
+    e2ee.initError === 'identity_lost_backup_available' ||
+    e2ee.initError === 'identity_restore_required' ||
+    e2ee.initError === 'identity_fingerprint_mismatch' ||
+    e2ee.initError === 'identity_server_unavailable'
   );
 
   const handleImageUpload = () => {
     if (sendBlocked) {
       if (e2ee.peerKeyMissing) {
         toast.error('Clés du contact indisponibles — impossible d’envoyer un média pour le moment.');
+      } else if (e2ee.initError === 'pin_setup_required') {
+        toast.error('Configure ton PIN de messagerie avant de creer ton identite securisee.');
       } else if (e2ee.initError === 'pin_unlock_required') {
         toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer un média.');
       } else if (e2ee.initError === 'identity_lost_backup_available') {
@@ -623,7 +629,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
             <span className="text-xs text-destructive font-semibold flex-1">
               {e2ee.initError === 'identity_lost_backup_available'
                 ? '🔑 Vos clés de chiffrement ont été perdues. Restaurez votre sauvegarde pour retrouver vos messages.'
-                : e2ee.initError === 'pin_unlock_required'
+                : e2ee.initError === 'identity_restore_required'
+                  ? 'Votre identite E2EE existe deja. Restaurez-la avec votre PIN avant d ouvrir la messagerie.'
+                  : e2ee.initError === 'identity_fingerprint_mismatch'
+                    ? 'Identite E2EE bloquee : le fingerprint local ne correspond pas au serveur. Restauration obligatoire.'
+                    : e2ee.initError === 'identity_server_unavailable'
+                      ? 'Impossible de verifier l identite E2EE serveur. Reessayez quand la connexion est stable.'
+                      : e2ee.initError === 'pin_setup_required'
+                        ? 'Configurez votre PIN de messagerie pour creer votre identite E2EE.'
+                        : e2ee.initError === 'pin_unlock_required'
                   ? '🔐 Déverrouillez votre PIN pour accéder à vos clés de chiffrement.'
                   : e2ee.initError === 'fingerprint_changed'
                     ? '🛑 L\'identité cryptographique de votre contact a changé. Cela peut indiquer un changement d\'appareil légitime ou une tentative d\'interception. Vérifiez avec votre contact avant d\'accepter.'

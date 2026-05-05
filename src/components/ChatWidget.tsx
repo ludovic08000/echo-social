@@ -737,6 +737,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
+    if (sendBlocked) {
+      explainSendBlock('message');
+      return;
+    }
 
     const replyText = replyTo ? decryptedCacheRef.current.get(replyTo.id) || replyTo.body : null;
     const body = replyTo
@@ -761,7 +765,32 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   };
 
   // Fingerprint change is no longer a blocker — only true unrecoverable states are.
-  const sendBlocked = !isZeusConversation && (e2ee.peerKeyMissing || e2ee.initError === 'pin_unlock_required' || e2ee.initError === 'identity_lost_backup_available');
+  const sendBlocked = !isZeusConversation && (
+    e2ee.peerKeyMissing ||
+    e2ee.initError === 'pin_setup_required' ||
+    e2ee.initError === 'pin_unlock_required' ||
+    e2ee.initError === 'identity_lost_backup_available' ||
+    e2ee.initError === 'identity_restore_required' ||
+    e2ee.initError === 'identity_fingerprint_mismatch' ||
+    e2ee.initError === 'identity_server_unavailable'
+  );
+
+  const explainSendBlock = useCallback((kind: 'message' | 'media' = 'message') => {
+    const noun = kind === 'media' ? 'un media' : 'un message';
+    if (e2ee.peerKeyMissing) {
+      toast.error(`Cles du contact indisponibles - impossible d'envoyer ${noun} pour le moment.`);
+    } else if (e2ee.initError === 'pin_setup_required') {
+      toast.error('Configure ton PIN de messagerie avant de creer ton identite E2EE.');
+    } else if (e2ee.initError === 'pin_unlock_required') {
+      toast.error('Deverrouille d abord la messagerie securisee.');
+    } else if (e2ee.initError === 'identity_lost_backup_available' || e2ee.initError === 'identity_restore_required') {
+      toast.error('Restaure d abord ton identite E2EE avant d envoyer.');
+    } else if (e2ee.initError === 'identity_fingerprint_mismatch') {
+      toast.error('Identite E2EE bloquee: le fingerprint local ne correspond pas au serveur.');
+    } else if (e2ee.initError === 'identity_server_unavailable') {
+      toast.error('Impossible de verifier l identite E2EE serveur. Reessaie dans quelques instants.');
+    }
+  }, [e2ee.peerKeyMissing, e2ee.initError]);
 
   const handleAI = async (action: 'correct' | 'improve' | 'translate', tone?: string) => {
     if (!newMessage.trim() || aiLoading) return;

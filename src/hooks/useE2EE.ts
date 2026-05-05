@@ -41,7 +41,15 @@ import {
   type RatchetEnvelope,
   type X3DHInitialMessage,
 } from '@/lib/crypto';
-import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
+import {
+  PinUnlockRequiredError,
+  IdentityRestoreRequiredError,
+  IdentityFingerprintMismatchError,
+  IdentityServerUnavailableError,
+  IdentityFirstSetupRequiredError,
+  fetchServerIdentityState,
+  identityBundleMatchesServer,
+} from '@/lib/crypto/keyManager';
 import { base64ToBuffer, bufferToBase64, constantTimeEqual } from '@/lib/crypto/utils';
 import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
 import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/lib/crypto/cryptoIntegrity';
@@ -544,21 +552,25 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     _cachedAuthUserIdTs = Date.now();
     try {
       const keysResult = await getOrCreateIdentityKeys(user.id);
-      const isNewIdentity = !!(keysResult as any).isNewIdentity;
       const keys: IdentityKeyPair = keysResult;
       keysRef.current = keys;
 
       const bundle = await exportPublicKeyBundle(keys);
 
-      // Check server state BEFORE publishing
-      const { data: existingServerKey } = await supabase
-        .from('user_public_keys')
-        .select('fingerprint, identity_key')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .maybeSingle();
+      const existingServerIdentity = await fetchServerIdentityState(user.id);
+      if (!existingServerIdentity) {
+        setState(s => ({
+          ...s,
+          ready: false,
+          initError: 'pin_setup_required',
+        }));
+        window.dispatchEvent(new CustomEvent('forsure:e2ee-first-setup-required', {
+          detail: { userId: user.id },
+        }));
+        return;
+      }
 
-      if (isNewIdentity && existingServerKey) {
+      if (existingServerIdentity && !identityBundleMatchesServer(bundle, existingServerIdentity)) {
         // IDENTITY LOSS DETECTED: local keys were regenerated but server has old keys.
         // Check if an encrypted backup exists — if so, require restore instead of overwriting.
         const { data: backupData } = await supabase
@@ -570,7 +582,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         if (backupData) {
           console.error(
             '[E2EE] ⛔ Identity loss detected! Server fingerprint:',
-            existingServerKey.fingerprint,
+            existingServerIdentity.fingerprint,
             '— Encrypted backup exists. Requesting restore before continuing.'
           );
           setState(s => ({
@@ -580,17 +592,26 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           }));
           // Dispatch event so UI can show restore dialog
           window.dispatchEvent(new CustomEvent('forsure-identity-lost', {
-            detail: { hasBackup: true, serverFingerprint: existingServerKey.fingerprint }
+            detail: { hasBackup: true, serverFingerprint: existingServerIdentity.fingerprint }
           }));
           return;
         }
 
-        // No backup exists — this is a genuine new identity (first device, or user accepted loss)
+        // A server identity already exists: never replace it from this path.
         console.warn(
-          '[E2EE] ⚠️ New identity created (no backup found). Server keys will be replaced.',
-          `Old: ${existingServerKey.fingerprint}`,
+          '[E2EE] ⚠️ Local identity differs from server identity. Restore required.',
+          `Old: ${existingServerIdentity.fingerprint}`,
           `New: ${bundle.fingerprint}`
         );
+        setState(s => ({
+          ...s,
+          ready: false,
+          initError: 'identity_fingerprint_mismatch',
+        }));
+        window.dispatchEvent(new CustomEvent('forsure-identity-lost', {
+          detail: { hasBackup: false, serverFingerprint: existingServerIdentity.fingerprint }
+        }));
+        return;
       }
 
       // Publish keys to server
@@ -647,6 +668,60 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           initError: 'pin_unlock_required',
         }));
         window.dispatchEvent(new CustomEvent('forsure-pin-required-for-keys'));
+        return;
+      }
+
+      if (err instanceof IdentityRestoreRequiredError) {
+        console.warn('[E2EE] Server identity exists; waiting for encrypted vault restore');
+        setState(s => ({
+          ...s,
+          ready: false,
+          initError: 'identity_restore_required',
+        }));
+        window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
+          detail: {
+            userId: user.id,
+            reason: 'server_identity_exists',
+            serverFingerprint: err.serverFingerprint,
+          },
+        }));
+        return;
+      }
+
+      if (err instanceof IdentityFingerprintMismatchError) {
+        console.error('[E2EE] Restored local identity does not match server identity', {
+          serverFingerprint: err.serverFingerprint,
+          localFingerprint: err.localFingerprint,
+        });
+        setState(s => ({
+          ...s,
+          ready: false,
+          initError: 'identity_fingerprint_mismatch',
+        }));
+        window.dispatchEvent(new CustomEvent('forsure-identity-lost', {
+          detail: { hasBackup: true, serverFingerprint: err.serverFingerprint },
+        }));
+        return;
+      }
+
+      if (err instanceof IdentityServerUnavailableError) {
+        setState(s => ({
+          ...s,
+          ready: false,
+          initError: 'identity_server_unavailable',
+        }));
+        return;
+      }
+
+      if (err instanceof IdentityFirstSetupRequiredError) {
+        setState(s => ({
+          ...s,
+          ready: false,
+          initError: 'pin_setup_required',
+        }));
+        window.dispatchEvent(new CustomEvent('forsure:e2ee-first-setup-required', {
+          detail: { userId: user.id },
+        }));
         return;
       }
 
@@ -791,6 +866,26 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           keysRef.current = keys;
           const bundle = await exportPublicKeyBundle(keys);
           if (cancelled) return;
+
+          const serverIdentity = await fetchServerIdentityState(user.id);
+          if (!serverIdentity) {
+            setState(s => ({
+              ...s,
+              encrypted: false,
+              ready: false,
+              initError: 'pin_setup_required',
+            }));
+            return;
+          }
+          if (serverIdentity && !identityBundleMatchesServer(bundle, serverIdentity)) {
+            setState(s => ({
+              ...s,
+              encrypted: false,
+              ready: false,
+              initError: 'identity_fingerprint_mismatch',
+            }));
+            return;
+          }
           
           // Publish if not done yet — DEDUPLICATED across hook instances
           if (!_ownKeyPublishPromise || Date.now() - _ownKeyPublishTs > OWN_KEY_PUBLISH_TTL) {

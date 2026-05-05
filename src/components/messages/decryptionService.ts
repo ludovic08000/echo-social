@@ -197,13 +197,23 @@ export async function resolvePlaintext(opts: {
   // ratchet state ≠ receiver state). Stay silent on miss.
   if (isMe) {
     const stored = await loadPlaintextForCiphertext(body).catch(() => null);
-    if (!stored) {
-      negCache.set(key, Date.now());
-      return null;
+    if (stored) {
+      const outcome = buildOutcomeFromText(stored);
+      cache.set(key, outcome);
+      return outcome;
     }
-    const outcome = buildOutcomeFromText(stored);
-    cache.set(key, outcome);
-    return outcome;
+
+    if (messageId) {
+      const copyText = await tryReadDeviceCopy(messageId).catch(() => null);
+      if (copyText !== null) {
+        const outcome = buildOutcomeFromText(copyText);
+        cache.set(key, outcome);
+        return outcome;
+      }
+    }
+
+    negCache.set(key, Date.now());
+    return null;
   }
 
   let promise = inflight.get(key);

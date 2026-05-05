@@ -22,6 +22,8 @@ import {
   getOrCreateIdentityKeys,
   exportPublicKeyBundle,
   exportPublicKeyBundleFromStoredKeys,
+  fetchServerIdentityState,
+  identityBundleMatchesServer,
   PinUnlockRequiredError,
 } from '@/lib/crypto/keyManager';
 import {
@@ -154,6 +156,11 @@ async function republishDeviceIdentity(
   }
   if (!bundle?.identityKey || !bundle?.signingKey || !keys?.signingPrivateKey) {
     throw new Error('identity bundle incomplete (identityKey/signingKey missing)');
+  }
+
+  const serverIdentity = await fetchServerIdentityState(userId);
+  if (serverIdentity && !identityBundleMatchesServer(bundle, serverIdentity)) {
+    throw new Error(`server identity mismatch: restore required (server=${serverIdentity.fingerprint}, local=${bundle.fingerprint})`);
   }
 
   let devicePublicKeyB64: string = bundle.identityKey;
@@ -461,6 +468,19 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
       } catch {}
       return report;
     }
+  }
+
+  if (report.steps.identity !== 'ok') {
+    report.durationMs = Date.now() - t0;
+    diag.push('done', 'warn', 'resync stopped because E2EE identity is not READY', {
+      ok: false,
+      errors: report.errors.length,
+    });
+    if (diagnostic) {
+      report.trace = diag.drain();
+      report.replayDetails = replayDetails ?? [];
+    }
+    return report;
   }
 
   // 2. Drop stale device-pair ratchets so the next outbound message renegotiates X3DH.

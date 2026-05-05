@@ -338,10 +338,10 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
   );
   const allDevices = deviceLists.flat();
 
-  // Multi-device only relevant if at least 1 device beyond the current sender device
-  const targets = allDevices.filter(d =>
-    !(d.user_id === input.senderUserId && d.device_id === senderDeviceId),
-  );
+  // Every message must have a decryptable copy for the recipient AND for the
+  // sender's own account. Include the current sender device so self-messages
+  // survive cache loss / refresh / iOS storage purges.
+  const targets = allDevices;
   if (targets.length === 0) return { inserted: 0, multiDevice: false };
 
   // 3. For each target device:

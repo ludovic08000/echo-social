@@ -16,9 +16,13 @@
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
-  getOrCreateIdentityKeys,
   refreshSignedPrekeyIfNeeded,
 } from '@/lib/crypto';
+import {
+  assertLocalIdentityMatchesServer,
+  fetchServerIdentityState,
+  loadIdentityKeys,
+} from '@/lib/crypto/keyManager';
 
 const MAINTENANCE_TTL = 6 * 60 * 60 * 1000; // 6h between auto-refills
 const STORAGE_KEY = 'forsure-crypto-maintenance-ts';
@@ -52,11 +56,18 @@ export function useCryptoMaintenance() {
         console.info('[CRYPTO-MAINT] Starting key maintenance check…');
 
         // 1. Ensure identity keys
-        const keys = await getOrCreateIdentityKeys(user.id);
+        const serverIdentity = await fetchServerIdentityState(user.id);
+        if (!serverIdentity) {
+          console.info('[CRYPTO-MAINT] No server identity yet - first setup will create it');
+          return;
+        }
+
+        const keys = await loadIdentityKeys(user.id);
         if (!keys) {
           console.warn('[CRYPTO-MAINT] Identity keys unavailable (PIN locked?) — skipping');
           return;
         }
+        await assertLocalIdentityMatchesServer(user.id);
 
         // 2. Rotate SPK if expired or out-of-sync
         try {

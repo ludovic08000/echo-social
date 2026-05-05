@@ -337,6 +337,11 @@ async function restoreAllCryptoBlob(userId: string, blob: string): Promise<void>
         throw new Error('Restauration crypto partielle détectée');
       }
 
+      if (identityRestored) {
+        const { assertLocalIdentityMatchesServer } = await import('@/lib/crypto/keyManager');
+        await assertLocalIdentityMatchesServer(userId);
+      }
+
       console.log('[PIN] All crypto material restored atomically');
     } catch (error) {
       await deleteRawIdentityBlob(userId).catch(() => undefined);
@@ -345,6 +350,8 @@ async function restoreAllCryptoBlob(userId: string, blob: string): Promise<void>
     }
   } else {
     await writeRawIdentityBlob(userId, blob);
+    const { assertLocalIdentityMatchesServer } = await import('@/lib/crypto/keyManager');
+    await assertLocalIdentityMatchesServer(userId);
     console.log('[PIN] Identity keys restored (v1 legacy blob)');
   }
 }
@@ -595,8 +602,23 @@ export function useChatPin() {
         return false;
       }
 
-      const { getOrCreateIdentityKeys } = await import('@/lib/crypto/keyManager');
-      await getOrCreateIdentityKeys(user.id);
+      const {
+        getOrCreateIdentityKeys,
+        exportPublicKeyBundle,
+        fetchServerIdentityState,
+        identityBundleMatchesServer,
+      } = await import('@/lib/crypto/keyManager');
+      const keys = await getOrCreateIdentityKeys(user.id, { allowCreate: true });
+      const publicBundle = await exportPublicKeyBundle(keys);
+      const serverIdentity = await fetchServerIdentityState(user.id);
+      if (serverIdentity && !identityBundleMatchesServer(publicBundle, serverIdentity)) {
+        setState(s => ({
+          ...s,
+          processing: false,
+          error: 'Identite E2EE serveur differente. Restauration obligatoire.',
+        }));
+        return false;
+      }
 
       // The server PIN must never be created without a local crypto snapshot.
       // Otherwise iOS can show a valid PIN while the E2EE identity is missing.
@@ -641,10 +663,54 @@ export function useChatPin() {
         const { syncChatPinBackupToServer } = await import('@/lib/crypto/accountKeyBackup');
         const synced = await syncChatPinBackupToServer(user.id, pin, backupSecret);
         if (!synced) {
-          console.warn('[PIN] Chat PIN backup was not synced during setup');
+          setState(s => ({
+            ...s,
+            processing: false,
+            error: 'Sauvegarde E2EE impossible. Identite non publiee.',
+          }));
+          return false;
         }
       } catch (backupErr) {
         console.warn('[PIN] Chat PIN backup setup sync failed:', backupErr);
+        setState(s => ({
+          ...s,
+          processing: false,
+          error: 'Sauvegarde E2EE impossible. Identite non publiee.',
+        }));
+        return false;
+      }
+
+      const { error: publishError } = await supabase
+        .from('user_public_keys')
+        .upsert({
+          user_id: user.id,
+          identity_key: publicBundle.identityKey,
+          signing_key: publicBundle.signingKey,
+          fingerprint: publicBundle.fingerprint,
+          kem_type: 'X25519',
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id,is_active' });
+      if (publishError) {
+        setState(s => ({ ...s, processing: false, error: 'Publication des cles E2EE impossible' }));
+        return false;
+      }
+
+      try {
+        const {
+          refreshSignedPrekeyIfNeeded,
+          refreshDeviceSignedPrekeyIfNeeded,
+          refillDeviceOneTimePrekeysIfNeeded,
+        } = await import('@/lib/crypto/x3dh');
+        const { getCurrentDeviceId, hydrateDeviceId, isDeviceIdTemporary } = await import('@/lib/messaging/currentDevice');
+        await refreshSignedPrekeyIfNeeded(user.id, keys.signingPrivateKey);
+        const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+        if (!isDeviceIdTemporary()) {
+          await refreshDeviceSignedPrekeyIfNeeded(user.id, deviceId, keys.signingPrivateKey);
+          await refillDeviceOneTimePrekeysIfNeeded(user.id, deviceId);
+        }
+      } catch (spkErr) {
+        console.warn('[PIN] X3DH prekey first setup failed:', spkErr);
       }
 
       sessionStorage.setItem(SESSION_KEY, user.id);
@@ -656,6 +722,10 @@ export function useChatPin() {
         processing: false,
         pinMode: 'every_open',
       });
+      window.dispatchEvent(new CustomEvent('forsure-keys-unlocked'));
+      window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+        detail: { status: 'first_setup', fingerprint: publicBundle.fingerprint },
+      }));
       return true;
     } catch (err) {
       console.error('[PIN] Setup failed:', err);

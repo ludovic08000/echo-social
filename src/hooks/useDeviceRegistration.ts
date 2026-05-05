@@ -23,7 +23,11 @@ import {
   hydrateDeviceId,
   isDeviceIdTemporary,
 } from '@/lib/messaging/currentDevice';
-import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto/keyManager';
+import {
+  getOrCreateIdentityKeys,
+  exportPublicKeyBundle,
+  fetchServerIdentityState,
+} from '@/lib/crypto/keyManager';
 import {
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
@@ -45,6 +49,12 @@ export function useDeviceRegistration() {
         const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
         if (isDeviceIdTemporary()) {
           console.warn('[useDeviceRegistration] device id still temporary - delaying device publish');
+          ranRef.current = false;
+          return;
+        }
+        const serverIdentity = await fetchServerIdentityState(user.id);
+        if (!serverIdentity) {
+          console.info('[useDeviceRegistration] no server E2EE identity yet - first setup must publish identity before device registration');
           ranRef.current = false;
           return;
         }

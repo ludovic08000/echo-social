@@ -14,8 +14,9 @@ import {
   KX_KEY_PARAMS, SIG_KEY_PARAMS,
 } from './constants';
 import { openE2EEDB } from './indexedDb';
-import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, base64ToBuffer, randomBytes } from './utils';
-import { hardCrypto, hardGlobals, scrubBuffer } from './cryptoIntegrity';
+import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, base64ToBuffer, constantTimeEqual } from './utils';
+import { hardCrypto, hardGlobals } from './cryptoIntegrity';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface IdentityKeyPair {
   publicKey: CryptoKey;
@@ -49,6 +50,16 @@ interface StoredSessionKey {
   messageCount: number;
   createdAt: number;
   peerFingerprint: string;
+}
+
+export interface ServerIdentityState {
+  identityKey: string;
+  signingKey: string;
+  fingerprint: string;
+}
+
+export interface IdentityKeyLoadOptions {
+  allowCreate?: boolean;
 }
 
 // ─── IndexedDB helpers ───
@@ -137,6 +148,64 @@ function jwkXToBase64(jwk: JsonWebKey, label: string): string {
   const b64 = x.replace(/-/g, '+').replace(/_/g, '/');
   const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
   return b64 + pad;
+}
+
+function normalizeFingerprint(fp: string | null | undefined): string {
+  return (fp ?? '').replace(/\s+/g, '').toUpperCase();
+}
+
+function base64PublicKeysEqual(a?: string | null, b?: string | null): boolean {
+  if (!a || !b) return false;
+  try {
+    return constantTimeEqual(new Uint8Array(base64ToBuffer(a)), new Uint8Array(base64ToBuffer(b)));
+  } catch {
+    return false;
+  }
+}
+
+export function identityBundleMatchesServer(
+  bundle: { identityKey: string; signingKey: string; fingerprint: string },
+  server: ServerIdentityState,
+): boolean {
+  return (
+    normalizeFingerprint(bundle.fingerprint) === normalizeFingerprint(server.fingerprint) &&
+    base64PublicKeysEqual(bundle.identityKey, server.identityKey) &&
+    base64PublicKeysEqual(bundle.signingKey, server.signingKey)
+  );
+}
+
+export async function fetchServerIdentityState(userId: string): Promise<ServerIdentityState | null> {
+  const { data, error } = await supabase
+    .from('user_public_keys')
+    .select('identity_key, signing_key, fingerprint')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (error) {
+    throw new IdentityServerUnavailableError(`Cannot read server identity: ${error.message}`);
+  }
+
+  if (!data?.identity_key || !data.signing_key || !data.fingerprint) return null;
+
+  return {
+    identityKey: data.identity_key,
+    signingKey: data.signing_key,
+    fingerprint: data.fingerprint,
+  };
+}
+
+async function exportBundleForLocalIdentity(
+  userId: string,
+  keys: IdentityKeyPair,
+): Promise<{ identityKey: string; signingKey: string; fingerprint: string }> {
+  try {
+    return await exportPublicKeyBundle(keys);
+  } catch {
+    const storedBundle = await exportPublicKeyBundleFromStoredKeys(userId);
+    if (!storedBundle) throw new Error('Stored identity bundle missing');
+    return storedBundle;
+  }
 }
 
 // ─── Public API ───
@@ -236,37 +305,64 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
 }
 
 /**
- * Get or create identity keys.
- * 
- * Signal model — recovery order:
- * 1. Try IndexedDB raw keys
- * 2. Try PIN-wrapped keys (forsure-pin-wrap DB)
- * 3. Generate NEW keys (true new identity)
- * 
- * NEVER silently regenerate — if keys existed before, the caller
- * must handle the identity change explicitly.
+ * Load the account E2EE identity using the server row as source of truth.
+ *
+ * If the server identity exists, this function only restores/validates local
+ * key material. It never generates a replacement identity.
+ *
+ * If the server identity is missing, generation is allowed only for the
+ * explicit FIRST_SETUP path (`allowCreate: true`).
  */
-export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityKeyPair & { isNewIdentity?: boolean }> {
-  // 1. Try raw keys from IndexedDB
+export async function getOrCreateIdentityKeys(
+  userId: string,
+  options: IdentityKeyLoadOptions = {},
+): Promise<IdentityKeyPair & { isNewIdentity?: boolean }> {
+  const serverIdentity = await fetchServerIdentityState(userId);
   const existing = await loadIdentityKeys(userId);
-  if (existing) return existing;
 
-  // 2. Try PIN-wrapped keys
-  try {
-    const { hasWrappedKeys, unwrapKeysWithPin } = await import('./pinWrap');
-    const hasWrap = await hasWrappedKeys(userId);
-    if (hasWrap) {
-      console.log('[KEY_MGR] Raw keys missing but PIN-wrapped keys exist — awaiting PIN unlock');
-      // Signal to caller that PIN unlock is needed — don't generate new keys
-      throw new PinUnlockRequiredError('PIN unlock required to recover identity keys');
+  if (serverIdentity) {
+    if (existing) {
+      const bundle = await exportBundleForLocalIdentity(userId, existing);
+      if (!identityBundleMatchesServer(bundle, serverIdentity)) {
+        throw new IdentityFingerprintMismatchError(
+          'Local identity does not match server fingerprint; E2EE is blocked until restore succeeds',
+          serverIdentity.fingerprint,
+          bundle.fingerprint,
+        );
+      }
+      return existing;
     }
-  } catch (e) {
-    if (e instanceof PinUnlockRequiredError) throw e;
-    // PIN wrap module error — continue to generation
+
+    try {
+      const { hasWrappedKeys } = await import('./pinWrap');
+      if (await hasWrappedKeys(userId)) {
+        console.log('[KEY_MGR] Server identity exists; raw keys missing and PIN-wrapped keys present');
+        throw new PinUnlockRequiredError('PIN unlock required to recover identity keys');
+      }
+    } catch (e) {
+      if (e instanceof PinUnlockRequiredError) throw e;
+    }
+
+    console.warn('[KEY_MGR] Server identity exists but no local private identity is available');
+    throw new IdentityRestoreRequiredError(
+      'Server identity exists; restore encrypted E2EE vault before using messaging',
+      serverIdentity.fingerprint,
+    );
   }
 
-  // 3. No local keys at all — generate new identity
-  console.log('[KEY_MGR] No local keys found — generating new identity');
+  if (existing) {
+    if (!options.allowCreate) {
+      throw new IdentityFirstSetupRequiredError('Server identity is missing; FIRST_SETUP must explicitly publish identity');
+    }
+    console.log('[KEY_MGR] Local unpublished identity found; treating as first setup material');
+    return { ...existing, isNewIdentity: true };
+  }
+
+  if (!options.allowCreate) {
+    throw new IdentityFirstSetupRequiredError('Server identity is missing; FIRST_SETUP is required before crypto use');
+  }
+
+  console.log('[KEY_MGR] No server identity found - generating first E2EE identity');
   const newKeys = await generateIdentityKeys();
   await saveIdentityKeys(userId, newKeys);
   return { ...newKeys, isNewIdentity: true };
@@ -278,6 +374,73 @@ export class PinUnlockRequiredError extends Error {
     super(message);
     this.name = 'PinUnlockRequiredError';
   }
+}
+
+/** Error thrown when the server identity exists but no private identity is locally restored */
+export class IdentityRestoreRequiredError extends Error {
+  constructor(message: string, public readonly serverFingerprint?: string) {
+    super(message);
+    this.name = 'IdentityRestoreRequiredError';
+  }
+}
+
+/** Error thrown when local key material does not match the server identity */
+export class IdentityFingerprintMismatchError extends Error {
+  constructor(
+    message: string,
+    public readonly serverFingerprint?: string,
+    public readonly localFingerprint?: string,
+  ) {
+    super(message);
+    this.name = 'IdentityFingerprintMismatchError';
+  }
+}
+
+/** Error thrown when the server identity decision cannot be read */
+export class IdentityServerUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'IdentityServerUnavailableError';
+  }
+}
+
+/** Error thrown when a caller tried to use crypto before FIRST_SETUP created server identity */
+export class IdentityFirstSetupRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'IdentityFirstSetupRequiredError';
+  }
+}
+
+export async function assertLocalIdentityMatchesServer(
+  userId: string,
+): Promise<{ server: ServerIdentityState | null; bundle: { identityKey: string; signingKey: string; fingerprint: string } | null }> {
+  const server = await fetchServerIdentityState(userId);
+  if (!server) return { server: null, bundle: null };
+
+  const local = await loadIdentityKeys(userId);
+  if (!local) {
+    try {
+      const { hasWrappedKeys } = await import('./pinWrap');
+      if (await hasWrappedKeys(userId)) {
+        throw new PinUnlockRequiredError('PIN unlock required to validate restored identity');
+      }
+    } catch (e) {
+      if (e instanceof PinUnlockRequiredError) throw e;
+    }
+    throw new IdentityRestoreRequiredError('Server identity exists but local private identity is not restored', server.fingerprint);
+  }
+
+  const bundle = await exportBundleForLocalIdentity(userId, local);
+  if (!identityBundleMatchesServer(bundle, server)) {
+    throw new IdentityFingerprintMismatchError(
+      'Restored identity fingerprint does not match server fingerprint',
+      server.fingerprint,
+      bundle.fingerprint,
+    );
+  }
+
+  return { server, bundle };
 }
 
 /** Export public key bundle for server publication */

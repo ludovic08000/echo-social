@@ -24,6 +24,7 @@ import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
 import { secureGetSecret, secureSetSecret, secureRemoveSecret } from '@/lib/secureStore';
 import { getCurrentDeviceId, setCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import { assertLocalIdentityMatchesServer, fetchServerIdentityState } from '@/lib/crypto/keyManager';
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
@@ -244,7 +245,7 @@ export async function restoreKeysFromKeychainSnapshot(userId: string): Promise<'
     const snapshot = await secureGetSecret(`${KEYCHAIN_SNAPSHOT_PREFIX}${userId}`);
     if (!snapshot) return 'unavailable';
 
-    await restoreAllKeys(snapshot);
+    await restoreAllKeys(snapshot, userId);
     const validated = await hasLocalKeys();
     if (!validated) return 'error';
 
@@ -265,7 +266,7 @@ export async function restoreKeysFromKeychainSnapshot(userId: string): Promise<'
 /**
  * Restore all local E2EE keys from backup — TRULY ATOMIC.
  */
-async function restoreAllKeys(json: string): Promise<void> {
+async function restoreAllKeys(json: string, userId: string): Promise<void> {
   const data = JSON.parse(json);
 
   const hasIdentityKeys = data['e2ee:identity-keys']?.length > 0;
@@ -371,6 +372,10 @@ async function restoreAllKeys(json: string): Promise<void> {
       });
     }
 
+    if (hasIdentityKeys) {
+      await assertLocalIdentityMatchesServer(userId);
+    }
+
     console.log('[MasterKey] ✅ Atomic restore complete');
   } catch (error) {
     console.error('[MasterKey] Restore failed, rolling back...', error);
@@ -412,20 +417,6 @@ export async function hasLocalKeys(): Promise<boolean> {
     }
     db.close();
     if (pinCount > 0) return true;
-  } catch {}
-
-  try {
-    const db = await openDB('forsure-ratchet', 1);
-    let ratchetCount = 0;
-    if (db.objectStoreNames.contains('ratchet-states')) {
-      const tx = db.transaction('ratchet-states', 'readonly');
-      ratchetCount = await new Promise<number>((r, j) => {
-        const req = tx.objectStore('ratchet-states').count();
-        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
-      });
-    }
-    db.close();
-    if (ratchetCount > 0) return true;
   } catch {}
 
   return false;
@@ -566,7 +557,7 @@ async function downloadAndRestore(
     const masterKeyRaw = await unwrapMasterKey(backup.wrapped_master_key, backup.master_key_iv, wrappingKey);
     const masterKey = await importMasterKey(masterKeyRaw);
     const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, masterKey);
-    await restoreAllKeys(json);
+    await restoreAllKeys(json, userId);
     return { masterKeyRaw, masterKey };
   }
 
@@ -578,7 +569,7 @@ async function downloadAndRestore(
     const ciphertext = base64ToBuffer(backup.encrypted_blob);
     const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf }, key, ciphertext);
     const json = new hardGlobals.TextDecoder().decode(plainBuf);
-    await restoreAllKeys(json);
+    await restoreAllKeys(json, userId);
     // Migrate: generate Master Key and re-upload in v5 format
     const mkRaw = generateMasterKey();
     const mk = await importMasterKey(mkRaw);
@@ -595,7 +586,7 @@ async function downloadAndRestore(
     const ciphertext = base64ToBuffer(backup.encrypted_blob);
     const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf }, key, ciphertext);
     const json = new hardGlobals.TextDecoder().decode(plainBuf);
-    await restoreAllKeys(json);
+    await restoreAllKeys(json, userId);
     const mkRaw = generateMasterKey();
     const mk = await importMasterKey(mkRaw);
     return { masterKeyRaw: mkRaw, masterKey: mk };
@@ -610,7 +601,7 @@ async function downloadAndRestore(
 /**
  * Called at login time. Derives wrapping key from password, restores or creates Master Key.
  */
-export async function initAccountKeySync(password: string, userId: string): Promise<'restored' | 'local_ok' | 'no_backup' | 'error'> {
+export async function initAccountKeySync(password: string, userId: string): Promise<'restored' | 'local_ok' | 'no_backup' | 'pin_required' | 'error'> {
   const t0 = performance.now();
   try {
     _sessionPassword = password;
@@ -618,6 +609,7 @@ export async function initAccountKeySync(password: string, userId: string): Prom
     const secret = passwordSecret(password, userId);
 
     const hasLocal = await hasLocalKeys();
+    const serverIdentity = await fetchServerIdentityState(userId).catch(() => null);
     if (hasLocal) {
       console.log('[MasterKey] Local keys present');
       logCryptoError({
@@ -639,6 +631,20 @@ export async function initAccountKeySync(password: string, userId: string): Prom
     }
 
     // No local keys — try restore from server
+    if (serverIdentity) {
+      console.warn('[MasterKey] Server identity exists but no local identity is restored - PIN restore required');
+      try {
+        window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
+          detail: {
+            userId,
+            reason: 'server_identity_exists',
+            serverFingerprint: serverIdentity.fingerprint,
+          },
+        }));
+      } catch {}
+      return 'pin_required';
+    }
+
     console.log('[MasterKey] No local keys, attempting restore...');
     logCryptoError({
       severity: 'info', context: 'restore', errorCode: 'RESTORE_ATTEMPT',
@@ -715,6 +721,12 @@ export async function restoreAccountKeysFromActiveSession(userId?: string): Prom
 
     if (!_sessionPassword || !targetUserId || _sessionUserId !== targetUserId) {
       console.warn('[MasterKey] Active-session restore unavailable: no in-memory password session');
+      return 'unavailable';
+    }
+
+    const serverIdentity = await fetchServerIdentityState(targetUserId).catch(() => null);
+    if (serverIdentity) {
+      console.warn('[MasterKey] Active-session password restore skipped - PIN restore required for server identity');
       return 'unavailable';
     }
 
