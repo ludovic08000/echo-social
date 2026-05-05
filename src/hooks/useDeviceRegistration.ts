@@ -144,14 +144,13 @@ export function useDeviceRegistration() {
             // specific one. Anything else is a hard mismatch → BLOCK.
             const isLegacyShared = serverDevicePublicKey === bundle.identityKey;
             if (!isLegacyShared) {
-              console.warn('[useDeviceRegistration] BLOCKED: server/local device key mismatch — restore required');
+              console.warn('[useDeviceRegistration] server/local device key mismatch — preserving server key and waiting silently for restore');
               try {
-                window.dispatchEvent(new CustomEvent('forsure:device-kx-restore-required', {
+                window.dispatchEvent(new CustomEvent('forsure:e2ee-silent-restore-retry', {
                   detail: {
+                    source: 'device-registration',
                     deviceId,
                     reason: 'mismatch',
-                    serverPublicKey: serverDevicePublicKey,
-                    localPublicKey: localKx.publicB64,
                   },
                 }));
               } catch {}
