@@ -376,7 +376,7 @@ export async function loadSessionKey(conversationId: string): Promise<SessionKey
 
   const sharedSecret = await importKeyFromJWK(
     stored.keyJWK,
-    { name: 'AES-GCM', length: 256 },
+    { name: 'AES-GCM', length: 256 } as AesKeyAlgorithm,
     ['encrypt', 'decrypt'],
     false, // NON-EXTRACTABLE at runtime
   );
