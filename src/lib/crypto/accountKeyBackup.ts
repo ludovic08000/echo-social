@@ -181,9 +181,10 @@ async function collectAllKeys(): Promise<string | null> {
   } catch {}
 
   try {
-    data['device:kx'] = await getAllFromStore(await openE2EEDB(), 'identity-keys')
-      .then((records) => records.filter((r: any) => typeof r?.id === 'string' && r.id.startsWith('device-kx::')))
-      .catch(() => []);
+    const db = await openE2EEDB();
+    data['device:kx'] = (await getAllFromStore(db, 'identity-keys'))
+      .filter((r: any) => typeof r?.id === 'string' && r.id.startsWith('device-kx::'));
+    db.close();
     const fps = localStorage.getItem('forsure-known-fps');
     if (fps) data['fingerprints'] = fps;
   } catch {}
