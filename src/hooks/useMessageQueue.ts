@@ -21,6 +21,7 @@ import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
 import { processDeviceCopyRetryRequests } from '@/lib/messaging/deviceCopyRetryProcessor';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { safeUUID } from '@/e2ee-session';
+import { isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 
 export function useMessageQueue(
   conversationId: string,
@@ -116,7 +117,18 @@ export function useMessageQueue(
             image_url: msg.imageUrl,
           });
 
+        const requiresDeviceCopies = isMultiDeviceEnvelopeBody(msg.encryptedBody);
+
         if (error?.code === '23505') {
+          if (requiresDeviceCopies && msg.plaintext) {
+            const replayFanout = await fanoutMessageCopies({
+              messageId: outboundId,
+              conversationId: msg.conversationId,
+              senderUserId: msg.senderId,
+              plaintext: msg.plaintext,
+            });
+            if (replayFanout.inserted <= 0) throw new Error('Copies multi-device chiffrées indisponibles');
+          }
           // Cache plaintext for own message display
           if (msg.plaintext) onPlaintextCached?.(outboundId, msg.plaintext);
           await onMessageSent?.(msg.localId);
@@ -142,12 +154,18 @@ export function useMessageQueue(
         // the sender's other devices can read the message. The primary
         // recipient device still relies on the per-conversation Double Ratchet.
         if (msg.plaintext) {
-          fanoutMessageCopies({
+          const fanoutPromise = fanoutMessageCopies({
             messageId: outboundId,
             conversationId: msg.conversationId,
             senderUserId: msg.senderId,
             plaintext: msg.plaintext,
-          }).catch(err => console.warn('[FANOUT] non-fatal failure', err));
+          });
+          if (requiresDeviceCopies) {
+            const fanoutResult = await fanoutPromise;
+            if (fanoutResult.inserted <= 0) throw new Error('Copies multi-device chiffrées indisponibles');
+          } else {
+            fanoutPromise.catch(err => console.warn('[FANOUT] non-fatal failure', err));
+          }
           processDeviceCopyRetryRequests().catch(() => {});
         }
 

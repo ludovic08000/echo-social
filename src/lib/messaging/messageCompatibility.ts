@@ -15,6 +15,13 @@ export interface StrictRatchetEnvelopeShape {
   ts: number;
 }
 
+export interface MultiDeviceEnvelopeShape {
+  encryptionMode: 'multi_device';
+  v: number;
+  ct: 'device_copies';
+  ts: number;
+}
+
 export function isCryptoJsonBody(body: string | null | undefined): boolean {
   if (!body || typeof body !== 'string' || !body.startsWith('{')) return false;
   return body.includes('"ct"') || body.includes('"hdr"') || body.includes('"kem"') || body.includes('"encryptionMode"');
@@ -52,6 +59,22 @@ export function isStrictRatchetEnvelopeBody(body: string | null | undefined): bo
   }
 }
 
+export function isMultiDeviceEnvelopeBody(body: string | null | undefined): body is string {
+  if (!body || typeof body !== 'string' || !body.startsWith('{')) return false;
+
+  try {
+    const parsed = JSON.parse(body) as Partial<MultiDeviceEnvelopeShape>;
+    return (
+      parsed.encryptionMode === 'multi_device' &&
+      parsed.v === PROTOCOL_VERSION &&
+      parsed.ct === 'device_copies' &&
+      typeof parsed.ts === 'number'
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function isKnownCryptoEnvelopeBody(body: string | null | undefined): boolean {
   if (!isCryptoJsonBody(body)) return false;
 
@@ -60,6 +83,7 @@ export function isKnownCryptoEnvelopeBody(body: string | null | undefined): bool
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
 
     if (isStrictRatchetEnvelopeBody(body)) return true;
+    if (isMultiDeviceEnvelopeBody(body)) return true;
 
     const hdr = parsed.hdr;
     const hasRatchetHeader =
