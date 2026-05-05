@@ -332,6 +332,11 @@ export async function generateAndUploadSignedPrekey(
     .neq('spk_id', spkId);
 
   console.log(`[X3DH] ✅ Signed prekey #${spkId} generated & uploaded`);
+  // Reactive backup so the new SPK private half is included server-side ASAP
+  try {
+    const { requestBackgroundBackup } = await import('@/lib/crypto/accountKeyBackup');
+    requestBackgroundBackup('spk-rotated');
+  } catch {}
   return { spkId, publicKey: publicBase64, signature: signatureBase64 };
 }
 
