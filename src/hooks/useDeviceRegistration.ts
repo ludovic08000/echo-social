@@ -83,13 +83,17 @@ export function useDeviceRegistration() {
           console.warn('[useDeviceRegistration] device kx key unavailable, falling back to identityKey:', kxErr);
         }
 
+        // Stable device fingerprint — lets the server-side
+        // resolve_device_id_by_fingerprints RPC reuse this device_id after
+        // Safari ITP wipes IndexedDB / localStorage / Keychain on iOS.
+        const deviceFingerprint = await getDeviceFingerprint().catch(() => null);
+
         const payload = {
           user_id: user.id,
           device_id: deviceId,
           device_name: getCurrentDeviceLabel(),
-          // Per-device X25519 public key (preferred) or shared identity key (legacy fallback).
-          // The deviceWrap fallback uses this column; see deviceWrap.ts.
           device_public_key: devicePublicKeyB64,
+          device_fingerprint: deviceFingerprint,
           platform: getCurrentPlatform(),
           user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
           is_active: true,
