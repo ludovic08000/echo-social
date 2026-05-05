@@ -882,9 +882,24 @@ export async function peekDeviceSignedPrekey(
   const material = await fetchDevicePrekeyMaterial(peerUserId, peerDeviceId);
   if (!material) return null;
 
-  const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature);
+  const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature, {
+    source: 'peekDeviceSignedPrekey',
+    identityKeyB64: material.identityKey,
+    userId: peerUserId,
+    deviceId: peerDeviceId,
+    spkId: material.spkId,
+  });
   if (!sigValid) {
-    console.warn(`[X3DH-DEV] device SPK signature INVALID for ${peerUserId}/${peerDeviceId}`);
+    console.warn('[X3DH-DEV] device SPK signature INVALID', {
+      user_id: peerUserId,
+      device_id: peerDeviceId,
+      spk_id: material.spkId,
+      identity_len: material.identityKey?.length ?? null,
+      spk_len: material.publicKey?.length ?? null,
+      sig_len: material.signature?.length ?? null,
+      valid: false,
+      encoding: 'base64(raw Ed25519 signature over raw X25519 SPK public key)',
+    });
     return null;
   }
 
@@ -903,9 +918,24 @@ export async function fetchPrekeyBundleForDevice(
   const material = await fetchDevicePrekeyMaterial(peerUserId, peerDeviceId);
   if (!material) return null;
 
-  const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature);
+  const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature, {
+    source: 'fetchPrekeyBundleForDevice',
+    identityKeyB64: material.identityKey,
+    userId: peerUserId,
+    deviceId: peerDeviceId,
+    spkId: material.spkId,
+  });
   if (!sigValid) {
-    console.warn(`[X3DH-DEV] ⛔ device SPK signature INVALID for ${peerUserId}/${peerDeviceId}`);
+    console.warn('[X3DH-DEV] ⛔ device SPK signature INVALID', {
+      user_id: peerUserId,
+      device_id: peerDeviceId,
+      spk_id: material.spkId,
+      identity_len: material.identityKey?.length ?? null,
+      spk_len: material.publicKey?.length ?? null,
+      sig_len: material.signature?.length ?? null,
+      valid: false,
+      encoding: 'base64(raw Ed25519 signature over raw X25519 SPK public key)',
+    });
     return null;
   }
 
