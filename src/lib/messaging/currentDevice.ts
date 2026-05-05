@@ -26,45 +26,69 @@ const FINGERPRINT_KEY = 'forsure-device-fingerprint-v1';
 let memoryDeviceId: string | null = null;
 let hydrationPromise: Promise<string> | null = null;
 let memoryDeviceIdIsTemporary = false;
-let cachedFingerprint: string | null = null;
+let cachedFingerprints: { strict: string; loose: string; ultraLoose: string } | null = null;
 
 /**
- * Stable per-installation fingerprint (UA + screen + lang + tz). Survives
- * Safari ITP storage purges because it's recomputed from the environment,
- * never read from cleared storage. Used by the server-side
- * `resolve_device_id_by_fingerprint` RPC to recover the previous
- * `device_id` after iOS wipes IndexedDB / localStorage / Keychain.
+ * iOS Safari ITP rotates UA strings, screen metrics and locale subtly. We
+ * therefore compute THREE candidate fingerprints from the most-stable to
+ * the loosest, and the server tries them in order:
+ *  - strict     : UA + lang + screen + tz + cpu  (matches a stable browser)
+ *  - loose      : UA family (iPhone/iPad/Android) + tz                 (survives Safari version bumps)
+ *  - ultraLoose : platform family only                                 (last-resort iOS recovery)
  */
-async function computeDeviceFingerprint(): Promise<string> {
-  if (cachedFingerprint) return cachedFingerprint;
-  const parts: string[] = [];
+async function sha256Hex(input: string): Promise<string> {
   try {
-    if (typeof navigator !== 'undefined') {
-      parts.push(navigator.userAgent || '');
-      parts.push(navigator.language || '');
-      parts.push(String((navigator as any).hardwareConcurrency || ''));
-      parts.push(String((navigator as any).deviceMemory || ''));
-    }
-    if (typeof screen !== 'undefined') {
-      parts.push(`${screen.width}x${screen.height}x${screen.colorDepth}`);
-    }
-    parts.push(Intl.DateTimeFormat().resolvedOptions().timeZone || '');
-  } catch {}
-  const raw = parts.join('|');
-  try {
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
-    cachedFingerprint = Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+    return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
   } catch {
-    // crypto.subtle missing — fall back to a non-crypto hash so RPC still works.
     let h = 0;
-    for (let i = 0; i < raw.length; i++) h = ((h << 5) - h + raw.charCodeAt(i)) | 0;
-    cachedFingerprint = `fp${(h >>> 0).toString(16)}`;
+    for (let i = 0; i < input.length; i++) h = ((h << 5) - h + input.charCodeAt(i)) | 0;
+    return `fp${(h >>> 0).toString(16)}`;
   }
-  return cachedFingerprint;
+}
+
+function uaFamily(ua: string): string {
+  if (/iPhone/i.test(ua)) return 'iPhone';
+  if (/iPad/i.test(ua)) return 'iPad';
+  if (/iPod/i.test(ua)) return 'iPod';
+  if (/Android/i.test(ua)) return 'Android';
+  if (/Macintosh/i.test(ua)) return 'Mac';
+  if (/Windows/i.test(ua)) return 'Windows';
+  if (/Linux/i.test(ua)) return 'Linux';
+  return 'Unknown';
+}
+
+async function computeDeviceFingerprints(): Promise<{ strict: string; loose: string; ultraLoose: string }> {
+  if (cachedFingerprints) return cachedFingerprints;
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+  const lang = (typeof navigator !== 'undefined' && navigator.language) || '';
+  const cpu = String((typeof navigator !== 'undefined' && (navigator as any).hardwareConcurrency) || '');
+  const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } })();
+  const screenStr = (() => {
+    if (typeof screen === 'undefined') return '';
+    // Use min/max so portrait/landscape rotation produces the same value (iOS quirk)
+    const w = Math.min(screen.width, screen.height);
+    const h = Math.max(screen.width, screen.height);
+    return `${w}x${h}x${screen.colorDepth}`;
+  })();
+  const family = uaFamily(ua);
+
+  const strict = await sha256Hex([ua, lang, cpu, tz, screenStr].join('|'));
+  const loose = await sha256Hex([family, lang.split('-')[0] || '', tz].join('|'));
+  const ultraLoose = await sha256Hex(`platform:${family}`);
+
+  cachedFingerprints = { strict, loose, ultraLoose };
+  try { localStorage.setItem(FINGERPRINT_KEY, strict); } catch {}
+  return cachedFingerprints;
 }
 
 export async function getDeviceFingerprint(): Promise<string> {
-  return computeDeviceFingerprint();
+  return (await computeDeviceFingerprints()).strict;
+}
+
+export async function getDeviceFingerprintCandidates(): Promise<string[]> {
+  const fps = await computeDeviceFingerprints();
+  return [fps.strict, fps.loose, fps.ultraLoose];
 }
 
 function generateId(): string {
@@ -176,16 +200,18 @@ export async function hydrateDeviceId(): Promise<string> {
       //    what stops anciens messages from becoming undecipherable on
       //    every cold start.
       try {
-        const fp = await computeDeviceFingerprint();
+        const candidates = await getDeviceFingerprintCandidates();
+        const platform = getCurrentPlatform();
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           const { data: serverId, error } = await supabase.rpc(
-            'resolve_device_id_by_fingerprint',
-            { p_fingerprint: fp },
+            'resolve_device_id_by_fingerprints' as any,
+            { p_fingerprints: candidates, p_platform: platform },
           );
           if (!error && typeof serverId === 'string' && serverId.length >= 16) {
             console.log('[device-id] Recovered from server fingerprint binding', {
               recovered: serverId.slice(0, 8),
+              platform,
             });
             return persistEverywhere(serverId);
           }

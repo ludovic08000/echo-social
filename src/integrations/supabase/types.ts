@@ -6217,6 +6217,10 @@ export type Database = {
         Args: { p_fingerprint: string }
         Returns: string
       }
+      resolve_device_id_by_fingerprints: {
+        Args: { p_fingerprints: string[]; p_platform?: string }
+        Returns: string
+      }
       stripe_mark_event_processed: {
         Args: { p_event_id: string; p_event_type: string }
         Returns: boolean
