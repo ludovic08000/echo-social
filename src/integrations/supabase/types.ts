@@ -1446,6 +1446,54 @@ export type Database = {
         }
         Relationships: []
       }
+      device_link_requests: {
+        Row: {
+          approved_at: string | null
+          approver_device_id: string | null
+          claimed_at: string | null
+          created_at: string
+          encrypted_payload: string | null
+          expires_at: string
+          id: string
+          requester_device_id: string
+          requester_label: string | null
+          requester_public_key: Json
+          status: string
+          token_hash: string
+          user_id: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approver_device_id?: string | null
+          claimed_at?: string | null
+          created_at?: string
+          encrypted_payload?: string | null
+          expires_at?: string
+          id?: string
+          requester_device_id: string
+          requester_label?: string | null
+          requester_public_key: Json
+          status?: string
+          token_hash: string
+          user_id: string
+        }
+        Update: {
+          approved_at?: string | null
+          approver_device_id?: string | null
+          claimed_at?: string | null
+          created_at?: string
+          encrypted_payload?: string | null
+          expires_at?: string
+          id?: string
+          requester_device_id?: string
+          requester_label?: string | null
+          requester_public_key?: Json
+          status?: string
+          token_hash?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       device_link_tokens: {
         Row: {
           claimed_at: string | null
@@ -5922,6 +5970,14 @@ export type Database = {
         Args: { _expected_step: number; _user_id: string }
         Returns: number
       }
+      approve_device_link_request: {
+        Args: {
+          p_approver_device_id: string
+          p_encrypted_payload: string
+          p_token_hash: string
+        }
+        Returns: boolean
+      }
       call_signal: {
         Args: {
           p_action: string
@@ -5962,17 +6018,29 @@ export type Database = {
         }[]
       }
       cleanup_ai_cache: { Args: never; Returns: undefined }
+      cleanup_expired_device_link_requests: { Args: never; Returns: undefined }
       cleanup_expired_device_links: { Args: never; Returns: undefined }
       cleanup_expired_device_prekeys: { Args: never; Returns: undefined }
       cleanup_old_behavior_signals: { Args: never; Returns: undefined }
       cleanup_old_fingerprints: { Args: never; Returns: undefined }
       cleanup_old_login_attempts: { Args: never; Returns: undefined }
+      cleanup_stale_user_devices: {
+        Args: never
+        Returns: {
+          action: string
+          device_id: string
+        }[]
+      }
       complete_device_copy_retry: {
         Args: {
           p_encrypted_body: string
           p_request_id: string
           p_sender_device_id: string
         }
+        Returns: boolean
+      }
+      complete_device_link_request: {
+        Args: { p_requester_device_id: string; p_token_hash: string }
         Returns: boolean
       }
       complete_onboarding: { Args: { _user_id: string }; Returns: boolean }
@@ -5986,6 +6054,15 @@ export type Database = {
       count_device_one_time_prekeys: {
         Args: { p_device_id: string; p_user_id: string }
         Returns: number
+      }
+      create_device_link_request: {
+        Args: {
+          p_requester_device_id: string
+          p_requester_label?: string
+          p_requester_public_key: Json
+          p_token_hash: string
+        }
+        Returns: string
       }
       create_group_conversation: {
         Args: { p_member_ids: string[]; p_name: string }
@@ -6022,6 +6099,13 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: boolean
       }
+      get_approved_device_link_payload: {
+        Args: { p_requester_device_id: string; p_token_hash: string }
+        Returns: {
+          approver_device_id: string
+          encrypted_payload: string
+        }[]
+      }
       get_conversations_with_details: {
         Args: { p_user_id: string }
         Returns: {
@@ -6057,6 +6141,17 @@ export type Database = {
           encrypted_body: string
           sender_device_id: string
           sender_user_id: string
+        }[]
+      }
+      get_device_link_request_for_approval: {
+        Args: { p_token_hash: string }
+        Returns: {
+          expires_at: string
+          id: string
+          requester_device_id: string
+          requester_label: string
+          requester_public_key: Json
+          status: string
         }[]
       }
       get_device_prekey_bundle: {
