@@ -23,7 +23,7 @@ import {
   hydrateDeviceId,
   isDeviceIdTemporary,
 } from '@/lib/messaging/currentDevice';
-import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto/keyManager';
+import { getOrCreateIdentityKeys, exportPublicKeyBundle, PinUnlockRequiredError } from '@/lib/crypto/keyManager';
 import {
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
@@ -35,13 +35,17 @@ import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
 export function useDeviceRegistration() {
   const { user } = useAuth();
   const ranRef = useRef(false);
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
-    if (!user || ranRef.current) return;
-    ranRef.current = true;
+    if (!user) return;
 
-    void (async () => {
+    const registerCurrentDevice = async (reason: string) => {
+      if (ranRef.current || inFlightRef.current) return;
+      ranRef.current = true;
+      inFlightRef.current = true;
       try {
+        console.log('[useDeviceRegistration] publishing current device', { reason });
         const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
         if (isDeviceIdTemporary()) {
           console.warn('[useDeviceRegistration] device id still temporary - delaying device publish');
@@ -140,8 +144,33 @@ export function useDeviceRegistration() {
           console.warn('[useDeviceRegistration] OPK refill failed (non-fatal):', opkErr);
         }
       } catch (err) {
+        if (err instanceof PinUnlockRequiredError || String(err).toLowerCase().includes('pin unlock required')) {
+          ranRef.current = false;
+          console.warn('[useDeviceRegistration] PIN_REQUIRED — device publish paused until PIN unlock');
+          try {
+            window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', { detail: { source: 'useDeviceRegistration' } }));
+          } catch {}
+          return;
+        }
+        ranRef.current = false;
         console.warn('[useDeviceRegistration] failed (non-fatal):', err);
+      } finally {
+        inFlightRef.current = false;
       }
-    })();
+    };
+
+    const onKeysAvailable = () => {
+      ranRef.current = false;
+      void registerCurrentDevice('keys-unlocked');
+    };
+
+    void registerCurrentDevice('auth-mounted');
+    window.addEventListener('forsure-keys-unlocked', onKeysAvailable);
+    window.addEventListener('forsure-keys-restored', onKeysAvailable);
+
+    return () => {
+      window.removeEventListener('forsure-keys-unlocked', onKeysAvailable);
+      window.removeEventListener('forsure-keys-restored', onKeysAvailable);
+    };
   }, [user]);
 }
