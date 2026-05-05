@@ -5034,6 +5034,7 @@ export type Database = {
       user_devices: {
         Row: {
           created_at: string
+          device_fingerprint: string | null
           device_id: string
           device_name: string | null
           device_public_key: string
@@ -5050,6 +5051,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          device_fingerprint?: string | null
           device_id: string
           device_name?: string | null
           device_public_key: string
@@ -5066,6 +5068,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          device_fingerprint?: string | null
           device_id?: string
           device_name?: string | null
           device_public_key?: string
@@ -6209,6 +6212,10 @@ export type Database = {
           p_user_agent?: string
         }
         Returns: undefined
+      }
+      resolve_device_id_by_fingerprint: {
+        Args: { p_fingerprint: string }
+        Returns: string
       }
       stripe_mark_event_processed: {
         Args: { p_event_id: string; p_event_type: string }
