@@ -20,6 +20,7 @@ import {
   restoreAccountKeysFromActiveSession,
   restoreKeysFromKeychainSnapshot,
   syncKeychainSnapshotFromLocal,
+  restoreFromInMemoryMasterKey,
 } from '@/lib/crypto/accountKeyBackup';
 import { hydrateDeviceId, getCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { isNativePlatform } from '@/lib/nativeStore';
@@ -196,12 +197,43 @@ export function useAccountKeySync() {
     };
   }, [user?.id]);
 
-  // Poll for IndexedDB changes using content-based digest
+  // Poll for IndexedDB changes + WATCHDOG: detect mid-session storage purge.
+  // iOS Safari/PWA can wipe IndexedDB silently while the app stays open
+  // (ITP, low storage, "Clear data"). We poll fast (8 s) and silently rebuild
+  // local keys from in-RAM Master Key → Keychain → password. No UI surface.
   useEffect(() => {
-    if (!user || !isAutoBackupActive()) return;
+    if (!user) return;
+
+    const PURGE_WATCHDOG_MS = 8_000;
 
     const checkForChanges = async () => {
       try {
+        // Watchdog first: if IndexedDB lost the identity, recover NOW.
+        if (!(await hasLocalKeys())) {
+          // Try keychain → in-RAM master key → password (all silent).
+          let recovered = false;
+          try {
+            recovered = (await restoreKeysFromKeychainSnapshot(user.id)) === 'restored';
+          } catch {}
+          if (!recovered) {
+            try {
+              recovered = (await restoreFromInMemoryMasterKey(user.id)) === 'restored';
+            } catch {}
+          }
+          if (!recovered) {
+            try {
+              recovered = (await restoreAccountKeysFromActiveSession(user.id)) === 'restored';
+            } catch {}
+          }
+          if (recovered) {
+            console.log('[AccountKeySync] watchdog: silent re-hydration succeeded');
+            window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+              detail: { status: 'watchdog_silent_restore' },
+            }));
+          }
+        }
+
+        if (!isAutoBackupActive()) return;
         const digest = await computeLocalCryptoDigest();
         if (lastDigestRef.current && digest !== lastDigestRef.current) {
           console.log('[AccountKeySync] Crypto state changed, triggering sync');
@@ -211,7 +243,7 @@ export function useAccountKeySync() {
       } catch {}
     };
 
-    const interval = setInterval(checkForChanges, POLL_INTERVAL_MS);
+    const interval = setInterval(checkForChanges, PURGE_WATCHDOG_MS);
     checkForChanges();
 
     return () => {
@@ -226,33 +258,49 @@ export function useAccountKeySync() {
 
     let unsubscribeApp: (() => void) | null = null;
 
+    const attemptSilentRestore = async (origin: string): Promise<boolean> => {
+      if (await hasLocalKeys()) return true;
+      // 1) Native Keychain snapshot (survives IndexedDB purge on iOS)
+      try {
+        const k = await restoreKeysFromKeychainSnapshot(user.id);
+        if (k === 'restored') {
+          window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+            detail: { status: `restored_from_keychain_${origin}` },
+          }));
+          return true;
+        }
+      } catch {}
+      // 2) In-RAM Master Key (no password prompt — works mid-session)
+      try {
+        const m = await restoreFromInMemoryMasterKey(user.id);
+        if (m === 'restored') {
+          window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+            detail: { status: `restored_from_inmem_mk_${origin}` },
+          }));
+          return true;
+        }
+      } catch {}
+      // 3) In-memory password session
+      try {
+        const p = await restoreAccountKeysFromActiveSession(user.id);
+        if (p === 'restored') {
+          window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+            detail: { status: `restored_from_password_${origin}` },
+          }));
+          return true;
+        }
+      } catch {}
+      return false;
+    };
+
     const onResume = () => {
       console.log('[AccountKeySync] app resumed — re-checking crypto');
       void (async () => {
         try {
           const digest = await computeLocalCryptoDigest();
           lastDigestRef.current = digest;
-          if (isAutoBackupActive()) {
-            // Force a sync attempt right away on resume
-            triggerSync();
-          }
-          // Re-attempt restore if local keys vanished (iOS WebView purge)
-          if (!(await hasLocalKeys())) {
-            const keychainStatus = await restoreKeysFromKeychainSnapshot(user.id);
-            if (keychainStatus === 'restored') {
-              window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
-                detail: { status: 'restored_from_keychain_on_resume' },
-              }));
-              return;
-            }
-
-            const status = await restoreAccountKeysFromActiveSession(user.id);
-            if (status === 'restored') {
-              window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
-                detail: { status: 'restored_on_resume' },
-              }));
-            }
-          }
+          if (isAutoBackupActive()) triggerSync();
+          await attemptSilentRestore('resume');
         } catch (e) {
           console.warn('[AccountKeySync] resume handler failed:', e);
         }

@@ -731,6 +731,51 @@ export async function restoreAccountKeysFromActiveSession(userId?: string): Prom
 }
 
 /**
+ * Silent re-hydration when IndexedDB has been wiped *during* an active session
+ * (typical iOS Safari/PWA storage purge). Uses the Master Key already in RAM —
+ * no password prompt, no UI surface. Returns:
+ *  - 'restored'    : keys restored from server backup
+ *  - 'local_ok'    : local keys still present, nothing to do
+ *  - 'unavailable' : no in-RAM Master Key OR no server backup
+ *  - 'error'       : decryption failed
+ */
+export async function restoreFromInMemoryMasterKey(userId?: string): Promise<'restored' | 'local_ok' | 'unavailable' | 'error'> {
+  const targetUserId = userId ?? _sessionUserId;
+  try {
+    if (await hasLocalKeys()) return 'local_ok';
+    if (!_sessionMasterKey || !targetUserId) return 'unavailable';
+
+    const { data } = await supabase
+      .from('user_backups' as any)
+      .select('encrypted_blob, iv, version, backup_type')
+      .eq('user_id', targetUserId)
+      .eq('backup_type', 'account')
+      .maybeSingle();
+    if (!data) return 'unavailable';
+
+    const backup = data as unknown as { encrypted_blob: string; iv: string; version: number };
+    if (backup.version < 5) return 'unavailable';
+
+    const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, _sessionMasterKey);
+    await restoreAllKeys(json);
+    if (!(await hasLocalKeys())) return 'error';
+
+    await writeKeychainSnapshot(targetUserId);
+    console.log('[MasterKey] ✅ Silent re-hydration via in-RAM Master Key');
+    logCryptoError({
+      severity: 'info', context: 'restore', errorCode: 'RESTORE_INMEM_MK_SUCCESS',
+      errorMessage: 'E2EE keys silently restored using in-memory Master Key',
+      metadata: { userId: targetUserId },
+    });
+    return 'restored';
+  } catch (e) {
+    console.warn('[MasterKey] In-memory MK restore failed:', e);
+    logCryptoException('restore', e, { severity: 'error', metadata: { stage: 'inmem_mk_restore', userId: targetUserId } });
+    return 'error';
+  }
+}
+
+/**
  * Restore using a recovery key (fallback when password doesn't work).
  */
 export async function restoreWithRecoveryKey(recoveryKey: string, userId: string): Promise<boolean> {
