@@ -1,0 +1,2 @@
+export function generateDeviceQR(userId, deviceId){return btoa(JSON.stringify({userId,deviceId,ts:Date.now()}));}
+export function parseDeviceQR(data){try{return JSON.parse(atob(data));}catch{return null;}}
