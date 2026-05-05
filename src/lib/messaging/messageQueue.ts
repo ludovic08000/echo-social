@@ -377,7 +377,21 @@ class MessageQueueManager {
 
   /** Process a single message through the state machine */
   private async processMessage(msg: OutboundMessage): Promise<void> {
-    if (this.processing.has(msg.localId) || this.processingConversations.has(msg.conversationId)) return;
+    const trace = (step: string, extra: Record<string, unknown> = {}) => {
+      const ageMs = Date.now() - msg.createdAt;
+      console.log(`%c[MSG_TRACE]%c ${step}`, 'color:#fff;background:#002395;padding:2px 6px;border-radius:3px;font-weight:bold', 'color:#002395;font-weight:bold', {
+        traceId: msg.traceId.slice(0, 8),
+        localId: msg.localId,
+        conv: msg.conversationId.slice(0, 8),
+        retry: msg.retryCount,
+        ageMs,
+        status: msg.status,
+        ...extra,
+      });
+    };
+    if (this.processing.has(msg.localId)) { trace('SKIP (already processing localId)'); return; }
+    if (this.processingConversations.has(msg.conversationId)) { trace('SKIP (conv busy)'); return; }
+    trace('▶ processMessage START');
     this.processing.add(msg.localId);
     this.processingConversations.add(msg.conversationId);
     this.clearRetryTimer(msg.localId);
