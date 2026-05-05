@@ -287,8 +287,13 @@ async function republishDeviceIdentity(
   const platform = normalizePlatform(getCurrentPlatform());
   const deviceName = (getCurrentDeviceLabel() || 'Unknown device').slice(0, 120);
   const userAgent = typeof navigator !== 'undefined' ? (navigator.userAgent || '').slice(0, 500) : null;
+  let deviceFingerprint: string | null = null;
+  try {
+    const { getDeviceFingerprint } = await import('@/lib/messaging/currentDevice');
+    deviceFingerprint = await getDeviceFingerprint();
+  } catch {}
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     user_id: userId,
     device_id: deviceId,
     device_name: deviceName,
@@ -298,6 +303,7 @@ async function republishDeviceIdentity(
     is_active: true,
     last_seen_at: new Date().toISOString(),
   };
+  if (deviceFingerprint) payload.device_fingerprint = deviceFingerprint;
 
   const publicPayload = {
     user_id: userId,
