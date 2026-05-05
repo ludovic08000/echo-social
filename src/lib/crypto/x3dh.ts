@@ -783,21 +783,43 @@ async function fetchDevicePrekeyMaterial(
   };
 }
 
+function safeBase64BytesLength(value: string): number | 'invalid_base64' {
+  try { return base64ToBuffer(value).byteLength; } catch { return 'invalid_base64'; }
+}
+
 async function verifySignedPrekey(
   signingKeyB64: string,
   spkPublicB64: string,
   signatureB64: string,
+  context: { source: string; identityKeyB64?: string; userId?: string; deviceId?: string; spkId?: number | string } = { source: 'unknown' },
 ): Promise<boolean> {
+  const diagBase = {
+    source: context.source,
+    user_id: context.userId,
+    device_id: context.deviceId,
+    spk_id: context.spkId,
+    encoding: 'base64(raw Ed25519 signature over raw X25519 SPK public key)',
+    identity_len: context.identityKeyB64?.length ?? null,
+    signing_len: signingKeyB64?.length ?? null,
+    spk_len: spkPublicB64?.length ?? null,
+    sig_len: signatureB64?.length ?? null,
+    identity_bytes: context.identityKeyB64 ? safeBase64BytesLength(context.identityKeyB64) : null,
+    signing_bytes: signingKeyB64 ? safeBase64BytesLength(signingKeyB64) : null,
+    spk_bytes: spkPublicB64 ? safeBase64BytesLength(spkPublicB64) : null,
+    sig_bytes: signatureB64 ? safeBase64BytesLength(signatureB64) : null,
+  };
   try {
     const peerSigningKey = await importEd25519Public(signingKeyB64);
-    return await hardCrypto.verify(
+    const valid = await hardCrypto.verify(
       'Ed25519' as any,
       peerSigningKey,
       base64ToBuffer(signatureB64),
       base64ToBuffer(spkPublicB64),
     );
+    console.log('[X3DH][SPK_VERIFY]', { ...diagBase, valid });
+    return valid;
   } catch (e) {
-    console.warn('[X3DH] SPK signature check error:', e);
+    console.warn('[X3DH][SPK_VERIFY_ERROR]', { ...diagBase, valid: false, error: e });
     return false;
   }
 }
