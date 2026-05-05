@@ -10,6 +10,7 @@ import { ChatWidgetProvider, useChatWidget } from "@/components/ChatWidgetContex
 import { ChatWidget } from "@/components/ChatWidget";
 import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
 import { RecoveryFlowGuard } from "@/components/RecoveryFlowGuard";
+import { DeviceKxRestoreGuard } from "@/components/DeviceKxRestoreGuard";
 import { CookieConsentBanner } from "@/components/CookieConsentBanner";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
 import { useIncomingCall, endActiveCall } from "@/hooks/useIncomingCall";
@@ -188,6 +189,7 @@ function AppContent() {
           <Sonner />
           <BrowserRouter>
             <RecoveryFlowGuard />
+            <DeviceKxRestoreGuard />
             <AccountKeySyncRunner />
             <IncomingCallHandler />
             <ErrorBoundary>

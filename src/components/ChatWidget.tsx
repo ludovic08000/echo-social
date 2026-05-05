@@ -37,7 +37,7 @@ import { useMessageTranslation } from '@/hooks/useMessageTranslation';
 import { useE2EE } from '@/hooks/useE2EE';
 import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
-import { EncryptionBadge, EncryptionStatusBar } from '@/components/messages/EncryptionBadge';
+import { EncryptionBadge } from '@/components/messages/EncryptionBadge';
 import { OutboundStatusIndicator } from '@/components/messages/OutboundStatus';
 import { ConversationPreviewText } from '@/components/messages/ConversationPreviewText';
 import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
@@ -380,7 +380,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
   // E2EE integration — STRICT: plaintext allowed only for the Zeus bot.
   const e2ee = useE2EE(conversationId, peerUserId);
-  const isEncryptionActive = !isZeusConversation && e2ee.encrypted;
+  const isEncryptionActive = !isZeusConversation;
   const [cacheVersion, setCacheVersion] = useState(0);
   const bumpCache = useCallback(() => setCacheVersion(v => v + 1), []);
   const decryptRefreshKey = `${conversationId}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.encrypted)}:${cacheVersion}`;
@@ -628,12 +628,12 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     if (isZeusConversation) {
       const url = await rawUpload(file);
       if (url) {
-        if (isZeusConversation) {
-          sendMessage.mutate({ conversationId, body: label, imageUrl: url });
-        } else {
-          queue.sendMessage(label, url).catch(() => toast.error('Erreur envoi photo'));
-        }
+        sendMessage.mutate({ conversationId, body: label, imageUrl: url });
       }
+      return;
+    }
+
+    if (e2ee.e2eeStatus === 'BLOCKED') {
       return;
     }
 
@@ -647,8 +647,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       if (url) {
         const body = buildMediaMessageBody(label, keyB64);
         queue.sendMessage(body, url).catch((e) => {
-          logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send', isVideo: false } });
-          toast.error('Erreur envoi photo');
+          logCryptoException('media', e, { severity: 'warning', conversationId, metadata: { stage: 'queue_send', isVideo: false } });
         });
         logCryptoError({
           severity: 'info', context: 'media', errorCode: 'MEDIA_ENCRYPT_OK',
@@ -665,15 +664,13 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         });
       }
     } catch (err) {
-      console.error('Media encryption failed:', err);
       logCryptoException('media', err, {
         severity: 'error',
         conversationId,
         metadata: { stage: 'encrypt_upload', sizeBytes: file.size, mime: file.type, durationMs: Math.round(performance.now() - t0) },
       });
-      toast.error('Erreur de chiffrement du média');
     }
-  }, [isZeusConversation, rawUpload, conversationId, sendMessage, queue]);
+  }, [isZeusConversation, rawUpload, conversationId, sendMessage, queue, e2ee.e2eeStatus]);
 
   useEffect(() => {
     lastScrollSigRef.current = '';
@@ -737,10 +734,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
-    if (sendBlocked) {
-      explainSendBlock('message');
-      return;
-    }
+    if (sendBlocked) return;
 
     const replyText = replyTo ? decryptedCacheRef.current.get(replyTo.id) || replyTo.body : null;
     const body = replyTo
@@ -759,38 +753,16 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     } else {
       // Fire-and-forget: queue handles retry/encryption in background
       queue.sendMessage(body).catch(err => {
-        toast.error(err instanceof Error ? err.message : 'Erreur envoi');
+        logCryptoException('queue.send', err, {
+          severity: 'warning',
+          conversationId,
+          metadata: { stage: 'widget_send' },
+        });
       });
     }
   };
 
-  // Fingerprint change is no longer a blocker — only true unrecoverable states are.
-  const sendBlocked = !isZeusConversation && (
-    e2ee.peerKeyMissing ||
-    e2ee.initError === 'pin_setup_required' ||
-    e2ee.initError === 'pin_unlock_required' ||
-    e2ee.initError === 'identity_lost_backup_available' ||
-    e2ee.initError === 'identity_restore_required' ||
-    e2ee.initError === 'identity_fingerprint_mismatch' ||
-    e2ee.initError === 'identity_server_unavailable'
-  );
-
-  const explainSendBlock = useCallback((kind: 'message' | 'media' = 'message') => {
-    const noun = kind === 'media' ? 'un media' : 'un message';
-    if (e2ee.peerKeyMissing) {
-      toast.error(`Cles du contact indisponibles - impossible d'envoyer ${noun} pour le moment.`);
-    } else if (e2ee.initError === 'pin_setup_required') {
-      toast.error('Configure ton PIN de messagerie avant de creer ton identite E2EE.');
-    } else if (e2ee.initError === 'pin_unlock_required') {
-      toast.error('Deverrouille d abord la messagerie securisee.');
-    } else if (e2ee.initError === 'identity_lost_backup_available' || e2ee.initError === 'identity_restore_required') {
-      toast.error('Restaure d abord ton identite E2EE avant d envoyer.');
-    } else if (e2ee.initError === 'identity_fingerprint_mismatch') {
-      toast.error('Identite E2EE bloquee: le fingerprint local ne correspond pas au serveur.');
-    } else if (e2ee.initError === 'identity_server_unavailable') {
-      toast.error('Impossible de verifier l identite E2EE serveur. Reessaie dans quelques instants.');
-    }
-  }, [e2ee.peerKeyMissing, e2ee.initError]);
+  const sendBlocked = !isZeusConversation && e2ee.e2eeStatus === 'BLOCKED';
 
   const handleAI = async (action: 'correct' | 'improve' | 'translate', tone?: string) => {
     if (!newMessage.trim() || aiLoading) return;
@@ -938,56 +910,6 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       </div>
 
-      {/* E2EE Status */}
-      {!isZeusConversation && (
-        <EncryptionStatusBar
-          encrypted={e2ee.encrypted}
-          fingerprint={e2ee.fingerprint}
-          peerFingerprint={e2ee.peerFingerprint}
-          ratchetActive={e2ee.ratchetActive}
-          fingerprintChanged={e2ee.fingerprintChanged}
-          peerName={conversation?.participant?.name || 'Contact'}
-          conversationId={conversationId || ''}
-        />
-      )}
-
-      {/* Fingerprint change banner removed per user request — silent re-keying */}
-
-      {/* Key lost / init error recovery banner */}
-      {!isZeusConversation && e2ee.initError && (
-        <div className="mx-2 mt-2 bg-destructive/10 border border-destructive/30 rounded-xl px-3 py-2.5">
-          <p className="text-xs font-semibold text-destructive">
-            {e2ee.initError === 'identity_lost_backup_available'
-              ? '🔑 Clés perdues — sauvegarde disponible'
-              : e2ee.initError === 'pin_unlock_required'
-                ? '🔐 PIN requis pour déverrouiller vos clés'
-                : '⚠️ Erreur de chiffrement'}
-          </p>
-          <p className="text-[10px] text-muted-foreground mt-1">
-            {e2ee.initError === 'identity_lost_backup_available'
-              ? 'Restaurez votre sauvegarde pour retrouver vos conversations chiffrées.'
-              : e2ee.initError === 'pin_unlock_required'
-                ? 'Entrez votre PIN pour accéder à vos messages.'
-                : 'Restaurez vos clés depuis les paramètres pour reprendre vos conversations.'}
-          </p>
-          <button
-            onClick={() => navigate('/settings', { state: { tab: 'privacy', scrollTo: 'key-backup' } })}
-            className="mt-2 px-3 py-1 rounded-full bg-primary text-primary-foreground text-[10px] font-medium hover:opacity-90 transition-opacity"
-          >
-            🔑 Restaurer mes clés
-          </button>
-        </div>
-      )}
-
-      {/* Peer has no keys */}
-      {!isZeusConversation && e2ee.peerKeyMissing && !e2ee.initError && (
-        <div className="mx-2 mt-2 bg-muted/50 border border-border/30 rounded-xl px-3 py-2">
-          <p className="text-[10px] text-muted-foreground">
-            🔒 Ce contact n'a pas encore de clés — les messages ne peuvent pas être envoyés pour l'instant.
-          </p>
-        </div>
-      )}
-
       {/* Pending message request banner */}
       {hasPending && (
         <div className="mx-2 mt-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2.5">
@@ -1035,7 +957,15 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                     if (isZeusConversation) {
                       sendMessage.mutate({ conversationId, body: s });
                     } else {
-                      try { await queue.sendMessage(s); } catch { toast.error('Erreur envoi'); }
+                      try {
+                        await queue.sendMessage(s);
+                      } catch (err) {
+                        logCryptoException('queue.send', err, {
+                          severity: 'warning',
+                          conversationId,
+                          metadata: { stage: 'suggestion_send' },
+                        });
+                      }
                     }
                   }}
                   className="px-3 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-medium hover:bg-primary/20 transition-all"
@@ -1343,10 +1273,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           {queue.pendingMessages.map(pm => (
             <div key={pm.localId} className="flex justify-start mt-1 px-2">
               <div className="max-w-[78%]">
-                <div className={cn(
-                  'px-3 py-1.5 text-xs break-words leading-relaxed rounded-2xl bg-primary/70 text-primary-foreground',
-                  pm.status === 'failed_visible' && 'bg-destructive/20 text-destructive border border-destructive/30',
-                )}>
+                <div className="px-3 py-1.5 text-xs break-words leading-relaxed rounded-2xl bg-primary/70 text-primary-foreground">
                   {(() => {
                     const text = pm.plaintext || '';
                     const media = parseMediaMessage(text);
@@ -1634,7 +1561,13 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             if (isZeusConversation) {
               sendMessage.mutate({ conversationId, body });
             } else {
-              queue.sendMessage(body).catch(() => toast.error('Erreur envoi GIF'));
+              queue.sendMessage(body).catch((err) => {
+                logCryptoException('queue.send', err, {
+                  severity: 'warning',
+                  conversationId,
+                  metadata: { stage: 'gif_send' },
+                });
+              });
             }
             setShowGifs(false);
           }}
@@ -1671,7 +1604,13 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             if (isZeusConversation) {
               sendMessage.mutate({ conversationId, body });
             } else {
-              queue.sendMessage(body).catch(() => toast.error('Erreur envoi vocal'));
+              queue.sendMessage(body).catch((err) => {
+                logCryptoException('queue.send', err, {
+                  severity: 'warning',
+                  conversationId,
+                  metadata: { stage: 'voice_send' },
+                });
+              });
             }
             setShowVoiceRecorder(false);
             setShowVoicemailPrompt(false);
@@ -1769,16 +1708,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               <button
                 type="button"
                 onClick={() => {
-                  if (sendBlocked) {
-                    if (e2ee.peerKeyMissing) {
-                      toast.error('Clés du contact indisponibles — impossible d’envoyer une photo pour le moment.');
-                    } else if (e2ee.initError === 'pin_unlock_required') {
-                      toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer une photo.');
-                    } else if (e2ee.initError === 'identity_lost_backup_available') {
-                      toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer une photo.');
-                    }
-                    return;
-                  }
+                  if (sendBlocked) return;
 
                   fileInputRef.current?.click();
                 }}

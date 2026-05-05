@@ -142,13 +142,37 @@ export function useMessageQueue(
         // the sender's other devices can read the message. The primary
         // recipient device still relies on the per-conversation Double Ratchet.
         if (msg.plaintext) {
-          fanoutMessageCopies({
-            messageId: outboundId,
-            conversationId: msg.conversationId,
-            senderUserId: msg.senderId,
-            plaintext: msg.plaintext,
-          }).catch(err => console.warn('[FANOUT] non-fatal failure', err));
-          processDeviceCopyRetryRequests().catch(() => {});
+          try {
+            const fanout = await fanoutMessageCopies({
+              messageId: outboundId,
+              conversationId: msg.conversationId,
+              senderUserId: msg.senderId,
+              plaintext: msg.plaintext,
+            });
+            if (fanout.multiDevice && fanout.failed > 0) {
+              logCryptoError({
+                severity: 'warning',
+                context: 'fanout',
+                errorCode: 'E_FANOUT_PARTIAL',
+                errorMessage: 'Message sent, but not every active device received a copy',
+                conversationId: msg.conversationId,
+                metadata: {
+                  localId: msg.localId,
+                  serverId: outboundId,
+                  targeted: fanout.targeted,
+                  inserted: fanout.inserted,
+                  failed: fanout.failed,
+                },
+              });
+            }
+          } catch (err) {
+            logCryptoException('fanout', err, {
+              severity: 'warning',
+              conversationId: msg.conversationId,
+              metadata: { localId: msg.localId, serverId: outboundId },
+            });
+          }
+          void processDeviceCopyRetryRequests().catch(() => {});
         }
 
         await supabase
@@ -299,10 +323,12 @@ export function useMessageQueue(
   }, []);
 
   // Enrich pending messages with volatile plaintext from memory cache
-  const pendingMessages = rawPendingMessages.map(m => ({
-    ...m,
-    plaintext: m.plaintext || plaintextCacheRef.current.get(m.localId) || '',
-  }));
+  const pendingMessages = rawPendingMessages
+    .filter(m => m.status !== 'failed_visible')
+    .map(m => ({
+      ...m,
+      plaintext: m.plaintext || plaintextCacheRef.current.get(m.localId) || '',
+    }));
 
   return {
     pendingMessages,

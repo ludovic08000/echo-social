@@ -15,7 +15,7 @@
  * - Legacy session ONLY used for inbound decrypt of old messages (never outbound)
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -56,6 +56,7 @@ import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/li
 import { KX_KEY_PARAMS, STORE_PREKEYS, STORE_SESSION } from '@/lib/crypto/constants';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
 import { isCryptoJsonBody, isStrictRatchetEnvelopeBody, isUnsupportedEncryptedBody } from '@/lib/messaging/messageCompatibility';
+import { deriveE2EEState } from '@/lib/crypto/e2eeStateMachine';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
 const RATCHET_DB_NAME = 'forsure-ratchet';
@@ -1662,29 +1663,34 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
   // Legacy message decrypt path removed — incompatible bodies are auto-purged.
 
+  const machineState = useMemo(() => deriveE2EEState({
+    isZeus,
+    encrypted: state.encrypted,
+    hasOwnKeys: !!keysRef.current,
+    hasPeerKey: !!peerKeyRef.current,
+    fingerprintChanged: state.fingerprintChanged,
+    peerKeyMissing: state.peerKeyMissing,
+    initError: state.initError,
+  }), [
+    isZeus,
+    state.encrypted,
+    state.fingerprintChanged,
+    state.peerKeyMissing,
+    state.initError,
+  ]);
+
   /** Check if encryption is ready for this conversation */
   const isReady = useCallback((): boolean => {
-    if (isZeus) return true;
-    // Ready if we have peer keys and our own keys, and no fingerprint block
-    const ready =
-      state.encrypted &&
-      !!keysRef.current &&
-      !!peerKeyRef.current &&
-      !state.fingerprintChanged;
-    if (!ready) {
-      // High-signal debug breadcrumb — surfaces in iOS Web Inspector.
-      console.debug('[E2EE.isReady] NOT ready', {
-        conversationId,
-        encrypted: state.encrypted,
-        hasOwnKeys: !!keysRef.current,
-        hasPeerKey: !!peerKeyRef.current,
-        fingerprintChanged: state.fingerprintChanged,
-        peerKeyMissing: state.peerKeyMissing,
-        initError: state.initError,
-      });
-    }
-    return ready;
-  }, [state.encrypted, state.fingerprintChanged, state.peerKeyMissing, state.initError, isZeus, conversationId]);
+    return deriveE2EEState({
+      isZeus,
+      encrypted: state.encrypted,
+      hasOwnKeys: !!keysRef.current,
+      hasPeerKey: !!peerKeyRef.current,
+      fingerprintChanged: state.fingerprintChanged,
+      peerKeyMissing: state.peerKeyMissing,
+      initError: state.initError,
+    }).status === 'READY';
+  }, [state.encrypted, state.fingerprintChanged, state.peerKeyMissing, state.initError, isZeus]);
 
   /** Acknowledge fingerprint change — user explicitly trusts new key */
   const acknowledgeFingerprint = useCallback(async () => {
@@ -1717,6 +1723,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
   return {
     ...state,
+    e2eeStatus: machineState.status,
+    stateReason: machineState.reason,
+    canEncrypt: machineState.canEncrypt,
+    canSend: machineState.canSend,
     encrypt,
     decrypt,
     isReady,

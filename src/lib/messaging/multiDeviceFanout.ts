@@ -56,6 +56,13 @@ interface ActiveDevice {
   device_public_key: string;
 }
 
+export interface FanoutResult {
+  inserted: number;
+  targeted: number;
+  failed: number;
+  multiDevice: boolean;
+}
+
 interface DeviceEncryptTargetInput {
   conversationId?: string;
   senderUserId: string;
@@ -64,6 +71,43 @@ interface DeviceEncryptTargetInput {
   recipientDeviceId: string;
   recipientDevicePublicKey: string;
   plaintext: string;
+}
+
+function emptyFanout(multiDevice = false): FanoutResult {
+  return { inserted: 0, targeted: 0, failed: 0, multiDevice };
+}
+
+function dedupeDevices(devices: ActiveDevice[]): ActiveDevice[] {
+  const seen = new Set<string>();
+  const out: ActiveDevice[] = [];
+  for (const device of devices) {
+    if (!device.user_id || !device.device_id || !device.device_public_key) continue;
+    const key = `${device.user_id}:${device.device_id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(device);
+  }
+  return out;
+}
+
+async function loadCurrentSenderDevice(senderUserId: string, senderDeviceId: string): Promise<ActiveDevice | null> {
+  try {
+    const { data } = await supabase
+      .from('user_devices')
+      .select('user_id, device_id, device_public_key, is_active, revoked_at')
+      .eq('user_id', senderUserId)
+      .eq('device_id', senderDeviceId)
+      .maybeSingle();
+
+    if (!data?.device_public_key || !data.is_active || data.revoked_at) return null;
+    return {
+      user_id: data.user_id,
+      device_id: data.device_id,
+      device_public_key: data.device_public_key,
+    };
+  } catch {
+    return null;
+  }
 }
 
 // ─── X3DH-wrapped envelopes ─────────────────────────────────────────────────
@@ -301,14 +345,14 @@ export async function encryptPlaintextForDeviceTarget(
   return encrypted ? { encryptedBody: encrypted, senderDeviceId } : null;
 }
 
-export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserted: number; multiDevice: boolean }> {
+export async function fanoutMessageCopies(input: FanoutInput): Promise<FanoutResult> {
   // SAFETY: Never bind a fresh ratchet session to a temporary device id —
   // doing so would orphan all session state once Keychain hydrates with
   // the real one. Skip fan-out entirely; the per-conv ratchet still
   // delivers to the primary device.
   if (isDeviceIdTemporary()) {
     // Silent skip: per-conv ratchet still delivers to the primary device.
-    return { inserted: 0, multiDevice: false };
+    return emptyFanout(false);
   }
   const senderDeviceId = getCurrentDeviceId();
 
@@ -318,7 +362,7 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
     .select('user_id')
     .eq('conversation_id', input.conversationId);
 
-  if (!participants?.length) return { inserted: 0, multiDevice: false };
+  if (!participants?.length) return emptyFanout(false);
   const userIds = participants.map(p => p.user_id);
 
   // 2. List active devices per participant
@@ -338,11 +382,16 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
   );
   const allDevices = deviceLists.flat();
 
-  // Every message must have a decryptable copy for the recipient AND for the
-  // sender's own account. Include the current sender device so self-messages
-  // survive cache loss / refresh / iOS storage purges.
-  const targets = allDevices;
-  if (targets.length === 0) return { inserted: 0, multiDevice: false };
+  // Every message must have a decryptable copy for every active participant
+  // device, including all devices of the sender's own account. The current
+  // sender device is added explicitly if the RPC missed a fresh registration.
+  const targets = dedupeDevices(allDevices);
+  const senderTargetKey = `${input.senderUserId}:${senderDeviceId}`;
+  if (!targets.some(dev => `${dev.user_id}:${dev.device_id}` === senderTargetKey)) {
+    const senderDevice = await loadCurrentSenderDevice(input.senderUserId, senderDeviceId);
+    if (senderDevice) targets.unshift(senderDevice);
+  }
+  if (targets.length === 0) return emptyFanout(false);
 
   // 3. For each target device:
   //    pre) detect peer SPK rotation → invalidate stale session (avoids
@@ -351,8 +400,12 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
   //    b)   X3DH per-device (v1/v2, also caches a session for next time)
   //    c)   refuse send if no authenticated per-device path is available
   const rows: Array<Record<string, string>> = [];
+  let failed = 0;
   for (const dev of targets) {
-    if (!dev.device_public_key) continue;
+    if (!dev.device_public_key) {
+      failed++;
+      continue;
+    }
 
     // (pre) Check whether the cached session was negotiated against an SPK
     // that the peer has since rotated. If so, drop the session so step (b)
@@ -385,13 +438,25 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
     //     cache returns a v3 envelope (legacy session that hasn't been
     //     re-bootstrapped yet), drop it and force fresh X3DH below so new
     //     traffic stays on Double Ratchet w/ DH ratchet.
-    let encrypted: string | null = await ratchetEncrypt(
-      input.senderUserId, senderDeviceId,
-      dev.user_id, dev.device_id,
-      input.plaintext,
-    );
-    if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V4)) {
-      encrypted = null;
+    let encrypted: string | null = null;
+    try {
+      encrypted = await ratchetEncrypt(
+        input.senderUserId, senderDeviceId,
+        dev.user_id, dev.device_id,
+        input.plaintext,
+      );
+      if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V4)) {
+        encrypted = null;
+      }
+    } catch (e) {
+      logCryptoException('fanout', e, {
+        severity: 'warning',
+        conversationId: input.conversationId,
+        myDeviceId: senderDeviceId,
+        peerUserId: dev.user_id,
+        peerDeviceId: dev.device_id,
+        metadata: { stage: 'ratchet_encrypt' },
+      });
     }
 
     // (b) Fresh X3DH (v1 or v2) — this also seeds the ratchet for next time.
@@ -416,6 +481,7 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
         peerDeviceId: dev.device_id,
         metadata: { stage: 'spk_required' },
       });
+      failed++;
       continue;
     }
 
@@ -429,9 +495,14 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
     });
   }
 
-  if (!rows.length) return { inserted: 0, multiDevice: true };
+  if (!rows.length) return { inserted: 0, targeted: targets.length, failed, multiDevice: true };
 
-  const { error } = await supabase.from('message_device_copies').insert(rows as any);
+  const { error } = await supabase
+    .from('message_device_copies')
+    .upsert(rows as any, {
+      onConflict: 'message_id,recipient_device_id',
+      ignoreDuplicates: true,
+    });
   if (error) {
     logCryptoError({
       severity: 'error',
@@ -442,7 +513,19 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
       myDeviceId: senderDeviceId,
       metadata: { rows: rows.length },
     });
-    return { inserted: 0, multiDevice: true };
+    return { inserted: 0, targeted: targets.length, failed: targets.length, multiDevice: true };
+  }
+
+  if (failed > 0) {
+    logCryptoError({
+      severity: 'warning',
+      context: 'fanout',
+      errorCode: 'E_FANOUT_PARTIAL',
+      errorMessage: 'Some active devices did not receive an encrypted copy',
+      conversationId: input.conversationId,
+      myDeviceId: senderDeviceId,
+      metadata: { targeted: targets.length, inserted: rows.length, failed },
+    });
   }
 
   // 4. Tag the parent message as multi-device for downstream readers
@@ -451,7 +534,7 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
     .update({ body_kind: 'multi_device' } as any)
     .eq('id', input.messageId);
 
-  return { inserted: rows.length, multiDevice: true };
+  return { inserted: rows.length, targeted: targets.length, failed, multiDevice: true };
 }
 
 /**

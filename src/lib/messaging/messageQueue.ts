@@ -450,8 +450,15 @@ class MessageQueueManager {
               withLocalId.startsWith('x3dh1.')                // X3DH per-device w/o OPK
             );
           if (!looksCiphertext) {
-            console.error('[E2EE] encrypt failed — output is plaintext or empty', msg.localId);
-            await this.updateStatus(msg, 'waiting_secure_channel', 'Canal sécurisé indisponible');
+            logCryptoError({
+              severity: 'warning',
+              context: 'queue.encrypt',
+              errorCode: 'E_ENCRYPT_OUTPUT_INVALID',
+              errorMessage: 'Encrypted output was unavailable; queue will retry securely',
+              conversationId: msg.conversationId,
+              metadata: { localId: msg.localId, traceId: msg.traceId },
+            });
+            await this.updateStatus(msg, 'waiting_secure_channel', 'secure_channel_unavailable');
             this.scheduleRetry(msg, 'secure_wait');
             return;
           }
@@ -485,10 +492,22 @@ class MessageQueueManager {
             normalized.includes('vérifiez l\'identité avant d\'envoyer') ||
             normalized.includes('fingerprint changed');
 
-          console.error('[E2EE] encrypt failed', msg.localId, errMsg);
+          logCryptoError({
+            severity: permanentSafetyMismatch ? 'error' : 'warning',
+            context: 'queue.encrypt',
+            errorCode: permanentSafetyMismatch ? 'E_SECURE_CHANNEL_BLOCKED' : 'E_ENCRYPT_ATTEMPT_DEFERRED',
+            errorMessage: permanentSafetyMismatch ? 'Secure channel blocked by identity safety check' : 'Secure send deferred',
+            conversationId: msg.conversationId,
+            metadata: {
+              localId: msg.localId,
+              traceId: msg.traceId,
+              retryCount: msg.retryCount,
+              reason: errMsg.slice(0, 500),
+            },
+          });
 
           if (permanentSafetyMismatch) {
-            await this.updateStatus(msg, 'failed_visible', errMsg);
+            await this.updateStatus(msg, 'failed_visible', 'secure_channel_blocked');
             return;
           }
 
@@ -497,19 +516,19 @@ class MessageQueueManager {
           const age = Date.now() - msg.createdAt;
           if (waitingForKeys && age > SECURE_CHANNEL_HARD_TIMEOUT_MS) {
             console.warn('[MSG_QUEUE] giving up - peer keys still missing after hard timeout', msg.localId);
-            await this.updateStatus(msg, 'failed_visible', 'Chiffrement impossible — clés du contact indisponibles. Réessayez.');
+            await this.updateStatus(msg, 'failed_visible', 'secure_channel_unavailable');
             return;
           }
 
           if (waitingForKeys || transientCryptoPressure) {
-            await this.updateStatus(msg, 'waiting_secure_channel', errMsg);
+            await this.updateStatus(msg, 'waiting_secure_channel', 'secure_channel_initializing');
             this.scheduleRetry(msg, 'secure_wait');
           } else {
             // Non-key errors: fail after 3 retries instead of 10
             if (msg.retryCount >= 3) {
-              await this.updateStatus(msg, 'failed_visible', `Échec chiffrement: ${errMsg}`);
+              await this.updateStatus(msg, 'failed_visible', 'secure_encrypt_unavailable');
             } else {
-              await this.updateStatus(msg, 'retry_pending', errMsg);
+              await this.updateStatus(msg, 'retry_pending', 'secure_encrypt_retry');
               this.scheduleRetry(msg);
             }
           }
@@ -572,13 +591,25 @@ class MessageQueueManager {
         this.notifyListeners(msg.conversationId);
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
-        console.error('[SEND] failed', msg.localId, errMsg);
+        logCryptoError({
+          severity: 'warning',
+          context: 'queue.send',
+          errorCode: 'E_SEND_ATTEMPT_DEFERRED',
+          errorMessage: 'Secure send deferred',
+          conversationId: msg.conversationId,
+          metadata: {
+            localId: msg.localId,
+            traceId: msg.traceId,
+            retryCount: msg.retryCount,
+            reason: errMsg.slice(0, 500),
+          },
+        });
 
         // Network error: retry. Other errors: check retry count.
         if (msg.retryCount >= msg.maxRetries) {
-          await this.updateStatus(msg, 'failed_visible', `Échec après ${msg.maxRetries} tentatives: ${errMsg}`);
+          await this.updateStatus(msg, 'failed_visible', 'secure_send_unavailable');
         } else {
-          await this.updateStatus(msg, 'retry_pending', errMsg);
+          await this.updateStatus(msg, 'retry_pending', 'secure_send_retry');
           this.scheduleRetry(msg);
         }
       }
