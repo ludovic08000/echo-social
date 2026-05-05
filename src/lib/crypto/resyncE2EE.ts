@@ -282,25 +282,43 @@ async function republishDeviceIdentity(
     last_seen_at: new Date().toISOString(),
   };
 
+  const publicPayload = {
+    user_id: userId,
+    identity_key: bundle.identityKey,
+    signing_key: bundle.signingKey,
+    fingerprint: bundle.fingerprint,
+    kem_type: 'X25519',
+    is_active: true,
+    updated_at: new Date().toISOString(),
+  };
+
+  validatePayloadForDB(publicPayload, 'user_public_keys');
+  logPayloadBeforeUpsert('user_public_keys', publicPayload);
+
+  validatePayloadForDB(payload, 'user_devices');
+  logPayloadBeforeUpsert('user_devices', payload);
+
   // Diagnostic log — NEVER log private key material.
   diag?.push('identity', 'info', 'stage user_public_keys.upsert', {
     identityKeyLen: bundle.identityKey.length,
     signingKeyLen: bundle.signingKey.length,
     fingerprint: bundle.fingerprint,
   });
-  const { error: pubErr } = await supabase
-    .from('user_public_keys')
-    .upsert({
-      user_id: userId,
-      identity_key: bundle.identityKey,
-      signing_key: bundle.signingKey,
-      fingerprint: bundle.fingerprint,
-      kem_type: 'X25519',
-      is_active: true,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id,is_active' });
-  if (pubErr) {
-    throw new Error(`user_public_keys upsert failed: ${pubErr.message} (code=${(pubErr as any).code ?? 'n/a'}, details=${(pubErr as any).details ?? 'n/a'})`);
+  try {
+    const { error: pubErr } = await supabase
+      .from('user_public_keys')
+      .upsert(publicPayload, { onConflict: 'user_id,is_active' });
+    if (pubErr) {
+      const dbDiag = formatSupabaseError('user_public_keys', 'user_public_keys_upsert', pubErr, publicPayload);
+      throw new Error(`E2EE_DB_UPSERT_FAILED table=user_public_keys step=user_public_keys_upsert code=${dbDiag.code ?? 'n/a'} rejected_column=${dbDiag.rejected_column} details=${dbDiag.details ?? 'n/a'} hint=${dbDiag.hint ?? 'n/a'} supabase_message=${dbDiag.message ?? 'n/a'}`);
+    }
+  } catch (e) {
+    console.error('[E2EE][IDENTITY][FAIL]', {
+      step: 'user_public_keys_upsert',
+      error: e,
+      payload: sanitizePayloadForLog(publicPayload),
+    });
+    throw e;
   }
 
   console.log('[resync] user_devices.upsert payload', {
@@ -319,17 +337,21 @@ async function republishDeviceIdentity(
     platform: payload.platform,
     devicePublicKeyLen: payload.device_public_key.length,
   });
-  const { error: devErr } = await supabase
-    .from('user_devices')
-    .upsert(payload, { onConflict: 'user_id,device_id' });
-  if (devErr) {
-    console.error('[resync] user_devices.upsert failed', {
-      code: (devErr as any).code,
-      message: devErr.message,
-      details: (devErr as any).details,
-      hint: (devErr as any).hint,
+  try {
+    const { error: devErr } = await supabase
+      .from('user_devices')
+      .upsert(payload, { onConflict: 'user_id,device_id' });
+    if (devErr) {
+      const dbDiag = formatSupabaseError('user_devices', 'user_devices_upsert', devErr, payload);
+      throw new Error(`E2EE_DB_UPSERT_FAILED table=user_devices step=user_devices_upsert code=${dbDiag.code ?? 'n/a'} rejected_column=${dbDiag.rejected_column} details=${dbDiag.details ?? 'n/a'} hint=${dbDiag.hint ?? 'n/a'} supabase_message=${dbDiag.message ?? 'n/a'}`);
+    }
+  } catch (e) {
+    console.error('[E2EE][IDENTITY][FAIL]', {
+      step: 'user_devices_upsert',
+      error: e,
+      payload: sanitizePayloadForLog(payload),
     });
-    throw new Error(`user_devices upsert failed: ${devErr.message} (code=${(devErr as any).code ?? 'n/a'}, details=${(devErr as any).details ?? 'n/a'})`);
+    throw e;
   }
   result.identity = true;
 
