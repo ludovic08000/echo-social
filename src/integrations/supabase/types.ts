@@ -5041,6 +5041,9 @@ export type Database = {
           is_active: boolean
           last_seen_at: string
           platform: string | null
+          revoke_reason: string | null
+          revoked_at: string | null
+          stale_at: string | null
           updated_at: string
           user_agent: string | null
           user_id: string
@@ -5054,6 +5057,9 @@ export type Database = {
           is_active?: boolean
           last_seen_at?: string
           platform?: string | null
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          stale_at?: string | null
           updated_at?: string
           user_agent?: string | null
           user_id: string
@@ -5067,6 +5073,9 @@ export type Database = {
           is_active?: boolean
           last_seen_at?: string
           platform?: string | null
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          stale_at?: string | null
           updated_at?: string
           user_agent?: string | null
           user_id?: string

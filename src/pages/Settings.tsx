@@ -16,6 +16,7 @@ import { ContentPreferencesPanel } from '@/components/settings/ContentPreference
 import { AccessibilitySettingsPanel } from '@/components/settings/AccessibilitySettingsPanel';
 import { ParentalControlPanel } from '@/components/settings/ParentalControlPanel';
 import { DevicesPanel } from '@/components/settings/DevicesPanel';
+import { MessagingPinGate } from '@/components/MessagingPinGate';
 import { Button } from '@/components/ui/button';
 
 export default function Settings() {
@@ -154,7 +155,9 @@ export default function Settings() {
                 <Smartphone className="w-4 h-4 text-primary" />
                 Appareils connectés
               </h2>
-              <DevicesPanel />
+              <MessagingPinGate>
+                <DevicesPanel />
+              </MessagingPinGate>
             </section>
           </div>
         )}

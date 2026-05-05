@@ -7,14 +7,14 @@
  *   2) deletes the local device-pair sessions on the current device so
  *      future messages re-handshake cleanly.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Loader2, Smartphone, Monitor, Tablet, ShieldOff, BadgeCheck, Trash2, AlertTriangle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
-import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import { getCurrentDeviceId, hydrateDeviceId } from '@/lib/messaging/currentDevice';
 import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
 import { Button } from '@/components/ui/button';
 import {
@@ -56,23 +56,46 @@ export function DevicesPanel() {
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [revoking, setRevoking] = useState<string | null>(null);
-  const currentDeviceId = useMemo(() => getCurrentDeviceId(), []);
+  const [currentDeviceId, setCurrentDeviceId] = useState(() => getCurrentDeviceId());
 
   const load = async () => {
     if (!user) return;
     setLoading(true);
-    const { data, error } = await (supabase as any)
-      .from('user_devices')
-      .select('id, device_id, device_name, platform, user_agent, last_seen_at, created_at, is_active, stale_at, revoked_at, revoke_reason')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .order('last_seen_at', { ascending: false });
-    if (error) {
-      toast.error('Impossible de charger les appareils');
-    } else {
-      setDevices((data ?? []) as DeviceRow[]);
+    try {
+      const hydratedDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+      setCurrentDeviceId(hydratedDeviceId);
+
+      const columns = 'id, device_id, device_name, platform, user_agent, last_seen_at, created_at, is_active, stale_at, revoked_at, revoke_reason';
+      const { data, error } = await (supabase as any)
+        .from('user_devices')
+        .select(columns)
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .order('last_seen_at', { ascending: false });
+      if (error) {
+        console.error('[DevicesPanel] LOAD_FAILED', {
+          table: 'user_devices',
+          columns,
+          userId: user.id,
+          deviceId: hydratedDeviceId,
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          line: 'src/components/settings/DevicesPanel.tsx:load',
+        });
+        toast.error(`Appareils: ${error.code ?? 'DB_ERROR'} · ${error.message}`);
+      } else {
+        setDevices((data ?? []).map((row: any) => ({
+          stale_at: null,
+          revoked_at: null,
+          revoke_reason: null,
+          ...row,
+        })) as DeviceRow[]);
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
