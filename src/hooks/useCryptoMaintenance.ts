@@ -18,7 +18,10 @@ import { useAuth } from '@/lib/auth';
 import {
   getOrCreateIdentityKeys,
   refreshSignedPrekeyIfNeeded,
+  refreshDeviceSignedPrekeyIfNeeded,
+  refillDeviceOneTimePrekeysIfNeeded,
 } from '@/lib/crypto';
+import { getCurrentDeviceId, hydrateDeviceId } from '@/lib/messaging/currentDevice';
 
 const MAINTENANCE_TTL = 6 * 60 * 60 * 1000; // 6h between auto-refills
 const STORAGE_KEY = 'forsure-crypto-maintenance-ts';
