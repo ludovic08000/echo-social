@@ -2643,6 +2643,30 @@ export type Database = {
           },
         ]
       }
+      message_read_receipts: {
+        Row: {
+          conversation_id: string
+          device_id: string
+          message_id: string
+          read_at: string
+          user_id: string
+        }
+        Insert: {
+          conversation_id: string
+          device_id: string
+          message_id: string
+          read_at?: string
+          user_id: string
+        }
+        Update: {
+          conversation_id?: string
+          device_id?: string
+          message_id?: string
+          read_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           body: string
