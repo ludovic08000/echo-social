@@ -359,25 +359,32 @@ export async function refreshSignedPrekeyIfNeeded(
     // against the new signing key → must regenerate SPK.
     let signatureValid = false;
     try {
-      const spkRaw = base64ToBuffer(data.public_key);
-      const sigRaw = base64ToBuffer(data.signature);
-
       const { data: pubKeyData } = await supabase
         .from('user_public_keys')
-        .select('signing_key')
+        .select('identity_key, signing_key')
         .eq('user_id', userId)
         .eq('is_active', true)
         .maybeSingle();
 
       if (pubKeyData) {
-        const signingPubKey = await importEd25519Public(pubKeyData.signing_key);
-        signatureValid = await hardCrypto.verify(
-          'Ed25519' as any, signingPubKey, sigRaw, spkRaw,
-        );
+        signatureValid = await verifySignedPrekey(pubKeyData.signing_key, data.public_key, data.signature, {
+          source: 'refreshSignedPrekeyIfNeeded.current_user_spk',
+          identityKeyB64: pubKeyData.identity_key,
+          userId,
+          spkId: data.spk_id,
+        });
       }
 
       if (!signatureValid) {
-        console.warn('[X3DH] ⚠️ SPK signature verification FAILED against current signing key — SPK out of sync');
+        console.warn('[X3DH] SPK INVALID → regeneration required', {
+          source: 'refreshSignedPrekeyIfNeeded',
+          user_id: userId,
+          spk_id: data.spk_id,
+          identity_len: pubKeyData?.identity_key?.length ?? null,
+          spk_len: data.public_key?.length ?? null,
+          sig_len: data.signature?.length ?? null,
+          valid: false,
+        });
       }
     } catch (verifyErr) {
       console.warn('[X3DH] ⚠️ SPK signature verification error:', verifyErr);
