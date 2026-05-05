@@ -128,29 +128,10 @@ export function ConversationList() {
           </div>
         </header>
 
-        {!search && recoveryState?.needsExplicitRestore && (recoveryState.totalConversations ?? 0) > 0 && (
-          <div className="mx-4 mb-3 rounded-2xl border border-border bg-secondary/50 px-4 py-3">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-background">
-                <Lock className="h-4 w-4 text-primary" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold">Conversations sécurisées détectées</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Vos conversations existent côté serveur, mais vos clés locales doivent être restaurées avant lecture.
-                </p>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="mt-3 rounded-full"
-                  onClick={() => navigate('/settings', { state: { tab: 'privacy', scrollTo: 'key-backup' } })}
-                >
-                  Restaurer mes clés
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Silent recovery: no "Restaurer mes clés" CTA in the conversation
+            list. Restoration runs automatically in background (useAccountKeySync
+            + realtimeKeySync + messageQueue). The dedicated UI is in
+            Settings → Privacy → Key Backup. */}
 
         {!search && conversations && conversations.length > 0 && (
           <div className="flex gap-4 px-4 py-3 overflow-x-auto scrollbar-none">
@@ -186,30 +167,6 @@ export function ConversationList() {
               ))}
             </div>
           ) : !filtered?.length ? (
-            shouldShowSecureEmptyState ? (
-              <div className="flex flex-col items-center justify-center py-20 gap-4 px-6">
-                <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center">
-                  <Lock className="w-7 h-7 text-primary" />
-                </div>
-                <div className="text-center max-w-[320px]">
-                  <p className="text-sm font-semibold">Conversations sécurisées en attente</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {recoveryState?.needsPinUnlock
-                      ? 'Vos conversations existent, mais les clés locales sont verrouillées. Déverrouillez la messagerie pour les retrouver.'
-                      : 'Vos conversations existent, mais les clés locales doivent être restaurées avant d’afficher leur contenu.'}
-                  </p>
-                </div>
-                {recoveryState?.needsExplicitRestore && (
-                  <Button
-                    className="rounded-full"
-                    size="sm"
-                    onClick={() => navigate('/settings', { state: { tab: 'privacy', scrollTo: 'key-backup' } })}
-                  >
-                    Restaurer mes clés
-                  </Button>
-                )}
-              </div>
-            ) : (
               <div className="flex flex-col items-center justify-center py-20 gap-4">
                 <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center">
                   <Send className="w-7 h-7 text-muted-foreground" />
@@ -233,7 +190,6 @@ export function ConversationList() {
                   </Button>
                 )}
               </div>
-            )
           ) : (
             filtered.map(conv => (
               <div key={conv.id} className="relative group">

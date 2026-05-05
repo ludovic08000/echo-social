@@ -615,48 +615,31 @@ export function ChatView({ conversationId }: ChatViewProps) {
         conversationId={conversationId}
       />
 
-      {/* Key lost / init error / fingerprint change recovery banner */}
-      {!isZeusConversation && e2ee.initError && (
+      {/* Silent restore policy: no "Restaurer mes clés" banner inside the chat.
+          Restoration runs automatically in background via useAccountKeySync,
+          realtimeKeySync and messageQueue.resumeAll(). The dedicated UI lives
+          in Settings → Privacy → Key Backup.
+
+          We keep ONLY the fingerprint-change banner: that's a real MITM
+          security signal that REQUIRES explicit user action — it must stay
+          visible. Everything else stays silent. */}
+      {!isZeusConversation && e2ee.initError === 'fingerprint_changed' && (
         <div className="flex flex-col gap-2 px-4 py-3 bg-destructive/10 border-b border-destructive/20">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-destructive flex-shrink-0" />
             <span className="text-xs text-destructive font-semibold flex-1">
-              {e2ee.initError === 'identity_lost_backup_available'
-                ? '🔑 Vos clés de chiffrement ont été perdues. Restaurez votre sauvegarde pour retrouver vos messages.'
-                : e2ee.initError === 'pin_unlock_required'
-                  ? '🔐 Déverrouillez votre PIN pour accéder à vos clés de chiffrement.'
-                  : e2ee.initError === 'fingerprint_changed'
-                    ? '🛑 L\'identité cryptographique de votre contact a changé. Cela peut indiquer un changement d\'appareil légitime ou une tentative d\'interception. Vérifiez avec votre contact avant d\'accepter.'
-                    : '⚠️ Erreur d\'initialisation du chiffrement. Restaurez vos clés pour reprendre vos conversations.'}
+              🛑 L'identité cryptographique de votre contact a changé. Vérifiez avec lui avant d'accepter (changement d'appareil ou tentative d'interception).
             </span>
           </div>
-          {e2ee.initError === 'fingerprint_changed' ? (
-            <button
-              onClick={() => e2ee.acknowledgeFingerprint()}
-              className="self-start px-4 py-1.5 rounded-full bg-destructive text-destructive-foreground text-xs font-semibold hover:opacity-90 transition-opacity"
-            >
-              ✅ J'ai vérifié, accepter la nouvelle clé
-            </button>
-          ) : (
-            <button
-              onClick={() => navigate('/settings', { state: { tab: 'privacy', scrollTo: 'key-backup' } })}
-              className="self-start px-4 py-1.5 rounded-full bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity"
-            >
-              🔑 Restaurer mes clés
-            </button>
-          )}
+          <button
+            onClick={() => e2ee.acknowledgeFingerprint()}
+            className="self-start px-4 py-1.5 rounded-full bg-destructive text-destructive-foreground text-xs font-semibold hover:opacity-90 transition-opacity"
+          >
+            ✅ J'ai vérifié, accepter la nouvelle clé
+          </button>
         </div>
       )}
 
-      {/* Peer has no keys — can't encrypt */}
-      {!isZeusConversation && e2ee.peerKeyMissing && !e2ee.initError && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-muted border-b border-border/30">
-          <AlertTriangle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-          <span className="text-[11px] text-muted-foreground font-medium flex-1">
-            🔒 Ce contact n'a pas encore publié ses clés de chiffrement. Les messages ne peuvent pas être envoyés pour l'instant.
-          </span>
-        </div>
-      )}
 
       {/* Group Management Panel */}
       {isGroup && showGroupPanel && (
