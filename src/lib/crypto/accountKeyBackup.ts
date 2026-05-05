@@ -32,13 +32,19 @@ const MASTER_KEY_LENGTH = 32;
 const BACKUP_VERSION = 5; // v5 = Signal-style Master Key architecture
 const BACKUP_TYPE_ACCOUNT = 'account';
 const BACKUP_TYPE_RECOVERY = 'recovery';
+const BACKUP_TYPE_CHAT_PIN = 'chat_pin';
 const KEYCHAIN_SNAPSHOT_PREFIX = 'forsure-e2ee-keychain-snapshot-v1:';
+const PIN_WRAP_DB_VERSION = 2;
+const PIN_WRAP_STORE = 'pin-wrapped-keys';
+const PIN_WRAP_LEGACY_STORE = 'wrapped-keys';
 
 // ── Session State (volatile, never persisted) ──
 let _sessionMasterKey: CryptoKey | null = null;
 let _sessionRawMasterKey: Uint8Array | null = null; // raw bytes for re-wrapping
 let _sessionPassword: string | null = null;
 let _sessionUserId: string | null = null;
+let _sessionChatPinUserId: string | null = null;
+let _sessionChatPinWrappingSecret: string | null = null;
 
 // ── Crypto Primitives ──
 
@@ -61,6 +67,17 @@ async function deriveWrappingKey(secret: string, salt: Uint8Array): Promise<Cryp
 
 function passwordSecret(password: string, userId: string): string {
   return `${password}::forsure::${userId}`;
+}
+
+function chatPinSecret(pin: string, serverSecret: string, userId: string): string {
+  return `forsure-chat-pin-backup-v1::${userId}::${serverSecret}::${pin}`;
+}
+
+function rememberChatPinBackupSession(userId: string, pin: string, serverSecret: string): boolean {
+  if (!/^\d{6}$/.test(pin) || !serverSecret) return false;
+  _sessionChatPinUserId = userId;
+  _sessionChatPinWrappingSecret = chatPinSecret(pin, serverSecret, userId);
+  return true;
 }
 
 /** Wrap (encrypt) the Master Key with a wrapping key */
@@ -163,8 +180,9 @@ async function collectAllKeys(): Promise<string | null> {
   } catch {}
 
   try {
-    const db = await openDB('forsure-pin-wrap', 1);
-    data['pinwrap:keys'] = await getAllFromStore(db, 'pin-wrapped-keys');
+    const db = await openDB('forsure-pin-wrap', PIN_WRAP_DB_VERSION, [PIN_WRAP_STORE, PIN_WRAP_LEGACY_STORE]);
+    data['pinwrap:keys'] = await getAllFromStore(db, PIN_WRAP_STORE);
+    data['pinwrap:legacy'] = await getAllFromStore(db, PIN_WRAP_LEGACY_STORE);
     db.close();
   } catch {}
 
@@ -185,7 +203,10 @@ async function collectAllKeys(): Promise<string | null> {
     if (fps) data['fingerprints'] = fps;
   } catch {}
 
-  const hasIdentity = data['e2ee:identity-keys']?.length > 0 || data['pinwrap:keys']?.length > 0;
+  const hasIdentity =
+    data['e2ee:identity-keys']?.length > 0 ||
+    data['pinwrap:keys']?.length > 0 ||
+    data['pinwrap:legacy']?.length > 0;
   if (!hasIdentity) return null;
 
   try {
@@ -248,7 +269,7 @@ async function restoreAllKeys(json: string): Promise<void> {
   const data = JSON.parse(json);
 
   const hasIdentityKeys = data['e2ee:identity-keys']?.length > 0;
-  const hasPinWrappedKeys = data['pinwrap:keys']?.length > 0;
+  const hasPinWrappedKeys = data['pinwrap:keys']?.length > 0 || data['pinwrap:legacy']?.length > 0;
   if (!hasIdentityKeys && !hasPinWrappedKeys) {
     throw new Error('Backup invalide : aucune clé d\'identité');
   }
@@ -297,15 +318,19 @@ async function restoreAllKeys(json: string): Promise<void> {
       });
     }
 
-    // Phase 3: PIN-wrapped keys
-    if (Array.isArray(data['pinwrap:keys'])) {
-      const db = await openDB('forsure-pin-wrap', 1, ['pin-wrapped-keys']);
-      const existing = await getAllFromStore(db, 'pin-wrapped-keys');
-      await putAllInStore(db, 'pin-wrapped-keys', data['pinwrap:keys']);
+    // Phase 3: PIN-wrapped keys (unified store + legacy migration store)
+    for (const [backupKey, storeName] of [
+      ['pinwrap:keys', PIN_WRAP_STORE],
+      ['pinwrap:legacy', PIN_WRAP_LEGACY_STORE],
+    ] as const) {
+      if (!Array.isArray(data[backupKey])) continue;
+      const db = await openDB('forsure-pin-wrap', PIN_WRAP_DB_VERSION, [PIN_WRAP_STORE, PIN_WRAP_LEGACY_STORE]);
+      const existing = await getAllFromStore(db, storeName);
+      await putAllInStore(db, storeName, data[backupKey]);
       db.close();
       rollbackOps.push(async () => {
-        const rdb = await openDB('forsure-pin-wrap', 1);
-        await putAllInStore(rdb, 'pin-wrapped-keys', existing);
+        const rdb = await openDB('forsure-pin-wrap', PIN_WRAP_DB_VERSION);
+        await putAllInStore(rdb, storeName, existing);
         rdb.close();
       });
     }
@@ -375,12 +400,13 @@ export async function hasLocalKeys(): Promise<boolean> {
   } catch {}
 
   try {
-    const db = await openDB('forsure-pin-wrap', 1);
+    const db = await openDB('forsure-pin-wrap', PIN_WRAP_DB_VERSION);
     let pinCount = 0;
-    if (db.objectStoreNames.contains('pin-wrapped-keys')) {
-      const tx = db.transaction('pin-wrapped-keys', 'readonly');
-      pinCount = await new Promise<number>((r, j) => {
-        const req = tx.objectStore('pin-wrapped-keys').count();
+    for (const storeName of [PIN_WRAP_STORE, PIN_WRAP_LEGACY_STORE]) {
+      if (!db.objectStoreNames.contains(storeName)) continue;
+      const tx = db.transaction(storeName, 'readonly');
+      pinCount += await new Promise<number>((r, j) => {
+        const req = tx.objectStore(storeName).count();
         req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
       });
     }
@@ -420,14 +446,15 @@ export async function computeLocalCryptoDigest(): Promise<string> {
     db.close();
   } catch {}
 
-  for (const [dbName, storeName] of [
-    ['forsure-ratchet', 'ratchet-states'],
-    ['forsure-pin-wrap', 'pin-wrapped-keys'],
-    ['forsure-prekeys', 'private-prekeys'],
-    ['forsure-spk', 'signed-prekeys'],
-  ]) {
+  for (const [dbName, version, storeName] of [
+    ['forsure-ratchet', 1, 'ratchet-states'],
+    ['forsure-pin-wrap', PIN_WRAP_DB_VERSION, PIN_WRAP_STORE],
+    ['forsure-pin-wrap', PIN_WRAP_DB_VERSION, PIN_WRAP_LEGACY_STORE],
+    ['forsure-prekeys', 1, 'private-prekeys'],
+    ['forsure-spk', 1, 'signed-prekeys'],
+  ] as const) {
     try {
-      const db = await openDB(dbName, 1);
+      const db = await openDB(dbName, version);
       const all = await getAllFromStore(db, storeName);
       parts.push(`${storeName}:${all.length}:${JSON.stringify(all).length}`);
       db.close();
@@ -451,6 +478,8 @@ interface BackupRow {
   backup_type: string;
 }
 
+type BackupType = typeof BACKUP_TYPE_ACCOUNT | typeof BACKUP_TYPE_RECOVERY | typeof BACKUP_TYPE_CHAT_PIN;
+
 /**
  * Save the current E2EE state to server, encrypted with Master Key.
  * Also saves the password-wrapped Master Key.
@@ -460,7 +489,7 @@ async function uploadBackup(
   masterKey: CryptoKey,
   password: string,
   userId: string,
-  backupType: 'account' | 'recovery',
+  backupType: BackupType,
   wrappingSecret: string,
 ): Promise<boolean> {
   const keysJson = await collectAllKeys();
@@ -493,7 +522,7 @@ async function uploadBackup(
 
   // Persist a secure sentinel so cold-start on iOS/Android can detect that a
   // server backup exists for this user and trigger an automatic restore flow.
-  if (backupType === 'account') {
+  if (backupType === BACKUP_TYPE_ACCOUNT || backupType === BACKUP_TYPE_CHAT_PIN) {
     try {
       const digest = await computeLocalCryptoDigest();
       await writeKeychainSnapshot(userId, keysJson);
@@ -516,7 +545,7 @@ async function uploadBackup(
  */
 async function downloadAndRestore(
   userId: string,
-  backupType: 'account' | 'recovery',
+  backupType: BackupType,
   wrappingSecret: string,
 ): Promise<{ masterKeyRaw: Uint8Array; masterKey: CryptoKey } | null> {
   const { data } = await supabase
@@ -787,6 +816,116 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
 }
 
 /**
+ * Sync an iOS/web-resilience backup wrapped by the chat PIN plus a server-held
+ * high-entropy secret. The encrypted row can live in user_backups, but it is
+ * not offline-bruteforceable with only the 6-digit PIN because the wrapping
+ * secret is released only after the rate-limited PIN verifier succeeds.
+ */
+export async function syncChatPinBackupToServer(
+  userId: string,
+  pin: string,
+  serverSecret: string,
+): Promise<boolean> {
+  if (!rememberChatPinBackupSession(userId, pin, serverSecret)) return false;
+  return syncChatPinBackupSessionToServer(userId);
+}
+
+/**
+ * Sync the chat-PIN wrapped backup using only the in-memory derived wrapping
+ * secret. This lets the global auto-sync hook refresh the PIN backup after
+ * ratchet/SPK/device changes without keeping the raw PIN around.
+ */
+export async function syncChatPinBackupSessionToServer(userId?: string): Promise<boolean> {
+  const targetUserId = userId ?? _sessionChatPinUserId;
+  if (!targetUserId || !_sessionChatPinWrappingSecret || _sessionChatPinUserId !== targetUserId) return false;
+
+  try {
+    if (!(await hasLocalKeys())) return false;
+
+    let mkRaw = _sessionRawMasterKey;
+    let mk = _sessionMasterKey;
+    if (!mkRaw || !mk) {
+      mkRaw = generateMasterKey();
+      mk = await importMasterKey(mkRaw);
+      _sessionRawMasterKey = mkRaw;
+      _sessionMasterKey = mk;
+    }
+
+    const ok = await uploadBackup(mkRaw, mk, '', targetUserId, BACKUP_TYPE_CHAT_PIN, _sessionChatPinWrappingSecret);
+    if (ok) {
+      logCryptoError({
+        severity: 'info',
+        context: 'backup',
+        errorCode: 'CHAT_PIN_BACKUP_SYNCED',
+        errorMessage: 'Chat PIN wrapped E2EE backup synced',
+        metadata: { userId: targetUserId },
+      });
+    }
+    return ok;
+  } catch (e) {
+    console.warn('[MasterKey] Chat PIN backup sync failed:', e);
+    logCryptoException('backup', e, {
+      severity: 'error',
+      metadata: { stage: 'chat_pin_backup_sync', userId: targetUserId },
+    });
+    return false;
+  }
+}
+
+/**
+ * Restore local E2EE material from the chat-PIN wrapped server backup.
+ * Intended for web/iOS cold starts where IndexedDB was purged but the user can
+ * still prove knowledge of the messaging PIN through the server verifier.
+ */
+export async function restoreWithChatPinBackup(
+  userId: string,
+  pin: string,
+  serverSecret: string,
+): Promise<'restored' | 'local_ok' | 'unavailable' | 'error'> {
+  const t0 = performance.now();
+  if (!rememberChatPinBackupSession(userId, pin, serverSecret)) return 'unavailable';
+
+  try {
+    if (await hasLocalKeys()) return 'local_ok';
+
+    const secret = _sessionChatPinWrappingSecret;
+    if (!secret) return 'unavailable';
+    const result = await downloadAndRestore(userId, BACKUP_TYPE_CHAT_PIN, secret);
+    if (!result) return 'unavailable';
+
+    if (!(await hasLocalKeys())) {
+      logCryptoError({
+        severity: 'critical',
+        context: 'restore',
+        errorCode: 'RESTORE_CHAT_PIN_VALIDATION_FAILED',
+        errorMessage: 'Chat PIN restore completed but no local keys were restored',
+        metadata: { userId, durationMs: Math.round(performance.now() - t0) },
+      });
+      return 'error';
+    }
+
+    _sessionRawMasterKey = result.masterKeyRaw;
+    _sessionMasterKey = result.masterKey;
+    await writeKeychainSnapshot(userId);
+    logCryptoError({
+      severity: 'info',
+      context: 'restore',
+      errorCode: 'RESTORE_CHAT_PIN_SUCCESS',
+      errorMessage: 'E2EE keys restored from chat PIN backup',
+      metadata: { userId, durationMs: Math.round(performance.now() - t0) },
+    });
+    return 'restored';
+  } catch (e) {
+    console.warn('[MasterKey] Chat PIN restore failed:', e);
+    logCryptoException('restore', e, {
+      severity: 'error',
+      metadata: { stage: 'chat_pin_restore', userId, durationMs: Math.round(performance.now() - t0) },
+    });
+    return 'error';
+  }
+}
+
+/**
  * Create a recovery-key-wrapped backup of the Master Key.
  * Returns the recovery key to show to user.
  */
@@ -864,12 +1003,46 @@ export function isAutoBackupActive(): boolean {
   return _sessionPassword !== null && _sessionUserId !== null;
 }
 
+/** Check if the PIN-wrapped auto-backup session is active */
+export function isChatPinBackupActive(userId?: string): boolean {
+  return !!_sessionChatPinWrappingSecret && !!_sessionChatPinUserId && (!userId || _sessionChatPinUserId === userId);
+}
+
+/** Any encrypted backup path available in this JS session. */
+export function isAnyBackupSyncActive(userId?: string): boolean {
+  const accountActive = isAutoBackupActive() && (!userId || _sessionUserId === userId);
+  return accountActive || isChatPinBackupActive(userId);
+}
+
+/**
+ * Sync every encrypted backup that is currently unlocked in memory.
+ *
+ * This is the production auto-sync entrypoint: password backup when a password
+ * session exists, chat-PIN backup after PIN unlock, or both. It returns true if
+ * at least one available backup was refreshed.
+ */
+export async function syncAvailableBackupsToServer(userId?: string): Promise<boolean> {
+  let synced = false;
+
+  if (isAutoBackupActive() && (!userId || _sessionUserId === userId)) {
+    synced = (await syncBackupToServer()) || synced;
+  }
+
+  if (isChatPinBackupActive(userId)) {
+    synced = (await syncChatPinBackupSessionToServer(userId)) || synced;
+  }
+
+  return synced;
+}
+
 /** Clear session state (on logout) */
 export function clearAccountKeySession(): void {
   _sessionMasterKey = null;
   _sessionRawMasterKey = null;
   _sessionPassword = null;
   _sessionUserId = null;
+  _sessionChatPinUserId = null;
+  _sessionChatPinWrappingSecret = null;
   // The sentinel is intentionally NOT cleared here — logout doesn't mean the
   // account is gone, and we want the next cold-start on the same device to
   // still recognise the linked user. Call `clearKeySentinelForAccount()` from

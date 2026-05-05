@@ -3,7 +3,7 @@
  * 
  * These tests use the raw crypto functions directly (no IndexedDB / Supabase).
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { encryptMessage, decryptMessage, isEncryptedMessage } from '../e2ee';
 import { hardCrypto } from '../cryptoIntegrity';
 import { KX_KEY_PARAMS, SIG_KEY_PARAMS, AES_ALGO, AES_KEY_LENGTH, HKDF_HASH, PROTOCOL_VERSION } from '../constants';
@@ -102,18 +102,38 @@ describe('encrypt → decrypt round-trip', () => {
   });
 });
 
-describe('replay protection', () => {
-  it('rejects messages older than 7 days', async () => {
+describe('timestamp handling', () => {
+  it('keeps old signed history decryptable after restore', async () => {
+    const aesKey = await generateAESKey();
+    const sigPair = await generateEd25519Pair();
+    const oldNow = Date.now() - 8 * 24 * 60 * 60 * 1000;
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(oldNow);
+
+    try {
+      const ciphertext = await encryptMessage('old msg', aesKey, sigPair.privateKey, 'fp', 0);
+      const sigPubRaw = await crypto.subtle.exportKey('raw', sigPair.publicKey);
+      const result = await decryptMessage(ciphertext, aesKey, bufferToBase64(sigPubRaw));
+
+      expect(result.plaintext).toBe('old msg');
+      expect(result.verified).toBe(true);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('marks tampered timestamps as unverified when signer is known', async () => {
     const aesKey = await generateAESKey();
     const sigPair = await generateEd25519Pair();
 
     const ciphertext = await encryptMessage('old msg', aesKey, sigPair.privateKey, 'fp', 0);
     const envelope = JSON.parse(ciphertext);
-
-    // Tamper timestamp to 8 days ago
     envelope.ts = Date.now() - 8 * 24 * 60 * 60 * 1000;
 
-    await expect(decryptMessage(JSON.stringify(envelope), aesKey)).rejects.toThrow('replay');
+    const sigPubRaw = await crypto.subtle.exportKey('raw', sigPair.publicKey);
+    const result = await decryptMessage(JSON.stringify(envelope), aesKey, bufferToBase64(sigPubRaw));
+
+    expect(result.plaintext).toBe('old msg');
+    expect(result.verified).toBe(false);
   });
 });
 

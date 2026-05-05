@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useSecureBackup } from '@/hooks/useSecureBackup';
 import { useDeviceLink } from '@/hooks/useDeviceLink';
-import { isAutoBackupActive, syncBackupToServer, hasLocalKeys } from '@/lib/crypto/accountKeyBackup';
+import { isAnyBackupSyncActive, syncAvailableBackupsToServer, hasLocalKeys } from '@/lib/crypto/accountKeyBackup';
 import { resyncE2EE, type ResyncReport } from '@/lib/crypto/resyncE2EE';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
@@ -33,19 +33,18 @@ export function KeyBackupPanel() {
 
   useEffect(() => {
     backup.hasBackup().then(setHasExisting);
-    setAutoBackupOn(isAutoBackupActive());
+    setAutoBackupOn(isAnyBackupSyncActive(user?.id));
     hasLocalKeys().then(setHasLocal);
-  }, []);
+  }, [user?.id]);
 
   const handleForceSync = async () => {
+    if (!user) { toast.error('Connecte-toi pour synchroniser'); return; }
     setSyncing(true);
     try {
-      const ok = await syncBackupToServer();
+      const ok = await syncAvailableBackupsToServer(user.id);
       if (ok) {
         toast.success('Clés synchronisées avec le serveur ✅');
         setHasExisting(true);
-      } else if (report.needsPinUnlock) {
-        toast.warning('Deverrouille le PIN de messagerie, puis la re-sync reprendra automatiquement');
       } else {
         toast.error('Aucune clé locale à sauvegarder');
       }

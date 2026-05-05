@@ -1,7 +1,7 @@
 /**
  * Double Ratchet tests — full conversation flow
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   initRatchetAsInitiator,
   initRatchetAsResponder,
@@ -110,16 +110,39 @@ describe('Double Ratchet', () => {
     expect(restored.recvCount).toBe(aliceState.recvCount);
   });
 
-  it('rejects replayed old messages', async () => {
+  it('keeps old signed messages decryptable after restore', async () => {
+    const { aliceState, bobState, aliceSig } = await setupAliceAndBob();
+    const oldNow = Date.now() - 8 * 24 * 60 * 60 * 1000;
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(oldNow);
+
+    try {
+      const { envelope } = await ratchetEncrypt(
+        aliceState, 'msg', aliceSig.privateKey, 'fp',
+      );
+      const aliceSigPub = await crypto.subtle.exportKey('raw', aliceSig.publicKey);
+      const aliceSigPubB64 = bufferToBase64(aliceSigPub);
+
+      const result = await ratchetDecrypt(bobState, envelope, aliceSigPubB64);
+      expect(result.plaintext).toBe('msg');
+      expect(result.verified).toBe(true);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('marks tampered timestamps as unverified when signer is known', async () => {
     const { aliceState, bobState, aliceSig } = await setupAliceAndBob();
 
     const { envelope } = await ratchetEncrypt(
       aliceState, 'msg', aliceSig.privateKey, 'fp',
     );
-
-    // Force old timestamp
     envelope.ts = Date.now() - 8 * 24 * 60 * 60 * 1000;
 
-    await expect(ratchetDecrypt(bobState, envelope)).rejects.toThrow('too old');
+    const aliceSigPub = await crypto.subtle.exportKey('raw', aliceSig.publicKey);
+    const aliceSigPubB64 = bufferToBase64(aliceSigPub);
+    const result = await ratchetDecrypt(bobState, envelope, aliceSigPubB64);
+
+    expect(result.plaintext).toBe('msg');
+    expect(result.verified).toBe(false);
   });
 });

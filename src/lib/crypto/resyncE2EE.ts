@@ -32,7 +32,7 @@ import {
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { clearAllDeviceSessions } from '@/lib/crypto/deviceRatchet';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
-import { syncBackupToServer, syncKeychainSnapshotFromLocal, hasLocalKeys } from '@/lib/crypto/accountKeyBackup';
+import { syncAvailableBackupsToServer, syncKeychainSnapshotFromLocal, hasLocalKeys } from '@/lib/crypto/accountKeyBackup';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 
 export type ResyncStep = 'identity' | 'spk' | 'opks' | 'ratchets' | 'replay' | 'snapshot' | 'backup';
@@ -519,7 +519,7 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
   // 5. Push the fresh state to the encrypted server backup (debounced inside).
   const tBack = Date.now();
   try {
-    const ok = await syncBackupToServer();
+    const ok = await syncAvailableBackupsToServer(userId);
     report.steps.backup = ok ? 'ok' : 'skipped';
     diag.push('backup', ok ? 'success' : 'info', ok ? 'server backup synced' : 'backup skipped (debounced or no keys)', {
       durationMs: Date.now() - tBack,

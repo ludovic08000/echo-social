@@ -278,6 +278,16 @@ class MessageQueueManager {
       registeredAt: Date.now(),
     });
     this.handlersByConversation.set(conversationId, existing);
+
+    try {
+      if (handlers.isReady(conversationId)) {
+        queueMicrotask(() => {
+          void this.resumeForConversation(conversationId);
+        });
+      }
+    } catch {
+      // Readiness probes must never break handler registration.
+    }
   }
 
   /** Unregister handlers when a conversation hook unmounts */
@@ -377,7 +387,10 @@ class MessageQueueManager {
 
   /** Process a single message through the state machine */
   private async processMessage(msg: OutboundMessage): Promise<void> {
-    if (this.processing.has(msg.localId) || this.processingConversations.has(msg.conversationId)) return;
+    if (this.processing.has(msg.localId) || this.processingConversations.has(msg.conversationId)) {
+      void this.queueConversationDrain(msg.conversationId);
+      return;
+    }
     this.processing.add(msg.localId);
     this.processingConversations.add(msg.conversationId);
     this.clearRetryTimer(msg.localId);
@@ -516,10 +529,15 @@ class MessageQueueManager {
 
       await this.updateStatus(msg, 'sending');
 
-      const handlers = this.getHandlers(msg.conversationId);
+      const handlers = this.getReadyAwareHandlers(msg.conversationId);
       if (!handlers?.send) {
-        await this.updateStatus(msg, 'retry_pending', 'Send handler not registered');
-        this.scheduleRetry(msg);
+        const age = Date.now() - msg.createdAt;
+        if (age > SECURE_CHANNEL_HARD_TIMEOUT_MS) {
+          await this.updateStatus(msg, 'failed_visible', 'Canal sécurisé indisponible - réessayez plus tard');
+          return;
+        }
+        await this.updateStatus(msg, 'waiting_secure_channel', 'En attente du canal sécurisé');
+        this.scheduleRetry(msg, 'secure_wait');
         return;
       }
 
@@ -567,19 +585,43 @@ class MessageQueueManager {
     } finally {
       this.processing.delete(msg.localId);
       this.processingConversations.delete(msg.conversationId);
-      queueMicrotask(async () => {
-        try {
-          const queued = await this.dbGetByConversation(msg.conversationId);
-          const next = queued
-            .filter(m => m.status === 'pending_local')
-            .sort((a, b) => a.createdAt - b.createdAt)
-            .find(m => !this.processing.has(m.localId) && !this.retryTimers.has(m.localId));
-          if (next) {
-            void this.processMessage(next);
-          }
-        } catch {}
-      });
+      void this.queueConversationDrain(msg.conversationId);
     }
+  }
+
+  private async queueConversationDrain(conversationId: string): Promise<void> {
+    queueMicrotask(async () => {
+      if (this.processingConversations.has(conversationId)) {
+        setTimeout(() => {
+          void this.queueConversationDrain(conversationId);
+        }, 50);
+        return;
+      }
+
+      try {
+        const queued = await this.dbGetByConversation(conversationId);
+        const next = queued
+          .filter(m =>
+            m.status === 'pending_local' ||
+            m.status === 'waiting_secure_channel' ||
+            m.status === 'retry_pending'
+          )
+          .sort((a, b) => a.createdAt - b.createdAt)
+          .find(m =>
+            !this.processing.has(m.localId) &&
+            !this.retryTimers.has(m.localId) &&
+            (this.volatilePlaintext.has(m.localId) || !!m.encryptedBody)
+          );
+        if (next) {
+          if (next.status !== 'pending_local') {
+            next.status = 'pending_local';
+            next.updatedAt = Date.now();
+            await this.dbPut(next);
+          }
+          void this.processMessage(next);
+        }
+      } catch {}
+    });
   }
 
   /**

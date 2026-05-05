@@ -12,8 +12,8 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import {
-  syncBackupToServer,
-  isAutoBackupActive,
+  syncAvailableBackupsToServer,
+  isAnyBackupSyncActive,
   clearAccountKeySession,
   hasLocalKeys,
   computeLocalCryptoDigest,
@@ -34,16 +34,16 @@ export function useAccountKeySync() {
   const lastDigestRef = useRef('');
 
   const triggerSync = useCallback(() => {
-    if (!isAutoBackupActive()) return;
+    if (!isAnyBackupSyncActive(user?.id)) return;
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(async () => {
       try {
-        await syncBackupToServer();
+        await syncAvailableBackupsToServer(user?.id);
       } catch (e) {
         console.warn('[AccountKeySync] Auto-sync failed:', e);
       }
     }, SYNC_DEBOUNCE_MS);
-  }, []);
+  }, [user?.id]);
 
   // Hydrate the persistent device id + verify Keychain/Keystore health at boot.
   useEffect(() => {
@@ -92,7 +92,7 @@ export function useAccountKeySync() {
           localKeysPresent,
           rawIdentityPresent,
           wrappedKeysPresent,
-          autoBackupActive: isAutoBackupActive(),
+          autoBackupActive: isAnyBackupSyncActive(user.id),
           native: isNativePlatform(),
         });
 
@@ -198,12 +198,12 @@ export function useAccountKeySync() {
 
   // Poll for IndexedDB changes using content-based digest
   useEffect(() => {
-    if (!user || !isAutoBackupActive()) return;
+    if (!user) return;
 
     const checkForChanges = async () => {
       try {
         const digest = await computeLocalCryptoDigest();
-        if (lastDigestRef.current && digest !== lastDigestRef.current) {
+        if (lastDigestRef.current && digest !== lastDigestRef.current && isAnyBackupSyncActive(user.id)) {
           console.log('[AccountKeySync] Crypto state changed, triggering sync');
           triggerSync();
         }
@@ -232,7 +232,7 @@ export function useAccountKeySync() {
         try {
           const digest = await computeLocalCryptoDigest();
           lastDigestRef.current = digest;
-          if (isAutoBackupActive()) {
+          if (isAnyBackupSyncActive(user.id)) {
             // Force a sync attempt right away on resume
             triggerSync();
           }
@@ -396,5 +396,5 @@ export function useAccountKeySync() {
     }
   }, [user]);
 
-  return { triggerSync, isActive: isAutoBackupActive() };
+  return { triggerSync, isActive: isAnyBackupSyncActive(user?.id) };
 }

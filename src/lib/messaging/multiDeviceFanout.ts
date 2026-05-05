@@ -20,7 +20,7 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
-import { wrapPlaintextForDevice, unwrapPlaintextForDevice } from './deviceWrap';
+import { unwrapPlaintextForDevice } from './deviceWrap';
 import { requestDeviceCopyRetry } from './deviceCopyRetryRequest';
 import {
   fetchPrekeyBundleForDevice,
@@ -131,7 +131,8 @@ async function x3dhWrapForDevice(
 
     return parts.join('.');
   } catch {
-    // X3DH wrap failed → caller falls back to deviceWrap. Silent.
+    // X3DH wrap failed. Caller may try an authenticated ratchet path, but new
+    // sends must not downgrade to unsigned deviceWrap.
     return null;
   }
 }
@@ -205,7 +206,8 @@ async function x3dhUnwrapForDevice(
 
     return new hardGlobals.TextDecoder().decode(pt);
   } catch {
-    // X3DH unwrap failed — caller will try deviceWrap legacy path. Silent.
+    // X3DH unwrap failed. Legacy deviceWrap reads are attempted only by the
+    // outer compatibility path for historical copies.
     return null;
   }
 }
@@ -282,24 +284,18 @@ export async function encryptPlaintextForDeviceTarget(
   }
 
   if (!encrypted) {
-    try {
-      encrypted = await wrapPlaintextForDevice(
-        input.plaintext,
-        input.senderUserId,
-        input.recipientDevicePublicKey,
-        input.recipientDeviceId,
-      );
-    } catch (e) {
-      logCryptoException('fanout', e, {
-        severity: 'error',
-        conversationId: input.conversationId,
-        myDeviceId: senderDeviceId,
-        peerUserId: input.recipientUserId,
-        peerDeviceId: input.recipientDeviceId,
-        metadata: { stage: 'all_paths_failed' },
-      });
-      return null;
-    }
+    logCryptoError({
+      severity: 'error',
+      context: 'fanout',
+      errorCode: 'E_AUTHENTICATED_DEVICE_COPY_UNAVAILABLE',
+      errorMessage: 'No authenticated device-copy path available; refusing unsigned deviceWrap fallback',
+      conversationId: input.conversationId,
+      myDeviceId: senderDeviceId,
+      peerUserId: input.recipientUserId,
+      peerDeviceId: input.recipientDeviceId,
+      metadata: { stage: 'spk_required' },
+    });
+    return null;
   }
 
   return encrypted ? { encryptedBody: encrypted, senderDeviceId } : null;
@@ -353,7 +349,7 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
   //         silent decryption failures on the recipient side)
   //    a)   ratchet v3/v4 (existing session, fastest)
   //    b)   X3DH per-device (v1/v2, also caches a session for next time)
-  //    c)   deviceWrap (legacy ECDH fallback)
+  //    c)   refuse send if no authenticated per-device path is available
   const rows: Array<Record<string, string>> = [];
   for (const dev of targets) {
     if (!dev.device_public_key) continue;
@@ -408,26 +404,19 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
       );
     }
 
-    // (c) Legacy deviceWrap fallback.
     if (!encrypted) {
-      try {
-        encrypted = await wrapPlaintextForDevice(
-          input.plaintext,
-          input.senderUserId,
-          dev.device_public_key,
-          dev.device_id,
-        );
-      } catch (e) {
-        logCryptoException('fanout', e, {
-          severity: 'error',
-          conversationId: input.conversationId,
-          myDeviceId: senderDeviceId,
-          peerUserId: dev.user_id,
-          peerDeviceId: dev.device_id,
-          metadata: { stage: 'all_paths_failed' },
-        });
-        continue;
-      }
+      logCryptoError({
+        severity: 'error',
+        context: 'fanout',
+        errorCode: 'E_AUTHENTICATED_DEVICE_COPY_UNAVAILABLE',
+        errorMessage: 'No authenticated device-copy path available; refusing unsigned deviceWrap fallback',
+        conversationId: input.conversationId,
+        myDeviceId: senderDeviceId,
+        peerUserId: dev.user_id,
+        peerDeviceId: dev.device_id,
+        metadata: { stage: 'spk_required' },
+      });
+      continue;
     }
 
     rows.push({

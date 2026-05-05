@@ -470,7 +470,7 @@ export async function refreshDeviceSignedPrekeyIfNeeded(
   try {
     const { data } = await supabase
       .from('device_signed_prekeys')
-      .select('created_at, expires_at, spk_id')
+      .select('created_at, expires_at, spk_id, public_key, signature')
       .eq('user_id', userId)
       .eq('device_id', deviceId)
       .eq('is_active', true)
@@ -479,6 +479,33 @@ export async function refreshDeviceSignedPrekeyIfNeeded(
       .maybeSingle();
 
     if (!data) {
+      await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
+      return;
+    }
+
+    let signatureValid = false;
+    try {
+      const { data: pubKeyData } = await supabase
+        .from('user_public_keys')
+        .select('signing_key')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (pubKeyData?.signing_key) {
+        signatureValid = await verifySignedPrekey(
+          pubKeyData.signing_key,
+          data.public_key,
+          data.signature,
+        );
+      }
+    } catch (verifyErr) {
+      console.warn('[X3DH-DEV] active device SPK signature verification error:', verifyErr);
+      signatureValid = false;
+    }
+
+    if (!signatureValid) {
+      console.warn('[X3DH-DEV] active device SPK signature invalid -> regenerating');
       await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
       return;
     }

@@ -33,6 +33,7 @@ const PIN_WRAP_STORE = 'pin-wrapped-keys';   // unified store (matches pinWrap.t
 const PIN_WRAP_LEGACY_STORE = 'wrapped-keys'; // read-only fallback for migration
 const PBKDF2_ITERATIONS = 600_000;
 const INACTIVITY_TIMEOUT = 5 * 60_000; // 5 minutes
+const PIN_MODES: PinMode[] = ['every_open', 'once_per_session', 'on_inactivity', 'on_return'];
 
 // ─── Types ───
 
@@ -195,6 +196,10 @@ function bytesToBase64(bytes: Uint8Array): string {
   let bin = '';
   for (const b of bytes) bin += String.fromCharCode(b);
   return hardGlobals.btoa(bin);
+}
+
+function isPinMode(value: unknown): value is PinMode {
+  return typeof value === 'string' && (PIN_MODES as string[]).includes(value);
 }
 
 async function derivePinKey(pin: string, salt: Uint8Array): Promise<CryptoKey> {
@@ -371,6 +376,15 @@ async function deleteRawIdentityBlob(userId: string): Promise<void> {
   }
 }
 
+async function hasUsableRawIdentity(userId: string): Promise<boolean> {
+  try {
+    const { hasRawIdentityKeys } = await import('@/lib/crypto/keyManager');
+    return await hasRawIdentityKeys(userId);
+  } catch {
+    return false;
+  }
+}
+
 // ─── Hook ───
 
 export function useChatPin() {
@@ -388,18 +402,19 @@ export function useChatPin() {
   const pinModeRef = useRef<PinMode>('every_open');
   const runtimeWrapKeyRef = useRef<CryptoKey | null>(null);
   const runtimeWrapSaltRef = useRef<string | null>(null);
+  const runtimePinRef = useRef<string | null>(null);
+  const runtimeBackupSecretRef = useRef<string | null>(null);
 
   // Fetch PIN mode from DB
   const fetchPinMode = useCallback(async (): Promise<PinMode> => {
     if (!user) return 'every_open';
     try {
-      const { data } = await supabase
-        .from('user_chat_pins')
-        .select('pin_mode')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      return (data?.pin_mode as PinMode) || 'every_open';
-    } catch {
+      const { data, error } = await supabase.rpc('get_chat_pin_settings' as any);
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      return isPinMode((row as any)?.pin_mode) ? (row as any).pin_mode : 'every_open';
+    } catch (error) {
+      console.warn('[PIN] fetchPinMode fallback:', error);
       return 'every_open';
     }
   }, [user]);
@@ -482,6 +497,15 @@ export function useChatPin() {
           }
         }
 
+        if (runtimePinRef.current && runtimeBackupSecretRef.current) {
+          try {
+            const { syncChatPinBackupToServer } = await import('@/lib/crypto/accountKeyBackup');
+            await syncChatPinBackupToServer(user.id, runtimePinRef.current, runtimeBackupSecretRef.current);
+          } catch (backupErr) {
+            console.warn('[PIN] Chat PIN backup refresh before lock failed:', backupErr);
+          }
+        }
+
         await deleteRawIdentityBlob(user.id);
         await wipeSessionKeys(user.id);
         window.dispatchEvent(new CustomEvent('forsure-keys-locked'));
@@ -491,6 +515,10 @@ export function useChatPin() {
       }
     }
 
+    runtimeWrapKeyRef.current = null;
+    runtimeWrapSaltRef.current = null;
+    runtimePinRef.current = null;
+    runtimeBackupSecretRef.current = null;
     setState(s => ({ ...s, unlocked: false }));
   }, [user]);
 
@@ -536,19 +564,18 @@ export function useChatPin() {
       return false;
     }
     try {
-      // Simple update without .select() to avoid PostgREST count issues
-      const { error, count } = await supabase
-        .from('user_chat_pins')
-        .update({ pin_mode: mode })
-        .eq('user_id', user.id);
+      const { data, error } = await supabase.rpc('update_chat_pin_mode' as any, {
+        p_pin_mode: mode,
+      });
 
       if (error) {
         console.error('[PIN] updatePinMode error:', error);
         return false;
       }
 
-      pinModeRef.current = mode;
-      setState(s => ({ ...s, pinMode: mode }));
+      const nextMode = isPinMode(data) ? data : mode;
+      pinModeRef.current = nextMode;
+      setState(s => ({ ...s, pinMode: nextMode }));
       return true;
     } catch (e) {
       console.error('[PIN] updatePinMode catch:', e);
@@ -568,6 +595,22 @@ export function useChatPin() {
         return false;
       }
 
+      const { getOrCreateIdentityKeys } = await import('@/lib/crypto/keyManager');
+      await getOrCreateIdentityKeys(user.id);
+
+      // The server PIN must never be created without a local crypto snapshot.
+      // Otherwise iOS can show a valid PIN while the E2EE identity is missing.
+      const fullBlob = await collectAllCryptoBlob(user.id);
+      const identityReady = await hasUsableRawIdentity(user.id);
+      if (!fullBlob || !identityReady) {
+        setState(s => ({
+          ...s,
+          processing: false,
+          error: 'Impossible de proteger les cles de messagerie. Ouvre la messagerie puis reessaie.',
+        }));
+        return false;
+      }
+
       const { data: setupResult, error: fnError } = await supabase.functions.invoke('verify-chat-pin', {
         body: { action: 'setup', pin },
       });
@@ -577,18 +620,31 @@ export function useChatPin() {
       }
 
       const saltB64 = setupResult.salt;
+      const backupSecret = typeof setupResult.backupSecret === 'string' ? setupResult.backupSecret : null;
+      if (!backupSecret) {
+        setState(s => ({ ...s, processing: false, error: 'Erreur creation PIN: secret de sauvegarde absent' }));
+        return false;
+      }
+
       const salt = base64ToBytes(saltB64);
       const wrapKey = await derivePinKey(pin, salt);
 
       runtimeWrapKeyRef.current = wrapKey;
       runtimeWrapSaltRef.current = saltB64;
+      runtimePinRef.current = pin;
+      runtimeBackupSecretRef.current = backupSecret;
 
-      // Collect ALL crypto material (identity + session + ratchet) for wrapping
-      const fullBlob = await collectAllCryptoBlob(user.id);
-      if (fullBlob) {
-        await encryptAndSaveWrappedCrypto(user.id, wrapKey, saltB64, fullBlob);
-        await deleteRawIdentityBlob(user.id);
-        console.log('[PIN] Full crypto blob wrapped (v2)');
+      await encryptAndSaveWrappedCrypto(user.id, wrapKey, saltB64, fullBlob);
+      console.log('[PIN] Full crypto blob wrapped (v2)');
+
+      try {
+        const { syncChatPinBackupToServer } = await import('@/lib/crypto/accountKeyBackup');
+        const synced = await syncChatPinBackupToServer(user.id, pin, backupSecret);
+        if (!synced) {
+          console.warn('[PIN] Chat PIN backup was not synced during setup');
+        }
+      } catch (backupErr) {
+        console.warn('[PIN] Chat PIN backup setup sync failed:', backupErr);
       }
 
       sessionStorage.setItem(SESSION_KEY, user.id);
@@ -635,7 +691,30 @@ export function useChatPin() {
         return false;
       }
 
-      const wrapped = await loadWrappedKeys(user.id);
+      let cryptoReady = false;
+      const backupSecret = typeof verifyResult.backupSecret === 'string' ? verifyResult.backupSecret : null;
+      runtimePinRef.current = pin;
+      runtimeBackupSecretRef.current = backupSecret;
+
+      let wrapped = await loadWrappedKeys(user.id);
+      if (!wrapped && backupSecret) {
+        try {
+          const { restoreWithChatPinBackup } = await import('@/lib/crypto/accountKeyBackup');
+          const restoreStatus = await restoreWithChatPinBackup(user.id, pin, backupSecret);
+          if (restoreStatus === 'restored' || restoreStatus === 'local_ok') {
+            wrapped = await loadWrappedKeys(user.id);
+            if (!wrapped && await hasUsableRawIdentity(user.id)) {
+              cryptoReady = true;
+              console.log('[PIN] Keys restored from chat PIN server backup');
+            }
+          } else if (restoreStatus === 'error') {
+            console.warn('[PIN] Chat PIN server backup restore errored');
+          }
+        } catch (restoreErr) {
+          console.warn('[PIN] Chat PIN server backup restore failed:', restoreErr);
+        }
+      }
+
       if (wrapped) {
         try {
           const wrapKey = await derivePinKey(pin, base64ToBytes(wrapped.salt));
@@ -650,17 +729,11 @@ export function useChatPin() {
           );
           const rawBlob = new TextDecoder().decode(plainBuffer);
           await restoreAllCryptoBlob(user.id, rawBlob);
+          cryptoReady = await hasUsableRawIdentity(user.id);
+          if (!cryptoReady) {
+            throw new Error('PIN blob restored without identity keys');
+          }
           console.log('[PIN] All keys unwrapped and restored');
-          try {
-            sessionStorage.setItem(
-              `forsure:e2ee-resync-pending:${user.id}`,
-              JSON.stringify({ at: Date.now(), detail: { status: 'pin_unlocked' } }),
-            );
-          } catch {}
-          window.dispatchEvent(new CustomEvent('forsure-keys-unlocked'));
-          window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
-            detail: { status: 'pin_unlocked' },
-          }));
         } catch (unwrapErr) {
           console.warn('[PIN] Key unwrap failed:', unwrapErr);
           setState(s => ({
@@ -670,19 +743,66 @@ export function useChatPin() {
           }));
           return false;
         }
-      } else if (verifyResult.salt) {
+      } else if (!cryptoReady && verifyResult.salt) {
         try {
           const fullBlob = await collectAllCryptoBlob(user.id);
-          if (fullBlob) {
-            const salt = base64ToBytes(verifyResult.salt);
-            const wrapKey = await derivePinKey(pin, salt);
-            runtimeWrapKeyRef.current = wrapKey;
-            runtimeWrapSaltRef.current = verifyResult.salt;
-            await encryptAndSaveWrappedCrypto(user.id, wrapKey, verifyResult.salt, fullBlob);
-            await deleteRawIdentityBlob(user.id);
-            console.log('[PIN] Full crypto blob wrapped on first verify (v2)');
+          const identityReady = await hasUsableRawIdentity(user.id);
+          if (!fullBlob || !identityReady) {
+            setState(s => ({
+              ...s,
+              processing: false,
+              error: 'PIN valide, mais aucune sauvegarde web n a pu restaurer tes cles. Lie ce device depuis un appareil connecte ou utilise la cle de recuperation.',
+            }));
+            return false;
           }
-        } catch {}
+
+          const salt = base64ToBytes(verifyResult.salt);
+          const wrapKey = await derivePinKey(pin, salt);
+          runtimeWrapKeyRef.current = wrapKey;
+          runtimeWrapSaltRef.current = verifyResult.salt;
+          await encryptAndSaveWrappedCrypto(user.id, wrapKey, verifyResult.salt, fullBlob);
+          cryptoReady = true;
+          console.log('[PIN] Full crypto blob wrapped on first verify (v2)');
+        } catch (rewrapErr) {
+          console.warn('[PIN] First verify rewrap failed:', rewrapErr);
+          setState(s => ({
+            ...s,
+            processing: false,
+            error: 'PIN valide, mais restauration crypto impossible sur ce device.',
+          }));
+          return false;
+        }
+      }
+
+      if (!cryptoReady) {
+        sessionStorage.removeItem(SESSION_KEY);
+        window.dispatchEvent(new CustomEvent('forsure-keys-locked'));
+        setState(s => ({
+          ...s,
+          processing: false,
+          error: 'PIN valide, mais aucune cle E2EE locale n a ete restauree.',
+        }));
+        return false;
+      }
+
+      try {
+        sessionStorage.setItem(
+          `forsure:e2ee-resync-pending:${user.id}`,
+          JSON.stringify({ at: Date.now(), detail: { status: 'pin_unlocked' } }),
+        );
+      } catch {}
+      window.dispatchEvent(new CustomEvent('forsure-keys-unlocked'));
+      window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+        detail: { status: 'pin_unlocked' },
+      }));
+
+      if (backupSecret) {
+        try {
+          const { syncChatPinBackupToServer } = await import('@/lib/crypto/accountKeyBackup');
+          await syncChatPinBackupToServer(user.id, pin, backupSecret);
+        } catch (backupErr) {
+          console.warn('[PIN] Chat PIN backup refresh after unlock failed:', backupErr);
+        }
       }
 
       sessionStorage.setItem(SESSION_KEY, user.id);

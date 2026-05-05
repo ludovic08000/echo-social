@@ -7,11 +7,11 @@
 
 import { useCallback, useState } from 'react';
 import { useAuth } from '@/lib/auth';
-import { syncBackupToServer, isAutoBackupActive } from '@/lib/crypto/accountKeyBackup';
+import { syncAvailableBackupsToServer, isAnyBackupSyncActive } from '@/lib/crypto/accountKeyBackup';
 
 export function useAutoBackup() {
   const { user } = useAuth();
-  const [hasKey] = useState(() => isAutoBackupActive());
+  const [hasKey] = useState(() => isAnyBackupSyncActive(user?.id));
 
   const setRecoveryKey = useCallback((_key: string) => {
     // No-op: Master Key system handles this automatically
@@ -23,7 +23,7 @@ export function useAutoBackup() {
 
   const triggerBackup = useCallback(() => {
     if (!user) return;
-    syncBackupToServer().catch(() => {});
+    syncAvailableBackupsToServer(user.id).catch(() => {});
   }, [user]);
 
   return { setRecoveryKey, clearRecoveryKey, triggerBackup, hasKey };

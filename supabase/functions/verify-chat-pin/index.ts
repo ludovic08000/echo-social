@@ -68,6 +68,10 @@ function generateResetCode(): string {
   return String(num % 1000000).padStart(6, "0");
 }
 
+function generateBackupWrapSecret(): string {
+  return bytesToBase64(crypto.getRandomValues(new Uint8Array(32)));
+}
+
 /** Check rate limit from DB — returns true if allowed */
 async function checkRateLimitDB(
   supabase: any,
@@ -282,11 +286,13 @@ Deno.serve(async (req) => {
         const salt = crypto.getRandomValues(new Uint8Array(32));
         const saltB64 = bytesToBase64(salt);
         const pinHash = await hashPinPBKDF2(pin, salt);
+        const backupWrapSecret = generateBackupWrapSecret();
 
         const { error } = await supabase.from("user_chat_pins").upsert({
           user_id: user.id,
           pin_hash: pinHash,
           salt: saltB64,
+          backup_wrap_secret: backupWrapSecret,
           failed_attempts: 0,
           locked_until: null,
           reset_code_hash: null,
@@ -298,7 +304,7 @@ Deno.serve(async (req) => {
         if (error) throw error;
 
         console.log(`[chat-pin] setup ok user=${user.id}`);
-        return new Response(JSON.stringify({ ok: true, salt: saltB64 }), {
+        return new Response(JSON.stringify({ ok: true, salt: saltB64, backupSecret: backupWrapSecret }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -312,7 +318,7 @@ Deno.serve(async (req) => {
 
         const { data, error } = await supabase
           .from("user_chat_pins")
-          .select("pin_hash, salt")
+          .select("pin_hash, salt, backup_wrap_secret")
           .eq("user_id", user.id)
           .maybeSingle();
 
@@ -340,9 +346,17 @@ Deno.serve(async (req) => {
         }
 
         if (matched) {
+          let backupWrapSecret = data.backup_wrap_secret;
+          if (!backupWrapSecret) {
+            backupWrapSecret = generateBackupWrapSecret();
+            await supabase.from("user_chat_pins").update({
+              backup_wrap_secret: backupWrapSecret,
+              updated_at: new Date().toISOString(),
+            }).eq("user_id", user.id);
+          }
           await clearFailedDB(supabase, user.id);
           console.log(`[chat-pin] verify ok user=${user.id}`);
-          return new Response(JSON.stringify({ ok: true, salt: data.salt }), {
+          return new Response(JSON.stringify({ ok: true, salt: data.salt, backupSecret: backupWrapSecret }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         } else {
