@@ -61,7 +61,7 @@ export function DevicesPanel() {
   const load = async () => {
     if (!user) return;
     setLoading(true);
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('user_devices')
       .select('id, device_id, device_name, platform, user_agent, last_seen_at, created_at, is_active, stale_at, revoked_at, revoke_reason')
       .eq('user_id', user.id)
