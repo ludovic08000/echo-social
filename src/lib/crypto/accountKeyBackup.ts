@@ -23,7 +23,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
 import { secureGetSecret, secureSetSecret, secureRemoveSecret } from '@/lib/secureStore';
-import { getCurrentDeviceId, setCurrentDeviceId } from '@/lib/messaging/currentDevice';
+// device_id continuity is now handled exclusively via the server-side
+// fingerprint binding in hydrateDeviceId() — never restored from backup.
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
