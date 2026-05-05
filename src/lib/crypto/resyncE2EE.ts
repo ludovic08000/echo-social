@@ -74,7 +74,16 @@ export interface ResyncReport {
 }
 
 const RECENT_MESSAGE_WINDOW = 50;
-const RESYNC_BUILD = 'e2ee-ios-device-v3';
+const RESYNC_BUILD = 'e2ee-ios-device-v3-diag-v3';
+const REPLAY_MESSAGE_TIMEOUT_MS = 1500;
+const REPLAY_CONVERSATION_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`timeout:${label}:${ms}ms`)), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
 
 function describeError(error: unknown): string {
   if (error instanceof Error) {
