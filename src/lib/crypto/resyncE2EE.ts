@@ -74,7 +74,16 @@ export interface ResyncReport {
 }
 
 const RECENT_MESSAGE_WINDOW = 50;
-const RESYNC_BUILD = 'e2ee-ios-device-v3';
+const RESYNC_BUILD = 'e2ee-ios-device-v3-diag-v3';
+const REPLAY_MESSAGE_TIMEOUT_MS = 1500;
+const REPLAY_CONVERSATION_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`timeout:${label}:${ms}ms`)), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
 
 function describeError(error: unknown): string {
   if (error instanceof Error) {
@@ -416,6 +425,7 @@ async function replayRecentDeviceCopies(
   diag.push('replay', 'info', `scanning ${convos.length} conversation(s)`);
 
   for (const c of convos as Array<{ conversation_id: string }>) {
+    const convDeadline = Date.now() + REPLAY_CONVERSATION_TIMEOUT_MS;
     const { data: rows, error: msgErr } = await supabase
       .from('messages')
       .select('id, body, body_kind, sender_id')
@@ -434,17 +444,34 @@ async function replayRecentDeviceCopies(
 
     let convScanned = 0;
     let convRecovered = 0;
+    let convTimedOut = false;
 
     for (const row of rows as Array<{ id: string; body: string | null; body_kind?: string | null; sender_id: string }>) {
       if (row.sender_id === userId) continue;
       const body = row.body ?? '';
       const looksEncrypted = body.startsWith('v') || body.startsWith('{') || row.body_kind === 'multi_device';
       if (!looksEncrypted) continue;
+      if (Date.now() > convDeadline) {
+        convTimedOut = true;
+        details?.push({
+          messageId: row.id,
+          conversationId: c.conversation_id,
+          bodyKind: row.body_kind ?? null,
+          outcome: 'failed',
+          error: `timeout:conversation:${REPLAY_CONVERSATION_TIMEOUT_MS}ms`,
+          durationMs: 0,
+        });
+        break;
+      }
       scanned += 1;
       convScanned += 1;
       const t = Date.now();
       try {
-        const pt = await tryReadDeviceCopy(row.id, row.sender_id);
+        const pt = await withTimeout(
+          tryReadDeviceCopy(row.id, row.sender_id),
+          REPLAY_MESSAGE_TIMEOUT_MS,
+          `message:${row.id.slice(0, 8)}`,
+        );
         const dur = Date.now() - t;
         if (pt !== null && pt.length > 0) {
           recovered += 1;
@@ -483,9 +510,11 @@ async function replayRecentDeviceCopies(
     }
 
     if (convScanned > 0) {
-      diag.push('replay', 'info', `conversation ${c.conversation_id.slice(0, 8)} → ${convRecovered}/${convScanned} recovered`);
+      diag.push('replay', 'info', `conversation ${c.conversation_id.slice(0, 8)} → ${convRecovered}/${convScanned} recovered${convTimedOut ? ' (timeout)' : ''}`);
     }
   }
+
+  return { scanned, recovered };
 
   return { scanned, recovered };
 }

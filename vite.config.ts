@@ -25,6 +25,9 @@ export default defineConfig(({ mode }) => ({
       registerType: "autoUpdate",
       includeAssets: ["favicon.png", "favicon.ico", "og-image.png"],
       workbox: {
+        // Bump cacheId to force a full SW + asset cache invalidation when shipping
+        // critical fixes (e.g. E2EE diagnostics-v3).
+        cacheId: "forsure-e2ee-diag-v3",
         maximumFileSizeToCacheInBytes: 5242880,
         navigateFallbackDenylist: [/^\/~oauth/],
         globPatterns: ["**/*.{js,css,html,ico,svg,woff2}"],
