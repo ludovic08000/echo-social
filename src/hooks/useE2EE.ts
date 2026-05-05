@@ -248,6 +248,12 @@ async function saveRatchetLocal(convId: string, state: RatchetState, x3dhHeader?
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+    // Reactive backup: ensure the new ratchet state lands on the server quickly
+    // so iOS can recover history even after an IndexedDB purge.
+    try {
+      const { requestBackgroundBackup } = await import('@/lib/crypto/accountKeyBackup');
+      requestBackgroundBackup('ratchet-save');
+    } catch {}
   } catch (e) {
     console.error('[E2EE] Failed to persist ratchet state:', e);
   }
