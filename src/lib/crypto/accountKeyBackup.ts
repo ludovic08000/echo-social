@@ -23,7 +23,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
 import { secureGetSecret, secureSetSecret, secureRemoveSecret } from '@/lib/secureStore';
-import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import { getCurrentDeviceId, setCurrentDeviceId } from '@/lib/messaging/currentDevice';
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
@@ -259,9 +259,12 @@ async function restoreAllKeys(json: string): Promise<void> {
   const rollbackOps: Array<() => Promise<void>> = [];
 
   try {
-    // Phase 0: keep device continuity when the server/fingerprint resolver
-    // already selected the same physical device. We restore only the matching
-    // per-device private key, never arbitrary stale device ids.
+    // Phase 0: restore the encrypted device routing id before restoring the
+    // matching per-device private key. This keeps message device-copies readable
+    // after iOS/WebView storage purges without showing a "verify device" flow.
+    if (typeof data['device:id'] === 'string' && data['device:id'].length >= 16) {
+      setCurrentDeviceId(data['device:id']);
+    }
 
     // Phase 1: E2EE stores
     for (const [key, records] of Object.entries(data)) {
