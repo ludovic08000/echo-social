@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { ParentalGateProvider } from "@/components/ParentalGate";
 import { I18nProvider } from "@/lib/i18n";
@@ -16,7 +16,7 @@ import { useIncomingCall, endActiveCall } from "@/hooks/useIncomingCall";
 import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { useCall } from "@/hooks/useCall";
 import { CallOverlay } from "@/components/CallOverlay";
-import { Suspense, lazy, useCallback, useRef } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef } from "react";
 import { useAccountKeySync } from "@/hooks/useAccountKeySync";
 import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
 import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
@@ -59,7 +59,7 @@ const Search = lazyWithOneRetry(() => import("./pages/Search"), 'r-search');
 const Notifications = lazyWithOneRetry(() => import("./pages/Notifications"), 'r-notifs');
 const Settings = lazyWithOneRetry(() => import("./pages/Settings"), 'r-settings');
 const SecurityDeviceVerify = lazyWithOneRetry(() => import("./pages/SecurityDeviceVerify"), 'r-secdev');
-const Messages = lazyWithOneRetry(() => import("./pages/Messages"), 'r-messages');
+// The standalone Messages page is intentionally disabled: ChatWidget is the single messaging runtime.
 const Friends = lazyWithOneRetry(() => import("./pages/Friends"), 'r-friends');
 const Groups = lazyWithOneRetry(() => import("./pages/Groups"), 'r-groups');
 const GroupDetail = lazyWithOneRetry(() => import("./pages/GroupDetail"), 'r-groupd');
@@ -170,6 +170,21 @@ function IncomingCallHandler() {
   );
 }
 
+function MessagesWidgetRoute() {
+  const { conversationId } = useParams();
+  const { openChat } = useChatWidget();
+
+  useEffect(() => {
+    if (conversationId) {
+      openChat(conversationId);
+    } else {
+      openChat();
+    }
+  }, [conversationId, openChat]);
+
+  return <Navigate to="/feed" replace />;
+}
+
 function AccountKeySyncRunner() {
   useAccountKeySync();
   useCryptoMaintenance();
@@ -239,8 +254,8 @@ function AppContent() {
               <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
               <Route path="/security/device" element={<ProtectedRoute><SecurityDeviceVerify /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-              <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
-              <Route path="/messages/:conversationId" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
+              <Route path="/messages" element={<ProtectedRoute><MessagesWidgetRoute /></ProtectedRoute>} />
+              <Route path="/messages/:conversationId" element={<ProtectedRoute><MessagesWidgetRoute /></ProtectedRoute>} />
               <Route path="/friends" element={<ProtectedRoute><Friends /></ProtectedRoute>} />
               <Route path="/groups" element={<ProtectedRoute><Groups /></ProtectedRoute>} />
               <Route path="/groups/:id" element={<ProtectedRoute><GroupDetail /></ProtectedRoute>} />
