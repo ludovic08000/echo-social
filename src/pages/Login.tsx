@@ -92,18 +92,18 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-[hsl(0,0%,98%)] flex flex-col items-center pb-10">
-      {/* Full-width brand banner (logo + wordmark + tagline + trust badges) */}
-      <Link to="/" className="block w-full">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/40 flex flex-col items-center pb-10">
+      {/* Brand banner — full-width on mobile, contained card on desktop */}
+      <Link to="/" className="block w-full sm:max-w-2xl sm:mt-8 sm:px-6">
         <img
           src={forsureBanner}
           alt="Forsure — Connecter · Partager · Avancer · Messagerie sécurisée · Bien-être · Réseau intelligent"
-          className="w-full h-auto select-none"
+          className="w-full h-auto select-none sm:rounded-3xl sm:shadow-[0_20px_60px_-20px_rgba(0,35,149,0.35)] sm:border sm:border-white/60"
           draggable={false}
         />
       </Link>
 
-      <div className="w-full max-w-sm px-5 -mt-6 animate-fade-in">
+      <div className="w-full max-w-sm px-5 -mt-6 sm:-mt-10 animate-fade-in relative z-10">
         {/* Card */}
         <div className="w-full bg-white rounded-3xl p-6 sm:p-8 shadow-[0_8px_30px_rgba(15,23,42,0.06)] border border-slate-100">
           <h1 className="text-2xl font-bold text-center text-slate-900 mb-6">
