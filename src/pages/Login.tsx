@@ -185,8 +185,10 @@ export default function Login() {
               S'inscrire
             </Link>
           </p>
+          </div>
         </div>
       </div>
     </div>
   );
 }
+
