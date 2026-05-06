@@ -15,9 +15,7 @@ if (import.meta.env.DEV) {
         args[0].includes(refMsg2) ||
         args[0].includes('Encountered two children with the same key') ||
         args[0].includes('React Router Future Flag'))
-    ) {
-      return;
-    }
+    ) return;
 
     orig(...args);
   };
@@ -26,18 +24,12 @@ if (import.meta.env.DEV) {
   console.error = filter(origError);
 }
 
-async function hardResetRuntime() {
+async function cleanupNonCryptoRuntimeCaches() {
+  // Never delete E2EE identity databases here.
+  // Identity recovery must happen through identityBootstrap/accountKeyBackup,
+  // not by wiping IndexedDB on every page load.
   try {
     indexedDB.deleteDatabase('forsure-msg-queue');
-  } catch {}
-
-  try {
-    const databases = ['signal-protocol-store', 'forsure-e2ee', 'libsignal-meta'];
-    for (const db of databases) {
-      try {
-        indexedDB.deleteDatabase(db);
-      } catch {}
-    }
   } catch {}
 
   try {
@@ -54,22 +46,24 @@ async function hardResetRuntime() {
     }
   } catch {}
 
-  console.info('[E2EE][BOOT] hard runtime reset complete');
+  console.info('[BOOT] non-crypto runtime caches cleaned');
 }
 
 async function bootstrap() {
-  await hardResetRuntime();
+  await cleanupNonCryptoRuntimeCaches();
 
-  const [{ default: App }, { activateRuntimeShield }, crypto] = await Promise.all([
+  const [{ default: App }, { activateRuntimeShield }, crypto, identity] = await Promise.all([
     import('./App.tsx'),
     import('@/lib/runtimeShield'),
     import('@/lib/crypto'),
+    import('@/lib/crypto/identityBootstrap'),
   ]);
 
   activateRuntimeShield();
   crypto.hardenPrototypes();
+  identity.startIdentityBootstrap();
 
-  console.info('[E2EE][BUILD] hard-reset-active', {
+  console.info('[E2EE][BUILD] protocol-bootstrap-active', {
     ts: new Date().toISOString(),
   });
 
