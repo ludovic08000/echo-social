@@ -5,6 +5,8 @@ import { useAuth } from '@/lib/auth';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { safeUUID } from '@/e2ee-session';
 import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
+import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto';
+import { wrapOutboundSecureMessage } from '@/lib/crypto/secureMessagePipeline';
 
 export interface OutboundMessage {
   localId: string;
@@ -92,10 +94,21 @@ export function useMessageQueue(
         return local;
       }
 
-      bodyToStore = await encrypt(sanitized, localId);
-      if (!bodyToStore || bodyToStore === sanitized) {
+      const encryptedPayload = await encrypt(sanitized, localId);
+      if (!encryptedPayload || encryptedPayload === sanitized) {
         throw new Error('Chiffrement indisponible — message non envoyé');
       }
+
+      const identityKeys = await getOrCreateIdentityKeys(user.id);
+      const publicBundle = await exportPublicKeyBundle(identityKeys);
+
+      bodyToStore = await wrapOutboundSecureMessage({
+        userId: user.id,
+        fingerprint: publicBundle.fingerprint,
+        encryptedBody: encryptedPayload,
+        conversationId,
+        localId,
+      });
     }
 
     const { data, error } = await supabase
