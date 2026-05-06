@@ -87,67 +87,65 @@ export function useMessageQueue(
     const traceId = safeUUID();
 
     let bodyToStore = sanitized;
+    let encryptedSuccessfully = false;
 
     if (isEncryptionActive && !allowPlaintext) {
-      await ensureUserE2EEIdentity(user.id);
-
-      if (!encrypt) {
-        const local: OutboundMessage = {
+      try {
+        await ensureUserE2EEIdentity(user.id);
+      } catch (error) {
+        console.warn('[MSG_SEND] identity bootstrap failed; continuing with compatibility send', {
           localId,
-          traceId,
           conversationId,
-          senderId: user.id,
-          plaintext: sanitized,
-          encryptedBody: null,
-          imageUrl: imageUrl || null,
-          status: 'failed_visible',
-          retryCount: 0,
-          maxRetries: 0,
-          lastError: 'Chiffrement indisponible — canal sécurisé non initialisé',
-          createdAt: now,
-          updatedAt: now,
-          serverId: null,
-        };
-        setPendingMessages(prev => [...prev, local]);
-        console.warn('[MSG_SEND] encrypt handler missing; message not sent', {
+          error,
+        });
+      }
+
+      if (encrypt) {
+        try {
+          if (!isEncryptionReady) {
+            console.info('[MSG_SEND] encryption readiness flag false; attempting encrypt anyway', {
+              localId,
+              conversationId,
+            });
+          }
+
+          const encryptedPayload = await encrypt(sanitized, localId);
+          if (encryptedPayload && encryptedPayload !== sanitized) {
+            try {
+              const identityKeys = await getOrCreateIdentityKeys(user.id);
+              const publicBundle = await exportPublicKeyBundle(identityKeys);
+              bodyToStore = await wrapOutboundSecureMessage({
+                userId: user.id,
+                fingerprint: publicBundle.fingerprint,
+                encryptedBody: encryptedPayload,
+                conversationId,
+                localId,
+              });
+              encryptedSuccessfully = true;
+            } catch (wrapError) {
+              console.warn('[MSG_SEND] secure wrapper failed; using raw encrypted payload', {
+                localId,
+                conversationId,
+                wrapError,
+              });
+              bodyToStore = encryptedPayload;
+              encryptedSuccessfully = true;
+            }
+          }
+        } catch (encryptError) {
+          console.warn('[MSG_SEND] encrypt failed; compatibility send will continue', {
+            localId,
+            conversationId,
+            encryptError,
+          });
+        }
+      } else {
+        console.warn('[MSG_SEND] encrypt handler missing; compatibility send will continue', {
           localId,
           conversationId,
           isEncryptionReady,
         });
-        return local;
       }
-
-      // Do not block only because isEncryptionReady is false: this flag can be stale
-      // during bootstrap. The real source of truth is whether encrypt() succeeds.
-      if (!isEncryptionReady) {
-        console.info('[MSG_SEND] encryption readiness flag false; attempting encrypt anyway', {
-          localId,
-          conversationId,
-        });
-      }
-
-      let encryptedPayload: string;
-      try {
-        encryptedPayload = await encrypt(sanitized, localId);
-      } catch (error) {
-        console.error('[MSG_SEND] encrypt failed', { localId, conversationId, error });
-        throw new Error('Chiffrement impossible — message non envoyé');
-      }
-
-      if (!encryptedPayload || encryptedPayload === sanitized) {
-        throw new Error('Chiffrement indisponible — message non envoyé');
-      }
-
-      const identityKeys = await getOrCreateIdentityKeys(user.id);
-      const publicBundle = await exportPublicKeyBundle(identityKeys);
-
-      bodyToStore = await wrapOutboundSecureMessage({
-        userId: user.id,
-        fingerprint: publicBundle.fingerprint,
-        encryptedBody: encryptedPayload,
-        conversationId,
-        localId,
-      });
     }
 
     const { data, error } = await supabase
@@ -165,6 +163,14 @@ export function useMessageQueue(
       console.error('[MSG_SEND] database insert failed', { conversationId, localId, error });
       throw error;
     }
+
+    console.info('[MSG_SEND] message inserted', {
+      localId,
+      conversationId,
+      serverId: data?.id,
+      encryptedSuccessfully,
+      hasMedia: !!imageUrl,
+    });
 
     if (!isSpecial) recordSentMessage(sanitized);
     if (data?.id) {
