@@ -3,6 +3,8 @@ import { createEpochBoundEnvelope, assertEnvelopeEpochValid, type EpochBoundEnve
 import { issueSenderCertificate, fetchSenderCertificate, type SenderCertificate } from './senderCertificate';
 import { assertNotReplay, computeReplayKey } from './replayGuard';
 import { getOrCreateCurrentDeviceId } from './deviceList';
+import { hardCrypto, hardGlobals } from './cryptoIntegrity';
+import { base64ToBuffer } from './utils';
 
 export interface SecurePipelineEnvelope {
   fs_secure_pipeline: 1;
@@ -84,6 +86,11 @@ export async function validateInboundSecureEnvelope(params: {
   ]);
   assertNotReplay(replayKey);
 
+  const certOk = await validateSenderCertificateShape(wrapped.meta.senderCertificate);
+  if (!certOk) {
+    throw new Error('INVALID_SENDER_CERTIFICATE');
+  }
+
   return { body: wrapped.body, meta: wrapped.meta };
 }
 
@@ -94,5 +101,38 @@ export async function validateSenderCertificateShape(cert: SenderCertificate | n
   const latest = await fetchSenderCertificate(cert.payload.userId, cert.payload.deviceId).catch(() => null);
   if (!latest) return true;
 
-  return latest.signature === cert.signature && latest.payload.identityEpoch === cert.payload.identityEpoch;
+  if (latest.signature !== cert.signature || latest.payload.identityEpoch !== cert.payload.identityEpoch) {
+    return false;
+  }
+
+  try {
+    const { data } = await supabase
+      .from('user_public_keys')
+      .select('signing_key')
+      .eq('user_id', cert.payload.userId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    const signingKey = (data as any)?.signing_key;
+    if (!signingKey) return false;
+
+    const publicKey = await hardCrypto.importKey(
+      'raw',
+      base64ToBuffer(signingKey),
+      'Ed25519' as any,
+      true,
+      ['verify'],
+    );
+
+    const payloadBytes = new hardGlobals.TextEncoder().encode(JSON.stringify(cert.payload));
+
+    return await hardCrypto.verify(
+      'Ed25519' as any,
+      publicKey,
+      base64ToBuffer(cert.signature),
+      payloadBytes,
+    );
+  } catch {
+    return false;
+  }
 }
