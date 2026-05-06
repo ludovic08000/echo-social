@@ -1,10 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
-import {
-  getOrCreateIdentityKeys,
-  exportPublicKeyBundle,
-  type IdentityKeyPair,
-} from './keyManager';
+import { exportPublicKeyBundle, type IdentityKeyPair } from './keyManager';
 import { refreshSignedPrekeyIfNeeded } from './x3dh';
+import { resolveUserIdentity } from './identityRecovery';
 
 const BOOTSTRAP_TTL_MS = 30_000;
 const attempts = new Map<string, Promise<void>>();
@@ -35,10 +32,7 @@ async function publishIdentity(userId: string, keys: IdentityKeyPair): Promise<v
 
   try {
     window.dispatchEvent(new CustomEvent('forsure-e2ee-identity-ready', {
-      detail: {
-        userId,
-        fingerprint: bundle.fingerprint,
-      },
+      detail: { userId, fingerprint: bundle.fingerprint },
     }));
   } catch {}
 
@@ -58,9 +52,19 @@ export async function ensureUserE2EEIdentity(userId: string): Promise<void> {
   if (existing) return existing;
 
   const attempt = (async () => {
-    const keys = await getOrCreateIdentityKeys(userId);
+    const { keys, mode } = await resolveUserIdentity(userId);
     await publishIdentity(userId, keys);
     lastSuccessAt.set(userId, Date.now());
+
+    if (mode === 'new_epoch') {
+      try {
+        window.dispatchEvent(new CustomEvent('forsure-e2ee-security-code-changed', {
+          detail: { userId, fingerprint: keys.fingerprint },
+        }));
+      } catch {}
+    }
+
+    console.info('[E2EE][IDENTITY] bootstrap complete', { userId, mode });
   })().catch((error) => {
     console.error('[E2EE][IDENTITY] key assignment failed', error);
     throw error;
@@ -80,11 +84,7 @@ export function startIdentityBootstrap(): void {
 
   supabase.auth.onAuthStateChange((_event, session) => {
     const userId = session?.user?.id;
-    if (userId) {
-      setTimeout(() => {
-        void ensureUserE2EEIdentity(userId);
-      }, 0);
-    }
+    if (userId) setTimeout(() => void ensureUserE2EEIdentity(userId), 0);
   });
 
   window.addEventListener('forsure-e2ee-needs-identity', (event) => {
