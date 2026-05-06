@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
-import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, ShieldCheck, MessageCircle, Network } from 'lucide-react';
 import forsureBanner from '@/assets/forsure-loader.png';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
@@ -185,6 +185,20 @@ export default function Login() {
               S'inscrire
             </Link>
           </p>
+
+          {/* Trust badges fused into the bottom of the card */}
+          <div className="mt-7 pt-5 border-t border-slate-100 grid grid-cols-3 gap-2 text-center">
+            {[
+              { Icon: ShieldCheck, label: 'Messagerie\nsécurisée' },
+              { Icon: MessageCircle, label: 'Bien-être' },
+              { Icon: Network, label: 'Réseau\nintelligent' },
+            ].map(({ Icon, label }, i) => (
+              <div key={i} className={`flex flex-col items-center gap-2 ${i < 2 ? 'border-r border-slate-100' : ''}`}>
+                <Icon className="w-6 h-6 text-[#0a1f4a]" strokeWidth={1.5} />
+                <span className="text-[10px] font-semibold tracking-wider uppercase text-slate-700 leading-tight whitespace-pre-line">{label}</span>
+              </div>
+            ))}
+          </div>
           </div>
         </div>
       </div>
