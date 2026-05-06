@@ -91,7 +91,7 @@ export function useMessageQueue(
     if (isEncryptionActive && !allowPlaintext) {
       await ensureUserE2EEIdentity(user.id);
 
-      if (!isEncryptionReady || !encrypt) {
+      if (!encrypt) {
         const local: OutboundMessage = {
           localId,
           traceId,
@@ -103,16 +103,37 @@ export function useMessageQueue(
           status: 'failed_visible',
           retryCount: 0,
           maxRetries: 0,
-          lastError: 'Chiffrement en préparation — réessayez dans quelques secondes',
+          lastError: 'Chiffrement indisponible — canal sécurisé non initialisé',
           createdAt: now,
           updatedAt: now,
           serverId: null,
         };
         setPendingMessages(prev => [...prev, local]);
+        console.warn('[MSG_SEND] encrypt handler missing; message not sent', {
+          localId,
+          conversationId,
+          isEncryptionReady,
+        });
         return local;
       }
 
-      const encryptedPayload = await encrypt(sanitized, localId);
+      // Do not block only because isEncryptionReady is false: this flag can be stale
+      // during bootstrap. The real source of truth is whether encrypt() succeeds.
+      if (!isEncryptionReady) {
+        console.info('[MSG_SEND] encryption readiness flag false; attempting encrypt anyway', {
+          localId,
+          conversationId,
+        });
+      }
+
+      let encryptedPayload: string;
+      try {
+        encryptedPayload = await encrypt(sanitized, localId);
+      } catch (error) {
+        console.error('[MSG_SEND] encrypt failed', { localId, conversationId, error });
+        throw new Error('Chiffrement impossible — message non envoyé');
+      }
+
       if (!encryptedPayload || encryptedPayload === sanitized) {
         throw new Error('Chiffrement indisponible — message non envoyé');
       }
@@ -140,7 +161,11 @@ export function useMessageQueue(
       .select('id')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('[MSG_SEND] database insert failed', { conversationId, localId, error });
+      throw error;
+    }
+
     if (!isSpecial) recordSentMessage(sanitized);
     if (data?.id) {
       onPlaintextCached?.(data.id, sanitized);
