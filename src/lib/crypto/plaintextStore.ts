@@ -1,14 +1,11 @@
 /**
- * Persistent plaintext cache for messages — survives reload.
+ * Persistent plaintext cache for messages — hardened IndexedDB version.
  *
- * Security model:
- * - Stored in IndexedDB on the device only — NEVER sent to the server.
- * - Each entry is encrypted with a device-local AES-GCM key, kept in IndexedDB.
- * - The device key never leaves the browser. If the device is wiped or the
- *   browser data cleared, plaintexts become unrecoverable (forward secrecy
- *   on local storage).
- * - This complements (does not replace) E2EE: the server still only sees
- *   ciphertext. This cache only restores the local UX after a page reload.
+ * This file is intentionally defensive: Chrome/Vite hot reload, browser tab
+ * suspension, and IndexedDB version changes can close a database connection
+ * while async React code is still trying to read it. In that case we reset the
+ * cached connection and return a safe null/empty result instead of spamming the
+ * console or crashing the UI.
  */
 
 const DB_NAME = 'forsure-plaintext-cache';
@@ -20,11 +17,45 @@ const DEVICE_KEY_ID = 'plaintext-cache-key-v1';
 let dbPromise: Promise<IDBDatabase> | null = null;
 let cachedDeviceKey: CryptoKey | null = null;
 let cachedKeyPromise: Promise<CryptoKey> | null = null;
+let lastIndexedDbWarningAt = 0;
+
+export interface PlaintextCacheExportEntry {
+  id: string;
+  plaintext: string;
+}
+
+interface StoredEntry {
+  id: string;
+  iv: ArrayBuffer;
+  ct: ArrayBuffer;
+  ts: number;
+}
+
+function isIDBClosedError(error: unknown): boolean {
+  return (
+    error instanceof DOMException &&
+    (error.name === 'InvalidStateError' || error.name === 'TransactionInactiveError')
+  ) || String(error).includes('database connection is closing');
+}
+
+function warnOnce(message: string, error?: unknown) {
+  const now = Date.now();
+  if (now - lastIndexedDbWarningAt < 5000) return;
+  lastIndexedDbWarningAt = now;
+  console.warn(message, error);
+}
+
+function resetDBConnection() {
+  dbPromise = null;
+  cachedKeyPromise = null;
+}
 
 function openDB(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
+
   dbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
+
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_MESSAGES)) {
@@ -34,10 +65,65 @@ function openDB(): Promise<IDBDatabase> {
         db.createObjectStore(STORE_KEYS, { keyPath: 'id' });
       }
     };
+
+    req.onsuccess = () => {
+      const db = req.result;
+      db.onversionchange = () => {
+        db.close();
+        resetDBConnection();
+      };
+      db.onclose = () => resetDBConnection();
+      db.onerror = () => resetDBConnection();
+      resolve(db);
+    };
+
+    req.onerror = () => {
+      resetDBConnection();
+      reject(req.error);
+    };
+
+    req.onblocked = () => {
+      resetDBConnection();
+      reject(new Error('IndexedDB open blocked'));
+    };
+  });
+
+  return dbPromise;
+}
+
+async function withStore<T>(
+  storeName: string | string[],
+  mode: IDBTransactionMode,
+  fn: (tx: IDBTransaction) => Promise<T> | T,
+  fallback: T,
+): Promise<T> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(storeName, mode);
+    return await fn(tx);
+  } catch (error) {
+    if (isIDBClosedError(error)) {
+      resetDBConnection();
+      warnOnce('[plaintextStore] IndexedDB connection was closing; operation skipped safely', error);
+      return fallback;
+    }
+    throw error;
+  }
+}
+
+function txDone(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
+  });
+}
+
+function reqResult<T>(req: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
-  return dbPromise;
 }
 
 async function getOrCreateDeviceKey(): Promise<CryptoKey> {
@@ -45,50 +131,42 @@ async function getOrCreateDeviceKey(): Promise<CryptoKey> {
   if (cachedKeyPromise) return cachedKeyPromise;
 
   cachedKeyPromise = (async () => {
-    const db = await openDB();
-    const existing = await new Promise<{ id: string; key: CryptoKey } | undefined>((resolve, reject) => {
-      const tx = db.transaction(STORE_KEYS, 'readonly');
-      const req = tx.objectStore(STORE_KEYS).get(DEVICE_KEY_ID);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const existing = await withStore<{ id: string; key: CryptoKey } | undefined>(
+      STORE_KEYS,
+      'readonly',
+      async (tx) => reqResult(tx.objectStore(STORE_KEYS).get(DEVICE_KEY_ID)),
+      undefined,
+    );
 
     if (existing?.key) {
       cachedDeviceKey = existing.key;
       return existing.key;
     }
 
-    // Generate a non-extractable AES-GCM key — can never be exported, even by us
     const key = await crypto.subtle.generateKey(
       { name: 'AES-GCM', length: 256 },
-      false, // not extractable — bound to this device
+      false,
       ['encrypt', 'decrypt'],
     );
 
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_KEYS, 'readwrite');
-      tx.objectStore(STORE_KEYS).put({ id: DEVICE_KEY_ID, key });
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    await withStore<void>(
+      STORE_KEYS,
+      'readwrite',
+      async (tx) => {
+        tx.objectStore(STORE_KEYS).put({ id: DEVICE_KEY_ID, key });
+        await txDone(tx);
+      },
+      undefined,
+    );
 
     cachedDeviceKey = key;
     return key;
-  })();
+  })().catch((error) => {
+    cachedKeyPromise = null;
+    throw error;
+  });
 
   return cachedKeyPromise;
-}
-
-interface StoredEntry {
-  id: string;          // messageId (server id) or composite key
-  iv: ArrayBuffer;
-  ct: ArrayBuffer;
-  ts: number;
-}
-
-export interface PlaintextCacheExportEntry {
-  id: string;
-  plaintext: string;
 }
 
 function bufferToHex(buffer: ArrayBuffer): string {
@@ -102,12 +180,6 @@ async function toCiphertextLookupKey(ciphertextBody: string): Promise<string> {
   return `cipher:${bufferToHex(digest)}`;
 }
 
-/**
- * Short-term sessionStorage mirror — survives soft reloads even when iOS
- * Safari ITP wipes IndexedDB (the encrypted store above). Bounded to 24h
- * and ~200 entries to keep memory pressure low. Plaintext stays local —
- * the server never sees it.
- */
 const SESSION_MIRROR_KEY = 'forsure-pt-mirror-v1';
 const SESSION_MIRROR_TTL_MS = 24 * 60 * 60 * 1000;
 const SESSION_MIRROR_CAP = 200;
@@ -116,17 +188,21 @@ interface SessionMirrorEntry { p: string; t: number }
 
 function readSessionMirror(): Record<string, SessionMirrorEntry> {
   try {
+    if (typeof sessionStorage === 'undefined') return {};
     const raw = sessionStorage.getItem(SESSION_MIRROR_KEY);
     if (!raw) return {};
     return JSON.parse(raw) as Record<string, SessionMirrorEntry>;
-  } catch { return {}; }
+  } catch {
+    return {};
+  }
 }
 
 function writeSessionMirror(map: Record<string, SessionMirrorEntry>) {
   try {
+    if (typeof sessionStorage === 'undefined') return;
     const cutoff = Date.now() - SESSION_MIRROR_TTL_MS;
     const entries = Object.entries(map)
-      .filter(([, v]) => v.t > cutoff)
+      .filter(([, value]) => value.t > cutoff)
       .sort(([, a], [, b]) => b.t - a.t)
       .slice(0, SESSION_MIRROR_CAP);
     sessionStorage.setItem(SESSION_MIRROR_KEY, JSON.stringify(Object.fromEntries(entries)));
@@ -134,14 +210,12 @@ function writeSessionMirror(map: Record<string, SessionMirrorEntry>) {
 }
 
 function mirrorSet(id: string, plaintext: string) {
-  if (typeof sessionStorage === 'undefined') return;
   const map = readSessionMirror();
   map[id] = { p: plaintext, t: Date.now() };
   writeSessionMirror(map);
 }
 
 function mirrorGet(id: string): string | null {
-  if (typeof sessionStorage === 'undefined') return null;
   const map = readSessionMirror();
   const entry = map[id];
   if (!entry) return null;
@@ -158,61 +232,61 @@ async function saveEntry(id: string, plaintext: string): Promise<void> {
     key,
     new TextEncoder().encode(plaintext),
   );
-  const db = await openDB();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_MESSAGES, 'readwrite');
-    tx.objectStore(STORE_MESSAGES).put({
-      id,
-      iv: iv.buffer,
-      ct,
-      ts: Date.now(),
-    } satisfies StoredEntry);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+
+  await withStore<void>(
+    STORE_MESSAGES,
+    'readwrite',
+    async (tx) => {
+      tx.objectStore(STORE_MESSAGES).put({ id, iv: iv.buffer, ct, ts: Date.now() } satisfies StoredEntry);
+      await txDone(tx);
+    },
+    undefined,
+  );
 }
 
 async function loadEntry(id: string): Promise<string | null> {
   if (!id) return null;
-  const db = await openDB();
-  const entry = await new Promise<StoredEntry | undefined>((resolve, reject) => {
-    const tx = db.transaction(STORE_MESSAGES, 'readonly');
-    const req = tx.objectStore(STORE_MESSAGES).get(id);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-  if (!entry) return null;
-  const key = await getOrCreateDeviceKey();
-  const pt = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: entry.iv },
-    key,
-    entry.ct,
+
+  const entry = await withStore<StoredEntry | undefined>(
+    STORE_MESSAGES,
+    'readonly',
+    async (tx) => reqResult(tx.objectStore(STORE_MESSAGES).get(id)),
+    undefined,
   );
-  return new TextDecoder().decode(pt);
+
+  if (!entry) return null;
+
+  try {
+    const key = await getOrCreateDeviceKey();
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: entry.iv }, key, entry.ct);
+    return new TextDecoder().decode(pt);
+  } catch (error) {
+    if (isIDBClosedError(error)) {
+      resetDBConnection();
+      return null;
+    }
+    // Cache entry may belong to a stale local key. Ignore safely.
+    return null;
+  }
 }
 
 export async function exportPlaintextCache(): Promise<PlaintextCacheExportEntry[]> {
   try {
-    const db = await openDB();
-    const entries = await new Promise<StoredEntry[]>((resolve, reject) => {
-      const tx = db.transaction(STORE_MESSAGES, 'readonly');
-      const req = tx.objectStore(STORE_MESSAGES).getAll();
-      req.onsuccess = () => resolve(req.result as StoredEntry[]);
-      req.onerror = () => reject(req.error);
-    });
+    const entries = await withStore<StoredEntry[]>(
+      STORE_MESSAGES,
+      'readonly',
+      async (tx) => reqResult(tx.objectStore(STORE_MESSAGES).getAll() as IDBRequest<StoredEntry[]>),
+      [],
+    );
 
     const exported: PlaintextCacheExportEntry[] = [];
     for (const entry of entries) {
-      try {
-        const plaintext = await loadEntry(entry.id);
-        if (plaintext) exported.push({ id: entry.id, plaintext });
-      } catch {
-        // Skip entries that belong to a stale local cache key.
-      }
+      const plaintext = await loadEntry(entry.id);
+      if (plaintext) exported.push({ id: entry.id, plaintext });
     }
     return exported;
-  } catch (e) {
-    console.warn('[plaintextStore] exportPlaintextCache failed', e);
+  } catch (error) {
+    warnOnce('[plaintextStore] exportPlaintextCache failed', error);
     return [];
   }
 }
@@ -221,20 +295,22 @@ export async function importPlaintextCache(entries: PlaintextCacheExportEntry[])
   if (!Array.isArray(entries) || entries.length === 0) return;
   for (const entry of entries) {
     if (!entry || typeof entry.id !== 'string' || typeof entry.plaintext !== 'string') continue;
-    await saveEntry(entry.id, entry.plaintext);
+    try {
+      await saveEntry(entry.id, entry.plaintext);
+    } catch (error) {
+      warnOnce('[plaintextStore] import entry skipped', error);
+    }
   }
 }
 
-/**
- * Save plaintext for a message id (server id). Idempotent.
- */
 export async function savePlaintext(messageId: string, plaintext: string): Promise<void> {
   if (!messageId || !plaintext) return;
   mirrorSet(messageId, plaintext);
   try {
     await saveEntry(messageId, plaintext);
-  } catch (e) {
-    console.warn('[plaintextStore] savePlaintext failed', e);
+  } catch (error) {
+    if (isIDBClosedError(error)) resetDBConnection();
+    warnOnce('[plaintextStore] savePlaintext skipped safely', error);
   }
 }
 
@@ -244,8 +320,9 @@ export async function savePlaintextForCiphertext(ciphertextBody: string, plainte
     const id = await toCiphertextLookupKey(ciphertextBody);
     mirrorSet(id, plaintext);
     await saveEntry(id, plaintext);
-  } catch (e) {
-    console.warn('[plaintextStore] savePlaintextForCiphertext failed', e);
+  } catch (error) {
+    if (isIDBClosedError(error)) resetDBConnection();
+    warnOnce('[plaintextStore] savePlaintextForCiphertext skipped safely', error);
   }
 }
 
@@ -255,8 +332,9 @@ export async function loadPlaintext(messageId: string): Promise<string | null> {
   if (mirror !== null) return mirror;
   try {
     return await loadEntry(messageId);
-  } catch (e) {
-    console.warn('[plaintextStore] loadPlaintext failed', e);
+  } catch (error) {
+    if (isIDBClosedError(error)) resetDBConnection();
+    warnOnce('[plaintextStore] loadPlaintext skipped safely', error);
     return null;
   }
 }
@@ -268,8 +346,9 @@ export async function loadPlaintextForCiphertext(ciphertextBody: string): Promis
     const mirror = mirrorGet(id);
     if (mirror !== null) return mirror;
     return await loadEntry(id);
-  } catch (e) {
-    console.warn('[plaintextStore] loadPlaintextForCiphertext failed', e);
+  } catch (error) {
+    if (isIDBClosedError(error)) resetDBConnection();
+    warnOnce('[plaintextStore] loadPlaintextForCiphertext skipped safely', error);
     return null;
   }
 }
@@ -277,36 +356,46 @@ export async function loadPlaintextForCiphertext(ciphertextBody: string): Promis
 export async function removePlaintext(messageId: string): Promise<void> {
   try {
     const map = readSessionMirror();
-    if (map[messageId]) { delete map[messageId]; writeSessionMirror(map); }
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_MESSAGES, 'readwrite');
-      tx.objectStore(STORE_MESSAGES).delete(messageId);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch (e) {
-    console.warn('[plaintextStore] removePlaintext failed', e);
+    if (map[messageId]) {
+      delete map[messageId];
+      writeSessionMirror(map);
+    }
+
+    await withStore<void>(
+      STORE_MESSAGES,
+      'readwrite',
+      async (tx) => {
+        tx.objectStore(STORE_MESSAGES).delete(messageId);
+        await txDone(tx);
+      },
+      undefined,
+    );
+  } catch (error) {
+    if (isIDBClosedError(error)) resetDBConnection();
+    warnOnce('[plaintextStore] removePlaintext skipped safely', error);
   }
 }
 
-/**
- * Wipe everything — used on logout for hygiene.
- */
 export async function wipePlaintextStore(): Promise<void> {
-  try { sessionStorage.removeItem(SESSION_MIRROR_KEY); } catch {}
   try {
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction([STORE_MESSAGES, STORE_KEYS], 'readwrite');
-      tx.objectStore(STORE_MESSAGES).clear();
-      tx.objectStore(STORE_KEYS).clear();
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(SESSION_MIRROR_KEY);
+  } catch {}
+
+  try {
+    await withStore<void>(
+      [STORE_MESSAGES, STORE_KEYS],
+      'readwrite',
+      async (tx) => {
+        tx.objectStore(STORE_MESSAGES).clear();
+        tx.objectStore(STORE_KEYS).clear();
+        await txDone(tx);
+      },
+      undefined,
+    );
     cachedDeviceKey = null;
     cachedKeyPromise = null;
-  } catch (e) {
-    console.warn('[plaintextStore] wipe failed', e);
+  } catch (error) {
+    if (isIDBClosedError(error)) resetDBConnection();
+    warnOnce('[plaintextStore] wipe skipped safely', error);
   }
 }
