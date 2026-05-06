@@ -32,6 +32,7 @@ export { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
 
 export { getOrCreateIdentityKeys } from './keyManagerSafe';
 export { resolveUserIdentity, type IdentityRecoveryMode } from './identityRecovery';
+
 export {
   createSecureBackupVault,
   restoreSecureBackupVault,
@@ -39,6 +40,75 @@ export {
   type CreatedSecureBackupVault,
   type SecureBackupVaultPayload,
 } from './secureBackupVault';
+
+export {
+  registerPasskeyForBackupVault,
+  verifyPasskeyBeforeVaultRestore,
+  hasLocalPasskeyVaultAlias,
+} from './passkeyVault';
+
+export {
+  rotateEncryptedBackupVault,
+  ensureBackupRotation,
+} from './backupRotation';
+
+export {
+  ensureSecurityEpoch,
+  bumpSecurityEpoch,
+  getLocalSecurityEpoch,
+  attachEpochToEnvelope,
+  isEnvelopeEpochStale,
+} from './securityEpoch';
+
+export {
+  createEpochBoundEnvelope,
+  assertEnvelopeEpochValid,
+} from './epochEnvelope';
+
+export {
+  createSealedSenderEnvelope,
+} from './sealedSender';
+
+export {
+  issueSenderCertificate,
+  fetchSenderCertificate,
+  isSenderCertificateExpired,
+} from './senderCertificate';
+
+export {
+  generatePairingQRCode,
+  acceptPairingQRCode,
+  revokePairingQRCode,
+} from './devicePairing';
+
+export {
+  publishCurrentDevice,
+  fetchActiveDevices,
+  revokeCurrentDevice,
+  getOrCreateCurrentDeviceId,
+} from './deviceList';
+
+export {
+  publishSignedDeviceManifest,
+  fetchSignedDeviceManifest,
+} from './deviceManifest';
+
+export {
+  createEncryptedDeviceTransferPackage,
+  openEncryptedDeviceTransferPackage,
+} from './deviceTransfer';
+
+export {
+  assertNotReplay,
+  isReplay,
+  markReplaySeen,
+} from './replayGuard';
+
+export {
+  clearAllRatchetSessions,
+  clearConversationRatchetSession,
+  startSessionInvalidationWatcher,
+} from './sessionInvalidation';
 
 export {
   exportPublicKeyBundle,
