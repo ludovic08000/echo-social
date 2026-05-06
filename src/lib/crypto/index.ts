@@ -1,6 +1,6 @@
 /**
  * ForSure E2EE - Public API v2
- * 
+ *
  * X25519 + Ed25519 + AES-256-GCM + HKDF-SHA-256
  * Double Ratchet + Hybrid Post-Quantum Ready (Kyber768)
  */
@@ -31,6 +31,7 @@ export {
 export { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
 
 export { getOrCreateIdentityKeys } from './keyManagerSafe';
+export { resolveUserIdentity, type IdentityRecoveryMode } from './identityRecovery';
 
 export {
   exportPublicKeyBundle,
