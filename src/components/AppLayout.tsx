@@ -43,7 +43,8 @@ function MobileHeader() {
           <Link to="/feed" className="flex items-center">
             <BrandLogo className="h-6 w-auto" />
           </Link>
-          <UXModeSwitchCompact />
+          <div />
+
         </div>
       </header>
     );
