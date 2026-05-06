@@ -25,9 +25,6 @@ if (import.meta.env.DEV) {
 }
 
 async function cleanupNonCryptoRuntimeCaches() {
-  // Never delete E2EE identity databases here.
-  // Identity recovery must happen through identityBootstrap/accountKeyBackup,
-  // not by wiping IndexedDB on every page load.
   try {
     indexedDB.deleteDatabase('forsure-msg-queue');
   } catch {}
@@ -52,16 +49,25 @@ async function cleanupNonCryptoRuntimeCaches() {
 async function bootstrap() {
   await cleanupNonCryptoRuntimeCaches();
 
-  const [{ default: App }, { activateRuntimeShield }, crypto, identity] = await Promise.all([
+  const [
+    { default: App },
+    { activateRuntimeShield },
+    crypto,
+    identity,
+    sessionInvalidation,
+  ] = await Promise.all([
     import('./App.tsx'),
     import('@/lib/runtimeShield'),
     import('@/lib/crypto'),
     import('@/lib/crypto/identityBootstrap'),
+    import('@/lib/crypto/sessionInvalidation'),
   ]);
 
   activateRuntimeShield();
   crypto.hardenPrototypes();
+
   identity.startIdentityBootstrap();
+  sessionInvalidation.startSessionInvalidationWatcher();
 
   console.info('[E2EE][BUILD] protocol-bootstrap-active', {
     ts: new Date().toISOString(),
