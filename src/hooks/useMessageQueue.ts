@@ -25,6 +25,28 @@ export interface OutboundMessage {
   serverId: string | null;
 }
 
+function inferMediaBody(body: string, imageUrl?: string | null): string {
+  const trimmed = body.trim();
+  if (trimmed) return body;
+  if (!imageUrl) return '';
+
+  const lower = imageUrl.toLowerCase().split('?')[0];
+  if (lower.endsWith('.gif') || lower.includes('image/gif')) return '🎞️ GIF';
+  if (lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.webm') || lower.includes('video')) return '🎬 Vidéo';
+  return '📷 Photo';
+}
+
+function isSpecialMessage(body: string, imageUrl?: string | null): boolean {
+  if (imageUrl) return true;
+  return (
+    body.includes('\x00MKEY:') ||
+    body.startsWith('🎙️ voice:') ||
+    body === '📷 Photo' ||
+    body === '🎬 Vidéo' ||
+    body === '🎞️ GIF'
+  );
+}
+
 export function useMessageQueue(
   conversationId: string,
   encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
@@ -43,7 +65,8 @@ export function useMessageQueue(
   }, [conversationId]);
 
   const sendMessage = useCallback(async (body: string, imageUrl?: string | null) => {
-    if (!user || !body.trim()) return;
+    const effectiveBody = inferMediaBody(body, imageUrl);
+    if (!user || (!effectiveBody.trim() && !imageUrl)) return;
 
     const { data: sess } = await supabase.auth.getSession();
     const liveUserId = sess.session?.user?.id;
@@ -51,19 +74,14 @@ export function useMessageQueue(
       throw new Error('Session expirée — reconnectez-vous pour envoyer.');
     }
 
-    const isMediaWithKey = body.includes('\x00MKEY:');
-    const isSpecial =
-      body.startsWith('🎙️ voice:') ||
-      body === '📷 Photo' ||
-      body === '🎬 Vidéo' ||
-      isMediaWithKey;
+    const isSpecial = isSpecialMessage(effectiveBody, imageUrl);
 
     if (!isSpecial) {
-      const validation = validateMessage(body);
+      const validation = validateMessage(effectiveBody);
       if (!validation.valid) throw new Error(validation.error);
     }
 
-    const sanitized = isSpecial ? body : sanitizeMessageBody(body);
+    const sanitized = isSpecial ? effectiveBody : sanitizeMessageBody(effectiveBody);
     const now = Date.now();
     const localId = `local-${now}-${Math.random().toString(36).slice(2, 8)}`;
     const traceId = safeUUID();
