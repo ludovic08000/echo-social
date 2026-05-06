@@ -3,18 +3,17 @@
  *
  * Never throws. Never returns ciphertext to the UI.
  *
- * Important recovery rule:
- * If local E2EE state was wiped or replaced, old encrypted envelopes may be
- * permanently unreadable. In that case we DROP them once instead of queuing
- * endless retries. This mirrors mainstream secure messengers: the app keeps
- * running, future messages work, and unreadable old payloads are shown as
- * unavailable by the UI layer.
+ * Recovery rule:
+ * - secure pipeline envelopes are validated first: epoch, replay, sender cert.
+ * - legacy encrypted payloads remain supported as fallback.
+ * - unreadable old payloads are dropped once, never retried forever.
  */
 import {
   RATCHET_PREFIX_V3,
   RATCHET_PREFIX_V4,
   ratchetDecrypt as deviceRatchetDecrypt,
 } from '@/lib/crypto/deviceRatchet';
+import { validateInboundSecureEnvelope } from '@/lib/crypto/secureMessagePipeline';
 import { selfDeviceId } from './deviceRegistry';
 import { tryEveryRatchetSession } from './fallbackDecrypt';
 import { legacyDecryptByMessageId, isKnownLegacyFormat } from './legacyDecryptRouter';
@@ -41,8 +40,33 @@ function dropUnreadableEnvelope(messageId: string | undefined, errorCode: string
   };
 }
 
+async function unwrapAndValidateInbound(input: RouteInput): Promise<{ body: string; secureValidated: boolean } | { errorCode: string }> {
+  try {
+    const result = await validateInboundSecureEnvelope({
+      localUserId: input.recipientUserId,
+      messageId: input.messageId,
+      body: input.encryptedBody,
+    });
+
+    return {
+      body: result.body,
+      secureValidated: !!result.meta,
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.warn('[E2EE] secure pipeline validation failed', { messageId: input.messageId, error: msg });
+    return { errorCode: msg || 'SECURE_PIPELINE_INVALID' };
+  }
+}
+
 export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
-  const { encryptedBody, recipientUserId, senderUserId, messageId } = input;
+  const unwrapped = await unwrapAndValidateInbound(input);
+  if ('errorCode' in unwrapped) {
+    return dropUnreadableEnvelope(input.messageId, unwrapped.errorCode);
+  }
+
+  const encryptedBody = unwrapped.body;
+  const { recipientUserId, senderUserId, messageId } = input;
   const me = selfDeviceId();
 
   const seenKey = makeSeenKey({
