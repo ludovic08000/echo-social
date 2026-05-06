@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { safeUUID } from '@/e2ee-session';
+import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
 
 export interface OutboundMessage {
   localId: string;
@@ -24,10 +25,10 @@ export interface OutboundMessage {
 
 export function useMessageQueue(
   conversationId: string,
-  _encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
-  _isEncryptionReady: boolean,
+  encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
+  isEncryptionReady: boolean,
   isEncryptionActive: boolean,
-  _onMessageSent?: (localId: string) => void | Promise<void>,
+  onMessageSent?: (localId: string) => void | Promise<void>,
   allowPlaintext = false,
   onPlaintextCached?: (serverId: string, plaintext: string) => void,
 ) {
@@ -61,34 +62,40 @@ export function useMessageQueue(
     }
 
     const sanitized = isSpecial ? body : sanitizeMessageBody(body);
+    const now = Date.now();
+    const localId = `local-${now}-${Math.random().toString(36).slice(2, 8)}`;
+    const traceId = safeUUID();
 
-    // Test mode: when peer E2EE is required, do not start the persistent
-    // outbound queue. This stops the encrypt-handler retry loop while the
-    // key/PIN recovery flow is being repaired.
+    let bodyToStore = sanitized;
+
     if (isEncryptionActive && !allowPlaintext) {
-      const now = Date.now();
-      const local: OutboundMessage = {
-        localId: `local-${now}-${Math.random().toString(36).slice(2, 8)}`,
-        traceId: safeUUID(),
-        conversationId,
-        senderId: user.id,
-        plaintext: sanitized,
-        encryptedBody: null,
-        imageUrl: imageUrl || null,
-        status: 'failed_visible',
-        retryCount: 0,
-        maxRetries: 0,
-        lastError: 'Mode test : E2EE désactivée temporairement',
-        createdAt: now,
-        updatedAt: now,
-        serverId: null,
-      };
-      setPendingMessages(prev => [...prev, local]);
-      console.warn('[TEST] outbound E2EE send blocked without retry', {
-        localId: local.localId,
-        conversationId,
-      });
-      return local;
+      await ensureUserE2EEIdentity(user.id);
+
+      if (!isEncryptionReady || !encrypt) {
+        const local: OutboundMessage = {
+          localId,
+          traceId,
+          conversationId,
+          senderId: user.id,
+          plaintext: sanitized,
+          encryptedBody: null,
+          imageUrl: imageUrl || null,
+          status: 'failed_visible',
+          retryCount: 0,
+          maxRetries: 0,
+          lastError: 'Chiffrement en préparation — réessayez dans quelques secondes',
+          createdAt: now,
+          updatedAt: now,
+          serverId: null,
+        };
+        setPendingMessages(prev => [...prev, local]);
+        return local;
+      }
+
+      bodyToStore = await encrypt(sanitized, localId);
+      if (!bodyToStore || bodyToStore === sanitized) {
+        throw new Error('Chiffrement indisponible — message non envoyé');
+      }
     }
 
     const { data, error } = await supabase
@@ -96,7 +103,7 @@ export function useMessageQueue(
       .insert({
         conversation_id: conversationId,
         sender_id: user.id,
-        body: sanitized,
+        body: bodyToStore,
         image_url: imageUrl || null,
       })
       .select('id')
@@ -104,15 +111,19 @@ export function useMessageQueue(
 
     if (error) throw error;
     if (!isSpecial) recordSentMessage(sanitized);
-    if (data?.id) onPlaintextCached?.(data.id, sanitized);
+    if (data?.id) {
+      onPlaintextCached?.(data.id, sanitized);
+      await onMessageSent?.(localId);
+    }
+
     queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
-  }, [user, conversationId, isEncryptionActive, allowPlaintext, queryClient, onPlaintextCached]);
+  }, [user, conversationId, encrypt, isEncryptionReady, isEncryptionActive, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
 
   const retryMessage = useCallback(async (localId: string) => {
     setPendingMessages(prev => prev.map(m =>
       m.localId === localId
-        ? { ...m, status: 'failed_visible', lastError: 'Mode test : retry E2EE désactivé', updatedAt: Date.now() }
+        ? { ...m, status: 'failed_visible', lastError: 'Relancez l’envoi après initialisation du chiffrement', updatedAt: Date.now() }
         : m
     ));
   }, []);
@@ -126,6 +137,6 @@ export function useMessageQueue(
     sendMessage,
     retryMessage,
     removeMessage,
-    isInstant: !isEncryptionActive || allowPlaintext,
+    isInstant: !isEncryptionActive || allowPlaintext || isEncryptionReady,
   };
 }
