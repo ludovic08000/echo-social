@@ -43,14 +43,7 @@ function MobileHeader() {
           <Link to="/feed" className="flex items-center">
             <BrandLogo className="h-6 w-auto" />
           </Link>
-          <div className="flex items-center gap-2">
-            <Link to="/login">
-              <Button variant="ghost" size="sm" className="text-xs">Connexion</Button>
-            </Link>
-            <Link to="/signup">
-              <Button size="sm" className="text-xs">S'inscrire</Button>
-            </Link>
-          </div>
+          <UXModeSwitchCompact />
         </div>
       </header>
     );
