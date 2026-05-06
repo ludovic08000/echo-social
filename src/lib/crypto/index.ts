@@ -32,6 +32,13 @@ export { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
 
 export { getOrCreateIdentityKeys } from './keyManagerSafe';
 export { resolveUserIdentity, type IdentityRecoveryMode } from './identityRecovery';
+export {
+  createSecureBackupVault,
+  restoreSecureBackupVault,
+  hasSecureBackupVault,
+  type CreatedSecureBackupVault,
+  type SecureBackupVaultPayload,
+} from './secureBackupVault';
 
 export {
   exportPublicKeyBundle,
