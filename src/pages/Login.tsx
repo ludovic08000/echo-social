@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
-import forsureBanner from '@/assets/forsure-banner.jpg';
+import forsureBanner from '@/assets/forsure-loader.png';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
