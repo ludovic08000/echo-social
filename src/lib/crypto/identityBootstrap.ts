@@ -3,6 +3,7 @@ import { exportPublicKeyBundle, type IdentityKeyPair } from './keyManager';
 import { refreshSignedPrekeyIfNeeded } from './x3dh';
 import { resolveUserIdentity } from './identityRecovery';
 import { createSecureBackupVault, hasSecureBackupVault } from './secureBackupVault';
+import { ensureServerCryptoState, markServerCryptoReady } from './serverCryptoState';
 
 const BOOTSTRAP_TTL_MS = 30_000;
 const attempts = new Map<string, Promise<void>>();
@@ -24,6 +25,12 @@ async function publishIdentity(userId: string, keys: IdentityKeyPair): Promise<v
     }, { onConflict: 'user_id,is_active' });
 
   if (error) throw error;
+
+  try {
+    await markServerCryptoReady(bundle.fingerprint);
+  } catch (error) {
+    console.warn('[E2EE][SERVER_STATE] ready update skipped', error);
+  }
 
   try {
     await refreshSignedPrekeyIfNeeded(userId, keys.signingPrivateKey);
@@ -77,6 +84,12 @@ export async function ensureUserE2EEIdentity(userId: string): Promise<void> {
   if (existing) return existing;
 
   const attempt = (async () => {
+    try {
+      await ensureServerCryptoState();
+    } catch (error) {
+      console.warn('[E2EE][SERVER_STATE] provisioning skipped', error);
+    }
+
     const { keys, mode } = await resolveUserIdentity(userId);
     await publishIdentity(userId, keys);
     await ensureEncryptedBackupVault(userId);
