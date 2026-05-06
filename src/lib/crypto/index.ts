@@ -5,9 +5,6 @@
  * Double Ratchet + Hybrid Post-Quantum Ready (Kyber768)
  */
 
-// NOTE: Legacy single-key envelope helpers are still exported from './e2ee'
-// for internal modules that need symmetric primitives (mediaEncrypt,
-// callKeyEncrypt, accountKeyBackup). They are NOT used for messaging anymore.
 export {
   encryptMessage,
   decryptMessage,
@@ -16,7 +13,6 @@ export {
   type EncryptedEnvelope,
 } from './e2ee';
 
-// Double Ratchet (primary protocol for 1:1 DMs)
 export {
   initRatchetAsInitiator,
   initRatchetAsResponder,
@@ -32,16 +28,11 @@ export {
   type RatchetReadiness,
 } from './ratchet';
 
-// KDF chains
 export { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
 
-// Key management
-// NOTE: loadSessionKey/saveSessionKey/establishSession are kept for non-message
-// flows that still rely on a per-conversation symmetric session
-// (call key encryption, account key backup). Messaging itself uses Double
-// Ratchet exclusively and never touches these helpers anymore.
+export { getOrCreateIdentityKeys } from './keyManagerSafe';
+
 export {
-  getOrCreateIdentityKeys,
   exportPublicKeyBundle,
   loadSessionKey,
   saveSessionKey,
@@ -62,7 +53,6 @@ export {
   PQ_KEM_ID,
 } from './constants';
 
-// Anti-exfiltration rate limiter
 export {
   cryptoRateCheck,
   isCryptoLocked,
@@ -71,7 +61,6 @@ export {
   onAutoWipe,
 } from './rateLimiter';
 
-// Integrity shield (anti-tampering)
 export {
   hardCrypto,
   verifyCryptoIntegrity,
@@ -83,7 +72,6 @@ export {
   scrubBuffer,
 } from './cryptoIntegrity';
 
-// PIN wrapping (keys encrypted at rest)
 export {
   wrapKeysWithPin,
   unwrapKeysWithPin,
@@ -91,7 +79,6 @@ export {
   deleteWrappedKeys,
 } from './pinWrap';
 
-// X3DH key agreement (Signal spec)
 export {
   x3dhInitiate,
   x3dhRespond,
