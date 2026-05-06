@@ -2,6 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { exportPublicKeyBundle, type IdentityKeyPair } from './keyManager';
 import { refreshSignedPrekeyIfNeeded } from './x3dh';
 import { resolveUserIdentity } from './identityRecovery';
+import { createSecureBackupVault, hasSecureBackupVault } from './secureBackupVault';
 
 const BOOTSTRAP_TTL_MS = 30_000;
 const attempts = new Map<string, Promise<void>>();
@@ -42,6 +43,30 @@ async function publishIdentity(userId: string, keys: IdentityKeyPair): Promise<v
   });
 }
 
+async function ensureEncryptedBackupVault(userId: string) {
+  try {
+    const exists = await hasSecureBackupVault(userId);
+    if (exists) return;
+
+    const backup = await createSecureBackupVault(userId);
+    if (!backup) return;
+
+    try {
+      window.dispatchEvent(new CustomEvent('forsure-e2ee-backup-created', {
+        detail: {
+          userId,
+          fingerprint: backup.fingerprint,
+          recoveryKey: backup.recoveryKey,
+        },
+      }));
+    } catch {}
+
+    console.info('[E2EE][BACKUP] encrypted recovery vault created');
+  } catch (error) {
+    console.warn('[E2EE][BACKUP] vault creation skipped', error);
+  }
+}
+
 export async function ensureUserE2EEIdentity(userId: string): Promise<void> {
   if (!userId) return;
 
@@ -54,6 +79,8 @@ export async function ensureUserE2EEIdentity(userId: string): Promise<void> {
   const attempt = (async () => {
     const { keys, mode } = await resolveUserIdentity(userId);
     await publishIdentity(userId, keys);
+    await ensureEncryptedBackupVault(userId);
+
     lastSuccessAt.set(userId, Date.now());
 
     if (mode === 'new_epoch') {
