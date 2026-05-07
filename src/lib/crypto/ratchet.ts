@@ -57,6 +57,11 @@ export interface RatchetState {
    */
   myIdentityKeyB64?: string;
   peerIdentityKeyB64?: string;
+  /**
+   * X3DH role for canonical AD ordering (initiator IK first). Optional for
+   * backward-compat with v2 states loaded from disk before the upgrade.
+   */
+  role?: 'initiator' | 'responder';
 }
 
 export interface RatchetHeader {
@@ -169,6 +174,7 @@ export async function initRatchetAsInitiator(
     skippedKeys: new Map(),
     myIdentityKeyB64: identityKeys?.myIdentityKeyB64,
     peerIdentityKeyB64: identityKeys?.peerIdentityKeyB64,
+    role: 'initiator',
   };
 }
 
@@ -200,6 +206,7 @@ export async function initRatchetAsResponder(
     // From responder's POV: peerIdentityKeyB64 = IKa (initiator), myIdentityKeyB64 = IKb (us).
     myIdentityKeyB64: identityKeys?.myIdentityKeyB64,
     peerIdentityKeyB64: identityKeys?.peerIdentityKeyB64,
+    role: 'responder',
   };
 }
 
