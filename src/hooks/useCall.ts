@@ -39,6 +39,7 @@ export function useCall(options?: UseCallOptions) {
   const [duration, setDuration] = useState(0);
   const [isE2eeActive, setIsE2eeActive] = useState(false);
   const [connectionQuality, setConnectionQuality] = useState<'excellent' | 'good' | 'poor' | 'lost' | 'unknown'>('unknown');
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
 
   const roomRef = useRef<Room | null>(null);
   const localVideoRef = useRef<HTMLDivElement | null>(null);
@@ -511,6 +512,7 @@ export function useCall(options?: UseCallOptions) {
     try {
       const enabled = room.localParticipant.isScreenShareEnabled;
       await room.localParticipant.setScreenShareEnabled(!enabled, { audio: true });
+      setIsScreenSharing(!enabled);
       if (!enabled) toast.success('Partage d\u2019\u00e9cran activ\u00e9');
       else toast.message('Partage d\u2019\u00e9cran arr\u00eat\u00e9');
     } catch (err) {
@@ -567,6 +569,7 @@ export function useCall(options?: UseCallOptions) {
     endCall,
     toggleMute,
     toggleCamera,
+    isScreenSharing,
     switchToVideo,
     switchCamera,
     toggleScreenShare,
