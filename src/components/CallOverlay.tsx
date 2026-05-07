@@ -213,6 +213,24 @@ export function CallOverlay({
             </Button>
           )}
 
+          {/* Screen share (desktop, video calls) */}
+          {isVideo && onToggleScreenShare && platform === 'web' && (
+            <Button
+              size="icon"
+              variant="secondary"
+              onClick={onToggleScreenShare}
+              className={cn(
+                'w-14 h-14 rounded-full',
+                isScreenSharing
+                  ? 'bg-primary/80 hover:bg-primary text-primary-foreground'
+                  : 'bg-white/20 hover:bg-white/30 text-white'
+              )}
+              title="Partager l'écran"
+            >
+              <MonitorUp className="w-6 h-6" />
+            </Button>
+          )}
+
           {/* End call */}
           <Button
             size="icon"
