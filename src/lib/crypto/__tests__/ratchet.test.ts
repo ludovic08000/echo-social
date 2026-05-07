@@ -25,11 +25,23 @@ async function setupAliceAndBob() {
   // Bob generates his DH pair first (responder)
   const bobDhPair = await crypto.subtle.generateKey(KX, true, ['deriveBits']) as CryptoKeyPair;
 
-  // Alice init with Bob's public key
-  const aliceState = await initRatchetAsInitiator('conv-1', sharedSecret, bobDhPair.publicKey);
+  // Identity keys (required for v4 envelope AAD)
+  const aliceIK = await crypto.subtle.generateKey(SIG, true, ['sign', 'verify']) as CryptoKeyPair;
+  const bobIK = await crypto.subtle.generateKey(SIG, true, ['sign', 'verify']) as CryptoKeyPair;
+  const aliceIKB64 = bufferToBase64(await crypto.subtle.exportKey('raw', aliceIK.publicKey));
+  const bobIKB64 = bufferToBase64(await crypto.subtle.exportKey('raw', bobIK.publicKey));
 
-  // Bob init
-  const bobState = await initRatchetAsResponder('conv-1', sharedSecret, bobDhPair);
+  // Alice (initiator): myIK = Alice, peerIK = Bob
+  const aliceState = await initRatchetAsInitiator('conv-1', sharedSecret, bobDhPair.publicKey, {
+    myIdentityKeyB64: aliceIKB64,
+    peerIdentityKeyB64: bobIKB64,
+  });
+
+  // Bob (responder): myIK = Bob, peerIK = Alice
+  const bobState = await initRatchetAsResponder('conv-1', sharedSecret, bobDhPair, {
+    myIdentityKeyB64: bobIKB64,
+    peerIdentityKeyB64: aliceIKB64,
+  });
 
   // Signing keys
   const aliceSig = await crypto.subtle.generateKey(SIG, true, ['sign', 'verify']) as CryptoKeyPair;
