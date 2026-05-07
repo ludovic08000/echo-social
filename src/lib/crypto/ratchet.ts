@@ -87,6 +87,14 @@ export interface RatchetEnvelope {
   sig: string;
   fp: string;
   ts: number;
+  /**
+   * Lot B — length-padding flag.
+   *   undefined / 0 → legacy (raw UTF-8 plaintext, no padding)
+   *   1             → plaintext padded with `padPlaintext()` (bucketed)
+   * Decrypt routes on this flag: must NEVER assume padding without it,
+   * otherwise pre-flag messages would lose their trailing 0x80 lookalikes.
+   */
+  pad?: 0 | 1;
 }
 
 const MAX_SKIP = RATCHET_MAX_SKIP; // Signal-conformant DoS protection ceiling
