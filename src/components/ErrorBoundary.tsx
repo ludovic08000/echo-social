@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 interface Props {
   children: React.ReactNode;
   fallback?: React.ReactNode;
+  /** When this key changes (e.g. route pathname), the boundary auto-resets. */
+  resetKey?: string;
 }
 
 interface State {
@@ -26,8 +28,23 @@ export class ErrorBoundary extends React.Component<Props, State> {
     console.error('[ErrorBoundary]', error, info.componentStack);
   }
 
+  componentDidUpdate(prevProps: Props) {
+    // Auto-reset when navigating to a new route — avoids "stuck" boundary after navigation.
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false, error: undefined });
+    }
+  }
+
   handleRetry = () => {
+    // First try a soft reset; if the error was a stale lazy chunk it will re-throw on next render
+    // and the user can hit "Recharger la page" below. We expose both options to avoid surprise reloads.
     this.setState({ hasError: false, error: undefined });
+  };
+
+  handleHardReload = () => {
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
   };
 
   render() {
@@ -42,18 +59,28 @@ export class ErrorBoundary extends React.Component<Props, State> {
           <div>
             <h3 className="font-semibold text-foreground mb-1">Quelque chose s'est mal passé</h3>
             <p className="text-sm text-muted-foreground max-w-sm">
-              Une erreur inattendue est survenue. Essayez de rafraîchir cette section.
+              Une erreur inattendue est survenue. Essayez de réessayer, ou rechargez la page si le problème persiste.
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={this.handleRetry}
-            className="gap-2 rounded-xl"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Réessayer
-          </Button>
+          <div className="flex flex-wrap gap-2 justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={this.handleRetry}
+              className="gap-2 rounded-xl"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Réessayer
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={this.handleHardReload}
+              className="gap-2 rounded-xl"
+            >
+              Recharger la page
+            </Button>
+          </div>
         </div>
       );
     }
