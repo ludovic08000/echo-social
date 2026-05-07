@@ -319,6 +319,16 @@ export function useCall(options?: UseCallOptions) {
         track.detach().forEach(el => el.remove());
       });
 
+      // Network quality indicator (WhatsApp-style)
+      room.on(RoomEvent.ConnectionQualityChanged, (quality) => {
+        const q = quality === ConnectionQuality.Excellent ? 'excellent'
+          : quality === ConnectionQuality.Good ? 'good'
+          : quality === ConnectionQuality.Poor ? 'poor'
+          : quality === ConnectionQuality.Lost ? 'lost'
+          : 'unknown';
+        setConnectionQuality(q);
+      });
+
       room.on(RoomEvent.Disconnected, (reason) => {
         if (endingRef.current) {
           console.debug('[CALL] RoomEvent.Disconnected ignored — safeDisconnect already running');
