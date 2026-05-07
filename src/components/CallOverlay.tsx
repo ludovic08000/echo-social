@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils';
 import { CallState, CallType, formatCallDuration } from '@/hooks/useCall';
 import { RefObject } from 'react';
 import { getPlatform } from '@/lib/platformPermissions';
+import { GroupCallGrid } from '@/components/calls/GroupCallGrid';
+import type { Room } from 'livekit-client';
 
 interface CallOverlayProps {
   callState: CallState;
@@ -25,6 +27,10 @@ interface CallOverlayProps {
   onSwitchCamera?: () => void;
   onToggleScreenShare?: () => void;
   isScreenSharing?: boolean;
+  // Group call extension
+  isGroup?: boolean;
+  room?: Room | null;
+  participantsInfo?: Record<string, { identity: string; name?: string; avatar?: string }>;
 }
 
 export function CallOverlay({
