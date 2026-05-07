@@ -63,8 +63,16 @@ const SIGNAL_LABEL: Record<string, number> = {
   skip_fast: -0.4,
 };
 
+// Wall-clock budget so we always return cleanly before Supabase's hard timeout
+// (defaults to ~150s on Edge Functions). We exit early and persist whatever
+// progress was made — better partial training than a 500.
+const SOFT_BUDGET_MS = 90_000;
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  const startedAt = Date.now();
+  const overBudget = () => Date.now() - startedAt > SOFT_BUDGET_MS;
 
   try {
     const supabase = createClient(
@@ -111,8 +119,9 @@ Deno.serve(async (req) => {
 
     // 3) Mini-batch SGD: for each (user, post, label), nudge embeddings so dot ≈ label
     let totalLoss = 0;
+    let epochsRun = 0;
     for (let epoch = 0; epoch < EPOCHS; epoch++) {
-      // Shuffle
+      if (overBudget()) break;
       const order = interactions.map((_, i) => i).sort(() => Math.random() - 0.5);
       for (const idx of order) {
         const it = interactions[idx];
@@ -122,7 +131,6 @@ Deno.serve(async (req) => {
         const pred = Math.tanh(dot(u, p));
         const err = pred - label;
         totalLoss += err * err;
-        // Gradient: dL/du = err * (1 - pred^2) * p
         const grad = err * (1 - pred * pred);
         for (let i = 0; i < EMBED_DIM; i++) {
           const gu = grad * p[i];
@@ -131,27 +139,37 @@ Deno.serve(async (req) => {
           p[i] -= LR * gp;
         }
       }
+      epochsRun++;
+    }
+
+    // Pre-compute training_samples counts in O(N) instead of O(N*M)
+    const userSampleCount = new Map<string, number>();
+    const postSampleCount = new Map<string, number>();
+    for (const it of interactions) {
+      userSampleCount.set(it.user_id, (userSampleCount.get(it.user_id) || 0) + 1);
+      postSampleCount.set(it.post_id, (postSampleCount.get(it.post_id) || 0) + 1);
     }
 
     // 4) Normalize and persist
+    const nowIso = new Date().toISOString();
     const userRows = [];
     const postRows = [];
     for (const [uid, vec] of userMap) {
       userRows.push({
         user_id: uid,
         embedding: toPgVector(l2Normalize(vec)),
-        training_samples: interactions.filter((i) => i.user_id === uid).length,
-        last_trained_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        training_samples: userSampleCount.get(uid) || 0,
+        last_trained_at: nowIso,
+        updated_at: nowIso,
       });
     }
     for (const [pid, vec] of postMap) {
       postRows.push({
         post_id: pid,
         embedding: toPgVector(l2Normalize(vec)),
-        training_samples: interactions.filter((i) => i.post_id === pid).length,
-        last_trained_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        training_samples: postSampleCount.get(pid) || 0,
+        last_trained_at: nowIso,
+        updated_at: nowIso,
       });
     }
 
@@ -160,16 +178,19 @@ Deno.serve(async (req) => {
       Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
 
     for (const c of chunk(userRows, 200)) {
+      if (overBudget()) break;
       await supabase.from("ml_user_embeddings").upsert(c, { onConflict: "user_id" });
     }
     for (const c of chunk(postRows, 200)) {
+      if (overBudget()) break;
       await supabase.from("ml_post_embeddings").upsert(c, { onConflict: "post_id" });
     }
 
-    // 5) Refresh multi-head scores for trained posts (capped to avoid timeout)
-    const postsToRefresh = postIds.slice(0, 500);
+    // 5) Refresh multi-head scores for trained posts (capped + budgeted)
+    const postsToRefresh = overBudget() ? [] : postIds.slice(0, 500);
     await Promise.all(
       postsToRefresh.map(async (pid) => {
+        if (overBudget()) return;
         try {
           await supabase.rpc("ml_compute_post_scores", { p_post_id: pid });
         } catch (_e) {
@@ -183,8 +204,11 @@ Deno.serve(async (req) => {
         trained_samples: interactions.length,
         users_updated: userRows.length,
         posts_updated: postRows.length,
-        avg_loss: totalLoss / (interactions.length * EPOCHS),
+        epochs_run: epochsRun,
+        avg_loss: epochsRun > 0 ? totalLoss / (interactions.length * epochsRun) : null,
         scores_refreshed: postsToRefresh.length,
+        elapsed_ms: Date.now() - startedAt,
+        budget_hit: overBudget(),
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
