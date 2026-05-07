@@ -56,27 +56,19 @@ export async function startGroupCall(
 
 /** Mark current user as accepted */
 export async function acceptGroupCall(callId: string, userId: string): Promise<void> {
-  await supabase.rpc('append_to_group_call_array', {
-    p_call_id: callId,
-    p_field: 'accepted_by',
-    p_user_id: userId,
-  }).throwOnError().then(() => {}, () => {});
-
-  // Fallback if RPC missing — direct update
   const { data } = await supabase.from('active_calls').select('accepted_by, status').eq('id', callId).single();
-  if (data) {
-    const next = Array.from(new Set([...(data.accepted_by ?? []), userId]));
-    await supabase.from('active_calls').update({
-      accepted_by: next,
-      status: data.status === 'ringing' ? 'accepted' : data.status,
-    }).eq('id', callId);
-  }
+  if (!data) return;
+  const next = Array.from(new Set([...((data.accepted_by as string[] | null) ?? []), userId]));
+  await supabase.from('active_calls').update({
+    accepted_by: next,
+    status: data.status === 'ringing' ? 'accepted' : data.status,
+  }).eq('id', callId);
 }
 
 /** Mark current user as declined */
 export async function declineGroupCall(callId: string, userId: string): Promise<void> {
   const { data } = await supabase.from('active_calls').select('declined_by').eq('id', callId).single();
   if (!data) return;
-  const next = Array.from(new Set([...(data.declined_by ?? []), userId]));
+  const next = Array.from(new Set([...((data.declined_by as string[] | null) ?? []), userId]));
   await supabase.from('active_calls').update({ declined_by: next }).eq('id', callId);
 }
