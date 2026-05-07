@@ -30,8 +30,8 @@ import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Feed from "./pages/Feed";
-import Dashboard from "./pages/Dashboard";
-import AdsManager from "./pages/AdsManager";
+// Dashboard and AdsManager are heavy admin/creator surfaces; lazy-load them
+// so they don't bloat the initial bundle for casual visitors landing on /.
 import NotFound from "./pages/NotFound";
 
 // Lazy-load with auto-retry on chunk errors (deploy / cache invalidation)
@@ -95,7 +95,8 @@ const SEOSecurity = lazyWithOneRetry(() => import("./pages/seo/SEOSecurity"), 'r
 const SEOModeration = lazyWithOneRetry(() => import("./pages/seo/SEOModeration"), 'r-seo-mod');
 const SEOProtection = lazyWithOneRetry(() => import("./pages/seo/SEOProtection"), 'r-seo-prot');
 const SEOFeed = lazyWithOneRetry(() => import("./pages/seo/SEOFeed"), 'r-seo-feed');
-// Dashboard is now eagerly loaded above
+const Dashboard = lazyWithOneRetry(() => import("./pages/Dashboard"), 'r-dash');
+const AdsManager = lazyWithOneRetry(() => import("./pages/AdsManager"), 'r-ads');
 
 const queryClient = new QueryClient();
 
