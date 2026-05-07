@@ -246,8 +246,24 @@ export function ChatView({ conversationId }: ChatViewProps) {
     const isVideo = /\.(mp4|mov|webm|avi|mkv)/i.test(file.name);
     const label = isVideo ? '🎬 Vidéo' : '📷 Photo';
 
-    // Compress still images before upload (skipped for videos / tiny files).
-    const prepared = isVideo ? file : await compressImageForChat(file);
+    // Compress before upload: video → ffmpeg.wasm H.264 720p (lazy-loaded),
+    // image → existing canvas-based pipeline. Falls back gracefully on iOS
+    // PWA / no SharedArrayBuffer (returns the original blob).
+    let prepared: File = file;
+    if (isVideo) {
+      try {
+        const { compressVideoForChat } = await import('@/lib/messaging/compressVideo');
+        const result = await compressVideoForChat(file);
+        prepared = result.compressed
+          ? new File([result.blob], file.name.replace(/\.[^.]+$/, '.mp4'), { type: 'video/mp4' })
+          : file;
+      } catch {
+        prepared = file;
+      }
+    } else {
+      const compressed = await compressImageForChat(file);
+      prepared = compressed instanceof File ? compressed : new File([compressed], file.name, { type: file.type });
+    }
 
     if (isZeusConversation) {
       const url = await rawUpload(prepared);
@@ -544,7 +560,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <input ref={fileInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleFileChange} />
+      <input ref={fileInputRef} type="file" accept="image/*,video/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/zip" className="hidden" onChange={handleFileChange} />
 
       {/* Header */}
       <header className="sticky top-0 z-40 bg-background border-b border-border/40 safe-area-pt">

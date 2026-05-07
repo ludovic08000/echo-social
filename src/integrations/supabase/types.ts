@@ -2745,33 +2745,51 @@ export type Database = {
           body_kind: string
           conversation_id: string
           created_at: string
+          document_mime: string | null
+          document_name: string | null
+          document_size_bytes: number | null
+          document_url: string | null
           expires_at: string | null
           id: string
           image_url: string | null
           sender_id: string
           status: string
+          view_once: boolean
+          viewed_at: string | null
         }
         Insert: {
           body: string
           body_kind?: string
           conversation_id: string
           created_at?: string
+          document_mime?: string | null
+          document_name?: string | null
+          document_size_bytes?: number | null
+          document_url?: string | null
           expires_at?: string | null
           id?: string
           image_url?: string | null
           sender_id: string
           status?: string
+          view_once?: boolean
+          viewed_at?: string | null
         }
         Update: {
           body?: string
           body_kind?: string
           conversation_id?: string
           created_at?: string
+          document_mime?: string | null
+          document_name?: string | null
+          document_size_bytes?: number | null
+          document_url?: string | null
           expires_at?: string | null
           id?: string
           image_url?: string | null
           sender_id?: string
           status?: string
+          view_once?: boolean
+          viewed_at?: string | null
         }
         Relationships: [
           {
