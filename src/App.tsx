@@ -32,6 +32,7 @@ import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Feed from "./pages/Feed";
+import Profile from "./pages/Profile";
 // Dashboard and AdsManager are heavy admin/creator surfaces; lazy-load them
 // so they don't bloat the initial bundle for casual visitors landing on /.
 import NotFound from "./pages/NotFound";
@@ -67,9 +68,10 @@ const lazyWithOneRetry = <TModule extends { default: React.ComponentType<any> }>
     if (!isChunkLoadError(e1)) throw e1;
     // The browser module map caches the failed URL — re-importing the same URL
     // won't help. Hard reload to fetch a fresh ?t= timestamp / new build hash.
-    const alreadyRetried = sessionStorage.getItem(retryKey) === '1';
-    if (!alreadyRetried) {
-      sessionStorage.setItem(retryKey, '1');
+    const lastRetry = Number(sessionStorage.getItem(retryKey) || '0');
+    const canRetry = !lastRetry || Date.now() - lastRetry > 8000;
+    if (canRetry) {
+      sessionStorage.setItem(retryKey, String(Date.now()));
       window.location.reload();
       return new Promise<TModule>(() => {}); // suspend until reload
     }
@@ -79,7 +81,6 @@ const lazyWithOneRetry = <TModule extends { default: React.ComponentType<any> }>
 
 const PostDetail = lazyWithOneRetry(() => import("./pages/PostDetail"), 'r-post');
 const CreatePostPage = lazyWithOneRetry(() => import("./pages/CreatePostPage"), 'r-create');
-const Profile = lazyWithOneRetry(() => import("./pages/Profile"), 'r-profile');
 const Search = lazyWithOneRetry(() => import("./pages/Search"), 'r-search');
 const Notifications = lazyWithOneRetry(() => import("./pages/Notifications"), 'r-notifs');
 const Settings = lazyWithOneRetry(() => import("./pages/Settings"), 'r-settings');
