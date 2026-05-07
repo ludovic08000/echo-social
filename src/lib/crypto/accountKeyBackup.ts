@@ -508,13 +508,14 @@ async function uploadBackup(
   const keysJson = await collectAllKeys();
   if (!keysJson) return false;
 
-  // 1. Encrypt all E2EE state with Master Key
-  const { encrypted, iv: dataIv } = await encryptWithMasterKey(keysJson, masterKey);
+  // 1. Encrypt all E2EE state with Master Key (AAD-bound to userId|backupType|version)
+  const aad = buildBackupAAD(userId, backupType, BACKUP_VERSION);
+  const { encrypted, iv: dataIv } = await encryptWithMasterKey(keysJson, masterKey, aad);
 
-  // 2. Wrap Master Key with the wrapping secret (password or recovery key)
+  // 2. Wrap Master Key with the wrapping secret (password or recovery key), AAD-bound
   const salt = hardCrypto.getRandomValues(new Uint8Array(SALT_LENGTH));
   const wrappingKey = await deriveWrappingKey(wrappingSecret, salt);
-  const { wrapped, iv: mkIv } = await wrapMasterKey(masterKeyRaw, wrappingKey);
+  const { wrapped, iv: mkIv } = await wrapMasterKey(masterKeyRaw, wrappingKey, aad);
 
   // 3. Upload
   const { error } = await supabase
