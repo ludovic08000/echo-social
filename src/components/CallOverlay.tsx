@@ -52,6 +52,9 @@ export function CallOverlay({
   onSwitchCamera,
   onToggleScreenShare,
   isScreenSharing,
+  isGroup,
+  room,
+  participantsInfo,
 }: CallOverlayProps) {
   if (callState === 'idle') return null;
 
