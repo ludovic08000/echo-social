@@ -1073,18 +1073,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       </div>
 
-      {/* E2EE Status */}
-      {!isZeusConversation && (
-        <EncryptionStatusBar
-          encrypted={e2ee.encrypted}
-          fingerprint={e2ee.fingerprint}
-          peerFingerprint={e2ee.peerFingerprint}
-          ratchetActive={e2ee.ratchetActive}
-          fingerprintChanged={e2ee.fingerprintChanged}
-          peerName={conversation?.participant?.name || 'Contact'}
-          conversationId={conversationId || ''}
-        />
-      )}
+      {/* E2EE Status bar removed per user request — encryption is silent */}
 
       {/* Fingerprint change banner removed per user request — silent re-keying */}
 
