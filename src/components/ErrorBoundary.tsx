@@ -1,6 +1,8 @@
 import React from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { captureCrash, getLastCrash, type CrashContext } from '@/lib/crashLogger';
+import { CrashDetails } from '@/components/CrashDetails';
 
 interface Props {
   children: React.ReactNode;
@@ -12,6 +14,7 @@ interface Props {
 interface State {
   hasError: boolean;
   error?: Error;
+  crash?: CrashContext | null;
 }
 
 export class ErrorBoundary extends React.Component<Props, State> {
@@ -26,6 +29,13 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('[ErrorBoundary]', error, info.componentStack);
+    const crash = captureCrash({
+      message: error.message || 'react.boundary',
+      source: 'react.boundary',
+      stack: error.stack,
+      componentStack: info.componentStack ?? undefined,
+    }) ?? getLastCrash();
+    this.setState({ crash });
   }
 
   componentDidUpdate(prevProps: Props) {
@@ -81,6 +91,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
               Recharger la page
             </Button>
           </div>
+          {(this.state.crash ?? getLastCrash()) && (
+            <CrashDetails crash={(this.state.crash ?? getLastCrash())!} />
+          )}
         </div>
       );
     }
