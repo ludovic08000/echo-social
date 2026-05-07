@@ -47,12 +47,21 @@ export const STORE_PREKEYS = 'pre-keys';
 // Protocol version (bump = breaking change)
 //   v1 — legacy P-384 envelopes (read-only)
 //   v2 — X25519 + Ed25519, no AAD on AES-GCM (still readable for migration)
-//   v3 — current: AES-GCM additionalData = "FORSURE-AD-v3|" || base64(IKa) || "|" || base64(IKb)
-//        bound to X3DH identity keys (Signal X3DH §3.3). Decrypt accepts both v2 and v3.
-export const PROTOCOL_VERSION = 3;
+//   v3 — AES-GCM AAD = "FORSURE-AD-v3|" || IKa || IKb (Signal X3DH §3.3 binding)
+//   v4 — Signal Double Ratchet rev.4 §3.4 conformance: AAD = id_AD || canonical(header)
+//        so the header (DH pub, n, pn) is cryptographically bound to ciphertext.
+//        Decrypt accepts v2, v3, and v4 transparently.
+export const PROTOCOL_VERSION = 4;
 
-/** Domain-separation prefix used inside Associated Data of v3 ratchet envelopes (reserved). */
+/** Domain-separation prefix used inside Associated Data of v3+ ratchet envelopes. */
 export const AD_PREFIX_V3 = 'FORSURE-AD-v3|';
+/** Header-binding prefix for v4 envelopes (Signal Double Ratchet §3.4). */
+export const AD_HEADER_PREFIX_V4 = 'FORSURE-HDR-v4|';
+
+/** Double Ratchet skipped message keys limits (Signal §2.6 + DoS protection). */
+export const RATCHET_MAX_SKIP = 1000;
+export const RATCHET_MAX_SKIPPED_CACHE = 2000;
+export const RATCHET_SKIPPED_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // KEM identifiers
 export const PQ_KEM_ID = 'HYBRID-X25519-KYBER768';
