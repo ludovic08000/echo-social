@@ -19,6 +19,12 @@ function resetE2EEDB() {
   dbPromise = null;
 }
 
+export async function reopenE2EEDB(): Promise<IDBDatabase> {
+  resetE2EEDB();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  return openE2EEDB();
+}
+
 export function isIndexedDBClosingError(error: unknown): boolean {
   return (
     error instanceof DOMException &&
