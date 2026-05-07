@@ -155,6 +155,7 @@ export function useMessageQueue(
         sender_id: user.id,
         body: bodyToStore,
         image_url: imageUrl || null,
+        ...(extra || {}),
       })
       .select('id')
       .single();
