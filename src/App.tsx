@@ -21,6 +21,7 @@ import { useAccountKeySync } from "@/hooks/useAccountKeySync";
 import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
 import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
 import { startRealtimeKeySync } from "@/lib/messaging/realtimeKeySync";
+import { catchUpSenderKeyDistribution, subscribeSenderKeyDistribution } from "@/lib/crypto/senderKeyInbound";
 import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
@@ -188,6 +189,20 @@ function AccountKeySyncRunner() {
     if (!user?.id) return;
     const stop = startRealtimeKeySync({ userId: user.id });
     return () => stop();
+  }, [user?.id]);
+
+  // Sender Keys inbound: catch up undelivered SKDMs at boot, then subscribe
+  // to realtime inserts so opted-in conversations install the chain on the fly.
+  useEffect(() => {
+    if (!user?.id) return;
+    void catchUpSenderKeyDistribution(user.id);
+    const unsub = subscribeSenderKeyDistribution(user.id);
+    const onFocus = () => { void catchUpSenderKeyDistribution(user.id); };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      unsub();
+      window.removeEventListener('focus', onFocus);
+    };
   }, [user?.id]);
 
   // PR #13 — listen for forced device-kx restore (server has a key we can't match)
