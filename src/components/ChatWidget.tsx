@@ -364,6 +364,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showScrollDown, setShowScrollDown] = useState(false);
+  const [isStartingCall, setIsStartingCall] = useState(false);
   const shouldAutoScrollRef = useRef(true);
   const lastScrollSigRef = useRef('');
 
@@ -625,14 +626,29 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const handleMediaFile = useCallback(async (file: File) => {
     const label = '📷 Photo';
 
+    // Pre-flight checks: catch the obvious failure modes BEFORE upload so the
+    // user sees a clear message instead of the generic "Erreur envoi photo".
+    if (!file || file.size === 0) {
+      toast.error('Photo invalide ou vide');
+      return;
+    }
+    const MAX_PHOTO_BYTES = 25 * 1024 * 1024; // 25 MB
+    if (file.size > MAX_PHOTO_BYTES) {
+      toast.error(`Photo trop lourde (max ${Math.round(MAX_PHOTO_BYTES / 1024 / 1024)} Mo)`);
+      return;
+    }
+
     if (isZeusConversation) {
-      const url = await rawUpload(file);
-      if (url) {
-        if (isZeusConversation) {
-          sendMessage.mutate({ conversationId, body: label, imageUrl: url });
-        } else {
-          queue.sendMessage(label, url).catch(() => toast.error('Erreur envoi photo'));
+      try {
+        const url = await rawUpload(file);
+        if (!url) {
+          toast.error("Échec de l'envoi : upload refusé");
+          return;
         }
+        sendMessage.mutate({ conversationId, body: label, imageUrl: url });
+      } catch (err) {
+        console.error('[ChatWidget] Zeus photo upload failed', err);
+        toast.error(err instanceof Error ? `Erreur envoi photo : ${err.message}` : 'Erreur envoi photo');
       }
       return;
     }
@@ -648,7 +664,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         const body = buildMediaMessageBody(label, keyB64);
         queue.sendMessage(body, url).catch((e) => {
           logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send', isVideo: false } });
-          toast.error('Erreur envoi photo');
+          console.error('[ChatWidget] queue.sendMessage rejected for photo', e);
+          toast.error(e instanceof Error ? `Erreur envoi photo : ${e.message}` : 'Erreur envoi photo');
         });
         logCryptoError({
           severity: 'info', context: 'media', errorCode: 'MEDIA_ENCRYPT_OK',
@@ -663,6 +680,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           conversationId,
           metadata: { sizeBytes: file.size, mime: file.type },
         });
+        toast.error("Échec de l'envoi : upload refusé par le serveur");
       }
     } catch (err) {
       console.error('Media encryption failed:', err);
@@ -671,7 +689,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         conversationId,
         metadata: { stage: 'encrypt_upload', sizeBytes: file.size, mime: file.type, durationMs: Math.round(performance.now() - t0) },
       });
-      toast.error('Erreur de chiffrement du média');
+      toast.error(err instanceof Error ? `Erreur photo : ${err.message}` : 'Erreur de chiffrement du média');
     }
   }, [isZeusConversation, rawUpload, conversationId, sendMessage, queue]);
 
@@ -867,35 +885,63 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           )}
         </div>
         <div className="flex items-center gap-0">
-          <button onClick={async () => {
-            const participantId = conversation?.participant?.user_id;
-            if (participantId && user?.id) {
-              const callKey = generateCallE2EEKey();
-              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'audio', callKey);
-              if (!callId) {
-                toast.error("Impossible de signaler l'appel. Réessayez.");
+          <button
+            disabled={isStartingCall}
+            onClick={async () => {
+              const participantId = conversation?.participant?.user_id;
+              if (!participantId || !user?.id) {
+                toast.error("Aucun contact à appeler dans cette conversation.");
                 return;
               }
-              activeCallIdRef.current = callId;
-              call.startCall(conversationId, 'audio', callKey);
-            }
-          }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
-            <Phone className="w-3.5 h-3.5" />
+              setIsStartingCall(true);
+              try {
+                const callKey = generateCallE2EEKey();
+                const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'audio', callKey);
+                if (!callId) {
+                  toast.error("Impossible de signaler l'appel. Réessayez.");
+                  return;
+                }
+                activeCallIdRef.current = callId;
+                await call.startCall(conversationId, 'audio', callKey);
+              } catch (err) {
+                console.error('[ChatWidget] audio call failed', err);
+                toast.error(err instanceof Error ? `Appel impossible : ${err.message}` : "Appel impossible");
+              } finally {
+                setIsStartingCall(false);
+              }
+            }}
+            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors disabled:opacity-50"
+          >
+            <Phone className={`w-3.5 h-3.5 ${isStartingCall ? 'animate-pulse' : ''}`} />
           </button>
-          <button onClick={async () => {
-            const participantId = conversation?.participant?.user_id;
-            if (participantId && user?.id) {
-              const callKey = generateCallE2EEKey();
-              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'video', callKey);
-              if (!callId) {
-                toast.error("Impossible de signaler l'appel. Réessayez.");
+          <button
+            disabled={isStartingCall}
+            onClick={async () => {
+              const participantId = conversation?.participant?.user_id;
+              if (!participantId || !user?.id) {
+                toast.error("Aucun contact à appeler dans cette conversation.");
                 return;
               }
-              activeCallIdRef.current = callId;
-              call.startCall(conversationId, 'video', callKey);
-            }
-          }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
-            <Video className="w-3.5 h-3.5" />
+              setIsStartingCall(true);
+              try {
+                const callKey = generateCallE2EEKey();
+                const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'video', callKey);
+                if (!callId) {
+                  toast.error("Impossible de signaler l'appel. Réessayez.");
+                  return;
+                }
+                activeCallIdRef.current = callId;
+                await call.startCall(conversationId, 'video', callKey);
+              } catch (err) {
+                console.error('[ChatWidget] video call failed', err);
+                toast.error(err instanceof Error ? `Visio impossible : ${err.message}` : "Visio impossible");
+              } finally {
+                setIsStartingCall(false);
+              }
+            }}
+            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors disabled:opacity-50"
+          >
+            <Video className={`w-3.5 h-3.5 ${isStartingCall ? 'animate-pulse' : ''}`} />
           </button>
           <button onClick={() => { closeChat(); navigate(`/messages/${conversationId}`); }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors" title="Agrandir">
             <Maximize2 className="w-3.5 h-3.5" />
