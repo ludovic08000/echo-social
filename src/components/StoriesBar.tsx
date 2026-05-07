@@ -302,7 +302,7 @@ export function StoriesBar() {
           </div>
           {/* Bottom label */}
           <div className="relative h-[60px] flex items-end justify-center pb-2.5 bg-card rounded-b-2xl">
-            <span className="text-[11px] font-semibold text-foreground text-center leading-tight">Créer une<br/>story</span>
+            <span className="text-[11px] font-semibold text-foreground text-center leading-tight">Vous</span>
           </div>
         </div>
 
