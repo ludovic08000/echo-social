@@ -31,6 +31,7 @@ import {
 } from './constants';
 import { exportPublicKeyRaw } from './keyManager';
 import { wrapSkippedJwk, unwrapSkippedJwk, isWrappedSkippedEntry } from './skippedKeyWrap';
+import { padPlaintext, unpadPlaintext } from './lengthPadding';
 
 // ─── Types ───
 
