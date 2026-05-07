@@ -359,6 +359,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [viewOnceArmed, setViewOnceArmed] = useState(false);
   const [showCallHistory, setShowCallHistory] = useState(false);
+  const [showGroupCallSheet, setShowGroupCallSheet] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
@@ -1020,6 +1021,13 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors disabled:opacity-50"
           >
             <Video className={`w-3.5 h-3.5 ${isStartingCall ? 'animate-pulse' : ''}`} />
+          </button>
+          <button
+            onClick={() => setShowGroupCallSheet(true)}
+            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors"
+            title="Appel de groupe"
+          >
+            <Users className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => setShowCallHistory(true)}
