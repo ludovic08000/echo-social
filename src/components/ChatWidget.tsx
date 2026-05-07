@@ -32,6 +32,7 @@ import { GifPicker } from '@/components/chat/GifPicker';
 import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { buildDocumentBody, parseDocumentBody, isDocumentMime } from '@/lib/messaging/documentMessage';
 import { DocumentBubble } from '@/components/messages/DocumentBubble';
+import { CallHistoryPanel } from '@/components/calls/CallHistoryPanel';
 import { Eye } from 'lucide-react';
 import { RelayPointPicker } from '@/components/marketplace/RelayPointPicker';
 import { useRealtimeNotificationSound } from '@/hooks/useNotificationSounds';
@@ -356,6 +357,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [showGifs, setShowGifs] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [viewOnceArmed, setViewOnceArmed] = useState(false);
+  const [showCallHistory, setShowCallHistory] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
