@@ -573,13 +573,14 @@ async function downloadAndRestore(
 
   const backup = data as unknown as BackupRow;
 
-  // v5 Master Key format
+  // v5+ Master Key format (v6 adds AAD; unwrap/decrypt fall back to no-AAD for v5)
   if (backup.version >= 5 && backup.wrapped_master_key && backup.master_key_iv) {
     const saltBuf = new Uint8Array(base64ToBuffer(backup.salt));
     const wrappingKey = await deriveWrappingKey(wrappingSecret, saltBuf);
-    const masterKeyRaw = await unwrapMasterKey(backup.wrapped_master_key, backup.master_key_iv, wrappingKey);
+    const aad = backup.version >= 6 ? buildBackupAAD(userId, backupType, backup.version) : undefined;
+    const masterKeyRaw = await unwrapMasterKey(backup.wrapped_master_key, backup.master_key_iv, wrappingKey, aad);
     const masterKey = await importMasterKey(masterKeyRaw);
-    const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, masterKey);
+    const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, masterKey, aad);
     await restoreAllKeys(json);
     return { masterKeyRaw, masterKey };
   }
