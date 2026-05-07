@@ -172,6 +172,8 @@ function MosaicTile({ item, followingIds }: { item: LiveItem; isLarge?: boolean;
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
       onClick={handleClick}
+      onPointerEnter={() => { if (item.is_active) prefetchLiveKitToken(`live-${item.id}`); }}
+      onFocus={() => { if (item.is_active) prefetchLiveKitToken(`live-${item.id}`); }}
       className="relative rounded-2xl overflow-hidden bg-black/60 group text-left w-full aspect-[3/4]"
     >
       {/* Background */}
