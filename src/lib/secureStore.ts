@@ -96,7 +96,11 @@ export async function secureSet(key: string, value: string): Promise<void> {
 export async function secureSetSecret(key: string, value: string): Promise<boolean> {
   await ensureSecure();
   if (!_secure) {
-    console.warn('[secureStore] secret write skipped — secure plugin unavailable:', key);
+    // Only warn on native platforms where the plugin is expected.
+    // On web there is no Keychain/Keystore — this is the normal code path.
+    if (isNative()) {
+      console.warn('[secureStore] secret write skipped — secure plugin unavailable:', key);
+    }
     return false;
   }
 
