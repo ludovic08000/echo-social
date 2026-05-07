@@ -348,6 +348,37 @@ export async function decryptFromGroup(
   return { plaintext, nextState };
 }
 
+/**
+ * Look up the recipient state matching a `sk1.` wire string. The wire
+ * encodes `(conversationId, senderDeviceId)` but NOT the sender user id —
+ * so we resolve the user id from the persisted `sender_key_state` row.
+ *
+ * Returns null if no recipient state exists yet (caller should keep the
+ * message buffered until the matching SKDM is installed).
+ */
+export async function loadRecipientStateForWire(wire: string): Promise<RecipientState | null> {
+  if (!wire.startsWith('sk1.')) return null;
+  const parts = wire.slice(4).split('.');
+  if (parts.length !== 7) return null;
+  const [conversationId, senderDeviceId] = parts;
+  const { data, error } = await supabase
+    .from('sender_key_state')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .eq('sender_device_id', senderDeviceId)
+    .eq('is_owner', false)
+    .maybeSingle();
+  if (error || !data) return null;
+  return {
+    conversationId,
+    senderUserId: data.sender_user_id,
+    senderDeviceId,
+    iteration: data.iteration,
+    chainKeyB64: data.chain_key_b64,
+    signingPubB64: data.signing_pub_b64,
+  };
+}
+
 export const __test__ = {
   loadOwnerState,
   loadRecipientState,

@@ -48,6 +48,12 @@ import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/li
 import { KX_KEY_PARAMS, STORE_PREKEYS, STORE_SESSION } from '@/lib/crypto/constants';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
 import { isCryptoJsonBody, isStrictRatchetEnvelopeBody, isUnsupportedEncryptedBody } from '@/lib/messaging/messageCompatibility';
+import { isSenderKeyWire, parseSKDM, SENDER_KEY_PREFIX } from '@/lib/crypto/senderKeys';
+import {
+  installSKDM,
+  loadRecipientStateForWire,
+  decryptFromGroup,
+} from '@/lib/crypto/senderKeySession';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
 const RATCHET_DB_NAME = 'forsure-ratchet';
@@ -1380,6 +1386,27 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
    * queue to prevent 50 concurrent ratchet inits when loading a chat.
    */
   const decrypt = useCallback(async (body: string): Promise<DecryptResult> => {
+    // Lot — Sender Keys (group E2EE) wire detection. Bypasses the JSON
+    // ratchet envelope path: `sk1.` is a flat dotted wire, not JSON.
+    if (typeof body === 'string' && isSenderKeyWire(body)) {
+      try {
+        const recipient = await loadRecipientStateForWire(body);
+        if (!recipient) {
+          // SKDM not yet delivered → keep ciphertext placeholder, will retry
+          // once the pairwise SKDM lands and installs the chain.
+          return { text: '', encrypted: true, verified: false, incompatible: true };
+        }
+        const { plaintext } = await decryptFromGroup(recipient, body);
+        if (plaintext === null) {
+          return { text: '', encrypted: true, verified: false, incompatible: true };
+        }
+        return { text: plaintext, encrypted: true, verified: true };
+      } catch (err) {
+        console.warn('[E2EE] Sender Key decrypt failed:', err);
+        return { text: '', encrypted: true, verified: false, incompatible: true };
+      }
+    }
+
     if (!isCryptoJsonBody(body)) {
       return { text: body, encrypted: false, verified: false };
     }
@@ -1422,6 +1449,23 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       }
     });
   }, [conversationId, ensureKeysAndPeerSync, isZeus, user, peerUserId, state.fingerprintChanged]);
+
+  /**
+   * If the decrypted ratchet plaintext is actually an SKDM (Sender Key
+   * Distribution Message), install it into `sender_key_state` and swallow
+   * the message — it's protocol metadata, not a user message.
+   */
+  const maybeAbsorbSKDM = useCallback(async (plaintext: string): Promise<DecryptResult | null> => {
+    const parsed = parseSKDM(plaintext);
+    if (!parsed) return null;
+    try {
+      await installSKDM(plaintext);
+      console.info('[E2EE] SKDM absorbed', { conv: parsed.conversationId, sender: parsed.senderUserId, iter: parsed.iteration });
+    } catch (err) {
+      console.warn('[E2EE] SKDM install failed', err);
+    }
+    return { text: '', encrypted: true, verified: true, incompatible: true };
+  }, []);
 
   const decryptRatchetMessage = useCallback(async (
     parsed: any,
@@ -1527,6 +1571,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
               await saveRatchetLocal(conversationId!, newState, null);
               setState(s => ({ ...s, ratchetActive: true }));
               console.debug(`[RATCHET] ✅ decrypt OK after readiness self-heal — verified=${verified}`);
+              const skdmAbsorbed = await maybeAbsorbSKDM(plaintext);
+              if (skdmAbsorbed) return skdmAbsorbed;
               return { text: plaintext, encrypted: true, verified };
             }
           } catch (healErr) {
@@ -1558,6 +1604,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         await saveRatchetLocal(conversationId!, newState, x3dhInfoRef.current);
         setState(s => ({ ...s, ratchetActive: true }));
         console.debug(`[RATCHET] ✅ decrypt OK — verified=${verified}`);
+        const skdmAbsorbed = await maybeAbsorbSKDM(plaintext);
+        if (skdmAbsorbed) return skdmAbsorbed;
         return { text: plaintext, encrypted: true, verified };
       } catch (ratchetErr) {
         const errMsg = ratchetErr instanceof Error ? ratchetErr.message : String(ratchetErr);
@@ -1577,6 +1625,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
               await saveRatchetLocal(conversationId!, newState, null);
               setState(s => ({ ...s, ratchetActive: true }));
               console.debug(`[RATCHET] ✅ decrypt OK after X3DH self-heal — verified=${verified}`);
+              const skdmAbsorbed = await maybeAbsorbSKDM(plaintext);
+              if (skdmAbsorbed) return skdmAbsorbed;
               return { text: plaintext, encrypted: true, verified };
             }
           } catch (healErr) {
