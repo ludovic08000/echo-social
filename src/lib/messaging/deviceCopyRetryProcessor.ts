@@ -77,16 +77,12 @@ export async function processDeviceCopyRetryRequests(limit = 20): Promise<RetryP
           (row.message_body ? await loadPlaintextForCiphertext(row.message_body) : null);
 
         if (!plaintext) {
+          // Per Signal/WhatsApp model: history is never re-encrypted across own
+          // devices on demand. If this device no longer caches the plaintext,
+          // the retry can NEVER succeed → close it permanently to avoid an
+          // infinite re-list/re-log loop on every polling cycle.
           result.skipped += 1;
-          logCryptoError({
-            severity: 'info',
-            context: 'fanout',
-            errorCode: 'DEVICE_COPY_RETRY_PLAINTEXT_UNAVAILABLE',
-            errorMessage: 'Sender device does not have local plaintext cache for retry',
-            conversationId: row.conversation_id,
-            myDeviceId: senderDeviceId,
-            metadata: { messageId: row.message_id, requestId: row.request_id },
-          });
+          await markRetryFailed(row.request_id, 'plaintext_unavailable_on_sender_device');
           continue;
         }
 
