@@ -109,10 +109,15 @@ function useAllLivesForScreen() {
         ...(b.replays || []),
       ];
 
+      const hasRanks = Object.keys(ranks).length > 0;
       const lives = all.map(l => ({
         ...l,
         host: profileMap.get(l.user_id),
-        _score: l.is_active ? (Number(ranks[l.id]) || 0) : 0,
+        _score: l.is_active
+          ? (hasRanks
+              ? (Number(ranks[l.id]) || 0)
+              : calculateZeusScore(l, [], followingIds))
+          : 0,
       })) as LiveItem[];
 
       lives.sort((a, b) => {
