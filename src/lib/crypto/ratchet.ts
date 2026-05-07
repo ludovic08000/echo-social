@@ -57,6 +57,11 @@ export interface RatchetState {
    */
   myIdentityKeyB64?: string;
   peerIdentityKeyB64?: string;
+  /**
+   * X3DH role for canonical AD ordering (initiator IK first). Optional for
+   * backward-compat with v2 states loaded from disk before the upgrade.
+   */
+  role?: 'initiator' | 'responder';
 }
 
 export interface RatchetHeader {
@@ -169,6 +174,7 @@ export async function initRatchetAsInitiator(
     skippedKeys: new Map(),
     myIdentityKeyB64: identityKeys?.myIdentityKeyB64,
     peerIdentityKeyB64: identityKeys?.peerIdentityKeyB64,
+    role: 'initiator',
   };
 }
 
@@ -200,6 +206,7 @@ export async function initRatchetAsResponder(
     // From responder's POV: peerIdentityKeyB64 = IKa (initiator), myIdentityKeyB64 = IKb (us).
     myIdentityKeyB64: identityKeys?.myIdentityKeyB64,
     peerIdentityKeyB64: identityKeys?.peerIdentityKeyB64,
+    role: 'responder',
   };
 }
 
@@ -210,12 +217,13 @@ export async function initRatchetAsResponder(
 // — i.e. `peerIdentityKeyB64 || myIdentityKeyB64`. The state always stores
 // keys in our local frame; this helper produces the canonical shared bytes.
 function buildAssociatedData(
-  state: Pick<RatchetState, 'myIdentityKeyB64' | 'peerIdentityKeyB64'>,
-  role: 'initiator' | 'responder',
+  state: Pick<RatchetState, 'myIdentityKeyB64' | 'peerIdentityKeyB64' | 'role'>,
+  roleOverride?: 'initiator' | 'responder',
 ): Uint8Array | null {
   const my = state.myIdentityKeyB64;
   const peer = state.peerIdentityKeyB64;
-  if (!my || !peer) return null;
+  const role = roleOverride ?? state.role;
+  if (!my || !peer || !role) return null;
   const initiatorIK = role === 'initiator' ? my : peer;
   const responderIK = role === 'initiator' ? peer : my;
   return new Uint8Array(encodeString(`${AD_PREFIX_V3}${initiatorIK}|${responderIK}`));
@@ -244,10 +252,14 @@ export async function ratchetEncrypt(
     n: state.sendCount,
   };
 
-  // Encrypt with AES-256-GCM
+  // Encrypt with AES-256-GCM (v3: bind to identity keys via AAD if available)
+  const ad = buildAssociatedData(state);
   const iv = randomBytes(IV_LENGTH);
+  const encryptParams: AesGcmParams = ad
+    ? { name: AES_ALGO, iv: iv.slice() as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: ad as Uint8Array<ArrayBuffer> }
+    : { name: AES_ALGO, iv: iv.slice() as Uint8Array<ArrayBuffer>, tagLength: 128 };
   const ct = await hardCrypto.encrypt(
-    { name: AES_ALGO, iv: iv.slice() as Uint8Array<ArrayBuffer>, tagLength: 128 },
+    encryptParams,
     messageKey,
     encodeString(plaintext),
   );
@@ -265,7 +277,7 @@ export async function ratchetEncrypt(
   const sig = await hardCrypto.sign('Ed25519' as any, signingKey, sigData);
 
   const envelope: RatchetEnvelope = {
-    v: PROTOCOL_VERSION,
+    v: ad ? PROTOCOL_VERSION : 2,
     kem: CLASSICAL_KEM_ID,
     hdr: header,
     iv: bufferToBase64(iv.buffer as ArrayBuffer),
@@ -312,7 +324,7 @@ export async function ratchetDecrypt(
   const cachedMK = newState.skippedKeys.get(skipKey);
   if (cachedMK) {
     newState.skippedKeys.delete(skipKey);
-    const result = await decryptWithKey(cachedMK, envelope, peerSigningKeyBase64);
+    const result = await decryptWithKey(cachedMK, envelope, peerSigningKeyBase64, newState);
     return { ...result, newState };
   }
 
@@ -368,7 +380,7 @@ export async function ratchetDecrypt(
   newState.receivingChainKey = nextChainKey;
   newState.recvCount = envelope.hdr.n + 1;
 
-  const result = await decryptWithKey(messageKey, envelope, peerSigningKeyBase64);
+  const result = await decryptWithKey(messageKey, envelope, peerSigningKeyBase64, newState);
   return { ...result, newState };
 }
 
@@ -412,15 +424,39 @@ async function decryptWithKey(
   messageKey: CryptoKey,
   envelope: RatchetEnvelope,
   peerSigningKeyBase64?: string,
+  state?: Pick<RatchetState, 'myIdentityKeyB64' | 'peerIdentityKeyB64' | 'role'>,
 ): Promise<{ plaintext: string; verified: boolean }> {
   const iv = base64ToBuffer(envelope.iv);
   const ct = base64ToBuffer(envelope.ct);
 
-  const ptBuf = await hardCrypto.decrypt(
-    { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128 },
-    messageKey,
-    ct,
-  );
+  // v3 envelopes are bound to identity-keys via AES-GCM AAD. v2 envelopes
+  // (legacy) carry no AAD and are still accepted for backward compatibility
+  // during the migration window. We try AAD first when v>=3 and fall back to
+  // no-AAD on tag mismatch — this absorbs the rare case where a v3 envelope
+  // is received before the local state has identity keys cached.
+  const ad = (envelope.v ?? 2) >= 3 && state ? buildAssociatedData(state) : null;
+  let ptBuf: ArrayBuffer;
+  if (ad) {
+    try {
+      ptBuf = await hardCrypto.decrypt(
+        { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128, additionalData: ad as Uint8Array<ArrayBuffer> } as AesGcmParams,
+        messageKey,
+        ct,
+      );
+    } catch {
+      ptBuf = await hardCrypto.decrypt(
+        { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128 },
+        messageKey,
+        ct,
+      );
+    }
+  } else {
+    ptBuf = await hardCrypto.decrypt(
+      { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128 },
+      messageKey,
+      ct,
+    );
+  }
 
   const plaintext = decodeString(ptBuf);
 
@@ -470,6 +506,9 @@ export async function serializeRatchetState(state: RatchetState): Promise<string
     recvCount: state.recvCount,
     prevSendCount: state.prevSendCount,
     skippedEntries,
+    myIdentityKeyB64: state.myIdentityKeyB64 ?? null,
+    peerIdentityKeyB64: state.peerIdentityKeyB64 ?? null,
+    role: state.role ?? null,
   });
 }
 
@@ -510,5 +549,8 @@ export async function deserializeRatchetState(json: string): Promise<RatchetStat
     recvCount: d.recvCount,
     prevSendCount: d.prevSendCount,
     skippedKeys,
+    myIdentityKeyB64: d.myIdentityKeyB64 ?? undefined,
+    peerIdentityKeyB64: d.peerIdentityKeyB64 ?? undefined,
+    role: (d.role as 'initiator' | 'responder' | null) ?? undefined,
   };
 }

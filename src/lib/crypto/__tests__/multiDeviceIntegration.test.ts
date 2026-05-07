@@ -195,7 +195,7 @@ describe('multi-device E2EE — single pair round-trip', () => {
 
     const env = await ratchetEncrypt(A.user, A.device, B.user, B.device, 'hello bob');
     expect(env).not.toBeNull();
-    expect(env!.startsWith('x3dh4.')).toBe(true);
+    expect(env!.startsWith('x3dh5.')).toBe(true);
 
     const pt = await ratchetDecrypt(B.user, B.device, env!);
     expect(pt).toBe('hello bob');

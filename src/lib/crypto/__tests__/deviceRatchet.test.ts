@@ -15,7 +15,7 @@ import {
   listKnownSessionIds,
   invalidateDeviceSession,
   clearAllDeviceSessions,
-  RATCHET_PREFIX_V4,
+  RATCHET_PREFIX_V5,
 } from '@/lib/crypto/deviceRatchet';
 
 const A_USER = 'user-alice';
@@ -64,9 +64,9 @@ describe('deviceRatchet — Sesame priming + Double Ratchet', () => {
 
     const ct = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'hello bob');
     expect(ct).not.toBeNull();
-    expect(ct!.startsWith(RATCHET_PREFIX_V4)).toBe(true);
+    expect(ct!.startsWith(RATCHET_PREFIX_V5)).toBe(true);
     // Header carries: sessionId.dhPub.Ns.PN.iv.ct
-    const parts = ct!.slice(RATCHET_PREFIX_V4.length).split('.');
+    const parts = ct!.slice(RATCHET_PREFIX_V5.length).split('.');
     expect(parts).toHaveLength(6);
     expect(parts[0]).toBe(sessionId);
     expect(parts[2]).toBe('0'); // Ns
