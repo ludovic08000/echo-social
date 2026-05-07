@@ -74,37 +74,56 @@ async function cleanupNonCryptoRuntimeCaches() {
 
 
 async function bootstrap() {
-  await cleanupNonCryptoRuntimeCaches();
-
-  const [
-    { default: App },
-    { activateRuntimeShield },
-    crypto,
-    identity,
-    sessionInvalidation,
-  ] = await Promise.all([
-    import('./App.tsx'),
-    import('@/lib/runtimeShield'),
-    import('@/lib/crypto'),
-    import('@/lib/crypto/identityBootstrap'),
-    import('@/lib/crypto/sessionInvalidation'),
-  ]);
-
-  activateRuntimeShield();
-  crypto.hardenPrototypes();
-
-  identity.startIdentityBootstrap();
-  sessionInvalidation.startSessionInvalidationWatcher();
-
-  console.info('[E2EE][BUILD] protocol-bootstrap-active', {
-    ts: new Date().toISOString(),
-  });
+  // Render the app ASAP so the Lovable preview iframe doesn't get marked
+  // as "stuck" by its parent recovery watcher. Heavy crypto bootstrap is
+  // deferred to after first paint.
+  const { default: App } = await import('./App.tsx');
 
   createRoot(document.getElementById('root')!).render(
     <HelmetProvider>
       <App />
     </HelmetProvider>,
   );
+
+  // Defer non-critical, heavy work to idle / post-paint
+  const runDeferred = async () => {
+    try {
+      await cleanupNonCryptoRuntimeCaches();
+    } catch {}
+
+    try {
+      const [
+        { activateRuntimeShield },
+        crypto,
+        identity,
+        sessionInvalidation,
+      ] = await Promise.all([
+        import('@/lib/runtimeShield'),
+        import('@/lib/crypto'),
+        import('@/lib/crypto/identityBootstrap'),
+        import('@/lib/crypto/sessionInvalidation'),
+      ]);
+
+      activateRuntimeShield();
+      crypto.hardenPrototypes();
+      identity.startIdentityBootstrap();
+      sessionInvalidation.startSessionInvalidationWatcher();
+
+      console.info('[E2EE][BUILD] protocol-bootstrap-active', {
+        ts: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error('[BOOT] deferred init failed', err);
+    }
+  };
+
+  const ric: typeof window.requestIdleCallback | undefined =
+    (window as any).requestIdleCallback;
+  if (ric) {
+    ric(() => void runDeferred(), { timeout: 1500 });
+  } else {
+    setTimeout(() => void runDeferred(), 0);
+  }
 }
 
 void bootstrap();
