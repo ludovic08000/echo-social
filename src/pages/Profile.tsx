@@ -946,15 +946,17 @@ export default function Profile() {
       </div>
 
       {avatarToCrop && (
-        <AvatarCropper
-          isOpen={isCropperOpen}
-          onClose={handleCloseCropper}
-          imageSrc={avatarToCrop}
-          onCropComplete={handleCroppedAvatar}
-          isUploading={avatarUpload.isUploading}
-          aspectRatio={1}
-          title="Recadrer la photo de profil"
-        />
+        <Suspense fallback={null}>
+          <AvatarCropper
+            isOpen={isCropperOpen}
+            onClose={handleCloseCropper}
+            imageSrc={avatarToCrop}
+            onCropComplete={handleCroppedAvatar}
+            isUploading={avatarUpload.isUploading}
+            aspectRatio={1}
+            title="Recadrer la photo de profil"
+          />
+        </Suspense>
       )}
     </AppLayout>
   );
