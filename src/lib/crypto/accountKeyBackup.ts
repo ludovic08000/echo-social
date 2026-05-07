@@ -830,7 +830,11 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
       errorMessage: 'Attempting recovery-key restore',
       metadata: { userId },
     });
-    const result = await downloadAndRestore(userId, 'recovery', recoveryKey);
+    // v6+ uses recoverySecret(...) (domain-separated). Legacy v5 used the raw recovery key.
+    let result = await downloadAndRestore(userId, 'recovery', recoverySecret(recoveryKey, userId)).catch(() => null);
+    if (!result) {
+      result = await downloadAndRestore(userId, 'recovery', recoveryKey).catch(() => null);
+    }
     if (result) {
       // Post-restore validation: ensure local identity actually exists now
       const validated = await hasLocalKeys();
