@@ -889,6 +889,33 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         onToggleScreenShare={call.toggleScreenShare}
         isScreenSharing={call.isScreenSharing}
       />
+
+      {/* Call history overlay */}
+      {showCallHistory && (
+        <div className="absolute inset-0 z-[90] bg-background/95 backdrop-blur-sm rounded-lg overflow-hidden">
+          <CallHistoryPanel
+            conversationId={conversationId}
+            onClose={() => setShowCallHistory(false)}
+            onCallBack={async (peerId, type) => {
+              if (!user?.id) return;
+              setShowCallHistory(false);
+              setIsStartingCall(true);
+              try {
+                const callKey = generateCallE2EEKey();
+                const callId = await signalOutgoingCall(conversationId, user.id, peerId, type, callKey);
+                if (!callId) { toast.error("Impossible de signaler l'appel."); return; }
+                activeCallIdRef.current = callId;
+                await call.startCall(conversationId, type, callKey);
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Appel impossible");
+              } finally {
+                setIsStartingCall(false);
+              }
+            }}
+          />
+        </div>
+      )}
+
       <input ref={fileInputRef} type="file" accept="image/*,video/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/zip,text/plain,text/csv" className="hidden" onChange={(e) => {
         const file = e.target.files?.[0];
         if (file) handleMediaFile(file);
