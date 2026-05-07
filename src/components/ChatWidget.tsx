@@ -1906,34 +1906,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               onFocus={() => { setShowEmojis(false); setShowGifs(false); }}
               placeholder="Aa"
               className="flex-1 bg-secondary/60 rounded-full px-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors min-w-0"
-      />
-
-      {/* Call history overlay */}
-      {showCallHistory && (
-        <div className="absolute inset-0 z-[90] bg-background/95 backdrop-blur-sm rounded-lg overflow-hidden">
-          <CallHistoryPanel
-            conversationId={conversationId}
-            onClose={() => setShowCallHistory(false)}
-            onCallBack={async (peerId, type) => {
-              if (!user?.id) return;
-              setShowCallHistory(false);
-              setIsStartingCall(true);
-              try {
-                const callKey = generateCallE2EEKey();
-                const callId = await signalOutgoingCall(conversationId, user.id, peerId, type, callKey);
-                if (!callId) { toast.error("Impossible de signaler l'appel."); return; }
-                activeCallIdRef.current = callId;
-                await call.startCall(conversationId, type, callKey);
-              } catch (err) {
-                toast.error(err instanceof Error ? err.message : "Appel impossible");
-              } finally {
-                setIsStartingCall(false);
-              }
-            }}
-          />
-        </div>
-      )}
-
+            />
             {newMessage.trim() ? (
               <button type="submit" disabled={sendMessage.isPending || sendBlocked} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
                 <Send className="w-3.5 h-3.5" />
