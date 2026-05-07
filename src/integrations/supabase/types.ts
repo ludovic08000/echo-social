@@ -1665,6 +1665,146 @@ export type Database = {
         }
         Relationships: []
       }
+      e2ee_kt_leaves: {
+        Row: {
+          epoch: number
+          leaf_hash: string
+          leaf_index: number
+          log_id: number
+        }
+        Insert: {
+          epoch: number
+          leaf_hash: string
+          leaf_index: number
+          log_id: number
+        }
+        Update: {
+          epoch?: number
+          leaf_hash?: string
+          leaf_index?: number
+          log_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "e2ee_kt_leaves_epoch_fkey"
+            columns: ["epoch"]
+            isOneToOne: false
+            referencedRelation: "e2ee_kt_tree_heads"
+            referencedColumns: ["epoch"]
+          },
+          {
+            foreignKeyName: "e2ee_kt_leaves_log_id_fkey"
+            columns: ["log_id"]
+            isOneToOne: false
+            referencedRelation: "e2ee_transparency_log"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      e2ee_kt_signing_keys: {
+        Row: {
+          active: boolean
+          algorithm: string
+          created_at: string
+          id: string
+          public_key_jwk: Json
+          retired_at: string | null
+        }
+        Insert: {
+          active?: boolean
+          algorithm?: string
+          created_at?: string
+          id?: string
+          public_key_jwk: Json
+          retired_at?: string | null
+        }
+        Update: {
+          active?: boolean
+          algorithm?: string
+          created_at?: string
+          id?: string
+          public_key_jwk?: Json
+          retired_at?: string | null
+        }
+        Relationships: []
+      }
+      e2ee_kt_tree_heads: {
+        Row: {
+          created_at: string
+          epoch: number
+          leaf_count: number
+          prev_epoch: number | null
+          root_hash: string
+          signature: string
+          signing_key_id: string
+        }
+        Insert: {
+          created_at?: string
+          epoch: number
+          leaf_count: number
+          prev_epoch?: number | null
+          root_hash: string
+          signature: string
+          signing_key_id: string
+        }
+        Update: {
+          created_at?: string
+          epoch?: number
+          leaf_count?: number
+          prev_epoch?: number | null
+          root_hash?: string
+          signature?: string
+          signing_key_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "e2ee_kt_tree_heads_prev_epoch_fkey"
+            columns: ["prev_epoch"]
+            isOneToOne: false
+            referencedRelation: "e2ee_kt_tree_heads"
+            referencedColumns: ["epoch"]
+          },
+        ]
+      }
+      e2ee_transparency_log: {
+        Row: {
+          created_at: string
+          device_id: string | null
+          event_type: string
+          fingerprint: string | null
+          id: number
+          identity_epoch: number | null
+          included_in_epoch: number | null
+          leaf_hash: string | null
+          payload: Json
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id?: string | null
+          event_type: string
+          fingerprint?: string | null
+          id?: number
+          identity_epoch?: number | null
+          included_in_epoch?: number | null
+          leaf_hash?: string | null
+          payload?: Json
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string | null
+          event_type?: string
+          fingerprint?: string | null
+          id?: number
+          identity_epoch?: number | null
+          included_in_epoch?: number | null
+          leaf_hash?: string | null
+          payload?: Json
+          user_id?: string
+        }
+        Relationships: []
+      }
       edge_rate_limits: {
         Row: {
           count: number
