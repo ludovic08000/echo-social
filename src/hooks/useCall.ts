@@ -505,6 +505,20 @@ export function useCall(options?: UseCallOptions) {
     }
   }, [callType]);
 
+  const toggleScreenShare = useCallback(async () => {
+    const room = roomRef.current;
+    if (!room || phaseRef.current === 'ending') return;
+    try {
+      const enabled = room.localParticipant.isScreenShareEnabled;
+      await room.localParticipant.setScreenShareEnabled(!enabled, { audio: true });
+      if (!enabled) toast.success('Partage d\u2019\u00e9cran activ\u00e9');
+      else toast.message('Partage d\u2019\u00e9cran arr\u00eat\u00e9');
+    } catch (err) {
+      console.error('[CALL] screen share toggle failed', err);
+      toast.error('Partage d\u2019\u00e9cran indisponible');
+    }
+  }, []);
+
   const switchCamera = useCallback(async () => {
     const room = roomRef.current;
     if (!room || phaseRef.current === 'ending') return;
@@ -555,6 +569,7 @@ export function useCall(options?: UseCallOptions) {
     toggleCamera,
     switchToVideo,
     switchCamera,
+    toggleScreenShare,
   };
 }
 
