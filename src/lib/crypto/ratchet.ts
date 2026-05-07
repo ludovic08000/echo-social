@@ -405,20 +405,26 @@ async function skipMessages(state: RatchetState, until: number): Promise<Ratchet
     : 'init';
 
   let ck = newState.receivingChainKey;
+  const now = Date.now();
   for (let i = newState.recvCount; i < until; i++) {
     // Use exportable variant since skipped keys need IndexedDB persistence
     const { nextChainKey, messageKey } = await kdfChainStepExportable(ck);
-    newState.skippedKeys.set(`${dhPub}:${i}`, messageKey);
+    newState.skippedKeys.set(`${dhPub}:${i}`, { key: messageKey, ts: now });
     ck = nextChainKey;
   }
   newState.receivingChainKey = ck;
   newState.recvCount = until;
 
-  // Prune old skipped keys (keep max 200)
-  if (newState.skippedKeys.size > 200) {
-    const entries = Array.from(newState.skippedKeys.entries());
-    const toDelete = entries.slice(0, entries.length - 200);
-    for (const [k] of toDelete) newState.skippedKeys.delete(k);
+  // Signal-conformant pruning: TTL purge first, then size cap.
+  const cutoff = now - RATCHET_SKIPPED_TTL_MS;
+  for (const [k, v] of newState.skippedKeys) {
+    if (v.ts < cutoff) newState.skippedKeys.delete(k);
+  }
+  if (newState.skippedKeys.size > RATCHET_MAX_SKIPPED_CACHE) {
+    // Evict oldest first (insertion order preserved by Map).
+    const overflow = newState.skippedKeys.size - RATCHET_MAX_SKIPPED_CACHE;
+    const it = newState.skippedKeys.keys();
+    for (let i = 0; i < overflow; i++) newState.skippedKeys.delete(it.next().value as string);
   }
 
   return newState;
