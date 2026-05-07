@@ -24,7 +24,29 @@ if (import.meta.env.DEV) {
   console.error = filter(origError);
 }
 
+/**
+ * One-shot cleanup of legacy non-crypto runtime caches.
+ *
+ * Originally this ran on EVERY boot, which:
+ *  - wiped the message-queue IndexedDB (losing in-flight messages),
+ *  - unregistered the PWA service worker on every load (defeating offline cache),
+ *  - emptied all Cache Storage entries (cold-start every time),
+ * and contributed to the Lovable preview iframe being marked as "stuck" /
+ * blank because boot was significantly delayed.
+ *
+ * It's now gated by a localStorage marker so the cleanup runs exactly once
+ * per browser, after which subsequent boots are fast and preserve queues.
+ */
+const CLEANUP_MARKER_KEY = 'forsure:legacy-cache-cleanup:v2';
+
 async function cleanupNonCryptoRuntimeCaches() {
+  try {
+    if (localStorage.getItem(CLEANUP_MARKER_KEY) === '1') return;
+  } catch {
+    // localStorage blocked → skip cleanup entirely rather than running it every boot
+    return;
+  }
+
   try {
     indexedDB.deleteDatabase('forsure-msg-queue');
   } catch {}
@@ -43,8 +65,13 @@ async function cleanupNonCryptoRuntimeCaches() {
     }
   } catch {}
 
-  console.info('[BOOT] non-crypto runtime caches cleaned');
+  try {
+    localStorage.setItem(CLEANUP_MARKER_KEY, '1');
+  } catch {}
+
+  console.info('[BOOT] non-crypto runtime caches cleaned (one-shot)');
 }
+
 
 async function bootstrap() {
   await cleanupNonCryptoRuntimeCaches();
