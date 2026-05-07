@@ -52,6 +52,7 @@ export interface IncomingCall {
   status: string;
   caller_name?: string;
   caller_avatar?: string;
+  is_group?: boolean;
 }
 
 /** Returned only by acceptCall — includes the decrypted key for immediate use */
