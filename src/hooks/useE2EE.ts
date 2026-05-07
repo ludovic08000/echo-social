@@ -1285,6 +1285,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       conversationId,
       x3dhResult.sharedSecret,
       peerSPKKey,
+      {
+        myIdentityKeyB64: bufferToBase64(myPubRaw),
+        peerIdentityKeyB64: peerKeyRef.current.identityKey,
+      },
     );
 
     const readiness = getRatchetReadiness(ratchet);
@@ -1531,10 +1535,16 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         x3dhHeader,
       );
 
+      const myPubRawResp = await hardCrypto.exportKey('raw', keysRef.current.publicKey);
       const rebuilt = await initRatchetAsResponder(
         conversationId,
         sharedSecret,
         spkKeyPair,
+        {
+          // Responder POV: peer = initiator (Alice) = x3dhHeader.ik; me = Bob.
+          myIdentityKeyB64: bufferToBase64(myPubRawResp),
+          peerIdentityKeyB64: x3dhHeader.ik,
+        },
       );
 
       ratchetRef.current = rebuilt;
