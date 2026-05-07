@@ -381,7 +381,7 @@ export default function Profile() {
   if (profileLoading) {
     return (
       <AppLayout fullWidth>
-        <div className="mx-auto max-w-[900px]">
+        <div className="w-full px-2 md:px-6">
           <div className="animate-pulse">
             <div className="h-52 bg-muted rounded-b-2xl" />
             <div className="px-6 -mt-14">
@@ -400,7 +400,7 @@ export default function Profile() {
   if (!profile) {
     return (
       <AppLayout fullWidth>
-        <div className="mx-auto max-w-[900px]">
+        <div className="w-full px-2 md:px-6">
           <div className="premium-card p-10 text-center mt-8">
             <p className="text-muted-foreground text-sm">Profil non trouvé</p>
           </div>
@@ -443,7 +443,7 @@ export default function Profile() {
       {profileBgStyle && (
         <div className="fixed inset-0 -z-10 opacity-30" style={profileBgStyle} />
       )}
-      <div className="mx-auto max-w-[900px]">
+      <div className="w-full px-2 md:px-6">
       <div className="-mt-2">
         <input ref={avatarInputRef} type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
         <input ref={coverInputRef} type="file" accept="image/*" onChange={handleCoverChange} className="hidden" />
