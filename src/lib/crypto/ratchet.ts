@@ -526,10 +526,14 @@ export async function serializeRatchetState(state: RatchetState): Promise<string
   const sendCKJWK = state.sendingChainKey ? await exportKeyToJWK(state.sendingChainKey) : null;
   const recvCKJWK = state.receivingChainKey ? await exportKeyToJWK(state.receivingChainKey) : null;
 
-  // Serialize skipped keys (with timestamps for TTL purge after restore)
-  const skippedEntries: [string, JsonWebKey, number][] = [];
+  // Lot A3: Skipped keys are at-rest WRAPPED (AES-GCM-256, non-extractable
+  // SWK in IndexedDB). Format per entry: [k, "v1.<wrapped>", ts]. Legacy
+  // entries kept on disk as [k, JsonWebKey, ts] are still readable on load.
+  const skippedEntries: [string, string, number][] = [];
   for (const [k, v] of state.skippedKeys) {
-    skippedEntries.push([k, await exportKeyToJWK(v.key), v.ts]);
+    const jwk = await exportKeyToJWK(v.key);
+    const wrapped = await wrapSkippedJwk(jwk);
+    skippedEntries.push([k, wrapped, v.ts]);
   }
 
   return hardGlobals.jsonStringify({
@@ -540,6 +544,7 @@ export async function serializeRatchetState(state: RatchetState): Promise<string
     recvCount: state.recvCount,
     prevSendCount: state.prevSendCount,
     skippedEntries,
+    skippedFormat: 'wrapped-v1',
     myIdentityKeyB64: state.myIdentityKeyB64 ?? null,
     peerIdentityKeyB64: state.peerIdentityKeyB64 ?? null,
     role: state.role ?? null,
