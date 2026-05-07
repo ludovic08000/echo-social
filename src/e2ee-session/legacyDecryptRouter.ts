@@ -130,7 +130,10 @@ export async function legacyDecryptDeviceCopy(args: {
 export async function legacyDecryptByMessageId(messageId: string, expectedSenderUserId?: string): Promise<DecryptResult> {
   try {
     const pt = await tryReadDeviceCopy(messageId, expectedSenderUserId);
-    if (pt !== null) return { ok: true, plaintext: pt, via: 'legacy-router' };
+    if (pt !== null) {
+      recordHit('legacy-router');
+      return { ok: true, plaintext: pt, via: 'legacy-router' };
+    }
   } catch { /* fall through */ }
   return { ok: false, plaintext: null, errorCode: 'NO_DEVICE_COPY_DECRYPTED' };
 }
