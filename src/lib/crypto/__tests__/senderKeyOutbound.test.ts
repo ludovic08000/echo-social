@@ -49,16 +49,17 @@ interface FakeRow {
   user_id?: string;
 }
 
+// Tiny in-memory KV that mimics `sender_key_state` upserts so the second
+// send in a test re-loads the SAME owner state (otherwise we'd regenerate
+// a fresh chain on every call and re-fan-out forever).
+const ownerStore = new Map<string, any>();
+const ownerKey = (conv: string, uid: string, did: string) => `${conv}::${uid}::${did}`;
+
 function makeFromHandler(opts: {
   enableSenderKeys: boolean;
   participants: string[];
   insertSink: any[];
 }) {
-  // supabase.from(table) returns a chainable thenable. We only need to handle
-  // the three call patterns this module uses:
-  //   - .from('conversations').select(...).eq(...).maybeSingle() → { data: { enable_sender_keys } }
-  //   - .from('conversation_participants').select(...).eq(...) → { data: [{user_id}] }
-  //   - .from('sender_key_distribution').insert(rows) → { error: null }
   return (table: string) => {
     if (table === 'conversations') {
       return {
@@ -91,20 +92,33 @@ function makeFromHandler(opts: {
       };
     }
     if (table === 'sender_key_state') {
-      // No persistence in tests: load returns nothing, upsert is a no-op.
+      // Capture the (conv, uid, did, is_owner) tuple from chained .eq() calls.
+      let conv = '', uid = '', did = '', isOwner = true;
+      const builder: any = {
+        eq(col: string, val: any) {
+          if (col === 'conversation_id') conv = val;
+          else if (col === 'sender_user_id') uid = val;
+          else if (col === 'sender_device_id') did = val;
+          else if (col === 'is_owner') isOwner = !!val;
+          return builder;
+        },
+        maybeSingle: async () => {
+          if (!isOwner) return { data: null, error: null };
+          const row = ownerStore.get(ownerKey(conv, uid, did));
+          return { data: row ?? null, error: null };
+        },
+      };
       return {
-        select: () => ({
-          eq: () => ({
-            eq: () => ({
-              eq: () => ({
-                eq: () => ({
-                  maybeSingle: async () => ({ data: null, error: null }),
-                }),
-              }),
-            }),
-          }),
-        }),
-        upsert: async () => ({ error: null }),
+        select: () => builder,
+        upsert: async (row: any) => {
+          if (row.is_owner) {
+            ownerStore.set(
+              ownerKey(row.conversation_id, row.sender_user_id, row.sender_device_id),
+              row,
+            );
+          }
+          return { error: null };
+        },
       };
     }
     throw new Error(`Unexpected table in test: ${table}`);
