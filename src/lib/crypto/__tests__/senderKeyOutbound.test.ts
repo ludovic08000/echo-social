@@ -139,15 +139,19 @@ function makeConvId(seed: string): string {
 }
 
 beforeEach(() => {
+  ownerStore.clear();
   (supabase.from as any).mockReset();
   (supabase.rpc as any).mockReset();
   (encryptPlaintextForDeviceTarget as any).mockClear();
-  // Default RPC: list_active_devices_for_user returns 1 device per user
+  // Default RPC: list_active_devices_for_user returns 1 device per user.
+  // Alice's device id matches the mocked getCurrentDeviceId() so she's
+  // filtered out of the peer list (the orchestrator skips self).
   (supabase.rpc as any).mockImplementation(async (_fn: string, args: any) => {
+    const isAlice = args.p_user_id === ALICE;
     return {
       data: [
         {
-          device_id: `${args.p_user_id.slice(0, 4)}-dev-1`,
+          device_id: isAlice ? 'alice-dev-1' : `${args.p_user_id.slice(0, 4)}-dev-1`,
           device_public_key: 'AAA=',
         },
       ],
