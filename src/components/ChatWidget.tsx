@@ -1326,8 +1326,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                           </div>
                         )}
 
-                        {/* Call event message */}
-                        {isCallMessage(msg.body) ? (() => {
+                        {/* Skip text bubble when message is purely a media attachment */}
+                        {msg.image_url && !isCallMessage(msg.body) ? null :
+                        /* Call event message */
+                        isCallMessage(msg.body) ? (() => {
                           const cd = getCallData(msg.body);
                           if (!cd) return null;
                           const isMissed = cd.status === 'missed';
