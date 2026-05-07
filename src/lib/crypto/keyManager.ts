@@ -239,6 +239,7 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
     signingPrivateKey,
     createdAt: stored.createdAt,
     fingerprint: stored.fingerprint,
+    ...(({ _privJWK: stored.privateKeyJWK, _sigPrivJWK: stored.signingPrivateKeyJWK }) as any),
   };
 }
 
