@@ -11,6 +11,7 @@
 
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import { encodeString } from './utils';
+import { supabase } from '@/integrations/supabase/client';
 
 const DB_NAME = 'forsure-x3dh-replay';
 const DB_VERSION = 1;
