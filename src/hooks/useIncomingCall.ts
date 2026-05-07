@@ -52,6 +52,7 @@ export interface IncomingCall {
   status: string;
   caller_name?: string;
   caller_avatar?: string;
+  is_group?: boolean;
 }
 
 /** Returned only by acceptCall — includes the decrypted key for immediate use */
@@ -212,6 +213,7 @@ export function useIncomingCall() {
           status: call.status,
           caller_name: profile?.name || 'Utilisateur',
           caller_avatar: profile?.avatar_url,
+          is_group: call.is_group === true,
         };
 
         setIncomingCall(incoming);
@@ -394,17 +396,23 @@ export function useIncomingCall() {
     }
 
     try {
-      // Always pass user IDs for fresh session derivation
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (!currentUser) throw new Error('Not authenticated');
-      const peerId = incomingCall.caller_id;
-      decryptedCallKey = await decryptCallKey(encKey, convId, currentUser.id, peerId);
+      // Group calls (D3): the call key is shared in clear via encrypted_call_key
+      // (per-recipient wrapping is planned for D4). Skip 1-to-1 decryption.
+      if (incomingCall.is_group) {
+        decryptedCallKey = encKey;
+      } else {
+        // Always pass user IDs for fresh session derivation
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (!currentUser) throw new Error('Not authenticated');
+        const peerId = incomingCall.caller_id;
+        decryptedCallKey = await decryptCallKey(encKey, convId, currentUser.id, peerId);
+      }
     } catch (firstErr) {
       console.warn('[CALL] First decrypt attempt failed, re-deriving session:', firstErr);
       try {
         const { getOrCreateIdentityKeys, establishSession, deleteSessionKey } = await import('@/lib/crypto');
         const { data: { user: retryUser } } = await supabase.auth.getUser();
-        if (retryUser && incomingCall) {
+        if (retryUser && incomingCall && !incomingCall.is_group) {
           const retryPeerId = incomingCall.caller_id;
           const { data: peerKey } = await supabase
             .from('user_public_keys')
