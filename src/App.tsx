@@ -84,6 +84,7 @@ const AIEngine = lazyWithOneRetry(() => import("./pages/AIEngine"), 'r-ai');
 
 const AIAgents = lazyWithOneRetry(() => import("./pages/AIAgents"), 'r-agents');
 const Admin = lazyWithOneRetry(() => import("./pages/Admin"), 'r-admin');
+const KeyTransparencyAudit = lazyWithOneRetry(() => import("./pages/KeyTransparencyAudit"), 'r-kt-audit');
 const CreatorUpgrade = lazyWithOneRetry(() => import("./pages/CreatorUpgrade"), 'r-creator');
 const ForgotPassword = lazyWithOneRetry(() => import("./pages/ForgotPassword"), 'r-forgot');
 const ResetPassword = lazyWithOneRetry(() => import("./pages/ResetPassword"), 'r-reset');
@@ -279,6 +280,7 @@ function AppContent() {
               <Route path="/publicites" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
               <Route path="/ai-agents" element={<ProtectedRoute><AIAgents /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+              <Route path="/settings/transparence-cles" element={<ProtectedRoute><KeyTransparencyAudit /></ProtectedRoute>} />
               <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               

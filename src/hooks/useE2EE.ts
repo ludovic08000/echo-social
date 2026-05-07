@@ -437,6 +437,18 @@ async function checkFingerprintChangeWithServer(
         return result;
       }
       console.warn('[PEER_KEY] ⚠️ Server-side fingerprint mismatch for', peerUserId, '(was previously verified)');
+      // Lot A4 — record the change so the chat banner can surface it.
+      try {
+        const { recordIdentityChange } = await import('@/lib/crypto/identityChangeLedger');
+        await recordIdentityChange({
+          observerUserId: currentUserId,
+          peerUserId,
+          previousFingerprint: data.fingerprint,
+          newFingerprint: currentFp,
+        });
+      } catch (e) {
+        console.warn('[A4] recordIdentityChange failed', e);
+      }
       const result = { changed: true, previousFp: data.fingerprint };
       _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
       return result;

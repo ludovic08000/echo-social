@@ -231,6 +231,49 @@ export async function rotateOwnerSession(
   return state;
 }
 
+// ─── Lot B4 — Auto-rotation thresholds ───────────────────────────────────
+//
+// WhatsApp/Signal rotate sender keys aggressively to bound the blast radius
+// of a key compromise. We auto-rotate when EITHER:
+//   • iteration >= MAX_MESSAGES_PER_CHAIN (default 1000), or
+//   • the chain has been alive for AGE_LIMIT_MS (default 7 days).
+//
+// Callers wrap their send like:
+//
+//   let owner = await ensureOwnerSession(conv, uid, did);
+//   const rotated = await maybeAutoRotate(owner);
+//   if (rotated) {
+//     owner = rotated.state;
+//     await fanoutSKDM(snapshotForDistribution(owner));
+//   }
+//   const out = await encryptForGroup(owner, plaintext);
+
+const MAX_MESSAGES_PER_CHAIN = 1000;
+const CHAIN_AGE_LIMIT_MS = 7 * 24 * 60 * 60 * 1000;
+
+const _ownerCreatedAt = new Map<string, number>();
+function chainKey(s: { conversationId: string; senderDeviceId: string }): string {
+  return `${s.conversationId}::${s.senderDeviceId}`;
+}
+
+export async function maybeAutoRotate(
+  s: OwnerState,
+  now: number = Date.now(),
+): Promise<{ state: OwnerState; reason: 'count' | 'age' } | null> {
+  const k = chainKey(s);
+  const createdAt = _ownerCreatedAt.get(k) ?? now;
+  if (!_ownerCreatedAt.has(k)) _ownerCreatedAt.set(k, createdAt);
+
+  let reason: 'count' | 'age' | null = null;
+  if (s.iteration >= MAX_MESSAGES_PER_CHAIN) reason = 'count';
+  else if (now - createdAt >= CHAIN_AGE_LIMIT_MS) reason = 'age';
+  if (!reason) return null;
+
+  const next = await rotateOwnerSession(s.conversationId, s.senderUserId, s.senderDeviceId);
+  _ownerCreatedAt.set(k, now);
+  return { state: next, reason };
+}
+
 // ─── Recipient side ──────────────────────────────────────────────────────
 
 /**
