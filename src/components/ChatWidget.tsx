@@ -805,6 +805,25 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     e.preventDefault();
     if (!newMessage.trim()) return;
 
+    // Show explicit reason if E2EE is not ready (especially on iOS Safari where
+    // IndexedDB takes a moment to hydrate after login).
+    if (sendBlocked) {
+      if (e2ee.peerKeyMissing) {
+        toast.error("Clés du contact indisponibles. Réessaie dans quelques secondes.");
+      } else if (e2ee.initError === 'pin_unlock_required') {
+        toast.error("Déverrouille d'abord la messagerie sécurisée (PIN).");
+      } else if (e2ee.initError === 'identity_lost_backup_available') {
+        toast.error("Restaure ton identité sécurisée avant d'envoyer.");
+      } else {
+        toast.error("Messagerie sécurisée pas encore prête, réessaie.");
+      }
+      console.warn('[ChatWidget] send blocked', {
+        peerKeyMissing: e2ee.peerKeyMissing,
+        initError: e2ee.initError,
+      });
+      return;
+    }
+
     const replyText = replyTo ? decryptedCacheRef.current.get(replyTo.id) || replyTo.body : null;
     const body = replyTo
       ? `↩️ ${replyTo.profile.name}: "${(replyText || '').slice(0, 40)}…"\n\n${newMessage.trim()}`
