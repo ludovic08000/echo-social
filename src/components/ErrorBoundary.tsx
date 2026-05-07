@@ -14,6 +14,7 @@ interface Props {
 interface State {
   hasError: boolean;
   error?: Error;
+  crash?: CrashContext | null;
 }
 
 export class ErrorBoundary extends React.Component<Props, State> {
@@ -28,6 +29,13 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('[ErrorBoundary]', error, info.componentStack);
+    const crash = captureCrash({
+      message: error.message || 'react.boundary',
+      source: 'react.boundary',
+      stack: error.stack,
+      componentStack: info.componentStack ?? undefined,
+    }) ?? getLastCrash();
+    this.setState({ crash });
   }
 
   componentDidUpdate(prevProps: Props) {
