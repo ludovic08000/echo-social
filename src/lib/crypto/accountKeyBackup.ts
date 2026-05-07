@@ -898,7 +898,7 @@ export async function createRecoveryKeyBackup(userId: string): Promise<string | 
   const normalized = normalizeRecoveryKey(recoveryKey);
 
   try {
-    await uploadBackup(_sessionRawMasterKey!, _sessionMasterKey!, _sessionPassword || '', userId, 'recovery', normalized);
+    await uploadBackup(_sessionRawMasterKey!, _sessionMasterKey!, _sessionPassword || '', userId, 'recovery', recoverySecret(normalized, userId));
     logCryptoError({
       severity: 'info', context: 'backup', errorCode: 'RECOVERY_BACKUP_CREATED',
       errorMessage: 'Recovery-key wrapped backup created',
