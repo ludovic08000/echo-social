@@ -565,6 +565,7 @@ export function useCall(options?: UseCallOptions) {
     connectionQuality,
     localVideoRef,
     remoteVideoRef,
+    room: roomRef.current,
     startCall,
     endCall,
     toggleMute,

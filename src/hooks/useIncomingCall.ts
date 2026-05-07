@@ -333,6 +333,22 @@ export function useIncomingCall() {
           }
         }
       )
+      // Group calls — sonne aussi quand uid ∈ caller_ids
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'active_calls' },
+        (payload) => {
+          const callData = payload.new as any;
+          if (
+            callData?.is_group &&
+            callData?.status === 'ringing' &&
+            Array.isArray(callData?.caller_ids) &&
+            callData.caller_ids.includes(user.id)
+          ) {
+            handleIncomingCall(callData);
+          }
+        }
+      )
       .subscribe((status) => {
         console.log('[IncomingCall] Realtime status:', status);
       });

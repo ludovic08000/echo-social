@@ -4,8 +4,9 @@ import {
   ArrowLeft, Send, Search, Plus, X, Phone, Video, Mic, MicOff,
   Smile, Check, CheckCheck, Minus, Camera, Reply, Copy, Trash2,
   ChevronDown, Sparkles, MoreVertical, ThumbsUp, ImageIcon, PhoneOff, PhoneMissed,
-  Flag, Forward, Wand2, Languages, SpellCheck, PenLine, Tag, ArrowRightLeft, CreditCard, XIcon, MapPin, Truck, Maximize2
+  Flag, Forward, Wand2, Languages, SpellCheck, PenLine, Tag, ArrowRightLeft, CreditCard, XIcon, MapPin, Truck, Maximize2, Users
 } from 'lucide-react';
+import { AddParticipantSheet } from '@/components/calls/AddParticipantSheet';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { UserAvatar } from '@/components/UserAvatar';
@@ -358,6 +359,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [viewOnceArmed, setViewOnceArmed] = useState(false);
   const [showCallHistory, setShowCallHistory] = useState(false);
+  const [showGroupCallSheet, setShowGroupCallSheet] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
@@ -916,6 +918,22 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       )}
 
+      {showGroupCallSheet && (
+        <AddParticipantSheet
+          open={showGroupCallSheet}
+          onClose={() => setShowGroupCallSheet(false)}
+          conversationId={conversationId}
+          prefilled={conversation?.participant?.user_id ? [conversation.participant.user_id] : []}
+          onCallStarted={async (_callId, _roomId, callKey, callType) => {
+            try {
+              await call.startCall(conversationId, callType, callKey);
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Impossible de rejoindre l'appel");
+            }
+          }}
+        />
+      )}
+
       <input ref={fileInputRef} type="file" accept="image/*,video/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/zip,text/plain,text/csv" className="hidden" onChange={(e) => {
         const file = e.target.files?.[0];
         if (file) handleMediaFile(file);
@@ -1019,6 +1037,13 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors disabled:opacity-50"
           >
             <Video className={`w-3.5 h-3.5 ${isStartingCall ? 'animate-pulse' : ''}`} />
+          </button>
+          <button
+            onClick={() => setShowGroupCallSheet(true)}
+            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors"
+            title="Appel de groupe"
+          >
+            <Users className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => setShowCallHistory(true)}

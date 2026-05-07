@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils';
 import { CallState, CallType, formatCallDuration } from '@/hooks/useCall';
 import { RefObject } from 'react';
 import { getPlatform } from '@/lib/platformPermissions';
+import { GroupCallGrid } from '@/components/calls/GroupCallGrid';
+import type { Room } from 'livekit-client';
 
 interface CallOverlayProps {
   callState: CallState;
@@ -25,6 +27,10 @@ interface CallOverlayProps {
   onSwitchCamera?: () => void;
   onToggleScreenShare?: () => void;
   isScreenSharing?: boolean;
+  // Group call extension
+  isGroup?: boolean;
+  room?: Room | null;
+  participantsInfo?: Record<string, { identity: string; name?: string; avatar?: string }>;
 }
 
 export function CallOverlay({
@@ -46,12 +52,66 @@ export function CallOverlay({
   onSwitchCamera,
   onToggleScreenShare,
   isScreenSharing,
+  isGroup,
+  room,
+  participantsInfo,
 }: CallOverlayProps) {
   if (callState === 'idle') return null;
 
   const isVideo = callType === 'video';
   const isConnecting = callState === 'connecting';
   const platform = getPlatform();
+
+  // GROUP CALL — replace 1-to-1 layout with adaptive grid
+  if (isGroup) {
+    return (
+      <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+        <div className="flex-1 overflow-hidden">
+          <GroupCallGrid
+            room={room ?? null}
+            localParticipantName={participantName}
+            localParticipantAvatar={participantAvatar ?? undefined}
+            participantsInfo={participantsInfo}
+          />
+        </div>
+        {/* Bottom controls (reuse 1-to-1 controls) */}
+        <div className="relative z-10 bg-gradient-to-t from-black via-black/80 to-transparent pb-8 pt-6 px-6 flex items-center justify-center gap-4">
+          <Button
+            size="icon"
+            onClick={onToggleMute}
+            className={cn('w-14 h-14 rounded-full', isMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-white/20 hover:bg-white/30')}
+          >
+            {isMuted ? <MicOff className="w-6 h-6 text-white" /> : <Mic className="w-6 h-6 text-white" />}
+          </Button>
+          {isVideo && (
+            <Button
+              size="icon"
+              onClick={onToggleCamera}
+              className={cn('w-14 h-14 rounded-full', isCameraOff ? 'bg-red-500 hover:bg-red-600' : 'bg-white/20 hover:bg-white/30')}
+            >
+              {isCameraOff ? <VideoOff className="w-6 h-6 text-white" /> : <Video className="w-6 h-6 text-white" />}
+            </Button>
+          )}
+          {onToggleScreenShare && platform === 'web' && (
+            <Button
+              size="icon"
+              onClick={onToggleScreenShare}
+              className={cn('w-14 h-14 rounded-full', isScreenSharing ? 'bg-primary hover:bg-primary/90' : 'bg-white/20 hover:bg-white/30')}
+            >
+              <MonitorUp className="w-6 h-6 text-white" />
+            </Button>
+          )}
+          <Button
+            size="icon"
+            onClick={onEndCall}
+            className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600"
+          >
+            <PhoneOff className="w-7 h-7 text-white" />
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[100] bg-black flex flex-col">

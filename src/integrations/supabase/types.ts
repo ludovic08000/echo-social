@@ -151,41 +151,53 @@ export type Database = {
       }
       active_calls: {
         Row: {
+          accepted_by: string[] | null
           answered_at: string | null
           call_type: string
           callee_id: string
           caller_id: string
+          caller_ids: string[] | null
           conversation_id: string
           created_at: string
+          declined_by: string[] | null
           encrypted_call_key: string | null
           ended_at: string | null
           id: string
+          is_group: boolean
           room_id: string | null
           status: string
         }
         Insert: {
+          accepted_by?: string[] | null
           answered_at?: string | null
           call_type?: string
           callee_id: string
           caller_id: string
+          caller_ids?: string[] | null
           conversation_id: string
           created_at?: string
+          declined_by?: string[] | null
           encrypted_call_key?: string | null
           ended_at?: string | null
           id?: string
+          is_group?: boolean
           room_id?: string | null
           status?: string
         }
         Update: {
+          accepted_by?: string[] | null
           answered_at?: string | null
           call_type?: string
           callee_id?: string
           caller_id?: string
+          caller_ids?: string[] | null
           conversation_id?: string
           created_at?: string
+          declined_by?: string[] | null
           encrypted_call_key?: string | null
           ended_at?: string | null
           id?: string
+          is_group?: boolean
           room_id?: string | null
           status?: string
         }
@@ -873,6 +885,8 @@ export type Database = {
           ended_at: string
           final_status: string
           id: string
+          is_group: boolean
+          participants: string[] | null
           started_at: string
         }
         Insert: {
@@ -885,6 +899,8 @@ export type Database = {
           ended_at?: string
           final_status: string
           id?: string
+          is_group?: boolean
+          participants?: string[] | null
           started_at?: string
         }
         Update: {
@@ -897,6 +913,8 @@ export type Database = {
           ended_at?: string
           final_status?: string
           id?: string
+          is_group?: boolean
+          participants?: string[] | null
           started_at?: string
         }
         Relationships: []
