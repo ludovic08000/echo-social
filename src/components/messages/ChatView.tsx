@@ -987,7 +987,22 @@ export function ChatView({ conversationId }: ChatViewProps) {
                             </div>
                           )}
 
-                          {isImage && (
+                          {(() => {
+                            const rawBody = decryptedCache.get(msg.id) || msg.body || '';
+                            const doc = parseDocumentBody(rawBody);
+                            if (doc && msg.image_url) {
+                              return (
+                                <DocumentBubble
+                                  encryptedUrl={msg.image_url}
+                                  doc={doc}
+                                  isMe={isMe}
+                                />
+                              );
+                            }
+                            return null;
+                          })()}
+
+                          {isImage && !parseDocumentBody(decryptedCache.get(msg.id) || msg.body || '') && (
                             <div
                               onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
                               onContextMenu={(e) => { e.preventDefault(); setActiveMessageId(msg.id); }}
