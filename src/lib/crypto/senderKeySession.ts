@@ -273,6 +273,9 @@ export async function maybeAutoRotate(
   _ownerCreatedAt.set(k, now);
   return { state: next, reason };
 }
+
+// ─── Recipient side ──────────────────────────────────────────────────────
+
 /**
  * Install (or replace) a recipient state from an SKDM that arrived via the
  * pairwise ratchet. If a newer SKDM (higher iteration baseline) supersedes
