@@ -329,6 +329,7 @@ export async function ratchetEncrypt(
     sig: bufferToBase64(sig),
     fp: fingerprint,
     ts,
+    pad: 1,
   };
 
   return {
