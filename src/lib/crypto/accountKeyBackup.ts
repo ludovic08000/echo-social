@@ -138,14 +138,27 @@ function generateMasterKey(): Uint8Array {
 
 // ── IndexedDB helpers (shared with collectAllKeys / restoreAllKeys) ──
 
+// Default schemas for the side-DBs we touch from the backup pipeline.
+// MUST stay in sync with the modules owning those DBs (x3dh.ts, pinWrap.ts, …).
+// Without this, opening a non-existent DB at v1 with no upgrade handler creates
+// an EMPTY v1 with no stores, and any later open at the same version skips
+// onupgradeneeded → NotFoundError on transaction(storeName).
+const SIDE_DB_DEFAULT_STORES: Record<string, string[]> = {
+  'forsure-ratchet': ['ratchet-states'],
+  'forsure-pin-wrap': ['pin-wrapped-keys', 'wrapped-keys'],
+  'forsure-prekeys': ['private-prekeys'],
+  'forsure-spk': ['signed-prekeys'],
+};
+
 async function openDB(name: string, version: number, storeNames?: string[]): Promise<IDBDatabase> {
+  const stores = storeNames ?? SIDE_DB_DEFAULT_STORES[name];
   return new Promise<IDBDatabase>((resolve, reject) => {
     const req = hardGlobals.idbOpen(name, version);
     req.onerror = () => reject(req.error);
     req.onsuccess = () => resolve(req.result);
-    if (storeNames) {
+    if (stores) {
       req.onupgradeneeded = () => {
-        for (const sn of storeNames) {
+        for (const sn of stores) {
           if (!req.result.objectStoreNames.contains(sn)) {
             req.result.createObjectStore(sn, { keyPath: sn === 'ratchet-states' ? 'convId' : 'id' });
           }
