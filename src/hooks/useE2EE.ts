@@ -1205,7 +1205,30 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       throw new EncryptionError('Cle de securite du contact modifiee - verification obligatoire avant envoi');
     }
 
-    const bundle = await fetchPrekeyBundle(peerUserId);
+    // Prefer per-device bundle (4-DH with OPK); fall back to legacy per-user bundle (3-DH only).
+    let bundle = null as Awaited<ReturnType<typeof fetchPrekeyBundle>>;
+    let route: 'per-device-4dh' | 'legacy-3dh' = 'legacy-3dh';
+    try {
+      const { fetchActiveDevices } = await import('@/lib/crypto/deviceList');
+      const { fetchPrekeyBundleForDevice } = await import('@/lib/crypto/x3dh');
+      const peerDevices = await fetchActiveDevices(peerUserId);
+      // Pick most recently seen active device
+      const target = peerDevices[0];
+      if (target) {
+        const devBundle = await fetchPrekeyBundleForDevice(peerUserId, target.deviceId);
+        if (devBundle) {
+          bundle = devBundle;
+          route = 'per-device-4dh';
+          console.info(`[X3DH][ROUTE] per-device 4-DH bundle for ${peerUserId.slice(0, 8)}…/${target.deviceId.slice(0, 8)}…`);
+        }
+      }
+    } catch (e) {
+      console.warn('[X3DH][ROUTE] per-device bundle lookup failed, falling back to legacy:', e);
+    }
+    if (!bundle) {
+      bundle = await fetchPrekeyBundle(peerUserId);
+      console.info(`[X3DH][ROUTE] legacy 3-DH bundle for ${peerUserId.slice(0, 8)}…`);
+    }
     if (!bundle) {
       console.error('[X3DH] ⛔ Bundle pair absent, expiré ou incohérent — impossible d\'initialiser X3DH');
       throw new EncryptionError('🔒 Bundle X3DH du contact indisponible ou incohérent — message en attente chiffrée');
