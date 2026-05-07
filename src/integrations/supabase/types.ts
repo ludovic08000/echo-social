@@ -1587,6 +1587,24 @@ export type Database = {
         }
         Relationships: []
       }
+      edge_rate_limits: {
+        Row: {
+          count: number
+          key: string
+          window_start: string
+        }
+        Insert: {
+          count?: number
+          key: string
+          window_start?: string
+        }
+        Update: {
+          count?: number
+          key?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       email_send_log: {
         Row: {
           created_at: string
@@ -6010,6 +6028,14 @@ export type Database = {
           fingerprint: string
         }[]
       }
+      check_rate_limit: {
+        Args: {
+          p_key: string
+          p_max_requests: number
+          p_window_seconds: number
+        }
+        Returns: boolean
+      }
       claim_device_one_time_prekey: {
         Args: { p_device_id: string; p_user_id: string }
         Returns: {
@@ -6018,6 +6044,7 @@ export type Database = {
         }[]
       }
       cleanup_ai_cache: { Args: never; Returns: undefined }
+      cleanup_edge_rate_limits: { Args: never; Returns: undefined }
       cleanup_expired_device_link_requests: { Args: never; Returns: undefined }
       cleanup_expired_device_links: { Args: never; Returns: undefined }
       cleanup_expired_device_prekeys: { Args: never; Returns: undefined }
