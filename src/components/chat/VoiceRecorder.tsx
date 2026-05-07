@@ -317,6 +317,7 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe, mediaKeyB64 }: Vo
   const [audioDuration, setAudioDuration] = useState(duration || 0);
   const [blobSrc, setBlobSrc] = useState<string | null>(null);
   const [decrypting, setDecrypting] = useState(false);
+  const [rate, setRate] = useState<1 | 1.5 | 2>(1);
   const audioRef = useRef<HTMLAudioElement>(null);
   const triedBlobRef = useRef(false);
 
