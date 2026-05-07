@@ -628,74 +628,115 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
   // Wrap upload: encrypt media before upload when E2EE is active
   const handleMediaFile = useCallback(async (file: File) => {
-    const label = '📷 Photo';
-
-    // Pre-flight checks: catch the obvious failure modes BEFORE upload so the
-    // user sees a clear message instead of the generic "Erreur envoi photo".
     if (!file || file.size === 0) {
-      toast.error('Photo invalide ou vide');
-      return;
-    }
-    const MAX_PHOTO_BYTES = 25 * 1024 * 1024; // 25 MB
-    if (file.size > MAX_PHOTO_BYTES) {
-      toast.error(`Photo trop lourde (max ${Math.round(MAX_PHOTO_BYTES / 1024 / 1024)} Mo)`);
+      toast.error('Fichier invalide ou vide');
       return;
     }
 
-    if (isZeusConversation) {
+    const isVideo = /\.(mp4|mov|webm|avi|mkv)$/i.test(file.name) || file.type.startsWith('video/');
+    const isImage = file.type.startsWith('image/');
+    const isDoc = !isImage && !isVideo && (isDocumentMime(file.type) || /\.(pdf|docx?|xlsx?|pptx?|zip|txt|csv)$/i.test(file.name));
+    const armedVO = viewOnceArmed;
+    setViewOnceArmed(false);
+
+    // Documents path (PDF/Office/zip ≤100 Mo)
+    if (isDoc) {
+      if (file.size > 100 * 1024 * 1024) {
+        toast.error('Document trop volumineux (max 100 Mo)');
+        return;
+      }
+      if (!isZeusConversation && e2ee.peerKeyMissing) {
+        toast.error('Clés du contact indisponibles.');
+        return;
+      }
       try {
-        const url = await rawUpload(file);
-        if (!url) {
-          toast.error("Échec de l'envoi : upload refusé");
-          return;
-        }
-        sendMessage.mutate({ conversationId, body: label, imageUrl: url });
+        const { key, keyB64 } = await generateMediaKey();
+        const encryptedBlob = await encryptMedia(file, key);
+        const encFile = new File([encryptedBlob], `${file.name}.enc`, { type: 'application/octet-stream' });
+        const url = await rawUpload(encFile);
+        if (!url) { toast.error('Upload échoué'); return; }
+        const body = buildDocumentBody(file.name, file.type || 'application/octet-stream', file.size, keyB64);
+        queue.sendMessage(body, url, {
+          view_once: armedVO,
+          document_url: url,
+          document_name: file.name,
+          document_mime: file.type || 'application/octet-stream',
+          document_size_bytes: file.size,
+        }).catch((e) => {
+          logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send_doc' } });
+          toast.error('Erreur envoi document');
+        });
       } catch (err) {
-        console.error('[ChatWidget] Zeus photo upload failed', err);
-        toast.error(err instanceof Error ? `Erreur envoi photo : ${err.message}` : 'Erreur envoi photo');
+        logCryptoException('media', err, { severity: 'error', conversationId, metadata: { stage: 'doc_encrypt_upload' } });
+        toast.error('Erreur de chiffrement du document');
       }
       return;
     }
 
-    // E2EE active → encrypt file before upload
+    const MAX_PHOTO_BYTES = 25 * 1024 * 1024;
+    const MAX_VIDEO_BYTES = 60 * 1024 * 1024;
+    if (!isVideo && file.size > MAX_PHOTO_BYTES) {
+      toast.error(`Photo trop lourde (max ${Math.round(MAX_PHOTO_BYTES / 1024 / 1024)} Mo)`);
+      return;
+    }
+    if (isVideo && file.size > MAX_VIDEO_BYTES) {
+      toast.error(`Vidéo trop lourde (max ${Math.round(MAX_VIDEO_BYTES / 1024 / 1024)} Mo)`);
+      return;
+    }
+
+    const label = isVideo ? '🎬 Vidéo' : '📷 Photo';
+
+    let prepared: File = file;
+    if (isVideo) {
+      try {
+        const { compressVideoForChat } = await import('@/lib/messaging/compressVideo');
+        const result = await compressVideoForChat(file);
+        prepared = result.compressed
+          ? new File([result.blob], file.name.replace(/\.[^.]+$/, '.mp4'), { type: 'video/mp4' })
+          : file;
+      } catch {
+        prepared = file;
+      }
+    }
+
+    if (isZeusConversation) {
+      try {
+        const url = await rawUpload(prepared);
+        if (!url) { toast.error("Échec de l'envoi : upload refusé"); return; }
+        sendMessage.mutate({ conversationId, body: label, imageUrl: url });
+      } catch (err) {
+        toast.error(err instanceof Error ? `Erreur envoi : ${err.message}` : 'Erreur envoi');
+      }
+      return;
+    }
+
     const t0 = performance.now();
     try {
       const { key, keyB64 } = await generateMediaKey();
-      const encryptedBlob = await encryptMedia(file, key);
-      const encFile = new File([encryptedBlob], `${file.name}.enc`, { type: 'application/octet-stream' });
+      const encryptedBlob = await encryptMedia(prepared, key);
+      const encFile = new File([encryptedBlob], `${prepared.name}.enc`, { type: 'application/octet-stream' });
       const url = await rawUpload(encFile);
       if (url) {
         const body = buildMediaMessageBody(label, keyB64);
-        queue.sendMessage(body, url).catch((e) => {
-          logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send', isVideo: false } });
-          console.error('[ChatWidget] queue.sendMessage rejected for photo', e);
-          toast.error(e instanceof Error ? `Erreur envoi photo : ${e.message}` : 'Erreur envoi photo');
+        queue.sendMessage(body, url, { view_once: armedVO }).catch((e) => {
+          logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send', isVideo } });
+          toast.error(e instanceof Error ? `Erreur envoi : ${e.message}` : 'Erreur envoi');
         });
         logCryptoError({
           severity: 'info', context: 'media', errorCode: 'MEDIA_ENCRYPT_OK',
           errorMessage: 'Media encrypted and uploaded',
           conversationId,
-          metadata: { sizeBytes: file.size, mime: file.type, durationMs: Math.round(performance.now() - t0) },
+          metadata: { sizeBytes: prepared.size, mime: prepared.type, isVideo, viewOnce: armedVO, durationMs: Math.round(performance.now() - t0) },
         });
       } else {
-        logCryptoError({
-          severity: 'error', context: 'media', errorCode: 'MEDIA_UPLOAD_FAILED',
-          errorMessage: 'Encrypted media upload returned no URL',
-          conversationId,
-          metadata: { sizeBytes: file.size, mime: file.type },
-        });
         toast.error("Échec de l'envoi : upload refusé par le serveur");
       }
     } catch (err) {
       console.error('Media encryption failed:', err);
-      logCryptoException('media', err, {
-        severity: 'error',
-        conversationId,
-        metadata: { stage: 'encrypt_upload', sizeBytes: file.size, mime: file.type, durationMs: Math.round(performance.now() - t0) },
-      });
-      toast.error(err instanceof Error ? `Erreur photo : ${err.message}` : 'Erreur de chiffrement du média');
+      logCryptoException('media', err, { severity: 'error', conversationId, metadata: { stage: 'encrypt_upload', sizeBytes: file.size, mime: file.type } });
+      toast.error(err instanceof Error ? `Erreur : ${err.message}` : 'Erreur de chiffrement du média');
     }
-  }, [isZeusConversation, rawUpload, conversationId, sendMessage, queue]);
+  }, [isZeusConversation, rawUpload, conversationId, sendMessage, queue, e2ee.peerKeyMissing, viewOnceArmed]);
 
   useEffect(() => {
     lastScrollSigRef.current = '';
