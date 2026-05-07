@@ -1162,6 +1162,7 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          disappearing_seconds: number | null
           id: string
           is_group: boolean
           name: string | null
@@ -1170,6 +1171,7 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by?: string | null
+          disappearing_seconds?: number | null
           id?: string
           is_group?: boolean
           name?: string | null
@@ -1178,6 +1180,7 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string | null
+          disappearing_seconds?: number | null
           id?: string
           is_group?: boolean
           name?: string | null
@@ -2739,6 +2742,7 @@ export type Database = {
           body_kind: string
           conversation_id: string
           created_at: string
+          expires_at: string | null
           id: string
           image_url: string | null
           sender_id: string
@@ -2749,6 +2753,7 @@ export type Database = {
           body_kind?: string
           conversation_id: string
           created_at?: string
+          expires_at?: string | null
           id?: string
           image_url?: string | null
           sender_id: string
@@ -2759,6 +2764,7 @@ export type Database = {
           body_kind?: string
           conversation_id?: string
           created_at?: string
+          expires_at?: string | null
           id?: string
           image_url?: string | null
           sender_id?: string

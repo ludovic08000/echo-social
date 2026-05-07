@@ -6,7 +6,7 @@ import {
   ArrowLeft, Send, Plus, Smile, Phone, Video,
   Camera, X, CheckCheck, Pin, PinOff, ChevronDown,
   Forward, Users, UserPlus, LogOut, Crown, UserMinus, Sparkles, Info,
-  AlertTriangle, Languages
+  AlertTriangle, Languages, Timer
 } from 'lucide-react';
 import { format, isSameDay } from 'date-fns';
 import { UserAvatar } from '@/components/UserAvatar';
@@ -47,6 +47,7 @@ import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
 import { useTypingPresence } from '@/hooks/useTypingPresence';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
 import { LRUMap } from '@/lib/utils/lruMap';
+import { DisappearingMessagesDialog } from './DisappearingMessagesDialog';
 
 interface ChatViewProps {
   conversationId: string;
@@ -95,6 +96,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const [pinnedMessages, setPinnedMessages] = useState<Set<string>>(new Set());
   const [forwardMsg, setForwardMsg] = useState<{ id: string; plaintext: string } | null>(null);
   const [showGroupPanel, setShowGroupPanel] = useState(false);
+  const [showDisappearing, setShowDisappearing] = useState(false);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [inviteSearch, setInviteSearch] = useState('');
   const [showNewChat, setShowNewChat] = useState(false);
@@ -323,7 +325,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   ]);
 
   const {
-    callState, callType, isMuted, isCameraOff, duration, isE2eeActive,
+    callState, callType, isMuted, isCameraOff, duration, isE2eeActive, connectionQuality,
     localVideoRef, remoteVideoRef,
     startCall, endCall, toggleMute, toggleCamera, switchToVideo, switchCamera,
   } = useCall();
@@ -598,6 +600,9 @@ export function ChatView({ conversationId }: ChatViewProps) {
             </Button>
             <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => handleStartCall('video')} disabled={callState !== 'idle'}>
               <Video className="w-5 h-5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => setShowDisappearing(true)} title="Messages éphémères">
+              <Timer className="w-5 h-5" />
             </Button>
             <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => setShowGroupPanel(!showGroupPanel)}>
               <Info className="w-5 h-5" />
@@ -1285,6 +1290,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         participantName={conversation?.participant.name || ''}
         participantAvatar={conversation?.participant.avatar_url}
         isE2eeActive={isE2eeActive}
+        connectionQuality={connectionQuality}
         localVideoRef={localVideoRef}
         remoteVideoRef={remoteVideoRef}
         onEndCall={handleEndCall}
@@ -1293,6 +1299,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
         onSwitchToVideo={switchToVideo}
         onSwitchCamera={switchCamera}
       />
+
+      {/* Disappearing messages dialog */}
+      {conversationId && (
+        <DisappearingMessagesDialog
+          open={showDisappearing}
+          onOpenChange={setShowDisappearing}
+          conversationId={conversationId}
+        />
+      )}
 
       {/* Forward dialog — uses decrypted text */}
       <ForwardMessageDialog

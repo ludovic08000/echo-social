@@ -1,4 +1,4 @@
-import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X, RotateCcw, ShieldCheck } from 'lucide-react';
+import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X, RotateCcw, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/UserAvatar';
 import { cn } from '@/lib/utils';
@@ -15,6 +15,7 @@ interface CallOverlayProps {
   participantName: string;
   participantAvatar?: string | null;
   isE2eeActive?: boolean;
+  connectionQuality?: 'excellent' | 'good' | 'poor' | 'lost' | 'unknown';
   localVideoRef: RefObject<HTMLDivElement>;
   remoteVideoRef: RefObject<HTMLDivElement>;
   onEndCall: () => void;
@@ -33,6 +34,7 @@ export function CallOverlay({
   participantName,
   participantAvatar,
   isE2eeActive,
+  connectionQuality = 'unknown',
   localVideoRef,
   remoteVideoRef,
   onEndCall,
@@ -91,6 +93,30 @@ export function CallOverlay({
               <div className="flex items-center gap-1.5 mt-2 bg-green-500/20 rounded-full px-3 py-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-green-400" />
                 <span className="text-green-400 text-xs font-medium">Chiffré de bout en bout</span>
+              </div>
+            )}
+            {!isConnecting && connectionQuality !== 'unknown' && (
+              <div
+                className={cn(
+                  "flex items-center gap-1.5 mt-2 rounded-full px-3 py-1",
+                  connectionQuality === 'excellent' && "bg-green-500/20 text-green-400",
+                  connectionQuality === 'good' && "bg-emerald-500/15 text-emerald-300",
+                  connectionQuality === 'poor' && "bg-amber-500/20 text-amber-400",
+                  connectionQuality === 'lost' && "bg-red-500/20 text-red-400",
+                )}
+                title="Qualité réseau"
+              >
+                {connectionQuality === 'lost' ? (
+                  <WifiOff className="w-3.5 h-3.5" />
+                ) : (
+                  <Wifi className="w-3.5 h-3.5" />
+                )}
+                <span className="text-xs font-medium">
+                  {connectionQuality === 'excellent' && 'Réseau excellent'}
+                  {connectionQuality === 'good' && 'Bon réseau'}
+                  {connectionQuality === 'poor' && 'Réseau faible'}
+                  {connectionQuality === 'lost' && 'Connexion perdue'}
+                </span>
               </div>
             )}
           </>

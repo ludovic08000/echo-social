@@ -831,6 +831,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         participantName={conversation?.participant.name || ''}
         participantAvatar={conversation?.participant.avatar_url}
         isE2eeActive={call.isE2eeActive}
+        connectionQuality={call.connectionQuality}
         localVideoRef={call.localVideoRef}
         remoteVideoRef={call.remoteVideoRef}
         onEndCall={call.endCall}

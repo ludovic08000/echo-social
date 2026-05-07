@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Room, RoomEvent, Track, ExternalE2EEKeyProvider, isE2EESupported } from 'livekit-client';
+import { Room, RoomEvent, Track, ExternalE2EEKeyProvider, isE2EESupported, ConnectionQuality } from 'livekit-client';
 import { getLiveKitToken } from '@/lib/livekit';
 import { requestMediaPermissions, acquireWakeLock, releaseWakeLock } from '@/lib/platformPermissions';
 import { toast } from 'sonner';
@@ -38,6 +38,7 @@ export function useCall(options?: UseCallOptions) {
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [duration, setDuration] = useState(0);
   const [isE2eeActive, setIsE2eeActive] = useState(false);
+  const [connectionQuality, setConnectionQuality] = useState<'excellent' | 'good' | 'poor' | 'lost' | 'unknown'>('unknown');
 
   const roomRef = useRef<Room | null>(null);
   const localVideoRef = useRef<HTMLDivElement | null>(null);
@@ -318,6 +319,16 @@ export function useCall(options?: UseCallOptions) {
         track.detach().forEach(el => el.remove());
       });
 
+      // Network quality indicator (WhatsApp-style)
+      room.on(RoomEvent.ConnectionQualityChanged, (quality) => {
+        const q = quality === ConnectionQuality.Excellent ? 'excellent'
+          : quality === ConnectionQuality.Good ? 'good'
+          : quality === ConnectionQuality.Poor ? 'poor'
+          : quality === ConnectionQuality.Lost ? 'lost'
+          : 'unknown';
+        setConnectionQuality(q);
+      });
+
       room.on(RoomEvent.Disconnected, (reason) => {
         if (endingRef.current) {
           console.debug('[CALL] RoomEvent.Disconnected ignored — safeDisconnect already running');
@@ -535,6 +546,7 @@ export function useCall(options?: UseCallOptions) {
     isCameraOff,
     duration,
     isE2eeActive,
+    connectionQuality,
     localVideoRef,
     remoteVideoRef,
     startCall,
