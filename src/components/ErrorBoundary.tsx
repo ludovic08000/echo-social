@@ -91,6 +91,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
               Recharger la page
             </Button>
           </div>
+          {(this.state.crash ?? getLastCrash()) && (
+            <CrashDetails crash={(this.state.crash ?? getLastCrash())!} />
+          )}
         </div>
       );
     }
