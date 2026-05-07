@@ -90,6 +90,23 @@ function makeFromHandler(opts: {
         },
       };
     }
+    if (table === 'sender_key_state') {
+      // No persistence in tests: load returns nothing, upsert is a no-op.
+      return {
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              eq: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({ data: null, error: null }),
+                }),
+              }),
+            }),
+          }),
+        }),
+        upsert: async () => ({ error: null }),
+      };
+    }
     throw new Error(`Unexpected table in test: ${table}`);
   };
 }
