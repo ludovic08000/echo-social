@@ -1630,6 +1630,7 @@ export type Database = {
           expires_at: string
           id: string
           is_active: boolean
+          is_last_resort: boolean
           public_key: string
           signature: string
           signature_version: number
@@ -1642,6 +1643,7 @@ export type Database = {
           expires_at?: string
           id?: string
           is_active?: boolean
+          is_last_resort?: boolean
           public_key: string
           signature: string
           signature_version?: number
@@ -1654,6 +1656,7 @@ export type Database = {
           expires_at?: string
           id?: string
           is_active?: boolean
+          is_last_resort?: boolean
           public_key?: string
           signature?: string
           signature_version?: number
@@ -5649,6 +5652,7 @@ export type Database = {
           expires_at: string
           id: string
           is_active: boolean
+          is_last_resort: boolean
           public_key: string
           signature: string
           signature_version: number
@@ -5660,6 +5664,7 @@ export type Database = {
           expires_at?: string
           id?: string
           is_active?: boolean
+          is_last_resort?: boolean
           public_key: string
           signature: string
           signature_version?: number
@@ -5671,6 +5676,7 @@ export type Database = {
           expires_at?: string
           id?: string
           is_active?: boolean
+          is_last_resort?: boolean
           public_key?: string
           signature?: string
           signature_version?: number
@@ -5896,6 +5902,30 @@ export type Database = {
           screen_time_score?: number
           social_balance_score?: number
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      x3dh_replay_ledger: {
+        Row: {
+          consumed_at: string
+          expires_at: string
+          fingerprint: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          consumed_at?: string
+          expires_at?: string
+          fingerprint: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          consumed_at?: string
+          expires_at?: string
+          fingerprint?: string
+          id?: string
           user_id?: string
         }
         Relationships: []
@@ -6271,6 +6301,7 @@ export type Database = {
           signature_version: number
         }[]
       }
+      claim_x3dh_initial: { Args: { p_fingerprint: string }; Returns: boolean }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_edge_rate_limits: { Args: never; Returns: undefined }
       cleanup_expired_device_link_requests: { Args: never; Returns: undefined }
@@ -6526,6 +6557,15 @@ export type Database = {
       get_signed_prekey: {
         Args: { p_user_id: string }
         Returns: {
+          public_key: string
+          signature: string
+          spk_id: number
+        }[]
+      }
+      get_signed_prekey_with_fallback: {
+        Args: { p_user_id: string }
+        Returns: {
+          is_last_resort: boolean
           public_key: string
           signature: string
           spk_id: number
