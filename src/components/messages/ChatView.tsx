@@ -95,6 +95,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const [pinnedMessages, setPinnedMessages] = useState<Set<string>>(new Set());
   const [forwardMsg, setForwardMsg] = useState<{ id: string; plaintext: string } | null>(null);
   const [showGroupPanel, setShowGroupPanel] = useState(false);
+  const [showDisappearing, setShowDisappearing] = useState(false);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [inviteSearch, setInviteSearch] = useState('');
   const [showNewChat, setShowNewChat] = useState(false);
