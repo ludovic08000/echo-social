@@ -1993,8 +1993,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 }
 
 // ─── Main Widget ─────────────────────────────────────────
-const WIDGET_W = 328;
-const WIDGET_H = 455;
+const WIDGET_W = 400;
+const WIDGET_H = 600;
 const POS_KEY = 'chatwidget:pos:v1';
 const MOBILE_POS_KEY = 'chatwidget:mobilepos:v1';
 
