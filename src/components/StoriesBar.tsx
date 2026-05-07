@@ -281,18 +281,20 @@ export function StoriesBar() {
               <img
                 src={myProfile.avatar_url}
                 alt="Ma story"
-                className="w-full h-[130px] object-cover"
+                className="w-full h-full object-cover"
                 loading="eager"
               />
             ) : (
-              <div className="w-full h-[130px] bg-gradient-to-br from-primary/30 to-accent/40 flex items-center justify-center">
+              <div className="w-full h-full bg-gradient-to-br from-primary/30 to-accent/40 flex items-center justify-center">
                 <UserAvatar src={null} alt="Moi" size="lg" />
               </div>
             )}
+            {/* Gradient overlay for label readability */}
+            <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
           </div>
           {/* iOS-style floating plus button */}
-          <div className="absolute left-1/2 -translate-x-1/2 top-[112px] z-10">
-            <div className="w-9 h-9 rounded-full border-[3px] border-card shadow-lg flex items-center justify-center bg-blue-500">
+          <div className="absolute left-1/2 -translate-x-1/2 top-2 z-10">
+            <div className="w-9 h-9 rounded-full border-[3px] border-white/90 shadow-lg flex items-center justify-center bg-blue-500">
               {isCreating ? (
                 <Loader2 className="w-4 h-4 animate-spin text-white" />
               ) : (
@@ -300,9 +302,9 @@ export function StoriesBar() {
               )}
             </div>
           </div>
-          {/* Bottom label — premium serif */}
-          <div className="relative h-[60px] flex items-end justify-center pb-2.5 bg-card rounded-b-2xl">
-            <span className="font-playfair text-[13px] font-semibold italic text-foreground text-center leading-tight tracking-tight bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+          {/* Bottom label — premium serif overlay */}
+          <div className="absolute inset-x-0 bottom-0 z-10 px-2 pb-2 text-center">
+            <span className="font-playfair text-[13px] font-semibold italic text-white text-center leading-tight tracking-tight drop-shadow-lg">
               Créer story
             </span>
           </div>
