@@ -300,9 +300,11 @@ export function StoriesBar() {
               )}
             </div>
           </div>
-          {/* Bottom label */}
+          {/* Bottom label — premium serif */}
           <div className="relative h-[60px] flex items-end justify-center pb-2.5 bg-card rounded-b-2xl">
-            <span className="text-[11px] font-semibold text-foreground text-center leading-tight">Vous</span>
+            <span className="font-playfair text-[13px] font-semibold italic text-foreground text-center leading-tight tracking-tight bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+              Créer story
+            </span>
           </div>
         </div>
 
