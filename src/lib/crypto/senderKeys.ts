@@ -16,8 +16,8 @@
  * once `enable_sender_keys` is set on a conversation and all member
  * devices have a corresponding SKDM delivered.
  */
-import { hardCrypto, hardGlobals } from '@/lib/security/runtimeShield';
-import { base64ToBuffer, bufferToBase64, randomBytes } from './x3dh';
+import { hardCrypto, hardGlobals } from './cryptoIntegrity';
+import { base64ToBuffer, bufferToBase64, randomBytes } from './utils';
 
 const CHAIN_INFO_KDF = 'ForSure/SenderKey/v1/chain';
 const MSG_INFO_KDF = 'ForSure/SenderKey/v1/msg';
