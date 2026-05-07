@@ -546,6 +546,7 @@ export function useCall(options?: UseCallOptions) {
     isCameraOff,
     duration,
     isE2eeActive,
+    connectionQuality,
     localVideoRef,
     remoteVideoRef,
     startCall,
