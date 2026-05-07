@@ -991,6 +991,13 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           >
             <Video className={`w-3.5 h-3.5 ${isStartingCall ? 'animate-pulse' : ''}`} />
           </button>
+          <button
+            onClick={() => setShowCallHistory(true)}
+            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors"
+            title="Historique d'appels"
+          >
+            <PhoneMissed className="w-3.5 h-3.5" />
+          </button>
           <button onClick={() => { closeChat(); navigate(`/messages/${conversationId}`); }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors" title="Agrandir">
             <Maximize2 className="w-3.5 h-3.5" />
           </button>
