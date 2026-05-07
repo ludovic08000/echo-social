@@ -970,23 +970,19 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <div className="flex items-center gap-2 flex-1 min-w-0">
+        <div className="flex items-center flex-1 min-w-0">
           {conversation && (
-            <>
-              <Link to={`/profile/${conversation.participant.user_id}`} className="relative flex-shrink-0">
+            <Link
+              to={`/profile/${conversation.participant.user_id}`}
+              className="relative flex-shrink-0 group"
+              title={`${conversation.participant.name} • En ligne`}
+              aria-label={conversation.participant.name}
+            >
+              <div className="rounded-full ring-2 ring-primary-foreground/40 group-hover:ring-primary-foreground/80 transition-all">
                 <UserAvatar src={conversation.participant.avatar_url} alt={conversation.participant.name} size="sm" />
-                <div className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 border border-primary" />
-              </Link>
-              <Link to={`/profile/${conversation.participant.user_id}`} className="min-w-0">
-                <div className="flex items-center gap-1 min-w-0">
-                  <p className="text-xs font-semibold truncate hover:underline">{conversation.participant.name}</p>
-                </div>
-                <p className="text-[9px] opacity-80 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  En ligne
-                </p>
-              </Link>
-            </>
+              </div>
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-primary shadow-sm" />
+            </Link>
           )}
         </div>
         <div className="flex items-center gap-1">
