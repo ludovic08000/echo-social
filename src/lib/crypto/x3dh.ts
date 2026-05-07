@@ -619,12 +619,22 @@ export async function generateAndUploadDeviceSignedPrekey(
     throw new Error(`X3DH_DB_UPSERT_FAILED table=device_signed_prekeys step=device_signed_prekeys_upsert code=${dbDiag.code ?? 'n/a'} rejected_column=${dbDiag.rejected_column} details=${dbDiag.details ?? 'n/a'} hint=${dbDiag.hint ?? 'n/a'} supabase_message=${dbDiag.message ?? 'n/a'}`);
   }
 
-  // Deactivate previous device SPKs server-side (local privates kept for in-flight)
+  // Mark previous device SPK as inactive but flag it as `last_resort` so peers
+  // mid-bootstrap don't fall on a void during rotation. Window bounded by
+  // `expires_at`. Local privates are also kept for in-flight messages.
   await supabase
     .from('device_signed_prekeys')
-    .update({ is_active: false })
+    .update({ is_last_resort: false })
     .eq('user_id', userId)
     .eq('device_id', deviceId)
+    .eq('is_last_resort', true);
+
+  await supabase
+    .from('device_signed_prekeys')
+    .update({ is_active: false, is_last_resort: true })
+    .eq('user_id', userId)
+    .eq('device_id', deviceId)
+    .eq('is_active', true)
     .neq('spk_id', spkId);
 
   console.log(`[X3DH-DEV] ✅ device SPK #${spkId} for ${deviceId.slice(0, 8)}… uploaded`);
