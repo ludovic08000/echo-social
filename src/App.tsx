@@ -191,6 +191,20 @@ function AccountKeySyncRunner() {
     return () => stop();
   }, [user?.id]);
 
+  // Sender Keys inbound: catch up undelivered SKDMs at boot, then subscribe
+  // to realtime inserts so opted-in conversations install the chain on the fly.
+  useEffect(() => {
+    if (!user?.id) return;
+    void catchUpSenderKeyDistribution(user.id);
+    const unsub = subscribeSenderKeyDistribution(user.id);
+    const onFocus = () => { void catchUpSenderKeyDistribution(user.id); };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      unsub();
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [user?.id]);
+
   // PR #13 — listen for forced device-kx restore (server has a key we can't match)
   useEffect(() => {
     const onRestoreNeeded = (e: Event) => {
