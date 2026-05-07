@@ -46,10 +46,10 @@ export async function registerPasskeyForBackupVault(userId: string, displayName:
 
   const credential = await navigator.credentials.create({
     publicKey: {
-      challenge: randomChallenge(),
+      challenge: randomChallenge() as BufferSource,
       rp: { name: 'ForSure' },
       user: {
-        id: new TextEncoder().encode(userId),
+        id: new TextEncoder().encode(userId) as BufferSource,
         name: displayName || userId,
         displayName: displayName || 'ForSure user',
       },
@@ -91,8 +91,8 @@ export async function verifyPasskeyBeforeVaultRestore(userId: string, recoveryKe
 
   const assertion = await navigator.credentials.get({
     publicKey: {
-      challenge: randomChallenge(),
-      allowCredentials: [{ type: 'public-key', id: fromBase64Url(credentialId) }],
+      challenge: randomChallenge() as BufferSource,
+      allowCredentials: [{ type: 'public-key', id: fromBase64Url(credentialId) as BufferSource }],
       userVerification: 'required',
       timeout: 60_000,
     },
