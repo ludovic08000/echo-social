@@ -155,17 +155,20 @@ describe('Signal conformance — v4 canonical AAD layout', () => {
   });
 
   it('initiator IK MUST come first in identity AD regardless of who serializes', () => {
+    type Side = { my: string; peer: string; role: 'initiator' | 'responder' };
     // Both Alice (initiator) and Bob (responder) must agree on the same AAD bytes.
-    const alice = { my: 'AAAA', peer: 'BBBB', role: 'initiator' as const };
-    const bob = { my: 'BBBB', peer: 'AAAA', role: 'responder' as const };
+    const alice: Side = { my: 'AAAA', peer: 'BBBB', role: 'initiator' };
+    const bob: Side = { my: 'BBBB', peer: 'AAAA', role: 'responder' };
 
-    const aliceInitIK = alice.role === 'initiator' ? alice.my : alice.peer;
-    const aliceRespIK = alice.role === 'initiator' ? alice.peer : alice.my;
-    const bobInitIK = bob.role === 'initiator' ? bob.my : bob.peer;
-    const bobRespIK = bob.role === 'initiator' ? bob.peer : bob.my;
+    const pickIK = (s: Side) => ({
+      init: s.role === 'initiator' ? s.my : s.peer,
+      resp: s.role === 'initiator' ? s.peer : s.my,
+    });
+    const a = pickIK(alice);
+    const b = pickIK(bob);
 
-    expect(`${AD_PREFIX_V3}${aliceInitIK}|${aliceRespIK}`).toBe(
-      `${AD_PREFIX_V3}${bobInitIK}|${bobRespIK}`,
+    expect(`${AD_PREFIX_V3}${a.init}|${a.resp}`).toBe(
+      `${AD_PREFIX_V3}${b.init}|${b.resp}`,
     );
   });
 });
