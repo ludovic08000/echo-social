@@ -55,7 +55,7 @@ function MobileHeader() {
     <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-xl border-b border-border/10 safe-area-pt">
       <div className="flex items-center justify-between h-14 px-3">
          <Link to="/feed" className="flex items-center">
-           <img src={forsureWordmark} alt="Forsure" className="h-7 w-auto select-none" draggable={false} />
+           <img src={forsureWordmark} alt="Forsure" className="h-7 w-auto select-none dark:invert dark:brightness-0 dark:contrast-200" draggable={false} />
          </Link>
         
         <div className="flex items-center gap-2">
