@@ -105,6 +105,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const [showNewChat, setShowNewChat] = useState(false);
   const [isSending] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
+  const [viewOnceArmed, setViewOnceArmed] = useState(false);
   const { translations, translating, translate: translateMsg, autoTranslateMessages } = useMessageTranslation();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
