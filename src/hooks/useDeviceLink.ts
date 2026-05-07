@@ -123,7 +123,7 @@ async function collectLocalKeys(options: { includePlaintextCache?: boolean } = {
       });
       data[`e2ee:${storeName}`] = all;
     }
-    db.close();
+    // openE2EEDB() returns the shared crypto DB singleton; keep it open.
   } catch {}
 
   try {
@@ -176,7 +176,7 @@ async function restoreLocalKeys(json: string): Promise<void> {
           tx.onerror = () => reject(tx.error);
         });
       }
-      db.close();
+      // openE2EEDB() returns the shared crypto DB singleton; keep it open.
     } catch {}
   }
 

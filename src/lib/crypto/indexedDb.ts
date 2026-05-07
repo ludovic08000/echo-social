@@ -19,6 +19,12 @@ function resetE2EEDB() {
   dbPromise = null;
 }
 
+export async function reopenE2EEDB(): Promise<IDBDatabase> {
+  resetE2EEDB();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  return openE2EEDB();
+}
+
 export function isIndexedDBClosingError(error: unknown): boolean {
   return (
     error instanceof DOMException &&
@@ -52,8 +58,22 @@ export function openE2EEDB(): Promise<IDBDatabase> {
 
     request.onsuccess = () => {
       const db = request.result;
+      const closeForUpgrade = db.close.bind(db);
+      // This connection is a shared singleton used by chat, calls, media upload,
+      // PIN restore and key backup. Feature code must not close it after a local
+      // read/write, otherwise concurrent crypto writes fail with:
+      // "Failed to execute 'transaction': The database connection is closing".
+      try {
+        Object.defineProperty(db, 'close', {
+          configurable: true,
+          value: () => console.warn('[E2EE][IDB] ignored close() on shared crypto database'),
+        });
+      } catch {
+        // Some WebViews may not allow overriding native methods; direct callers
+        // are still being removed, and onversionchange uses closeForUpgrade.
+      }
       db.onversionchange = () => {
-        db.close();
+        closeForUpgrade();
         resetE2EEDB();
       };
       db.onclose = () => resetE2EEDB();

@@ -7,7 +7,7 @@ import {
   STORE_KEYS, STORE_SESSION, STORE_PREKEYS,
   KX_KEY_PARAMS, SIG_KEY_PARAMS,
 } from './constants';
-import { openE2EEDB } from './indexedDb';
+import { isIndexedDBClosingError, openE2EEDB, reopenE2EEDB } from './indexedDb';
 import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, base64ToBuffer } from './utils';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 
@@ -45,12 +45,12 @@ interface StoredSessionKey {
   peerFingerprint: string;
 }
 
-function openDB(): Promise<IDBDatabase> {
-  return openE2EEDB();
+function openDB(forceFresh = false): Promise<IDBDatabase> {
+  return forceFresh ? reopenE2EEDB() : openE2EEDB();
 }
 
-function dbGet<T>(storeName: string, key: string): Promise<T | undefined> {
-  return openDB().then(db => new Promise((resolve, reject) => {
+function dbGet<T>(storeName: string, key: string, forceFresh = false): Promise<T | undefined> {
+  return openDB(forceFresh).then(db => new Promise((resolve, reject) => {
     try {
       const tx = db.transaction(storeName, 'readonly');
       const store = tx.objectStore(storeName);
@@ -63,8 +63,9 @@ function dbGet<T>(storeName: string, key: string): Promise<T | undefined> {
   }));
 }
 
-function dbPut<T>(storeName: string, value: T): Promise<void> {
-  return openDB().then(db => new Promise((resolve, reject) => {
+async function dbPut<T>(storeName: string, value: T, forceFresh = false): Promise<void> {
+  try {
+    return await openDB(forceFresh).then(db => new Promise<void>((resolve, reject) => {
     try {
       const tx = db.transaction(storeName, 'readwrite');
       const store = tx.objectStore(storeName);
@@ -74,7 +75,14 @@ function dbPut<T>(storeName: string, value: T): Promise<void> {
     } catch (error) {
       reject(error);
     }
-  }));
+    }));
+  } catch (error) {
+    if (!forceFresh && isIndexedDBClosingError(error)) {
+      console.warn('[KEY_MGR] IndexedDB connection was closing; retrying with a fresh connection.');
+      return dbPut(storeName, value, true);
+    }
+    throw error;
+  }
 }
 
 function dbDelete(storeName: string, key: string): Promise<void> {
