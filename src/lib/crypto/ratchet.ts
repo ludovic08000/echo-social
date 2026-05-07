@@ -24,7 +24,11 @@ import {
 } from './utils';
 import { exportKeyToJWK, importKeyFromJWK } from './utils';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
-import { AES_ALGO, IV_LENGTH, PROTOCOL_VERSION, AD_PREFIX_V3, CLASSICAL_KEM_ID, KX_KEY_PARAMS } from './constants';
+import {
+  AES_ALGO, IV_LENGTH, PROTOCOL_VERSION, AD_PREFIX_V3, AD_HEADER_PREFIX_V4,
+  CLASSICAL_KEM_ID, KX_KEY_PARAMS,
+  RATCHET_MAX_SKIP, RATCHET_MAX_SKIPPED_CACHE, RATCHET_SKIPPED_TTL_MS,
+} from './constants';
 import { exportPublicKeyRaw } from './keyManager';
 
 // ─── Types ───
