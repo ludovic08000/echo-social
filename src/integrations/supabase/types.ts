@@ -6960,6 +6960,17 @@ export type Database = {
           device_id: string
         }[]
       }
+      live_score_batch: {
+        Args: { p_limit?: number; p_user_id: string }
+        Returns: {
+          affinity: number
+          freshness: number
+          interest_match: number
+          live_id: string
+          momentum: number
+          score: number
+        }[]
+      }
       mark_device_copy_retry_failed: {
         Args: { p_error: string; p_request_id: string }
         Returns: boolean
@@ -7056,6 +7067,10 @@ export type Database = {
         Returns: number
       }
       ml_score_post_v4: {
+        Args: { p_post_id: string; p_user_id: string }
+        Returns: number
+      }
+      ml_score_post_v5: {
         Args: { p_post_id: string; p_user_id: string }
         Returns: number
       }
