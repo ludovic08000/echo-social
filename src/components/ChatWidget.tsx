@@ -805,6 +805,25 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     e.preventDefault();
     if (!newMessage.trim()) return;
 
+    // Show explicit reason if E2EE is not ready (especially on iOS Safari where
+    // IndexedDB takes a moment to hydrate after login).
+    if (sendBlocked) {
+      if (e2ee.peerKeyMissing) {
+        toast.error("Clés du contact indisponibles. Réessaie dans quelques secondes.");
+      } else if (e2ee.initError === 'pin_unlock_required') {
+        toast.error("Déverrouille d'abord la messagerie sécurisée (PIN).");
+      } else if (e2ee.initError === 'identity_lost_backup_available') {
+        toast.error("Restaure ton identité sécurisée avant d'envoyer.");
+      } else {
+        toast.error("Messagerie sécurisée pas encore prête, réessaie.");
+      }
+      console.warn('[ChatWidget] send blocked', {
+        peerKeyMissing: e2ee.peerKeyMissing,
+        initError: e2ee.initError,
+      });
+      return;
+    }
+
     const replyText = replyTo ? decryptedCacheRef.current.get(replyTo.id) || replyTo.body : null;
     const body = replyTo
       ? `↩️ ${replyTo.profile.name}: "${(replyText || '').slice(0, 40)}…"\n\n${newMessage.trim()}`
@@ -1933,7 +1952,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               className="flex-1 bg-secondary/60 rounded-full px-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors min-w-0"
             />
             {newMessage.trim() ? (
-              <button type="submit" disabled={sendMessage.isPending || sendBlocked} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
+              <button type="submit" disabled={sendMessage.isPending} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
                 <Send className="w-3.5 h-3.5" />
               </button>
             ) : (
