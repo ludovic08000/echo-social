@@ -1,4 +1,4 @@
-import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X, RotateCcw, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
+import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X, RotateCcw, ShieldCheck, Wifi, WifiOff, MonitorUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/UserAvatar';
 import { cn } from '@/lib/utils';
@@ -23,6 +23,8 @@ interface CallOverlayProps {
   onToggleCamera: () => void;
   onSwitchToVideo?: () => void;
   onSwitchCamera?: () => void;
+  onToggleScreenShare?: () => void;
+  isScreenSharing?: boolean;
 }
 
 export function CallOverlay({
@@ -42,6 +44,8 @@ export function CallOverlay({
   onToggleCamera,
   onSwitchToVideo,
   onSwitchCamera,
+  onToggleScreenShare,
+  isScreenSharing,
 }: CallOverlayProps) {
   if (callState === 'idle') return null;
 
@@ -206,6 +210,24 @@ export function CallOverlay({
               className="w-14 h-14 rounded-full bg-white/20 hover:bg-white/30 text-white"
             >
               <RotateCcw className="w-6 h-6" />
+            </Button>
+          )}
+
+          {/* Screen share (desktop, video calls) */}
+          {isVideo && onToggleScreenShare && platform === 'web' && (
+            <Button
+              size="icon"
+              variant="secondary"
+              onClick={onToggleScreenShare}
+              className={cn(
+                'w-14 h-14 rounded-full',
+                isScreenSharing
+                  ? 'bg-primary/80 hover:bg-primary text-primary-foreground'
+                  : 'bg-white/20 hover:bg-white/30 text-white'
+              )}
+              title="Partager l'écran"
+            >
+              <MonitorUp className="w-6 h-6" />
             </Button>
           )}
 

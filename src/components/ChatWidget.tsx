@@ -32,6 +32,7 @@ import { GifPicker } from '@/components/chat/GifPicker';
 import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { buildDocumentBody, parseDocumentBody, isDocumentMime } from '@/lib/messaging/documentMessage';
 import { DocumentBubble } from '@/components/messages/DocumentBubble';
+import { CallHistoryPanel } from '@/components/calls/CallHistoryPanel';
 import { Eye } from 'lucide-react';
 import { RelayPointPicker } from '@/components/marketplace/RelayPointPicker';
 import { useRealtimeNotificationSound } from '@/hooks/useNotificationSounds';
@@ -356,6 +357,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [showGifs, setShowGifs] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [viewOnceArmed, setViewOnceArmed] = useState(false);
+  const [showCallHistory, setShowCallHistory] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
@@ -884,7 +886,36 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         onToggleCamera={call.toggleCamera}
         onSwitchToVideo={call.switchToVideo}
         onSwitchCamera={call.switchCamera}
+        onToggleScreenShare={call.toggleScreenShare}
+        isScreenSharing={call.isScreenSharing}
       />
+
+      {/* Call history overlay */}
+      {showCallHistory && (
+        <div className="absolute inset-0 z-[90] bg-background/95 backdrop-blur-sm rounded-lg overflow-hidden">
+          <CallHistoryPanel
+            conversationId={conversationId}
+            onClose={() => setShowCallHistory(false)}
+            onCallBack={async (peerId, type) => {
+              if (!user?.id) return;
+              setShowCallHistory(false);
+              setIsStartingCall(true);
+              try {
+                const callKey = generateCallE2EEKey();
+                const callId = await signalOutgoingCall(conversationId, user.id, peerId, type, callKey);
+                if (!callId) { toast.error("Impossible de signaler l'appel."); return; }
+                activeCallIdRef.current = callId;
+                await call.startCall(conversationId, type, callKey);
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Appel impossible");
+              } finally {
+                setIsStartingCall(false);
+              }
+            }}
+          />
+        </div>
+      )}
+
       <input ref={fileInputRef} type="file" accept="image/*,video/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/zip,text/plain,text/csv" className="hidden" onChange={(e) => {
         const file = e.target.files?.[0];
         if (file) handleMediaFile(file);
@@ -988,6 +1019,13 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors disabled:opacity-50"
           >
             <Video className={`w-3.5 h-3.5 ${isStartingCall ? 'animate-pulse' : ''}`} />
+          </button>
+          <button
+            onClick={() => setShowCallHistory(true)}
+            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors"
+            title="Historique d'appels"
+          >
+            <PhoneMissed className="w-3.5 h-3.5" />
           </button>
           <button onClick={() => { closeChat(); navigate(`/messages/${conversationId}`); }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors" title="Agrandir">
             <Maximize2 className="w-3.5 h-3.5" />
@@ -1869,7 +1907,6 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               placeholder="Aa"
               className="flex-1 bg-secondary/60 rounded-full px-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors min-w-0"
             />
-
             {newMessage.trim() ? (
               <button type="submit" disabled={sendMessage.isPending || sendBlocked} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
                 <Send className="w-3.5 h-3.5" />
