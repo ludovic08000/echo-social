@@ -41,7 +41,11 @@ function hexToBytes(hex: string): Uint8Array {
 }
 
 async function sha256(bytes: Uint8Array): Promise<Uint8Array> {
-  const hash = await crypto.subtle.digest('SHA-256', bytes);
+  // Copy into a fresh ArrayBuffer-backed view so subtle.digest accepts it
+  // under strict TS lib.dom typings (Uint8Array<ArrayBufferLike> mismatch).
+  const buf = new Uint8Array(bytes.length);
+  buf.set(bytes);
+  const hash = await crypto.subtle.digest('SHA-256', buf.buffer);
   return new Uint8Array(hash);
 }
 
