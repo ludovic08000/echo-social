@@ -363,6 +363,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
+  const [lightboxMedia, setLightboxMedia] = useState<{ url: string; body: string; messageId: string } | null>(null);
   // Persisted + realtime reactions (replaces local-only state)
   const [showAIMenu, setShowAIMenu] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
@@ -1294,11 +1295,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         })()}
 
                         {msg.image_url && !parseDocumentBody(msg.body) && (
-                          <Link
-                            to={`/profile/${msg.sender_id}`}
-                            onClick={() => closeChat()}
-                            className="block rounded-xl overflow-hidden mb-0.5 shadow-sm cursor-pointer hover:opacity-95 transition-opacity"
-                            title="Voir le profil"
+                          <button
+                            type="button"
+                            onClick={() => setLightboxMedia({ url: msg.image_url!, body: msg.body, messageId: msg.id })}
+                            className="block rounded-xl overflow-hidden mb-0.5 shadow-sm cursor-zoom-in hover:opacity-95 transition-opacity"
+                            title="Agrandir"
                           >
                             <MessageMedia
                               imageUrl={msg.image_url}
@@ -1307,7 +1308,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                               isEncryptionActive={e2ee.encrypted && !isZeusConversation}
                               messageId={msg.id}
                             />
-                          </Link>
+                          </button>
                         )}
 
                         {/* Skip text bubble when message is purely a media attachment */}
@@ -1520,6 +1521,35 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         >
           <ChevronDown className="w-4 h-4 text-muted-foreground" />
         </button>
+      )}
+
+      {/* Fullscreen media lightbox */}
+      {lightboxMedia && (
+        <div
+          className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center"
+          onClick={() => setLightboxMedia(null)}
+        >
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setLightboxMedia(null); }}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors z-10"
+            aria-label="Fermer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <div
+            className="max-w-[95vw] max-h-[95vh] flex items-center justify-center [&_img]:!max-h-[95vh] [&_img]:!max-w-[95vw] [&_video]:!max-h-[95vh] [&_video]:!max-w-[95vw]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <MessageMedia
+              imageUrl={lightboxMedia.url}
+              body={lightboxMedia.body}
+              decrypt={e2ee.decrypt}
+              isEncryptionActive={e2ee.encrypted && !isZeusConversation}
+              messageId={lightboxMedia.messageId}
+            />
+          </div>
+        </div>
       )}
 
       {/* Negotiation product banner - bottom */}
