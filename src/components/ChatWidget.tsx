@@ -1911,7 +1911,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       {/* Input bar */}
       {!showVoiceRecorder && (
         <div className="border-t border-border/30 bg-background">
-          <form onSubmit={handleSend} className="flex items-center gap-1 px-2 py-1.5">
+          <form onSubmit={handleSend} className="flex items-center gap-1.5 px-3 py-2.5">
             <div className="flex items-center gap-0">
               <button
                 type="button"
@@ -1930,9 +1930,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                   fileInputRef.current?.click();
                 }}
                 disabled={isUploading || sendBlocked}
-                className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors disabled:opacity-50 disabled:pointer-events-none"
               >
-                {isUploading ? <div className="w-3.5 h-3.5 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Camera className="w-4 h-4" />}
+                {isUploading ? <div className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Camera className="w-5 h-5" />}
               </button>
               <button
                 type="button"
@@ -1942,20 +1942,20 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                 }}
                 title="Vue unique"
                 className={cn(
-                  "w-7 h-7 rounded-full flex items-center justify-center transition-colors",
+                  "w-9 h-9 rounded-full flex items-center justify-center transition-colors",
                   viewOnceArmed ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-primary"
                 )}
               >
-                <Eye className="w-4 h-4" />
+                <Eye className="w-5 h-5" />
               </button>
-              <button type="button" onClick={() => { setShowGifs(v => !v); setShowEmojis(false); }} className={cn("w-7 h-7 rounded-full flex items-center justify-center transition-colors text-[11px] font-bold", showGifs ? "text-primary" : "text-muted-foreground hover:text-primary")}>
+              <button type="button" onClick={() => { setShowGifs(v => !v); setShowEmojis(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors text-[12px] font-bold", showGifs ? "text-primary" : "text-muted-foreground hover:text-primary")}>
                 GIF
               </button>
-              <button type="button" onClick={() => { setShowEmojis(v => !v); setShowGifs(false); setShowAIMenu(false); }} className={cn("w-7 h-7 rounded-full flex items-center justify-center transition-colors", showEmojis ? "text-primary" : "text-muted-foreground hover:text-primary")}>
-                <Smile className="w-4 h-4" />
+              <button type="button" onClick={() => { setShowEmojis(v => !v); setShowGifs(false); setShowAIMenu(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors", showEmojis ? "text-primary" : "text-muted-foreground hover:text-primary")}>
+                <Smile className="w-5 h-5" />
               </button>
-              <button type="button" onClick={() => { setShowAIMenu(v => !v); setShowEmojis(false); setShowGifs(false); }} className={cn("w-7 h-7 rounded-full flex items-center justify-center transition-colors", showAIMenu ? "text-primary" : "text-muted-foreground hover:text-primary")}>
-                {aiLoading ? <div className="w-3.5 h-3.5 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Wand2 className="w-4 h-4" />}
+              <button type="button" onClick={() => { setShowAIMenu(v => !v); setShowEmojis(false); setShowGifs(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors", showAIMenu ? "text-primary" : "text-muted-foreground hover:text-primary")}>
+                {aiLoading ? <div className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Wand2 className="w-5 h-5" />}
               </button>
             </div>
 
@@ -1965,23 +1965,23 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               onChange={e => setNewMessage(e.target.value)}
               onFocus={() => { setShowEmojis(false); setShowGifs(false); }}
               placeholder="Aa"
-              className="flex-1 bg-secondary/60 rounded-full px-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors min-w-0"
+              className="flex-1 bg-secondary/60 rounded-full px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors min-w-0"
             />
             {newMessage.trim() ? (
-              <button type="submit" disabled={sendMessage.isPending} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
-                <Send className="w-3.5 h-3.5" />
+              <button type="submit" disabled={sendMessage.isPending} className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
+                <Send className="w-4 h-4" />
               </button>
             ) : (
               <div className="flex items-center gap-0">
                 <button
                   type="button"
                   onClick={() => setShowVoiceRecorder(true)}
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors"
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors"
                 >
-                  <Mic className="w-4 h-4" />
+                  <Mic className="w-5 h-5" />
                 </button>
-                <button type="button" className="w-7 h-7 rounded-full flex items-center justify-center text-primary flex-shrink-0 hover:bg-primary/10 transition-colors">
-                  <ThumbsUp className="w-4 h-4" fill="currentColor" />
+                <button type="button" className="w-9 h-9 rounded-full flex items-center justify-center text-primary flex-shrink-0 hover:bg-primary/10 transition-colors">
+                  <ThumbsUp className="w-5 h-5" fill="currentColor" />
                 </button>
               </div>
             )}
