@@ -51,9 +51,10 @@ function snapshotKey(conversationId: string, senderDeviceId: string): string {
 }
 
 function snapshotFingerprint(s: OwnerState): string {
-  // chainKey + signingPub uniquely identify a chain generation; iteration is
-  // intentionally NOT included (we want one fan-out per chain, not per msg).
-  return `${s.chainKeyB64}::${s.signingPubB64}`;
+  // signingPub uniquely identifies a chain GENERATION (regenerated only on
+  // rotation). chainKeyB64 advances at every send, so we deliberately exclude
+  // it — otherwise we'd re-fan-out the SKDM on every keystroke.
+  return s.signingPubB64;
 }
 
 async function isSenderKeysEnabled(conversationId: string): Promise<boolean> {
