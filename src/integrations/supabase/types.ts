@@ -5394,6 +5394,39 @@ export type Database = {
         }
         Relationships: []
       }
+      user_device_signatures: {
+        Row: {
+          device_id: string
+          id: string
+          primary_device_id: string
+          primary_pub_b64: string
+          revoked_at: string | null
+          signature_b64: string
+          signed_at: string
+          user_id: string
+        }
+        Insert: {
+          device_id: string
+          id?: string
+          primary_device_id: string
+          primary_pub_b64: string
+          revoked_at?: string | null
+          signature_b64: string
+          signed_at?: string
+          user_id: string
+        }
+        Update: {
+          device_id?: string
+          id?: string
+          primary_device_id?: string
+          primary_pub_b64?: string
+          revoked_at?: string | null
+          signature_b64?: string
+          signed_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_devices: {
         Row: {
           created_at: string
@@ -5403,6 +5436,7 @@ export type Database = {
           device_public_key: string
           id: string
           is_active: boolean
+          is_primary: boolean
           last_seen_at: string
           platform: string | null
           revoke_reason: string | null
@@ -5420,6 +5454,7 @@ export type Database = {
           device_public_key: string
           id?: string
           is_active?: boolean
+          is_primary?: boolean
           last_seen_at?: string
           platform?: string | null
           revoke_reason?: string | null
@@ -5437,6 +5472,7 @@ export type Database = {
           device_public_key?: string
           id?: string
           is_active?: boolean
+          is_primary?: boolean
           last_seen_at?: string
           platform?: string | null
           revoke_reason?: string | null
@@ -6552,6 +6588,18 @@ export type Database = {
           total_views: number
           user_id: string
           viewer_count: number
+        }[]
+      }
+      get_signed_device_list: {
+        Args: { p_user_id: string }
+        Returns: {
+          device_id: string
+          device_public_key: string
+          is_primary: boolean
+          primary_device_id: string
+          primary_pub_b64: string
+          signature_b64: string
+          signed_at: string
         }[]
       }
       get_signed_prekey: {
