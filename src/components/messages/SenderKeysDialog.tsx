@@ -8,6 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { rotateOwnerSession, ensureOwnerSession, snapshotForDistribution } from '@/lib/crypto/senderKeySession';
+import { invalidateSenderKeysFlag } from '@/lib/crypto/senderKeyOutbound';
 import { getOrCreateCurrentDeviceId } from '@/lib/crypto/deviceList';
 
 interface Props {
