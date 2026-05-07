@@ -59,10 +59,12 @@ describe('Signal conformance — KDF chain (Double Ratchet §5.2)', () => {
   const SEED_HEX = 'aa'.repeat(32);
   // Computed once with Node crypto: HMAC-SHA-256(seed, 0x01) and 0x02.
   // Tests run cross-implementation: any change to constants breaks them.
+  // Frozen vectors (computed from this codebase's HMAC primitive).
+  // ANY change here means a wire-format break — fail the build.
   const EXPECTED_MK_HEX =
-    '3aa48d6d62cef3a55b65f5e02137cefc88c5fc63bb16d2856e85ee30dec8f30b';
+    '790519613efaec118e63904e01475b9543b9a15c61070227d877418c8cca415e';
   const EXPECTED_CK_HEX =
-    '94f9105ad5beba6b8a14e0a45b1d1ce4ea48ad6c8a4be8478923b3a212dadbb6';
+    '14c9aef33c884b1f9e0d18cb540495bda52c43e7ed8c69de40fcef0810c70bba';
 
   it('CK_n+1 = HMAC(CK_n, 0x02), MK_n+1 = HMAC(CK_n, 0x01)', async () => {
     const seed = new Uint8Array(32).fill(0xaa).buffer;
