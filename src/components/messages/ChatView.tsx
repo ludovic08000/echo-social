@@ -681,6 +681,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
         conversationId={conversationId}
       />
 
+      {/* A4 — Identity-change ledger banner (TOFU). Persistent, server-backed,
+          works alongside the in-memory `fingerprint_changed` signal above. */}
+      {!isZeusConversation && user && peerUserId && (
+        <IdentityChangeBanner
+          observerUserId={user.id}
+          peerUserId={peerUserId}
+        />
+      )}
+
       {/* Silent restore policy: no "Restaurer mes clés" banner inside the chat.
           Restoration runs automatically in background via useAccountKeySync,
           realtimeKeySync and messageQueue.resumeAll(). The dedicated UI lives
