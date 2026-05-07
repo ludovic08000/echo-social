@@ -35,12 +35,7 @@ interface SkdmRow {
 
 const inflight = new Set<string>();
 const catchUpInflight = new Map<string, Promise<{ processed: number; installed: number }>>();
-const lastCatchUpAt = new Map<string, number>();
 const activeSubscriptions = new Map<string, { refs: number; unsubscribe: () => void }>();
-
-// Prevent auth/focus/realtime startup bursts from repeatedly polling and
-// decrypting the same SKDM rows. This keeps crypto work bounded on boot.
-const CATCH_UP_MIN_INTERVAL_MS = 5_000;
 
 function inboxKey(userId: string, deviceId: string) {
   return `${userId}:${deviceId}`;
@@ -111,11 +106,6 @@ export async function catchUpSenderKeyDistribution(userId: string): Promise<{
   const existing = catchUpInflight.get(key);
   if (existing) return existing;
 
-  const last = lastCatchUpAt.get(key) || 0;
-  if (Date.now() - last < CATCH_UP_MIN_INTERVAL_MS) {
-    return { processed: 0, installed: 0 };
-  }
-
   const task = (async () => {
     const { data, error } = await supabase
       .from('sender_key_distribution')
@@ -135,7 +125,6 @@ export async function catchUpSenderKeyDistribution(userId: string): Promise<{
     }
     return { processed: data.length, installed };
   })().finally(() => {
-    lastCatchUpAt.set(key, Date.now());
     catchUpInflight.delete(key);
   });
 
