@@ -129,8 +129,7 @@ export function AddParticipantSheet({
               <Checkbox checked={selected.has(f.user_id)} onCheckedChange={() => toggle(f.user_id)} />
               <UserAvatar src={f.avatar_url} alt={f.name ?? ''} size="sm" />
               <div className="flex-1 text-left">
-                <p className="text-sm font-medium">{f.name ?? f.username ?? 'Sans nom'}</p>
-                {f.username && <p className="text-xs text-muted-foreground">@{f.username}</p>}
+                <p className="text-sm font-medium">{f.name ?? 'Sans nom'}</p>
               </div>
             </button>
           ))}
