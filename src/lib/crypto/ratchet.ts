@@ -217,12 +217,13 @@ export async function initRatchetAsResponder(
 // — i.e. `peerIdentityKeyB64 || myIdentityKeyB64`. The state always stores
 // keys in our local frame; this helper produces the canonical shared bytes.
 function buildAssociatedData(
-  state: Pick<RatchetState, 'myIdentityKeyB64' | 'peerIdentityKeyB64'>,
-  role: 'initiator' | 'responder',
+  state: Pick<RatchetState, 'myIdentityKeyB64' | 'peerIdentityKeyB64' | 'role'>,
+  roleOverride?: 'initiator' | 'responder',
 ): Uint8Array | null {
   const my = state.myIdentityKeyB64;
   const peer = state.peerIdentityKeyB64;
-  if (!my || !peer) return null;
+  const role = roleOverride ?? state.role;
+  if (!my || !peer || !role) return null;
   const initiatorIK = role === 'initiator' ? my : peer;
   const responderIK = role === 'initiator' ? peer : my;
   return new Uint8Array(encodeString(`${AD_PREFIX_V3}${initiatorIK}|${responderIK}`));

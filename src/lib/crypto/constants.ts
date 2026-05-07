@@ -46,10 +46,10 @@ export const STORE_PREKEYS = 'pre-keys';
 
 // Protocol version (bump = breaking change)
 //   v1 — legacy P-384 envelopes (read-only)
-//   v2 — X25519 + Ed25519 (current)
-//   v3 — planned: AES-GCM additionalData = "FORSURE-AD-v3|" || base64(IKa) || "|" || base64(IKb)
-//        Bumped on the wire only when AD is fully wired into encrypt/decrypt.
-export const PROTOCOL_VERSION = 2;
+//   v2 — X25519 + Ed25519, no AAD on AES-GCM (still readable for migration)
+//   v3 — current: AES-GCM additionalData = "FORSURE-AD-v3|" || base64(IKa) || "|" || base64(IKb)
+//        bound to X3DH identity keys (Signal X3DH §3.3). Decrypt accepts both v2 and v3.
+export const PROTOCOL_VERSION = 3;
 
 /** Domain-separation prefix used inside Associated Data of v3 ratchet envelopes (reserved). */
 export const AD_PREFIX_V3 = 'FORSURE-AD-v3|';
