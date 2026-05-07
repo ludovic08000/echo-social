@@ -54,6 +54,7 @@ import {
   loadRecipientStateForWire,
   decryptFromGroup,
 } from '@/lib/crypto/senderKeySession';
+import { tryEncryptViaSenderKeys } from '@/lib/crypto/senderKeyOutbound';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
 const RATCHET_DB_NAME = 'forsure-ratchet';
@@ -1339,6 +1340,25 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     if (!cryptoRateCheck('encrypt')) {
       throw new EncryptionError('Rate limited — possible exfiltration attempt');
+    }
+
+    // ─── Sender Keys (group E2EE) opt-in path ──────────────────────────────
+    // When `conversations.enable_sender_keys=true`, encrypt via the group
+    // chain and emit a `sk1.` wire. SKDM fan-out happens inside the helper
+    // (idempotent per chain generation). Returns null when the conv is not
+    // opted in or the orchestration fails — we then fall through to the
+    // pairwise Double Ratchet path below (zero downgrade risk: both paths
+    // are E2EE).
+    if (conversationId && user) {
+      try {
+        const skWire = await tryEncryptViaSenderKeys(conversationId, user.id, plaintext);
+        if (skWire) {
+          if (localId) pendingPayloadRef.current.set(localId, skWire);
+          return skWire;
+        }
+      } catch (e) {
+        console.warn('[E2EE] sender-keys path errored; falling back to pairwise', e);
+      }
     }
 
     // Signal protocol: NEVER fall back from Double Ratchet to legacy.

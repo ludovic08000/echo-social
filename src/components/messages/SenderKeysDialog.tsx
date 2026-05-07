@@ -8,6 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { rotateOwnerSession, ensureOwnerSession, snapshotForDistribution } from '@/lib/crypto/senderKeySession';
+import { invalidateSenderKeysFlag } from '@/lib/crypto/senderKeyOutbound';
 import { getOrCreateCurrentDeviceId } from '@/lib/crypto/deviceList';
 
 interface Props {
@@ -59,6 +60,7 @@ export function SenderKeysDialog({ open, onOpenChange, conversationId, isGroup }
       return;
     }
     setEnabled(next);
+    invalidateSenderKeysFlag(conversationId);
     toast.success(next ? 'Sender Keys activé' : 'Sender Keys désactivé');
   };
 
@@ -72,6 +74,7 @@ export function SenderKeysDialog({ open, onOpenChange, conversationId, isGroup }
       // SKDM will be fanned out by send pipeline on next message; pre-build
       // to surface any error early.
       snapshotForDistribution(next);
+      invalidateSenderKeysFlag(conversationId);
       toast.success('Chaîne régénérée — un nouveau SKDM sera envoyé au prochain message.');
     } catch (e: any) {
       toast.error(`Rotation impossible : ${e?.message ?? 'erreur'}`);
