@@ -8,6 +8,7 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
+import { fetchTrustedDeviceList } from '@/lib/crypto/signedDeviceList';
 import type { DeviceDescriptor, UserId, DeviceId } from './types';
 
 /** Stable device id of the current installation. Persisted in Keychain on iOS. */
@@ -25,15 +26,52 @@ export function isSelfDeviceIdTemporary(): boolean {
 }
 
 /**
- * List every active device of `userId`. Never throws — returns [] on RPC error
- * so the caller can fall back to the single-device path.
+ * Lot A1 — Trust gate.
+ * Returns the set of devices we are willing to encrypt to.
+ *
+ * Priority:
+ *  1) **Signed device list (L4)** — if `user_device_signatures` has any active
+ *     entry for `userId`, ONLY signed/verified devices are accepted. This
+ *     blocks the "server adds a rogue device" attack class.
+ *  2) **Legacy fallback** — if no signature exists yet (pre-L4 users), fall
+ *     back to the raw `list_active_devices_for_user` RPC. We log a single
+ *     warning so the migration window remains visible. Once the user pairs
+ *     their next companion (or rotates), the signed list becomes the source
+ *     of truth and the fallback disappears for them.
+ *
+ * Never throws — returns [] on any error so the caller can fall back to the
+ * single-device path.
  */
 export async function listDevicesForUser(userId: UserId): Promise<DeviceDescriptor[]> {
+  // 1) Trusted (signed) list first.
+  try {
+    const trusted = await fetchTrustedDeviceList(userId);
+    if (trusted.length > 0) {
+      return trusted
+        .filter(t => !!t.devicePublicKey)
+        .map(t => ({
+          userId,
+          deviceId: t.deviceId,
+          devicePublicKey: t.devicePublicKey,
+          lastSeen: undefined,
+        }));
+    }
+  } catch (e) {
+    // RPC error — fall through to legacy. Logged below at fallback boundary.
+    if (typeof console !== 'undefined') {
+      console.warn('[A1] signed device list fetch failed; falling back to raw RPC', e);
+    }
+  }
+
+  // 2) Legacy fallback for users who haven't published any signature yet.
   try {
     const { data, error } = await supabase.rpc('list_active_devices_for_user', {
       p_user_id: userId,
     });
     if (error || !data) return [];
+    if (typeof console !== 'undefined') {
+      console.warn(`[A1] using LEGACY device list for ${userId} (no signed entries) — pair a device or rotate to migrate`);
+    }
     return (data as Array<{ device_id: string; device_public_key: string; last_seen_at?: string; last_seen?: string }>)
       .filter(d => !!d.device_public_key)
       .map(d => ({
