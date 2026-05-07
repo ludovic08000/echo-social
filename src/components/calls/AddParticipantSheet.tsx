@@ -125,115 +125,183 @@ export function AddParticipantSheet({
     }
   };
 
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md p-0 overflow-hidden gap-0">
-        <DialogHeader className="px-5 pt-5 pb-3 border-b">
-          <DialogTitle className="flex items-center gap-2 text-lg">
-            <Users className="w-5 h-5 text-primary" />
-            Appel de groupe
-          </DialogTitle>
-        </DialogHeader>
+  // Draggable on desktop, fullscreen on mobile
+  const isMobile = useIsMobile();
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
 
-        <div className="px-5 pt-4 pb-3 space-y-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Rechercher un ami…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-10 rounded-full"
-            />
-          </div>
+  useEffect(() => {
+    if (!open) return;
+    if (isMobile) {
+      setPos(null);
+      return;
+    }
+    // Center on first open
+    setPos((prev) => {
+      if (prev) return prev;
+      const w = 420;
+      const h = Math.min(window.innerHeight * 0.8, 640);
+      return {
+        x: Math.max(16, (window.innerWidth - w) / 2),
+        y: Math.max(16, (window.innerHeight - h) / 2),
+      };
+    });
+  }, [open, isMobile]);
 
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">
-              {selected.size} / {MAX_INVITEES} sélectionné{selected.size > 1 ? 's' : ''}
-            </span>
-            {selected.size > 0 && (
-              <button
-                onClick={() => setSelected(new Set())}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                Tout effacer
-              </button>
-            )}
-          </div>
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (isMobile || !pos) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragRef.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    const w = 420;
+    const h = 640;
+    const x = Math.min(Math.max(0, e.clientX - dragRef.current.dx), window.innerWidth - 100);
+    const y = Math.min(Math.max(0, e.clientY - dragRef.current.dy), window.innerHeight - 80);
+    setPos({ x, y });
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    dragRef.current = null;
+  };
 
-          {selectedFriends.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {selectedFriends.map(f => (
-                <Badge
-                  key={f.user_id}
-                  variant="secondary"
-                  className="pl-1 pr-2 py-1 gap-1.5 rounded-full cursor-pointer"
-                  onClick={() => toggle(f.user_id)}
-                >
-                  <UserAvatar src={f.avatar_url} alt={f.name ?? ''} size="xs" />
-                  <span className="text-xs">{f.name ?? '—'}</span>
-                  <X className="w-3 h-3 opacity-60" />
-                </Badge>
-              ))}
-            </div>
+  if (!open) return null;
+
+  const panel = (
+    <div
+      className={
+        isMobile
+          ? 'fixed inset-0 z-[120] bg-background flex flex-col'
+          : 'fixed z-[120] w-[420px] max-h-[80vh] rounded-2xl border bg-background shadow-2xl flex flex-col overflow-hidden'
+      }
+      style={isMobile || !pos ? undefined : { left: pos.x, top: pos.y }}
+    >
+      <div
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        className={`flex items-center justify-between px-5 py-3 border-b ${
+          isMobile ? '' : 'cursor-grab active:cursor-grabbing select-none'
+        }`}
+      >
+        <div className="flex items-center gap-2 text-base font-semibold">
+          <Users className="w-5 h-5 text-primary" />
+          Appel de groupe
+        </div>
+        <button
+          onClick={onClose}
+          className="p-1.5 rounded-full hover:bg-muted transition"
+          aria-label="Fermer"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="px-5 pt-4 pb-3 space-y-3">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Rechercher un ami…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10 rounded-full"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">
+            {selected.size} / {MAX_INVITEES} sélectionné{selected.size > 1 ? 's' : ''}
+          </span>
+          {selected.size > 0 && (
+            <button
+              onClick={() => setSelected(new Set())}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Tout effacer
+            </button>
           )}
         </div>
 
-        <ScrollArea className="max-h-[45vh] px-2">
-          <div className="px-3 pb-2 space-y-0.5">
-            {loading && (
-              <p className="text-center text-sm text-muted-foreground py-8">Chargement…</p>
-            )}
-            {!loading && friends.length === 0 && (
-              <p className="text-center text-sm text-muted-foreground py-8">
-                Aucun ami pour l'instant
-              </p>
-            )}
-            {!loading && friends.length > 0 && filtered.length === 0 && (
-              <p className="text-center text-sm text-muted-foreground py-8">
-                Aucun résultat
-              </p>
-            )}
-            {filtered.map(f => {
-              const isOn = selected.has(f.user_id);
-              return (
-                <button
-                  key={f.user_id}
-                  onClick={() => toggle(f.user_id)}
-                  className={`w-full flex items-center gap-3 p-2 rounded-xl transition ${
-                    isOn ? 'bg-primary/10' : 'hover:bg-muted/60'
-                  }`}
-                >
-                  <Checkbox checked={isOn} onCheckedChange={() => toggle(f.user_id)} />
-                  <UserAvatar src={f.avatar_url} alt={f.name ?? ''} size="sm" />
-                  <div className="flex-1 text-left min-w-0">
-                    <p className="text-sm font-medium truncate">{f.name ?? 'Sans nom'}</p>
-                  </div>
-                </button>
-              );
-            })}
+        {selectedFriends.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {selectedFriends.map(f => (
+              <Badge
+                key={f.user_id}
+                variant="secondary"
+                className="pl-1 pr-2 py-1 gap-1.5 rounded-full cursor-pointer"
+                onClick={() => toggle(f.user_id)}
+              >
+                <UserAvatar src={f.avatar_url} alt={f.name ?? ''} size="xs" />
+                <span className="text-xs">{f.name ?? '—'}</span>
+                <X className="w-3 h-3 opacity-60" />
+              </Badge>
+            ))}
           </div>
-        </ScrollArea>
+        )}
+      </div>
 
-        <div className="px-5 py-4 border-t bg-background flex gap-3">
-          <Button
-            disabled={starting || selected.size === 0}
-            onClick={() => start('audio')}
-            className="flex-1 rounded-full"
-            variant="secondary"
-          >
-            <Phone className="w-4 h-4 mr-2" />
-            Audio
-          </Button>
-          <Button
-            disabled={starting || selected.size === 0}
-            onClick={() => start('video')}
-            className="flex-1 rounded-full"
-          >
-            <Video className="w-4 h-4 mr-2" />
-            Vidéo
-          </Button>
+      <ScrollArea className="flex-1 min-h-0 px-2">
+        <div className="px-3 pb-2 space-y-0.5">
+          {loading && (
+            <p className="text-center text-sm text-muted-foreground py-8">Chargement…</p>
+          )}
+          {!loading && friends.length === 0 && (
+            <p className="text-center text-sm text-muted-foreground py-8">
+              Aucun ami pour l'instant
+            </p>
+          )}
+          {!loading && friends.length > 0 && filtered.length === 0 && (
+            <p className="text-center text-sm text-muted-foreground py-8">
+              Aucun résultat
+            </p>
+          )}
+          {filtered.map(f => {
+            const isOn = selected.has(f.user_id);
+            return (
+              <button
+                key={f.user_id}
+                onClick={() => toggle(f.user_id)}
+                className={`w-full flex items-center gap-3 p-2 rounded-xl transition ${
+                  isOn ? 'bg-primary/10' : 'hover:bg-muted/60'
+                }`}
+              >
+                <Checkbox checked={isOn} onCheckedChange={() => toggle(f.user_id)} />
+                <UserAvatar src={f.avatar_url} alt={f.name ?? ''} size="sm" />
+                <div className="flex-1 text-left min-w-0">
+                  <p className="text-sm font-medium truncate">{f.name ?? 'Sans nom'}</p>
+                </div>
+              </button>
+            );
+          })}
         </div>
-      </DialogContent>
-    </Dialog>
+      </ScrollArea>
+
+      <div
+        className="px-5 py-4 border-t bg-background flex gap-3"
+        style={isMobile ? { paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' } : undefined}
+      >
+        <Button
+          disabled={starting || selected.size === 0}
+          onClick={() => start('audio')}
+          className="flex-1 rounded-full"
+          variant="secondary"
+        >
+          <Phone className="w-4 h-4 mr-2" />
+          Audio
+        </Button>
+        <Button
+          disabled={starting || selected.size === 0}
+          onClick={() => start('video')}
+          className="flex-1 rounded-full"
+        >
+          <Video className="w-4 h-4 mr-2" />
+          Vidéo
+        </Button>
+      </div>
+    </div>
   );
+
+  return createPortal(panel, document.body);
 }
