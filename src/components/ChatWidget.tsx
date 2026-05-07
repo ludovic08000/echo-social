@@ -4,8 +4,9 @@ import {
   ArrowLeft, Send, Search, Plus, X, Phone, Video, Mic, MicOff,
   Smile, Check, CheckCheck, Minus, Camera, Reply, Copy, Trash2,
   ChevronDown, Sparkles, MoreVertical, ThumbsUp, ImageIcon, PhoneOff, PhoneMissed,
-  Flag, Forward, Wand2, Languages, SpellCheck, PenLine, Tag, ArrowRightLeft, CreditCard, XIcon, MapPin, Truck, Maximize2
+  Flag, Forward, Wand2, Languages, SpellCheck, PenLine, Tag, ArrowRightLeft, CreditCard, XIcon, MapPin, Truck, Maximize2, Users
 } from 'lucide-react';
+import { AddParticipantSheet } from '@/components/calls/AddParticipantSheet';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { UserAvatar } from '@/components/UserAvatar';
