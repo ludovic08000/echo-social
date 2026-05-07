@@ -308,6 +308,8 @@ async function gcExpiredSPKPrivates(userId: string, maxAgeMs = 30 * 24 * 60 * 60
   } catch (e) {
     console.warn('[X3DH][GC] SPK GC failed (non-fatal):', e);
   }
+}
+
 
 /**
  * Generate a new signed prekey and upload to server.
