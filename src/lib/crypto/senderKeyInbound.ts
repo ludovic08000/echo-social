@@ -34,6 +34,17 @@ interface SkdmRow {
 }
 
 const inflight = new Set<string>();
+const catchUpInflight = new Map<string, Promise<{ processed: number; installed: number }>>();
+const lastCatchUpAt = new Map<string, number>();
+const activeSubscriptions = new Map<string, { refs: number; unsubscribe: () => void }>();
+
+// Prevent auth/focus/realtime startup bursts from repeatedly polling and
+// decrypting the same SKDM rows. This keeps crypto work bounded on boot.
+const CATCH_UP_MIN_INTERVAL_MS = 5_000;
+
+function inboxKey(userId: string, deviceId: string) {
+  return `${userId}:${deviceId}`;
+}
 
 async function processRow(row: SkdmRow, recipientUserId: string): Promise<boolean> {
   if (inflight.has(row.id)) return false;
@@ -96,23 +107,40 @@ export async function catchUpSenderKeyDistribution(userId: string): Promise<{
   if (isDeviceIdTemporary()) return { processed: 0, installed: 0 };
 
   const myDeviceId = getCurrentDeviceId();
-  const { data, error } = await supabase
-    .from('sender_key_distribution')
-    .select('id, conversation_id, sender_user_id, sender_device_id, recipient_user_id, recipient_device_id, encrypted_skdm')
-    .eq('recipient_user_id', userId)
-    .eq('recipient_device_id', myDeviceId)
-    .eq('delivered', false)
-    .order('created_at', { ascending: true })
-    .limit(200);
+  const key = inboxKey(userId, myDeviceId);
+  const existing = catchUpInflight.get(key);
+  if (existing) return existing;
 
-  if (error || !data?.length) return { processed: 0, installed: 0 };
-
-  let installed = 0;
-  for (const row of data as SkdmRow[]) {
-    const ok = await processRow(row, userId);
-    if (ok) installed++;
+  const last = lastCatchUpAt.get(key) || 0;
+  if (Date.now() - last < CATCH_UP_MIN_INTERVAL_MS) {
+    return { processed: 0, installed: 0 };
   }
-  return { processed: data.length, installed };
+
+  const task = (async () => {
+    const { data, error } = await supabase
+      .from('sender_key_distribution')
+      .select('id, conversation_id, sender_user_id, sender_device_id, recipient_user_id, recipient_device_id, encrypted_skdm')
+      .eq('recipient_user_id', userId)
+      .eq('recipient_device_id', myDeviceId)
+      .eq('delivered', false)
+      .order('created_at', { ascending: true })
+      .limit(200);
+
+    if (error || !data?.length) return { processed: 0, installed: 0 };
+
+    let installed = 0;
+    for (const row of data as SkdmRow[]) {
+      const ok = await processRow(row, userId);
+      if (ok) installed++;
+    }
+    return { processed: data.length, installed };
+  })().finally(() => {
+    lastCatchUpAt.set(key, Date.now());
+    catchUpInflight.delete(key);
+  });
+
+  catchUpInflight.set(key, task);
+  return task;
 }
 
 /**
@@ -121,9 +149,27 @@ export async function catchUpSenderKeyDistribution(userId: string): Promise<{
  */
 export function subscribeSenderKeyDistribution(userId: string): () => void {
   if (!userId) return () => {};
+  if (isDeviceIdTemporary()) return () => {};
+
+  const myDeviceId = getCurrentDeviceId();
+  const key = inboxKey(userId, myDeviceId);
+  const existing = activeSubscriptions.get(key);
+  if (existing) {
+    existing.refs += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      existing.refs -= 1;
+      if (existing.refs <= 0) {
+        existing.unsubscribe();
+        activeSubscriptions.delete(key);
+      }
+    };
+  }
 
   const channel = supabase
-    .channel(`skdm-inbox-${userId}`)
+    .channel(`skdm-inbox-${userId}-${myDeviceId}`)
     .on(
       'postgres_changes',
       {
@@ -137,18 +183,36 @@ export function subscribeSenderKeyDistribution(userId: string): () => void {
         if (!row?.id) return;
         // Best-effort device match: realtime can't filter on two columns.
         if (isDeviceIdTemporary()) return;
-        const myDeviceId = getCurrentDeviceId();
-        if (row.recipient_device_id && row.recipient_device_id !== myDeviceId) return;
+        const currentDeviceId = getCurrentDeviceId();
+        if (row.recipient_device_id && row.recipient_device_id !== currentDeviceId) return;
         void processRow(row, userId);
       },
     )
     .subscribe();
 
+  const entry = {
+    refs: 1,
+    unsubscribe: () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch {
+        // ignore — channel may already be torn down on hot reload
+      }
+    },
+  };
+  activeSubscriptions.set(key, entry);
+
+  let released = false;
   return () => {
+    if (released) return;
+    released = true;
+    entry.refs -= 1;
+    if (entry.refs > 0) return;
     try {
-      supabase.removeChannel(channel);
+      entry.unsubscribe();
     } catch {
       // ignore — channel may already be torn down on hot reload
     }
+    activeSubscriptions.delete(key);
   };
 }
