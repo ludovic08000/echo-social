@@ -13,10 +13,10 @@ interface ConversationPreviewTextProps {
 // {"fs_secure_pipeline":1,"body":"..."} or anything containing crypto markers.
 function looksEncrypted(input: string | null | undefined): boolean {
   if (!input || typeof input !== 'string') return false;
-  const body: string = input;
-  if (isStrictRatchetEnvelopeBody(body)) return true;
-  if (isCryptoJsonBody(body)) return true;
-  if (body.startsWith('{') && /"(fs_secure_pipeline|kem|hdr|ct|encryptionMode|iv|sig|fp)"/.test(body)) {
+  if (isStrictRatchetEnvelopeBody(input)) return true;
+  const s = input as string;
+  if (isCryptoJsonBody(s)) return true;
+  if (s.startsWith('{') && /"(fs_secure_pipeline|kem|hdr|ct|encryptionMode|iv|sig|fp)"/.test(s)) {
     return true;
   }
   return false;
