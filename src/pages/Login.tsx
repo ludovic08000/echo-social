@@ -96,11 +96,11 @@ export default function Login() {
       <div className="w-full max-w-md animate-fade-in">
         {/* Unified card: brand banner + login form */}
         <div className="w-full bg-white rounded-3xl shadow-[0_20px_60px_-20px_rgba(0,35,149,0.25)] border border-slate-100 overflow-hidden">
-          <Link to="/" className="flex w-full items-center justify-center bg-gradient-to-b from-white to-slate-50/60 pt-8 pb-4">
+          <Link to="/" className="flex w-full items-center justify-center bg-gradient-to-b from-white to-slate-50/60 pt-10 pb-6">
             <img
               src={forsureBanner}
               alt="Forsure — Connecter · Partager · Avancer"
-              className="h-40 w-auto select-none object-contain"
+              className="h-56 w-auto select-none object-contain"
               draggable={false}
             />
           </Link>
