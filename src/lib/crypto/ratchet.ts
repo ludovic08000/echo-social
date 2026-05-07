@@ -502,10 +502,10 @@ export async function serializeRatchetState(state: RatchetState): Promise<string
   const sendCKJWK = state.sendingChainKey ? await exportKeyToJWK(state.sendingChainKey) : null;
   const recvCKJWK = state.receivingChainKey ? await exportKeyToJWK(state.receivingChainKey) : null;
 
-  // Serialize skipped keys
-  const skippedEntries: [string, JsonWebKey][] = [];
+  // Serialize skipped keys (with timestamps for TTL purge after restore)
+  const skippedEntries: [string, JsonWebKey, number][] = [];
   for (const [k, v] of state.skippedKeys) {
-    skippedEntries.push([k, await exportKeyToJWK(v)]);
+    skippedEntries.push([k, await exportKeyToJWK(v.key), v.ts]);
   }
 
   return hardGlobals.jsonStringify({
