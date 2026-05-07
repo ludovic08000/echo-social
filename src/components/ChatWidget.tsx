@@ -1911,7 +1911,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       {/* Input bar */}
       {!showVoiceRecorder && (
         <div className="border-t border-border/30 bg-background">
-          <form onSubmit={handleSend} className="flex items-center gap-1 px-2 py-1.5">
+          <form onSubmit={handleSend} className="flex items-center gap-1.5 px-3 py-2.5">
             <div className="flex items-center gap-0">
               <button
                 type="button"
