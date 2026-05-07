@@ -1,4 +1,5 @@
-import { createSecureBackupVault } from './secureBackupVault';
+import { createRecoveryKeyBackup } from './accountKeyBackup';
+import { loadIdentityKeys } from './keyManager';
 
 const ROTATION_INTERVAL_MS = 1000 * 60 * 60 * 24 * 30;
 const ROTATION_KEY = 'forsure-backup-last-rotation:';
@@ -17,19 +18,25 @@ export function markBackupRotation(userId: string): void {
   localStorage.setItem(key(userId), String(Date.now()));
 }
 
+/**
+ * Rotate the recovery-key wrapped Master Key backup (Signal/WA-style).
+ * Re-uses the in-RAM Master Key, only the recovery key changes.
+ */
 export async function rotateEncryptedBackupVault(userId: string): Promise<void> {
-  const vault = await createSecureBackupVault(userId);
-  if (!vault) return;
+  const recoveryKey = await createRecoveryKeyBackup(userId);
+  if (!recoveryKey) return;
 
   markBackupRotation(userId);
 
+  let fingerprint = '';
+  try {
+    const keys = await loadIdentityKeys(userId);
+    fingerprint = keys?.fingerprint ?? '';
+  } catch {}
+
   try {
     window.dispatchEvent(new CustomEvent('forsure-e2ee-backup-rotated', {
-      detail: {
-        userId,
-        fingerprint: vault.fingerprint,
-        recoveryKey: vault.recoveryKey,
-      },
+      detail: { userId, fingerprint, recoveryKey },
     }));
   } catch {}
 }
