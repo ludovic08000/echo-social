@@ -463,34 +463,32 @@ async function decryptWithKey(
   const iv = base64ToBuffer(envelope.iv);
   const ct = base64ToBuffer(envelope.ct);
 
-  // v3 envelopes are bound to identity-keys via AES-GCM AAD. v2 envelopes
-  // (legacy) carry no AAD and are still accepted for backward compatibility
-  // during the migration window. We try AAD first when v>=3 and fall back to
-  // no-AAD on tag mismatch — this absorbs the rare case where a v3 envelope
-  // is received before the local state has identity keys cached.
-  const ad = (envelope.v ?? 2) >= 3 && state ? buildAssociatedData(state) : null;
-  let ptBuf: ArrayBuffer;
-  if (ad) {
+  // Multi-version AAD fallback (Signal Double Ratchet rev.4 §3.4):
+  //   v4 → AAD = identity_AD || canonical(header)  (header-bound, current)
+  //   v3 → AAD = identity_AD                       (id-bound only)
+  //   v2 → no AAD                                  (legacy, migration)
+  // We try in declared order and fall back on AES-GCM tag mismatch so that
+  // mixed-version peer states migrate transparently without ciphertext loss.
+  const v = envelope.v ?? 2;
+  const candidates: (Uint8Array | null)[] = [];
+  if (v >= 4 && state) candidates.push(buildAssociatedDataV4(state, envelope.hdr));
+  if (v >= 3 && state) candidates.push(buildAssociatedData(state));
+  candidates.push(null); // legacy v2 / last-resort
+
+  let ptBuf: ArrayBuffer | null = null;
+  let lastErr: unknown = null;
+  for (const ad of candidates) {
     try {
-      ptBuf = await hardCrypto.decrypt(
-        { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128, additionalData: ad as Uint8Array<ArrayBuffer> } as AesGcmParams,
-        messageKey,
-        ct,
-      );
-    } catch {
-      ptBuf = await hardCrypto.decrypt(
-        { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128 },
-        messageKey,
-        ct,
-      );
+      const params: AesGcmParams = ad
+        ? { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128, additionalData: ad as Uint8Array<ArrayBuffer> }
+        : { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128 };
+      ptBuf = await hardCrypto.decrypt(params, messageKey, ct);
+      break;
+    } catch (err) {
+      lastErr = err;
     }
-  } else {
-    ptBuf = await hardCrypto.decrypt(
-      { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128 },
-      messageKey,
-      ct,
-    );
   }
+  if (!ptBuf) throw lastErr instanceof Error ? lastErr : new Error('AEAD tag verification failed');
 
   const plaintext = decodeString(ptBuf);
 
