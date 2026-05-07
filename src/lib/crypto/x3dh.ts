@@ -1144,6 +1144,16 @@ export async function x3dhRespond(
 ): Promise<{ sharedSecret: ArrayBuffer; spkKeyPair: CryptoKeyPair }> {
   console.info(`[X3DH] init responder — SPK #${initialMessage.spkId}, OPK ${initialMessage.opkId ?? 'none'}, peer IK ${initialMessage.ik.slice(0, 8)}…`);
 
+  // Anti-replay (Signal X3DH §4.6) — must run BEFORE any DH or OPK consumption
+  const { assertNotReplayedAndRecord } = await import('./x3dhReplayGuard');
+  await assertNotReplayedAndRecord({
+    myUserId,
+    ik: initialMessage.ik,
+    ek: initialMessage.ek,
+    spkId: initialMessage.spkId,
+    opkId: initialMessage.opkId,
+  });
+
   // 1. Import Alice's keys
   const aliceIK = await importX25519Public(initialMessage.ik);
   const aliceEK = await importX25519Public(initialMessage.ek);
@@ -1223,6 +1233,16 @@ export async function x3dhRespondForDevice(
   console.info(
     `[X3DH-DEV] respond — SPK #${initialMessage.spkId}, OPK ${initialMessage.opkId ?? 'none'}, dev=${myDeviceId.slice(0, 8)}…`,
   );
+
+  // Anti-replay (Signal X3DH §4.6) — must run BEFORE any DH or OPK consumption
+  const { assertNotReplayedAndRecord } = await import('./x3dhReplayGuard');
+  await assertNotReplayedAndRecord({
+    myUserId: `${myUserId}::${myDeviceId}`,
+    ik: initialMessage.ik,
+    ek: initialMessage.ek,
+    spkId: initialMessage.spkId,
+    opkId: initialMessage.opkId,
+  });
 
   const aliceIK = await importX25519Public(initialMessage.ik);
   const aliceEK = await importX25519Public(initialMessage.ek);
