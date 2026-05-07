@@ -493,15 +493,18 @@ export async function ratchetEncrypt(
 }
 
 /**
- * Decrypt a v3 (legacy) or v4 (DR) envelope.
+ * Decrypt a v3 (legacy), v4 (DR no AAD) or v5 (DR + AAD) envelope.
  */
 export async function ratchetDecrypt(
   myUserId: string,
   myDeviceId: string,
   payload: string,
 ): Promise<string | null> {
+  if (payload.startsWith(RATCHET_PREFIX_V5)) {
+    return decryptV4or5(myUserId, myDeviceId, payload, RATCHET_PREFIX_V5);
+  }
   if (payload.startsWith(RATCHET_PREFIX_V4)) {
-    return decryptV4(myUserId, myDeviceId, payload);
+    return decryptV4or5(myUserId, myDeviceId, payload, RATCHET_PREFIX_V4);
   }
   if (payload.startsWith(RATCHET_PREFIX_V3)) {
     return decryptV3(myUserId, myDeviceId, payload);
@@ -509,24 +512,27 @@ export async function ratchetDecrypt(
   return null;
 }
 
-async function decryptV4(myUserId: string, myDeviceId: string, payload: string): Promise<string | null> {
-  const parts = payload.slice(RATCHET_PREFIX_V4.length).split('.');
+async function decryptV4or5(
+  myUserId: string,
+  myDeviceId: string,
+  payload: string,
+  prefix: string,
+): Promise<string | null> {
+  const parts = payload.slice(prefix.length).split('.');
   if (parts.length !== 6) return null;
   const [sessionId] = parts;
   const found = await lookupSessionById(myUserId, myDeviceId, sessionId);
   if (!found) return null;
-  return decryptV4WithStored(found.key, found.session, parts);
+  const peer = parseCompositeKey(found.key);
+  const aad = (prefix === RATCHET_PREFIX_V5 && peer)
+    ? buildDevAAD(peer.myUserId, peer.myDeviceId, peer.peerUserId, peer.peerDeviceId, sessionId)
+    : null;
+  return decryptV4WithStored(found.key, found.session, parts, aad);
 }
 
 /**
- * Public escape hatch: attempt v4 decryption against a *specific* locally
- * stored session, ignoring the sessionId in the payload header. Used by the
- * multi-session fallback router when the header sessionId points to an
- * unknown / rotated session but the peer still has a valid prior session
- * locally that may decrypt the message (e.g. multi-device peer where one
- * device's session was bootstrapped under a different sessionId).
- *
- * Returns null on parse failure or AES-GCM tag mismatch — never throws.
+ * Public escape hatch: attempt v4/v5 decryption against a *specific* locally
+ * stored session, ignoring the sessionId in the payload header.
  */
 export async function ratchetDecryptWithSession(
   myUserId: string,
@@ -535,8 +541,9 @@ export async function ratchetDecryptWithSession(
   peerDeviceId: string,
   payload: string,
 ): Promise<string | null> {
-  if (!payload.startsWith(RATCHET_PREFIX_V4)) {
-    // v3 has no DH state to ratchet — re-route through the standard path.
+  const isV5 = payload.startsWith(RATCHET_PREFIX_V5);
+  const isV4 = payload.startsWith(RATCHET_PREFIX_V4);
+  if (!isV5 && !isV4) {
     if (payload.startsWith(RATCHET_PREFIX_V3)) {
       const parts = payload.slice(RATCHET_PREFIX_V3.length).split('.');
       if (parts.length !== 4) return null;
@@ -547,26 +554,27 @@ export async function ratchetDecryptWithSession(
     }
     return null;
   }
-  const parts = payload.slice(RATCHET_PREFIX_V4.length).split('.');
+  const prefix = isV5 ? RATCHET_PREFIX_V5 : RATCHET_PREFIX_V4;
+  const parts = payload.slice(prefix.length).split('.');
   if (parts.length !== 6) return null;
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
   const session = await loadSession(key);
   if (!session) return null;
-  return decryptV4WithStored(key, session, parts);
+  const aad = isV5
+    ? buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, parts[0])
+    : null;
+  return decryptV4WithStored(key, session, parts, aad);
 }
 
 /**
- * Core v4 decrypt loop, factored out so both header-routed and
+ * Core v4/v5 decrypt loop, factored out so both header-routed and
  * session-forced callers share the exact same crypto path.
- *
- * IMPORTANT: state is only persisted on full success. Probe attempts that
- * fail (wrong session, AES tag mismatch) leave IndexedDB untouched, which
- * is what makes session-by-session probing safe.
  */
 async function decryptV4WithStored(
   key: string,
   initialSession: StoredSession,
   parts: string[],
+  aad: Uint8Array | null,
 ): Promise<string | null> {
   const [sessionId, dhPubB64, NsStr, PNStr, ivB64, ctB64] = parts;
   const Ns = parseInt(NsStr, 10);
@@ -578,7 +586,7 @@ async function decryptV4WithStored(
   const ct = base64ToBuffer(ctB64);
 
   // 1) Skipped-key fast path
-  const skipped = await trySkippedKeys(session, dhPubB64, Ns, iv, ct);
+  const skipped = await trySkippedKeys(session, dhPubB64, Ns, iv, ct, aad);
   if (skipped) {
     await saveSession(key, skipped.updated);
     return skipped.pt;
@@ -596,9 +604,24 @@ async function decryptV4WithStored(
     // 4) Derive next message key
     const { ck, mk } = await kdfCK(session.ckRecvB64!);
     const aes = await importMessageKey(mk);
-    const pt = await hardCrypto.decrypt(
-      { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ct,
-    );
+    let pt: ArrayBuffer;
+    if (aad) {
+      try {
+        pt = await hardCrypto.decrypt(
+          { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> } as AesGcmParams,
+          aes, ct,
+        );
+      } catch {
+        // Defensive v4 fallback: legacy in-flight envelope mislabelled v5.
+        pt = await hardCrypto.decrypt(
+          { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ct,
+        );
+      }
+    } else {
+      pt = await hardCrypto.decrypt(
+        { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ct,
+      );
+    }
     session = { ...session, ckRecvB64: ck, Nr: session.Nr + 1 };
     await saveSession(key, session);
     return new hardGlobals.TextDecoder().decode(pt);
