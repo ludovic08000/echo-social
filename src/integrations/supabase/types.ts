@@ -6960,6 +6960,14 @@ export type Database = {
           device_id: string
         }[]
       }
+      live_feed_bundle: {
+        Args: {
+          p_active_limit?: number
+          p_replay_limit?: number
+          p_user_id: string
+        }
+        Returns: Json
+      }
       live_score_batch: {
         Args: { p_limit?: number; p_user_id: string }
         Returns: {

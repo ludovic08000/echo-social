@@ -38,25 +38,27 @@ function useAllLives(targetId?: string) {
   return useQuery({
     queryKey: ['all-lives-feed', targetId],
     queryFn: async () => {
-      const { data: activeLives } = await supabase
-        .from('live_streams')
-        .select('id, title, thumbnail_url, is_active, viewer_count, total_views, category, user_id, recording_url, started_at')
-        .eq('is_active', true)
-        .order('viewer_count', { ascending: false });
+      // Single batched RPC (actives + replays + profiles)
+      const { data: bundle } = await supabase.rpc('live_feed_bundle' as any, {
+        p_user_id: null,
+        p_active_limit: 80,
+        p_replay_limit: 20,
+      });
 
-      const { data: replays } = await supabase
-        .from('live_streams')
-        .select('id, title, thumbnail_url, is_active, viewer_count, total_views, category, user_id, recording_url, ended_at, started_at')
-        .eq('is_active', false)
-        .not('ended_at', 'is', null)
-        .order('ended_at', { ascending: false })
-        .limit(20);
+      const b = (bundle as {
+        active: any[];
+        replays: any[];
+        profiles: Array<{ user_id: string; name: string; avatar_url: string | null }>;
+      } | null) || { active: [], replays: [], profiles: [] };
 
-      const all = [
-        ...(activeLives || []).map(l => ({ ...l, ended_at: null as string | null })),
-        ...(replays || []).map(r => ({ ...r, viewer_count: r.viewer_count || 0 })),
+      const profileMap = new Map(b.profiles.map(p => [p.user_id, { name: p.name, avatar_url: p.avatar_url }]));
+
+      const all: AllLiveItem[] = [
+        ...(b.active || []).map((l: any) => ({ ...l, ended_at: null as string | null, host: profileMap.get(l.user_id) })),
+        ...(b.replays || []).map((r: any) => ({ ...r, viewer_count: r.viewer_count || 0, host: profileMap.get(r.user_id) })),
       ];
 
+      // Targeted live not in bundle? Fetch on the side, prepend.
       if (targetId && !all.some(l => l.id === targetId)) {
         const { data: target } = await supabase
           .from('live_streams')
@@ -64,28 +66,32 @@ function useAllLives(targetId?: string) {
           .eq('id', targetId)
           .single();
         if (target) {
-          all.unshift({ ...target, ended_at: target.ended_at || null });
+          const { data: hostProfile } = await supabase
+            .from('profiles').select('name, avatar_url').eq('user_id', target.user_id).maybeSingle();
+          all.unshift({
+            ...target,
+            ended_at: target.ended_at || null,
+            host: hostProfile ? { name: hostProfile.name, avatar_url: hostProfile.avatar_url } : undefined,
+          } as AllLiveItem);
         }
       }
 
-      if (!all.length) return [];
+      // Prefetch next 3 thumbnails (CDN warm-up for swipe-up perf)
+      try {
+        all.slice(0, 4).forEach(l => {
+          if (l.thumbnail_url) {
+            const img = new Image();
+            img.decoding = 'async';
+            img.src = l.thumbnail_url;
+          }
+        });
+      } catch {}
 
-      const hostIds = [...new Set(all.map(l => l.user_id))];
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, name, avatar_url')
-        .in('user_id', hostIds);
-
-      const profileMap = new Map(
-        (profiles || []).map(p => [p.user_id, { name: p.name, avatar_url: p.avatar_url }])
-      );
-
-      return all.map(l => ({
-        ...l,
-        host: profileMap.get(l.user_id),
-      })) as AllLiveItem[];
+      return all;
     },
     staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -346,6 +352,13 @@ export default function LiveWatch() {
       const newItem = orderedItems[newIndex];
       if (newItem) {
         window.history.replaceState(null, '', `/live/${newItem.id}`);
+      }
+      // Prefetch next 2 LiveKit tokens for instant swipe-up
+      for (let i = 1; i <= 2; i++) {
+        const next = orderedItems[newIndex + i];
+        if (next?.is_active) {
+          import('@/lib/livekit').then(m => m.prefetchLiveKitToken(`live-${next.id}`)).catch(() => {});
+        }
       }
     }
   }, [currentIndex, orderedItems]);
