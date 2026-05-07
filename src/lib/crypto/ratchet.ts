@@ -274,8 +274,14 @@ export async function ratchetEncrypt(
     n: state.sendCount,
   };
 
-  // Encrypt with AES-256-GCM (v3: bind to identity keys via AAD if available)
-  const ad = buildAssociatedData(state);
+  // Encrypt with AES-256-GCM. Signal Double Ratchet rev.4 §3.4:
+  //   AAD = identity_AD || canonical(header)  → header is now bound to ciphertext.
+  // We prefer v4 AAD when identity keys are known, else fall back to v3 (id-only)
+  // or v2 (no AAD) for legacy state restored from disk.
+  const adV4 = buildAssociatedDataV4(state, header);
+  const adV3 = adV4 ? null : buildAssociatedData(state);
+  const ad = adV4 ?? adV3;
+  const envelopeVersion = adV4 ? PROTOCOL_VERSION : adV3 ? 3 : 2;
   const iv = randomBytes(IV_LENGTH);
   const encryptParams: AesGcmParams = ad
     ? { name: AES_ALGO, iv: iv.slice() as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: ad as Uint8Array<ArrayBuffer> }
@@ -288,7 +294,7 @@ export async function ratchetEncrypt(
 
   const ts = Date.now();
 
-  // Sign: header || iv || ciphertext
+  // Sign: header || iv || ciphertext || ts
   const sigData = new Uint8Array([
     ...new Uint8Array(encodeString(hardGlobals.jsonStringify(header))),
     ...iv,
@@ -299,7 +305,7 @@ export async function ratchetEncrypt(
   const sig = await hardCrypto.sign('Ed25519' as any, signingKey, sigData);
 
   const envelope: RatchetEnvelope = {
-    v: ad ? PROTOCOL_VERSION : 2,
+    v: envelopeVersion,
     kem: CLASSICAL_KEM_ID,
     hdr: header,
     iv: bufferToBase64(iv.buffer as ArrayBuffer),
