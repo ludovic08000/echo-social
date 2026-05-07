@@ -42,35 +42,38 @@ const isChunkLoadError = (e: unknown): boolean => {
   return /Failed to fetch dynamically imported module|Importing a module script failed|ChunkLoadError|Loading chunk \d+ failed|error loading dynamically imported module/i.test(msg);
 };
 
+// Clear stale retry flags after the app has lived 5s without crashing,
+// so a future chunk failure can still recover via reload.
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    try {
+      for (let i = sessionStorage.length - 1; i >= 0; i--) {
+        const k = sessionStorage.key(i);
+        if (k && k.startsWith('r-')) sessionStorage.removeItem(k);
+      }
+    } catch {}
+  }, 5000);
+}
+
 const lazyWithOneRetry = <TModule extends { default: React.ComponentType<any> }>(
   importer: () => Promise<TModule>,
   retryKey: string
 ) => lazy(async () => {
-  // Attempt 1
   try {
     const mod = await importer();
     sessionStorage.removeItem(retryKey);
     return mod;
   } catch (e1) {
     if (!isChunkLoadError(e1)) throw e1;
-    // Attempt 2 — short delay, network may have hiccupped or HMR was mid-flight
-    await new Promise((r) => setTimeout(r, 350));
-    try {
-      const mod = await importer();
-      sessionStorage.removeItem(retryKey);
-      return mod;
-    } catch (e2) {
-      if (!isChunkLoadError(e2)) throw e2;
-      // Attempt 3 — last-resort hard reload, but only once per session per route
-      const alreadyRetried = sessionStorage.getItem(retryKey) === '1';
-      if (!alreadyRetried) {
-        sessionStorage.setItem(retryKey, '1');
-        window.location.reload();
-        // Block resolution while reload happens
-        return new Promise<TModule>(() => {});
-      }
-      throw e2;
+    // The browser module map caches the failed URL — re-importing the same URL
+    // won't help. Hard reload to fetch a fresh ?t= timestamp / new build hash.
+    const alreadyRetried = sessionStorage.getItem(retryKey) === '1';
+    if (!alreadyRetried) {
+      sessionStorage.setItem(retryKey, '1');
+      window.location.reload();
+      return new Promise<TModule>(() => {}); // suspend until reload
     }
+    throw e1;
   }
 });
 
