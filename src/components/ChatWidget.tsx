@@ -1523,6 +1523,32 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </button>
       )}
 
+      {/* Fullscreen media lightbox */}
+      {lightboxMedia && (
+        <div
+          className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center"
+          onClick={() => setLightboxMedia(null)}
+        >
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setLightboxMedia(null); }}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors z-10"
+            aria-label="Fermer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <div className="max-w-[95vw] max-h-[95vh] flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+            <MessageMedia
+              imageUrl={lightboxMedia.url}
+              body={lightboxMedia.body}
+              decrypt={e2ee.decrypt}
+              isEncryptionActive={e2ee.encrypted && !isZeusConversation}
+              messageId={lightboxMedia.messageId}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Negotiation product banner - bottom */}
       {negotiationProduct && (
         <div className="mx-2 mt-1 mb-1 bg-primary/5 border border-primary/20 rounded-xl px-3 py-2">
