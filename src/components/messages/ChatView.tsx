@@ -47,6 +47,7 @@ import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
 import { useTypingPresence } from '@/hooks/useTypingPresence';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
 import { LRUMap } from '@/lib/utils/lruMap';
+import { DisappearingMessagesDialog } from './DisappearingMessagesDialog';
 
 interface ChatViewProps {
   conversationId: string;
