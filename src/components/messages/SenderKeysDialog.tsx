@@ -60,6 +60,7 @@ export function SenderKeysDialog({ open, onOpenChange, conversationId, isGroup }
       return;
     }
     setEnabled(next);
+    invalidateSenderKeysFlag(conversationId);
     toast.success(next ? 'Sender Keys activé' : 'Sender Keys désactivé');
   };
 
