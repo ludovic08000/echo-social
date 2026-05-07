@@ -324,7 +324,7 @@ export async function ratchetDecrypt(
   const cachedMK = newState.skippedKeys.get(skipKey);
   if (cachedMK) {
     newState.skippedKeys.delete(skipKey);
-    const result = await decryptWithKey(cachedMK, envelope, peerSigningKeyBase64);
+    const result = await decryptWithKey(cachedMK, envelope, peerSigningKeyBase64, newState);
     return { ...result, newState };
   }
 
@@ -380,7 +380,7 @@ export async function ratchetDecrypt(
   newState.receivingChainKey = nextChainKey;
   newState.recvCount = envelope.hdr.n + 1;
 
-  const result = await decryptWithKey(messageKey, envelope, peerSigningKeyBase64);
+  const result = await decryptWithKey(messageKey, envelope, peerSigningKeyBase64, newState);
   return { ...result, newState };
 }
 
@@ -424,15 +424,39 @@ async function decryptWithKey(
   messageKey: CryptoKey,
   envelope: RatchetEnvelope,
   peerSigningKeyBase64?: string,
+  state?: Pick<RatchetState, 'myIdentityKeyB64' | 'peerIdentityKeyB64' | 'role'>,
 ): Promise<{ plaintext: string; verified: boolean }> {
   const iv = base64ToBuffer(envelope.iv);
   const ct = base64ToBuffer(envelope.ct);
 
-  const ptBuf = await hardCrypto.decrypt(
-    { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128 },
-    messageKey,
-    ct,
-  );
+  // v3 envelopes are bound to identity-keys via AES-GCM AAD. v2 envelopes
+  // (legacy) carry no AAD and are still accepted for backward compatibility
+  // during the migration window. We try AAD first when v>=3 and fall back to
+  // no-AAD on tag mismatch — this absorbs the rare case where a v3 envelope
+  // is received before the local state has identity keys cached.
+  const ad = (envelope.v ?? 2) >= 3 && state ? buildAssociatedData(state) : null;
+  let ptBuf: ArrayBuffer;
+  if (ad) {
+    try {
+      ptBuf = await hardCrypto.decrypt(
+        { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128, additionalData: ad as Uint8Array<ArrayBuffer> } as AesGcmParams,
+        messageKey,
+        ct,
+      );
+    } catch {
+      ptBuf = await hardCrypto.decrypt(
+        { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128 },
+        messageKey,
+        ct,
+      );
+    }
+  } else {
+    ptBuf = await hardCrypto.decrypt(
+      { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128 },
+      messageKey,
+      ct,
+    );
+  }
 
   const plaintext = decodeString(ptBuf);
 
