@@ -64,7 +64,7 @@ export function useMessageQueue(
     setPendingMessages([]);
   }, [conversationId]);
 
-  const sendMessage = useCallback(async (body: string, imageUrl?: string | null) => {
+  const sendMessage = useCallback(async (body: string, imageUrl?: string | null, extra?: { view_once?: boolean; document_url?: string | null; document_name?: string | null; document_mime?: string | null; document_size_bytes?: number | null }) => {
     const effectiveBody = inferMediaBody(body, imageUrl);
     if (!user || (!effectiveBody.trim() && !imageUrl)) return;
 
