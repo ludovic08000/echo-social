@@ -49,6 +49,7 @@ import { sanitizeUrl } from '@/lib/sanitizeUrl';
 import { LRUMap } from '@/lib/utils/lruMap';
 import { DisappearingMessagesDialog } from './DisappearingMessagesDialog';
 import { SenderKeysDialog } from './SenderKeysDialog';
+import { IdentityChangeBanner } from './IdentityChangeBanner';
 import { buildDocumentBody, parseDocumentBody, isDocumentMime } from '@/lib/messaging/documentMessage';
 import { DocumentBubble } from './DocumentBubble';
 import { Eye, FileText as FileTextIcon } from 'lucide-react';
