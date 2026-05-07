@@ -135,6 +135,7 @@ export async function initRatchetAsInitiator(
   conversationId: string,
   sharedSecret: ArrayBuffer,
   peerDhPublicKey: CryptoKey,
+  identityKeys?: { myIdentityKeyB64: string; peerIdentityKeyB64: string },
 ): Promise<RatchetState> {
   // Generate our first ratchet key pair
   const dhPair = await hardCrypto.generateKey(
@@ -166,6 +167,8 @@ export async function initRatchetAsInitiator(
     recvCount: 0,
     prevSendCount: 0,
     skippedKeys: new Map(),
+    myIdentityKeyB64: identityKeys?.myIdentityKeyB64,
+    peerIdentityKeyB64: identityKeys?.peerIdentityKeyB64,
   };
 }
 
@@ -174,6 +177,7 @@ export async function initRatchetAsResponder(
   conversationId: string,
   sharedSecret: ArrayBuffer,
   ourDhPair: CryptoKeyPair,
+  identityKeys?: { myIdentityKeyB64: string; peerIdentityKeyB64: string },
 ): Promise<RatchetState> {
   const rootKey = await hardCrypto.importKey(
     'raw', sharedSecret.slice(0, 32),
@@ -192,7 +196,29 @@ export async function initRatchetAsResponder(
     recvCount: 0,
     prevSendCount: 0,
     skippedKeys: new Map(),
+    // Note for responder: AD = "FORSURE-AD-v3|" || IKa || IKb (initiator first).
+    // From responder's POV: peerIdentityKeyB64 = IKa (initiator), myIdentityKeyB64 = IKb (us).
+    myIdentityKeyB64: identityKeys?.myIdentityKeyB64,
+    peerIdentityKeyB64: identityKeys?.peerIdentityKeyB64,
   };
+}
+
+// ─── Associated Data (Signal X3DH §3.3) ───
+//
+// Canonical order: initiator IK first. For sender (Alice) AD is built as
+// `prefix || IKa || IKb`. For responder (Bob) it is `prefix || IKa || IKb`
+// — i.e. `peerIdentityKeyB64 || myIdentityKeyB64`. The state always stores
+// keys in our local frame; this helper produces the canonical shared bytes.
+function buildAssociatedData(
+  state: Pick<RatchetState, 'myIdentityKeyB64' | 'peerIdentityKeyB64'>,
+  role: 'initiator' | 'responder',
+): Uint8Array | null {
+  const my = state.myIdentityKeyB64;
+  const peer = state.peerIdentityKeyB64;
+  if (!my || !peer) return null;
+  const initiatorIK = role === 'initiator' ? my : peer;
+  const responderIK = role === 'initiator' ? peer : my;
+  return new Uint8Array(encodeString(`${AD_PREFIX_V3}${initiatorIK}|${responderIK}`));
 }
 
 // ─── Encrypt ───
