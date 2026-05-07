@@ -233,6 +233,24 @@ function buildAssociatedData(
   return new Uint8Array(encodeString(`${AD_PREFIX_V3}${initiatorIK}|${responderIK}`));
 }
 
+/**
+ * Signal Double Ratchet rev.4 §3.4 — AEAD AAD = identity_AD || canonical(header).
+ * Canonical header: "FORSURE-HDR-v4|" || dh || "|" || pn || "|" || n.
+ * Order is fixed (NOT JSON.stringify) to be deterministic across runtimes.
+ */
+function buildAssociatedDataV4(
+  state: Pick<RatchetState, 'myIdentityKeyB64' | 'peerIdentityKeyB64' | 'role'>,
+  header: RatchetHeader,
+): Uint8Array | null {
+  const idAd = buildAssociatedData(state);
+  if (!idAd) return null;
+  const hdrAd = encodeString(`${AD_HEADER_PREFIX_V4}${header.dh}|${header.pn}|${header.n}`);
+  const out = new Uint8Array(idAd.byteLength + hdrAd.byteLength);
+  out.set(idAd, 0);
+  out.set(new Uint8Array(hdrAd), idAd.byteLength);
+  return out;
+}
+
 // ─── Encrypt ───
 
 export async function ratchetEncrypt(
