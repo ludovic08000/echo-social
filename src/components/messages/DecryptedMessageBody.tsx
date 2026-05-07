@@ -109,9 +109,9 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       if (next.mediaKeyB64 && messageId) {
         setMediaKey(messageId, next.mediaKeyB64, isVideoMediaLabel(next.text));
       }
-      if (!next.hidden) {
-        onDecryptedRef.current?.(cachedPlaintext);
-      }
+      // NOTE: do NOT re-notify parent — it already owns this plaintext.
+      // Calling onDecrypted here would trigger a parent state bump, change
+      // `refreshKey`, re-run this effect, and create an infinite loop.
       return;
     }
 
