@@ -79,80 +79,40 @@ function useAllLivesForScreen() {
   const { user } = useAuth();
 
   return useQuery({
-    queryKey: ['live-screen-all', user?.id],
+    queryKey: ['live-screen-bundle', user?.id ?? 'guest'],
     queryFn: async () => {
-      const { data: activeLives } = await supabase
-        .from('live_streams')
-        .select('id, title, description, thumbnail_url, is_active, viewer_count, total_views, category, hashtags, user_id, recording_url, started_at')
-        .eq('is_active', true)
-        .order('viewer_count', { ascending: false });
+      // ── Single batched RPC: actives + replays + profiles + ranks + follow ──
+      const { data: bundle, error } = await supabase.rpc('live_feed_bundle' as any, {
+        p_user_id: user?.id ?? null,
+        p_active_limit: 80,
+        p_replay_limit: 30,
+      });
 
-      const { data: replays } = await supabase
-        .from('live_streams')
-        .select('id, title, description, thumbnail_url, is_active, viewer_count, total_views, category, hashtags, user_id, recording_url, ended_at, started_at')
-        .eq('is_active', false)
-        .not('ended_at', 'is', null)
-        .order('ended_at', { ascending: false })
-        .limit(30);
-
-      const all = [
-        ...(activeLives || []).map(l => ({ ...l, ended_at: null as string | null })),
-        ...(replays || []).map(r => ({ ...r })),
-      ];
-
-      if (!all.length) return { lives: [] as LiveItem[], followingIds: [] as string[] };
-
-      const hostIds = [...new Set(all.map(l => l.user_id))];
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, name, avatar_url')
-        .in('user_id', hostIds);
-
-      const profileMap = new Map(
-        (profiles || []).map(p => [p.user_id, { name: p.name, avatar_url: p.avatar_url }])
-      );
-
-      let userInterests: string[] = [];
-      let followingIds: string[] = [];
-
-      if (user) {
-        const { data: interests } = await supabase
-          .from('user_interests')
-          .select('interest_value')
-          .eq('user_id', user.id);
-        userInterests = (interests || []).map(i => i.interest_value);
-
-        const { data: friendships } = await supabase
-          .from('friendships')
-          .select('requester_id, addressee_id')
-          .eq('status', 'accepted')
-          .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`);
-
-        followingIds = (friendships || []).map(f =>
-          f.requester_id === user.id ? f.addressee_id : f.requester_id
-        );
+      if (error || !bundle) {
+        return { lives: [] as LiveItem[], followingIds: [] as string[] };
       }
 
-      // ── Server-side neural ranking (live_score_batch) — wellbeing-aware ──
-      const rankMap = new Map<string, number>();
-      try {
-        const { data: ranks } = await supabase.rpc('live_score_batch' as any, {
-          p_user_id: user?.id ?? null,
-          p_limit: 80,
-        });
-        if (Array.isArray(ranks)) {
-          for (const r of ranks as Array<{ live_id: string; score: number }>) {
-            rankMap.set(r.live_id, Number(r.score) || 0);
-          }
-        }
-      } catch {}
+      const b = bundle as {
+        active: any[];
+        replays: any[];
+        profiles: Array<{ user_id: string; name: string; avatar_url: string | null }>;
+        ranks: Record<string, number>;
+        following: string[];
+      };
+
+      const profileMap = new Map(b.profiles.map(p => [p.user_id, { name: p.name, avatar_url: p.avatar_url }]));
+      const followingIds = b.following || [];
+      const ranks = b.ranks || {};
+
+      const all = [
+        ...(b.active || []).map(l => ({ ...l, ended_at: null as string | null })),
+        ...(b.replays || []),
+      ];
 
       const lives = all.map(l => ({
         ...l,
         host: profileMap.get(l.user_id),
-        _score: l.is_active
-          ? (rankMap.get(l.id) ?? calculateZeusScore(l, userInterests, followingIds))
-          : 0,
+        _score: l.is_active ? (Number(ranks[l.id]) || 0) : 0,
       })) as LiveItem[];
 
       lives.sort((a, b) => {
@@ -161,11 +121,32 @@ function useAllLivesForScreen() {
         return (b._score || 0) - (a._score || 0);
       });
 
+      // ── Aggressive prefetch of top-6 thumbnails (CDN warm-up) ──
+      try {
+        if (typeof window !== 'undefined') {
+          lives.slice(0, 6).forEach(l => {
+            if (l.thumbnail_url) {
+              const img = new Image();
+              img.decoding = 'async';
+              img.loading = 'eager' as any;
+              img.src = l.thumbnail_url;
+            }
+            // Replay video first frame warm-up
+            if (l.recording_url && !l.is_active) {
+              const v = document.createElement('video');
+              v.preload = 'metadata';
+              v.src = l.recording_url + '#t=0.1';
+            }
+          });
+        }
+      } catch {}
+
       return { lives, followingIds };
     },
     staleTime: 30_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: false,
+    placeholderData: (prev) => prev, // keepPreviousData equivalent — instant UI
   });
 }
 
