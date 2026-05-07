@@ -318,8 +318,33 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe, mediaKeyB64 }: Vo
   const [blobSrc, setBlobSrc] = useState<string | null>(null);
   const [decrypting, setDecrypting] = useState(false);
   const [rate, setRate] = useState<1 | 1.5 | 2>(1);
+  const [transcript, setTranscript] = useState<string | null>(null);
+  const [transcribing, setTranscribing] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const triedBlobRef = useRef(false);
+
+  const handleTranscribe = useCallback(async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (transcribing || transcript) return;
+    setTranscribing(true);
+    try {
+      const { transcribeVoice } = await import('@/lib/messaging/transcribeVoice');
+      // Prefer the in-memory blob (decrypted), fallback to fetching the URL.
+      let blob: Blob | null = null;
+      if (blobSrc) {
+        try { blob = await (await fetch(blobSrc)).blob(); } catch { blob = null; }
+      }
+      if (!blob && !mediaKeyB64) {
+        try { blob = await (await fetch(audioUrl)).blob(); } catch { blob = null; }
+      }
+      if (!blob) { toast.error('Vocal indisponible'); return; }
+      const t = await transcribeVoice(blob);
+      if (!t) { toast.error('Transcription échouée'); return; }
+      setTranscript(t);
+    } finally {
+      setTranscribing(false);
+    }
+  }, [transcribing, transcript, blobSrc, audioUrl, mediaKeyB64]);
 
   // ─── E2EE: Decrypt encrypted voice on mount ───
   useEffect(() => {
