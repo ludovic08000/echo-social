@@ -33,18 +33,32 @@ export const MessageMedia = memo(function MessageMedia({
   isEncryptionActive,
   messageId,
 }: MessageMediaProps) {
+  // Try to extract a media key directly from the body — covers the case
+  // where the message was inserted in compatibility mode (encrypt failed
+  // upstream, body contains label + \x00MKEY:keyB64 in clear).
+  const inlineMedia = (() => {
+    if (!body) return null;
+    return parseMediaMessage(body);
+  })();
+
   const [mediaKey, setMediaKey] = useState<string | null>(() => {
-    if (!messageId) return null;
-    const cached = getMediaKey(messageId);
-    return cached?.mediaKeyB64 ?? null;
+    if (messageId) {
+      const cached = getMediaKey(messageId);
+      if (cached) return cached.mediaKeyB64;
+    }
+    return inlineMedia?.keyB64 ?? null;
   });
   const [isVideo, setIsVideo] = useState<boolean>(() => {
-    if (!messageId) return false;
-    return getMediaKey(messageId)?.isVideo ?? false;
+    if (messageId) {
+      const cached = getMediaKey(messageId);
+      if (cached) return cached.isVideo;
+    }
+    return inlineMedia ? isVideoMediaLabel(inlineMedia.label) : false;
   });
   const [resolved, setResolved] = useState<boolean>(() => {
     if (!isEncryptionActive) return true;
     if (messageId && getMediaKey(messageId)) return true;
+    if (inlineMedia) return true;
     return false;
   });
 
@@ -58,6 +72,14 @@ export const MessageMedia = memo(function MessageMedia({
         setResolved(true);
         return;
       }
+    }
+
+    // Inline plaintext body containing MKEY (compatibility-send fallback).
+    if (inlineMedia) {
+      setMediaKey(inlineMedia.keyB64);
+      setIsVideo(isVideoMediaLabel(inlineMedia.label));
+      setResolved(true);
+      return;
     }
 
     const shouldAttemptDecrypt = isEncryptionActive || looksEncryptedMessage(body);
