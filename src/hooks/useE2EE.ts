@@ -542,9 +542,16 @@ function cleanupLegacyStorage() {
 
 // ─── Ratchet readiness check ───
 
-/** Returns true only if the ratchet state is fully ready for encryption */
+/** Returns true only if the ratchet state is fully ready for v4 AEAD encryption */
 function isRatchetFullyReady(state: RatchetState | null): boolean {
-  return isRatchetReadyForEncrypt(state);
+  if (!isRatchetReadyForEncrypt(state)) return false;
+  // v4 strict: identity keys + role MUST be present, otherwise AAD cannot be
+  // built and ratchetEncrypt will throw E_RATCHET_V4_REQUIRED. Old persisted
+  // states predating v4 are treated as invalid → triggers a fresh X3DH.
+  if (!state?.myIdentityKeyB64 || !state?.peerIdentityKeyB64 || !state?.role) {
+    return false;
+  }
+  return true;
 }
 
 // ─── Hook ───
