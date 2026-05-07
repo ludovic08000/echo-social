@@ -95,7 +95,8 @@ export async function compressVideoForChat(
     ]);
 
     const out = await ffmpeg.readFile(outName);
-    const outBlob = new Blob([out as Uint8Array], { type: 'video/mp4' });
+    const outBytes = (out instanceof Uint8Array ? new Uint8Array(out) : new Uint8Array(out as ArrayBuffer));
+    const outBlob = new Blob([outBytes.buffer as ArrayBuffer], { type: 'video/mp4' });
     await ffmpeg.deleteFile(inName).catch(() => {});
     await ffmpeg.deleteFile(outName).catch(() => {});
 

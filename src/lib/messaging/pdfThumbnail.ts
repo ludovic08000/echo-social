@@ -7,7 +7,6 @@ export async function generatePdfThumbnail(file: File): Promise<Blob | null> {
     const pdfjs = await import('pdfjs-dist');
     // Ship the worker as a module URL. pdfjs-dist v5 exports the worker
     // path; without setting it, we'd block the main thread on parse.
-    // @ts-expect-error - resolved at bundle time by Vite
     pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
 
     const buf = await file.arrayBuffer();
