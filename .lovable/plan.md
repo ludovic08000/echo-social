@@ -1,94 +1,90 @@
-## D3 — Appels de groupe (jusqu'à 8 participants)
+# Durcissement X3DH + Double Ratchet — alignement Signal/WhatsApp
 
-### 1. Base de données (migration)
+## Objectif
+Combler les 7 écarts identifiés vs spec Signal X3DH (rev.1) + Sesame, sans casser les conversations existantes.
 
-Étendre `active_calls` pour le multi-appelés :
-- Ajouter `caller_ids uuid[]` (liste des invités) — `callee_id` reste pour rétro-compat 1-to-1.
-- Ajouter `is_group boolean default false`.
-- Ajouter `accepted_by uuid[]` (qui a accepté), `declined_by uuid[]` (qui a refusé).
-- Le `room_id` (déjà en place) sert de room LiveKit partagée.
+## Stratégie de compatibilité
+Tous les changements de format passent par **bump de version d'enveloppe** : `PROTOCOL_VERSION` actuel = ancien comportement, `PROTOCOL_VERSION+1` = nouveau. Les ratchets existants continuent à fonctionner ; les nouvelles sessions adoptent le format durci. Pas de migration brutale.
 
-Nouvelle vue / fonction RPC `get_active_group_call(room_id)` pour lister les participants en temps réel.
+## Lot 1 — Sans risque, déployable immédiatement
 
-Trigger : quand tous les invités ont décliné OU quand le créateur raccroche → status = `ended`.
+### 1.1 Anti-replay des messages X3DH initiaux (spec §4.6)
+- Nouvelle store IndexedDB `forsure-x3dh-replay` : clé = `sha256(IKa||EKa||spkId||opkId)`, TTL 7j.
+- Vérification dans `x3dhRespond` + `x3dhRespondForDevice` **avant** de consommer l'OPK.
+- Si déjà présent → throw `X3DH_REPLAY_DETECTED`.
+- GC automatique des entrées > 7j à chaque appel.
 
-### 2. Démarrage d'un appel de groupe
+### 1.2 Garbage-collect des SPK privés expirés
+- Dans `refreshSignedPrekeyIfNeeded`, scan IDB et suppression des SPK > 30j (per-user et per-device).
+- Log `[X3DH][GC] purged N expired SPK privates`.
 
-- Depuis `ChatWidget` (conversation 1-to-1) : bouton "ajouter participant" ouvre un picker d'amis.
-- Depuis une conversation groupée (si la table `conversations` a `is_group`) : bouton 📞/📹 lance directement un appel groupe avec tous les membres.
-- Insert unique dans `active_calls` avec `caller_ids = [...uids]`, `is_group = true`, `room_id = uuid()`, `status = 'ringing'`.
-- Le trigger push (déjà en place) sonne en parallèle chez tous les invités via leurs `push_subscriptions`.
+### 1.3 Re-router 100 % du 1-1 vers le chemin per-device (récupère DH4)
+- Dans `messageQueue.ts` / `multiDeviceFanout.ts` : supprimer le fallback `fetchPrekeyBundle` (legacy 3-DH only) quand un `device_id` est résolu.
+- Garde `fetchPrekeyBundle` uniquement comme dernier secours si la table `device_signed_prekeys` est vide pour ce peer (rétro-compat amis n'ayant pas encore migré).
+- Ajoute log `[X3DH][ROUTE] per-device 4-DH` vs `[X3DH][ROUTE] legacy 3-DH fallback`.
 
-### 3. Réception (sonnerie parallèle)
+## Lot 2 — Breaking, version d'enveloppe v2
 
-- `useIncomingCall` écoute déjà `active_calls` ; on étend pour matcher `auth.uid() = ANY(caller_ids)`.
-- `IncomingCallOverlay` affiche : "Untel + 3 autres vous appellent".
-- Quand un invité accepte → update `accepted_by = array_append(accepted_by, uid)`, status reste `ringing` jusqu'à ce que le 1er accepte → passe à `accepted`.
-- Décliner → `declined_by` ; si tous ont décliné → status `declined`, l'appelant voit "Personne n'a répondu".
+### 2.1 AD (Associated Data) lié aux identités — spec §3.3
+- Étendre `RatchetState` avec `peerIdentityKey: string` et `myIdentityKey: string` (snapshot au init X3DH).
+- Construire `AD = base64(IKa) || '|' || base64(IKb)` (ordre canonique : initiateur en premier).
+- Passer `additionalData: encodeString(AD)` à `crypto.subtle.encrypt`/`decrypt` AES-GCM (lignes 215, 386 de `ratchet.ts`).
+- Inclure aussi AD dans la donnée signée Ed25519 (sigData lignes 223 + 397).
+- Bump `PROTOCOL_VERSION` → 2. Branche le decrypt : `envelope.v === 1` → ancien chemin sans AD ; `v === 2` → AD obligatoire.
 
-### 4. Grille N participants
+### 2.2 Liaison cryptographique du `spkId` (closes #5)
+- Nouveau format de signature SPK :
+  `signature = Ed25519.sign(IKpriv, "FORSURE-SPK-v2" || uint32_BE(spkId) || rawSpkPub)`.
+- Champ `spk_signature_version` ajouté aux tables `user_signed_prekeys` + `device_signed_prekeys` (default `1`).
+- `verifySignedPrekey` détecte la version ; v2 vérifie le préfixe + ID, v1 reste accepté en lecture jusqu'au `2026-09-01` (cf. mémoire "Sender Keys Foundation" extinction date).
+- Toute nouvelle SPK générée → v2 directement.
 
-Nouveau composant `<GroupCallGrid />` :
-- Layout adaptatif : 1=plein écran, 2=côte à côte, 3-4=2x2, 5-6=2x3, 7-8=3x3 (placeholder vide pour case impaire).
-- Chaque tile = `<RemoteParticipantTile>` avec vidéo LiveKit, nom, indicateur micro coupé, qualité réseau.
-- L'utilisateur local en PiP (coin bas-droite) ou dans la grille si > 4.
-- Mise à jour live : `room.on(ParticipantConnected/Disconnected)` re-render.
-- `CallOverlay` détecte `is_group` et bascule vers `GroupCallGrid` au lieu du layout 1-to-1.
+### 2.3 Signature individuelle des OPK (closes #7)
+- Colonne `signature TEXT` ajoutée à `device_one_time_prekeys`.
+- Génération dans `refillDeviceOneTimePrekeysIfNeeded` :
+  `sig = Ed25519.sign(IKpriv, "FORSURE-OPK-v1" || uint32_BE(opkId) || rawOpkPub)`.
+- `claim_device_one_time_prekey` RPC retourne aussi la signature.
+- Vérification côté Alice avant `dh4`. Si absente (legacy OPK pré-migration) → accepté avec warning, dépréciation au `2026-09-01`.
 
-### 5. Contrôles d'appel groupe
+## Lot 3 — Recherche / moyen terme (NON dans cette PR)
 
-- Mute / cam off / partage écran : déjà en place via `useCall`.
-- Nouveau : bouton "ajouter participant" en cours d'appel → insère dans `caller_ids` → push sonne le nouveau.
-- Bouton "quitter" : un participant peut sortir sans terminer l'appel pour les autres.
-- Si le créateur quitte ET reste ≥ 2 participants : transfert automatique de propriété.
-- Si reste ≤ 1 : appel auto-terminé.
+- **PQXDH** via `@noble/post-quantum` (ML-KEM-768 hybridé). Nécessite audit dépendance + test perf mobile. Sera proposé séparément.
+- **Sesame Device Manifest signé** : audit du flux `e2ee-session/deviceRegistry.ts` requis avant.
 
-### 6. Historique
+## Migrations DB à créer
 
-`call_history` (déjà en place via trigger) : on stocke `participants uuid[]` au lieu de `callee_id` seul pour les groupes, et `duration` = max des durées.
+```sql
+-- 2.2
+ALTER TABLE public.user_signed_prekeys
+  ADD COLUMN signature_version SMALLINT NOT NULL DEFAULT 1;
+ALTER TABLE public.device_signed_prekeys
+  ADD COLUMN signature_version SMALLINT NOT NULL DEFAULT 1;
 
-### 7. E2EE LiveKit
-
-LiveKit gère nativement le SFrame E2EE pour la room ; même clé dérivée du `room_id` partagée par tous les participants au moment du `connect()` (déjà actif pour le 1-to-1 via `e2ee.keyProvider`).
-
----
-
-### Plan technique condensé
-
-```text
-Migration SQL
- ├─ ALTER active_calls (caller_ids, is_group, accepted_by, declined_by)
- ├─ ALTER call_history (participants uuid[])
- └─ Trigger update_call_history_group
-
-src/hooks/useCall.ts
- └─ Support is_group dans connectToRoom / endCall
-
-src/hooks/useIncomingCall.ts
- └─ Filter: callee_id = uid OR uid = ANY(caller_ids)
-
-src/components/calls/GroupCallGrid.tsx        ← nouveau
-src/components/calls/RemoteParticipantTile.tsx ← nouveau
-src/components/calls/AddParticipantSheet.tsx   ← nouveau
-
-src/components/CallOverlay.tsx
- └─ if (isGroup) render <GroupCallGrid /> else current layout
-
-src/components/ChatWidget.tsx
- └─ Bouton "appel groupe" pour conversations groupées
+-- 2.3
+ALTER TABLE public.device_one_time_prekeys
+  ADD COLUMN signature TEXT;
+ALTER TABLE public.device_one_time_prekeys
+  ADD COLUMN signature_version SMALLINT NOT NULL DEFAULT 0; -- 0 = legacy unsigned
+-- Mettre à jour la function claim_device_one_time_prekey pour retourner signature + version.
 ```
 
-### Hors scope (à part)
+## Fichiers modifiés
+- `src/lib/crypto/x3dh.ts` (1.1, 1.2, 2.2, 2.3)
+- `src/lib/crypto/ratchet.ts` + `deviceRatchet.ts` (2.1)
+- `src/lib/crypto/constants.ts` (`PROTOCOL_VERSION` → 2)
+- `src/lib/messaging/messageQueue.ts` + `multiDeviceFanout.ts` (1.3)
+- 1 migration SQL
+- Tests : `src/lib/crypto/__tests__/x3dh-replay.test.ts`, `ratchet-ad.test.ts`
 
-- Réactions emoji en appel
-- Flou d'arrière-plan / fond virtuel
-- Enregistrement d'appel
-- Visioconférence > 8 (nécessiterait config SFU + simulcast renforcé)
+## Risques
+- **Lot 2.1 (AD)** : un bug = impossibilité totale de déchiffrer les nouveaux messages. Tests obligatoires + canary release.
+- **Lot 1.3 (routing)** : peut exposer des bugs dormants du chemin per-device pour des paires d'amis qui n'avaient jamais utilisé OPK.
+- **Pas de risque** sur Lot 1.1 et 1.2.
 
-### Estimation
+## Plan d'exécution recommandé
+1. Lot 1 d'abord (3 commits, déployable la même journée).
+2. Tester 48h en prod.
+3. Lot 2 ensuite, dans 3 PRs séparées (2.1, 2.2, 2.3) avec tests unitaires.
+4. Lot 3 plus tard, après stabilisation.
 
-~6-8 fichiers modifiés/créés + 1 migration. L'effort principal est la grille adaptative et le multi-callee signaling.
-
----
-
-**Tu valides ce plan ? Je code direct ?**
+Confirme-moi : **on attaque Lot 1 maintenant**, ou tu veux qu'on fasse aussi le Lot 2 dans la foulée ?

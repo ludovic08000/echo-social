@@ -275,6 +275,43 @@ async function getNextSPKId(userId: string): Promise<number> {
 }
 
 /**
+ * Garbage-collect SPK private keys older than `maxAgeMs` (default 30 days).
+ * Covers BOTH per-user (`userId:spkId`) and per-device (`userId::dev::deviceId::spkId`)
+ * entries. Safe to call on every SPK refresh.
+ */
+async function gcExpiredSPKPrivates(userId: string, maxAgeMs = 30 * 24 * 60 * 60 * 1000): Promise<void> {
+  try {
+    const db = await openSPKDB();
+    const tx = db.transaction(SPK_STORE, 'readwrite');
+    const store = tx.objectStore(SPK_STORE);
+    const cutoff = Date.now() - maxAgeMs;
+    const userPrefix = `${userId}:`;
+    const cursorReq = store.openCursor();
+    let purged = 0;
+    cursorReq.onsuccess = () => {
+      const cursor = cursorReq.result;
+      if (!cursor) return;
+      const id = String(cursor.key);
+      const rec = cursor.value as StoredSPK;
+      // Scope GC strictly to this user (legacy or device-scoped IDs both start with userPrefix)
+      if (id.startsWith(userPrefix) && typeof rec.createdAt === 'number' && rec.createdAt < cutoff) {
+        cursor.delete();
+        purged++;
+      }
+      cursor.continue();
+    };
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    if (purged > 0) console.log(`[X3DH][GC] purged ${purged} expired SPK private(s) for user ${userId.slice(0, 8)}…`);
+  } catch (e) {
+    console.warn('[X3DH][GC] SPK GC failed (non-fatal):', e);
+  }
+}
+
+
+/**
  * Generate a new signed prekey and upload to server.
  * The SPK is an X25519 key signed by the user's Ed25519 identity key.
  */
@@ -348,6 +385,9 @@ export async function refreshSignedPrekeyIfNeeded(
   signingPrivateKey: CryptoKey,
 ): Promise<void> {
   try {
+    // Opportunistic GC of SPK privates older than 30 days (legacy + per-device).
+    void gcExpiredSPKPrivates(userId);
+
     const { data } = await supabase
       .from('user_signed_prekeys')
       .select('created_at, public_key, signature, spk_id')
@@ -1144,6 +1184,16 @@ export async function x3dhRespond(
 ): Promise<{ sharedSecret: ArrayBuffer; spkKeyPair: CryptoKeyPair }> {
   console.info(`[X3DH] init responder — SPK #${initialMessage.spkId}, OPK ${initialMessage.opkId ?? 'none'}, peer IK ${initialMessage.ik.slice(0, 8)}…`);
 
+  // Anti-replay (Signal X3DH §4.6) — must run BEFORE any DH or OPK consumption
+  const { assertNotReplayedAndRecord } = await import('./x3dhReplayGuard');
+  await assertNotReplayedAndRecord({
+    myUserId,
+    ik: initialMessage.ik,
+    ek: initialMessage.ek,
+    spkId: initialMessage.spkId,
+    opkId: initialMessage.opkId,
+  });
+
   // 1. Import Alice's keys
   const aliceIK = await importX25519Public(initialMessage.ik);
   const aliceEK = await importX25519Public(initialMessage.ek);
@@ -1223,6 +1273,16 @@ export async function x3dhRespondForDevice(
   console.info(
     `[X3DH-DEV] respond — SPK #${initialMessage.spkId}, OPK ${initialMessage.opkId ?? 'none'}, dev=${myDeviceId.slice(0, 8)}…`,
   );
+
+  // Anti-replay (Signal X3DH §4.6) — must run BEFORE any DH or OPK consumption
+  const { assertNotReplayedAndRecord } = await import('./x3dhReplayGuard');
+  await assertNotReplayedAndRecord({
+    myUserId: `${myUserId}::${myDeviceId}`,
+    ik: initialMessage.ik,
+    ek: initialMessage.ek,
+    spkId: initialMessage.spkId,
+    opkId: initialMessage.opkId,
+  });
 
   const aliceIK = await importX25519Public(initialMessage.ik);
   const aliceEK = await importX25519Public(initialMessage.ek);
