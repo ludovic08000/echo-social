@@ -95,6 +95,30 @@ export function CallOverlay({
                 <span className="text-green-400 text-xs font-medium">Chiffré de bout en bout</span>
               </div>
             )}
+            {!isConnecting && connectionQuality !== 'unknown' && (
+              <div
+                className={cn(
+                  "flex items-center gap-1.5 mt-2 rounded-full px-3 py-1",
+                  connectionQuality === 'excellent' && "bg-green-500/20 text-green-400",
+                  connectionQuality === 'good' && "bg-emerald-500/15 text-emerald-300",
+                  connectionQuality === 'poor' && "bg-amber-500/20 text-amber-400",
+                  connectionQuality === 'lost' && "bg-red-500/20 text-red-400",
+                )}
+                title="Qualité réseau"
+              >
+                {connectionQuality === 'lost' ? (
+                  <WifiOff className="w-3.5 h-3.5" />
+                ) : (
+                  <Wifi className="w-3.5 h-3.5" />
+                )}
+                <span className="text-xs font-medium">
+                  {connectionQuality === 'excellent' && 'Réseau excellent'}
+                  {connectionQuality === 'good' && 'Bon réseau'}
+                  {connectionQuality === 'poor' && 'Réseau faible'}
+                  {connectionQuality === 'lost' && 'Connexion perdue'}
+                </span>
+              </div>
+            )}
           </>
         )}
 
