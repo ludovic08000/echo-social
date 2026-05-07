@@ -49,18 +49,26 @@ function openDB(forceFresh = false): Promise<IDBDatabase> {
   return forceFresh ? reopenE2EEDB() : openE2EEDB();
 }
 
-function dbGet<T>(storeName: string, key: string, forceFresh = false): Promise<T | undefined> {
-  return openDB(forceFresh).then(db => new Promise((resolve, reject) => {
-    try {
-      const tx = db.transaction(storeName, 'readonly');
-      const store = tx.objectStore(storeName);
-      const req = store.get(key);
-      req.onsuccess = () => resolve(req.result as T | undefined);
-      req.onerror = () => reject(req.error);
-    } catch {
-      resolve(undefined);
+async function dbGet<T>(storeName: string, key: string, forceFresh = false): Promise<T | undefined> {
+  try {
+    return await openDB(forceFresh).then(db => new Promise<T | undefined>((resolve, reject) => {
+      try {
+        const tx = db.transaction(storeName, 'readonly');
+        const store = tx.objectStore(storeName);
+        const req = store.get(key);
+        req.onsuccess = () => resolve(req.result as T | undefined);
+        req.onerror = () => reject(req.error);
+      } catch (error) {
+        reject(error);
+      }
+    }));
+  } catch (error) {
+    if (!forceFresh && isIndexedDBClosingError(error)) {
+      console.warn('[KEY_MGR] IndexedDB connection was closing on read; retrying with a fresh connection.');
+      return dbGet(storeName, key, true);
     }
-  }));
+    return undefined;
+  }
 }
 
 async function dbPut<T>(storeName: string, value: T, forceFresh = false): Promise<void> {
@@ -85,18 +93,26 @@ async function dbPut<T>(storeName: string, value: T, forceFresh = false): Promis
   }
 }
 
-function dbDelete(storeName: string, key: string): Promise<void> {
-  return openDB().then(db => new Promise((resolve, reject) => {
-    try {
-      const tx = db.transaction(storeName, 'readwrite');
-      const store = tx.objectStore(storeName);
-      const req = store.delete(key);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
-    } catch {
-      resolve();
+async function dbDelete(storeName: string, key: string, forceFresh = false): Promise<void> {
+  try {
+    return await openDB(forceFresh).then(db => new Promise<void>((resolve, reject) => {
+      try {
+        const tx = db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        const req = store.delete(key);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      } catch (error) {
+        reject(error);
+      }
+    }));
+  } catch (error) {
+    if (!forceFresh && isIndexedDBClosingError(error)) {
+      console.warn('[KEY_MGR] IndexedDB connection was closing on delete; retrying with a fresh connection.');
+      return dbDelete(storeName, key, true);
     }
-  }));
+    // Best-effort delete: never propagate
+  }
 }
 
 export async function exportPublicKeyRaw(publicKey: CryptoKey): Promise<ArrayBuffer> {
