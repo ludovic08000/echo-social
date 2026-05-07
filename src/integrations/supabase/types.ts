@@ -160,6 +160,7 @@ export type Database = {
           encrypted_call_key: string | null
           ended_at: string | null
           id: string
+          room_id: string | null
           status: string
         }
         Insert: {
@@ -172,6 +173,7 @@ export type Database = {
           encrypted_call_key?: string | null
           ended_at?: string | null
           id?: string
+          room_id?: string | null
           status?: string
         }
         Update: {
@@ -184,6 +186,7 @@ export type Database = {
           encrypted_call_key?: string | null
           ended_at?: string | null
           id?: string
+          room_id?: string | null
           status?: string
         }
         Relationships: []
@@ -856,6 +859,45 @@ export type Database = {
           is_active?: boolean
           reason?: string | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      call_history: {
+        Row: {
+          call_id: string | null
+          call_type: string
+          callee_id: string
+          caller_id: string
+          conversation_id: string
+          duration_seconds: number
+          ended_at: string
+          final_status: string
+          id: string
+          started_at: string
+        }
+        Insert: {
+          call_id?: string | null
+          call_type?: string
+          callee_id: string
+          caller_id: string
+          conversation_id: string
+          duration_seconds?: number
+          ended_at?: string
+          final_status: string
+          id?: string
+          started_at?: string
+        }
+        Update: {
+          call_id?: string | null
+          call_type?: string
+          callee_id?: string
+          caller_id?: string
+          conversation_id?: string
+          duration_seconds?: number
+          ended_at?: string
+          final_status?: string
+          id?: string
+          started_at?: string
         }
         Relationships: []
       }
