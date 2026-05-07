@@ -1294,7 +1294,12 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         })()}
 
                         {msg.image_url && !parseDocumentBody(msg.body) && (
-                          <div className="rounded-xl overflow-hidden mb-0.5 shadow-sm">
+                          <Link
+                            to={`/profile/${msg.sender_id}`}
+                            onClick={() => closeChat()}
+                            className="block rounded-xl overflow-hidden mb-0.5 shadow-sm cursor-pointer hover:opacity-95 transition-opacity"
+                            title="Voir le profil"
+                          >
                             <MessageMedia
                               imageUrl={msg.image_url}
                               body={msg.body}
@@ -1302,7 +1307,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                               isEncryptionActive={e2ee.encrypted && !isZeusConversation}
                               messageId={msg.id}
                             />
-                          </div>
+                          </Link>
                         )}
 
                         {/* Skip text bubble when message is purely a media attachment */}
