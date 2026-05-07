@@ -97,9 +97,7 @@ export async function assertNotReplayedAndRecord(params: {
     return;
   }
 
-  // (id already computed above)
-
-  const id = await fingerprint(params.myUserId, params.ik, params.ek, params.spkId, params.opkId);
+  // (id already computed above — reuse it)
 
   // Check existing
   const existing = await new Promise<ReplayRecord | undefined>((resolve, reject) => {
