@@ -3,7 +3,7 @@
  *
  * Guarantees:
  *  1. New outbound messages from a freshly established session ALWAYS use
- *     the `x3dh4.` Double-Ratchet wire format. The legacy `x3dh3.` prefix
+ *     the `x3dh5.` Double-Ratchet wire format. The legacy `x3dh3.` prefix
  *     must never leak into outbound traffic for new sessions.
  *  2. The decryption path correctly handles BOTH:
  *     - v4 envelopes (current Double Ratchet wire format).
@@ -22,7 +22,7 @@ import {
   ratchetDecrypt,
   clearAllDeviceSessions,
   RATCHET_PREFIX_V3,
-  RATCHET_PREFIX_V4,
+  RATCHET_PREFIX_V5,
 } from '@/lib/crypto/deviceRatchet';
 
 const A_USER = 'user-alice';
@@ -121,7 +121,7 @@ describe('v4 envelope contract — outbound + legacy read', () => {
     for (let i = 0; i < 5; i++) {
       const ct = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, `msg-${i}`);
       expect(ct).not.toBeNull();
-      expect(ct!.startsWith(RATCHET_PREFIX_V4)).toBe(true);
+      expect(ct!.startsWith(RATCHET_PREFIX_V5)).toBe(true);
       expect(ct!.startsWith(RATCHET_PREFIX_V3)).toBe(false);
     }
   });
@@ -140,8 +140,8 @@ describe('v4 envelope contract — outbound + legacy read', () => {
     const ct2 = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'm2');
 
     for (const ct of [ct0, ct1, ct2]) {
-      expect(ct!.startsWith(RATCHET_PREFIX_V4)).toBe(true);
-      const parts = ct!.slice(RATCHET_PREFIX_V4.length).split('.');
+      expect(ct!.startsWith(RATCHET_PREFIX_V5)).toBe(true);
+      const parts = ct!.slice(RATCHET_PREFIX_V5.length).split('.');
       // Header layout: sessionId.dhPub.Ns.PN.iv.ct — exactly 6 dot-separated parts.
       expect(parts).toHaveLength(6);
       expect(parts[0]).toBe(sessionId);
@@ -151,7 +151,7 @@ describe('v4 envelope contract — outbound + legacy read', () => {
     }
 
     // Counters strictly increase across consecutive sends.
-    const Ns = (ct: string) => parseInt(ct.slice(RATCHET_PREFIX_V4.length).split('.')[2], 10);
+    const Ns = (ct: string) => parseInt(ct.slice(RATCHET_PREFIX_V5.length).split('.')[2], 10);
     expect(Ns(ct0!)).toBe(0);
     expect(Ns(ct1!)).toBe(1);
     expect(Ns(ct2!)).toBe(2);
@@ -209,8 +209,8 @@ describe('v4 envelope contract — outbound + legacy read', () => {
 
     // Each pair holds the line on its own wire format — no cross-contamination.
     expect(ctLegacy!.startsWith(RATCHET_PREFIX_V3)).toBe(true);
-    expect(ctLegacy!.startsWith(RATCHET_PREFIX_V4)).toBe(false);
-    expect(ctNew!.startsWith(RATCHET_PREFIX_V4)).toBe(true);
+    expect(ctLegacy!.startsWith(RATCHET_PREFIX_V5)).toBe(false);
+    expect(ctNew!.startsWith(RATCHET_PREFIX_V5)).toBe(true);
     expect(ctNew!.startsWith(RATCHET_PREFIX_V3)).toBe(false);
   });
 
