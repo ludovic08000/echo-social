@@ -14,7 +14,6 @@ interface FriendRow {
   user_id: string;
   name: string | null;
   avatar_url: string | null;
-  username: string | null;
 }
 
 interface AddParticipantSheetProps {
@@ -49,7 +48,7 @@ export function AddParticipantSheet({
       // Reuse "friendships" table if present, else fall back to recent message peers.
       const { data: prof } = await supabase
         .from('profiles')
-        .select('user_id, name, avatar_url, username')
+        .select('user_id, name, avatar_url')
         .neq('user_id', user.id)
         .order('updated_at', { ascending: false })
         .limit(50);
@@ -61,8 +60,7 @@ export function AddParticipantSheet({
   const filtered = friends.filter(f => {
     const q = search.toLowerCase();
     if (!q) return true;
-    return (f.name ?? '').toLowerCase().includes(q)
-      || (f.username ?? '').toLowerCase().includes(q);
+    return (f.name ?? '').toLowerCase().includes(q);
   });
 
   const toggle = (uid: string) => {
