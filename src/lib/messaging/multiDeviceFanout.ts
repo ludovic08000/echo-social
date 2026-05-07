@@ -575,6 +575,15 @@ export async function tryReadDeviceCopy(
   }
 }
 
+/** Attempt decryption of a single device-targeted encrypted row. Returns plaintext or null. */
+export async function tryDecryptDeviceTargetedBody(
+  row: { encrypted_body: string; sender_user_id: string; sender_device_id: string },
+  userId: string,
+  myDeviceId: string,
+): Promise<string | null> {
+  return tryDecryptCopy(row, userId, myDeviceId);
+}
+
 /** Attempt decryption of a single device copy row. Returns plaintext or null. */
 async function tryDecryptCopy(
   row: { encrypted_body: string; sender_user_id: string; sender_device_id: string },
