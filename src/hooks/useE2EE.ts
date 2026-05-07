@@ -48,6 +48,12 @@ import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/li
 import { KX_KEY_PARAMS, STORE_PREKEYS, STORE_SESSION } from '@/lib/crypto/constants';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
 import { isCryptoJsonBody, isStrictRatchetEnvelopeBody, isUnsupportedEncryptedBody } from '@/lib/messaging/messageCompatibility';
+import { isSenderKeyWire, parseSKDM, SENDER_KEY_PREFIX } from '@/lib/crypto/senderKeys';
+import {
+  installSKDM,
+  loadRecipientStateForWire,
+  decryptFromGroup,
+} from '@/lib/crypto/senderKeySession';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
 const RATCHET_DB_NAME = 'forsure-ratchet';
