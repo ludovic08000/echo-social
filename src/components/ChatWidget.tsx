@@ -885,7 +885,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         onSwitchToVideo={call.switchToVideo}
         onSwitchCamera={call.switchCamera}
       />
-      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
+      <input ref={fileInputRef} type="file" accept="image/*,video/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/zip,text/plain,text/csv" className="hidden" onChange={(e) => {
         const file = e.target.files?.[0];
         if (file) handleMediaFile(file);
         e.target.value = '';
