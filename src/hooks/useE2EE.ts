@@ -1571,6 +1571,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
               await saveRatchetLocal(conversationId!, newState, null);
               setState(s => ({ ...s, ratchetActive: true }));
               console.debug(`[RATCHET] ✅ decrypt OK after readiness self-heal — verified=${verified}`);
+              const skdmAbsorbed = await maybeAbsorbSKDM(plaintext);
+              if (skdmAbsorbed) return skdmAbsorbed;
               return { text: plaintext, encrypted: true, verified };
             }
           } catch (healErr) {
@@ -1602,6 +1604,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         await saveRatchetLocal(conversationId!, newState, x3dhInfoRef.current);
         setState(s => ({ ...s, ratchetActive: true }));
         console.debug(`[RATCHET] ✅ decrypt OK — verified=${verified}`);
+        const skdmAbsorbed = await maybeAbsorbSKDM(plaintext);
+        if (skdmAbsorbed) return skdmAbsorbed;
         return { text: plaintext, encrypted: true, verified };
       } catch (ratchetErr) {
         const errMsg = ratchetErr instanceof Error ? ratchetErr.message : String(ratchetErr);
@@ -1621,6 +1625,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
               await saveRatchetLocal(conversationId!, newState, null);
               setState(s => ({ ...s, ratchetActive: true }));
               console.debug(`[RATCHET] ✅ decrypt OK after X3DH self-heal — verified=${verified}`);
+              const skdmAbsorbed = await maybeAbsorbSKDM(plaintext);
+              if (skdmAbsorbed) return skdmAbsorbed;
               return { text: plaintext, encrypted: true, verified };
             }
           } catch (healErr) {
