@@ -1289,6 +1289,23 @@ export function ChatView({ conversationId }: ChatViewProps) {
             )}
           </button>
 
+          <button
+            type="button"
+            onClick={() => {
+              setViewOnceArmed(v => !v);
+              if (!viewOnceArmed) toast.success('Mode Vue Unique activé pour le prochain média 🔥');
+            }}
+            title="Vue unique (Premier visionnage)"
+            className={cn(
+              "w-10 h-10 rounded-full flex items-center justify-center transition-colors flex-shrink-0",
+              viewOnceArmed
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-secondary"
+            )}
+          >
+            <Eye className="w-5 h-5" />
+          </button>
+
           <div className="flex-1 flex items-center bg-secondary rounded-full px-1 min-h-[40px]">
             <button
               type="button"
