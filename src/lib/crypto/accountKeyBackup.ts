@@ -153,7 +153,7 @@ async function collectAllKeys(): Promise<string | null> {
     for (const storeName of Array.from(db.objectStoreNames)) {
       data[`e2ee:${storeName}`] = await getAllFromStore(db, storeName);
     }
-    db.close();
+    // db.close() skipped — shared singleton, see indexedDb.ts
   } catch {}
 
   try {
@@ -184,7 +184,7 @@ async function collectAllKeys(): Promise<string | null> {
     const db = await openE2EEDB();
     data['device:kx'] = (await getAllFromStore(db, 'identity-keys'))
       .filter((r: any) => typeof r?.id === 'string' && r.id.startsWith('device-kx::'));
-    db.close();
+    // db.close() skipped — shared singleton, see indexedDb.ts
     const fps = localStorage.getItem('forsure-known-fps');
     if (fps) data['fingerprints'] = fps;
   } catch {}
@@ -279,10 +279,10 @@ async function restoreAllKeys(json: string): Promise<void> {
         rollbackOps.push(async () => {
           const rdb = await openE2EEDB();
           await putAllInStore(rdb, sn, ed);
-          rdb.close();
+          // db.close() skipped — shared singleton, see indexedDb.ts
         });
       }
-      db.close();
+      // db.close() skipped — shared singleton, see indexedDb.ts
     }
 
     if (Array.isArray(data['device:kx'])) {
@@ -292,7 +292,7 @@ async function restoreAllKeys(json: string): Promise<void> {
         const db = await openE2EEDB();
         const existing = await getAllFromStore(db, 'identity-keys');
         await putAllInStore(db, 'identity-keys', [...existing.filter((r: any) => r?.id !== currentDeviceKxId), ...deviceKx]);
-        db.close();
+        // db.close() skipped — shared singleton, see indexedDb.ts
       }
     }
 
@@ -382,7 +382,7 @@ export async function hasLocalKeys(): Promise<boolean> {
         req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
       });
     }
-    db.close();
+    // db.close() skipped — shared singleton, see indexedDb.ts
     if (rawCount > 0) return true;
   } catch {}
 
@@ -429,7 +429,7 @@ export async function computeLocalCryptoDigest(): Promise<string> {
       const all = await getAllFromStore(db, storeName);
       parts.push(`${storeName}:${all.length}:${JSON.stringify(all).length}`);
     }
-    db.close();
+    // db.close() skipped — shared singleton, see indexedDb.ts
   } catch {}
 
   for (const [dbName, storeName] of [
