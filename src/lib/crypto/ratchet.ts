@@ -30,6 +30,7 @@ import {
   RATCHET_MAX_SKIP, RATCHET_MAX_SKIPPED_CACHE, RATCHET_SKIPPED_TTL_MS,
 } from './constants';
 import { exportPublicKeyRaw } from './keyManager';
+import { wrapSkippedJwk, unwrapSkippedJwk, isWrappedSkippedEntry } from './skippedKeyWrap';
 
 // ─── Types ───
 
