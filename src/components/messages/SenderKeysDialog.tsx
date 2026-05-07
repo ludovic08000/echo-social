@@ -74,6 +74,7 @@ export function SenderKeysDialog({ open, onOpenChange, conversationId, isGroup }
       // SKDM will be fanned out by send pipeline on next message; pre-build
       // to surface any error early.
       snapshotForDistribution(next);
+      invalidateSenderKeysFlag(conversationId);
       toast.success('Chaîne régénérée — un nouveau SKDM sera envoyé au prochain message.');
     } catch (e: any) {
       toast.error(`Rotation impossible : ${e?.message ?? 'erreur'}`);
