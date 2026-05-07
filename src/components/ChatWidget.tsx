@@ -1948,7 +1948,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               >
                 <Eye className="w-5 h-5" />
               </button>
-              <button type="button" onClick={() => { setShowGifs(v => !v); setShowEmojis(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors text-[11px] font-bold", showGifs ? "text-primary" : "text-muted-foreground hover:text-primary")}>
+              <button type="button" onClick={() => { setShowGifs(v => !v); setShowEmojis(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors text-[12px] font-bold", showGifs ? "text-primary" : "text-muted-foreground hover:text-primary")}>
                 GIF
               </button>
               <button type="button" onClick={() => { setShowEmojis(v => !v); setShowGifs(false); setShowAIMenu(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors", showEmojis ? "text-primary" : "text-muted-foreground hover:text-primary")}>
