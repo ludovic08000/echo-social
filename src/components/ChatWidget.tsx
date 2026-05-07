@@ -1073,18 +1073,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       </div>
 
-      {/* E2EE Status */}
-      {!isZeusConversation && (
-        <EncryptionStatusBar
-          encrypted={e2ee.encrypted}
-          fingerprint={e2ee.fingerprint}
-          peerFingerprint={e2ee.peerFingerprint}
-          ratchetActive={e2ee.ratchetActive}
-          fingerprintChanged={e2ee.fingerprintChanged}
-          peerName={conversation?.participant?.name || 'Contact'}
-          conversationId={conversationId || ''}
-        />
-      )}
+      {/* E2EE Status bar removed per user request — encryption is silent */}
 
       {/* Fingerprint change banner removed per user request — silent re-keying */}
 
@@ -1305,7 +1294,12 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         })()}
 
                         {msg.image_url && !parseDocumentBody(msg.body) && (
-                          <div className="rounded-xl overflow-hidden mb-0.5 shadow-sm">
+                          <Link
+                            to={`/profile/${msg.sender_id}`}
+                            onClick={() => closeChat()}
+                            className="block rounded-xl overflow-hidden mb-0.5 shadow-sm cursor-pointer hover:opacity-95 transition-opacity"
+                            title="Voir le profil"
+                          >
                             <MessageMedia
                               imageUrl={msg.image_url}
                               body={msg.body}
@@ -1313,7 +1307,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                               isEncryptionActive={e2ee.encrypted && !isZeusConversation}
                               messageId={msg.id}
                             />
-                          </div>
+                          </Link>
                         )}
 
                         {/* Skip text bubble when message is purely a media attachment */}
