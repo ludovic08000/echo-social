@@ -38,6 +38,7 @@ export function useCall(options?: UseCallOptions) {
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [duration, setDuration] = useState(0);
   const [isE2eeActive, setIsE2eeActive] = useState(false);
+  const [connectionQuality, setConnectionQuality] = useState<'excellent' | 'good' | 'poor' | 'lost' | 'unknown'>('unknown');
 
   const roomRef = useRef<Room | null>(null);
   const localVideoRef = useRef<HTMLDivElement | null>(null);
