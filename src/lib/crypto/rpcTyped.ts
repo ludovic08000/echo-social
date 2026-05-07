@@ -16,7 +16,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 type RpcResult<T> = { data: T | null; error: Error | null };
 
-async function callRpc<T>(fn: string, args?: Record<string, unknown>): Promise<RpcResult<T>> {
+async function callRpc<T>(fn: string, args?: object): Promise<RpcResult<T>> {
   const { data, error } = await (supabase.rpc as any)(fn, args);
   return { data: (data ?? null) as T | null, error: (error ?? null) as Error | null };
 }
