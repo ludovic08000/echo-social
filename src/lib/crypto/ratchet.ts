@@ -301,7 +301,12 @@ export async function ratchetEncrypt(
     tagLength: 128,
     additionalData: ad as Uint8Array<ArrayBuffer>,
   };
-  const ct = await hardCrypto.encrypt(encryptParams, messageKey, encodeString(plaintext));
+  // Lot B — bucketed length padding (Signal §6 / WhatsApp whitepaper).
+  // Plaintext is padded to a length-bucket BEFORE encryption so AES-GCM
+  // ciphertext length does not leak msg length to network observers.
+  // The `pad: 1` flag below tells the receiver to call `unpadPlaintext()`.
+  const padded = padPlaintext(plaintext);
+  const ct = await hardCrypto.encrypt(encryptParams, messageKey, padded);
 
   const ts = Date.now();
 
