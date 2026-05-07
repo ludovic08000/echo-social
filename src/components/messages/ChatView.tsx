@@ -323,7 +323,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   ]);
 
   const {
-    callState, callType, isMuted, isCameraOff, duration, isE2eeActive,
+    callState, callType, isMuted, isCameraOff, duration, isE2eeActive, connectionQuality,
     localVideoRef, remoteVideoRef,
     startCall, endCall, toggleMute, toggleCamera, switchToVideo, switchCamera,
   } = useCall();
