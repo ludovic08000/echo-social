@@ -24,7 +24,9 @@ import {
 } from './utils';
 import { exportKeyToJWK, importKeyFromJWK } from './utils';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
-import { AES_ALGO, IV_LENGTH, PROTOCOL_VERSION, AD_PREFIX_V3, CLASSICAL_KEM_ID, KX_KEY_PARAMS } from './constants';
+import { AES_ALGO, IV_LENGTH, PROTOCOL_VERSION, AD_PREFIX_V3 as _AD_PREFIX_V3, CLASSICAL_KEM_ID, KX_KEY_PARAMS } from './constants';
+// Reserved for v3 AD wiring; intentionally unused at v2 protocol.
+void _AD_PREFIX_V3;
 import { exportPublicKeyRaw } from './keyManager';
 
 // ─── Types ───
