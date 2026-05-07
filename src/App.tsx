@@ -218,6 +218,11 @@ function AccountKeySyncRunner() {
   return null;
 }
 
+function RoutedErrorBoundary({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  return <ErrorBoundary resetKey={location.pathname}>{children}</ErrorBoundary>;
+}
+
 function AppContent() {
   useSettingsInit();
   return (
