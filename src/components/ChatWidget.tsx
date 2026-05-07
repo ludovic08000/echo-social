@@ -355,6 +355,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [showEmojis, setShowEmojis] = useState(false);
   const [showGifs, setShowGifs] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
+  const [viewOnceArmed, setViewOnceArmed] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
