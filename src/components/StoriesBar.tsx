@@ -7,6 +7,7 @@ import { fr } from 'date-fns/locale';
 import { useStories, useCreateStory, useViewStory, useDeleteStory, useStoryViewers, GroupedStories } from '@/hooks/useStories';
 import { useCreateConversation, useSendMessage } from '@/hooks/useMessages';
 import { useAuth } from '@/lib/auth';
+import { useProfile } from '@/hooks/useProfile';
 import { UserAvatar } from './UserAvatar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -26,6 +27,7 @@ const QUICK_REACTIONS = [
 export function StoriesBar() {
   const { data: groupedStories, isLoading } = useStories();
   const { user } = useAuth();
+  const { data: myProfile } = useProfile();
   const [selectedGroup, setSelectedGroup] = useState<GroupedStories | null>(null);
   const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
@@ -273,12 +275,19 @@ export function StoriesBar() {
           onKeyDown={(e) => { if (e.key === 'Enter') fileInputRef.current?.click(); }}
           className="flex-shrink-0 w-[110px] h-[190px] rounded-2xl overflow-hidden relative group cursor-pointer shadow-md hover:shadow-lg transition-shadow duration-200"
         >
-          {/* Background gradient */}
-          <div className="absolute inset-0 bg-gradient-to-b from-muted/80 to-muted" />
-          {/* User photo top section */}
-          <div className="relative h-[130px] w-full flex items-center justify-center">
-            {user && (
-              <UserAvatar src={null} alt="Moi" size="lg" />
+          {/* User photo full-bleed background */}
+          <div className="absolute inset-0">
+            {myProfile?.avatar_url ? (
+              <img
+                src={myProfile.avatar_url}
+                alt="Ma story"
+                className="w-full h-[130px] object-cover"
+                loading="eager"
+              />
+            ) : (
+              <div className="w-full h-[130px] bg-gradient-to-br from-primary/30 to-accent/40 flex items-center justify-center">
+                <UserAvatar src={null} alt="Moi" size="lg" />
+              </div>
             )}
           </div>
           {/* iOS-style floating plus button */}
