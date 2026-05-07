@@ -17,14 +17,14 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react';
 import { cn } from '@/lib/utils';
 import { generateProfileUrl } from '@/lib/urlUtils';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Loader2 } from 'lucide-react';
-import { AvatarCropper } from '@/components/AvatarCropper';
+const AvatarCropper = lazy(() => import('@/components/AvatarCropper').then(m => ({ default: m.AvatarCropper })));
 import { ProfilePhotoGrid } from '@/components/profile/ProfilePhotoGrid';
 import { AlbumsList } from '@/components/profile/AlbumsList';
 import { AlbumDetail } from '@/components/profile/AlbumDetail';
@@ -946,15 +946,17 @@ export default function Profile() {
       </div>
 
       {avatarToCrop && (
-        <AvatarCropper
-          isOpen={isCropperOpen}
-          onClose={handleCloseCropper}
-          imageSrc={avatarToCrop}
-          onCropComplete={handleCroppedAvatar}
-          isUploading={avatarUpload.isUploading}
-          aspectRatio={1}
-          title="Recadrer la photo de profil"
-        />
+        <Suspense fallback={null}>
+          <AvatarCropper
+            isOpen={isCropperOpen}
+            onClose={handleCloseCropper}
+            imageSrc={avatarToCrop}
+            onCropComplete={handleCroppedAvatar}
+            isUploading={avatarUpload.isUploading}
+            aspectRatio={1}
+            title="Recadrer la photo de profil"
+          />
+        </Suspense>
       )}
     </AppLayout>
   );
