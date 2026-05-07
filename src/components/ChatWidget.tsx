@@ -1218,7 +1218,21 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                           </>
                         )}
 
-                        {msg.image_url && (
+                        {(() => {
+                          const docParsed = parseDocumentBody(msg.body);
+                          if (docParsed && msg.image_url) {
+                            return (
+                              <DocumentBubble
+                                encryptedUrl={msg.image_url}
+                                doc={docParsed}
+                                isMe={isMe}
+                              />
+                            );
+                          }
+                          return null;
+                        })()}
+
+                        {msg.image_url && !parseDocumentBody(msg.body) && (
                           <div className="rounded-xl overflow-hidden mb-0.5 shadow-sm">
                             <MessageMedia
                               imageUrl={msg.image_url}
