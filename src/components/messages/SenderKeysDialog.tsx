@@ -8,7 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { rotateOwnerSession, ensureOwnerSession, snapshotForDistribution } from '@/lib/crypto/senderKeySession';
-import { getOrCreateDeviceId } from '@/lib/crypto/deviceId';
+import { getOrCreateCurrentDeviceId } from '@/lib/crypto/deviceList';
 
 interface Props {
   open: boolean;
@@ -66,7 +66,7 @@ export function SenderKeysDialog({ open, onOpenChange, conversationId, isGroup }
     if (!user) return;
     setRotating(true);
     try {
-      const did = await getOrCreateDeviceId();
+      const did = getOrCreateCurrentDeviceId();
       await ensureOwnerSession(conversationId, user.id, did);
       const next = await rotateOwnerSession(conversationId, user.id, did);
       // SKDM will be fanned out by send pipeline on next message; pre-build
