@@ -1025,7 +1025,9 @@ export function ChatView({ conversationId }: ChatViewProps) {
                             const rawBody = decryptedCache.get(msg.id) || msg.body || '';
                             const media = parseMediaMessage(rawBody);
                             const label = media?.label ?? rawBody;
+                            const docParsed = parseDocumentBody(rawBody);
                             const isPureMediaPlaceholder = !!msg.image_url && (
+                              !!docParsed ||
                               /^📷\s*Photo(MKEY:|$)/i.test(rawBody) ||
                               /^🎬\s*(Video|Vidéo)(MKEY:|$)/i.test(rawBody) ||
                               !!media ||
