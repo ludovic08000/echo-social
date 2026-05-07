@@ -289,22 +289,20 @@ export function StoriesBar() {
                 <UserAvatar src={null} alt="Moi" size="lg" />
               </div>
             )}
-            {/* Gradient overlay for label readability */}
-            <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
           </div>
-          {/* iOS-style floating plus button */}
-          <div className="absolute left-1/2 -translate-x-1/2 top-2 z-10">
-            <div className="w-9 h-9 rounded-full border-[3px] border-white/90 shadow-lg flex items-center justify-center bg-blue-500">
+          {/* iOS-style floating plus button — top right corner */}
+          <div className="absolute top-2 right-2 z-10">
+            <div className="w-7 h-7 rounded-full border-2 border-white/90 shadow-md flex items-center justify-center bg-primary">
               {isCreating ? (
-                <Loader2 className="w-4 h-4 animate-spin text-white" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
               ) : (
-                <Plus className="w-5 h-5 text-white" strokeWidth={3} />
+                <Plus className="w-4 h-4 text-white" strokeWidth={3} />
               )}
             </div>
           </div>
-          {/* Bottom label — premium serif overlay */}
-          <div className="absolute inset-x-0 bottom-0 z-10 px-2 pb-2 text-center">
-            <span className="font-playfair text-[13px] font-semibold italic text-white text-center leading-tight tracking-tight drop-shadow-lg">
+          {/* Bottom label — minimal pill */}
+          <div className="absolute inset-x-0 bottom-2 z-10 flex justify-center px-2">
+            <span className="font-playfair text-[11px] font-semibold italic text-white tracking-tight px-2.5 py-0.5 rounded-full bg-black/45 backdrop-blur-md">
               Créer story
             </span>
           </div>
