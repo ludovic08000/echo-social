@@ -1,4 +1,4 @@
-import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X, RotateCcw, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
+import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X, RotateCcw, ShieldCheck, Wifi, WifiOff, MonitorUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/UserAvatar';
 import { cn } from '@/lib/utils';
@@ -23,6 +23,8 @@ interface CallOverlayProps {
   onToggleCamera: () => void;
   onSwitchToVideo?: () => void;
   onSwitchCamera?: () => void;
+  onToggleScreenShare?: () => void;
+  isScreenSharing?: boolean;
 }
 
 export function CallOverlay({
@@ -42,6 +44,8 @@ export function CallOverlay({
   onToggleCamera,
   onSwitchToVideo,
   onSwitchCamera,
+  onToggleScreenShare,
+  isScreenSharing,
 }: CallOverlayProps) {
   if (callState === 'idle') return null;
 
