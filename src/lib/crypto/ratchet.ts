@@ -31,6 +31,7 @@ import {
 } from './constants';
 import { exportPublicKeyRaw } from './keyManager';
 import { wrapSkippedJwk, unwrapSkippedJwk, isWrappedSkippedEntry } from './skippedKeyWrap';
+import { padPlaintext, unpadPlaintext } from './lengthPadding';
 
 // ─── Types ───
 
@@ -87,6 +88,14 @@ export interface RatchetEnvelope {
   sig: string;
   fp: string;
   ts: number;
+  /**
+   * Lot B — length-padding flag.
+   *   undefined / 0 → legacy (raw UTF-8 plaintext, no padding)
+   *   1             → plaintext padded with `padPlaintext()` (bucketed)
+   * Decrypt routes on this flag: must NEVER assume padding without it,
+   * otherwise pre-flag messages would lose their trailing 0x80 lookalikes.
+   */
+  pad?: 0 | 1;
 }
 
 const MAX_SKIP = RATCHET_MAX_SKIP; // Signal-conformant DoS protection ceiling
@@ -292,7 +301,12 @@ export async function ratchetEncrypt(
     tagLength: 128,
     additionalData: ad as Uint8Array<ArrayBuffer>,
   };
-  const ct = await hardCrypto.encrypt(encryptParams, messageKey, encodeString(plaintext));
+  // Lot B — bucketed length padding (Signal §6 / WhatsApp whitepaper).
+  // Plaintext is padded to a length-bucket BEFORE encryption so AES-GCM
+  // ciphertext length does not leak msg length to network observers.
+  // The `pad: 1` flag below tells the receiver to call `unpadPlaintext()`.
+  const padded = padPlaintext(plaintext);
+  const ct = await hardCrypto.encrypt(encryptParams, messageKey, padded);
 
   const ts = Date.now();
 
@@ -315,6 +329,7 @@ export async function ratchetEncrypt(
     sig: bufferToBase64(sig),
     fp: fingerprint,
     ts,
+    pad: 1,
   };
 
   return {
@@ -492,7 +507,20 @@ async function decryptWithKey(
   }
   if (!ptBuf) throw lastErr instanceof Error ? lastErr : new Error('AEAD tag verification failed');
 
-  const plaintext = decodeString(ptBuf);
+  // Lot B — unpad iff sender flagged `pad: 1`. Legacy envelopes (no flag)
+  // remain raw UTF-8 to preserve historical message readability.
+  let plaintext: string;
+  if (envelope.pad === 1) {
+    try {
+      plaintext = unpadPlaintext(new Uint8Array(ptBuf));
+    } catch {
+      // Padding marker missing → treat as legacy/raw to avoid losing the
+      // message in a botched migration.
+      plaintext = decodeString(ptBuf);
+    }
+  } else {
+    plaintext = decodeString(ptBuf);
+  }
 
   // Verify Ed25519 signature
   let verified = false;
