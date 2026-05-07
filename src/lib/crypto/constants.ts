@@ -61,7 +61,20 @@ export const AD_HEADER_PREFIX_V4 = 'FORSURE-HDR-v4|';
 /** Double Ratchet skipped message keys limits (Signal §2.6 + DoS protection). */
 export const RATCHET_MAX_SKIP = 1000;
 export const RATCHET_MAX_SKIPPED_CACHE = 2000;
-export const RATCHET_SKIPPED_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+/**
+ * Skipped message keys TTL.
+ * Lot A3: tightened from 7 days → 24 hours (audit recommendation).
+ * Reduces the window where a device-compromise leaks historical messages.
+ * Override via `localStorage.setItem('e2eeStrictSkippedTtl','false')` to keep 7d.
+ */
+export const RATCHET_SKIPPED_TTL_MS = (() => {
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('e2eeStrictSkippedTtl') === 'false') {
+      return 7 * 24 * 60 * 60 * 1000;
+    }
+  } catch { /* SSR / locked storage */ }
+  return 24 * 60 * 60 * 1000;
+})();
 
 // KEM identifiers
 export const PQ_KEM_ID = 'HYBRID-X25519-KYBER768';
