@@ -1965,7 +1965,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               onChange={e => setNewMessage(e.target.value)}
               onFocus={() => { setShowEmojis(false); setShowGifs(false); }}
               placeholder="Aa"
-              className="flex-1 bg-secondary/60 rounded-full px-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors min-w-0"
+              className="flex-1 bg-secondary/60 rounded-full px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors min-w-0"
             />
             {newMessage.trim() ? (
               <button type="submit" disabled={sendMessage.isPending} className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
