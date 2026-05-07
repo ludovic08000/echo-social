@@ -26,6 +26,53 @@ import { selfDeviceId } from './deviceRegistry';
 import { supabase } from '@/integrations/supabase/client';
 
 /**
+ * Extinction plan for the legacy router.
+ *
+ * The router exists to read EVERY ciphertext format we have ever shipped
+ * (Sesame promise: a message that was once readable must stay readable
+ * forever). Each successful decode bumps a per-format counter so we can
+ * see — empirically — when the legacy formats stop being used.
+ *
+ * After `LEGACY_ROUTER_EXTINCTION_DATE` we will:
+ *   1. Stop accepting NEW writes in any pre-v4 format (already true today
+ *      for outbound traffic — only `ratchetEncrypt` is used).
+ *   2. If 30 consecutive days of zero hits on `legacy-router` and `v3`,
+ *      remove the corresponding decoders.
+ *
+ * Until then, every legacy hit is logged silently for the SOC dashboard.
+ */
+export const LEGACY_ROUTER_EXTINCTION_DATE = '2026-09-01';
+
+type LegacyHitKey = 'ratchet-v4' | 'ratchet-v3' | 'legacy-router';
+const HITS: Record<LegacyHitKey, { count: number; last: string | null }> = {
+  'ratchet-v4': { count: 0, last: null },
+  'ratchet-v3': { count: 0, last: null },
+  'legacy-router': { count: 0, last: null },
+};
+
+function recordHit(via: LegacyHitKey) {
+  const entry = HITS[via];
+  entry.count += 1;
+  entry.last = new Date().toISOString();
+  // Cheap localStorage mirror so the dashboard / Zeus admin can read it.
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('e2ee.legacyRouter.hits', JSON.stringify(HITS));
+    }
+  } catch { /* private mode — ignore */ }
+}
+
+/** Diagnostics: snapshot of decoder hit counts since page load. */
+export function legacyRouterStats(): Readonly<typeof HITS> {
+  return HITS;
+}
+
+/** True if today is past the extinction date. */
+export function isLegacyRouterExtinct(now: Date = new Date()): boolean {
+  return now.toISOString().slice(0, 10) >= LEGACY_ROUTER_EXTINCTION_DATE;
+}
+
+/**
  * Try to decrypt a single device-copy `encrypted_body`. Wraps every legacy
  * format. Returns `{ ok, plaintext, via }`. Never throws.
  */
@@ -43,13 +90,19 @@ export async function legacyDecryptDeviceCopy(args: {
   if (encryptedBody.startsWith(RATCHET_PREFIX_V4)) {
     try {
       const pt = await deviceRatchetDecrypt(args.recipientUserId, me, encryptedBody);
-      if (pt !== null) return { ok: true, plaintext: pt, via: 'ratchet-v4' };
+      if (pt !== null) {
+        recordHit('ratchet-v4');
+        return { ok: true, plaintext: pt, via: 'ratchet-v4' };
+      }
     } catch { /* fall through */ }
   }
   if (encryptedBody.startsWith(RATCHET_PREFIX_V3)) {
     try {
       const pt = await deviceRatchetDecrypt(args.recipientUserId, me, encryptedBody);
-      if (pt !== null) return { ok: true, plaintext: pt, via: 'ratchet-v3' };
+      if (pt !== null) {
+        recordHit('ratchet-v3');
+        return { ok: true, plaintext: pt, via: 'ratchet-v3' };
+      }
     } catch { /* fall through */ }
   }
 
@@ -60,7 +113,10 @@ export async function legacyDecryptDeviceCopy(args: {
   if (args.messageId) {
     try {
       const pt = await tryReadDeviceCopy(args.messageId, args.senderUserId);
-      if (pt !== null) return { ok: true, plaintext: pt, via: 'legacy-router' };
+      if (pt !== null) {
+        recordHit('legacy-router');
+        return { ok: true, plaintext: pt, via: 'legacy-router' };
+      }
     } catch { /* fall through */ }
   }
 
@@ -74,7 +130,10 @@ export async function legacyDecryptDeviceCopy(args: {
 export async function legacyDecryptByMessageId(messageId: string, expectedSenderUserId?: string): Promise<DecryptResult> {
   try {
     const pt = await tryReadDeviceCopy(messageId, expectedSenderUserId);
-    if (pt !== null) return { ok: true, plaintext: pt, via: 'legacy-router' };
+    if (pt !== null) {
+      recordHit('legacy-router');
+      return { ok: true, plaintext: pt, via: 'legacy-router' };
+    }
   } catch { /* fall through */ }
   return { ok: false, plaintext: null, errorCode: 'NO_DEVICE_COPY_DECRYPTED' };
 }

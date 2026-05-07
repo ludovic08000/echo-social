@@ -1163,6 +1163,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           disappearing_seconds: number | null
+          enable_sender_keys: boolean
           id: string
           is_group: boolean
           name: string | null
@@ -1172,6 +1173,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           disappearing_seconds?: number | null
+          enable_sender_keys?: boolean
           id?: string
           is_group?: boolean
           name?: string | null
@@ -1181,6 +1183,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           disappearing_seconds?: number | null
+          enable_sender_keys?: boolean
           id?: string
           is_group?: boolean
           name?: string | null
@@ -4728,6 +4731,100 @@ export type Database = {
             columns: ["seller_id"]
             isOneToOne: false
             referencedRelation: "seller_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sender_key_distribution: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          delivered: boolean
+          encrypted_skdm: string
+          id: string
+          recipient_device_id: string
+          recipient_user_id: string
+          sender_device_id: string
+          sender_user_id: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          delivered?: boolean
+          encrypted_skdm: string
+          id?: string
+          recipient_device_id: string
+          recipient_user_id: string
+          sender_device_id: string
+          sender_user_id: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          delivered?: boolean
+          encrypted_skdm?: string
+          id?: string
+          recipient_device_id?: string
+          recipient_user_id?: string
+          sender_device_id?: string
+          sender_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sender_key_distribution_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sender_key_state: {
+        Row: {
+          chain_key_b64: string
+          conversation_id: string
+          created_at: string
+          id: string
+          is_owner: boolean
+          iteration: number
+          sender_device_id: string
+          sender_user_id: string
+          signing_priv_jwk: Json | null
+          signing_pub_b64: string
+          updated_at: string
+        }
+        Insert: {
+          chain_key_b64: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          is_owner?: boolean
+          iteration?: number
+          sender_device_id: string
+          sender_user_id: string
+          signing_priv_jwk?: Json | null
+          signing_pub_b64: string
+          updated_at?: string
+        }
+        Update: {
+          chain_key_b64?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          is_owner?: boolean
+          iteration?: number
+          sender_device_id?: string
+          sender_user_id?: string
+          signing_priv_jwk?: Json | null
+          signing_pub_b64?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sender_key_state_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
             referencedColumns: ["id"]
           },
         ]
