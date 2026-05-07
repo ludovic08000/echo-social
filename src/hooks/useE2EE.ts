@@ -223,7 +223,8 @@ function recreateLegacyE2EEDatabase(): Promise<void> {
           console.log('[E2EE] Repaired IndexedDB schema and cleared transient crypto stores');
         }
 
-        db.close();
+        // openE2EEDB() returns the shared crypto DB singleton; keep it open for
+        // concurrent key restores, calls and media encryption.
       } catch (error) {
         console.error('[E2EE] Failed to repair E2EE database — identity keys preserved', error);
       } finally {
@@ -513,7 +514,7 @@ function cleanupLegacyStorage() {
             tx.objectStore(STORE_SESSION).clear();
             console.log('[E2EE] Cleared stale session keys (migration v4)');
           }
-          db.close();
+          // openE2EEDB() returns the shared crypto DB singleton; keep it open.
         } catch {}
       }).catch(() => {});
     }
