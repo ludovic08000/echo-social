@@ -1,4 +1,4 @@
-import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X, RotateCcw, ShieldCheck } from 'lucide-react';
+import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X, RotateCcw, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/UserAvatar';
 import { cn } from '@/lib/utils';
@@ -15,6 +15,7 @@ interface CallOverlayProps {
   participantName: string;
   participantAvatar?: string | null;
   isE2eeActive?: boolean;
+  connectionQuality?: 'excellent' | 'good' | 'poor' | 'lost' | 'unknown';
   localVideoRef: RefObject<HTMLDivElement>;
   remoteVideoRef: RefObject<HTMLDivElement>;
   onEndCall: () => void;
