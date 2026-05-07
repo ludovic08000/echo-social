@@ -600,6 +600,9 @@ export function ChatView({ conversationId }: ChatViewProps) {
             <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => handleStartCall('video')} disabled={callState !== 'idle'}>
               <Video className="w-5 h-5" />
             </Button>
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => setShowDisappearing(true)} title="Messages éphémères">
+              <Timer className="w-5 h-5" />
+            </Button>
             <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => setShowGroupPanel(!showGroupPanel)}>
               <Info className="w-5 h-5" />
             </Button>
