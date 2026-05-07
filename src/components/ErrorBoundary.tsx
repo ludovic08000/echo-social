@@ -1,6 +1,8 @@
 import React from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { captureCrash, getLastCrash, type CrashContext } from '@/lib/crashLogger';
+import { CrashDetails } from '@/components/CrashDetails';
 
 interface Props {
   children: React.ReactNode;
