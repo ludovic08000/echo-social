@@ -961,14 +961,14 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       }} />
 
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30 bg-primary text-primary-foreground rounded-t-lg">
+      <div data-drag-handle className="flex items-center gap-1.5 px-2.5 py-2 border-b border-border/30 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-t-2xl cursor-grab active:cursor-grabbing select-none">
         <button
           onClick={goBack}
-          className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors flex-shrink-0"
+          className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all flex-shrink-0 backdrop-blur-sm"
           title="Retour aux conversations"
           aria-label="Retour aux conversations"
         >
-          <ArrowLeft className="w-3.5 h-3.5" />
+          <ArrowLeft className="w-4 h-4" />
         </button>
         <div className="flex items-center gap-2 flex-1 min-w-0">
           {conversation && (
@@ -989,7 +989,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             </>
           )}
         </div>
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-1">
           <button
             disabled={isStartingCall}
             onClick={async () => {
@@ -1015,9 +1015,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                 setIsStartingCall(false);
               }
             }}
-            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors disabled:opacity-50"
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all disabled:opacity-50 backdrop-blur-sm"
+            title="Appel audio"
           >
-            <Phone className={`w-3.5 h-3.5 ${isStartingCall ? 'animate-pulse' : ''}`} />
+            <Phone className={`w-4 h-4 ${isStartingCall ? 'animate-pulse' : ''}`} />
           </button>
           <button
             disabled={isStartingCall}
@@ -1044,32 +1045,30 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                 setIsStartingCall(false);
               }
             }}
-            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors disabled:opacity-50"
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all disabled:opacity-50 backdrop-blur-sm"
+            title="Visio"
           >
-            <Video className={`w-3.5 h-3.5 ${isStartingCall ? 'animate-pulse' : ''}`} />
+            <Video className={`w-4 h-4 ${isStartingCall ? 'animate-pulse' : ''}`} />
           </button>
           <button
             onClick={() => setShowGroupCallSheet(true)}
-            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors"
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all backdrop-blur-sm"
             title="Appel de groupe"
           >
-            <Users className="w-3.5 h-3.5" />
+            <Users className="w-4 h-4" />
           </button>
           <button
             onClick={() => setShowCallHistory(true)}
-            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors"
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all backdrop-blur-sm"
             title="Historique d'appels"
           >
-            <PhoneMissed className="w-3.5 h-3.5" />
+            <PhoneMissed className="w-4 h-4" />
           </button>
-          <button onClick={() => { closeChat(); navigate(`/messages/${conversationId}`); }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors" title="Agrandir">
-            <Maximize2 className="w-3.5 h-3.5" />
+          <button onClick={minimizeChat} className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all backdrop-blur-sm" title="Réduire">
+            <Minus className="w-4 h-4" />
           </button>
-          <button onClick={minimizeChat} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
-            <Minus className="w-3.5 h-3.5" />
-          </button>
-          <button onClick={closeChat} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
-            <X className="w-3.5 h-3.5" />
+          <button onClick={closeChat} className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-destructive/80 active:scale-95 transition-all backdrop-blur-sm" title="Fermer">
+            <X className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -1998,6 +1997,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 }
 
 // ─── Main Widget ─────────────────────────────────────────
+const WIDGET_W = 328;
+const WIDGET_H = 455;
+const POS_KEY = 'chatwidget:pos:v1';
+const MOBILE_POS_KEY = 'chatwidget:mobilepos:v1';
+
 export function ChatWidget() {
   const { user } = useAuth();
   const { state, restoreChat, closeChat } = useChatWidget();
@@ -2009,23 +2013,93 @@ export function ChatWidget() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
+  // Desktop position state
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const saved = localStorage.getItem(POS_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  });
+
+  // Mobile bubble position (when minimized on mobile)
+  const [mobilePos, setMobilePos] = useState<{ x: number; y: number }>(() => {
+    if (typeof window === 'undefined') return { x: 16, y: 200 };
+    try {
+      const saved = localStorage.getItem(MOBILE_POS_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return { x: 16, y: window.innerHeight - 160 };
+  });
+
+  // Default desktop position: bottom-right
+  const effectivePos = useMemo(() => {
+    if (pos) return pos;
+    if (typeof window === 'undefined') return { x: 0, y: 0 };
+    return { x: window.innerWidth - WIDGET_W - 80, y: window.innerHeight - WIDGET_H };
+  }, [pos]);
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Drag handler factory
+  const startDrag = useCallback((e: React.PointerEvent, current: { x: number; y: number }, w: number, h: number, onUpdate: (p: { x: number; y: number }) => void, onEnd: (p: { x: number; y: number }) => void) => {
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const origX = current.x;
+    const origY = current.y;
+    let last = current;
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      const nx = Math.min(Math.max(0, origX + (ev.clientX - startX)), window.innerWidth - w);
+      const ny = Math.min(Math.max(0, origY + (ev.clientY - startY)), window.innerHeight - h);
+      last = { x: nx, y: ny };
+      onUpdate(last);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      onEnd(last);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }, []);
+
   if (!user || !state.isOpen) return null;
 
-  // Minimized state - show a small bubble (desktop only)
-  if (state.isMinimized && !isMobile) {
+  // Minimized state - draggable bubble (both desktop and mobile)
+  if (state.isMinimized) {
+    const size = 56;
+    const bubblePos = isMobile ? mobilePos : { x: effectivePos.x + WIDGET_W - size - 4, y: window.innerHeight - size };
     return (
       <button
-        onClick={restoreChat}
-        className="fixed bottom-0 right-[90px] z-[60] w-12 h-12 rounded-t-lg bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-all animate-in zoom-in-75"
+        onPointerDown={(e) => {
+          let moved = false;
+          const sx = e.clientX, sy = e.clientY;
+          startDrag(e, bubblePos, size, size,
+            (p) => {
+              if (Math.abs(p.x - bubblePos.x) > 3 || Math.abs(p.y - bubblePos.y) > 3) moved = true;
+              if (isMobile) setMobilePos(p);
+              else setPos({ x: p.x - WIDGET_W + size + 4, y: p.y });
+            },
+            (p) => {
+              if (!moved) { restoreChat(); return; }
+              if (isMobile) {
+                try { localStorage.setItem(MOBILE_POS_KEY, JSON.stringify(p)); } catch {}
+              }
+            }
+          );
+        }}
+        style={{ left: bubblePos.x, top: bubblePos.y, width: size, height: size, touchAction: 'none' }}
+        className="fixed z-[60] rounded-full bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-2xl flex items-center justify-center hover:scale-105 active:scale-95 transition-transform animate-in zoom-in-75"
       >
-        <Send className="w-5 h-5" />
+        <Send className="w-6 h-6" />
       </button>
     );
   }
 
-  // Mobile: full-screen overlay so the unique ChatWidget runtime is reachable on phones
+  // Mobile open: full-screen overlay
   if (isMobile) {
-    if (state.isMinimized) return null;
     return (
       <div className="fixed inset-0 z-[80] bg-background flex flex-col animate-in slide-in-from-right-4 duration-200 overflow-hidden">
         <MessagingPinGate compact>
@@ -2039,8 +2113,22 @@ export function ChatWidget() {
     );
   }
 
+  // Desktop: draggable floating widget
   return (
-    <div className="fixed bottom-0 right-[80px] z-[60] w-[328px] h-[455px] bg-background border border-border/40 rounded-t-lg shadow-2xl shadow-black/20 flex flex-col animate-in slide-in-from-bottom-4 duration-200 overflow-hidden">
+    <div
+      ref={containerRef}
+      style={{ left: effectivePos.x, top: effectivePos.y, width: WIDGET_W, height: WIDGET_H, touchAction: 'none' }}
+      onPointerDown={(e) => {
+        const target = e.target as HTMLElement;
+        if (!target.closest('[data-drag-handle]')) return;
+        if (target.closest('button, a, input, textarea')) return;
+        startDrag(e, effectivePos, WIDGET_W, WIDGET_H,
+          (p) => setPos(p),
+          (p) => { try { localStorage.setItem(POS_KEY, JSON.stringify(p)); } catch {} }
+        );
+      }}
+      className="fixed z-[60] bg-background border border-border/40 rounded-2xl shadow-2xl shadow-black/30 flex flex-col animate-in slide-in-from-bottom-4 duration-200 overflow-hidden"
+    >
       <MessagingPinGate compact>
         {state.conversationId ? (
           <WidgetChatView conversationId={state.conversationId} />
@@ -2051,3 +2139,4 @@ export function ChatWidget() {
     </div>
   );
 }
+
