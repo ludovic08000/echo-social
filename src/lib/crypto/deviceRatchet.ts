@@ -296,21 +296,36 @@ async function trySkippedKeys(
   n: number,
   iv: Uint8Array,
   ct: ArrayBuffer,
+  aad: Uint8Array | null,
 ): Promise<{ pt: string; updated: StoredSession } | null> {
   const idx = session.skipped.findIndex(s => s.dhPubB64 === dhPubB64 && s.n === n);
   if (idx === -1) return null;
   const entry = session.skipped[idx];
   try {
     const aes = await importMessageKey(entry.keyB64);
-    // Defensive copy of IV + ciphertext: WebCrypto implementations are free to
-    // detach or otherwise mutate the underlying buffer. If decryption fails we
-    // must keep the originals intact for the next attempt path.
     const ivCopy = new Uint8Array(iv.byteLength);
     ivCopy.set(iv);
     const ctCopy = (ct as ArrayBuffer).slice(0);
-    const pt = await hardCrypto.decrypt(
-      { name: 'AES-GCM', iv: ivCopy as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ctCopy,
-    );
+    let pt: ArrayBuffer;
+    if (aad) {
+      try {
+        pt = await hardCrypto.decrypt(
+          { name: 'AES-GCM', iv: ivCopy as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> } as AesGcmParams,
+          aes, ctCopy,
+        );
+      } catch {
+        // v4 fallback (no AAD) for in-flight legacy messages
+        const ivCopy2 = new Uint8Array(iv.byteLength); ivCopy2.set(iv);
+        const ctCopy2 = (ct as ArrayBuffer).slice(0);
+        pt = await hardCrypto.decrypt(
+          { name: 'AES-GCM', iv: ivCopy2 as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ctCopy2,
+        );
+      }
+    } else {
+      pt = await hardCrypto.decrypt(
+        { name: 'AES-GCM', iv: ivCopy as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ctCopy,
+      );
+    }
     const newSkipped = session.skipped.slice();
     newSkipped.splice(idx, 1);
     return {
