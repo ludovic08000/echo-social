@@ -249,7 +249,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
     // Compress before upload: video → ffmpeg.wasm H.264 720p (lazy-loaded),
     // image → existing canvas-based pipeline. Falls back gracefully on iOS
     // PWA / no SharedArrayBuffer (returns the original blob).
-    let prepared: File | Blob = file;
+    let prepared: File = file;
     if (isVideo) {
       try {
         const { compressVideoForChat } = await import('@/lib/messaging/compressVideo');
@@ -261,7 +261,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
         prepared = file;
       }
     } else {
-      prepared = await compressImageForChat(file);
+      const compressed = await compressImageForChat(file);
+      prepared = compressed instanceof File ? compressed : new File([compressed], file.name, { type: file.type });
     }
 
     if (isZeusConversation) {
