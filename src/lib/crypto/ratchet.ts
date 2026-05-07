@@ -24,7 +24,11 @@ import {
 } from './utils';
 import { exportKeyToJWK, importKeyFromJWK } from './utils';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
-import { AES_ALGO, IV_LENGTH, PROTOCOL_VERSION, AD_PREFIX_V3, CLASSICAL_KEM_ID, KX_KEY_PARAMS } from './constants';
+import {
+  AES_ALGO, IV_LENGTH, PROTOCOL_VERSION, AD_PREFIX_V3, AD_HEADER_PREFIX_V4,
+  CLASSICAL_KEM_ID, KX_KEY_PARAMS,
+  RATCHET_MAX_SKIP, RATCHET_MAX_SKIPPED_CACHE, RATCHET_SKIPPED_TTL_MS,
+} from './constants';
 import { exportPublicKeyRaw } from './keyManager';
 
 // ─── Types ───
@@ -46,8 +50,8 @@ export interface RatchetState {
   recvCount: number;
   /** Previous sending chain length (for header) */
   prevSendCount: number;
-  /** Skipped message keys: Map<"dhPub:msgNum", AES key> */
-  skippedKeys: Map<string, CryptoKey>;
+  /** Skipped message keys: Map<"dhPub:msgNum", { key, createdAt }> with TTL purge */
+  skippedKeys: Map<string, { key: CryptoKey; ts: number }>;
   /**
    * Identity keys snapshot at X3DH time. Used to build AES-GCM Associated
    * Data (AD = "FORSURE-AD-v3|" || base64(IKa) || "|" || base64(IKb)) so
@@ -84,7 +88,7 @@ export interface RatchetEnvelope {
   ts: number;
 }
 
-const MAX_SKIP = 100; // Max messages to skip (DoS protection)
+const MAX_SKIP = RATCHET_MAX_SKIP; // Signal-conformant DoS protection ceiling
 
 export interface RatchetReadiness {
   canEncrypt: boolean;
@@ -229,6 +233,24 @@ function buildAssociatedData(
   return new Uint8Array(encodeString(`${AD_PREFIX_V3}${initiatorIK}|${responderIK}`));
 }
 
+/**
+ * Signal Double Ratchet rev.4 §3.4 — AEAD AAD = identity_AD || canonical(header).
+ * Canonical header: "FORSURE-HDR-v4|" || dh || "|" || pn || "|" || n.
+ * Order is fixed (NOT JSON.stringify) to be deterministic across runtimes.
+ */
+function buildAssociatedDataV4(
+  state: Pick<RatchetState, 'myIdentityKeyB64' | 'peerIdentityKeyB64' | 'role'>,
+  header: RatchetHeader,
+): Uint8Array | null {
+  const idAd = buildAssociatedData(state);
+  if (!idAd) return null;
+  const hdrAd = encodeString(`${AD_HEADER_PREFIX_V4}${header.dh}|${header.pn}|${header.n}`);
+  const out = new Uint8Array(idAd.byteLength + hdrAd.byteLength);
+  out.set(idAd, 0);
+  out.set(new Uint8Array(hdrAd), idAd.byteLength);
+  return out;
+}
+
 // ─── Encrypt ───
 
 export async function ratchetEncrypt(
@@ -252,8 +274,14 @@ export async function ratchetEncrypt(
     n: state.sendCount,
   };
 
-  // Encrypt with AES-256-GCM (v3: bind to identity keys via AAD if available)
-  const ad = buildAssociatedData(state);
+  // Encrypt with AES-256-GCM. Signal Double Ratchet rev.4 §3.4:
+  //   AAD = identity_AD || canonical(header)  → header is now bound to ciphertext.
+  // We prefer v4 AAD when identity keys are known, else fall back to v3 (id-only)
+  // or v2 (no AAD) for legacy state restored from disk.
+  const adV4 = buildAssociatedDataV4(state, header);
+  const adV3 = adV4 ? null : buildAssociatedData(state);
+  const ad = adV4 ?? adV3;
+  const envelopeVersion = adV4 ? PROTOCOL_VERSION : adV3 ? 3 : 2;
   const iv = randomBytes(IV_LENGTH);
   const encryptParams: AesGcmParams = ad
     ? { name: AES_ALGO, iv: iv.slice() as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: ad as Uint8Array<ArrayBuffer> }
@@ -266,7 +294,7 @@ export async function ratchetEncrypt(
 
   const ts = Date.now();
 
-  // Sign: header || iv || ciphertext
+  // Sign: header || iv || ciphertext || ts
   const sigData = new Uint8Array([
     ...new Uint8Array(encodeString(hardGlobals.jsonStringify(header))),
     ...iv,
@@ -277,7 +305,7 @@ export async function ratchetEncrypt(
   const sig = await hardCrypto.sign('Ed25519' as any, signingKey, sigData);
 
   const envelope: RatchetEnvelope = {
-    v: ad ? PROTOCOL_VERSION : 2,
+    v: envelopeVersion,
     kem: CLASSICAL_KEM_ID,
     hdr: header,
     iv: bufferToBase64(iv.buffer as ArrayBuffer),
@@ -321,10 +349,10 @@ export async function ratchetDecrypt(
 
   // Check skipped keys first
   const skipKey = `${envelope.hdr.dh}:${envelope.hdr.n}`;
-  const cachedMK = newState.skippedKeys.get(skipKey);
-  if (cachedMK) {
+  const cachedEntry = newState.skippedKeys.get(skipKey);
+  if (cachedEntry) {
     newState.skippedKeys.delete(skipKey);
-    const result = await decryptWithKey(cachedMK, envelope, peerSigningKeyBase64, newState);
+    const result = await decryptWithKey(cachedEntry.key, envelope, peerSigningKeyBase64, newState);
     return { ...result, newState };
   }
 
@@ -401,20 +429,26 @@ async function skipMessages(state: RatchetState, until: number): Promise<Ratchet
     : 'init';
 
   let ck = newState.receivingChainKey;
+  const now = Date.now();
   for (let i = newState.recvCount; i < until; i++) {
     // Use exportable variant since skipped keys need IndexedDB persistence
     const { nextChainKey, messageKey } = await kdfChainStepExportable(ck);
-    newState.skippedKeys.set(`${dhPub}:${i}`, messageKey);
+    newState.skippedKeys.set(`${dhPub}:${i}`, { key: messageKey, ts: now });
     ck = nextChainKey;
   }
   newState.receivingChainKey = ck;
   newState.recvCount = until;
 
-  // Prune old skipped keys (keep max 200)
-  if (newState.skippedKeys.size > 200) {
-    const entries = Array.from(newState.skippedKeys.entries());
-    const toDelete = entries.slice(0, entries.length - 200);
-    for (const [k] of toDelete) newState.skippedKeys.delete(k);
+  // Signal-conformant pruning: TTL purge first, then size cap.
+  const cutoff = now - RATCHET_SKIPPED_TTL_MS;
+  for (const [k, v] of newState.skippedKeys) {
+    if (v.ts < cutoff) newState.skippedKeys.delete(k);
+  }
+  if (newState.skippedKeys.size > RATCHET_MAX_SKIPPED_CACHE) {
+    // Evict oldest first (insertion order preserved by Map).
+    const overflow = newState.skippedKeys.size - RATCHET_MAX_SKIPPED_CACHE;
+    const it = newState.skippedKeys.keys();
+    for (let i = 0; i < overflow; i++) newState.skippedKeys.delete(it.next().value as string);
   }
 
   return newState;
@@ -429,34 +463,32 @@ async function decryptWithKey(
   const iv = base64ToBuffer(envelope.iv);
   const ct = base64ToBuffer(envelope.ct);
 
-  // v3 envelopes are bound to identity-keys via AES-GCM AAD. v2 envelopes
-  // (legacy) carry no AAD and are still accepted for backward compatibility
-  // during the migration window. We try AAD first when v>=3 and fall back to
-  // no-AAD on tag mismatch — this absorbs the rare case where a v3 envelope
-  // is received before the local state has identity keys cached.
-  const ad = (envelope.v ?? 2) >= 3 && state ? buildAssociatedData(state) : null;
-  let ptBuf: ArrayBuffer;
-  if (ad) {
+  // Multi-version AAD fallback (Signal Double Ratchet rev.4 §3.4):
+  //   v4 → AAD = identity_AD || canonical(header)  (header-bound, current)
+  //   v3 → AAD = identity_AD                       (id-bound only)
+  //   v2 → no AAD                                  (legacy, migration)
+  // We try in declared order and fall back on AES-GCM tag mismatch so that
+  // mixed-version peer states migrate transparently without ciphertext loss.
+  const v = envelope.v ?? 2;
+  const candidates: (Uint8Array | null)[] = [];
+  if (v >= 4 && state) candidates.push(buildAssociatedDataV4(state, envelope.hdr));
+  if (v >= 3 && state) candidates.push(buildAssociatedData(state));
+  candidates.push(null); // legacy v2 / last-resort
+
+  let ptBuf: ArrayBuffer | null = null;
+  let lastErr: unknown = null;
+  for (const ad of candidates) {
     try {
-      ptBuf = await hardCrypto.decrypt(
-        { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128, additionalData: ad as Uint8Array<ArrayBuffer> } as AesGcmParams,
-        messageKey,
-        ct,
-      );
-    } catch {
-      ptBuf = await hardCrypto.decrypt(
-        { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128 },
-        messageKey,
-        ct,
-      );
+      const params: AesGcmParams = ad
+        ? { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128, additionalData: ad as Uint8Array<ArrayBuffer> }
+        : { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128 };
+      ptBuf = await hardCrypto.decrypt(params, messageKey, ct);
+      break;
+    } catch (err) {
+      lastErr = err;
     }
-  } else {
-    ptBuf = await hardCrypto.decrypt(
-      { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128 },
-      messageKey,
-      ct,
-    );
   }
+  if (!ptBuf) throw lastErr instanceof Error ? lastErr : new Error('AEAD tag verification failed');
 
   const plaintext = decodeString(ptBuf);
 
@@ -492,10 +524,10 @@ export async function serializeRatchetState(state: RatchetState): Promise<string
   const sendCKJWK = state.sendingChainKey ? await exportKeyToJWK(state.sendingChainKey) : null;
   const recvCKJWK = state.receivingChainKey ? await exportKeyToJWK(state.receivingChainKey) : null;
 
-  // Serialize skipped keys
-  const skippedEntries: [string, JsonWebKey][] = [];
+  // Serialize skipped keys (with timestamps for TTL purge after restore)
+  const skippedEntries: [string, JsonWebKey, number][] = [];
   for (const [k, v] of state.skippedKeys) {
-    skippedEntries.push([k, await exportKeyToJWK(v)]);
+    skippedEntries.push([k, await exportKeyToJWK(v.key), v.ts]);
   }
 
   return hardGlobals.jsonStringify({
@@ -532,10 +564,14 @@ export async function deserializeRatchetState(json: string): Promise<RatchetStat
   const sendCK = d.sendCKJWK ? await importKeyFromJWK(d.sendCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign'], true) : null;
   const recvCK = d.recvCKJWK ? await importKeyFromJWK(d.recvCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign'], true) : null;
 
-  // Skipped message keys also need extractable=true for re-serialization
-  const skippedKeys = new Map<string, CryptoKey>();
-  for (const [k, jwk] of d.skippedEntries || []) {
-    skippedKeys.set(k, await importKeyFromJWK(jwk as any, { name: AES_ALGO } as any, ['encrypt', 'decrypt'], true));
+  // Skipped message keys also need extractable=true for re-serialization.
+  // Backward-compat: legacy entries are [key, jwk] (2-tuple); v4+ are [key, jwk, ts] (3-tuple).
+  const skippedKeys = new Map<string, { key: CryptoKey; ts: number }>();
+  const now = Date.now();
+  for (const entry of (d.skippedEntries || []) as Array<[string, JsonWebKey] | [string, JsonWebKey, number]>) {
+    const [k, jwk, ts] = entry as [string, JsonWebKey, number?];
+    const key = await importKeyFromJWK(jwk as any, { name: AES_ALGO } as any, ['encrypt', 'decrypt'], true);
+    skippedKeys.set(k, { key, ts: typeof ts === 'number' ? ts : now });
   }
 
   return {
