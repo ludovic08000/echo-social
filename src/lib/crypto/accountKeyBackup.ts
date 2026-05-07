@@ -799,7 +799,8 @@ export async function restoreFromInMemoryMasterKey(userId?: string): Promise<'re
     const backup = data as unknown as { encrypted_blob: string; iv: string; version: number };
     if (backup.version < 5) return 'unavailable';
 
-    const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, _sessionMasterKey);
+    const aad = backup.version >= 6 ? buildBackupAAD(targetUserId, 'account', backup.version) : undefined;
+    const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, _sessionMasterKey, aad);
     await restoreAllKeys(json);
     if (!(await hasLocalKeys())) return 'error';
 
