@@ -152,10 +152,46 @@ const SIDE_DB_DEFAULT_STORES: Record<string, string[]> = {
 
 async function openDB(name: string, version: number, storeNames?: string[]): Promise<IDBDatabase> {
   const stores = storeNames ?? SIDE_DB_DEFAULT_STORES[name];
+
+  // Probe current on-disk version first to avoid VersionError when another
+  // module (e.g. x3dh.ts) bumped the DB to repair a missing store.
+  let effectiveVersion = version;
+  try {
+    const probe = await new Promise<IDBDatabase>((resolve, reject) => {
+      const r = hardGlobals.idbOpen(name);
+      r.onerror = () => reject(r.error);
+      r.onsuccess = () => resolve(r.result);
+    });
+    if (probe.version > effectiveVersion) effectiveVersion = probe.version;
+    probe.close();
+  } catch {
+    // First-time open: keep requested version
+  }
+
   return new Promise<IDBDatabase>((resolve, reject) => {
-    const req = hardGlobals.idbOpen(name, version);
+    const req = hardGlobals.idbOpen(name, effectiveVersion);
     req.onerror = () => reject(req.error);
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      // Self-heal: bump version once if a required store is missing
+      if (stores && stores.some((sn) => !db.objectStoreNames.contains(sn))) {
+        const next = db.version + 1;
+        db.close();
+        const repair = hardGlobals.idbOpen(name, next);
+        repair.onupgradeneeded = () => {
+          const rdb = repair.result;
+          for (const sn of stores) {
+            if (!rdb.objectStoreNames.contains(sn)) {
+              rdb.createObjectStore(sn, { keyPath: sn === 'ratchet-states' ? 'convId' : 'id' });
+            }
+          }
+        };
+        repair.onerror = () => reject(repair.error);
+        repair.onsuccess = () => resolve(repair.result);
+        return;
+      }
+      resolve(db);
+    };
     if (stores) {
       req.onupgradeneeded = () => {
         for (const sn of stores) {
