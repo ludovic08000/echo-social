@@ -7,27 +7,74 @@ import { installGlobalCrashHandlers } from "@/lib/crashLogger";
 // loading or crypto bootstrap) is captured with full context.
 installGlobalCrashHandlers();
 
-if (import.meta.env.DEV) {
+// Console noise filter — keep ONLY real errors/warnings; mute verbose
+// info/log/debug from crypto, E2EE, ML, X3DH, identity bootstrap, push,
+// service worker, Vite HMR, third-party preview iframe noise, etc.
+{
+  const origLog = console.log;
+  const origInfo = console.info;
+  const origDebug = console.debug;
   const origWarn = console.warn;
   const origError = console.error;
-  const refMsg = 'Function components cannot be given refs';
-  const refMsg2 = 'is not a prop';
 
-  const filter = (orig: typeof console.warn) => (...args: unknown[]) => {
-    if (
-      typeof args[0] === 'string' &&
-      (args[0].includes(refMsg) ||
-        args[0].includes(refMsg2) ||
-        args[0].includes('Encountered two children with the same key') ||
-        args[0].includes('React Router Future Flag'))
-    ) return;
+  // Patterns that match purely informational chatter we don't need to see.
+  const NOISE_PATTERNS: RegExp[] = [
+    /^\[E2EE\]/i,
+    /^\[X3DH\]/i,
+    /^\[CRYPTO\]/i,
+    /^\[KEY[_-]?SYNC\]/i,
+    /^\[DEVICE\]/i,
+    /^\[BOOT\]/i,
+    /^\[ML\]/i,
+    /^\[ZEUS\]/i,
+    /^\[PUSH\]/i,
+    /^\[SW\]/i,
+    /^\[REALTIME\]/i,
+    /^\[QUEUE\]/i,
+    /^\[RATCHET\]/i,
+    /^\[SENDER[_-]?KEY\]/i,
+    /^\[KT\]/i,
+    /^\[TRUST\]/i,
+    /^\[SESSION\]/i,
+    /\[vite\]/i,
+    /Download the React DevTools/i,
+    /React Router Future Flag/i,
+    /Function components cannot be given refs/i,
+    /Encountered two children with the same key/i,
+    /is not a prop/i,
+    /Unrecognized feature:/i,
+    /allow-scripts and allow-same-origin/i,
+    /preview_iframe_stuck_recovery/i,
+    /feature_suggestions_message/i,
+    /Failed to execute 'postMessage'/i,
+    /ERR_BLOCKED_BY_CLIENT/i,
+    /Content Security Policy directive/i,
+    /An iframe which has both/i,
+    /asynchronous response by returning true/i,
+  ];
 
-    orig(...args);
+  const isNoise = (args: unknown[]) => {
+    const first = args[0];
+    if (typeof first !== 'string') return false;
+    return NOISE_PATTERNS.some((re) => re.test(first));
   };
 
-  console.warn = filter(origWarn);
-  console.error = filter(origError);
+  const wrap =
+    (orig: typeof console.log) =>
+    (...args: unknown[]) => {
+      if (isNoise(args)) return;
+      orig(...args);
+    };
+
+  // Mute purely informational levels entirely (still wrap to allow [CRASH] etc.)
+  console.log = wrap(origLog);
+  console.info = wrap(origInfo);
+  console.debug = wrap(origDebug);
+  // Keep warn/error visible but drop the well-known noise
+  console.warn = wrap(origWarn);
+  console.error = wrap(origError);
 }
+
 
 /**
  * One-shot cleanup of legacy non-crypto runtime caches.
