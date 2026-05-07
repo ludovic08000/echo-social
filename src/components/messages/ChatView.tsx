@@ -247,12 +247,46 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   // Wrap upload: encrypt media before upload when E2EE is active
   const handleMediaFile = useCallback(async (file: File) => {
-    const isVideo = /\.(mp4|mov|webm|avi|mkv)/i.test(file.name);
+    const isVideo = /\.(mp4|mov|webm|avi|mkv)/i.test(file.name) || file.type.startsWith('video/');
+    const isImage = file.type.startsWith('image/');
+    const isDoc = !isImage && !isVideo && (isDocumentMime(file.type) || /\.(pdf|docx?|xlsx?|pptx?|zip|txt|csv)$/i.test(file.name));
+    const armedVO = viewOnceArmed;
+    setViewOnceArmed(false);
+
+    // ── Documents path: encrypt + upload, send as 📎 doc envelope ──
+    if (isDoc) {
+      if (file.size > 100 * 1024 * 1024) {
+        toast.error('Document trop volumineux (max 100 Mo)');
+        return;
+      }
+      if (e2ee.peerKeyMissing) { toast.error('Clés du contact indisponibles.'); return; }
+      try {
+        const { generateMediaKey, encryptMedia } = await import('@/lib/crypto/mediaEncrypt');
+        const { key, keyB64 } = await generateMediaKey();
+        const encryptedBlob = await encryptMedia(file, key);
+        const encFile = new File([encryptedBlob], `${file.name}.enc`, { type: 'application/octet-stream' });
+        const url = await rawUpload(encFile);
+        if (!url) { toast.error('Upload échoué'); return; }
+        const body = buildDocumentBody(file.name, file.type || 'application/octet-stream', file.size, keyB64);
+        queue.sendMessage(body, url, {
+          view_once: armedVO,
+          document_url: url,
+          document_name: file.name,
+          document_mime: file.type || 'application/octet-stream',
+          document_size_bytes: file.size,
+        }).catch((e) => {
+          logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send_doc' } });
+          toast.error('Erreur envoi document');
+        });
+      } catch (err) {
+        logCryptoException('media', err, { severity: 'error', conversationId, metadata: { stage: 'doc_encrypt_upload' } });
+        toast.error('Erreur de chiffrement du document');
+      }
+      return;
+    }
+
     const label = isVideo ? '🎬 Vidéo' : '📷 Photo';
 
-    // Compress before upload: video → ffmpeg.wasm H.264 720p (lazy-loaded),
-    // image → existing canvas-based pipeline. Falls back gracefully on iOS
-    // PWA / no SharedArrayBuffer (returns the original blob).
     let prepared: File = file;
     if (isVideo) {
       try {
@@ -299,14 +333,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
       const encFile = new File([encryptedBlob], `${prepared.name}.enc`, { type: 'application/octet-stream' });
       const url = await rawUpload(encFile);
       if (url) {
-        // Pre-seed the cache with the local plaintext blob so the sender
-        // sees their image instantly, without R2 round-trip + decrypt.
         try {
           const localUrl = URL.createObjectURL(prepared);
           rememberDecryptedMedia(url, localUrl, isVideo);
         } catch { /* noop */ }
         const body = buildMediaMessageBody(label, keyB64);
-        queue.sendMessage(body, url).catch((e) => {
+        queue.sendMessage(body, url, { view_once: armedVO }).catch((e) => {
           logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send', isVideo } });
           toast.error('Erreur envoi média');
         });
@@ -314,7 +346,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
           severity: 'info', context: 'media', errorCode: 'MEDIA_ENCRYPT_OK',
           errorMessage: 'Media encrypted and uploaded',
           conversationId,
-          metadata: { sizeBytes: prepared.size, mime: prepared.type, isVideo, durationMs: Math.round(performance.now() - t0) },
+          metadata: { sizeBytes: prepared.size, mime: prepared.type, isVideo, durationMs: Math.round(performance.now() - t0), viewOnce: armedVO },
         });
       } else {
         logCryptoError({
@@ -342,6 +374,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
     e2ee.fingerprintChanged,
     e2ee.peerKeyMissing,
     e2ee.initError,
+    viewOnceArmed,
   ]);
 
   const {
