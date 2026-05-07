@@ -1285,6 +1285,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         participantName={conversation?.participant.name || ''}
         participantAvatar={conversation?.participant.avatar_url}
         isE2eeActive={isE2eeActive}
+        connectionQuality={connectionQuality}
         localVideoRef={localVideoRef}
         remoteVideoRef={remoteVideoRef}
         onEndCall={handleEndCall}
