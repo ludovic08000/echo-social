@@ -90,13 +90,19 @@ export async function legacyDecryptDeviceCopy(args: {
   if (encryptedBody.startsWith(RATCHET_PREFIX_V4)) {
     try {
       const pt = await deviceRatchetDecrypt(args.recipientUserId, me, encryptedBody);
-      if (pt !== null) return { ok: true, plaintext: pt, via: 'ratchet-v4' };
+      if (pt !== null) {
+        recordHit('ratchet-v4');
+        return { ok: true, plaintext: pt, via: 'ratchet-v4' };
+      }
     } catch { /* fall through */ }
   }
   if (encryptedBody.startsWith(RATCHET_PREFIX_V3)) {
     try {
       const pt = await deviceRatchetDecrypt(args.recipientUserId, me, encryptedBody);
-      if (pt !== null) return { ok: true, plaintext: pt, via: 'ratchet-v3' };
+      if (pt !== null) {
+        recordHit('ratchet-v3');
+        return { ok: true, plaintext: pt, via: 'ratchet-v3' };
+      }
     } catch { /* fall through */ }
   }
 
@@ -107,7 +113,10 @@ export async function legacyDecryptDeviceCopy(args: {
   if (args.messageId) {
     try {
       const pt = await tryReadDeviceCopy(args.messageId, args.senderUserId);
-      if (pt !== null) return { ok: true, plaintext: pt, via: 'legacy-router' };
+      if (pt !== null) {
+        recordHit('legacy-router');
+        return { ok: true, plaintext: pt, via: 'legacy-router' };
+      }
     } catch { /* fall through */ }
   }
 
