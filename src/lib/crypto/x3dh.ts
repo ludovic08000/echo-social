@@ -382,12 +382,23 @@ export async function generateAndUploadSignedPrekey(
     throw new Error(`X3DH_DB_UPSERT_FAILED table=user_signed_prekeys step=user_signed_prekeys_upsert code=${dbDiag.code ?? 'n/a'} rejected_column=${dbDiag.rejected_column} details=${dbDiag.details ?? 'n/a'} hint=${dbDiag.hint ?? 'n/a'} supabase_message=${dbDiag.message ?? 'n/a'}`);
   }
 
-  // Deactivate previous SPKs on server but keep local private keys
-  // (old SPKs may still be referenced by in-flight X3DH messages)
+  // Mark previous SPK as inactive but flag it as `last_resort` so peers in the
+  // middle of an X3DH bootstrap don't fall on a void during the rotation
+  // window (Signal X3DH §3.5 / WhatsApp Whitepaper "last-resort prekey").
+  // The grace window is bounded by `expires_at` (default 30 days).
+  // First clear any previous last_resort flag, keep ONLY the freshly-rotated
+  // predecessor as fallback.
   await supabase
     .from('user_signed_prekeys')
-    .update({ is_active: false })
+    .update({ is_last_resort: false })
     .eq('user_id', userId)
+    .eq('is_last_resort', true);
+
+  await supabase
+    .from('user_signed_prekeys')
+    .update({ is_active: false, is_last_resort: true })
+    .eq('user_id', userId)
+    .eq('is_active', true)
     .neq('spk_id', spkId);
 
   console.log(`[X3DH] ✅ Signed prekey #${spkId} generated & uploaded`);
