@@ -50,8 +50,8 @@ export interface RatchetState {
   recvCount: number;
   /** Previous sending chain length (for header) */
   prevSendCount: number;
-  /** Skipped message keys: Map<"dhPub:msgNum", AES key> */
-  skippedKeys: Map<string, CryptoKey>;
+  /** Skipped message keys: Map<"dhPub:msgNum", { key, createdAt }> with TTL purge */
+  skippedKeys: Map<string, { key: CryptoKey; ts: number }>;
   /**
    * Identity keys snapshot at X3DH time. Used to build AES-GCM Associated
    * Data (AD = "FORSURE-AD-v3|" || base64(IKa) || "|" || base64(IKb)) so
@@ -88,7 +88,7 @@ export interface RatchetEnvelope {
   ts: number;
 }
 
-const MAX_SKIP = 100; // Max messages to skip (DoS protection)
+const MAX_SKIP = RATCHET_MAX_SKIP; // Signal-conformant DoS protection ceiling
 
 export interface RatchetReadiness {
   canEncrypt: boolean;
