@@ -565,7 +565,29 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe, mediaKeyB64 }: Vo
       >
         {rate}×
       </button>
+      <button
+        type="button"
+        onClick={handleTranscribe}
+        disabled={transcribing}
+        title="Transcrire le vocal"
+        className={cn(
+          "w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-colors",
+          isMe ? "bg-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/30"
+               : "bg-primary/10 text-primary hover:bg-primary/20"
+        )}
+      >
+        {transcribing ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+      </button>
       <Mic className={cn("w-3 h-3 flex-shrink-0", isMe ? "text-primary-foreground/50" : "text-muted-foreground/50")} />
+      {transcript && (
+        <div className={cn(
+          "absolute left-0 right-0 top-full mt-1 p-2 rounded-xl text-[12px] leading-snug shadow",
+          isMe ? "bg-primary/10 text-foreground" : "bg-background border border-border/40 text-foreground"
+        )}>
+          <span className="block opacity-60 text-[10px] mb-0.5">Transcription</span>
+          {transcript}
+        </div>
+      )}
     </div>
   );
 }
