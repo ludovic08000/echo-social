@@ -46,6 +46,7 @@ import { EMOJI_CATEGORIES, formatDateSeparator, isSingleEmoji } from './constant
 import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
 import { useTypingPresence } from '@/hooks/useTypingPresence';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
+import { LRUMap } from '@/lib/utils/lruMap';
 
 interface ChatViewProps {
   conversationId: string;
@@ -69,7 +70,10 @@ function parseVoiceMessage(text: string): { url: string; duration: number } | nu
  *   The persistent layer is encrypted with a non-extractable device key
  *   that never leaves the browser; the server still only sees ciphertext.
  */
-const decryptedCache = new Map<string, string>();
+// Bounded LRU: keeps the last N decrypted plaintexts in RAM.
+// Prevents unbounded growth on long sessions / huge conversations while still
+// covering the typical scroll window. Older entries fall back to re-decrypt.
+const decryptedCache = new LRUMap<string, string>(2000);
 
 export function ChatView({ conversationId }: ChatViewProps) {
   const { user } = useAuth();
