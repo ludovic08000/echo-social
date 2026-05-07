@@ -49,6 +49,7 @@ import { sanitizeUrl } from '@/lib/sanitizeUrl';
 import { LRUMap } from '@/lib/utils/lruMap';
 import { DisappearingMessagesDialog } from './DisappearingMessagesDialog';
 import { SenderKeysDialog } from './SenderKeysDialog';
+import { IdentityChangeBanner } from './IdentityChangeBanner';
 import { buildDocumentBody, parseDocumentBody, isDocumentMime } from '@/lib/messaging/documentMessage';
 import { DocumentBubble } from './DocumentBubble';
 import { Eye, FileText as FileTextIcon } from 'lucide-react';
@@ -679,6 +680,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
         peerName={conversation?.participant?.name || 'Contact'}
         conversationId={conversationId}
       />
+
+      {/* A4 — Identity-change ledger banner (TOFU). Persistent, server-backed,
+          works alongside the in-memory `fingerprint_changed` signal above. */}
+      {!isZeusConversation && user && peerUserId && (
+        <IdentityChangeBanner
+          observerUserId={user.id}
+          peerUserId={peerUserId}
+        />
+      )}
 
       {/* Silent restore policy: no "Restaurer mes clés" banner inside the chat.
           Restoration runs automatically in background via useAccountKeySync,
