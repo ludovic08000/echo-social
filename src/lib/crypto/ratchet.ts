@@ -274,23 +274,24 @@ export async function ratchetEncrypt(
     n: state.sendCount,
   };
 
-  // Encrypt with AES-256-GCM. Signal Double Ratchet rev.4 §3.4:
-  //   AAD = identity_AD || canonical(header)  → header is now bound to ciphertext.
-  // We prefer v4 AAD when identity keys are known, else fall back to v3 (id-only)
-  // or v2 (no AAD) for legacy state restored from disk.
-  const adV4 = buildAssociatedDataV4(state, header);
-  const adV3 = adV4 ? null : buildAssociatedData(state);
-  const ad = adV4 ?? adV3;
-  const envelopeVersion = adV4 ? PROTOCOL_VERSION : adV3 ? 3 : 2;
+  // Encrypt with AES-256-GCM. Signal Double Ratchet rev.4 §3.4 (mandatory):
+  //   AAD = identity_AD || canonical(header)  → header bound to ciphertext.
+  // v4 is REQUIRED for all outbound envelopes — no downgrade allowed.
+  // If identity keys are missing the state is invalid (corrupt) and we abort.
+  const ad = buildAssociatedDataV4(state, header);
+  if (!ad) {
+    throw new Error(
+      'E_RATCHET_V4_REQUIRED: ratchet state missing identity keys / role — refusing to emit pre-v4 envelope. Re-run X3DH.'
+    );
+  }
   const iv = randomBytes(IV_LENGTH);
-  const encryptParams: AesGcmParams = ad
-    ? { name: AES_ALGO, iv: iv.slice() as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: ad as Uint8Array<ArrayBuffer> }
-    : { name: AES_ALGO, iv: iv.slice() as Uint8Array<ArrayBuffer>, tagLength: 128 };
-  const ct = await hardCrypto.encrypt(
-    encryptParams,
-    messageKey,
-    encodeString(plaintext),
-  );
+  const encryptParams: AesGcmParams = {
+    name: AES_ALGO,
+    iv: iv.slice() as Uint8Array<ArrayBuffer>,
+    tagLength: 128,
+    additionalData: ad as Uint8Array<ArrayBuffer>,
+  };
+  const ct = await hardCrypto.encrypt(encryptParams, messageKey, encodeString(plaintext));
 
   const ts = Date.now();
 
@@ -305,7 +306,7 @@ export async function ratchetEncrypt(
   const sig = await hardCrypto.sign('Ed25519' as any, signingKey, sigData);
 
   const envelope: RatchetEnvelope = {
-    v: envelopeVersion,
+    v: PROTOCOL_VERSION, // always 4
     kem: CLASSICAL_KEM_ID,
     hdr: header,
     iv: bufferToBase64(iv.buffer as ArrayBuffer),
