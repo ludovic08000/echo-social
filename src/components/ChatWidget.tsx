@@ -1476,37 +1476,42 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           {queue.pendingMessages.map(pm => (
             <div key={pm.localId} className="flex justify-start mt-1 px-2">
               <div className="max-w-[78%]">
-                <div className={cn(
-                  'px-3 py-1.5 text-xs break-words leading-relaxed rounded-2xl bg-primary/70 text-primary-foreground',
-                  pm.status === 'failed_visible' && 'bg-destructive/20 text-destructive border border-destructive/30',
-                )}>
-                  {(() => {
-                    const text = pm.plaintext || '';
-                    const media = parseMediaMessage(text);
-                    if (pm.imageUrl && media) {
-                      return (
-                        <EncryptedMedia
-                          encryptedUrl={pm.imageUrl}
-                          mediaKeyB64={media.keyB64}
-                          isVideo={isVideoMediaLabel(media.label)}
-                        />
-                      );
-                    }
-                    if (isGifMessage(text)) {
-                      const gifUrl = sanitizeUrl(getGifUrl(text));
-                      return gifUrl === '#'
-                        ? null
-                        : <img src={gifUrl} alt="GIF" className="max-w-full max-h-[150px] object-cover rounded-xl" />;
-                    }
-                    if (isVoiceMessage(text)) {
-                      const vd = getVoiceData(text);
-                      return vd
-                        ? <VoiceMessagePlayer audioUrl={vd.url} duration={vd.duration} isMe />
-                        : 'Message vocal';
-                    }
-                    return media?.label || text || '...';
-                  })()}
-                </div>
+              {(() => {
+                const text = pm.plaintext || '';
+                const media = parseMediaMessage(text);
+                // Pure media: render media only, no bleu bubble
+                if (pm.imageUrl && media) {
+                  return (
+                    <div className="rounded-xl overflow-hidden shadow-sm opacity-70">
+                      <EncryptedMedia
+                        encryptedUrl={pm.imageUrl}
+                        mediaKeyB64={media.keyB64}
+                        isVideo={isVideoMediaLabel(media.label)}
+                      />
+                    </div>
+                  );
+                }
+                if (isGifMessage(text)) {
+                  const gifUrl = sanitizeUrl(getGifUrl(text));
+                  return gifUrl === '#'
+                    ? null
+                    : <img src={gifUrl} alt="GIF" className="max-w-full max-h-[150px] object-cover rounded-xl opacity-70" />;
+                }
+                if (isVoiceMessage(text)) {
+                  const vd = getVoiceData(text);
+                  return vd
+                    ? <VoiceMessagePlayer audioUrl={vd.url} duration={vd.duration} isMe />
+                    : <div className="px-3 py-1.5 text-xs rounded-2xl bg-primary/70 text-primary-foreground">Message vocal</div>;
+                }
+                return (
+                  <div className={cn(
+                    'px-3 py-1.5 text-xs break-words leading-relaxed rounded-2xl bg-primary/70 text-primary-foreground',
+                    pm.status === 'failed_visible' && 'bg-destructive/20 text-destructive border border-destructive/30',
+                  )}>
+                    {media?.label || text || '...'}
+                  </div>
+                );
+              })()}
                 <OutboundStatusIndicator
                   status={pm.status}
                   lastError={pm.lastError}
