@@ -1300,6 +1300,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
         onSwitchCamera={switchCamera}
       />
 
+      {/* Disappearing messages dialog */}
+      {conversationId && (
+        <DisappearingMessagesDialog
+          open={showDisappearing}
+          onOpenChange={setShowDisappearing}
+          conversationId={conversationId}
+        />
+      )}
+
       {/* Forward dialog — uses decrypted text */}
       <ForwardMessageDialog
         open={!!forwardMsg}
