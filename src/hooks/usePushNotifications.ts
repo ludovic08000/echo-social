@@ -54,7 +54,7 @@ export function usePushNotifications() {
           try {
             subscription = await registration.pushManager.subscribe({
               userVisibleOnly: true,
-              applicationServerKey: urlBase64ToUint8Array(vapidKey),
+              applicationServerKey: urlBase64ToUint8Array(vapidKey).buffer as ArrayBuffer,
             });
           } catch (e) {
             console.error('[Push] pushManager.subscribe failed:', e);
