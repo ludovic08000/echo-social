@@ -506,6 +506,9 @@ export async function serializeRatchetState(state: RatchetState): Promise<string
     recvCount: state.recvCount,
     prevSendCount: state.prevSendCount,
     skippedEntries,
+    myIdentityKeyB64: state.myIdentityKeyB64 ?? null,
+    peerIdentityKeyB64: state.peerIdentityKeyB64 ?? null,
+    role: state.role ?? null,
   });
 }
 
@@ -546,5 +549,8 @@ export async function deserializeRatchetState(json: string): Promise<RatchetStat
     recvCount: d.recvCount,
     prevSendCount: d.prevSendCount,
     skippedKeys,
+    myIdentityKeyB64: d.myIdentityKeyB64 ?? undefined,
+    peerIdentityKeyB64: d.peerIdentityKeyB64 ?? undefined,
+    role: (d.role as 'initiator' | 'responder' | null) ?? undefined,
   };
 }
