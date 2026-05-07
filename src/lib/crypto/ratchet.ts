@@ -30,6 +30,7 @@ import {
   RATCHET_MAX_SKIP, RATCHET_MAX_SKIPPED_CACHE, RATCHET_SKIPPED_TTL_MS,
 } from './constants';
 import { exportPublicKeyRaw } from './keyManager';
+import { wrapSkippedJwk, unwrapSkippedJwk, isWrappedSkippedEntry } from './skippedKeyWrap';
 
 // ─── Types ───
 
@@ -525,10 +526,14 @@ export async function serializeRatchetState(state: RatchetState): Promise<string
   const sendCKJWK = state.sendingChainKey ? await exportKeyToJWK(state.sendingChainKey) : null;
   const recvCKJWK = state.receivingChainKey ? await exportKeyToJWK(state.receivingChainKey) : null;
 
-  // Serialize skipped keys (with timestamps for TTL purge after restore)
-  const skippedEntries: [string, JsonWebKey, number][] = [];
+  // Lot A3: Skipped keys are at-rest WRAPPED (AES-GCM-256, non-extractable
+  // SWK in IndexedDB). Format per entry: [k, "v1.<wrapped>", ts]. Legacy
+  // entries kept on disk as [k, JsonWebKey, ts] are still readable on load.
+  const skippedEntries: [string, string, number][] = [];
   for (const [k, v] of state.skippedKeys) {
-    skippedEntries.push([k, await exportKeyToJWK(v.key), v.ts]);
+    const jwk = await exportKeyToJWK(v.key);
+    const wrapped = await wrapSkippedJwk(jwk);
+    skippedEntries.push([k, wrapped, v.ts]);
   }
 
   return hardGlobals.jsonStringify({
@@ -539,6 +544,7 @@ export async function serializeRatchetState(state: RatchetState): Promise<string
     recvCount: state.recvCount,
     prevSendCount: state.prevSendCount,
     skippedEntries,
+    skippedFormat: 'wrapped-v1',
     myIdentityKeyB64: state.myIdentityKeyB64 ?? null,
     peerIdentityKeyB64: state.peerIdentityKeyB64 ?? null,
     role: state.role ?? null,
@@ -565,12 +571,18 @@ export async function deserializeRatchetState(json: string): Promise<RatchetStat
   const sendCK = d.sendCKJWK ? await importKeyFromJWK(d.sendCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign'], true) : null;
   const recvCK = d.recvCKJWK ? await importKeyFromJWK(d.recvCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign'], true) : null;
 
-  // Skipped message keys also need extractable=true for re-serialization.
-  // Backward-compat: legacy entries are [key, jwk] (2-tuple); v4+ are [key, jwk, ts] (3-tuple).
+  // Lot A3: accept BOTH legacy [k, JWK, ts?] and wrapped [k, "v1.…", ts].
   const skippedKeys = new Map<string, { key: CryptoKey; ts: number }>();
   const now = Date.now();
-  for (const entry of (d.skippedEntries || []) as Array<[string, JsonWebKey] | [string, JsonWebKey, number]>) {
-    const [k, jwk, ts] = entry as [string, JsonWebKey, number?];
+  for (const entry of (d.skippedEntries || []) as Array<[string, unknown, number?]>) {
+    const [k, raw, ts] = entry;
+    let jwk: JsonWebKey | null = null;
+    if (isWrappedSkippedEntry(raw)) {
+      jwk = await unwrapSkippedJwk(raw);
+    } else if (raw && typeof raw === 'object') {
+      jwk = raw as JsonWebKey;
+    }
+    if (!jwk) continue; // unwrap failure → drop the skipped entry (safe; just no decrypt)
     const key = await importKeyFromJWK(jwk as any, { name: AES_ALGO } as any, ['encrypt', 'decrypt'], true);
     skippedKeys.set(k, { key, ts: typeof ts === 'number' ? ts : now });
   }
