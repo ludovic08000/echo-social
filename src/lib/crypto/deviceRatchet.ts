@@ -36,7 +36,10 @@ const DB_VERSION = 2;
 const STORE = 'sessions';
 
 export const RATCHET_PREFIX_V3 = 'x3dh3.'; // legacy (single-secret KDF)
-export const RATCHET_PREFIX_V4 = 'x3dh4.'; // Double Ratchet w/ DH
+export const RATCHET_PREFIX_V4 = 'x3dh4.'; // Double Ratchet w/ DH (no AAD)
+export const RATCHET_PREFIX_V5 = 'x3dh5.'; // Double Ratchet w/ DH + AAD (X3DH §3.3)
+
+const AD_PREFIX_DEV_V5 = 'FORSURE-DEV-AD-v5|';
 
 const MAX_SKIP = 256;            // max skipped message keys per chain
 const MAX_SKIPPED_TOTAL = 2048;  // hard cap across all stored skipped keys
