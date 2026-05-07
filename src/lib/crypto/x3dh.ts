@@ -93,7 +93,9 @@ const X3DH_SALT_BYTES = 32; // All zeros as per Signal spec
 
 const SPK_ROTATION_DAYS = 7;
 const SPK_DB_NAME = 'forsure-spk';
-const SPK_DB_VERSION = 1;
+// v2 — accountKeyBackup bumped existing DBs from v1→v2 to repair missing stores.
+// We must request at least v2 here, otherwise Safari/Chrome throw VersionError.
+const SPK_DB_VERSION = 2;
 const SPK_STORE = 'signed-prekeys';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STABLE_DEVICE_ID_RE = /^[A-Za-z0-9._:-]{8,128}$/;
