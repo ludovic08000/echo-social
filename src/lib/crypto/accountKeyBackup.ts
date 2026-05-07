@@ -77,7 +77,7 @@ function passwordSecret(password: string, userId: string): string {
 async function wrapMasterKey(masterKeyRaw: Uint8Array, wrappingKey: CryptoKey, aad?: Uint8Array): Promise<{ wrapped: string; iv: string }> {
   const iv = hardCrypto.getRandomValues(new Uint8Array(IV_LENGTH));
   const params: AesGcmParams = aad
-    ? { name: 'AES-GCM', iv, additionalData: aad }
+    ? { name: 'AES-GCM', iv, additionalData: aad.slice().buffer }
     : { name: 'AES-GCM', iv };
   // Use slice() to get a clean ArrayBuffer (no offset issues — Signal lesson)
   const ciphertext = await hardCrypto.encrypt(params, wrappingKey, masterKeyRaw.slice().buffer);
@@ -90,7 +90,7 @@ async function unwrapMasterKey(wrapped: string, iv: string, wrappingKey: CryptoK
   const ciphertext = base64ToBuffer(wrapped);
   if (aad) {
     try {
-      const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf, additionalData: aad }, wrappingKey, ciphertext);
+      const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf, additionalData: aad.slice().buffer }, wrappingKey, ciphertext);
       return new Uint8Array(plainBuf);
     } catch {
       // Fall through — legacy v5 backup without AAD
@@ -110,7 +110,7 @@ async function importMasterKey(raw: Uint8Array): Promise<CryptoKey> {
 async function encryptWithMasterKey(data: string, masterKey: CryptoKey, aad?: Uint8Array): Promise<{ encrypted: string; iv: string }> {
   const iv = hardCrypto.getRandomValues(new Uint8Array(IV_LENGTH));
   const encoded = new hardGlobals.TextEncoder().encode(data);
-  const params: AesGcmParams = aad ? { name: 'AES-GCM', iv, additionalData: aad } : { name: 'AES-GCM', iv };
+  const params: AesGcmParams = aad ? { name: 'AES-GCM', iv, additionalData: aad.slice().buffer } : { name: 'AES-GCM', iv };
   const ciphertext = await hardCrypto.encrypt(params, masterKey, encoded);
   return { encrypted: bufferToBase64(ciphertext), iv: bufferToBase64(iv.buffer) };
 }
@@ -121,7 +121,7 @@ async function decryptWithMasterKey(encrypted: string, iv: string, masterKey: Cr
   const ciphertext = base64ToBuffer(encrypted);
   if (aad) {
     try {
-      const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf, additionalData: aad }, masterKey, ciphertext);
+      const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf, additionalData: aad.slice().buffer }, masterKey, ciphertext);
       return new hardGlobals.TextDecoder().decode(plainBuf);
     } catch {
       // Fall through — legacy v5 backup without AAD
