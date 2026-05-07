@@ -353,6 +353,13 @@ export default function LiveWatch() {
       if (newItem) {
         window.history.replaceState(null, '', `/live/${newItem.id}`);
       }
+      // Prefetch next 2 LiveKit tokens for instant swipe-up
+      for (let i = 1; i <= 2; i++) {
+        const next = orderedItems[newIndex + i];
+        if (next?.is_active) {
+          import('@/lib/livekit').then(m => m.prefetchLiveKitToken(`live-${next.id}`)).catch(() => {});
+        }
+      }
     }
   }, [currentIndex, orderedItems]);
 
