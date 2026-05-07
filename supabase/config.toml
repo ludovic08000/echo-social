@@ -1,6 +1,8 @@
 project_id = "vkpmoqfzrihcijjochks"
 
 [functions]
+  [functions.vapid-public-key]
+    verify_jwt = false
   [functions.ad-assistant]
     verify_jwt = false
   [functions.ad-checkout]

@@ -24,6 +24,7 @@ import { startRealtimeKeySync } from "@/lib/messaging/realtimeKeySync";
 import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
+import { PushAutoSubscribe } from "@/components/push/PushAutoSubscribe";
 
 // Eager-load critical routes
 import Landing from "./pages/Landing";
@@ -142,6 +143,7 @@ function IncomingCallHandler() {
 
   return (
     <>
+      <PushAutoSubscribe />
       {incomingCall && (
         <IncomingCallOverlay
           call={incomingCall}
