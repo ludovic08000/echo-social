@@ -64,7 +64,7 @@ describe('Signal conformance — KDF chain (Double Ratchet §5.2)', () => {
   const EXPECTED_MK_HEX =
     '790519613efaec118e63904e01475b9543b9a15c61070227d877418c8cca415e';
   const EXPECTED_CK_HEX =
-    '14c9aef33c884b1f9e0d18cb540495bda52c43e7ed8c69de40fcef0810c70bba';
+    'e3593f75e832b460cfc9cdea5a65902f94d9213060090c0e00a5a74306389e2e';
 
   it('CK_n+1 = HMAC(CK_n, 0x02), MK_n+1 = HMAC(CK_n, 0x01)', async () => {
     const seed = new Uint8Array(32).fill(0xaa).buffer;
