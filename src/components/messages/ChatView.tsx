@@ -6,7 +6,7 @@ import {
   ArrowLeft, Send, Plus, Smile, Phone, Video,
   Camera, X, CheckCheck, Pin, PinOff, ChevronDown,
   Forward, Users, UserPlus, LogOut, Crown, UserMinus, Sparkles, Info,
-  AlertTriangle, Languages
+  AlertTriangle, Languages, Timer
 } from 'lucide-react';
 import { format, isSameDay } from 'date-fns';
 import { UserAvatar } from '@/components/UserAvatar';
