@@ -325,10 +325,10 @@ export async function ratchetDecrypt(
 
   // Check skipped keys first
   const skipKey = `${envelope.hdr.dh}:${envelope.hdr.n}`;
-  const cachedMK = newState.skippedKeys.get(skipKey);
-  if (cachedMK) {
+  const cachedEntry = newState.skippedKeys.get(skipKey);
+  if (cachedEntry) {
     newState.skippedKeys.delete(skipKey);
-    const result = await decryptWithKey(cachedMK, envelope, peerSigningKeyBase64, newState);
+    const result = await decryptWithKey(cachedEntry.key, envelope, peerSigningKeyBase64, newState);
     return { ...result, newState };
   }
 
