@@ -522,6 +522,24 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe, mediaKeyB64 }: Vo
         )}
       </div>
 
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1;
+          setRate(next as 1 | 1.5 | 2);
+          if (audioRef.current) audioRef.current.playbackRate = next;
+        }}
+        title="Vitesse de lecture"
+        className={cn(
+          "text-[10px] font-semibold tabular-nums px-1.5 py-0.5 rounded-full flex-shrink-0 transition-colors",
+          isMe
+            ? "bg-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/30"
+            : "bg-primary/10 text-primary hover:bg-primary/20"
+        )}
+      >
+        {rate}×
+      </button>
       <Mic className={cn("w-3 h-3 flex-shrink-0", isMe ? "text-primary-foreground/50" : "text-muted-foreground/50")} />
     </div>
   );
