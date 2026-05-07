@@ -275,8 +275,8 @@ export function StoriesBar() {
           onKeyDown={(e) => { if (e.key === 'Enter') fileInputRef.current?.click(); }}
           className="flex-shrink-0 w-[110px] h-[190px] rounded-2xl overflow-hidden relative group cursor-pointer shadow-md hover:shadow-lg transition-shadow duration-200"
         >
-          {/* User photo full-bleed background */}
-          <div className="absolute inset-0">
+          {/* User photo - top portion */}
+          <div className="absolute inset-x-0 top-0 h-[125px] overflow-hidden">
             {myProfile?.avatar_url ? (
               <img
                 src={myProfile.avatar_url}
@@ -290,21 +290,21 @@ export function StoriesBar() {
               </div>
             )}
           </div>
-          {/* iOS-style floating plus button — top right corner */}
-          <div className="absolute top-2 right-2 z-10">
-            <div className="w-7 h-7 rounded-full border-2 border-white/90 shadow-md flex items-center justify-center bg-primary">
+          {/* White bottom section with label */}
+          <div className="absolute inset-x-0 bottom-0 h-[65px] bg-card flex items-end justify-center pb-2.5">
+            <span className="text-[12px] font-semibold text-foreground text-center leading-tight px-2">
+              Créer une<br />story
+            </span>
+          </div>
+          {/* Floating plus button straddling the divide */}
+          <div className="absolute left-1/2 -translate-x-1/2 top-[107px] z-10">
+            <div className="w-9 h-9 rounded-full border-[3px] border-card shadow-md flex items-center justify-center bg-primary">
               {isCreating ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                <Loader2 className="w-4 h-4 animate-spin text-white" />
               ) : (
-                <Plus className="w-4 h-4 text-white" strokeWidth={3} />
+                <Plus className="w-5 h-5 text-white" strokeWidth={3} />
               )}
             </div>
-          </div>
-          {/* Bottom label — minimal pill */}
-          <div className="absolute inset-x-0 bottom-2 z-10 flex justify-center px-2">
-            <span className="font-playfair text-[11px] font-semibold italic text-white tracking-tight px-2.5 py-0.5 rounded-full bg-black/45 backdrop-blur-md">
-              Créer story
-            </span>
           </div>
         </div>
 
