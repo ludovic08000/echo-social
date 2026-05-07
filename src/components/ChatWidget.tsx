@@ -961,14 +961,14 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       }} />
 
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30 bg-primary text-primary-foreground rounded-t-lg">
+      <div data-drag-handle className="flex items-center gap-1.5 px-2.5 py-2 border-b border-border/30 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-t-2xl cursor-grab active:cursor-grabbing select-none">
         <button
           onClick={goBack}
-          className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors flex-shrink-0"
+          className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all flex-shrink-0 backdrop-blur-sm"
           title="Retour aux conversations"
           aria-label="Retour aux conversations"
         >
-          <ArrowLeft className="w-3.5 h-3.5" />
+          <ArrowLeft className="w-4 h-4" />
         </button>
         <div className="flex items-center gap-2 flex-1 min-w-0">
           {conversation && (
