@@ -252,10 +252,14 @@ export async function ratchetEncrypt(
     n: state.sendCount,
   };
 
-  // Encrypt with AES-256-GCM
+  // Encrypt with AES-256-GCM (v3: bind to identity keys via AAD if available)
+  const ad = buildAssociatedData(state);
   const iv = randomBytes(IV_LENGTH);
+  const encryptParams: AesGcmParams = ad
+    ? { name: AES_ALGO, iv: iv.slice() as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: ad as Uint8Array<ArrayBuffer> }
+    : { name: AES_ALGO, iv: iv.slice() as Uint8Array<ArrayBuffer>, tagLength: 128 };
   const ct = await hardCrypto.encrypt(
-    { name: AES_ALGO, iv: iv.slice() as Uint8Array<ArrayBuffer>, tagLength: 128 },
+    encryptParams,
     messageKey,
     encodeString(plaintext),
   );
@@ -273,7 +277,7 @@ export async function ratchetEncrypt(
   const sig = await hardCrypto.sign('Ed25519' as any, signingKey, sigData);
 
   const envelope: RatchetEnvelope = {
-    v: PROTOCOL_VERSION,
+    v: ad ? PROTOCOL_VERSION : 2,
     kem: CLASSICAL_KEM_ID,
     hdr: header,
     iv: bufferToBase64(iv.buffer as ArrayBuffer),
