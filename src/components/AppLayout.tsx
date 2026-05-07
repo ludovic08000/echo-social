@@ -9,7 +9,7 @@ import { useProfile } from '@/hooks/useProfile';
 import { Bell, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import BrandLogo from '@/components/BrandLogo';
-import forsureWordmark from '@/assets/forsure-wordmark.png';
+import ForsureWordmark from '@/components/ForsureWordmark';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
 import { useScreenSize } from '@/hooks/useScreenSize';
@@ -55,7 +55,7 @@ function MobileHeader() {
     <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-xl border-b border-border/10 safe-area-pt">
       <div className="flex items-center justify-between h-14 px-3">
          <Link to="/feed" className="flex items-center">
-           <img src={forsureWordmark} alt="Forsure" className="h-7 w-auto select-none dark:invert dark:brightness-0 dark:contrast-200" draggable={false} />
+           <ForsureWordmark className="h-7 text-foreground" />
          </Link>
         
         <div className="flex items-center gap-2">
