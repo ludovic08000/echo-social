@@ -133,10 +133,26 @@ function useAllLivesForScreen() {
         );
       }
 
+      // ── Server-side neural ranking (live_score_batch) — wellbeing-aware ──
+      const rankMap = new Map<string, number>();
+      try {
+        const { data: ranks } = await supabase.rpc('live_score_batch' as any, {
+          p_user_id: user?.id ?? null,
+          p_limit: 80,
+        });
+        if (Array.isArray(ranks)) {
+          for (const r of ranks as Array<{ live_id: string; score: number }>) {
+            rankMap.set(r.live_id, Number(r.score) || 0);
+          }
+        }
+      } catch {}
+
       const lives = all.map(l => ({
         ...l,
         host: profileMap.get(l.user_id),
-        _score: l.is_active ? calculateZeusScore(l, userInterests, followingIds) : 0,
+        _score: l.is_active
+          ? (rankMap.get(l.id) ?? calculateZeusScore(l, userInterests, followingIds))
+          : 0,
       })) as LiveItem[];
 
       lives.sort((a, b) => {
