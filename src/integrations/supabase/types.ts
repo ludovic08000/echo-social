@@ -1597,6 +1597,8 @@ export type Database = {
           id: string
           opk_id: number
           public_key: string
+          signature: string | null
+          signature_version: number
           user_id: string
         }
         Insert: {
@@ -1605,6 +1607,8 @@ export type Database = {
           id?: string
           opk_id: number
           public_key: string
+          signature?: string | null
+          signature_version?: number
           user_id: string
         }
         Update: {
@@ -1613,6 +1617,8 @@ export type Database = {
           id?: string
           opk_id?: number
           public_key?: string
+          signature?: string | null
+          signature_version?: number
           user_id?: string
         }
         Relationships: []
@@ -1626,6 +1632,7 @@ export type Database = {
           is_active: boolean
           public_key: string
           signature: string
+          signature_version: number
           spk_id: number
           user_id: string
         }
@@ -1637,6 +1644,7 @@ export type Database = {
           is_active?: boolean
           public_key: string
           signature: string
+          signature_version?: number
           spk_id: number
           user_id: string
         }
@@ -1648,6 +1656,7 @@ export type Database = {
           is_active?: boolean
           public_key?: string
           signature?: string
+          signature_version?: number
           spk_id?: number
           user_id?: string
         }
@@ -5609,6 +5618,7 @@ export type Database = {
           is_active: boolean
           public_key: string
           signature: string
+          signature_version: number
           spk_id: number
           user_id: string
         }
@@ -5619,6 +5629,7 @@ export type Database = {
           is_active?: boolean
           public_key: string
           signature: string
+          signature_version?: number
           spk_id: number
           user_id: string
         }
@@ -5629,6 +5640,7 @@ export type Database = {
           is_active?: boolean
           public_key?: string
           signature?: string
+          signature_version?: number
           spk_id?: number
           user_id?: string
         }
@@ -6222,6 +6234,8 @@ export type Database = {
         Returns: {
           opk_id: number
           public_key: string
+          signature: string
+          signature_version: number
         }[]
       }
       cleanup_ai_cache: { Args: never; Returns: undefined }
