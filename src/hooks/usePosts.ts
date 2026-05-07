@@ -227,11 +227,14 @@ export function usePosts() {
     },
     initialPageParam: null as number | null,
     enabled: !loading,
-    staleTime: 60_000,
-    gcTime: 10 * 60_000,
-    refetchInterval: 2 * 60_000,
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
+    // Stabilize cache: avoid feed reshuffling on every focus / interval.
+    // Realtime + manual pull-to-refresh handle freshness.
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
   });
 }
 
