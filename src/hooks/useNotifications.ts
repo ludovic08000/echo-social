@@ -115,11 +115,12 @@ export function useMarkAsRead() {
 
         if (error) throw error;
       } else {
+        // "Tout marquer comme lu" → on supprime carrément les notifications
+        // de l'utilisateur pour vider la liste à l'écran.
         const { error } = await supabase
           .from('notifications')
-          .update({ read_at: new Date().toISOString() })
-          .eq('user_id', user.id)
-          .is('read_at', null);
+          .delete()
+          .eq('user_id', user.id);
 
         if (error) throw error;
       }
