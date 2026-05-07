@@ -37,8 +37,7 @@ export async function publishCurrentDevice(
     .upsert({
       user_id: userId,
       device_id: deviceId,
-      fingerprint,
-      identity_epoch: identityEpoch,
+      device_fingerprint: fingerprint,
       last_seen_at: now,
       revoked_at: null,
     }, { onConflict: 'user_id,device_id' });
@@ -66,7 +65,7 @@ export async function publishCurrentDevice(
 export async function fetchActiveDevices(userId: string): Promise<DeviceListEntry[]> {
   const { data } = await supabase
     .from('user_devices' as any)
-    .select('user_id, device_id, fingerprint, identity_epoch, created_at, last_seen_at, revoked_at')
+    .select('user_id, device_id, device_fingerprint, created_at, last_seen_at, revoked_at')
     .eq('user_id', userId)
     .is('revoked_at', null)
     .order('last_seen_at', { ascending: false });
@@ -74,8 +73,8 @@ export async function fetchActiveDevices(userId: string): Promise<DeviceListEntr
   return ((data || []) as any[]).map((row) => ({
     userId: row.user_id,
     deviceId: row.device_id,
-    fingerprint: row.fingerprint,
-    identityEpoch: Number(row.identity_epoch || 1),
+    fingerprint: row.device_fingerprint || '',
+    identityEpoch: 1,
     createdAt: row.created_at || row.last_seen_at || new Date().toISOString(),
     lastSeenAt: row.last_seen_at || new Date().toISOString(),
     revokedAt: row.revoked_at || null,
