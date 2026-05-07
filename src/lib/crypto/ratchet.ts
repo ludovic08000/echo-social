@@ -24,7 +24,7 @@ import {
 } from './utils';
 import { exportKeyToJWK, importKeyFromJWK } from './utils';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
-import { AES_ALGO, IV_LENGTH, PROTOCOL_VERSION, CLASSICAL_KEM_ID, KX_KEY_PARAMS } from './constants';
+import { AES_ALGO, IV_LENGTH, PROTOCOL_VERSION, AD_PREFIX_V3, CLASSICAL_KEM_ID, KX_KEY_PARAMS } from './constants';
 import { exportPublicKeyRaw } from './keyManager';
 
 // ─── Types ───
@@ -48,6 +48,15 @@ export interface RatchetState {
   prevSendCount: number;
   /** Skipped message keys: Map<"dhPub:msgNum", AES key> */
   skippedKeys: Map<string, CryptoKey>;
+  /**
+   * Identity keys snapshot at X3DH time. Used to build AES-GCM Associated
+   * Data (AD = "FORSURE-AD-v3|" || base64(IKa) || "|" || base64(IKb)) so
+   * the ciphertext is cryptographically bound to the conversation parties
+   * (Signal X3DH spec §3.3). Optional for backward-compat with v2 states
+   * loaded from disk before the upgrade.
+   */
+  myIdentityKeyB64?: string;
+  peerIdentityKeyB64?: string;
 }
 
 export interface RatchetHeader {
