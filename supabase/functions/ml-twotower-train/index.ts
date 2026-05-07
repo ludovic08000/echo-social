@@ -169,9 +169,13 @@ Deno.serve(async (req) => {
     // 5) Refresh multi-head scores for trained posts (capped to avoid timeout)
     const postsToRefresh = postIds.slice(0, 500);
     await Promise.all(
-      postsToRefresh.map((pid) =>
-        supabase.rpc("ml_compute_post_scores", { p_post_id: pid }).catch(() => {})
-      )
+      postsToRefresh.map(async (pid) => {
+        try {
+          await supabase.rpc("ml_compute_post_scores", { p_post_id: pid });
+        } catch (_e) {
+          // best-effort score refresh — ignore individual failures
+        }
+      })
     );
 
     return new Response(
