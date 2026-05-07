@@ -34,6 +34,7 @@ export function CallOverlay({
   participantName,
   participantAvatar,
   isE2eeActive,
+  connectionQuality = 'unknown',
   localVideoRef,
   remoteVideoRef,
   onEndCall,
