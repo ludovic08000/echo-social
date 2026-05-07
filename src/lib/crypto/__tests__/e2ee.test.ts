@@ -103,17 +103,19 @@ describe('encrypt → decrypt round-trip', () => {
 });
 
 describe('replay protection', () => {
-  it('rejects messages older than 7 days', async () => {
+  it('accepts old timestamps (anti-replay enforced by seq counter, not ts)', async () => {
+    // Per Signal spec: replay is prevented by per-conversation `seq`
+    // counter, not by wall-clock timestamps. Old messages must remain
+    // decryptable after restore (PIN re-unlock, key backup, multi-device sync).
     const aesKey = await generateAESKey();
     const sigPair = await generateEd25519Pair();
 
     const ciphertext = await encryptMessage('old msg', aesKey, sigPair.privateKey, 'fp', 0);
     const envelope = JSON.parse(ciphertext);
-
-    // Tamper timestamp to 8 days ago
     envelope.ts = Date.now() - 8 * 24 * 60 * 60 * 1000;
 
-    await expect(decryptMessage(JSON.stringify(envelope), aesKey)).rejects.toThrow('replay');
+    const result = await decryptMessage(JSON.stringify(envelope), aesKey);
+    expect(result.plaintext).toBe('old msg');
   });
 });
 
