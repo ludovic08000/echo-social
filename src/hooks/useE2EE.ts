@@ -1450,6 +1450,23 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     });
   }, [conversationId, ensureKeysAndPeerSync, isZeus, user, peerUserId, state.fingerprintChanged]);
 
+  /**
+   * If the decrypted ratchet plaintext is actually an SKDM (Sender Key
+   * Distribution Message), install it into `sender_key_state` and swallow
+   * the message — it's protocol metadata, not a user message.
+   */
+  const maybeAbsorbSKDM = useCallback(async (plaintext: string): Promise<DecryptResult | null> => {
+    const parsed = parseSKDM(plaintext);
+    if (!parsed) return null;
+    try {
+      await installSKDM(plaintext);
+      console.info('[E2EE] SKDM absorbed', { conv: parsed.conversationId, sender: parsed.senderUserId, iter: parsed.iteration });
+    } catch (err) {
+      console.warn('[E2EE] SKDM install failed', err);
+    }
+    return { text: '', encrypted: true, verified: true, incompatible: true };
+  }, []);
+
   const decryptRatchetMessage = useCallback(async (
     parsed: any,
     rawBody: string,
