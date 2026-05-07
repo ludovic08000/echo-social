@@ -103,3 +103,9 @@ project_id = "vkpmoqfzrihcijjochks"
     verify_jwt = false
   [functions.device-security]
     verify_jwt = false
+  [functions.sealed-mint-token]
+    verify_jwt = false
+  [functions.sealed-relay]
+    verify_jwt = false
+  [functions.kt-publish-epoch]
+    verify_jwt = false
