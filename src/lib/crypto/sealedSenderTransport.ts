@@ -25,7 +25,7 @@ export async function sendSealedTransportMessage(params: {
     throw new Error('MISSING_SEALED_SENDER_TAG');
   }
 
-  const { data, error } = await supabase.rpc('send_sealed_sender_message', {
+  const { data, error } = await (supabase.rpc as any)('send_sealed_sender_message', {
     p_conversation_id: params.conversationId,
     p_recipient_user_id: params.recipientUserId,
     p_anonymous_sender_tag: tag,
@@ -59,7 +59,7 @@ export async function fetchIncomingSealedTransportMessages(): Promise<SealedTran
 }
 
 export async function markSealedTransportDelivered(messageId: string): Promise<void> {
-  await supabase.rpc('mark_sealed_sender_delivered', {
+  await (supabase.rpc as any)('mark_sealed_sender_delivered', {
     p_message_id: messageId,
   });
 }

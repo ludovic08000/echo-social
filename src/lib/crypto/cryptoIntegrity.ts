@@ -26,7 +26,7 @@ const _deriveKey = _subtle.deriveKey.bind(_subtle);
 const _sign = _subtle.sign.bind(_subtle);
 const _verify = _subtle.verify.bind(_subtle);
 const _digest = _subtle.digest.bind(_subtle);
-const _getRandomValues = crypto.getRandomValues.bind(crypto);
+const _getRandomValues = <T extends ArrayBufferView | null>(array: T): T => crypto.getRandomValues(array as any) as T;
 
 // Global APIs used in crypto pipeline
 const _JSONparse = JSON.parse;

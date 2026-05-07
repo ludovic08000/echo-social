@@ -157,6 +157,8 @@ export {
   deleteWrappedKeys,
 } from './pinWrap';
 
+export { fetchTransparencyLog, appendTransparencyLog, type TransparencyEventType } from './transparencyLog';
+
 export {
   x3dhInitiate,
   x3dhRespond,

@@ -24,7 +24,7 @@ function normalize(row: any): ServerCryptoState {
 
 export async function ensureServerCryptoState(): Promise<ServerCryptoState | null> {
   try {
-    const { data, error } = await supabase.rpc('ensure_user_crypto_state');
+    const { data, error } = await (supabase.rpc as any)('ensure_user_crypto_state');
     if (error) throw error;
     return data ? normalize(data) : null;
   } catch (error) {
@@ -35,7 +35,7 @@ export async function ensureServerCryptoState(): Promise<ServerCryptoState | nul
 
 export async function markServerCryptoReady(fingerprint: string): Promise<ServerCryptoState | null> {
   try {
-    const { data, error } = await supabase.rpc('mark_user_crypto_ready', {
+    const { data, error } = await (supabase.rpc as any)('mark_user_crypto_ready', {
       p_fingerprint: fingerprint,
     });
     if (error) throw error;
