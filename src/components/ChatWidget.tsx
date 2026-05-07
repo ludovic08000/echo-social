@@ -1537,7 +1537,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           >
             <X className="w-5 h-5" />
           </button>
-          <div className="max-w-[95vw] max-h-[95vh] flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="max-w-[95vw] max-h-[95vh] flex items-center justify-center [&_img]:!max-h-[95vh] [&_img]:!max-w-[95vw] [&_video]:!max-h-[95vh] [&_video]:!max-w-[95vw]"
+            onClick={(e) => e.stopPropagation()}
+          >
             <MessageMedia
               imageUrl={lightboxMedia.url}
               body={lightboxMedia.body}
