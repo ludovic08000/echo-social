@@ -989,7 +989,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             </>
           )}
         </div>
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-1">
           <button
             disabled={isStartingCall}
             onClick={async () => {
@@ -1015,9 +1015,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                 setIsStartingCall(false);
               }
             }}
-            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors disabled:opacity-50"
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all disabled:opacity-50 backdrop-blur-sm"
+            title="Appel audio"
           >
-            <Phone className={`w-3.5 h-3.5 ${isStartingCall ? 'animate-pulse' : ''}`} />
+            <Phone className={`w-4 h-4 ${isStartingCall ? 'animate-pulse' : ''}`} />
           </button>
           <button
             disabled={isStartingCall}
@@ -1044,32 +1045,30 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                 setIsStartingCall(false);
               }
             }}
-            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors disabled:opacity-50"
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all disabled:opacity-50 backdrop-blur-sm"
+            title="Visio"
           >
-            <Video className={`w-3.5 h-3.5 ${isStartingCall ? 'animate-pulse' : ''}`} />
+            <Video className={`w-4 h-4 ${isStartingCall ? 'animate-pulse' : ''}`} />
           </button>
           <button
             onClick={() => setShowGroupCallSheet(true)}
-            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors"
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all backdrop-blur-sm"
             title="Appel de groupe"
           >
-            <Users className="w-3.5 h-3.5" />
+            <Users className="w-4 h-4" />
           </button>
           <button
             onClick={() => setShowCallHistory(true)}
-            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors"
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all backdrop-blur-sm"
             title="Historique d'appels"
           >
-            <PhoneMissed className="w-3.5 h-3.5" />
+            <PhoneMissed className="w-4 h-4" />
           </button>
-          <button onClick={() => { closeChat(); navigate(`/messages/${conversationId}`); }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors" title="Agrandir">
-            <Maximize2 className="w-3.5 h-3.5" />
+          <button onClick={minimizeChat} className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all backdrop-blur-sm" title="Réduire">
+            <Minus className="w-4 h-4" />
           </button>
-          <button onClick={minimizeChat} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
-            <Minus className="w-3.5 h-3.5" />
-          </button>
-          <button onClick={closeChat} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
-            <X className="w-3.5 h-3.5" />
+          <button onClick={closeChat} className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-destructive/80 active:scale-95 transition-all backdrop-blur-sm" title="Fermer">
+            <X className="w-4 h-4" />
           </button>
         </div>
       </div>
