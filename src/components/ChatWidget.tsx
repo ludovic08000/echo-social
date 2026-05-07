@@ -363,6 +363,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
+  const [lightboxMedia, setLightboxMedia] = useState<{ url: string; body: string; messageId: string } | null>(null);
   // Persisted + realtime reactions (replaces local-only state)
   const [showAIMenu, setShowAIMenu] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
