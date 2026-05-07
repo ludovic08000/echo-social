@@ -11,8 +11,9 @@ interface ConversationPreviewTextProps {
 // Detect any encrypted-looking payload that should NEVER be shown raw to the user.
 // Covers strict ratchet envelopes, legacy crypto JSON, and pipeline wrappers like
 // {"fs_secure_pipeline":1,"body":"..."} or anything containing crypto markers.
-function looksEncrypted(body: string | null | undefined): body is string {
-  if (!body || typeof body !== 'string') return false;
+function looksEncrypted(input: string | null | undefined): boolean {
+  if (!input || typeof input !== 'string') return false;
+  const body: string = input;
   if (isStrictRatchetEnvelopeBody(body)) return true;
   if (isCryptoJsonBody(body)) return true;
   if (body.startsWith('{') && /"(fs_secure_pipeline|kem|hdr|ct|encryptionMode|iv|sig|fp)"/.test(body)) {
