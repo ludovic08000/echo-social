@@ -884,35 +884,63 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           )}
         </div>
         <div className="flex items-center gap-0">
-          <button onClick={async () => {
-            const participantId = conversation?.participant?.user_id;
-            if (participantId && user?.id) {
-              const callKey = generateCallE2EEKey();
-              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'audio', callKey);
-              if (!callId) {
-                toast.error("Impossible de signaler l'appel. Réessayez.");
+          <button
+            disabled={isStartingCall}
+            onClick={async () => {
+              const participantId = conversation?.participant?.user_id;
+              if (!participantId || !user?.id) {
+                toast.error("Aucun contact à appeler dans cette conversation.");
                 return;
               }
-              activeCallIdRef.current = callId;
-              call.startCall(conversationId, 'audio', callKey);
-            }
-          }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
-            <Phone className="w-3.5 h-3.5" />
+              setIsStartingCall(true);
+              try {
+                const callKey = generateCallE2EEKey();
+                const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'audio', callKey);
+                if (!callId) {
+                  toast.error("Impossible de signaler l'appel. Réessayez.");
+                  return;
+                }
+                activeCallIdRef.current = callId;
+                await call.startCall(conversationId, 'audio', callKey);
+              } catch (err) {
+                console.error('[ChatWidget] audio call failed', err);
+                toast.error(err instanceof Error ? `Appel impossible : ${err.message}` : "Appel impossible");
+              } finally {
+                setIsStartingCall(false);
+              }
+            }}
+            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors disabled:opacity-50"
+          >
+            <Phone className={`w-3.5 h-3.5 ${isStartingCall ? 'animate-pulse' : ''}`} />
           </button>
-          <button onClick={async () => {
-            const participantId = conversation?.participant?.user_id;
-            if (participantId && user?.id) {
-              const callKey = generateCallE2EEKey();
-              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'video', callKey);
-              if (!callId) {
-                toast.error("Impossible de signaler l'appel. Réessayez.");
+          <button
+            disabled={isStartingCall}
+            onClick={async () => {
+              const participantId = conversation?.participant?.user_id;
+              if (!participantId || !user?.id) {
+                toast.error("Aucun contact à appeler dans cette conversation.");
                 return;
               }
-              activeCallIdRef.current = callId;
-              call.startCall(conversationId, 'video', callKey);
-            }
-          }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
-            <Video className="w-3.5 h-3.5" />
+              setIsStartingCall(true);
+              try {
+                const callKey = generateCallE2EEKey();
+                const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'video', callKey);
+                if (!callId) {
+                  toast.error("Impossible de signaler l'appel. Réessayez.");
+                  return;
+                }
+                activeCallIdRef.current = callId;
+                await call.startCall(conversationId, 'video', callKey);
+              } catch (err) {
+                console.error('[ChatWidget] video call failed', err);
+                toast.error(err instanceof Error ? `Visio impossible : ${err.message}` : "Visio impossible");
+              } finally {
+                setIsStartingCall(false);
+              }
+            }}
+            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors disabled:opacity-50"
+          >
+            <Video className={`w-3.5 h-3.5 ${isStartingCall ? 'animate-pulse' : ''}`} />
           </button>
           <button onClick={() => { closeChat(); navigate(`/messages/${conversationId}`); }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors" title="Agrandir">
             <Maximize2 className="w-3.5 h-3.5" />
