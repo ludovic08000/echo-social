@@ -12,6 +12,7 @@ import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
 import { RecoveryFlowGuard } from "@/components/RecoveryFlowGuard";
 import { CookieConsentBanner } from "@/components/CookieConsentBanner";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
+import { useVersionWatcher } from "@/hooks/useVersionWatcher";
 import { useIncomingCall, endActiveCall } from "@/hooks/useIncomingCall";
 import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { useCall } from "@/hooks/useCall";
@@ -248,6 +249,7 @@ function RoutedErrorBoundary({ children }: { children: React.ReactNode }) {
 
 function AppContent() {
   useSettingsInit();
+  useVersionWatcher();
   return (
       <AuthProvider>
         <ParentalGateProvider>
