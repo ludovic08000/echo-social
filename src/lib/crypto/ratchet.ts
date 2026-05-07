@@ -507,7 +507,20 @@ async function decryptWithKey(
   }
   if (!ptBuf) throw lastErr instanceof Error ? lastErr : new Error('AEAD tag verification failed');
 
-  const plaintext = decodeString(ptBuf);
+  // Lot B — unpad iff sender flagged `pad: 1`. Legacy envelopes (no flag)
+  // remain raw UTF-8 to preserve historical message readability.
+  let plaintext: string;
+  if (envelope.pad === 1) {
+    try {
+      plaintext = unpadPlaintext(new Uint8Array(ptBuf));
+    } catch {
+      // Padding marker missing → treat as legacy/raw to avoid losing the
+      // message in a botched migration.
+      plaintext = decodeString(ptBuf);
+    }
+  } else {
+    plaintext = decodeString(ptBuf);
+  }
 
   // Verify Ed25519 signature
   let verified = false;
