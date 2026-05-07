@@ -11,6 +11,7 @@
 
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import { encodeString } from './utils';
+import { supabase } from '@/integrations/supabase/client';
 
 const DB_NAME = 'forsure-x3dh-replay';
 const DB_VERSION = 1;
@@ -62,17 +63,41 @@ export async function assertNotReplayedAndRecord(params: {
   spkId: number;
   opkId?: number;
 }): Promise<void> {
+  const id = await fingerprint(params.myUserId, params.ik, params.ek, params.spkId, params.opkId);
+
+  // ─── Server-side ledger first (authoritative, defeats local IDB wipe) ───
+  // Signal X3DH §4.6 + WhatsApp Whitepaper §"Initial Sessions" — server MUST also
+  // refuse to deliver a duplicate initial bundle. Best-effort: if RPC fails for
+  // network reasons we still fall back to the local guard below.
+  try {
+    const { data: claimed, error } = await supabase.rpc('claim_x3dh_initial', {
+      p_fingerprint: id,
+    });
+    if (error) {
+      console.warn('[X3DH][REPLAY][SERVER] RPC error — relying on local guard only', error.message);
+    } else if (claimed === false) {
+      console.error('[X3DH][REPLAY][SERVER] ⛔ duplicate initial message rejected by ledger', {
+        spkId: params.spkId,
+        opkId: params.opkId ?? null,
+      });
+      throw new Error('X3DH_REPLAY_DETECTED');
+    }
+  } catch (err: any) {
+    if (err?.message === 'X3DH_REPLAY_DETECTED') throw err;
+    console.warn('[X3DH][REPLAY][SERVER] ledger unavailable — local guard only', err?.message ?? err);
+  }
+
   let db: IDBDatabase;
   try {
     db = await openDB();
   } catch {
-    // IndexedDB unavailable (private mode, quota issue): fail-open with warn.
-    // OPK private deletion still gives single-use guarantee in nominal case.
-    console.warn('[X3DH][REPLAY] IDB unavailable — replay guard SKIPPED');
+    // IndexedDB unavailable (private mode, quota issue): server ledger above is
+    // the source of truth; if it also failed we fail-open with a warn.
+    console.warn('[X3DH][REPLAY] IDB unavailable — server ledger is the only line of defense');
     return;
   }
 
-  const id = await fingerprint(params.myUserId, params.ik, params.ek, params.spkId, params.opkId);
+  // (id already computed above — reuse it)
 
   // Check existing
   const existing = await new Promise<ReplayRecord | undefined>((resolve, reject) => {
