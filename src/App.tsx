@@ -36,22 +36,41 @@ import Feed from "./pages/Feed";
 // so they don't bloat the initial bundle for casual visitors landing on /.
 import NotFound from "./pages/NotFound";
 
-// Lazy-load with auto-retry on chunk errors (deploy / cache invalidation)
+// Lazy-load with auto-retry on chunk errors (deploy / cache invalidation / HMR races)
+const isChunkLoadError = (e: unknown): boolean => {
+  const msg = (e as Error)?.message || '';
+  return /Failed to fetch dynamically imported module|Importing a module script failed|ChunkLoadError|Loading chunk \d+ failed|error loading dynamically imported module/i.test(msg);
+};
+
 const lazyWithOneRetry = <TModule extends { default: React.ComponentType<any> }>(
   importer: () => Promise<TModule>,
   retryKey: string
 ) => lazy(async () => {
+  // Attempt 1
   try {
     const mod = await importer();
     sessionStorage.removeItem(retryKey);
     return mod;
-  } catch (error) {
-    const alreadyRetried = sessionStorage.getItem(retryKey) === '1';
-    if (!alreadyRetried) {
-      sessionStorage.setItem(retryKey, '1');
-      window.location.reload();
+  } catch (e1) {
+    if (!isChunkLoadError(e1)) throw e1;
+    // Attempt 2 — short delay, network may have hiccupped or HMR was mid-flight
+    await new Promise((r) => setTimeout(r, 350));
+    try {
+      const mod = await importer();
+      sessionStorage.removeItem(retryKey);
+      return mod;
+    } catch (e2) {
+      if (!isChunkLoadError(e2)) throw e2;
+      // Attempt 3 — last-resort hard reload, but only once per session per route
+      const alreadyRetried = sessionStorage.getItem(retryKey) === '1';
+      if (!alreadyRetried) {
+        sessionStorage.setItem(retryKey, '1');
+        window.location.reload();
+        // Block resolution while reload happens
+        return new Promise<TModule>(() => {});
+      }
+      throw e2;
     }
-    throw error;
   }
 });
 
