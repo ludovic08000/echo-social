@@ -57,8 +57,12 @@ export function SettingsMenuGrid({ activeTab, onTabChange }: SettingsMenuGridPro
   };
 
   const handleSignOut = async () => {
-    await signOut();
-    navigate('/login');
+    try {
+      await signOut();
+    } finally {
+      // Hard reload to guarantee all in-memory state (E2EE keys, caches, guards) is wiped
+      window.location.replace('/login');
+    }
   };
 
   const allTabs = [

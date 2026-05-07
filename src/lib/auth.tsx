@@ -191,7 +191,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    // Stop background guard FIRST so its idle-refresh loop can't resurrect the session
+    try { stopSessionGuard(); } catch {}
+    // Local clear immediately — don't wait on network
+    setSession(null);
+    setUser(null);
+
+    // Try global signOut (revokes refresh token server-side); fall back to local on failure
+    try {
+      const { error } = await supabase.auth.signOut({ scope: 'global' });
+      if (error) {
+        console.warn('[AUTH] global signOut failed, falling back to local', error);
+        await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('[AUTH] signOut threw, forcing local cleanup', err);
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+    }
+
+    // Hard purge any leftover Supabase tokens that could let refreshSession resurrect us
+    try {
+      const purge = (storage: Storage) => {
+        const keys: string[] = [];
+        for (let i = 0; i < storage.length; i++) {
+          const k = storage.key(i);
+          if (k && (k.startsWith('sb-') || k.startsWith('supabase.auth.'))) keys.push(k);
+        }
+        keys.forEach((k) => storage.removeItem(k));
+      };
+      purge(localStorage);
+      purge(sessionStorage);
+    } catch {}
   };
 
   return (
