@@ -46,6 +46,7 @@ import { EMOJI_CATEGORIES, formatDateSeparator, isSingleEmoji } from './constant
 import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
 import { useTypingPresence } from '@/hooks/useTypingPresence';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
+import { LRUMap } from '@/lib/utils/lruMap';
 
 interface ChatViewProps {
   conversationId: string;
