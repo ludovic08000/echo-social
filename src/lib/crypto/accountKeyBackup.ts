@@ -29,10 +29,20 @@ const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
 const IV_LENGTH = 12;
 const MASTER_KEY_LENGTH = 32;
-const BACKUP_VERSION = 5; // v5 = Signal-style Master Key architecture
+const BACKUP_VERSION = 6; // v6 = v5 + AAD binding (userId|backupType|version) — Signal/WA-style swap-attack protection
 const BACKUP_TYPE_ACCOUNT = 'account';
 const BACKUP_TYPE_RECOVERY = 'recovery';
 const KEYCHAIN_SNAPSHOT_PREFIX = 'forsure-e2ee-keychain-snapshot-v1:';
+
+/** Domain-separated AAD bound to userId|backupType|version (Signal SVR / WA backup style). */
+function buildBackupAAD(userId: string, backupType: 'account' | 'recovery', version: number): Uint8Array {
+  return new hardGlobals.TextEncoder().encode(`forsure-backup|${userId}|${backupType}|v${version}`);
+}
+
+/** Domain separator for the recovery key (mirrors passwordSecret to avoid cross-secret collisions). */
+function recoverySecret(recoveryKey: string, userId: string): string {
+  return `recovery::forsure::${userId}::${recoveryKey}`;
+}
 
 // ── Session State (volatile, never persisted) ──
 let _sessionMasterKey: CryptoKey | null = null;
