@@ -918,6 +918,22 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       )}
 
+      {showGroupCallSheet && (
+        <AddParticipantSheet
+          open={showGroupCallSheet}
+          onClose={() => setShowGroupCallSheet(false)}
+          conversationId={conversationId}
+          prefilled={conversation?.participant?.user_id ? [conversation.participant.user_id] : []}
+          onCallStarted={async (_callId, _roomId, callKey, callType) => {
+            try {
+              await call.startCall(conversationId, callType, callKey);
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Impossible de rejoindre l'appel");
+            }
+          }}
+        />
+      )}
+
       <input ref={fileInputRef} type="file" accept="image/*,video/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/zip,text/plain,text/csv" className="hidden" onChange={(e) => {
         const file = e.target.files?.[0];
         if (file) handleMediaFile(file);
