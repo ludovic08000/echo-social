@@ -5358,6 +5358,39 @@ export type Database = {
         }
         Relationships: []
       }
+      user_crypto_state: {
+        Row: {
+          client_key_published_at: string | null
+          created_at: string
+          fingerprint: string | null
+          identity_epoch: number
+          key_slot_id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          client_key_published_at?: string | null
+          created_at?: string
+          fingerprint?: string | null
+          identity_epoch?: number
+          key_slot_id?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          client_key_published_at?: string | null
+          created_at?: string
+          fingerprint?: string | null
+          identity_epoch?: number
+          key_slot_id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_devices: {
         Row: {
           created_at: string
@@ -6316,6 +6349,25 @@ export type Database = {
         Args: { payload: Json; queue_name: string }
         Returns: number
       }
+      ensure_user_crypto_state: {
+        Args: never
+        Returns: {
+          client_key_published_at: string | null
+          created_at: string
+          fingerprint: string | null
+          identity_epoch: number
+          key_slot_id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "user_crypto_state"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       generate_order_number: { Args: never; Returns: string }
       get_ai_data_sharing_enabled: {
         Args: { p_user_id: string }
@@ -6527,6 +6579,25 @@ export type Database = {
       mark_device_copy_retry_failed: {
         Args: { p_error: string; p_request_id: string }
         Returns: boolean
+      }
+      mark_user_crypto_ready: {
+        Args: { p_fingerprint: string }
+        Returns: {
+          client_key_published_at: string | null
+          created_at: string
+          fingerprint: string | null
+          identity_epoch: number
+          key_slot_id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "user_crypto_state"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       match_contacts_by_phone:
         | {
