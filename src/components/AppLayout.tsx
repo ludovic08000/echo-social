@@ -9,6 +9,7 @@ import { useProfile } from '@/hooks/useProfile';
 import { Bell, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import BrandLogo from '@/components/BrandLogo';
+import forsureWordmark from '@/assets/forsure-wordmark.png';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
 import { useScreenSize } from '@/hooks/useScreenSize';
