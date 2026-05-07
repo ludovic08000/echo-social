@@ -111,6 +111,31 @@ function compositeKey(myUserId: string, myDeviceId: string, peerUserId: string, 
   return `${myUserId}::${myDeviceId}::${peerUserId}::${peerDeviceId}`;
 }
 
+/**
+ * Canonical AAD for v5 envelopes. Sorted device-pair tags + sessionId so
+ * both sides derive the exact same bytes. Binds ciphertext to the device
+ * pair + session — defeats cross-session and cross-pair swap attacks.
+ */
+function buildDevAAD(
+  myUserId: string,
+  myDeviceId: string,
+  peerUserId: string,
+  peerDeviceId: string,
+  sessionId: string,
+): Uint8Array {
+  const me = `${myUserId}::${myDeviceId}`;
+  const peer = `${peerUserId}::${peerDeviceId}`;
+  const [a, b] = me < peer ? [me, peer] : [peer, me];
+  return new hardGlobals.TextEncoder().encode(`${AD_PREFIX_DEV_V5}${sessionId}|${a}|${b}`);
+}
+
+/** Parse the four IDs back from a composite key. */
+function parseCompositeKey(key: string): { myUserId: string; myDeviceId: string; peerUserId: string; peerDeviceId: string } | null {
+  const parts = key.split('::');
+  if (parts.length !== 4) return null;
+  return { myUserId: parts[0], myDeviceId: parts[1], peerUserId: parts[2], peerDeviceId: parts[3] };
+}
+
 async function loadSession(key: string): Promise<StoredSession | null> {
   try {
     const db = await openDB();
