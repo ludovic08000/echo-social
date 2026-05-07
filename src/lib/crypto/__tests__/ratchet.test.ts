@@ -110,16 +110,18 @@ describe('Double Ratchet', () => {
     expect(restored.recvCount).toBe(aliceState.recvCount);
   });
 
-  it('rejects replayed old messages', async () => {
+  it('accepts old timestamps (anti-replay enforced by header counters, not ts)', async () => {
+    // Per Signal spec: replay is prevented by Double Ratchet header counters
+    // (pn/n) + skippedKeys cache, not by wall-clock timestamps. Old messages
+    // must remain decryptable after restore (PIN unlock, key backup, sync).
     const { aliceState, bobState, aliceSig } = await setupAliceAndBob();
 
     const { envelope } = await ratchetEncrypt(
       aliceState, 'msg', aliceSig.privateKey, 'fp',
     );
-
-    // Force old timestamp
     envelope.ts = Date.now() - 8 * 24 * 60 * 60 * 1000;
 
-    await expect(ratchetDecrypt(bobState, envelope)).rejects.toThrow('too old');
+    const { plaintext } = await ratchetDecrypt(bobState, envelope);
+    expect(plaintext).toBe('msg');
   });
 });
