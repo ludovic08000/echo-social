@@ -213,6 +213,7 @@ export function useIncomingCall() {
           status: call.status,
           caller_name: profile?.name || 'Utilisateur',
           caller_avatar: profile?.avatar_url,
+          is_group: call.is_group === true,
         };
 
         setIncomingCall(incoming);
