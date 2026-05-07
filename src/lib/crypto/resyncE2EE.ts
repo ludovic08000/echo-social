@@ -474,7 +474,7 @@ async function replayRecentDeviceCopies(
       const t = Date.now();
       try {
         const pt = await withTimeout(
-          tryReadDeviceCopy(row.id, row.sender_id),
+          tryReadDeviceCopy(row.id, row.sender_id, { requestRetry: false }),
           REPLAY_MESSAGE_TIMEOUT_MS,
           `message:${row.id.slice(0, 8)}`,
         );
@@ -519,8 +519,6 @@ async function replayRecentDeviceCopies(
       diag.push('replay', 'info', `conversation ${c.conversation_id.slice(0, 8)} → ${convRecovered}/${convScanned} recovered${convTimedOut ? ' (timeout)' : ''}`);
     }
   }
-
-  return { scanned, recovered };
 
   return { scanned, recovered };
 }

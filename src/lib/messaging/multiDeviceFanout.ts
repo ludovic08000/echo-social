@@ -475,8 +475,17 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
  * Returns plaintext or null. Used by DecryptedMessageBody as fallback when the
  * ratchet decrypt fails (typical case: secondary device).
  */
-export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?: string): Promise<string | null> {
+interface TryReadDeviceCopyOptions {
+  requestRetry?: boolean;
+}
+
+export async function tryReadDeviceCopy(
+  messageId: string,
+  expectedSenderUserId?: string,
+  options: TryReadDeviceCopyOptions = {},
+): Promise<string | null> {
   const myDeviceId = getCurrentDeviceId();
+  const shouldRequestRetry = options.requestRetry !== false;
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
@@ -504,7 +513,7 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
         p_message_id: messageId,
       });
       if (!allCopies || allCopies.length === 0) {
-        if (expectedSenderUserId) {
+        if (shouldRequestRetry && expectedSenderUserId) {
           void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
         }
         return null;
@@ -534,7 +543,9 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
         });
       }
       if (rows.length === 0) {
-        void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
+        if (shouldRequestRetry) {
+          void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
+        }
         return null;
       }
     }
@@ -547,7 +558,7 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       const pt = await tryDecryptCopy(row, user.id, targetDeviceId);
       if (pt !== null) return pt;
     }
-    if (expectedSenderUserId) {
+    if (shouldRequestRetry && expectedSenderUserId) {
       void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
     }
     return null;
@@ -557,7 +568,7 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       myDeviceId,
       metadata: { messageId, stage: 'tryReadDeviceCopy' },
     });
-    if (expectedSenderUserId) {
+    if (shouldRequestRetry && expectedSenderUserId) {
       void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
     }
     return null;
