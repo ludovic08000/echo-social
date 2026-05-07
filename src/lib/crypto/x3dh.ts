@@ -385,6 +385,9 @@ export async function refreshSignedPrekeyIfNeeded(
   signingPrivateKey: CryptoKey,
 ): Promise<void> {
   try {
+    // Opportunistic GC of SPK privates older than 30 days (legacy + per-device).
+    void gcExpiredSPKPrivates(userId);
+
     const { data } = await supabase
       .from('user_signed_prekeys')
       .select('created_at, public_key, signature, spk_id')
