@@ -501,7 +501,7 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe, mediaKeyB64 }: Vo
 
   return (
     <div className={cn(
-      "flex items-center gap-2 px-3 py-2 rounded-2xl min-w-[160px]",
+      "relative flex items-center gap-2 px-3 py-2 rounded-2xl min-w-[160px]",
       isMe ? "bg-primary text-primary-foreground" : "bg-secondary",
       error && "opacity-60"
     )}>
