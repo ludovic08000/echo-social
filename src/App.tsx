@@ -21,6 +21,7 @@ import { useAccountKeySync } from "@/hooks/useAccountKeySync";
 import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
 import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
 import { startRealtimeKeySync } from "@/lib/messaging/realtimeKeySync";
+import { catchUpSenderKeyDistribution, subscribeSenderKeyDistribution } from "@/lib/crypto/senderKeyInbound";
 import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
