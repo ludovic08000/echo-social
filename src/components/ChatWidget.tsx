@@ -1836,6 +1836,20 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               >
                 {isUploading ? <div className="w-3.5 h-3.5 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Camera className="w-4 h-4" />}
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewOnceArmed(v => !v);
+                  if (!viewOnceArmed) toast.success('Vue Unique armée pour le prochain média 🔥');
+                }}
+                title="Vue unique"
+                className={cn(
+                  "w-7 h-7 rounded-full flex items-center justify-center transition-colors",
+                  viewOnceArmed ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-primary"
+                )}
+              >
+                <Eye className="w-4 h-4" />
+              </button>
               <button type="button" onClick={() => { setShowGifs(v => !v); setShowEmojis(false); }} className={cn("w-7 h-7 rounded-full flex items-center justify-center transition-colors text-[11px] font-bold", showGifs ? "text-primary" : "text-muted-foreground hover:text-primary")}>
                 GIF
               </button>
