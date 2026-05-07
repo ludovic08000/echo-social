@@ -457,8 +457,9 @@ export async function ratchetEncrypt(
   const { ck, mk } = await kdfCK(session.ckSendB64);
   const aes = await importMessageKey(mk);
   const iv = randomBytes(12);
+  const aad = buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, session.sessionId);
   const ct = await hardCrypto.encrypt(
-    { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 },
+    { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> },
     aes,
     new hardGlobals.TextEncoder().encode(plaintext),
   );
@@ -467,7 +468,7 @@ export async function ratchetEncrypt(
   await saveSession(key, { ...session, ckSendB64: ck, Ns: Ns + 1 });
 
   return [
-    RATCHET_PREFIX_V4 + session.sessionId,
+    RATCHET_PREFIX_V5 + session.sessionId,
     session.dhsPubB64,
     String(Ns),
     String(session.PN),
