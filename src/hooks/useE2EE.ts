@@ -54,6 +54,7 @@ import {
   loadRecipientStateForWire,
   decryptFromGroup,
 } from '@/lib/crypto/senderKeySession';
+import { tryEncryptViaSenderKeys } from '@/lib/crypto/senderKeyOutbound';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
 const RATCHET_DB_NAME = 'forsure-ratchet';
