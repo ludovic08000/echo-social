@@ -1386,6 +1386,27 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
    * queue to prevent 50 concurrent ratchet inits when loading a chat.
    */
   const decrypt = useCallback(async (body: string): Promise<DecryptResult> => {
+    // Lot — Sender Keys (group E2EE) wire detection. Bypasses the JSON
+    // ratchet envelope path: `sk1.` is a flat dotted wire, not JSON.
+    if (typeof body === 'string' && isSenderKeyWire(body)) {
+      try {
+        const recipient = await loadRecipientStateForWire(body);
+        if (!recipient) {
+          // SKDM not yet delivered → keep ciphertext placeholder, will retry
+          // once the pairwise SKDM lands and installs the chain.
+          return { text: '', encrypted: true, verified: false, incompatible: true };
+        }
+        const { plaintext } = await decryptFromGroup(recipient, body);
+        if (plaintext === null) {
+          return { text: '', encrypted: true, verified: false, incompatible: true };
+        }
+        return { text: plaintext, encrypted: true, verified: true };
+      } catch (err) {
+        console.warn('[E2EE] Sender Key decrypt failed:', err);
+        return { text: '', encrypted: true, verified: false, incompatible: true };
+      }
+    }
+
     if (!isCryptoJsonBody(body)) {
       return { text: body, encrypted: false, verified: false };
     }
