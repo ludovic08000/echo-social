@@ -4575,6 +4575,96 @@ export type Database = {
         }
         Relationships: []
       }
+      sealed_delivery_tokens: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          recipient_user_id: string
+          token_hash: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          expires_at: string
+          recipient_user_id: string
+          token_hash: string
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          recipient_user_id?: string
+          token_hash?: string
+        }
+        Relationships: []
+      }
+      sealed_sender_events: {
+        Row: {
+          anonymous_sender_tag: string
+          conversation_id: string
+          created_at: string
+          id: number
+          recipient_user_id: string | null
+          sender_hint_hash: string | null
+        }
+        Insert: {
+          anonymous_sender_tag: string
+          conversation_id: string
+          created_at?: string
+          id?: number
+          recipient_user_id?: string | null
+          sender_hint_hash?: string | null
+        }
+        Update: {
+          anonymous_sender_tag?: string
+          conversation_id?: string
+          created_at?: string
+          id?: number
+          recipient_user_id?: string | null
+          sender_hint_hash?: string | null
+        }
+        Relationships: []
+      }
+      sealed_sender_messages: {
+        Row: {
+          anonymous_sender_tag: string
+          conversation_id: string
+          created_at: string
+          delivered_at: string | null
+          delivery_state: string
+          id: string
+          read_at: string | null
+          recipient_user_id: string
+          sealed_header: Json
+          sealed_payload: string
+        }
+        Insert: {
+          anonymous_sender_tag: string
+          conversation_id: string
+          created_at?: string
+          delivered_at?: string | null
+          delivery_state?: string
+          id?: string
+          read_at?: string | null
+          recipient_user_id: string
+          sealed_header?: Json
+          sealed_payload: string
+        }
+        Update: {
+          anonymous_sender_tag?: string
+          conversation_id?: string
+          created_at?: string
+          delivered_at?: string | null
+          delivery_state?: string
+          id?: string
+          read_at?: string | null
+          recipient_user_id?: string
+          sealed_header?: Json
+          sealed_payload?: string
+        }
+        Relationships: []
+      }
       security_ai_patterns: {
         Row: {
           autonomy_level: number | null
@@ -5660,6 +5750,39 @@ export type Database = {
           },
         ]
       }
+      user_identity_change_events: {
+        Row: {
+          acknowledged: boolean
+          acknowledged_at: string | null
+          id: number
+          new_fingerprint: string
+          observed_at: string
+          observer_user_id: string
+          peer_user_id: string
+          previous_fingerprint: string | null
+        }
+        Insert: {
+          acknowledged?: boolean
+          acknowledged_at?: string | null
+          id?: number
+          new_fingerprint: string
+          observed_at?: string
+          observer_user_id: string
+          peer_user_id: string
+          previous_fingerprint?: string | null
+        }
+        Update: {
+          acknowledged?: boolean
+          acknowledged_at?: string | null
+          id?: number
+          new_fingerprint?: string
+          observed_at?: string
+          observer_user_id?: string
+          peer_user_id?: string
+          previous_fingerprint?: string | null
+        }
+        Relationships: []
+      }
       user_interests: {
         Row: {
           created_at: string
@@ -5818,6 +5941,39 @@ export type Database = {
         Update: {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_sender_certificates: {
+        Row: {
+          device_id: string
+          expires_at: string
+          fingerprint: string
+          identity_epoch: number
+          issued_at: string
+          payload: string
+          signature: string
+          user_id: string
+        }
+        Insert: {
+          device_id: string
+          expires_at: string
+          fingerprint: string
+          identity_epoch: number
+          issued_at?: string
+          payload: string
+          signature: string
+          user_id: string
+        }
+        Update: {
+          device_id?: string
+          expires_at?: string
+          fingerprint?: string
+          identity_epoch?: number
+          issued_at?: string
+          payload?: string
+          signature?: string
           user_id?: string
         }
         Relationships: []
