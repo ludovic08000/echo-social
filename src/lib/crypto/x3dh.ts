@@ -180,12 +180,32 @@ function openSPKDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = hardGlobals.idbOpen(SPK_DB_NAME, SPK_DB_VERSION);
     req.onerror = () => reject(req.error);
-    req.onsuccess = () => resolve(req.result);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(SPK_STORE)) {
         db.createObjectStore(SPK_STORE, { keyPath: 'id' });
       }
+    };
+    req.onsuccess = () => {
+      const db = req.result;
+      // Self-heal: if the DB exists at the right version but the store is
+      // missing (caused by an older code path that opened the DB without an
+      // upgrade handler), bump the version once to recreate the store.
+      if (!db.objectStoreNames.contains(SPK_STORE)) {
+        const nextVersion = db.version + 1;
+        db.close();
+        const repair = hardGlobals.idbOpen(SPK_DB_NAME, nextVersion);
+        repair.onupgradeneeded = () => {
+          const rdb = repair.result;
+          if (!rdb.objectStoreNames.contains(SPK_STORE)) {
+            rdb.createObjectStore(SPK_STORE, { keyPath: 'id' });
+          }
+        };
+        repair.onerror = () => reject(repair.error);
+        repair.onsuccess = () => resolve(repair.result);
+        return;
+      }
+      resolve(db);
     };
   });
 }
