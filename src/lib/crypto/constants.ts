@@ -45,7 +45,14 @@ export const STORE_SESSION = 'session-keys';
 export const STORE_PREKEYS = 'pre-keys';
 
 // Protocol version (bump = breaking change)
-export const PROTOCOL_VERSION = 2;
+//   v1 — legacy P-384 envelopes (read-only)
+//   v2 — X25519 + Ed25519, no AD binding (read-only after migration)
+//   v3 — X25519 + Ed25519 + AES-GCM additionalData = "FORSURE-AD-v3|" || base64(IKa) || "|" || base64(IKb)
+//        Signature also covers AD. Ratchet state carries both identity keys.
+export const PROTOCOL_VERSION = 3;
+
+/** Domain-separation prefix used inside Associated Data of v3 ratchet envelopes. */
+export const AD_PREFIX_V3 = 'FORSURE-AD-v3|';
 
 // KEM identifiers
 export const PQ_KEM_ID = 'HYBRID-X25519-KYBER768';
