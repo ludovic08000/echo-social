@@ -80,16 +80,23 @@ export default function Feed() {
   const { data: mlData } = useMLScoring(postIds);
   const { data: mlRecos } = useMLRecommendations();
 
-  // Blend ML scores with chronological order for smart ranking
+  // Blend ML scores once per post, then KEEP that order stable across renders
+  // to avoid the visible flicker when new pages arrive or scores update late.
+  const orderRef = useRef<Map<string, number>>(new Map());
   const posts = useMemo(() => {
     const mlScores = mlData?.scores || {};
-    if (Object.keys(mlScores).length === 0) return rawPosts;
-    
-    return [...rawPosts].sort((a, b) => {
-      const scoreA = blendScores(rawPosts.indexOf(a) * -1, mlScores[a.id], 0.3);
-      const scoreB = blendScores(rawPosts.indexOf(b) * -1, mlScores[b.id], 0.3);
-      return scoreB - scoreA;
+    const order = orderRef.current;
+
+    // Assign a stable rank to any post we haven't seen yet.
+    rawPosts.forEach((p, i) => {
+      if (order.has(p.id)) return;
+      const chrono = -i; // earlier = higher
+      const ml = mlScores[p.id];
+      order.set(p.id, ml != null ? blendScores(chrono, ml, 0.3) : chrono);
     });
+
+    // Sort by frozen rank — never reshuffle posts already on screen.
+    return [...rawPosts].sort((a, b) => (order.get(b.id) ?? 0) - (order.get(a.id) ?? 0));
   }, [rawPosts, mlData?.scores]);
 
   // Track feed load performance
