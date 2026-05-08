@@ -138,6 +138,11 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
         }
         if (!next.hidden) {
           const persisted = persistOutcome(body, next);
+          // Once a message is readable, push the refreshed ratchet + small
+          // plaintext/media-key cache into the encrypted account backup quickly.
+          void import('@/lib/crypto/accountKeyBackup')
+            .then(({ requestImmediateBackup }) => requestImmediateBackup('message-decrypted'))
+            .catch(() => {});
           onDecryptedRef.current?.(persisted);
         }
       })
