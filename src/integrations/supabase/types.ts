@@ -6951,6 +6951,7 @@ export type Database = {
           spk_id: number
         }[]
       }
+      has_backup_pin: { Args: { _user_id?: string }; Returns: boolean }
       has_chat_pin: { Args: { p_user_id: string }; Returns: boolean }
       has_role: {
         Args: {
@@ -7146,6 +7147,17 @@ export type Database = {
           p_user_agent?: string
         }
         Returns: undefined
+      }
+      release_backup_pin_blob: {
+        Args: { _user_id: string }
+        Returns: {
+          allowed: boolean
+          attempts_remaining: number
+          kdf_version: number
+          locked_until: string
+          pin_wrap_master: string
+          salt: string
+        }[]
       }
       request_device_copy_retry: {
         Args: {
