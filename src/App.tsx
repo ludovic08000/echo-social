@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
 import { PushAutoSubscribe } from "@/components/push/PushAutoSubscribe";
+import { E2EERestorePromptDialog } from "@/components/messages/E2EERestorePromptDialog";
 
 // Eager-load critical routes
 import Landing from "./pages/Landing";
