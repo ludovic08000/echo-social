@@ -1060,6 +1060,26 @@ export function requestBackgroundBackup(reason: string = 'mutation'): void {
   }, BG_BACKUP_DEBOUNCE_MS);
 }
 
+/** Force a near-immediate backup for user-visible decrypt/send milestones. */
+export function requestImmediateBackup(reason: string = 'critical-mutation'): void {
+  if (!isAutoBackupActive()) return;
+  _bgBackupPendingReason = reason;
+  if (_bgBackupTimer) {
+    clearTimeout(_bgBackupTimer);
+    _bgBackupTimer = null;
+  }
+  if (_bgBackupInFlight) {
+    _bgBackupTimer = setTimeout(() => requestImmediateBackup(reason), BG_BACKUP_DEBOUNCE_MS);
+    return;
+  }
+  _bgBackupInFlight = true;
+  const why = _bgBackupPendingReason ?? reason;
+  _bgBackupPendingReason = null;
+  syncBackupToServer()
+    .catch((e) => console.warn(`[MasterKey] immediate backup (${why}) failed:`, e))
+    .finally(() => { _bgBackupInFlight = false; });
+}
+
 /** Clear session state (on logout) */
 export function clearAccountKeySession(): void {
   _sessionMasterKey = null;
