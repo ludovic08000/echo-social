@@ -13,6 +13,7 @@ import { isAutoBackupActive, syncBackupToServer, hasLocalKeys } from '@/lib/cryp
 import { resyncE2EE, type ResyncReport } from '@/lib/crypto/resyncE2EE';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
+import { BackupPinSection } from '@/components/BackupPinSection';
 
 export function KeyBackupPanel() {
   const backup = useSecureBackup();
