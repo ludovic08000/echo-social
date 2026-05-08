@@ -111,6 +111,16 @@ function hasRatchetTerminalFailure(conversationId: string | undefined, body: str
   return _ratchetTerminalFailures.has(`${conversationId}:${body}`);
 }
 
+function clearRatchetTerminalFailures(conversationId: string | undefined) {
+  if (!conversationId) {
+    _ratchetTerminalFailures.clear();
+    return;
+  }
+  for (const key of Array.from(_ratchetTerminalFailures)) {
+    if (key.startsWith(`${conversationId}:`)) _ratchetTerminalFailures.delete(key);
+  }
+}
+
 /** Dedup for own key publishing — prevents ChatView + ChatWidget from both publishing */
 let _ownKeyPublishPromise: Promise<void> | null = null;
 let _ownKeyPublishTs = 0;
@@ -778,11 +788,31 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   useEffect(() => {
     const handler = () => {
       console.log('[E2EE] Keys unlocked via PIN — re-initializing');
+      clearRatchetTerminalFailures(conversationId);
       initKeys();
     };
     window.addEventListener('forsure-keys-unlocked', handler);
     return () => window.removeEventListener('forsure-keys-unlocked', handler);
-  }, [initKeys]);
+  }, [conversationId, initKeys]);
+
+  // Re-init when iOS/backup restore rehydrates IndexedDB after a cache purge.
+  useEffect(() => {
+    const handler = () => {
+      console.log('[E2EE] Keys restored from backup — resetting stale refs');
+      keysRef.current = null;
+      ratchetRef.current = null;
+      prekeyInfoRef.current = null;
+      x3dhInfoRef.current = null;
+      legacySessionReadyRef.current = false;
+      peerHasRespondedRef.current = false;
+      clearRatchetTerminalFailures(conversationId);
+      void initKeys().finally(() => {
+        try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch {}
+      });
+    };
+    window.addEventListener('forsure-keys-restored', handler);
+    return () => window.removeEventListener('forsure-keys-restored', handler);
+  }, [conversationId, initKeys]);
 
   useEffect(() => {
     const handler = () => {

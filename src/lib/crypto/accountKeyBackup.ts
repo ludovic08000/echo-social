@@ -24,6 +24,11 @@ import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
 import { secureGetSecret, secureSetSecret, secureRemoveSecret } from '@/lib/secureStore';
 import { getCurrentDeviceId, setCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import {
+  exportPlaintextCache,
+  importPlaintextCache,
+  type PlaintextCacheExportEntry,
+} from '@/lib/crypto/plaintextStore';
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
@@ -275,6 +280,14 @@ async function collectAllKeys(): Promise<string | null> {
     data['device:id'] = getCurrentDeviceId();
   } catch {}
 
+  try {
+    // Signal/WhatsApp-style secure backup: keep a small decryptable history
+    // cache inside the encrypted Master-Key backup so the latest messages and
+    // media keys remain readable after iOS/WebView purges IndexedDB.
+    const plaintextCache = await exportPlaintextCache();
+    if (plaintextCache.length > 0) data['plaintext:cache'] = plaintextCache;
+  } catch {}
+
   data['_meta'] = {
     version: BACKUP_VERSION,
     createdAt: new Date().toISOString(),
@@ -435,6 +448,14 @@ async function restoreAllKeys(json: string): Promise<void> {
         if (oldFps) localStorage.setItem('forsure-known-fps', oldFps);
         else localStorage.removeItem('forsure-known-fps');
       });
+    }
+
+    // Phase 6: recent decrypted history cache. This is already encrypted at
+    // rest by the Master Key backup, and re-imports into an IndexedDB cache
+    // protected by a fresh local AES key. It lets the app show the latest
+    // messages/media immediately after iOS clears WebView storage.
+    if (Array.isArray(data['plaintext:cache'])) {
+      await importPlaintextCache(data['plaintext:cache'] as PlaintextCacheExportEntry[]);
     }
 
     console.log('[MasterKey] ✅ Atomic restore complete');
@@ -1037,6 +1058,26 @@ export function requestBackgroundBackup(reason: string = 'mutation'): void {
       .catch((e) => console.warn(`[MasterKey] background backup (${why}) failed:`, e))
       .finally(() => { _bgBackupInFlight = false; });
   }, BG_BACKUP_DEBOUNCE_MS);
+}
+
+/** Force a near-immediate backup for user-visible decrypt/send milestones. */
+export function requestImmediateBackup(reason: string = 'critical-mutation'): void {
+  if (!isAutoBackupActive()) return;
+  _bgBackupPendingReason = reason;
+  if (_bgBackupTimer) {
+    clearTimeout(_bgBackupTimer);
+    _bgBackupTimer = null;
+  }
+  if (_bgBackupInFlight) {
+    _bgBackupTimer = setTimeout(() => requestImmediateBackup(reason), BG_BACKUP_DEBOUNCE_MS);
+    return;
+  }
+  _bgBackupInFlight = true;
+  const why = _bgBackupPendingReason ?? reason;
+  _bgBackupPendingReason = null;
+  syncBackupToServer()
+    .catch((e) => console.warn(`[MasterKey] immediate backup (${why}) failed:`, e))
+    .finally(() => { _bgBackupInFlight = false; });
 }
 
 /** Clear session state (on logout) */

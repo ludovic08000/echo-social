@@ -31,6 +31,12 @@ The Master Key itself is wrapped (encrypted) by two parallel mechanisms stored i
 1. Password-wrapped (automatic on login)
 2. Recovery-key-wrapped (manual fallback in settings)
 
+### iOS/WebView Cache Purge Recovery
+- The encrypted Master Key backup also includes a bounded recent plaintext/media-key cache (`plaintext:cache`) exported from the local encrypted plaintext store.
+- This mirrors Signal Secure Backups / WhatsApp encrypted backup behavior for recent readable history: after IndexedDB/WebView cache loss, restored keys plus the encrypted recent cache let the latest messages/media show immediately.
+- `requestImmediateBackup()` must be called after successful send and successful decrypt so ratchet state + recent cache are captured before iOS can purge storage.
+- On `forsure-keys-restored`, E2EE hooks must clear stale ratchet terminal failures and refs, re-init keys, then dispatch `forsure-decrypt-retry`.
+
 ### Strict Fingerprint Mode
 Fingerprint change BLOCKS sending (`ready=false`, `initError='fingerprint_changed'`), requires explicit user acknowledgement via `acknowledgeFingerprint()`
 
