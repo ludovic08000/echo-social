@@ -6,7 +6,7 @@
  * the body itself. This eliminates double-decryption of the same envelope.
  */
 
-import { useState, useEffect, memo, useRef } from 'react';
+import { useState, useEffect, memo, useMemo } from 'react';
 import { EncryptedMedia } from './EncryptedMedia';
 import { isVideoMediaLabel, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
@@ -40,11 +40,11 @@ export const MessageMedia = memo(function MessageMedia({
   // Try to extract a media key directly from the body — covers the case
   // where the message was inserted in compatibility mode (encrypt failed
   // upstream, body contains label + \x00MKEY:keyB64 in clear).
-  const inlineMedia = (() => {
+  const inlineMedia = useMemo(() => {
     const source = cachedPlaintext || body;
     if (!source) return null;
     return parseMediaMessage(source);
-  })();
+  }, [body, cachedPlaintext]);
 
   const [mediaKey, setMediaKey] = useState<string | null>(() => {
     if (messageId) {
@@ -86,6 +86,8 @@ export const MessageMedia = memo(function MessageMedia({
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     // Fast path — DecryptedMessageBody already resolved the media key.
     if (messageId) {
       const cached = getMediaKey(messageId);
@@ -123,10 +125,8 @@ export const MessageMedia = memo(function MessageMedia({
 
     if (!shouldAttemptDecrypt || !looksEncryptedMessage(body)) {
       setResolved(true);
-      return;
+      return () => { cancelled = true; };
     }
-
-    let cancelled = false;
 
     // Subscribe — DecryptedMessageBody pushes the key the moment it's ready.
     const unsubscribe = messageId
