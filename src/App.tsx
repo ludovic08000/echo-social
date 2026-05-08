@@ -339,6 +339,7 @@ function AppContent() {
             </Suspense>
             </RoutedErrorBoundary>
             <ChatWidget />
+            <E2EERestorePromptDialog />
             <CookieConsentBanner />
           </BrowserRouter>
         </TooltipProvider>
