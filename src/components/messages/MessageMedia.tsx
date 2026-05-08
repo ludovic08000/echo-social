@@ -6,7 +6,7 @@
  * the body itself. This eliminates double-decryption of the same envelope.
  */
 
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, memo, useRef } from 'react';
 import { EncryptedMedia } from './EncryptedMedia';
 import { isVideoMediaLabel, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
@@ -61,6 +61,24 @@ export const MessageMedia = memo(function MessageMedia({
     if (inlineMedia) return true;
     return false;
   });
+  const [retryTick, setRetryTick] = useState(0);
+
+  // Re-run resolution when keys are restored (e.g. after PIN unlock) — without
+  // this, a media that resolved as "no key" while locked would stay broken
+  // until a manual refresh.
+  useEffect(() => {
+    const handler = () => {
+      setMediaKey(null);
+      setResolved(false);
+      setRetryTick((t) => t + 1);
+    };
+    window.addEventListener('forsure-decrypt-retry', handler);
+    window.addEventListener('forsure-keys-unlocked', handler);
+    return () => {
+      window.removeEventListener('forsure-decrypt-retry', handler);
+      window.removeEventListener('forsure-keys-unlocked', handler);
+    };
+  }, []);
 
   useEffect(() => {
     // Fast path — DecryptedMessageBody already resolved the media key.
@@ -120,7 +138,7 @@ export const MessageMedia = memo(function MessageMedia({
     }, 1000);
 
     return () => { cancelled = true; unsubscribe(); clearTimeout(fallbackTimer); };
-  }, [body, decrypt, isEncryptionActive, messageId]);
+  }, [body, decrypt, isEncryptionActive, messageId, retryTick]);
 
   if (!resolved) return null;
 
