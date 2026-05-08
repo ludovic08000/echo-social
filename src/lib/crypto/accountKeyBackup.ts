@@ -24,6 +24,11 @@ import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
 import { secureGetSecret, secureSetSecret, secureRemoveSecret } from '@/lib/secureStore';
 import { getCurrentDeviceId, setCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import {
+  exportPlaintextCache,
+  importPlaintextCache,
+  type PlaintextCacheExportEntry,
+} from '@/lib/crypto/plaintextStore';
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
@@ -273,6 +278,14 @@ async function collectAllKeys(): Promise<string | null> {
 
   try {
     data['device:id'] = getCurrentDeviceId();
+  } catch {}
+
+  try {
+    // Signal/WhatsApp-style secure backup: keep a small decryptable history
+    // cache inside the encrypted Master-Key backup so the latest messages and
+    // media keys remain readable after iOS/WebView purges IndexedDB.
+    const plaintextCache = await exportPlaintextCache();
+    if (plaintextCache.length > 0) data['plaintext:cache'] = plaintextCache;
   } catch {}
 
   data['_meta'] = {
