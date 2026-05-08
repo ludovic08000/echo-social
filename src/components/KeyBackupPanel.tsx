@@ -323,6 +323,9 @@ export function KeyBackupPanel() {
               </div>
             )}
 
+            {/* L5 — WhatsApp-style 6-digit PIN backup */}
+            <BackupPinSection />
+
             {/* Info */}
             <div className="p-3 bg-primary/5 rounded-lg space-y-1">
               <p className="text-xs font-medium flex items-center gap-1">
