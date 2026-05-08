@@ -661,6 +661,12 @@ export function useChatPin() {
           window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
             detail: { status: 'pin_unlocked' },
           }));
+          // Force tous les composants (texte + médias) à re-tenter le déchiffrement
+          // après restauration des clés via PIN — sinon les médias restent en
+          // état "chiffré" jusqu'à un refresh manuel.
+          window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
+            detail: { reason: 'pin_unlocked' },
+          }));
         } catch (unwrapErr) {
           console.warn('[PIN] Key unwrap failed:', unwrapErr);
           setState(s => ({
