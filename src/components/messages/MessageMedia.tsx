@@ -6,11 +6,12 @@
  * the body itself. This eliminates double-decryption of the same envelope.
  */
 
-import { useState, useEffect, memo, useRef } from 'react';
+import { useState, useEffect, memo, useMemo } from 'react';
 import { EncryptedMedia } from './EncryptedMedia';
 import { isVideoMediaLabel, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { getMediaKey, subscribeMediaKey } from './mediaKeyCache';
+import { loadPlaintext } from '@/lib/crypto/plaintextStore';
 import type { DecryptResult } from '@/hooks/useE2EE';
 
 function looksEncryptedMessage(body: string): boolean {
@@ -24,6 +25,8 @@ interface MessageMediaProps {
   isEncryptionActive: boolean;
   /** Message id — enables sharing the decrypted media key across components */
   messageId?: string;
+  /** Plaintext already known by the parent, especially for our own just-sent media */
+  cachedPlaintext?: string;
 }
 
 export const MessageMedia = memo(function MessageMedia({
@@ -32,14 +35,16 @@ export const MessageMedia = memo(function MessageMedia({
   decrypt,
   isEncryptionActive,
   messageId,
+  cachedPlaintext,
 }: MessageMediaProps) {
   // Try to extract a media key directly from the body — covers the case
   // where the message was inserted in compatibility mode (encrypt failed
   // upstream, body contains label + \x00MKEY:keyB64 in clear).
-  const inlineMedia = (() => {
-    if (!body) return null;
-    return parseMediaMessage(body);
-  })();
+  const inlineMedia = useMemo(() => {
+    const source = cachedPlaintext || body;
+    if (!source) return null;
+    return parseMediaMessage(source);
+  }, [body, cachedPlaintext]);
 
   const [mediaKey, setMediaKey] = useState<string | null>(() => {
     if (messageId) {
@@ -81,6 +86,8 @@ export const MessageMedia = memo(function MessageMedia({
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     // Fast path — DecryptedMessageBody already resolved the media key.
     if (messageId) {
       const cached = getMediaKey(messageId);
@@ -92,7 +99,8 @@ export const MessageMedia = memo(function MessageMedia({
       }
     }
 
-    // Inline plaintext body containing MKEY (compatibility-send fallback).
+    // Inline/cached plaintext body containing MKEY (compatibility-send fallback
+    // and self-sent media: sender cannot decrypt their own outbound ratchet copy).
     if (inlineMedia) {
       setMediaKey(inlineMedia.keyB64);
       setIsVideo(isVideoMediaLabel(inlineMedia.label));
@@ -100,14 +108,25 @@ export const MessageMedia = memo(function MessageMedia({
       return;
     }
 
+    // Local persistent plaintext cache keyed by message id — populated right
+    // after send. This is the reliable path for our own outgoing encrypted media.
+    if (messageId) {
+      void loadPlaintext(messageId).then((plain) => {
+        if (cancelled || !plain) return;
+        const parsed = parseMediaMessage(plain);
+        if (!parsed) return;
+        setMediaKey(parsed.keyB64);
+        setIsVideo(isVideoMediaLabel(parsed.label));
+        setResolved(true);
+      });
+    }
+
     const shouldAttemptDecrypt = isEncryptionActive || looksEncryptedMessage(body);
 
     if (!shouldAttemptDecrypt || !looksEncryptedMessage(body)) {
       setResolved(true);
-      return;
+      return () => { cancelled = true; };
     }
-
-    let cancelled = false;
 
     // Subscribe — DecryptedMessageBody pushes the key the moment it's ready.
     const unsubscribe = messageId
@@ -138,7 +157,7 @@ export const MessageMedia = memo(function MessageMedia({
     }, 1000);
 
     return () => { cancelled = true; unsubscribe(); clearTimeout(fallbackTimer); };
-  }, [body, decrypt, isEncryptionActive, messageId, retryTick]);
+  }, [body, cachedPlaintext, decrypt, inlineMedia, isEncryptionActive, messageId, retryTick]);
 
   if (!resolved) return null;
 

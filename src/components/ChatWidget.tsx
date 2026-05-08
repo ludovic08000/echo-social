@@ -1302,6 +1302,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                               decrypt={e2ee.decrypt}
                               isEncryptionActive={e2ee.encrypted && !isZeusConversation}
                               messageId={msg.id}
+                              cachedPlaintext={decryptedCacheRef.current.get(msg.id)}
                             />
                           </button>
                         )}
@@ -1542,6 +1543,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               decrypt={e2ee.decrypt}
               isEncryptionActive={e2ee.encrypted && !isZeusConversation}
               messageId={lightboxMedia.messageId}
+              cachedPlaintext={lightboxMedia.messageId ? decryptedCacheRef.current.get(lightboxMedia.messageId) : undefined}
             />
           </div>
         </div>
