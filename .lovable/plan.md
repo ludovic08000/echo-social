@@ -1,109 +1,118 @@
-# Alignement E2EE sur Signal & WhatsApp (parité protocole)
+# L1 + L3 + L2 + L5 — Durcissement E2EE (parité Signal/WhatsApp)
 
-Objectif : amener le système au niveau **Signal Protocol** (X3DH + Double Ratchet + PQXDH + Sender Keys) et **WhatsApp Whitepaper v9** (multi-device, key transparency, E2E backup).
+Quatre chantiers crypto majeurs, livrés en séquence pour limiter le risque de régression sur la messagerie.
 
-Sources de vérité :
-- Signal X3DH : https://signal.org/docs/specifications/x3dh/
-- Signal Double Ratchet rev.4 (2025-11-04) : https://signal.org/docs/specifications/doubleratchet/
-- Signal PQXDH rev.3 : https://signal.org/docs/specifications/pqxdh/
-- WhatsApp Encryption Whitepaper v9 (2026-02-25)
-- WhatsApp Key Transparency v1
-- WhatsApp E2E Backup (HSM-backed)
+## L1 — Double Ratchet rev.4 conformité
 
-## État actuel (forces déjà en place)
+**Header Encryption (HE variant)**
+- Nouveau module `src/lib/crypto/headerEncryption.ts` : chiffre `{DH_pub, N, PN}` avec une `HK`/`NHK` dérivée de la root chain (HKDF info `"WhisperHeader"`).
+- Wire format v6 (`x3dh6.`) : `[encHeader || ciphertext || tag]`. Les pairs legacy v5 restent lus via le router existant.
+- `doubleRatchet.ts` : ajout `encryptHeader/decryptHeader`, fallback try-current-then-next-HK.
 
-- X3DH + Double Ratchet + PQXDH (mémoire `encryption-protocol`)
-- Sender Keys foundation (DB prête, opt-in, pas câblée — mémoire `sender-keys-foundation`)
-- DeviceWrap per-device KX (mémoire `devicewrap-per-device-kx`)
-- Backup chiffré + recovery key (mémoire `key-sync-backup`)
-- Safety numbers + QR (mémoire `safety-verification`)
-- Purge clés sur blur/idle, IDB hardening (mémoire `local-key-hardening`)
+**MAX_SKIP strict**
+- Constante `MAX_SKIP = 1000` dans `constants.ts` ; refus dur au-delà (throw `RatchetSkipOverflow`).
+- TTL 24 h sur les skipped keys (déjà partiel via A3) → purge au démarrage + cron client.
 
-## Écarts vs spec (à combler)
+**AAD audit**
+- Vérif que `AAD = AD || serializedHeader` partout (router legacy + nouveau). Tests vecteurs.
 
-### Bloc A — Conformité Double Ratchet rev.4
-1. **Header encryption (HE variant)** : section 4 de la spec — chiffrer les headers (DH pub, N, PN) avec une clé dérivée de la root. Empêche le serveur de corréler conversations. *(actuellement headers en clair)*
-2. **MAX_SKIP** strict + purge des skipped message keys après N messages / TTL (section 2.6). Vérifier que `MKSKIPPED` n'est pas illimité.
-3. **AEAD AAD = AD || header** correctement (section 3.4). Auditer le câblage AAD côté router legacy + nouveau router.
-4. **KDF chains** : confirmer HKDF-SHA256 avec les info-strings exacts ("WhisperRatchet", "WhisperMessageKeys") — interop Signal.
+**Tests**
+- `__tests__/headerEncryption.test.ts` : aller-retour HE, rotation NHK.
+- Property-based out-of-order jusqu'à 999 messages, rejet à 1001.
 
-### Bloc B — PQXDH durci
-5. **Last-resort PQ prekey** + signature Ed25519 sur la PQ-SPK (section 3.2 PQXDH). Vérifier qu'on republie une PQ-SPK non utilisée.
-6. **Replay protection** par enregistrement du `IK_A || EK_A || PQKEM` côté receveur pendant la fenêtre de validité (section 4.4).
+## L3 — PQXDH durci
 
-### Bloc C — Sender Keys (groupes) — CÂBLAGE
-7. Activer l'envoi via Sender Keys pour les conversations de groupe (>2 membres) — actuellement opt-in non câblé.
-8. **Distribution Message** chiffré pairwise via Double Ratchet à chaque membre (Whitepaper §"Group Messages").
-9. Rotation Sender Key sur chaque `member-leave` / `device-add` (forward secrecy groupe).
-10. Chain key ratchet symétrique par message (HMAC-SHA256), signature ECDSA-P256 par message — déjà en place, valider conformité bit-à-bit avec la PoC `WhatsUpp with Sender Keys` (eprint 2023/1385).
+**Last-resort PQ prekey**
+- Migration : colonne `is_last_resort boolean` sur `pqkem_prekeys` (déjà fait pour SPK classique → étendre).
+- `x3dh.ts` : si pool PQ vide, claim la last-resort sans la consommer.
+- Republication PQ-SPK signée Ed25519 (déjà signée → vérifier la signature côté receveur en strict mode).
 
-### Bloc D — Multi-device façon WhatsApp v9
-11. **Companion devices** : chaque device a sa propre identity, signée par l'identity du device principal (chain de signatures). Aujourd'hui DeviceWrap utilise per-device KX mais pas de chain de signatures.
-12. **Device list signing** : publier `{deviceId, identityPub, addedAt}[]` signé par le device principal → vérifié par les pairs lors de chaque session init.
-13. **App-state sync** chiffré (paramètres, contacts bloqués, étoilés) entre devices via une clé dérivée master-key.
+**Replay cache PQXDH**
+- Migration `pqxdh_replay_cache(user_id, init_hash, expires_at)` TTL 7j.
+- RPC `claim_pqxdh_initial(hash)` : INSERT-OR-FAIL → rejette les replays de bundle initial complet (`IK_A || EK_A || PQKEM_ct`).
 
-### Bloc E — Key Transparency (WhatsApp KT v1)
-14. Publier les bundles publics dans un **arbre Merkle append-only** signé périodiquement (auditable).
-15. Endpoint `/key-audit/:userId` retournant la preuve d'inclusion + l'historique des fingerprints.
-16. UI "Vérifier l'historique des clés" dans Sécurité du chat.
+## L2 — Sender Keys câblage groupes
 
-### Bloc F — Backup E2E façon WhatsApp (HSM-backed)
-17. Mode "Backup chiffré bout-en-bout" alternatif à la recovery key 64 hex : **PIN 6+ chiffres**, dérivation côté **HSM virtuel** (edge function avec rate-limit strict + lockout après 10 essais), 2^N essais max — Whitepaper E2E Backup §3.
-18. Stocker uniquement le `BackupKey` chiffré par une clé HSM ; le PIN n'est jamais exposé au serveur applicatif.
+**Pipeline d'envoi**
+- `secureMessagePipeline.ts` : si `conversation.kind === 'group'` ET `members.length > 2` ET tous les devices supportent SK → route via `senderKeySession.encrypt()` au lieu du fan-out pairwise.
+- Wire format `sk1.` (déjà défini).
 
-### Bloc G — Tests interop & vecteurs
-19. Ajouter vecteurs de test officiels Signal (libsignal test vectors) à `interopV4V5.test.ts`.
-20. Test cross-platform : message envoyé depuis device A (header-encrypted) → reçu par device B legacy → fallback gracieux.
-21. Property-based tests (fast-check) sur l'ordre out-of-order jusqu'à MAX_SKIP=1000.
+**Distribution Message (SKDM)**
+- À l'init de session ou rotation : envoie le `SenderKeyDistributionMessage` chiffré pairwise (Double Ratchet) à chaque membre via `multiDeviceFanout`.
+
+**Rotation auto**
+- Trigger sur events DB `conversation_members` (INSERT/DELETE) → realtime channel → `senderKeySession.rotate()` côté chaque membre owner.
+- Hook `useGroups` écoute et déclenche.
+
+**Decrypt**
+- `legacyDecryptRouter.ts` : route les `sk1.` vers `senderKeyInbound.decrypt()`.
+
+**Feature flag**
+- `localStorage['forsure-sk-groups'] = '1'` pour activer progressivement (default OFF semaine 1, ON semaine 2 après monitoring).
+
+## L5 — Backup PIN style WhatsApp E2E
+
+**UX onboarding**
+- Nouveau dialog `BackupPinSetupDialog` dans Réglages → Sécurité → "Sauvegarde par PIN".
+- Demande PIN 6 chiffres + confirmation. Avertissement : "Si oublié, messages perdus définitivement".
+
+**Edge function `e2e-backup-hsm`**
+- `POST /derive` : reçoit `{userId, pin, salt, attempt_id}`. Dérive `BackupKey = HKDF(PBKDF2(pin, salt, 600k))` côté serveur **sans stocker le PIN**.
+- Rate-limit : 10 tentatives par compte par 24 h. Lockout 24 h. Compteur stocké en DB (`backup_pin_attempts`).
+- Le serveur renvoie le `BackupKey` dérivé seulement si rate-limit OK. Le client l'utilise pour déchiffrer la `MasterKey` chiffrée déjà en backup.
+
+**Migration**
+- `backup_pin_state(user_id PK, salt bytea, pin_wrap_master bytea, attempts_count int, locked_until timestamptz, created_at, updated_at)`.
+- RLS : user lit/écrit la sienne uniquement.
+
+**Restoration flow**
+- Tab supplémentaire dans `E2EERestorePromptDialog` : "PIN" (à côté de Mot de passe / Clé de récupération).
+- Appelle `e2e-backup-hsm/derive`, affiche compteur essais restants.
 
 ## Détails techniques
 
-```text
+```
 src/lib/crypto/
-├── doubleRatchet.ts          → ajouter mode HE (header encryption)
-├── x3dh.ts                   → enforce last-resort PQ-SPK + replay cache
-├── senderKeys/
-│   ├── distribute.ts         → CÂBLER (aujourd'hui dormant)
-│   └── rotate.ts             → trigger sur member-change
-├── multiDevice/
-│   ├── deviceList.ts         → signed list + verify chain
-│   └── appStateSync.ts       → NEW
-├── keyTransparency/
-│   ├── merkle.ts             → NEW (append-only log client side)
-│   └── audit.ts              → NEW
-└── backup/
-    └── hsmBackup.ts          → NEW (PIN-based via edge fn)
+├── headerEncryption.ts       NEW (L1)
+├── constants.ts              MAX_SKIP=1000 (L1)
+├── doubleRatchet.ts          HE wiring (L1)
+├── x3dh.ts                   last-resort + replay (L3)
+├── x3dhReplayGuard.ts        étendu (L3)
+├── pinBackup.ts              NEW (L5)
+└── senderKeys/
+    └── pipelineRouter.ts     NEW (L2 — décide SK vs pairwise)
+
+src/lib/messaging/
+├── secureMessagePipeline.ts  branche SK (L2)
+└── multiDeviceFanout.ts      skip si SK actif (L2)
+
+src/components/messages/
+├── E2EERestorePromptDialog.tsx  +tab PIN (L5)
+└── BackupPinSetupDialog.tsx     NEW (L5)
 
 supabase/functions/
-├── key-transparency-publish/ → NEW (sign Merkle root quotidien)
-├── key-transparency-prove/   → NEW (preuve d'inclusion)
-└── e2e-backup-hsm/           → NEW (rate-limit 10 essais, dérivation côté serveur sans connaître le PIN clair)
+├── e2e-backup-hsm/index.ts   NEW (L5)
+└── kt-publish-epoch          (existant, pas touché)
 
-migrations/
-├── key_transparency_log (id, root_hash, signed_at, signature)
-├── user_device_signatures (device_id, parent_device_id, signature, added_at)
-└── pqxdh_replay_cache (user_id, hash, expires_at)
+migrations:
+- pqxdh_replay_cache (L3)
+- pqkem_prekeys.is_last_resort (L3)
+- backup_pin_state (L5)
 ```
 
-## Découpage en lots livrables
+## Découpage de livraison
 
-| Lot | Contenu | Risque |
-|-----|---------|--------|
-| **L1** | Bloc A (Double Ratchet rev.4 conformité + AAD audit + MAX_SKIP) | Faible — durcissement |
-| **L2** | Bloc C (Sender Keys câblage groupes) | Moyen — touche pipeline d'envoi |
-| **L3** | Bloc B (PQXDH last-resort + replay cache) | Faible |
-| **L4** | Bloc D (Multi-device signed list) | Moyen — nécessite migration |
-| **L5** | Bloc F (Backup HSM-style avec PIN) | Moyen — UX onboarding |
-| **L6** | Bloc E (Key Transparency Merkle) | Élevé — infra cron + UI audit |
-| **L7** | Bloc G (vecteurs interop officiels) | Faible — tests uniquement |
+1. **L1 d'abord** (zéro impact UX, durcissement pur). Vecteurs de test avant déploiement.
+2. **L3 ensuite** (faible risque, 1 migration + 1 RPC).
+3. **L2** (risque moyen — pipeline d'envoi). Feature flag obligatoire, rollout progressif.
+4. **L5 en dernier** (UX onboarding + edge function HSM). Optionnel pour l'utilisateur.
 
-## Recommandation
+Compatibilité legacy v5 préservée pendant toute la transition. Aucun message existant ne devient illisible.
 
-Commencer par **L1 + L3** (durcissement protocole pur, zéro impact UX) puis **L2** (Sender Keys déjà préparés en DB → ROI immédiat sur les groupes). Les lots L4-L6 demandent plus de travail UX/infra et méritent chacun leur propre validation.
+## Hors-scope
 
-## Hors-scope (à valider)
+- L4 (multi-device signed list) : déjà partiellement en place via mémoire `signed-device-list`.
+- L6 (Key Transparency Merkle) : déjà en place via mémoire `key-transparency-merkle`.
+- L7 (vecteurs interop officiels libsignal) : à faire dans un lot dédié plus tard.
 
-- Migration vers `libsignal-client` WASM officiel (Rust → WASM) : remplacerait notre implémentation maison. Décision stratégique : interop parfaite mais bundle +800 KB et perte du contrôle fin sur le purge mémoire.
-- MLS (RFC 9420) pour les groupes >256 membres — alternative aux Sender Keys.
-
-Confirme par quel lot commencer (recommandation : L1 + L3 ensemble), ou si tu veux que j'attaque tout en séquence.
+Confirme pour que j'attaque **L1** en premier (header encryption + MAX_SKIP), je livre, on teste, puis on enchaîne.

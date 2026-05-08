@@ -1099,3 +1099,180 @@ export async function clearKeySentinelForAccount(): Promise<void> {
   }
   await clearKeySentinel();
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// L5 — WhatsApp-style 6-digit PIN backup
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// The PIN never leaves the device. The server holds:
+//   * a random 32-byte salt
+//   * the Master Key wrapped by AES-GCM under PBKDF2(PIN, salt, 600k)
+// The server also tracks a hard rate-limit (10 attempts / 24 h) via
+// release_backup_pin_blob() so a stolen JWT cannot brute-force a 6-digit PIN.
+//
+// AAD binds the wrapped blob to (userId|backupType=pin|version) so a swapped
+// blob from a different user / backup type fails the AEAD tag check.
+
+const PIN_BACKUP_KDF_VERSION = 1;
+const PIN_BACKUP_TYPE = 'pin' as const;
+
+function pinSecret(pin: string, userId: string): string {
+  return `pin::forsure::${userId}::${pin}`;
+}
+
+function buildPinBackupAAD(userId: string, version: number): Uint8Array {
+  return new hardGlobals.TextEncoder().encode(`forsure-backup|${userId}|${PIN_BACKUP_TYPE}|v${version}`);
+}
+
+function isValidPin(pin: string): boolean {
+  return /^\d{6}$/.test(pin);
+}
+
+/**
+ * Setup or replace the 6-digit PIN backup for the current account.
+ * Requires the Master Key to be loaded in session (user is signed in
+ * and recently typed their password / unlocked via recovery key).
+ */
+export async function setupBackupPin(pin: string, userId: string): Promise<'ok' | 'no_master_key' | 'invalid_pin' | 'error'> {
+  if (!isValidPin(pin)) return 'invalid_pin';
+  if (!_sessionRawMasterKey) {
+    // Try to silently re-hydrate from snapshot on the rare path where we have
+    // local keys but lost the in-RAM raw bytes (e.g. tab restored).
+    return 'no_master_key';
+  }
+  try {
+    const salt = hardCrypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+    const kek = await deriveWrappingKey(pinSecret(pin, userId), salt);
+    const aad = buildPinBackupAAD(userId, PIN_BACKUP_KDF_VERSION);
+    const { wrapped, iv } = await wrapMasterKey(_sessionRawMasterKey, kek, aad);
+
+    // Pack iv + ct in a single base64 blob so the DB stores one column.
+    const packed = `${iv}.${wrapped}`;
+
+    const { error } = await supabase
+      .from('backup_pin_state' as any)
+      .upsert({
+        user_id: userId,
+        salt: bufferToBase64(salt.buffer),
+        pin_wrap_master: packed,
+        kdf_version: PIN_BACKUP_KDF_VERSION,
+        attempts_count: 0,
+        attempts_window_start: new Date().toISOString(),
+        locked_until: null,
+      } as any, { onConflict: 'user_id' });
+    if (error) {
+      logCryptoError({
+        severity: 'error', context: 'backup', errorCode: 'PIN_BACKUP_UPSERT_FAILED',
+        errorMessage: error.message, metadata: { userId },
+      });
+      return 'error';
+    }
+    logCryptoError({
+      severity: 'info', context: 'backup', errorCode: 'PIN_BACKUP_SETUP',
+      errorMessage: 'PIN backup wrapped and stored',
+      metadata: { userId },
+    });
+    return 'ok';
+  } catch (e) {
+    logCryptoException('backup', e, { severity: 'error', metadata: { stage: 'pin_backup_setup', userId } });
+    return 'error';
+  }
+}
+
+/** Returns true if this account has a 6-digit PIN backup configured. */
+export async function hasBackupPin(userId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc('has_backup_pin' as any, { _user_id: userId } as any);
+    if (error) return false;
+    return data === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Remove the PIN backup. */
+export async function deleteBackupPin(userId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('backup_pin_state' as any).delete().eq('user_id', userId);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export interface PinRestoreResult {
+  status: 'restored' | 'wrong_pin' | 'locked' | 'no_backup' | 'error';
+  attemptsRemaining?: number;
+  lockedUntil?: string | null;
+}
+
+/**
+ * Restore E2EE keys using the 6-digit PIN.
+ * Server gates the release with a hard rate-limit (10 / 24 h).
+ */
+export async function restoreWithBackupPin(pin: string, userId: string): Promise<PinRestoreResult> {
+  if (!isValidPin(pin)) return { status: 'wrong_pin' };
+  const t0 = performance.now();
+  try {
+    const { data, error } = await supabase.rpc('release_backup_pin_blob' as any, { _user_id: userId } as any);
+    if (error) {
+      logCryptoError({
+        severity: 'error', context: 'restore', errorCode: 'PIN_RESTORE_RPC_ERROR',
+        errorMessage: error.message, metadata: { userId },
+      });
+      return { status: 'error' };
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return { status: 'no_backup' };
+
+    if (!row.allowed) {
+      if (row.locked_until) {
+        return { status: 'locked', lockedUntil: row.locked_until };
+      }
+      return { status: 'no_backup' };
+    }
+
+    if (!row.salt || !row.pin_wrap_master) return { status: 'no_backup' };
+
+    const salt = new Uint8Array(base64ToBuffer(row.salt));
+    const kek = await deriveWrappingKey(pinSecret(pin, userId), salt);
+    const [iv, wrapped] = String(row.pin_wrap_master).split('.');
+    if (!iv || !wrapped) return { status: 'error' };
+
+    let masterKeyRaw: Uint8Array;
+    try {
+      const aad = buildPinBackupAAD(userId, row.kdf_version || PIN_BACKUP_KDF_VERSION);
+      masterKeyRaw = await unwrapMasterKey(wrapped, iv, kek, aad);
+    } catch {
+      // PIN was wrong → AES-GCM tag check failed.
+      logCryptoError({
+        severity: 'warning', context: 'restore', errorCode: 'PIN_RESTORE_WRONG_PIN',
+        errorMessage: 'PIN unwrap failed (wrong PIN)',
+        metadata: { userId, attemptsRemaining: row.attempts_remaining },
+      });
+      return { status: 'wrong_pin', attemptsRemaining: row.attempts_remaining };
+    }
+
+    // Hydrate session and re-use the in-memory restore path which downloads
+    // the full encrypted state blob (account backup) and rehydrates everything.
+    _sessionRawMasterKey = masterKeyRaw;
+    _sessionMasterKey = await importMasterKey(masterKeyRaw);
+    _sessionUserId = userId;
+
+    const result = await restoreFromInMemoryMasterKey(userId);
+    if (result === 'restored' || result === 'local_ok') {
+      // Reset the attempt counter on success.
+      try { await supabase.rpc('reset_backup_pin_attempts' as any, { _user_id: userId } as any); } catch {}
+      logCryptoError({
+        severity: 'info', context: 'restore', errorCode: 'PIN_RESTORE_SUCCESS',
+        errorMessage: 'E2EE keys restored via backup PIN',
+        metadata: { userId, durationMs: Math.round(performance.now() - t0) },
+      });
+      return { status: 'restored' };
+    }
+    return { status: 'error' };
+  } catch (e) {
+    logCryptoException('restore', e, { severity: 'error', metadata: { stage: 'pin_restore', userId } });
+    return { status: 'error' };
+  }
+}

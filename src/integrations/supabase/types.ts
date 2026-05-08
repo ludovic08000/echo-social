@@ -784,6 +784,42 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_pin_state: {
+        Row: {
+          attempts_count: number
+          attempts_window_start: string
+          created_at: string
+          kdf_version: number
+          locked_until: string | null
+          pin_wrap_master: string
+          salt: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempts_count?: number
+          attempts_window_start?: string
+          created_at?: string
+          kdf_version?: number
+          locked_until?: string | null
+          pin_wrap_master: string
+          salt: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempts_count?: number
+          attempts_window_start?: string
+          created_at?: string
+          kdf_version?: number
+          locked_until?: string | null
+          pin_wrap_master?: string
+          salt?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       banned_emails: {
         Row: {
           associated_user_id: string | null
@@ -6915,6 +6951,7 @@ export type Database = {
           spk_id: number
         }[]
       }
+      has_backup_pin: { Args: { _user_id?: string }; Returns: boolean }
       has_chat_pin: { Args: { p_user_id: string }; Returns: boolean }
       has_role: {
         Args: {
@@ -7111,6 +7148,17 @@ export type Database = {
         }
         Returns: undefined
       }
+      release_backup_pin_blob: {
+        Args: { _user_id: string }
+        Returns: {
+          allowed: boolean
+          attempts_remaining: number
+          kdf_version: number
+          locked_until: string
+          pin_wrap_master: string
+          salt: string
+        }[]
+      }
       request_device_copy_retry: {
         Args: {
           p_message_id: string
@@ -7118,6 +7166,10 @@ export type Database = {
           p_sender_user_id: string
         }
         Returns: string
+      }
+      reset_backup_pin_attempts: {
+        Args: { _user_id: string }
+        Returns: undefined
       }
       resolve_device_id_by_fingerprint: {
         Args: { p_fingerprint: string }
@@ -7130,6 +7182,19 @@ export type Database = {
       stripe_mark_event_processed: {
         Args: { p_event_id: string; p_event_type: string }
         Returns: boolean
+      }
+      try_consume_backup_pin_attempt: {
+        Args: {
+          _lockout_seconds?: number
+          _max_attempts?: number
+          _user_id: string
+          _window_seconds?: number
+        }
+        Returns: {
+          allowed: boolean
+          attempts_remaining: number
+          locked_until: string
+        }[]
       }
     }
     Enums: {
