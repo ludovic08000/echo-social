@@ -111,6 +111,16 @@ function hasRatchetTerminalFailure(conversationId: string | undefined, body: str
   return _ratchetTerminalFailures.has(`${conversationId}:${body}`);
 }
 
+function clearRatchetTerminalFailures(conversationId: string | undefined) {
+  if (!conversationId) {
+    _ratchetTerminalFailures.clear();
+    return;
+  }
+  for (const key of Array.from(_ratchetTerminalFailures)) {
+    if (key.startsWith(`${conversationId}:`)) _ratchetTerminalFailures.delete(key);
+  }
+}
+
 /** Dedup for own key publishing — prevents ChatView + ChatWidget from both publishing */
 let _ownKeyPublishPromise: Promise<void> | null = null;
 let _ownKeyPublishTs = 0;
