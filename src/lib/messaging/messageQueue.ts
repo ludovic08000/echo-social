@@ -442,6 +442,7 @@ class MessageQueueManager {
             withLocalId !== plaintext &&
             (
               withLocalId.startsWith('{') ||
+              withLocalId.startsWith('x3dh5.') ||
               withLocalId.startsWith('x3dh4.') ||
               withLocalId.startsWith('x3dh3.') ||
               withLocalId.startsWith('x3dh2.') ||
