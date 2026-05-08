@@ -450,6 +450,14 @@ async function restoreAllKeys(json: string): Promise<void> {
       });
     }
 
+    // Phase 6: recent decrypted history cache. This is already encrypted at
+    // rest by the Master Key backup, and re-imports into an IndexedDB cache
+    // protected by a fresh local AES key. It lets the app show the latest
+    // messages/media immediately after iOS clears WebView storage.
+    if (Array.isArray(data['plaintext:cache'])) {
+      await importPlaintextCache(data['plaintext:cache'] as PlaintextCacheExportEntry[]);
+    }
+
     console.log('[MasterKey] ✅ Atomic restore complete');
   } catch (error) {
     console.error('[MasterKey] Restore failed, rolling back...', error);
