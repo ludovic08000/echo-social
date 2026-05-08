@@ -157,7 +157,7 @@ export const MessageMedia = memo(function MessageMedia({
     }, 1000);
 
     return () => { cancelled = true; unsubscribe(); clearTimeout(fallbackTimer); };
-  }, [body, cachedPlaintext, decrypt, isEncryptionActive, messageId, retryTick]);
+  }, [body, cachedPlaintext, decrypt, inlineMedia, isEncryptionActive, messageId, retryTick]);
 
   if (!resolved) return null;
 
