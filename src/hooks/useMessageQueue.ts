@@ -176,6 +176,12 @@ export function useMessageQueue(
     if (!isSpecial) recordSentMessage(sanitized);
     if (data?.id) {
       onPlaintextCached?.(data.id, sanitized);
+      // Critical for iOS/Safari: after the server ACK, persist the newest
+      // ratchet state + sender plaintext/media key into the encrypted backup
+      // immediately so a WebView cache purge doesn't make recent messages blank.
+      void import('@/lib/crypto/accountKeyBackup')
+        .then(({ requestImmediateBackup }) => requestImmediateBackup('message-sent'))
+        .catch(() => {});
       await onMessageSent?.(localId);
     }
 
