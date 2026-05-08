@@ -3,12 +3,10 @@
  *
  * Inspired by Signal "Restore from backup" / WhatsApp "Encrypted backup" flow.
  *
- * When the local IndexedDB is wiped (browser cache cleared, iOS ITP purge,
- * "clear site data") but the Supabase auth session is still valid, the
- * server still holds the encrypted Master Key backup. We just need the user
- * to re-enter their password (or recovery key) so we can unwrap it.
- *
- * Without this prompt, the user would simply see "messages locked" forever.
+ * Three restoration paths:
+ *   1. Account password   (always available if a v5+ backup exists)
+ *   2. 64-hex recovery key (if generated from Settings → Security)
+ *   3. 6-digit backup PIN (L5 — WhatsApp-style, server-rate-limited 10/24h)
  *
  * Triggered by the `forsure:e2ee-restore-needed` window event.
  */
@@ -26,11 +24,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, KeyRound, Lock, ShieldCheck } from 'lucide-react';
+import { Loader2, KeyRound, Lock, ShieldCheck, Hash } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   initAccountKeySync,
   restoreWithRecoveryKey,
+  restoreWithBackupPin,
+  hasBackupPin,
   hasLocalKeys,
 } from '@/lib/crypto/accountKeyBackup';
 
@@ -40,29 +40,32 @@ export function E2EERestorePromptDialog() {
   const [busy, setBusy] = useState(false);
   const [password, setPassword] = useState('');
   const [recoveryKey, setRecoveryKey] = useState('');
-  const [tab, setTab] = useState<'password' | 'recovery'>('password');
+  const [pin, setPin] = useState('');
+  const [tab, setTab] = useState<'password' | 'recovery' | 'pin'>('password');
+  const [pinAvailable, setPinAvailable] = useState(false);
 
   useEffect(() => {
     const onNeeded = async (ev: Event) => {
       const detail = (ev as CustomEvent).detail || {};
-      // Last-chance: keys may have been restored silently in parallel.
       try {
         if (await hasLocalKeys()) return;
       } catch {}
       console.warn('[E2EERestore] prompting user to restore keys', detail);
+      // Probe whether a PIN backup exists so we show the tab.
+      if (user?.id) {
+        try { setPinAvailable(await hasBackupPin(user.id)); } catch { setPinAvailable(false); }
+      }
       setOpen(true);
     };
     window.addEventListener('forsure:e2ee-restore-needed', onNeeded as EventListener);
     return () => window.removeEventListener('forsure:e2ee-restore-needed', onNeeded as EventListener);
-  }, []);
+  }, [user?.id]);
 
-  // Auto-close if keys appear (e.g. another tab restored, or background sync succeeded)
   useEffect(() => {
     if (!open) return;
     const onRestored = () => {
       setOpen(false);
-      setPassword('');
-      setRecoveryKey('');
+      setPassword(''); setRecoveryKey(''); setPin('');
       toast.success('Messages déverrouillés');
     };
     window.addEventListener('forsure-keys-restored', onRestored);
@@ -71,9 +74,7 @@ export function E2EERestorePromptDialog() {
 
   const finish = (origin: string) => {
     setOpen(false);
-    setPassword('');
-    setRecoveryKey('');
-    // Re-trigger media/decrypt pipelines so already-rendered conversations refresh.
+    setPassword(''); setRecoveryKey(''); setPin('');
     window.dispatchEvent(new CustomEvent('forsure-keys-unlocked', { detail: { origin } }));
     window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail: { origin } }));
     window.dispatchEvent(new CustomEvent('forsure-keys-restored', { detail: { status: origin } }));
@@ -105,13 +106,36 @@ export function E2EERestorePromptDialog() {
     setBusy(true);
     try {
       const ok = await restoreWithRecoveryKey(recoveryKey.trim(), user.id);
-      if (ok) {
-        finish('recovery_restore');
-      } else {
-        toast.error('Clé de récupération invalide');
-      }
+      if (ok) finish('recovery_restore');
+      else toast.error('Clé de récupération invalide');
     } catch (e) {
       console.error('[E2EERestore] recovery restore failed', e);
+      toast.error('Échec de la restauration');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handlePin = async () => {
+    if (!user?.id || pin.length !== 6) return;
+    setBusy(true);
+    try {
+      const result = await restoreWithBackupPin(pin, user.id);
+      if (result.status === 'restored') {
+        finish('pin_restore');
+      } else if (result.status === 'wrong_pin') {
+        const remaining = typeof result.attemptsRemaining === 'number' ? result.attemptsRemaining : null;
+        toast.error(remaining !== null ? `Code PIN incorrect — ${remaining} essai(s) restant(s)` : 'Code PIN incorrect');
+      } else if (result.status === 'locked') {
+        const until = result.lockedUntil ? new Date(result.lockedUntil).toLocaleString('fr-FR') : '24 h';
+        toast.error(`Trop d'essais. Réessayez après le ${until}`);
+      } else if (result.status === 'no_backup') {
+        toast.error('Aucune sauvegarde par PIN trouvée');
+      } else {
+        toast.error('Échec de la restauration par PIN');
+      }
+    } catch (e) {
+      console.error('[E2EERestore] pin restore failed', e);
       toast.error('Échec de la restauration');
     } finally {
       setBusy(false);
@@ -133,19 +157,24 @@ export function E2EERestorePromptDialog() {
             </p>
             <p>
               Une sauvegarde chiffrée existe sur nos serveurs (style Signal / WhatsApp).
-              Saisissez votre mot de passe pour la déverrouiller.
+              Choisissez une méthode pour la déverrouiller.
             </p>
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as 'password' | 'recovery')}>
-          <TabsList className="grid grid-cols-2 w-full">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
+          <TabsList className={`grid w-full ${pinAvailable ? 'grid-cols-3' : 'grid-cols-2'}`}>
             <TabsTrigger value="password">
-              <Lock className="w-4 h-4 mr-2" /> Mot de passe
+              <Lock className="w-4 h-4 mr-1" /> Mot de passe
             </TabsTrigger>
             <TabsTrigger value="recovery">
-              <KeyRound className="w-4 h-4 mr-2" /> Clé de récupération
+              <KeyRound className="w-4 h-4 mr-1" /> Clé
             </TabsTrigger>
+            {pinAvailable && (
+              <TabsTrigger value="pin">
+                <Hash className="w-4 h-4 mr-1" /> PIN
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="password" className="space-y-3 pt-3">
@@ -186,6 +215,33 @@ export function E2EERestorePromptDialog() {
               Restaurer avec la clé
             </Button>
           </TabsContent>
+
+          {pinAvailable && (
+            <TabsContent value="pin" className="space-y-3 pt-3">
+              <Label htmlFor="restore-pin">Code PIN à 6 chiffres</Label>
+              <Input
+                id="restore-pin"
+                type="tel"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="••••••"
+                disabled={busy}
+                autoComplete="off"
+                className="text-center tracking-[0.5em] text-xl"
+                onKeyDown={(e) => { if (e.key === 'Enter' && pin.length === 6) handlePin(); }}
+              />
+              <p className="text-xs text-muted-foreground">
+                Limité à 10 essais par 24 h. Si vous l'oubliez, utilisez votre mot de passe ou la clé de récupération.
+              </p>
+              <Button onClick={handlePin} disabled={busy || pin.length !== 6} className="w-full">
+                {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                Déverrouiller avec le PIN
+              </Button>
+            </TabsContent>
+          )}
         </Tabs>
 
         <DialogFooter className="text-xs text-muted-foreground">
