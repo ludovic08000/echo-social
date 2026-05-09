@@ -223,10 +223,12 @@ function AccountKeySyncRunner() {
     if (!user?.id) return;
     void catchUpSenderKeyDistribution(user.id);
     const unsub = subscribeSenderKeyDistribution(user.id);
+    const unsubRotate = subscribeSenderKeyRotation(user.id);
     const onFocus = () => { void catchUpSenderKeyDistribution(user.id); };
     window.addEventListener('focus', onFocus);
     return () => {
       unsub();
+      unsubRotate();
       window.removeEventListener('focus', onFocus);
     };
   }, [user?.id]);
