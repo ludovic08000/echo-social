@@ -23,6 +23,7 @@ import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
 import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
 import { startRealtimeKeySync } from "@/lib/messaging/realtimeKeySync";
 import { catchUpSenderKeyDistribution, subscribeSenderKeyDistribution } from "@/lib/crypto/senderKeyInbound";
+import { subscribeSenderKeyRotation } from "@/lib/crypto/senderKeyRotationWatcher";
 import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
@@ -222,10 +223,12 @@ function AccountKeySyncRunner() {
     if (!user?.id) return;
     void catchUpSenderKeyDistribution(user.id);
     const unsub = subscribeSenderKeyDistribution(user.id);
+    const unsubRotate = subscribeSenderKeyRotation(user.id);
     const onFocus = () => { void catchUpSenderKeyDistribution(user.id); };
     window.addEventListener('focus', onFocus);
     return () => {
       unsub();
+      unsubRotate();
       window.removeEventListener('focus', onFocus);
     };
   }, [user?.id]);
