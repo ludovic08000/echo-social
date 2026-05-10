@@ -20,6 +20,6 @@ describe('recoveryManager', () => {
   it('catches thrown errors and returns them tagged', async () => {
     const res = await attemptRecovery('user-1', { source: 'recovery_key', key: 'invalid' });
     expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.source).toBe('recovery_key');
+    if (res.ok === false) expect(res.source).toBe('recovery_key');
   });
 });
