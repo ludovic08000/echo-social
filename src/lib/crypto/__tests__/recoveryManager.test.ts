@@ -5,7 +5,7 @@ describe('recoveryManager', () => {
   it('returns a tagged failure when PIN backup is unavailable', async () => {
     const res = await attemptRecovery('user-1', { source: 'pin', pin: '000000' });
     expect(res.ok).toBe(false);
-    if (!res.ok) {
+    if (res.ok === false) {
       expect(res.source).toBe('pin');
       expect(typeof res.reason).toBe('string');
     }
