@@ -3,16 +3,7 @@
  *
  * Owns ONE `useE2EE(conversationId, peerUserId)` instance per subtree and
  * exposes it via React context. Four facade hooks let consumers pick only
- * the slice they need, without ever creating duplicate ratchet instances:
- *
- *   - useE2EEBoot()         → boot / readiness state (mode, ready, error, fingerprint)
- *   - useE2EEEncrypt()      → encrypt + acknowledgeSentPayload
- *   - useE2EEDecrypt()      → decrypt
- *   - useE2EERatchetState() → isReady() + acknowledgeFingerprint + raw state
- *
- * Direct `useE2EE(...)` callers continue to work unchanged. This provider is
- * only required when a component tree needs to share the same instance across
- * several facade hooks.
+ * the slice they need, without ever creating duplicate ratchet instances.
  */
 
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
@@ -30,15 +21,15 @@ export interface E2EEProviderProps {
 
 export function E2EEProvider({ conversationId, peerUserId, children }: E2EEProviderProps) {
   const value = useE2EE(conversationId, peerUserId);
-  // Stable identity for context consumers (value already memoized internally
-  // through useCallback/useState; we just forward it).
   const ctx = useMemo(() => value, [
     value.ready,
-    value.mode,
-    value.error,
     value.fingerprint,
+    value.peerFingerprint,
+    value.encrypted,
+    value.ratchetActive,
     value.fingerprintChanged,
-    value.previousFingerprint,
+    value.peerKeyMissing,
+    value.initError,
     value.encrypt,
     value.decrypt,
     value.isReady,
@@ -60,16 +51,21 @@ function useE2EEContextOrThrow(hookName: string): E2EEContextValue {
 }
 
 /** Boot / readiness slice — what UI needs to show "secure" badges & errors. */
-export function useE2EEBoot(): Pick<E2EEState, 'ready' | 'mode' | 'error' | 'fingerprint' | 'fingerprintChanged' | 'previousFingerprint'> {
-  const { ready, mode, error, fingerprint, fingerprintChanged, previousFingerprint } =
-    useE2EEContextOrThrow('useE2EEBoot');
-  return { ready, mode, error, fingerprint, fingerprintChanged, previousFingerprint };
+export function useE2EEBoot(): Pick<
+  E2EEState,
+  'ready' | 'encrypted' | 'ratchetActive' | 'initError' | 'fingerprint' | 'peerFingerprint' | 'fingerprintChanged' | 'peerKeyMissing'
+> {
+  const {
+    ready, encrypted, ratchetActive, initError,
+    fingerprint, peerFingerprint, fingerprintChanged, peerKeyMissing,
+  } = useE2EEContextOrThrow('useE2EEBoot');
+  return { ready, encrypted, ratchetActive, initError, fingerprint, peerFingerprint, fingerprintChanged, peerKeyMissing };
 }
 
 /** Outbound: encrypt + ack-sent. */
 export function useE2EEEncrypt() {
-  const { encrypt, acknowledgeSentPayload, ready, mode } = useE2EEContextOrThrow('useE2EEEncrypt');
-  return { encrypt, acknowledgeSentPayload, ready, mode };
+  const { encrypt, acknowledgeSentPayload, ready, ratchetActive } = useE2EEContextOrThrow('useE2EEEncrypt');
+  return { encrypt, acknowledgeSentPayload, ready, ratchetActive };
 }
 
 /** Inbound: decrypt only. */
