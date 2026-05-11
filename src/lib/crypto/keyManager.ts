@@ -241,7 +241,7 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
     importKeyFromJWK(stored.signingPrivateKeyJWK, SIG_KEY_PARAMS as any, ['sign'], false),
   ]);
 
-  return {
+  const result: IdentityKeyPair = {
     publicKey,
     privateKey,
     signingPublicKey,
@@ -250,6 +250,15 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
     fingerprint: stored.fingerprint,
     ...(({ _privJWK: stored.privateKeyJWK, _sigPrivJWK: stored.signingPrivateKeyJWK }) as any),
   };
+
+  try {
+    memCache.set(userId, {
+      identityPrivate: result.privateKey,
+      identityPublic: result.publicKey,
+    });
+  } catch {}
+
+  return result;
 }
 
 async function createFreshIdentity(userId: string, reason: string): Promise<IdentityKeyPair & { isNewIdentity?: boolean; recoveredAfterLoss?: boolean }> {
