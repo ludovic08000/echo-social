@@ -1907,7 +1907,7 @@ Deno.serve(async (req) => {
     }
 
     // Rate limit per domain
-    const limitMap: Record<string, number> = { content: 20, post: 15, moderation: 30, ads: 10, seller: 10, photo: 5, agent: 20, admin: 30, "post-moderation": 30 };
+    const limitMap: Record<string, number> = { content: 20, post: 15, moderation: 30, ads: 10, seller: 10, photo: 5, agent: 20, admin: 30, "post-moderation": 30, "comment-moderation": 60 };
     if (!checkRateLimit(`${user.id}:${domain}`, limitMap[domain] || 15)) {
       return new Response(JSON.stringify({ error: "Trop de requêtes, réessayez." }), { status: 429, headers: { ...cors, "Content-Type": "application/json" } });
     }
