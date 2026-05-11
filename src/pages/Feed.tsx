@@ -155,7 +155,7 @@ export default function Feed() {
           fetchNextPage();
         }
       },
-      { rootMargin: '400px' }
+      { rootMargin: '1200px' }
     );
     observer.observe(el);
     return () => observer.disconnect();
