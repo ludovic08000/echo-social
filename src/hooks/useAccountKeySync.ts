@@ -76,7 +76,11 @@ export function useAccountKeySync() {
     if (!user) return;
     let cancelled = false;
 
-    void (async () => {
+    // Single-flight guard: concurrent mounts share the same boot promise,
+    // and `identity_creating` is hard-locked to once-per-session by the
+    // CryptoStateMachine — eliminates the IndexedDB-empty → recreate loop.
+    void withEnsureLock(user.id, async () => {
+      try { transition(user.id, 'storage_checking', 'useAccountKeySync.boot'); } catch {}
       try {
         const [{ hasWrappedKeys }, { hasRawIdentityKeys }] = await Promise.all([
           import('@/lib/crypto/pinWrap'),
