@@ -63,8 +63,9 @@ export function useComments(postId: string) {
       });
 
       const enriched: Comment[] = data.map(comment => {
-        const profile = profileMap.get(comment.user_id);
+        const profile = comment.user_id ? profileMap.get(comment.user_id) : null;
         const userReaction = userReactionMap.get(comment.id) || null;
+        const isZeus = (comment as any).is_zeus_reply === true;
         return {
           id: comment.id,
           user_id: comment.user_id,
@@ -72,9 +73,10 @@ export function useComments(postId: string) {
           body: comment.body,
           created_at: comment.created_at,
           parent_id: comment.parent_id,
+          is_zeus_reply: isZeus,
           profile: {
-            name: profile?.name || 'Unknown',
-            avatar_url: profile?.avatar_url || null,
+            name: isZeus ? 'Zeus' : (profile?.name || 'Unknown'),
+            avatar_url: isZeus ? null : (profile?.avatar_url || null),
           },
           likes_count: likesCountMap.get(comment.id) || 0,
           is_liked: !!userReaction,
