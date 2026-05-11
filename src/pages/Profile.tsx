@@ -728,10 +728,10 @@ export default function Profile() {
             <div className="flex flex-wrap gap-2 mt-6 justify-center w-full max-w-md">
               {isOwnProfile ? (
                 <>
-                  <Link to="/settings" className="flex-1 min-w-[140px]">
-                    <Button className="w-full rounded-2xl h-11 text-sm font-semibold bg-foreground text-background hover:bg-foreground/90">
-                      <Edit2 className="w-4 h-4 mr-2" />
-                      Modifier
+                  <Link to="/messages" className="flex-1 min-w-[140px]">
+                    <Button className="w-full rounded-2xl h-11 text-sm font-semibold bg-[#002395] text-white hover:bg-[#002395]/90">
+                      <MessageCircle className="w-4 h-4 mr-2" />
+                      Messages
                     </Button>
                   </Link>
                   {!isCreator && (
