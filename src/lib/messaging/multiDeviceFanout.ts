@@ -447,7 +447,9 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
 
   if (!rows.length) return { inserted: 0, multiDevice: true };
 
-  const { error } = await supabase.from('message_device_copies').insert(rows as any);
+  const { error } = await supabase
+    .from('message_device_copies')
+    .upsert(rows as any, { onConflict: 'message_id,recipient_device_id', ignoreDuplicates: true });
   if (error) {
     logCryptoError({
       severity: 'error',

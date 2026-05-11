@@ -217,6 +217,16 @@ function AccountKeySyncRunner() {
     return () => stop();
   }, [user?.id]);
 
+  // Auto-backfill: re-emit per-device copies for recent messages this device
+  // sent before multi-device fan-out was wired (or while the recipient device
+  // was still bootstrapping its prekey bundle). Idempotent + debounced 5min.
+  useEffect(() => {
+    if (!user?.id) return;
+    void import('@/lib/messaging/backfillMissingCopies').then(({ scheduleBackfillMissingDeviceCopies }) => {
+      scheduleBackfillMissingDeviceCopies(user.id);
+    });
+  }, [user?.id]);
+
   // Sender Keys inbound: catch up undelivered SKDMs at boot, then subscribe
   // to realtime inserts so opted-in conversations install the chain on the fly.
   useEffect(() => {
