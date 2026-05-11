@@ -10,6 +10,7 @@
  */
 
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
+import { runTxOn, reqToPromise } from './indexedDbTx';
 
 const PIN_WRAP_STORE = 'pin-wrapped-keys';
 const PBKDF2_ITERATIONS = 600_000;
@@ -44,26 +45,6 @@ async function deriveWrappingKey(pin: string, salt: Uint8Array): Promise<CryptoK
     false,
     ['encrypt', 'decrypt'],
   );
-}
-
-/** Open/create the PIN wrap IndexedDB store (shared with useChatPin) */
-function openPinDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    // Bump in lockstep with useChatPin.ts (PIN_WRAP_VERSION = 2)
-    const req = hardGlobals.idbOpen('forsure-pin-wrap', 2);
-    req.onerror = () => reject(req.error);
-    req.onsuccess = () => resolve(req.result);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(PIN_WRAP_STORE)) {
-        db.createObjectStore(PIN_WRAP_STORE, { keyPath: 'id' });
-      }
-      // Keep legacy useChatPin store so coexistence works during upgrade
-      if (!db.objectStoreNames.contains('wrapped-keys')) {
-        db.createObjectStore('wrapped-keys', { keyPath: 'id' });
-      }
-    };
-  });
 }
 
 /**
