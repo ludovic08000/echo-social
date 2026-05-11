@@ -10,6 +10,7 @@ import {
 import { isIndexedDBClosingError, openE2EEDB, reopenE2EEDB } from './indexedDb';
 import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, base64ToBuffer } from './utils';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
+import * as memCache from './memoryIdentityCache';
 
 export interface IdentityKeyPair {
   publicKey: CryptoKey;
