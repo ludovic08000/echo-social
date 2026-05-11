@@ -29,8 +29,8 @@ interface QueueEntry {
 const queues = new Map<string, QueueEntry[]>();
 const running = new Set<string>();
 
-function queueKey(stores: string[]): string {
-  return [...stores].sort().join('|');
+function queueKey(dbKey: DBKey, stores: string[]): string {
+  return dbKey + '::' + [...stores].sort().join('|');
 }
 
 function enqueue<T>(stores: string[], run: () => Promise<T>): Promise<T> {
