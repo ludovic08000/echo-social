@@ -1912,19 +1912,36 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Trop de requêtes, réessayez." }), { status: 429, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
-    switch (domain) {
-      case "content": return await handleContent(LOVABLE_API_KEY, body, cors);
-      case "post": return await handlePostAssistant(LOVABLE_API_KEY, body, cors);
-      case "moderation": return await handleModeration(LOVABLE_API_KEY, body, user.id, supabase, cors);
-      case "post-moderation": return await handlePostModeration(LOVABLE_API_KEY, body, user.id, supabase, cors);
-      case "comment-moderation": return await handleCommentModeration(LOVABLE_API_KEY, body, user.id, supabase, cors);
-      case "ads": return await handleAds(LOVABLE_API_KEY, body, cors);
-      case "seller": return await handleSeller(LOVABLE_API_KEY, body, user.id, supabase, cors);
-      case "photo": return await handlePhotoGuard(LOVABLE_API_KEY, body, user.id, supabase, cors);
-      case "agent": return await handleAgentChat(LOVABLE_API_KEY, body, user.id, supabase, cors);
-      case "admin": return await handleAdmin(LOVABLE_API_KEY, body, user.id, supabase, cors);
-      default:
-        return new Response(JSON.stringify({ error: `Unknown domain: ${domain}` }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    const __startedAt = performance.now();
+    const __moduleId = zeusModuleId(domain, action);
+    let __resp: Response;
+    let __success = false;
+    try {
+      switch (domain) {
+        case "content": __resp = await handleContent(LOVABLE_API_KEY, body, cors); break;
+        case "post": __resp = await handlePostAssistant(LOVABLE_API_KEY, body, cors); break;
+        case "moderation": __resp = await handleModeration(LOVABLE_API_KEY, body, user.id, supabase, cors); break;
+        case "post-moderation": __resp = await handlePostModeration(LOVABLE_API_KEY, body, user.id, supabase, cors); break;
+        case "comment-moderation": __resp = await handleCommentModeration(LOVABLE_API_KEY, body, user.id, supabase, cors); break;
+        case "ads": __resp = await handleAds(LOVABLE_API_KEY, body, cors); break;
+        case "seller": __resp = await handleSeller(LOVABLE_API_KEY, body, user.id, supabase, cors); break;
+        case "photo": __resp = await handlePhotoGuard(LOVABLE_API_KEY, body, user.id, supabase, cors); break;
+        case "agent": __resp = await handleAgentChat(LOVABLE_API_KEY, body, user.id, supabase, cors); break;
+        case "admin": __resp = await handleAdmin(LOVABLE_API_KEY, body, user.id, supabase, cors); break;
+        default:
+          __resp = new Response(JSON.stringify({ error: `Unknown domain: ${domain}` }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+      }
+      __success = __resp.status >= 200 && __resp.status < 400;
+      return __resp;
+    } finally {
+      logAIEvent(supabase, {
+        module_id: __moduleId,
+        source: "zeus",
+        action: `${domain}.${action ?? ""}`,
+        user_id: user.id,
+        latency_ms: performance.now() - __startedAt,
+        success: __success,
+      });
     }
   } catch (err) {
     console.error("⚡ Zeus error:", err);
