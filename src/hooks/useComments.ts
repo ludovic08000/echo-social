@@ -30,7 +30,7 @@ export function useComments(postId: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('comments')
-        .select('id, user_id, post_id, body, created_at, parent_id')
+        .select('id, user_id, post_id, body, created_at, parent_id, is_zeus_reply')
         .eq('post_id', postId)
         .order('created_at', { ascending: true })
         .limit(100);
