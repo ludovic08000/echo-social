@@ -77,7 +77,7 @@ const NAV_GROUPS = [
   },
 ];
 
-type AdminSection = 'dashboard' | 'health' | 'stats' | 'monitoring' | 'users' | 'posts' | 'reports' | 'verifications' | 'archives' | 'subscriptions' | 'feed_intelligence' | 'ml_feed' | 'ai' | 'zeus' | 'security_ai' | 'security' | 'crypto_errors' | 'audit_logs' | 'settings';
+type AdminSection = 'dashboard' | 'health' | 'stats' | 'monitoring' | 'users' | 'posts' | 'reports' | 'comment_alerts' | 'verifications' | 'archives' | 'subscriptions' | 'feed_intelligence' | 'ml_feed' | 'ai' | 'zeus' | 'security_ai' | 'security' | 'crypto_errors' | 'audit_logs' | 'settings';
 
 export default function Admin() {
   const [section, setSection] = useState<AdminSection>('dashboard');
