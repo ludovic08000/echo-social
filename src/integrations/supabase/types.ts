@@ -1125,30 +1125,106 @@ export type Database = {
           },
         ]
       }
+      comment_moderation_alerts: {
+        Row: {
+          ai_reasoning: string | null
+          category: string
+          comment_id: string | null
+          created_at: string
+          evidence_text: string
+          id: string
+          post_id: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          severity: string
+          status: string
+          strike_count: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_reasoning?: string | null
+          category: string
+          comment_id?: string | null
+          created_at?: string
+          evidence_text: string
+          id?: string
+          post_id?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          severity?: string
+          status?: string
+          strike_count?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_reasoning?: string | null
+          category?: string
+          comment_id?: string | null
+          created_at?: string
+          evidence_text?: string
+          id?: string
+          post_id?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          severity?: string
+          status?: string
+          strike_count?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comment_moderation_alerts_comment_id_fkey"
+            columns: ["comment_id"]
+            isOneToOne: false
+            referencedRelation: "comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comment_moderation_alerts_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "feed_posts_enriched"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comment_moderation_alerts_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       comments: {
         Row: {
           body: string
           created_at: string
           id: string
+          is_zeus_reply: boolean
           parent_id: string | null
           post_id: string
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           body: string
           created_at?: string
           id?: string
+          is_zeus_reply?: boolean
           parent_id?: string | null
           post_id: string
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           body?: string
           created_at?: string
           id?: string
+          is_zeus_reply?: boolean
           parent_id?: string | null
           post_id?: string
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
