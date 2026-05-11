@@ -378,7 +378,23 @@ export default function Profile() {
       };
     },
     enabled: !!userId,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
+
+  // Realtime: invalider les stats à chaque changement
+  useEffect(() => {
+    if (!userId) return;
+    const invalidate = () => queryClient.invalidateQueries({ queryKey: ['profile-stats', userId] });
+    const channel = supabase
+      .channel(`profile-stats-${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts', filter: `user_id=eq.${userId}` }, invalidate)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'friendships', filter: `requester_id=eq.${userId}` }, invalidate)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'friendships', filter: `addressee_id=eq.${userId}` }, invalidate)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, invalidate)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [userId, queryClient]);
 
   const { data: mutualFriends } = useQuery({
     queryKey: ['mutual-friends', userId],
