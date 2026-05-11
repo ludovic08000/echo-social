@@ -220,6 +220,14 @@ export async function saveIdentityKeys(userId: string, keys: IdentityKeyPair): P
     createdAt: keys.createdAt,
     fingerprint: keys.fingerprint,
   });
+
+  // Hot RAM cache — survives brief IndexedDB outages on Safari/iOS.
+  try {
+    memCache.set(userId, {
+      identityPrivate: keys.privateKey,
+      identityPublic: keys.publicKey,
+    });
+  } catch {}
 }
 
 export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair | null> {
