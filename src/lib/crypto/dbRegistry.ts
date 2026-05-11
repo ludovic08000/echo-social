@@ -21,6 +21,7 @@ export type DBKey =
   | 'ratchet'                // forsure-ratchet
   | 'device-sessions'        // forsure-device-sessions
   | 'spk'                    // forsure-spk
+  | 'prekeys'                // forsure-prekeys (legacy backup-only)
   | 'x3dh-replay'            // forsure-x3dh-replay
   | 'skipped-wrap'           // forsure-crypto-skipped-wrap
   | 'pin-wrap'               // forsure-pin-wrap
@@ -52,6 +53,11 @@ const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
     name: 'forsure-spk',
     version: 2,
     stores: [{ name: 'signed-prekeys', keyPath: 'id' }],
+  },
+  prekeys: {
+    name: 'forsure-prekeys',
+    version: 1,
+    stores: [{ name: 'private-prekeys', keyPath: 'id' }],
   },
   'x3dh-replay': {
     name: 'forsure-x3dh-replay',
