@@ -21,6 +21,7 @@ export type DBKey =
   | 'ratchet'                // forsure-ratchet
   | 'device-sessions'        // forsure-device-sessions
   | 'spk'                    // forsure-spk
+  | 'prekeys'                // forsure-prekeys (legacy backup-only)
   | 'x3dh-replay'            // forsure-x3dh-replay
   | 'skipped-wrap'           // forsure-crypto-skipped-wrap
   | 'pin-wrap'               // forsure-pin-wrap
