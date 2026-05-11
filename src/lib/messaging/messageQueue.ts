@@ -108,8 +108,6 @@ interface HandlerEntry {
   registeredAt: number;
 }
 
-const DB_NAME = 'forsure-msg-queue';
-const DB_VERSION = 1;
 const STORE_NAME = 'outbound';
 const MAX_RETRIES = 10;
 const BASE_RETRY_MS = 2000;
