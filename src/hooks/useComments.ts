@@ -6,11 +6,12 @@ import { ReactionType } from '@/hooks/useReactions';
 
 export interface Comment {
   id: string;
-  user_id: string;
+  user_id: string | null;
   post_id: string;
   body: string;
   created_at: string;
   parent_id: string | null;
+  is_zeus_reply?: boolean;
   profile: {
     name: string;
     avatar_url: string | null;
