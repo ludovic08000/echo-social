@@ -56,10 +56,11 @@ export default function Friends() {
     navigate(`/messages/${conv.id}`);
   };
 
+  // Amitiés mutuelles : tous les amis acceptés sont à la fois followers et abonnements
   const allFriends = data?.friends || [];
-  const followersList = allFriends.filter(f => f.addressee_id === user?.id); // ils m'ont ajouté
-  const followingList = allFriends.filter(f => f.requester_id === user?.id); // je les ai ajoutés
-  const sourceList = friendSubTab === 'followers' ? followersList : friendSubTab === 'following' ? followingList : allFriends;
+  const followersList = allFriends;
+  const followingList = allFriends;
+  const sourceList = allFriends;
   const filteredFriends = sourceList.filter(f =>
     f.profile.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
