@@ -210,20 +210,13 @@ function recreateLegacyE2EEDatabase(): Promise<void> {
 async function saveRatchetLocal(convId: string, state: RatchetState, x3dhHeader?: X3DHInitialMessage | null) {
   try {
     const json = await serializeRatchetState(state);
-    const db = await openRatchetDB();
-    const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
     const record: any = { convId, data: json };
-    // Persist X3DH header alongside ratchet state (Signal: attach PreKey header until first peer response)
     if (x3dhHeader !== undefined) {
       record.x3dhHeader = x3dhHeader ? hardGlobals.jsonStringify(x3dhHeader) : null;
     }
-    tx.objectStore(RATCHET_STORE_NAME).put(record);
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
+      tx.objectStore(RATCHET_STORE_NAME).put(record);
     });
-    // Reactive backup: ensure the new ratchet state lands on the server quickly
-    // so iOS can recover history even after an IndexedDB purge.
     try {
       const { requestBackgroundBackup } = await import('@/lib/crypto/accountKeyBackup');
       requestBackgroundBackup('ratchet-save');
@@ -235,13 +228,9 @@ async function saveRatchetLocal(convId: string, state: RatchetState, x3dhHeader?
 
 async function loadRatchetLocal(convId: string): Promise<{ state: RatchetState; x3dhHeader: X3DHInitialMessage | null } | null> {
   try {
-    const db = await openRatchetDB();
-    const tx = db.transaction(RATCHET_STORE_NAME, 'readonly');
-    const req = tx.objectStore(RATCHET_STORE_NAME).get(convId);
-    const result = await new Promise<any>((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const result = await runTxOn('ratchet', [RATCHET_STORE_NAME], 'readonly', (tx) =>
+      reqToPromise<any>(tx.objectStore(RATCHET_STORE_NAME).get(convId)),
+    );
     if (!result?.data) return null;
     const state = await deserializeRatchetState(result.data);
     const x3dhHeader = result.x3dhHeader ? hardGlobals.jsonParse(result.x3dhHeader) as X3DHInitialMessage : null;
@@ -253,12 +242,8 @@ async function loadRatchetLocal(convId: string): Promise<{ state: RatchetState; 
 
 async function deleteRatchetLocal(convId: string): Promise<void> {
   try {
-    const db = await openRatchetDB();
-    const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
-    tx.objectStore(RATCHET_STORE_NAME).delete(convId);
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
+      tx.objectStore(RATCHET_STORE_NAME).delete(convId);
     });
     console.info(`[E2EE] 🧹 Ratchet local purgé pour conv ${convId}`);
   } catch (e) {
