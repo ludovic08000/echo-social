@@ -56,9 +56,13 @@ export default function Friends() {
     navigate(`/messages/${conv.id}`);
   };
 
-  const filteredFriends = data?.friends.filter(f =>
+  const allFriends = data?.friends || [];
+  const followersList = allFriends.filter(f => f.addressee_id === user?.id); // ils m'ont ajouté
+  const followingList = allFriends.filter(f => f.requester_id === user?.id); // je les ai ajoutés
+  const sourceList = friendSubTab === 'followers' ? followersList : friendSubTab === 'following' ? followingList : allFriends;
+  const filteredFriends = sourceList.filter(f =>
     f.profile.name.toLowerCase().includes(searchQuery.toLowerCase())
-  ) || [];
+  );
 
   const requestCount = data?.requests.length || 0;
 
