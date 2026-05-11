@@ -5,36 +5,21 @@
  * silently fails, the same `(IKa, EKa, spkId, opkId)` tuple cannot be
  * processed twice by the responder.
  *
- * Storage: dedicated IndexedDB store, TTL 7 days (matches SPK lifetime).
+ * Storage: dedicated IndexedDB store via dbRegistry, TTL 7 days.
  * Cost: 1 SHA-256 + 1 IDB get/put per inbound X3DH message.
  */
 
-import { hardCrypto, hardGlobals } from './cryptoIntegrity';
+import { hardCrypto } from './cryptoIntegrity';
 import { encodeString } from './utils';
 import { supabase } from '@/integrations/supabase/client';
+import { runTxOn, reqToPromise } from './indexedDbTx';
 
-const DB_NAME = 'forsure-x3dh-replay';
-const DB_VERSION = 1;
 const STORE = 'consumed-initials';
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface ReplayRecord {
   id: string;
   consumedAt: number;
-}
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = hardGlobals.idbOpen(DB_NAME, DB_VERSION);
-    req.onerror = () => reject(req.error);
-    req.onsuccess = () => resolve(req.result);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        db.createObjectStore(STORE, { keyPath: 'id' });
-      }
-    };
-  });
 }
 
 async function fingerprint(
@@ -66,9 +51,6 @@ export async function assertNotReplayedAndRecord(params: {
   const id = await fingerprint(params.myUserId, params.ik, params.ek, params.spkId, params.opkId);
 
   // ─── Server-side ledger first (authoritative, defeats local IDB wipe) ───
-  // Signal X3DH §4.6 + WhatsApp Whitepaper §"Initial Sessions" — server MUST also
-  // refuse to deliver a duplicate initial bundle. Best-effort: if RPC fails for
-  // network reasons we still fall back to the local guard below.
   try {
     const { data: claimed, error } = await supabase.rpc('claim_x3dh_initial', {
       p_fingerprint: id,
@@ -87,25 +69,15 @@ export async function assertNotReplayedAndRecord(params: {
     console.warn('[X3DH][REPLAY][SERVER] ledger unavailable — local guard only', err?.message ?? err);
   }
 
-  let db: IDBDatabase;
+  let existing: ReplayRecord | undefined;
   try {
-    db = await openDB();
+    existing = await runTxOn('x3dh-replay', [STORE], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore(STORE).get(id) as IDBRequest<ReplayRecord | undefined>),
+    );
   } catch {
-    // IndexedDB unavailable (private mode, quota issue): server ledger above is
-    // the source of truth; if it also failed we fail-open with a warn.
     console.warn('[X3DH][REPLAY] IDB unavailable — server ledger is the only line of defense');
     return;
   }
-
-  // (id already computed above — reuse it)
-
-  // Check existing
-  const existing = await new Promise<ReplayRecord | undefined>((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readonly');
-    const req = tx.objectStore(STORE).get(id);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
 
   if (existing) {
     const ageMs = Date.now() - existing.consumedAt;
@@ -117,38 +89,34 @@ export async function assertNotReplayedAndRecord(params: {
       });
       throw new Error('X3DH_REPLAY_DETECTED');
     }
-    // expired record → fall through and overwrite
   }
 
-  // Record + opportunistic GC
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
+  await runTxOn('x3dh-replay', [STORE], 'readwrite', (tx) => {
     tx.objectStore(STORE).put({ id, consumedAt: Date.now() } as ReplayRecord);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
   });
 
   // Best-effort GC (sample 1/10 to keep cost low)
   if (Math.random() < 0.1) {
     try {
-      const tx = db.transaction(STORE, 'readwrite');
-      const store = tx.objectStore(STORE);
-      const cursorReq = store.openCursor();
-      const cutoff = Date.now() - TTL_MS;
-      let purged = 0;
-      cursorReq.onsuccess = () => {
-        const cursor = cursorReq.result;
-        if (!cursor) {
-          if (purged > 0) console.log(`[X3DH][REPLAY][GC] purged ${purged} expired entries`);
-          return;
-        }
-        const rec = cursor.value as ReplayRecord;
-        if (rec.consumedAt < cutoff) {
-          cursor.delete();
-          purged++;
-        }
-        cursor.continue();
-      };
+      await runTxOn('x3dh-replay', [STORE], 'readwrite', (tx) => {
+        const store = tx.objectStore(STORE);
+        const cursorReq = store.openCursor();
+        const cutoff = Date.now() - TTL_MS;
+        let purged = 0;
+        cursorReq.onsuccess = () => {
+          const cursor = cursorReq.result;
+          if (!cursor) {
+            if (purged > 0) console.log(`[X3DH][REPLAY][GC] purged ${purged} expired entries`);
+            return;
+          }
+          const rec = cursor.value as ReplayRecord;
+          if (rec.consumedAt < cutoff) {
+            cursor.delete();
+            purged++;
+          }
+          cursor.continue();
+        };
+      });
     } catch { /* non-fatal */ }
   }
 }

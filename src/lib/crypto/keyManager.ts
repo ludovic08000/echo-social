@@ -11,6 +11,7 @@ import { isIndexedDBClosingError, openE2EEDB, reopenE2EEDB } from './indexedDb';
 import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, base64ToBuffer } from './utils';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import * as memCache from './memoryIdentityCache';
+import { runTxOn, reqToPromise } from './indexedDbTx';
 
 export interface IdentityKeyPair {
   publicKey: CryptoKey;
@@ -445,23 +446,9 @@ export async function wipeSessionKeys(userId?: string): Promise<void> {
   } catch {}
 
   try {
-    const ratchetReq = hardGlobals.idbOpen('forsure-ratchet', 1);
-    const ratchetDB = await new Promise<IDBDatabase>((resolve, reject) => {
-      ratchetReq.onerror = () => reject(ratchetReq.error);
-      ratchetReq.onsuccess = () => resolve(ratchetReq.result);
-      ratchetReq.onupgradeneeded = () => {
-        const db = ratchetReq.result;
-        if (!db.objectStoreNames.contains('ratchet-states')) db.createObjectStore('ratchet-states', { keyPath: 'convId' });
-      };
-    });
-    if (ratchetDB.objectStoreNames.contains('ratchet-states')) {
-      const tx = ratchetDB.transaction('ratchet-states', 'readwrite');
+    await runTxOn('ratchet', ['ratchet-states'], 'readwrite', (tx) => {
       tx.objectStore('ratchet-states').clear();
-      await new Promise<void>((resolve, reject) => {
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-    }
+    });
   } catch {}
 }
 
@@ -493,22 +480,9 @@ export async function importAllSessionKeys(records: StoredSessionKey[]): Promise
 
 export async function exportAllRatchetStates(): Promise<any[]> {
   try {
-    const ratchetReq = hardGlobals.idbOpen('forsure-ratchet', 1);
-    const ratchetDB = await new Promise<IDBDatabase>((resolve, reject) => {
-      ratchetReq.onerror = () => reject(ratchetReq.error);
-      ratchetReq.onsuccess = () => resolve(ratchetReq.result);
-      ratchetReq.onupgradeneeded = () => {
-        const db = ratchetReq.result;
-        if (!db.objectStoreNames.contains('ratchet-states')) db.createObjectStore('ratchet-states', { keyPath: 'convId' });
-      };
-    });
-    if (!ratchetDB.objectStoreNames.contains('ratchet-states')) return [];
-    const tx = ratchetDB.transaction('ratchet-states', 'readonly');
-    const req = tx.objectStore('ratchet-states').getAll();
-    return new Promise((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
+    return await runTxOn('ratchet', ['ratchet-states'], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore('ratchet-states').getAll() as IDBRequest<any[]>),
+    ) ?? [];
   } catch {
     return [];
   }
@@ -517,21 +491,10 @@ export async function exportAllRatchetStates(): Promise<any[]> {
 export async function importAllRatchetStates(records: any[]): Promise<void> {
   if (!records.length) return;
   try {
-    const ratchetReq = hardGlobals.idbOpen('forsure-ratchet', 1);
-    const ratchetDB = await new Promise<IDBDatabase>((resolve, reject) => {
-      ratchetReq.onerror = () => reject(ratchetReq.error);
-      ratchetReq.onsuccess = () => resolve(ratchetReq.result);
-      ratchetReq.onupgradeneeded = () => {
-        const db = ratchetReq.result;
-        if (!db.objectStoreNames.contains('ratchet-states')) db.createObjectStore('ratchet-states', { keyPath: 'convId' });
-      };
-    });
-    const tx = ratchetDB.transaction('ratchet-states', 'readwrite');
-    const store = tx.objectStore('ratchet-states');
-    for (const r of records) store.put(r);
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('ratchet', ['ratchet-states'], 'readwrite', (tx) => {
+      const store = tx.objectStore('ratchet-states');
+      for (const r of records) store.put(r);
     });
   } catch {}
 }
+

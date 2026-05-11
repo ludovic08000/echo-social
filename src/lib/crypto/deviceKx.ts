@@ -19,9 +19,9 @@
  */
 
 import { KX_KEY_PARAMS, STORE_KEYS } from './constants';
-import { openE2EEDB } from './indexedDb';
 import { exportKeyToJWK, importKeyFromJWK, bufferToBase64 } from './utils';
 import { hardCrypto } from './cryptoIntegrity';
+import { runTx, reqToPromise } from './indexedDbTx';
 
 export interface DeviceKxKey {
   publicKey: CryptoKey;
@@ -61,30 +61,21 @@ async function publicKeyToBase64(publicKey: CryptoKey): Promise<string> {
 }
 
 function dbGet<T>(key: string): Promise<T | undefined> {
-  return openE2EEDB().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_KEYS, 'readonly');
-    const req = tx.objectStore(STORE_KEYS).get(key);
-    req.onsuccess = () => resolve(req.result as T | undefined);
-    req.onerror = () => reject(req.error);
-  }));
+  return runTx([STORE_KEYS], 'readonly', (tx) =>
+    reqToPromise(tx.objectStore(STORE_KEYS).get(key) as IDBRequest<T | undefined>),
+  );
 }
 
 function dbPut<T>(value: T): Promise<void> {
-  return openE2EEDB().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_KEYS, 'readwrite');
-    const req = tx.objectStore(STORE_KEYS).put(value);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  }));
+  return runTx([STORE_KEYS], 'readwrite', (tx) => {
+    tx.objectStore(STORE_KEYS).put(value as unknown as IDBValidKey | object);
+  });
 }
 
 function dbDelete(key: string): Promise<void> {
-  return openE2EEDB().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_KEYS, 'readwrite');
-    const req = tx.objectStore(STORE_KEYS).delete(key);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  }));
+  return runTx([STORE_KEYS], 'readwrite', (tx) => {
+    tx.objectStore(STORE_KEYS).delete(key);
+  });
 }
 
 /**

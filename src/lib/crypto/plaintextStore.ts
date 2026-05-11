@@ -1,20 +1,15 @@
 /**
  * Persistent plaintext cache for messages — hardened IndexedDB version.
  *
- * This file is intentionally defensive: Chrome/Vite hot reload, browser tab
- * suspension, and IndexedDB version changes can close a database connection
- * while async React code is still trying to read it. In that case we reset the
- * cached connection and return a safe null/empty result instead of spamming the
- * console or crashing the UI.
+ * Migrated to dbRegistry + runTxOn for Safari-safe singleton + queue.
  */
 
-const DB_NAME = 'forsure-plaintext-cache';
-const DB_VERSION = 1;
+import { runTxOn, reqToPromise } from './indexedDbTx';
+
 const STORE_MESSAGES = 'messages';
 const STORE_KEYS = 'device-keys';
 const DEVICE_KEY_ID = 'plaintext-cache-key-v1';
 
-let dbPromise: Promise<IDBDatabase> | null = null;
 let cachedDeviceKey: CryptoKey | null = null;
 let cachedKeyPromise: Promise<CryptoKey> | null = null;
 let lastIndexedDbWarningAt = 0;
@@ -31,13 +26,6 @@ interface StoredEntry {
   ts: number;
 }
 
-function isIDBClosedError(error: unknown): boolean {
-  return (
-    error instanceof DOMException &&
-    (error.name === 'InvalidStateError' || error.name === 'TransactionInactiveError')
-  ) || String(error).includes('database connection is closing');
-}
-
 function warnOnce(message: string, error?: unknown) {
   const now = Date.now();
   if (now - lastIndexedDbWarningAt < 5000) return;
@@ -45,98 +33,14 @@ function warnOnce(message: string, error?: unknown) {
   console.warn(message, error);
 }
 
-function resetDBConnection() {
-  dbPromise = null;
-  cachedKeyPromise = null;
-}
-
-function openDB(): Promise<IDBDatabase> {
-  if (dbPromise) return dbPromise;
-
-  dbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE_MESSAGES)) {
-        db.createObjectStore(STORE_MESSAGES, { keyPath: 'id' });
-      }
-      if (!db.objectStoreNames.contains(STORE_KEYS)) {
-        db.createObjectStore(STORE_KEYS, { keyPath: 'id' });
-      }
-    };
-
-    req.onsuccess = () => {
-      const db = req.result;
-      db.onversionchange = () => {
-        db.close();
-        resetDBConnection();
-      };
-      db.onclose = () => resetDBConnection();
-      db.onerror = () => resetDBConnection();
-      resolve(db);
-    };
-
-    req.onerror = () => {
-      resetDBConnection();
-      reject(req.error);
-    };
-
-    req.onblocked = () => {
-      resetDBConnection();
-      reject(new Error('IndexedDB open blocked'));
-    };
-  });
-
-  return dbPromise;
-}
-
-async function withStore<T>(
-  storeName: string | string[],
-  mode: IDBTransactionMode,
-  fn: (tx: IDBTransaction) => Promise<T> | T,
-  fallback: T,
-): Promise<T> {
-  try {
-    const db = await openDB();
-    const tx = db.transaction(storeName, mode);
-    return await fn(tx);
-  } catch (error) {
-    if (isIDBClosedError(error)) {
-      resetDBConnection();
-      warnOnce('[plaintextStore] IndexedDB connection was closing; operation skipped safely', error);
-      return fallback;
-    }
-    throw error;
-  }
-}
-
-function txDone(tx: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
-  });
-}
-
-function reqResult<T>(req: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
 async function getOrCreateDeviceKey(): Promise<CryptoKey> {
   if (cachedDeviceKey) return cachedDeviceKey;
   if (cachedKeyPromise) return cachedKeyPromise;
 
   cachedKeyPromise = (async () => {
-    const existing = await withStore<{ id: string; key: CryptoKey } | undefined>(
-      STORE_KEYS,
-      'readonly',
-      async (tx) => reqResult(tx.objectStore(STORE_KEYS).get(DEVICE_KEY_ID)),
-      undefined,
-    );
+    const existing = await runTxOn('plaintext-cache', [STORE_KEYS], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore(STORE_KEYS).get(DEVICE_KEY_ID) as IDBRequest<{ id: string; key: CryptoKey } | undefined>),
+    ).catch(() => undefined);
 
     if (existing?.key) {
       cachedDeviceKey = existing.key;
@@ -149,15 +53,9 @@ async function getOrCreateDeviceKey(): Promise<CryptoKey> {
       ['encrypt', 'decrypt'],
     );
 
-    await withStore<void>(
-      STORE_KEYS,
-      'readwrite',
-      async (tx) => {
-        tx.objectStore(STORE_KEYS).put({ id: DEVICE_KEY_ID, key });
-        await txDone(tx);
-      },
-      undefined,
-    );
+    await runTxOn('plaintext-cache', [STORE_KEYS], 'readwrite', (tx) => {
+      tx.objectStore(STORE_KEYS).put({ id: DEVICE_KEY_ID, key });
+    }).catch((e) => warnOnce('[plaintextStore] device key persist failed', e));
 
     cachedDeviceKey = key;
     return key;
@@ -233,26 +131,17 @@ async function saveEntry(id: string, plaintext: string): Promise<void> {
     new TextEncoder().encode(plaintext),
   );
 
-  await withStore<void>(
-    STORE_MESSAGES,
-    'readwrite',
-    async (tx) => {
-      tx.objectStore(STORE_MESSAGES).put({ id, iv: iv.buffer, ct, ts: Date.now() } satisfies StoredEntry);
-      await txDone(tx);
-    },
-    undefined,
-  );
+  await runTxOn('plaintext-cache', [STORE_MESSAGES], 'readwrite', (tx) => {
+    tx.objectStore(STORE_MESSAGES).put({ id, iv: iv.buffer, ct, ts: Date.now() } satisfies StoredEntry);
+  });
 }
 
 async function loadEntry(id: string): Promise<string | null> {
   if (!id) return null;
 
-  const entry = await withStore<StoredEntry | undefined>(
-    STORE_MESSAGES,
-    'readonly',
-    async (tx) => reqResult(tx.objectStore(STORE_MESSAGES).get(id)),
-    undefined,
-  );
+  const entry = await runTxOn('plaintext-cache', [STORE_MESSAGES], 'readonly', (tx) =>
+    reqToPromise(tx.objectStore(STORE_MESSAGES).get(id) as IDBRequest<StoredEntry | undefined>),
+  ).catch(() => undefined);
 
   if (!entry) return null;
 
@@ -260,23 +149,15 @@ async function loadEntry(id: string): Promise<string | null> {
     const key = await getOrCreateDeviceKey();
     const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: entry.iv }, key, entry.ct);
     return new TextDecoder().decode(pt);
-  } catch (error) {
-    if (isIDBClosedError(error)) {
-      resetDBConnection();
-      return null;
-    }
-    // Cache entry may belong to a stale local key. Ignore safely.
+  } catch {
     return null;
   }
 }
 
 export async function exportPlaintextCache(): Promise<PlaintextCacheExportEntry[]> {
   try {
-    const entries = await withStore<StoredEntry[]>(
-      STORE_MESSAGES,
-      'readonly',
-      async (tx) => reqResult(tx.objectStore(STORE_MESSAGES).getAll() as IDBRequest<StoredEntry[]>),
-      [],
+    const entries = await runTxOn('plaintext-cache', [STORE_MESSAGES], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore(STORE_MESSAGES).getAll() as IDBRequest<StoredEntry[]>),
     );
 
     const exported: PlaintextCacheExportEntry[] = [];
@@ -309,7 +190,6 @@ export async function savePlaintext(messageId: string, plaintext: string): Promi
   try {
     await saveEntry(messageId, plaintext);
   } catch (error) {
-    if (isIDBClosedError(error)) resetDBConnection();
     warnOnce('[plaintextStore] savePlaintext skipped safely', error);
   }
 }
@@ -321,7 +201,6 @@ export async function savePlaintextForCiphertext(ciphertextBody: string, plainte
     mirrorSet(id, plaintext);
     await saveEntry(id, plaintext);
   } catch (error) {
-    if (isIDBClosedError(error)) resetDBConnection();
     warnOnce('[plaintextStore] savePlaintextForCiphertext skipped safely', error);
   }
 }
@@ -333,7 +212,6 @@ export async function loadPlaintext(messageId: string): Promise<string | null> {
   try {
     return await loadEntry(messageId);
   } catch (error) {
-    if (isIDBClosedError(error)) resetDBConnection();
     warnOnce('[plaintextStore] loadPlaintext skipped safely', error);
     return null;
   }
@@ -347,7 +225,6 @@ export async function loadPlaintextForCiphertext(ciphertextBody: string): Promis
     if (mirror !== null) return mirror;
     return await loadEntry(id);
   } catch (error) {
-    if (isIDBClosedError(error)) resetDBConnection();
     warnOnce('[plaintextStore] loadPlaintextForCiphertext skipped safely', error);
     return null;
   }
@@ -361,17 +238,10 @@ export async function removePlaintext(messageId: string): Promise<void> {
       writeSessionMirror(map);
     }
 
-    await withStore<void>(
-      STORE_MESSAGES,
-      'readwrite',
-      async (tx) => {
-        tx.objectStore(STORE_MESSAGES).delete(messageId);
-        await txDone(tx);
-      },
-      undefined,
-    );
+    await runTxOn('plaintext-cache', [STORE_MESSAGES], 'readwrite', (tx) => {
+      tx.objectStore(STORE_MESSAGES).delete(messageId);
+    });
   } catch (error) {
-    if (isIDBClosedError(error)) resetDBConnection();
     warnOnce('[plaintextStore] removePlaintext skipped safely', error);
   }
 }
@@ -382,20 +252,13 @@ export async function wipePlaintextStore(): Promise<void> {
   } catch {}
 
   try {
-    await withStore<void>(
-      [STORE_MESSAGES, STORE_KEYS],
-      'readwrite',
-      async (tx) => {
-        tx.objectStore(STORE_MESSAGES).clear();
-        tx.objectStore(STORE_KEYS).clear();
-        await txDone(tx);
-      },
-      undefined,
-    );
+    await runTxOn('plaintext-cache', [STORE_MESSAGES, STORE_KEYS], 'readwrite', (tx) => {
+      tx.objectStore(STORE_MESSAGES).clear();
+      tx.objectStore(STORE_KEYS).clear();
+    });
     cachedDeviceKey = null;
     cachedKeyPromise = null;
   } catch (error) {
-    if (isIDBClosedError(error)) resetDBConnection();
     warnOnce('[plaintextStore] wipe skipped safely', error);
   }
 }

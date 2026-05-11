@@ -19,16 +19,13 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
-import { openE2EEDB } from '@/lib/crypto/indexedDb';
+import { runTx, runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
+import { STORE_KEYS as IDENTITY_STORE } from '@/lib/crypto/constants';
 
 export type PinMode = 'every_open' | 'once_per_session' | 'on_inactivity' | 'on_return';
 
 const SESSION_KEY = 'forsure-pin-unlocked';
-const PIN_WRAP_DB = 'forsure-pin-wrap';
-// CRITICAL: Bumped to v2 to add the unified store. v1 used a single store
-// "wrapped-keys" which was incompatible with pinWrap.ts ("pin-wrapped-keys").
-// We keep BOTH stores in v2 so we can migrate legacy blobs lazily.
-const PIN_WRAP_VERSION = 2;
+// PIN wrap DB metadata is owned by dbRegistry now (key 'pin-wrap', version 2).
 const PIN_WRAP_STORE = 'pin-wrapped-keys';   // unified store (matches pinWrap.ts)
 const PIN_WRAP_LEGACY_STORE = 'wrapped-keys'; // read-only fallback for migration
 const PBKDF2_ITERATIONS = 600_000;
@@ -53,48 +50,20 @@ export interface ChatPinState {
 
 // ─── IndexedDB for wrapped keys ───
 
-function openPinDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(PIN_WRAP_DB, PIN_WRAP_VERSION);
-    req.onerror = () => reject(req.error);
-    req.onsuccess = () => resolve(req.result);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      // Unified store (matches pinWrap.ts)
-      if (!db.objectStoreNames.contains(PIN_WRAP_STORE)) {
-        db.createObjectStore(PIN_WRAP_STORE, { keyPath: 'id' });
-      }
-      // Legacy store kept for one-shot migration (do NOT drop yet — older
-      // builds may still write here during the upgrade window).
-      if (!db.objectStoreNames.contains(PIN_WRAP_LEGACY_STORE)) {
-        db.createObjectStore(PIN_WRAP_LEGACY_STORE, { keyPath: 'id' });
-      }
-    };
-  });
-}
-
 async function saveWrappedKeys(userId: string, data: {
   wrappedBlob: string;
   iv: string;
   salt: string;
 }) {
-  const db = await openPinDB();
-  const tx = db.transaction(PIN_WRAP_STORE, 'readwrite');
-  // Persist using BOTH the useChatPin schema and the pinWrap.ts schema
-  // so any reader (KeyBackupPanel, accountKeyBackup, resyncE2EE) can decode it.
-  tx.objectStore(PIN_WRAP_STORE).put({
-    id: userId,
-    // useChatPin shape
-    wrappedBlob: data.wrappedBlob,
-    iv: data.iv,
-    salt: data.salt,
-    // pinWrap.ts compatibility shape
-    ciphertext: data.wrappedBlob,
-    version: 1,
-  });
-  return new Promise<void>((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+  await runTxOn('pin-wrap', [PIN_WRAP_STORE], 'readwrite', (tx) => {
+    tx.objectStore(PIN_WRAP_STORE).put({
+      id: userId,
+      wrappedBlob: data.wrappedBlob,
+      iv: data.iv,
+      salt: data.salt,
+      ciphertext: data.wrappedBlob,
+      version: 1,
+    });
   });
 }
 
@@ -126,52 +95,38 @@ async function loadWrappedKeys(userId: string): Promise<{
   salt: string;
 } | null> {
   try {
-    const db = await openPinDB();
-
     // 1) Try unified store first
-    const fromUnified = await new Promise<any>((resolve, reject) => {
-      const tx = db.transaction(PIN_WRAP_STORE, 'readonly');
-      const req = tx.objectStore(PIN_WRAP_STORE).get(userId);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const fromUnified = await runTxOn('pin-wrap', [PIN_WRAP_STORE], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore(PIN_WRAP_STORE).get(userId)),
+    ).catch(() => null);
 
     if (fromUnified) {
-      // Accept either useChatPin shape or pinWrap.ts shape
-      const wrappedBlob = fromUnified.wrappedBlob ?? fromUnified.ciphertext;
-      if (wrappedBlob && fromUnified.iv && fromUnified.salt) {
-        return { wrappedBlob, iv: fromUnified.iv, salt: fromUnified.salt };
+      const wrappedBlob = (fromUnified as any).wrappedBlob ?? (fromUnified as any).ciphertext;
+      if (wrappedBlob && (fromUnified as any).iv && (fromUnified as any).salt) {
+        return { wrappedBlob, iv: (fromUnified as any).iv, salt: (fromUnified as any).salt };
       }
     }
 
     // 2) Legacy fallback — migrate to unified store on the fly
-    const fromLegacy = await new Promise<any>((resolve, reject) => {
-      try {
-        const tx = db.transaction(PIN_WRAP_LEGACY_STORE, 'readonly');
-        const req = tx.objectStore(PIN_WRAP_LEGACY_STORE).get(userId);
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      } catch (e) {
-        resolve(null);
-      }
-    }).catch(() => null);
+    const fromLegacy = await runTxOn('pin-wrap', [PIN_WRAP_LEGACY_STORE], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore(PIN_WRAP_LEGACY_STORE).get(userId)),
+    ).catch(() => null);
 
-    if (fromLegacy?.wrappedBlob && fromLegacy.iv && fromLegacy.salt) {
+    if (fromLegacy && (fromLegacy as any).wrappedBlob && (fromLegacy as any).iv && (fromLegacy as any).salt) {
       console.warn('[PIN] migrating legacy wrapped-keys → pin-wrapped-keys');
+      const legacy = fromLegacy as any;
       await saveWrappedKeys(userId, {
-        wrappedBlob: fromLegacy.wrappedBlob,
-        iv: fromLegacy.iv,
-        salt: fromLegacy.salt,
+        wrappedBlob: legacy.wrappedBlob,
+        iv: legacy.iv,
+        salt: legacy.salt,
       });
-      // Best-effort cleanup of legacy entry
-      try {
-        const tx = db.transaction(PIN_WRAP_LEGACY_STORE, 'readwrite');
+      await runTxOn('pin-wrap', [PIN_WRAP_LEGACY_STORE], 'readwrite', (tx) => {
         tx.objectStore(PIN_WRAP_LEGACY_STORE).delete(userId);
-      } catch {}
+      }).catch(() => {});
       return {
-        wrappedBlob: fromLegacy.wrappedBlob,
-        iv: fromLegacy.iv,
-        salt: fromLegacy.salt,
+        wrappedBlob: legacy.wrappedBlob,
+        iv: legacy.iv,
+        salt: legacy.salt,
       };
     }
 
@@ -237,14 +192,9 @@ async function hashPinLegacy(pin: string, salt: Uint8Array): Promise<string> {
 
 async function readRawIdentityBlob(userId: string): Promise<string | null> {
   try {
-    const db = await openE2EEDB();
-    if (!db.objectStoreNames.contains('identity-keys')) return null;
-    const tx = db.transaction('identity-keys', 'readonly');
-    const req = tx.objectStore('identity-keys').get(userId);
-    const result = await new Promise<any>((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const result = await runTx([IDENTITY_STORE], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore(IDENTITY_STORE).get(userId)),
+    );
     if (!result) return null;
     return JSON.stringify(result);
   } catch {
@@ -346,25 +296,16 @@ async function restoreAllCryptoBlob(userId: string, blob: string): Promise<void>
 
 async function writeRawIdentityBlob(userId: string, blob: string): Promise<void> {
   const parsed = JSON.parse(blob);
-  const db = await openE2EEDB();
-  const tx = db.transaction('identity-keys', 'readwrite');
-  tx.objectStore('identity-keys').put(parsed);
-  return new Promise<void>((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+  await runTx([IDENTITY_STORE], 'readwrite', (tx) => {
+    tx.objectStore(IDENTITY_STORE).put(parsed);
   });
 }
 
 /** Delete raw identity keys from IndexedDB (after PIN wrap) */
 async function deleteRawIdentityBlob(userId: string): Promise<void> {
   try {
-    const db = await openE2EEDB();
-    if (!db.objectStoreNames.contains('identity-keys')) return;
-    const tx = db.transaction('identity-keys', 'readwrite');
-    tx.objectStore('identity-keys').delete(userId);
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTx([IDENTITY_STORE], 'readwrite', (tx) => {
+      tx.objectStore(IDENTITY_STORE).delete(userId);
     });
   } catch {
     // DB may not exist yet
