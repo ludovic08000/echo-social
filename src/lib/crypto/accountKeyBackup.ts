@@ -254,27 +254,19 @@ async function collectAllKeys(): Promise<string | null> {
   } catch {}
 
   try {
-    const db = await openDB('forsure-ratchet', 1);
-    data['ratchet:states'] = await getAllFromStore(db, 'ratchet-states');
-    db.close();
+    data['ratchet:states'] = await getAllFromSideDB('forsure-ratchet', 'ratchet-states');
   } catch {}
 
   try {
-    const db = await openDB('forsure-pin-wrap', 1);
-    data['pinwrap:keys'] = await getAllFromStore(db, 'pin-wrapped-keys');
-    db.close();
+    data['pinwrap:keys'] = await getAllFromSideDB('forsure-pin-wrap', 'pin-wrapped-keys');
   } catch {}
 
   try {
-    const db = await openDB('forsure-prekeys', 1);
-    data['prekeys:private'] = await getAllFromStore(db, 'private-prekeys');
-    db.close();
+    data['prekeys:private'] = await getAllFromSideDB('forsure-prekeys', 'private-prekeys');
   } catch {}
 
   try {
-    const db = await openDB('forsure-spk', 1);
-    data['spk:private'] = await getAllFromStore(db, 'signed-prekeys');
-    db.close();
+    data['spk:private'] = await getAllFromSideDB('forsure-spk', 'signed-prekeys');
   } catch {}
 
   try {
