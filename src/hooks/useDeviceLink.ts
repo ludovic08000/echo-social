@@ -128,21 +128,10 @@ async function collectLocalKeys(options: { includePlaintextCache?: boolean } = {
   } catch {}
 
   try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-ratchet', 1);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result);
-    });
-    if (db.objectStoreNames.contains('ratchet-states')) {
-      const tx = db.transaction('ratchet-states', 'readonly');
-      const all = await new Promise<any[]>((resolve, reject) => {
-        const req = tx.objectStore('ratchet-states').getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-      data['ratchet:states'] = all;
-    }
-    db.close();
+    const all = await runTxOn('ratchet', ['ratchet-states'], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore('ratchet-states').getAll()),
+    );
+    if (all && all.length) data['ratchet:states'] = all;
   } catch {}
 
   if (includePlaintextCache) {
