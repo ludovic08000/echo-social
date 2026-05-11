@@ -369,6 +369,9 @@ export function SecurityMonitoringSection() {
         ))}
       </div>
 
+      {/* Zeus Security AI — modules défensifs */}
+      <SecurityAIModulePanel />
+
       {/* ═══ TABLEAU DES IPs EN CLAIR ═══ */}
       <Card>
         <CardHeader className="pb-3">
