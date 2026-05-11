@@ -47,6 +47,7 @@ import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
 import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/lib/crypto/cryptoIntegrity';
 import { KX_KEY_PARAMS, STORE_PREKEYS, STORE_SESSION } from '@/lib/crypto/constants';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
+import { runTx, runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
 import { isCryptoJsonBody, isStrictRatchetEnvelopeBody, isUnsupportedEncryptedBody } from '@/lib/messaging/messageCompatibility';
 import { isSenderKeyWire, parseSKDM, SENDER_KEY_PREFIX } from '@/lib/crypto/senderKeys';
 import {
@@ -183,65 +184,20 @@ async function fetchPeerPublicKeys(peerUserId: string): Promise<{ identity_key: 
 
 // ─── IndexedDB ratchet persistence ───
 
-function openRatchetDBAt(version?: number): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    // When version is undefined, IndexedDB opens at the existing version
-    // (or creates v1 if none exists) without triggering VersionError.
-    const req = version === undefined
-      ? hardGlobals.idbOpen(RATCHET_DB_NAME)
-      : hardGlobals.idbOpen(RATCHET_DB_NAME, version);
-    req.onerror = () => reject(req.error);
-    req.onblocked = () => reject(new Error('ratchet db blocked'));
-    req.onsuccess = () => resolve(req.result);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(RATCHET_STORE_NAME)) {
-        db.createObjectStore(RATCHET_STORE_NAME, { keyPath: 'convId' });
-      }
-    };
-  });
-}
-
-/**
- * Open the ratchet IndexedDB safely:
- *   1. Open without specifying a version → discovers the actual existing version
- *      (avoids VersionError when the DB has been upgraded in another tab/session).
- *   2. If the expected object store is missing (corrupt/legacy install),
- *      bump the version to trigger `onupgradeneeded` and create the store.
- */
-async function openRatchetDB(): Promise<IDBDatabase> {
-  let db = await openRatchetDBAt();
-  if (db.objectStoreNames.contains(RATCHET_STORE_NAME)) return db;
-
-  const nextVersion = (db.version || RATCHET_DB_VERSION) + 1;
-  db.close();
-  console.warn(`[E2EE] Ratchet store missing — upgrading IndexedDB to v${nextVersion} to recreate it`);
-  db = await openRatchetDBAt(nextVersion);
-  if (!db.objectStoreNames.contains(RATCHET_STORE_NAME)) {
-    throw new Error('Failed to provision ratchet object store');
-  }
-  return db;
-}
+// openRatchetDB helpers removed — all ratchet IndexedDB access goes through
+// `runTxOn('ratchet', [RATCHET_STORE_NAME], ...)` (Safari-safe singleton + retries).
 
 function recreateLegacyE2EEDatabase(): Promise<void> {
   return new Promise((resolve) => {
     void (async () => {
       try {
-        const db = await openE2EEDB();
-        const storesToClear = [STORE_SESSION, STORE_PREKEYS].filter((store) => db.objectStoreNames.contains(store));
-
-        if (storesToClear.length > 0) {
-          const tx = db.transaction(storesToClear, 'readwrite');
-          storesToClear.forEach((store) => tx.objectStore(store).clear());
-          await new Promise<void>((txResolve, txReject) => {
-            tx.oncomplete = () => txResolve();
-            tx.onerror = () => txReject(tx.error);
-          });
-          console.log('[E2EE] Repaired IndexedDB schema and cleared transient crypto stores');
-        }
-
-        // openE2EEDB() returns the shared crypto DB singleton; keep it open for
-        // concurrent key restores, calls and media encryption.
+        const storesToClear = [STORE_SESSION, STORE_PREKEYS];
+        await runTx(storesToClear, 'readwrite', (tx) => {
+          for (const s of storesToClear) {
+            try { tx.objectStore(s).clear(); } catch {}
+          }
+        });
+        console.log('[E2EE] Repaired IndexedDB schema and cleared transient crypto stores');
       } catch (error) {
         console.error('[E2EE] Failed to repair E2EE database — identity keys preserved', error);
       } finally {
@@ -254,20 +210,13 @@ function recreateLegacyE2EEDatabase(): Promise<void> {
 async function saveRatchetLocal(convId: string, state: RatchetState, x3dhHeader?: X3DHInitialMessage | null) {
   try {
     const json = await serializeRatchetState(state);
-    const db = await openRatchetDB();
-    const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
     const record: any = { convId, data: json };
-    // Persist X3DH header alongside ratchet state (Signal: attach PreKey header until first peer response)
     if (x3dhHeader !== undefined) {
       record.x3dhHeader = x3dhHeader ? hardGlobals.jsonStringify(x3dhHeader) : null;
     }
-    tx.objectStore(RATCHET_STORE_NAME).put(record);
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
+      tx.objectStore(RATCHET_STORE_NAME).put(record);
     });
-    // Reactive backup: ensure the new ratchet state lands on the server quickly
-    // so iOS can recover history even after an IndexedDB purge.
     try {
       const { requestBackgroundBackup } = await import('@/lib/crypto/accountKeyBackup');
       requestBackgroundBackup('ratchet-save');
@@ -279,13 +228,9 @@ async function saveRatchetLocal(convId: string, state: RatchetState, x3dhHeader?
 
 async function loadRatchetLocal(convId: string): Promise<{ state: RatchetState; x3dhHeader: X3DHInitialMessage | null } | null> {
   try {
-    const db = await openRatchetDB();
-    const tx = db.transaction(RATCHET_STORE_NAME, 'readonly');
-    const req = tx.objectStore(RATCHET_STORE_NAME).get(convId);
-    const result = await new Promise<any>((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const result = await runTxOn('ratchet', [RATCHET_STORE_NAME], 'readonly', (tx) =>
+      reqToPromise<any>(tx.objectStore(RATCHET_STORE_NAME).get(convId)),
+    );
     if (!result?.data) return null;
     const state = await deserializeRatchetState(result.data);
     const x3dhHeader = result.x3dhHeader ? hardGlobals.jsonParse(result.x3dhHeader) as X3DHInitialMessage : null;
@@ -297,12 +242,8 @@ async function loadRatchetLocal(convId: string): Promise<{ state: RatchetState; 
 
 async function deleteRatchetLocal(convId: string): Promise<void> {
   try {
-    const db = await openRatchetDB();
-    const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
-    tx.objectStore(RATCHET_STORE_NAME).delete(convId);
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
+      tx.objectStore(RATCHET_STORE_NAME).delete(convId);
     });
     console.info(`[E2EE] 🧹 Ratchet local purgé pour conv ${convId}`);
   } catch (e) {
@@ -526,26 +467,12 @@ function cleanupLegacyStorage() {
     const migrationKey = 'forsure-e2ee-migration-v4';
     if (!localStorage.getItem(migrationKey)) {
       localStorage.setItem(migrationKey, '1');
-      const req = hardGlobals.idbOpen(RATCHET_DB_NAME, RATCHET_DB_VERSION);
-      req.onsuccess = () => {
-        try {
-          const db = req.result;
-          const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
-          tx.objectStore(RATCHET_STORE_NAME).clear();
-          console.log('[E2EE] Cleared stale ratchet states (migration v4)');
-        } catch {}
-      };
-      // Also clear legacy session keys to re-derive — use openE2EEDB to ensure stores exist
-      openE2EEDB().then(db => {
-        try {
-          if (db.objectStoreNames.contains(STORE_SESSION)) {
-            const tx = db.transaction(STORE_SESSION, 'readwrite');
-            tx.objectStore(STORE_SESSION).clear();
-            console.log('[E2EE] Cleared stale session keys (migration v4)');
-          }
-          // openE2EEDB() returns the shared crypto DB singleton; keep it open.
-        } catch {}
-      }).catch(() => {});
+      void runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
+        tx.objectStore(RATCHET_STORE_NAME).clear();
+      }).then(() => console.log('[E2EE] Cleared stale ratchet states (migration v4)')).catch(() => {});
+      void runTx([STORE_SESSION], 'readwrite', (tx) => {
+        try { tx.objectStore(STORE_SESSION).clear(); } catch {}
+      }).then(() => console.log('[E2EE] Cleared stale session keys (migration v4)')).catch(() => {});
     }
   } catch {}
 }
@@ -939,11 +866,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             };
 
             if (conversationId) {
-              openRatchetDB().then(db => {
-                try {
-                  const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
-                  tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
-                } catch {}
+              void runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
+                try { tx.objectStore(RATCHET_STORE_NAME).delete(conversationId); } catch {}
               }).catch(() => {});
               ratchetRef.current = null;
               peerHasRespondedRef.current = false;
@@ -1115,14 +1039,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       if (fingerprintChanged) {
         if (conversationId) {
           try {
-            const db = await openRatchetDB();
-            const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
-            tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
-            await new Promise<void>((resolve, reject) => {
-              tx.oncomplete = () => resolve();
-              tx.onerror = () => reject(tx.error);
+            await runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
+              tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
             });
-            db.close();
           } catch {}
 
           ratchetRef.current = null;
@@ -1155,14 +1074,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
       if (conversationId && forceSessionRefresh) {
         try {
-          const db = await openRatchetDB();
-          const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
-          tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
-          await new Promise<void>((resolve, reject) => {
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+          await runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
+            tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
           });
-          db.close();
         } catch {}
 
         ratchetRef.current = null;
@@ -1788,11 +1702,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     }
     if (conversationId) {
       // Clear old ratchet state
-      openRatchetDB().then(db => {
-        try {
-          const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
-          tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
-        } catch {}
+      void runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
+        try { tx.objectStore(RATCHET_STORE_NAME).delete(conversationId); } catch {}
       }).catch(() => {});
       ratchetRef.current = null;
       peerHasRespondedRef.current = false;
