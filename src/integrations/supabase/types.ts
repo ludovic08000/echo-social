@@ -2219,6 +2219,33 @@ export type Database = {
           },
         ]
       }
+      feed_score_tamper_events: {
+        Row: {
+          applied_algo: string | null
+          created_at: string
+          id: number
+          post_count: number | null
+          requested_algo: string | null
+          user_id: string | null
+        }
+        Insert: {
+          applied_algo?: string | null
+          created_at?: string
+          id?: number
+          post_count?: number | null
+          requested_algo?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          applied_algo?: string | null
+          created_at?: string
+          id?: number
+          post_count?: number | null
+          requested_algo?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       friend_group_members: {
         Row: {
           added_at: string
@@ -7188,6 +7215,7 @@ export type Database = {
       }
       purge_old_audit_logs: { Args: never; Returns: undefined }
       purge_old_crypto_error_logs: { Args: never; Returns: number }
+      purge_old_feed_score_tamper_events: { Args: never; Returns: undefined }
       push_my_fingerprint_to_peers: { Args: never; Returns: number }
       read_email_batch: {
         Args: { batch_size: number; queue_name: string; vt: number }
