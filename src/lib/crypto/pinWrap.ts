@@ -82,12 +82,8 @@ export async function wrapKeysWithPin(
     version: 1,
   };
 
-  const db = await openPinDB();
-  const tx = db.transaction(PIN_WRAP_STORE, 'readwrite');
-  tx.objectStore(PIN_WRAP_STORE).put(blob);
-  await new Promise<void>((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+  await runTxOn('pin-wrap', [PIN_WRAP_STORE], 'readwrite', (tx) => {
+    tx.objectStore(PIN_WRAP_STORE).put(blob);
   });
 
   console.log('[PIN_WRAP] Keys encrypted and stored');
@@ -108,13 +104,9 @@ export async function unwrapKeysWithPin(
   fingerprint: string;
   createdAt: number;
 } | null> {
-  const db = await openPinDB();
-  const tx = db.transaction(PIN_WRAP_STORE, 'readonly');
-  const req = tx.objectStore(PIN_WRAP_STORE).get(userId);
-  const blob = await new Promise<WrappedKeyBlob | undefined>((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+  const blob = await runTxOn('pin-wrap', [PIN_WRAP_STORE], 'readonly', (tx) =>
+    reqToPromise(tx.objectStore(PIN_WRAP_STORE).get(userId) as IDBRequest<WrappedKeyBlob | undefined>),
+  );
 
   if (!blob) return null;
 
@@ -143,13 +135,9 @@ export async function unwrapKeysWithPin(
 /** Check if PIN-wrapped keys exist for a user */
 export async function hasWrappedKeys(userId: string): Promise<boolean> {
   try {
-    const db = await openPinDB();
-    const tx = db.transaction(PIN_WRAP_STORE, 'readonly');
-    const req = tx.objectStore(PIN_WRAP_STORE).get(userId);
-    const result = await new Promise<any>((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const result = await runTxOn('pin-wrap', [PIN_WRAP_STORE], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore(PIN_WRAP_STORE).get(userId)),
+    );
     return !!result;
   } catch {
     return false;
@@ -159,12 +147,8 @@ export async function hasWrappedKeys(userId: string): Promise<boolean> {
 /** Delete wrapped keys (logout/account deletion) */
 export async function deleteWrappedKeys(userId: string): Promise<void> {
   try {
-    const db = await openPinDB();
-    const tx = db.transaction(PIN_WRAP_STORE, 'readwrite');
-    tx.objectStore(PIN_WRAP_STORE).delete(userId);
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('pin-wrap', [PIN_WRAP_STORE], 'readwrite', (tx) => {
+      tx.objectStore(PIN_WRAP_STORE).delete(userId);
     });
   } catch {}
 }
