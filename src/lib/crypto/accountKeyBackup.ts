@@ -395,53 +395,37 @@ async function restoreAllKeys(json: string): Promise<void> {
 
     // Phase 2: Ratchet states
     if (Array.isArray(data['ratchet:states'])) {
-      const db = await openDB('forsure-ratchet', 1, ['ratchet-states']);
-      const existing = await getAllFromStore(db, 'ratchet-states');
-      await putAllInStore(db, 'ratchet-states', data['ratchet:states']);
-      db.close();
+      const existing = await getAllFromSideDB('forsure-ratchet', 'ratchet-states');
+      await putAllInSideDB('forsure-ratchet', 'ratchet-states', data['ratchet:states']);
       rollbackOps.push(async () => {
-        const rdb = await openDB('forsure-ratchet', 1);
-        await putAllInStore(rdb, 'ratchet-states', existing);
-        rdb.close();
+        await putAllInSideDB('forsure-ratchet', 'ratchet-states', existing);
       });
     }
 
     // Phase 3: PIN-wrapped keys
     if (Array.isArray(data['pinwrap:keys'])) {
-      const db = await openDB('forsure-pin-wrap', 1, ['pin-wrapped-keys']);
-      const existing = await getAllFromStore(db, 'pin-wrapped-keys');
-      await putAllInStore(db, 'pin-wrapped-keys', data['pinwrap:keys']);
-      db.close();
+      const existing = await getAllFromSideDB('forsure-pin-wrap', 'pin-wrapped-keys');
+      await putAllInSideDB('forsure-pin-wrap', 'pin-wrapped-keys', data['pinwrap:keys']);
       rollbackOps.push(async () => {
-        const rdb = await openDB('forsure-pin-wrap', 1);
-        await putAllInStore(rdb, 'pin-wrapped-keys', existing);
-        rdb.close();
+        await putAllInSideDB('forsure-pin-wrap', 'pin-wrapped-keys', existing);
       });
     }
 
     // Phase 4: Private prekeys
     if (Array.isArray(data['prekeys:private'])) {
-      const db = await openDB('forsure-prekeys', 1, ['private-prekeys']);
-      const existing = await getAllFromStore(db, 'private-prekeys');
-      await putAllInStore(db, 'private-prekeys', data['prekeys:private']);
-      db.close();
+      const existing = await getAllFromSideDB('forsure-prekeys', 'private-prekeys');
+      await putAllInSideDB('forsure-prekeys', 'private-prekeys', data['prekeys:private']);
       rollbackOps.push(async () => {
-        const rdb = await openDB('forsure-prekeys', 1);
-        await putAllInStore(rdb, 'private-prekeys', existing);
-        rdb.close();
+        await putAllInSideDB('forsure-prekeys', 'private-prekeys', existing);
       });
     }
 
     // Phase 4b: Signed prekey private halves (required to decrypt X3DH/device copies)
     if (Array.isArray(data['spk:private'])) {
-      const db = await openDB('forsure-spk', 1, ['signed-prekeys']);
-      const existing = await getAllFromStore(db, 'signed-prekeys');
-      await putAllInStore(db, 'signed-prekeys', data['spk:private']);
-      db.close();
+      const existing = await getAllFromSideDB('forsure-spk', 'signed-prekeys');
+      await putAllInSideDB('forsure-spk', 'signed-prekeys', data['spk:private']);
       rollbackOps.push(async () => {
-        const rdb = await openDB('forsure-spk', 1);
-        await putAllInStore(rdb, 'signed-prekeys', existing);
-        rdb.close();
+        await putAllInSideDB('forsure-spk', 'signed-prekeys', existing);
       });
     }
 
