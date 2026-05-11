@@ -1734,6 +1734,149 @@ async function handlePostModeration(apiKey: string, body: any, userId: string, s
 }
 
 // ═══════════════════════════════════════════════════════════════
+// COMMENT MODERATION — Auto reply + admin escalation
+// ═══════════════════════════════════════════════════════════════
+async function handleCommentModeration(apiKey: string, body: any, userId: string, supabase: any, cors: Record<string, string>) {
+  const { commentId, postId, text } = body;
+  if (!commentId || !text) {
+    return new Response(JSON.stringify({ safe: true }), { headers: { ...cors, "Content-Type": "application/json" } });
+  }
+
+  let unsafe = false;
+  let reason = "";
+  let category = "inappropriate";
+  let severity: "info" | "warning" | "critical" = "warning";
+  let aiReasoning = "";
+
+  // 1) Quick keyword pass
+  const basic = basicModeration(text);
+  if (!basic.safe) {
+    unsafe = true;
+    reason = basic.reason || "contenu inapproprié";
+    category = basic.category || "inappropriate";
+    severity = "warning";
+    aiReasoning = "Détection lexicale (regex)";
+  }
+
+  // 2) AI nuanced pass for longer comments
+  if (!unsafe && text.length > 10) {
+    const resp = await callAI(apiKey, {
+      model: "google/gemini-2.5-flash",
+      messages: [
+        { role: "system", content: "Tu es un modérateur bienveillant pour ForSure. Analyse le commentaire ci-dessous. Tu dois être strict sur: discours haineux, harcèlement, menaces, discrimination, insultes ciblées, contenu sexuel non consenti. Tolère le langage familier, sarcasme léger, désaccord poli. Réponds UNIQUEMENT via l'outil moderate_comment." },
+        { role: "user", content: text },
+      ],
+      tools: [{
+        type: "function",
+        function: {
+          name: "moderate_comment",
+          description: "Résultat de la modération du commentaire",
+          parameters: {
+            type: "object",
+            properties: {
+              safe: { type: "boolean" },
+              category: { type: "string", enum: ["safe", "hate_speech", "harassment", "threats", "discrimination", "insult", "inappropriate", "spam"] },
+              reason_fr: { type: "string", description: "Court (≤120 chars). Vide si safe." },
+              severity: { type: "string", enum: ["info", "warning", "critical"] },
+              reasoning: { type: "string", description: "Explication courte interne pour les admins" },
+            },
+            required: ["safe", "category", "reason_fr", "severity", "reasoning"],
+            additionalProperties: false,
+          },
+        },
+      }],
+      tool_choice: { type: "function", function: { name: "moderate_comment" } },
+    });
+
+    const errResp = aiError(resp.status, cors);
+    if (errResp) return errResp;
+    if (resp.ok) {
+      const data = await resp.json();
+      const tc = data.choices?.[0]?.message?.tool_calls?.[0];
+      if (tc?.function?.name === "moderate_comment") {
+        try {
+          const r = JSON.parse(tc.function.arguments);
+          if (!r.safe) {
+            unsafe = true;
+            reason = r.reason_fr;
+            category = r.category;
+            severity = r.severity;
+            aiReasoning = r.reasoning || "";
+          }
+        } catch {}
+      }
+    }
+  }
+
+  if (!unsafe) {
+    return new Response(JSON.stringify({ safe: true }), { headers: { ...cors, "Content-Type": "application/json" } });
+  }
+
+  // 3) Count prior strikes for this user
+  const { count } = await supabase
+    .from("content_strikes")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId);
+  const strikeCount = (count || 0) + 1;
+
+  // 4) Compose Zeus reply (apaisant)
+  let zeusReply: string;
+  if (severity === "critical" || strikeCount >= 3) {
+    zeusReply = `⚡ Hey, je comprends que tu puisses ressentir des choses fortes — c'est humain. Mais ce commentaire dépasse une limite (${reason}). Je transmets aux modérateurs pour qu'ils regardent calmement. En attendant, prends une grande respiration 🌿 — on est plus forts quand on s'écoute. Si tu veux en parler, je suis là.`;
+  } else if (strikeCount === 2) {
+    zeusReply = `🙏 Hey, je remarque que tes mots peuvent blesser (${reason}). Je sais que ce n'est peut-être pas l'intention — reformule, et ta voix portera mieux. ForSure reste un espace bienveillant. Je suis là si tu veux échanger ⚡`;
+  } else {
+    zeusReply = `Hey ⚡ J'ai lu ton commentaire et certains mots peuvent heurter (${reason}). Pas de jugement — juste une invitation à reformuler avec plus de douceur. Ton point de vue compte, exprime-le pour qu'il soit entendu 🌿`;
+  }
+
+  // 5) Insert Zeus reply as a child comment
+  if (postId) {
+    await supabase.from("comments").insert({
+      post_id: postId,
+      parent_id: commentId,
+      user_id: null,
+      is_zeus_reply: true,
+      body: zeusReply,
+    });
+  }
+
+  // 6) Record strike
+  await supabase.from("content_strikes").insert({
+    user_id: userId,
+    post_id: postId || null,
+    reason,
+    severity,
+    zeus_message: zeusReply,
+  });
+
+  // 7) Escalate to admin if severe or repeated
+  const shouldEscalate = severity === "critical" || strikeCount >= 3;
+  if (shouldEscalate) {
+    await supabase.from("comment_moderation_alerts").insert({
+      user_id: userId,
+      comment_id: commentId,
+      post_id: postId || null,
+      evidence_text: text,
+      category,
+      severity,
+      ai_reasoning: aiReasoning,
+      strike_count: strikeCount,
+      status: "pending",
+    });
+  }
+
+  return new Response(JSON.stringify({
+    safe: false,
+    reason,
+    category,
+    severity,
+    zeus_reply: zeusReply,
+    strike_count: strikeCount,
+    escalated: shouldEscalate,
+  }), { headers: { ...cors, "Content-Type": "application/json" } });
+}
+
+// ═══════════════════════════════════════════════════════════════
 // MAIN ROUTER
 // ═══════════════════════════════════════════════════════════════
 Deno.serve(async (req) => {
@@ -1764,7 +1907,7 @@ Deno.serve(async (req) => {
     }
 
     // Rate limit per domain
-    const limitMap: Record<string, number> = { content: 20, post: 15, moderation: 30, ads: 10, seller: 10, photo: 5, agent: 20, admin: 30, "post-moderation": 30 };
+    const limitMap: Record<string, number> = { content: 20, post: 15, moderation: 30, ads: 10, seller: 10, photo: 5, agent: 20, admin: 30, "post-moderation": 30, "comment-moderation": 60 };
     if (!checkRateLimit(`${user.id}:${domain}`, limitMap[domain] || 15)) {
       return new Response(JSON.stringify({ error: "Trop de requêtes, réessayez." }), { status: 429, headers: { ...cors, "Content-Type": "application/json" } });
     }
@@ -1774,6 +1917,7 @@ Deno.serve(async (req) => {
       case "post": return await handlePostAssistant(LOVABLE_API_KEY, body, cors);
       case "moderation": return await handleModeration(LOVABLE_API_KEY, body, user.id, supabase, cors);
       case "post-moderation": return await handlePostModeration(LOVABLE_API_KEY, body, user.id, supabase, cors);
+      case "comment-moderation": return await handleCommentModeration(LOVABLE_API_KEY, body, user.id, supabase, cors);
       case "ads": return await handleAds(LOVABLE_API_KEY, body, cors);
       case "seller": return await handleSeller(LOVABLE_API_KEY, body, user.id, supabase, cors);
       case "photo": return await handlePhotoGuard(LOVABLE_API_KEY, body, user.id, supabase, cors);

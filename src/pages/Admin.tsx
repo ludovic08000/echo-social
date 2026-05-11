@@ -6,6 +6,7 @@ import { useIsAdmin } from '@/hooks/useIsAdmin';
 import {
   Shield, Users, Activity, LayoutDashboard, FileText, Flag, BarChart3, CreditCard, Lock, Settings,
   Brain, Zap, Archive, Gauge, Monitor, ScrollText, ShieldAlert, ChevronDown, Menu, X, KeyRound, Sparkles,
+  MessageSquareWarning,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,7 @@ import {
   StatsSection, SubscriptionsSection, SecuritySection, SettingsSection,
   AISection, PlatformHealthDashboard, FeedIntelligenceSection, MonitoringSection,
   SecurityMonitoringSection, CryptoErrorsSection, MLFeedSection,
+  CommentModerationAlertsSection,
 } from '@/components/admin';
 import { VerificationsSection } from '@/components/admin/VerificationsSection';
 import { ArchivesSection } from '@/components/admin/ArchivesSection';
@@ -38,6 +40,7 @@ const NAV_GROUPS = [
       { key: 'users', label: 'Utilisateurs', icon: Users },
       { key: 'posts', label: 'Publications', icon: FileText },
       { key: 'reports', label: 'Signalements', icon: Flag },
+      { key: 'comment_alerts', label: 'Alertes Zeus', icon: MessageSquareWarning },
       { key: 'verifications', label: 'Vérifications', icon: Shield },
       { key: 'archives', label: 'Archives', icon: Archive },
     ],
@@ -74,7 +77,7 @@ const NAV_GROUPS = [
   },
 ];
 
-type AdminSection = 'dashboard' | 'health' | 'stats' | 'monitoring' | 'users' | 'posts' | 'reports' | 'verifications' | 'archives' | 'subscriptions' | 'feed_intelligence' | 'ml_feed' | 'ai' | 'zeus' | 'security_ai' | 'security' | 'crypto_errors' | 'audit_logs' | 'settings';
+type AdminSection = 'dashboard' | 'health' | 'stats' | 'monitoring' | 'users' | 'posts' | 'reports' | 'comment_alerts' | 'verifications' | 'archives' | 'subscriptions' | 'feed_intelligence' | 'ml_feed' | 'ai' | 'zeus' | 'security_ai' | 'security' | 'crypto_errors' | 'audit_logs' | 'settings';
 
 export default function Admin() {
   const [section, setSection] = useState<AdminSection>('dashboard');
@@ -119,6 +122,7 @@ export default function Admin() {
       case 'users': return <UsersSection />;
       case 'posts': return <PostsSection />;
       case 'reports': return <ReportsSection />;
+      case 'comment_alerts': return <CommentModerationAlertsSection />;
       case 'verifications': return <VerificationsSection />;
       case 'archives': return <ArchivesSection />;
       case 'stats': return <StatsSection />;

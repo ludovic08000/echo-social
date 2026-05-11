@@ -6,11 +6,12 @@ import { ReactionType } from '@/hooks/useReactions';
 
 export interface Comment {
   id: string;
-  user_id: string;
+  user_id: string | null;
   post_id: string;
   body: string;
   created_at: string;
   parent_id: string | null;
+  is_zeus_reply?: boolean;
   profile: {
     name: string;
     avatar_url: string | null;
@@ -29,7 +30,7 @@ export function useComments(postId: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('comments')
-        .select('id, user_id, post_id, body, created_at, parent_id')
+        .select('id, user_id, post_id, body, created_at, parent_id, is_zeus_reply')
         .eq('post_id', postId)
         .order('created_at', { ascending: true })
         .limit(100);
@@ -37,7 +38,7 @@ export function useComments(postId: string) {
       if (error) throw error;
 
       // Get profile info
-      const userIds = [...new Set(data.map(c => c.user_id))];
+      const userIds = [...new Set(data.map(c => c.user_id).filter((id): id is string => !!id))];
       const { data: profiles } = await supabase
         .from('profiles')
         .select('user_id, name, avatar_url')
@@ -62,8 +63,9 @@ export function useComments(postId: string) {
       });
 
       const enriched: Comment[] = data.map(comment => {
-        const profile = profileMap.get(comment.user_id);
+        const profile = comment.user_id ? profileMap.get(comment.user_id) : null;
         const userReaction = userReactionMap.get(comment.id) || null;
+        const isZeus = (comment as any).is_zeus_reply === true;
         return {
           id: comment.id,
           user_id: comment.user_id,
@@ -71,9 +73,10 @@ export function useComments(postId: string) {
           body: comment.body,
           created_at: comment.created_at,
           parent_id: comment.parent_id,
+          is_zeus_reply: isZeus,
           profile: {
-            name: profile?.name || 'Unknown',
-            avatar_url: profile?.avatar_url || null,
+            name: isZeus ? 'Zeus' : (profile?.name || 'Unknown'),
+            avatar_url: isZeus ? null : (profile?.avatar_url || null),
           },
           likes_count: likesCountMap.get(comment.id) || 0,
           is_liked: !!userReaction,
@@ -149,6 +152,11 @@ export function useCreateComment() {
           post_id: postId,
         });
       }
+
+      // Fire-and-forget Zeus moderation (auto-reply if hateful, escalate to admin)
+      supabase.functions.invoke('zeus', {
+        body: { domain: 'comment-moderation', commentId: data.id, postId, text: sanitizedBody },
+      }).catch(() => {});
 
       return data;
     },
