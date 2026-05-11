@@ -672,12 +672,12 @@ export default function Profile() {
                 <span className="text-[10px] text-muted-foreground uppercase tracking-[0.18em] font-semibold mt-0.5">Posts</span>
               </div>
               <div className="w-px bg-border/50 my-2" />
-              <Link to="/friends" className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl transition-all active:scale-95 hover:bg-accent/40">
+              <Link to="/friends?tab=followers" className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl transition-all active:scale-95 hover:bg-accent/40">
                 <span className="text-lg font-bold tracking-tight">{stats?.followersCount || 0}</span>
                 <span className="text-[10px] text-muted-foreground uppercase tracking-[0.18em] font-semibold mt-0.5">Followers</span>
               </Link>
               <div className="w-px bg-border/50 my-2" />
-              <Link to="/friends" className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl transition-all active:scale-95 hover:bg-accent/40">
+              <Link to="/friends?tab=following" className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl transition-all active:scale-95 hover:bg-accent/40">
                 <span className="text-lg font-bold tracking-tight">{stats?.followingCount || 0}</span>
                 <span className="text-[10px] text-muted-foreground uppercase tracking-[0.18em] font-semibold mt-0.5">Abonnements</span>
               </Link>
