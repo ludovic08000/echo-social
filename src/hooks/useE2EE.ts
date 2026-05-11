@@ -60,6 +60,7 @@ import {
 import {
   fetchPeerPublicKeys,
   getCachedAuthUserId,
+  primeAuthUserId,
   _peerKeyCache,
   _peerSyncPromise,
 } from '@/lib/crypto/peerKeyCache';
@@ -260,8 +261,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const initKeys = useCallback(async () => {
     if (!user) return;
     // Warm up the auth user ID cache to avoid repeated getUser() calls
-    _cachedAuthUserId = user.id;
-    _cachedAuthUserIdTs = Date.now();
+    primeAuthUserId(user.id);
     try {
       const keysResult = await getOrCreateIdentityKeys(user.id);
       const isNewIdentity = !!(keysResult as any).isNewIdentity;
