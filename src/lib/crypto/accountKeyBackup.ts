@@ -142,73 +142,85 @@ function generateMasterKey(): Uint8Array {
 }
 
 // ── IndexedDB helpers (shared with collectAllKeys / restoreAllKeys) ──
+//
+// All side-DBs are routed through the central dbRegistry + runTxOn so Safari
+// transient errors and concurrent-tx wedges are handled uniformly. Only the
+// E2EE singleton (openE2EEDB) keeps its own helper because it predates this
+// stack.
 
-// Default schemas for the side-DBs we touch from the backup pipeline.
-// MUST stay in sync with the modules owning those DBs (x3dh.ts, pinWrap.ts, …).
-// Without this, opening a non-existent DB at v1 with no upgrade handler creates
-// an EMPTY v1 with no stores, and any later open at the same version skips
-// onupgradeneeded → NotFoundError on transaction(storeName).
-const SIDE_DB_DEFAULT_STORES: Record<string, string[]> = {
-  'forsure-ratchet': ['ratchet-states'],
-  'forsure-pin-wrap': ['pin-wrapped-keys', 'wrapped-keys'],
-  'forsure-prekeys': ['private-prekeys'],
-  'forsure-spk': ['signed-prekeys'],
+import { runTxOn } from './indexedDbTx';
+import type { DBKey } from './dbRegistry';
+
+/** Map legacy DB names used in this file to registered DBKey ids. */
+const LEGACY_DB_TO_KEY: Record<string, Exclude<DBKey, 'e2ee-keys'>> = {
+  'forsure-ratchet': 'ratchet',
+  'forsure-pin-wrap': 'pin-wrap',
+  'forsure-prekeys': 'prekeys',
+  'forsure-spk': 'spk',
 };
 
-async function openDB(name: string, version: number, storeNames?: string[]): Promise<IDBDatabase> {
-  const stores = storeNames ?? SIDE_DB_DEFAULT_STORES[name];
+function dbKeyForLegacyName(name: string): Exclude<DBKey, 'e2ee-keys'> {
+  const k = LEGACY_DB_TO_KEY[name];
+  if (!k) throw new Error(`[accountKeyBackup] Unknown legacy DB name: ${name}`);
+  return k;
+}
 
-  // Probe current on-disk version first to avoid VersionError when another
-  // module (e.g. x3dh.ts) bumped the DB to repair a missing store.
-  let effectiveVersion = version;
+/** Read all rows from a side-DB store via the registry/runTxOn pipeline. */
+async function getAllFromSideDB(dbName: string, storeName: string): Promise<any[]> {
+  const key = dbKeyForLegacyName(dbName);
   try {
-    const probe = await new Promise<IDBDatabase>((resolve, reject) => {
-      const r = hardGlobals.idbOpen(name);
-      r.onerror = () => reject(r.error);
-      r.onsuccess = () => resolve(r.result);
+    return await runTxOn(key, [storeName], 'readonly', (tx) => {
+      return new Promise<any[]>((resolve, reject) => {
+        const req = tx.objectStore(storeName).getAll();
+        req.onsuccess = () => resolve(req.result ?? []);
+        req.onerror = () => reject(req.error);
+      });
     });
-    if (probe.version > effectiveVersion) effectiveVersion = probe.version;
-    probe.close();
-  } catch {
-    // First-time open: keep requested version
+  } catch (e) {
+    // Missing store after a failed upgrade → treat as empty rather than throw.
+    if (e instanceof DOMException && e.name === 'NotFoundError') return [];
+    throw e;
   }
+}
 
-  return new Promise<IDBDatabase>((resolve, reject) => {
-    const req = hardGlobals.idbOpen(name, effectiveVersion);
-    req.onerror = () => reject(req.error);
-    req.onsuccess = () => {
-      const db = req.result;
-      // Self-heal: bump version once if a required store is missing
-      if (stores && stores.some((sn) => !db.objectStoreNames.contains(sn))) {
-        const next = db.version + 1;
-        db.close();
-        const repair = hardGlobals.idbOpen(name, next);
-        repair.onupgradeneeded = () => {
-          const rdb = repair.result;
-          for (const sn of stores) {
-            if (!rdb.objectStoreNames.contains(sn)) {
-              rdb.createObjectStore(sn, { keyPath: sn === 'ratchet-states' ? 'convId' : 'id' });
-            }
-          }
-        };
-        repair.onerror = () => reject(repair.error);
-        repair.onsuccess = () => resolve(repair.result);
-        return;
-      }
-      resolve(db);
-    };
-    if (stores) {
-      req.onupgradeneeded = () => {
-        for (const sn of stores) {
-          if (!req.result.objectStoreNames.contains(sn)) {
-            req.result.createObjectStore(sn, { keyPath: sn === 'ratchet-states' ? 'convId' : 'id' });
-          }
+/** Atomically clear+repopulate a side-DB store. */
+async function putAllInSideDB(dbName: string, storeName: string, records: any[]): Promise<void> {
+  const key = dbKeyForLegacyName(dbName);
+  await runTxOn(key, [storeName], 'readwrite', (tx) => {
+    return new Promise<void>((resolve, reject) => {
+      const store = tx.objectStore(storeName);
+      const clearReq = store.clear();
+      clearReq.onerror = () => reject(clearReq.error);
+      clearReq.onsuccess = () => {
+        try {
+          for (const r of records) store.put(r);
+          resolve();
+        } catch (err) {
+          reject(err);
         }
       };
-    }
+    });
   });
 }
 
+/** Count rows in a side-DB store (used by hasLocalKeys / digest). */
+async function countSideDB(dbName: string, storeName: string): Promise<number> {
+  const key = dbKeyForLegacyName(dbName);
+  try {
+    return await runTxOn(key, [storeName], 'readonly', (tx) => {
+      return new Promise<number>((resolve, reject) => {
+        const req = tx.objectStore(storeName).count();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'NotFoundError') return 0;
+    throw e;
+  }
+}
+
+/** Read all rows from an E2EE singleton store (kept separate from side-DBs). */
 async function getAllFromStore(db: IDBDatabase, storeName: string): Promise<any[]> {
   if (!db.objectStoreNames.contains(storeName)) return [];
   const tx = db.transaction(storeName, 'readonly');
@@ -219,6 +231,7 @@ async function getAllFromStore(db: IDBDatabase, storeName: string): Promise<any[
   });
 }
 
+/** Write all rows into an E2EE singleton store (kept separate from side-DBs). */
 async function putAllInStore(db: IDBDatabase, storeName: string, records: any[]): Promise<void> {
   if (!db.objectStoreNames.contains(storeName)) return;
   const tx = db.transaction(storeName, 'readwrite');
