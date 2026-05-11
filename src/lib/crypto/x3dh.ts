@@ -24,6 +24,7 @@
  */
 
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
+import { runTxOn, reqToPromise } from './indexedDbTx';
 import {
   bufferToBase64,
   base64ToBuffer,
@@ -178,39 +179,8 @@ function logDBUpsertError(table: 'device_signed_prekeys' | 'user_signed_prekeys'
   return diagnostic;
 }
 
-function openSPKDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = hardGlobals.idbOpen(SPK_DB_NAME, SPK_DB_VERSION);
-    req.onerror = () => reject(req.error);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(SPK_STORE)) {
-        db.createObjectStore(SPK_STORE, { keyPath: 'id' });
-      }
-    };
-    req.onsuccess = () => {
-      const db = req.result;
-      // Self-heal: if the DB exists at the right version but the store is
-      // missing (caused by an older code path that opened the DB without an
-      // upgrade handler), bump the version once to recreate the store.
-      if (!db.objectStoreNames.contains(SPK_STORE)) {
-        const nextVersion = db.version + 1;
-        db.close();
-        const repair = hardGlobals.idbOpen(SPK_DB_NAME, nextVersion);
-        repair.onupgradeneeded = () => {
-          const rdb = repair.result;
-          if (!rdb.objectStoreNames.contains(SPK_STORE)) {
-            rdb.createObjectStore(SPK_STORE, { keyPath: 'id' });
-          }
-        };
-        repair.onerror = () => reject(repair.error);
-        repair.onsuccess = () => resolve(repair.result);
-        return;
-      }
-      resolve(db);
-    };
-  });
-}
+// openSPKDB removed — all SPK IndexedDB access goes through `runTxOn('spk', ...)`
+// (see src/lib/crypto/dbRegistry.ts). Singleton + Safari-safe close + retries.
 
 interface StoredSPK {
   id: string; // `${userId}:${spkId}`
@@ -222,30 +192,22 @@ interface StoredSPK {
 
 async function saveSPKPrivate(userId: string, spkId: number, privateKey: CryptoKey, publicBase64: string): Promise<void> {
   const jwk = await hardCrypto.exportKey('jwk', privateKey);
-  const db = await openSPKDB();
-  const tx = db.transaction(SPK_STORE, 'readwrite');
-  tx.objectStore(SPK_STORE).put({
-    id: `${userId}:${spkId}`,
-    spkId,
-    privateKeyJWK: jwk,
-    publicKeyBase64: publicBase64,
-    createdAt: Date.now(),
-  } as StoredSPK);
-  await new Promise<void>((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+  await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
+    tx.objectStore(SPK_STORE).put({
+      id: `${userId}:${spkId}`,
+      spkId,
+      privateKeyJWK: jwk,
+      publicKeyBase64: publicBase64,
+      createdAt: Date.now(),
+    } as StoredSPK);
   });
 }
 
 async function loadSPKPrivate(userId: string, spkId: number): Promise<CryptoKey | null> {
   try {
-    const db = await openSPKDB();
-    const tx = db.transaction(SPK_STORE, 'readonly');
-    const req = tx.objectStore(SPK_STORE).get(`${userId}:${spkId}`);
-    const result = await new Promise<StoredSPK | undefined>((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const result = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) =>
+      reqToPromise<StoredSPK | undefined>(tx.objectStore(SPK_STORE).get(`${userId}:${spkId}`)),
+    );
     if (!result) return null;
     return importKeyFromJWK(result.privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits'], false);
   } catch {
@@ -259,13 +221,9 @@ async function loadSPKPrivate(userId: string, spkId: number): Promise<CryptoKey 
  */
 async function loadSPKRecord(userId: string, spkId: number): Promise<StoredSPK | null> {
   try {
-    const db = await openSPKDB();
-    const tx = db.transaction(SPK_STORE, 'readonly');
-    const req = tx.objectStore(SPK_STORE).get(`${userId}:${spkId}`);
-    const result = await new Promise<StoredSPK | undefined>((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const result = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) =>
+      reqToPromise<StoredSPK | undefined>(tx.objectStore(SPK_STORE).get(`${userId}:${spkId}`)),
+    );
     return result ?? null;
   } catch {
     return null;
@@ -274,13 +232,9 @@ async function loadSPKRecord(userId: string, spkId: number): Promise<StoredSPK |
 
 async function getNextSPKId(userId: string): Promise<number> {
   try {
-    const db = await openSPKDB();
-    const tx = db.transaction(SPK_STORE, 'readonly');
-    const allKeys = await new Promise<IDBValidKey[]>((resolve, reject) => {
-      const req = tx.objectStore(SPK_STORE).getAllKeys();
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const allKeys = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) =>
+      reqToPromise<IDBValidKey[]>(tx.objectStore(SPK_STORE).getAllKeys()),
+    );
     const prefix = `${userId}:`;
     let maxId = 0;
     for (const key of allKeys) {
