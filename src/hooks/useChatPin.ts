@@ -196,14 +196,9 @@ async function hashPinLegacy(pin: string, salt: Uint8Array): Promise<string> {
 
 async function readRawIdentityBlob(userId: string): Promise<string | null> {
   try {
-    const db = await openE2EEDB();
-    if (!db.objectStoreNames.contains('identity-keys')) return null;
-    const tx = db.transaction('identity-keys', 'readonly');
-    const req = tx.objectStore('identity-keys').get(userId);
-    const result = await new Promise<any>((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const result = await runTx([IDENTITY_STORE], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore(IDENTITY_STORE).get(userId)),
+    );
     if (!result) return null;
     return JSON.stringify(result);
   } catch {
@@ -305,25 +300,16 @@ async function restoreAllCryptoBlob(userId: string, blob: string): Promise<void>
 
 async function writeRawIdentityBlob(userId: string, blob: string): Promise<void> {
   const parsed = JSON.parse(blob);
-  const db = await openE2EEDB();
-  const tx = db.transaction('identity-keys', 'readwrite');
-  tx.objectStore('identity-keys').put(parsed);
-  return new Promise<void>((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+  await runTx([IDENTITY_STORE], 'readwrite', (tx) => {
+    tx.objectStore(IDENTITY_STORE).put(parsed);
   });
 }
 
 /** Delete raw identity keys from IndexedDB (after PIN wrap) */
 async function deleteRawIdentityBlob(userId: string): Promise<void> {
   try {
-    const db = await openE2EEDB();
-    if (!db.objectStoreNames.contains('identity-keys')) return;
-    const tx = db.transaction('identity-keys', 'readwrite');
-    tx.objectStore('identity-keys').delete(userId);
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTx([IDENTITY_STORE], 'readwrite', (tx) => {
+      tx.objectStore(IDENTITY_STORE).delete(userId);
     });
   } catch {
     // DB may not exist yet
