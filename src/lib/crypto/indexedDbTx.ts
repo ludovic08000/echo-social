@@ -16,6 +16,7 @@
  */
 
 import { openE2EEDB, reopenE2EEDB, isIndexedDBClosingError } from './indexedDb';
+import { openDB as openRegistryDB, reopenDB as reopenRegistryDB, type DBKey } from './dbRegistry';
 
 type TxMode = 'readonly' | 'readwrite';
 
@@ -28,12 +29,12 @@ interface QueueEntry {
 const queues = new Map<string, QueueEntry[]>();
 const running = new Set<string>();
 
-function queueKey(stores: string[]): string {
-  return [...stores].sort().join('|');
+function queueKey(dbKey: DBKey, stores: string[]): string {
+  return dbKey + '::' + [...stores].sort().join('|');
 }
 
-function enqueue<T>(stores: string[], run: () => Promise<T>): Promise<T> {
-  const key = queueKey(stores);
+function enqueue<T>(dbKey: DBKey, stores: string[], run: () => Promise<T>): Promise<T> {
+  const key = queueKey(dbKey, stores);
   return new Promise<T>((resolve, reject) => {
     const list = queues.get(key) ?? [];
     list.push({ run: run as () => Promise<unknown>, resolve: resolve as (v: unknown) => void, reject });
@@ -85,11 +86,32 @@ export async function runTx<T>(
   mode: TxMode,
   fn: (tx: IDBTransaction) => Promise<T> | T,
 ): Promise<T> {
-  return enqueue(stores, async () => {
+  return runTxOn('e2ee-keys', stores, mode, fn);
+}
+
+/**
+ * Same as `runTx` but targets a specific registered IndexedDB (see
+ * `dbRegistry.ts`). All cross-DB writes/reads in the E2EE stack must go
+ * through this — never call `indexedDB.open` directly.
+ */
+export async function runTxOn<T>(
+  dbKey: DBKey,
+  stores: string[],
+  mode: TxMode,
+  fn: (tx: IDBTransaction) => Promise<T> | T,
+): Promise<T> {
+  return enqueue(dbKey, stores, async () => {
     let lastErr: unknown;
     for (let attempt = 0; attempt <= TRANSIENT_BACKOFF_MS.length; attempt++) {
       try {
-        const db = attempt === 0 ? await openE2EEDB() : await reopenE2EEDB();
+        const db =
+          dbKey === 'e2ee-keys'
+            ? attempt === 0
+              ? await openE2EEDB()
+              : await reopenE2EEDB()
+            : attempt === 0
+              ? await openRegistryDB(dbKey)
+              : await reopenRegistryDB(dbKey);
         const tx = db.transaction(stores, mode);
         const completion = new Promise<void>((resolve, reject) => {
           tx.oncomplete = () => resolve();
@@ -111,7 +133,7 @@ export async function runTx<T>(
   });
 }
 
-/** Convenience helpers built on `runTx`. */
+/** Convenience helpers built on `runTx` (E2EE singleton DB). */
 
 export function txGet<T>(store: string, id: IDBValidKey): Promise<T | undefined> {
   return runTx([store], 'readonly', (tx) =>
@@ -151,4 +173,12 @@ export function txClear(store: string): Promise<void> {
       req.onerror = () => reject(req.error);
     }),
   );
+}
+
+/** Helper: turn an IDBRequest into a Promise. Use inside `runTxOn` callbacks. */
+export function reqToPromise<T>(req: IDBRequest<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
 }

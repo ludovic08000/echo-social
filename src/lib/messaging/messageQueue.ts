@@ -26,6 +26,7 @@ export type OutboundMessageStatus =
 import { logCryptoError } from '@/lib/crypto/errorLogger';
 import { safeUUID } from '@/e2ee-session/safeUuid';
 import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
+import { runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
 
 /**
  * Emit a low-volume "trace" entry into crypto_error_logs so we can follow a
@@ -108,8 +109,6 @@ interface HandlerEntry {
   registeredAt: number;
 }
 
-const DB_NAME = 'forsure-msg-queue';
-const DB_VERSION = 1;
 const STORE_NAME = 'outbound';
 const MAX_RETRIES = 10;
 const BASE_RETRY_MS = 2000;
@@ -134,7 +133,6 @@ class MessageQueueManager {
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private processing = new Set<string>();
   private processingConversations = new Set<string>();
-  private dbPromise: Promise<IDBDatabase> | null = null;
   private handlersByConversation = new Map<string, Map<string, HandlerEntry>>();
   /** SECURITY: Plaintext stored ONLY in volatile memory, never in IndexedDB */
   private volatilePlaintext = new Map<string, string>();
@@ -144,59 +142,24 @@ class MessageQueueManager {
   private lastResumeAt = new Map<string, number>();
 
   // ─── DB ───
+  // All DB I/O goes through `runTxOn('msg-queue', ...)` so it benefits from
+  // the FIFO write queue + Safari/iOS retry pattern (see indexedDbTx.ts).
 
-  private openDB(): Promise<IDBDatabase> {
-    if (!this.dbPromise) {
-      this.dbPromise = new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onerror = () => { this.dbPromise = null; reject(req.error); };
-        req.onsuccess = async () => {
-          const db = req.result;
-          if (!this.legacyPlaintextScrubbed) {
-            this.legacyPlaintextScrubbed = true;
-            try {
-              await this.scrubLegacyPersistedPlaintext(db);
-            } catch (e) {
-              console.warn('[MSG_QUEUE] legacy plaintext scrub failed', e);
-            }
-          }
-          resolve(db);
-        };
-        req.onupgradeneeded = () => {
-          const db = req.result;
-          if (!db.objectStoreNames.contains(STORE_NAME)) {
-            const store = db.createObjectStore(STORE_NAME, { keyPath: 'localId' });
-            store.createIndex('conversationId', 'conversationId', { unique: false });
-            store.createIndex('status', 'status', { unique: false });
-          }
-        };
+  private async ensureLegacyScrub(): Promise<void> {
+    if (this.legacyPlaintextScrubbed) return;
+    this.legacyPlaintextScrubbed = true;
+    try {
+      const all = await this.dbGetAllRaw();
+      const leaked = all.filter((msg) => typeof msg.plaintext === 'string' && msg.plaintext.length > 0);
+      if (!leaked.length) return;
+      await runTxOn('msg-queue', [STORE_NAME], 'readwrite', (tx) => {
+        const store = tx.objectStore(STORE_NAME);
+        for (const msg of leaked) store.put({ ...msg, plaintext: '' });
       });
+      console.warn(`[MSG_QUEUE] scrubbed ${leaked.length} legacy plaintext message(s) from IndexedDB`);
+    } catch (e) {
+      console.warn('[MSG_QUEUE] legacy plaintext scrub failed', e);
     }
-    return this.dbPromise;
-  }
-
-  private async scrubLegacyPersistedPlaintext(db: IDBDatabase): Promise<void> {
-    const all = await new Promise<OutboundMessage[]>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const req = tx.objectStore(STORE_NAME).getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
-
-    const leaked = all.filter((msg) => typeof msg.plaintext === 'string' && msg.plaintext.length > 0);
-    if (!leaked.length) return;
-
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
-      for (const msg of leaked) {
-        store.put({ ...msg, plaintext: '' });
-      }
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-
-    console.warn(`[MSG_QUEUE] scrubbed ${leaked.length} legacy plaintext message(s) from IndexedDB`);
   }
 
   private toPersistedMessage(msg: OutboundMessage): OutboundMessage {
@@ -215,58 +178,45 @@ class MessageQueueManager {
   }
 
   private async dbPut(msg: OutboundMessage): Promise<void> {
-    const db = await this.openDB();
+    await this.ensureLegacyScrub();
     const persisted = this.toPersistedMessage(msg);
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
+    await runTxOn('msg-queue', [STORE_NAME], 'readwrite', (tx) => {
       tx.objectStore(STORE_NAME).put(persisted);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
     });
   }
 
   private async dbDelete(localId: string): Promise<void> {
-    const db = await this.openDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
+    await runTxOn('msg-queue', [STORE_NAME], 'readwrite', (tx) => {
       tx.objectStore(STORE_NAME).delete(localId);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
     });
   }
 
   private async dbGet(localId: string): Promise<OutboundMessage | undefined> {
-    const db = await this.openDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const req = tx.objectStore(STORE_NAME).get(localId);
-      req.onsuccess = () => {
-        const result = req.result as OutboundMessage | undefined;
-        resolve(result ? this.hydrateRuntimeMessage(result) : undefined);
-      };
-      req.onerror = () => reject(req.error);
-    });
+    await this.ensureLegacyScrub();
+    const result = await runTxOn('msg-queue', [STORE_NAME], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore(STORE_NAME).get(localId)),
+    );
+    return result ? this.hydrateRuntimeMessage(result as OutboundMessage) : undefined;
+  }
+
+  private async dbGetAllRaw(): Promise<OutboundMessage[]> {
+    return (await runTxOn('msg-queue', [STORE_NAME], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore(STORE_NAME).getAll()),
+    )) as OutboundMessage[] || [];
   }
 
   private async dbGetAll(): Promise<OutboundMessage[]> {
-    const db = await this.openDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const req = tx.objectStore(STORE_NAME).getAll();
-      req.onsuccess = () => resolve((req.result || []).map((msg) => this.hydrateRuntimeMessage(msg)));
-      req.onerror = () => reject(req.error);
-    });
+    await this.ensureLegacyScrub();
+    const all = await this.dbGetAllRaw();
+    return all.map((msg) => this.hydrateRuntimeMessage(msg));
   }
 
   private async dbGetByConversation(conversationId: string): Promise<OutboundMessage[]> {
-    const db = await this.openDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const idx = tx.objectStore(STORE_NAME).index('conversationId');
-      const req = idx.getAll(conversationId);
-      req.onsuccess = () => resolve((req.result || []).map((msg) => this.hydrateRuntimeMessage(msg)));
-      req.onerror = () => reject(req.error);
-    });
+    await this.ensureLegacyScrub();
+    const all = (await runTxOn('msg-queue', [STORE_NAME], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore(STORE_NAME).index('conversationId').getAll(conversationId)),
+    )) as OutboundMessage[] || [];
+    return all.map((msg) => this.hydrateRuntimeMessage(msg));
   }
 
   // ─── Public API ───
