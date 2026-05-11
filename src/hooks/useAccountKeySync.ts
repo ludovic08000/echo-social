@@ -195,7 +195,13 @@ export function useAccountKeySync() {
       } catch (e) {
         console.warn('[messaging] startup crypto check failed:', e);
       }
-    })();
+      try {
+        const snap = getSnapshot(user.id);
+        if (snap.state === 'storage_checking') {
+          transition(user.id, await hasLocalKeys() ? 'identity_loaded' : 'backup_restore_required', 'boot.fallback');
+        }
+      } catch {}
+    });
 
     return () => {
       cancelled = true;
