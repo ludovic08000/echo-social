@@ -172,23 +172,10 @@ async function restoreLocalKeys(json: string): Promise<void> {
 
   if (data['ratchet:states'] && Array.isArray(data['ratchet:states'])) {
     try {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const req = indexedDB.open('forsure-ratchet', 1);
-        req.onerror = () => reject(req.error);
-        req.onsuccess = () => resolve(req.result);
-        req.onupgradeneeded = () => {
-          if (!req.result.objectStoreNames.contains('ratchet-states')) {
-            req.result.createObjectStore('ratchet-states', { keyPath: 'convId' });
-          }
-        };
+      await runTxOn('ratchet', ['ratchet-states'], 'readwrite', (tx) => {
+        const store = tx.objectStore('ratchet-states');
+        for (const r of data['ratchet:states']) store.put(r);
       });
-      const tx = db.transaction('ratchet-states', 'readwrite');
-      for (const r of data['ratchet:states']) tx.objectStore('ratchet-states').put(r);
-      await new Promise<void>((resolve, reject) => {
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-      db.close();
     } catch {}
   }
 
