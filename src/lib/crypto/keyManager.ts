@@ -497,9 +497,4 @@ export async function importAllRatchetStates(records: any[]): Promise<void> {
     });
   } catch {}
 }
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch {}
-}
+
