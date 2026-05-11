@@ -17,6 +17,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
+import { runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
 import {
   buildDeviceLinkQrData,
   decryptDeviceLinkPayload,
