@@ -78,7 +78,7 @@ async function logSecurityAIResult(supabase: ReturnType<typeof createClient>, us
   }
 }
 
-serve(async (req) => {
+async function handle(req: Request): Promise<Response> {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
