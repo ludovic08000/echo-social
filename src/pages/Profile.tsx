@@ -480,187 +480,219 @@ export default function Profile() {
           </div>
         )}
 
-        {/* Cover Photo */}
-        <div 
-          ref={coverRef}
-          className={cn(
-            "relative h-52 lg:h-72 bg-gradient-to-br from-primary/20 via-primary/10 to-accent/20 overflow-hidden lg:rounded-b-2xl",
-            isRepositioning && "cursor-ns-resize"
-          )}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
-          {profile.cover_url ? (
-            <img 
-              src={profile.cover_url} 
-              alt="Couverture" 
-              className="w-full h-full object-cover select-none"
-              style={{ objectPosition: `center ${isRepositioning ? coverPositionY : (profile.cover_position_y ?? 50)}%` }}
-              draggable={false}
-            />
-          ) : (
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-accent/10" />
-          )}
-          
-          {coverUpload.isUploading && (
-            <div className="absolute inset-0 bg-background/50 flex items-center justify-center">
-              <Loader2 className="w-6 h-6 animate-spin text-primary" />
-            </div>
-          )}
-          
-          {isRepositioning && (
-            <>
-              <div className="absolute inset-0 bg-background/20 flex items-center justify-center pointer-events-none">
-                <div className="glass rounded-xl px-4 py-2 text-xs font-medium flex items-center gap-2">
-                  <Move className="w-3.5 h-3.5" />
-                  <span>Glisse pour repositionner</span>
-                </div>
-              </div>
-              <div 
-                className="absolute bottom-0 left-0 right-0 glass p-3 flex gap-2 z-20"
-                onMouseDown={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-              >
-                <Button variant="outline" size="sm" className="flex-1 rounded-xl" onClick={(e) => { e.stopPropagation(); handleCancelReposition(); }}>
-                  <X className="w-3.5 h-3.5 mr-1.5" /> Annuler
-                </Button>
-                <Button size="sm" className="flex-1 rounded-xl" onClick={(e) => { e.stopPropagation(); handleSavePosition(); }} disabled={updateProfile.isPending}>
-                  {updateProfile.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Check className="w-3.5 h-3.5 mr-1.5" />}
-                  Enregistrer
-                </Button>
-              </div>
-            </>
-          )}
-          
-          {/* Header buttons */}
-          <div className="absolute top-3 left-3 right-3 flex justify-between items-center z-10">
-            {!isOwnProfile && (
-              <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="h-8 w-8 rounded-full glass">
-                <ArrowLeft className="w-4 h-4" />
-              </Button>
+        {/* ============= MODERN PROFILE HEADER (Elite Glassmorphism) ============= */}
+        <div className="relative">
+          {/* Cover background — blurred, immersive */}
+          <div
+            ref={coverRef}
+            className={cn(
+              "relative h-72 lg:h-80 overflow-hidden",
+              isRepositioning && "cursor-ns-resize"
             )}
-            <div className="flex-1" />
-            {!isRepositioning && (
-              <div className="flex gap-1.5">
-                <ShareButton
-                  url={generateProfileUrl(userId!)}
-                  title={`Profil de ${profile?.name || 'utilisateur'}`}
-                  text={profile?.bio || undefined}
-                  variant="ghost"
-                  className="h-8 w-8 rounded-full glass"
-                />
-                {isOwnProfile && profile.cover_url && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full glass" onClick={handleStartReposition}>
-                    <Move className="w-4 h-4" />
-                  </Button>
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+          >
+            {profile.cover_url ? (
+              <img
+                src={profile.cover_url}
+                alt="Couverture"
+                className={cn(
+                  "w-full h-full object-cover select-none scale-110",
+                  !isRepositioning && "blur-2xl opacity-50"
                 )}
-                {isOwnProfile && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full glass" onClick={() => coverInputRef.current?.click()} disabled={coverUpload.isUploading}>
-                    {coverUpload.isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
-                  </Button>
-                )}
-              </div>
+                style={{ objectPosition: `center ${isRepositioning ? coverPositionY : (profile.cover_position_y ?? 50)}%` }}
+                draggable={false}
+              />
+            ) : (
+              <>
+                <div className="absolute inset-0 bg-gradient-to-br from-[#002395]/40 via-background to-[#ED2939]/30" />
+                <div className="absolute inset-0 opacity-30 mix-blend-overlay" style={{
+                  backgroundImage: 'radial-gradient(circle at 20% 20%, hsl(var(--primary)/0.5), transparent 50%), radial-gradient(circle at 80% 80%, hsl(var(--accent)/0.4), transparent 50%)'
+                }} />
+              </>
             )}
-          </div>
-        </div>
+            {/* Bottom fade to background */}
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/40 to-background pointer-events-none" />
 
-        {/* Profile Header */}
-        <div className="px-4 lg:px-6 relative">
-          {/* Avatar */}
-          <div className="absolute -top-14 lg:-top-16 left-4 lg:left-6">
-            <div className="relative">
-              <div className="w-28 h-28 lg:w-32 lg:h-32 rounded-full border-4 border-background overflow-hidden bg-background shadow-xl">
-                {avatarUpload.isUploading ? (
-                  <div className="w-full h-full flex items-center justify-center bg-muted">
-                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                  </div>
-                ) : (
-                  <UserAvatar src={profile.avatar_url} alt={profile.name} size="xl" className="w-full h-full" />
-                )}
+            {coverUpload.isUploading && (
+              <div className="absolute inset-0 bg-background/50 flex items-center justify-center">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
               </div>
-              {isOwnProfile && (
-                <button 
-                  className="absolute bottom-1 right-1 w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center border-2 border-background hover:bg-primary/90 transition-all duration-200"
-                  onClick={() => avatarInputRef.current?.click()}
-                  disabled={avatarUpload.isUploading}
+            )}
+
+            {isRepositioning && (
+              <>
+                <div className="absolute inset-0 bg-background/20 flex items-center justify-center pointer-events-none">
+                  <div className="glass rounded-xl px-4 py-2 text-xs font-medium flex items-center gap-2">
+                    <Move className="w-3.5 h-3.5" />
+                    <span>Glisse pour repositionner</span>
+                  </div>
+                </div>
+                <div
+                  className="absolute bottom-0 left-0 right-0 glass p-3 flex gap-2 z-30"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
                 >
-                  <Camera className="w-4 h-4" />
-                </button>
+                  <Button variant="outline" size="sm" className="flex-1 rounded-xl" onClick={(e) => { e.stopPropagation(); handleCancelReposition(); }}>
+                    <X className="w-3.5 h-3.5 mr-1.5" /> Annuler
+                  </Button>
+                  <Button size="sm" className="flex-1 rounded-xl" onClick={(e) => { e.stopPropagation(); handleSavePosition(); }} disabled={updateProfile.isPending}>
+                    {updateProfile.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Check className="w-3.5 h-3.5 mr-1.5" />}
+                    Enregistrer
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* Top toolbar */}
+            <div className="absolute top-3 left-3 right-3 flex justify-between items-center z-20">
+              {!isOwnProfile ? (
+                <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="h-9 w-9 rounded-full bg-background/40 backdrop-blur-xl border border-border/40">
+                  <ArrowLeft className="w-4 h-4" />
+                </Button>
+              ) : <div />}
+              {!isRepositioning && (
+                <div className="flex gap-1.5">
+                  <ShareButton
+                    url={generateProfileUrl(userId!)}
+                    title={`Profil de ${profile?.name || 'utilisateur'}`}
+                    text={profile?.bio || undefined}
+                    variant="ghost"
+                    className="h-9 w-9 rounded-full bg-background/40 backdrop-blur-xl border border-border/40"
+                  />
+                  {isOwnProfile && profile.cover_url && (
+                    <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full bg-background/40 backdrop-blur-xl border border-border/40" onClick={handleStartReposition}>
+                      <Move className="w-4 h-4" />
+                    </Button>
+                  )}
+                  {isOwnProfile && (
+                    <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full bg-background/40 backdrop-blur-xl border border-border/40" onClick={() => coverInputRef.current?.click()} disabled={coverUpload.isUploading}>
+                      {coverUpload.isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
           </div>
 
-          {/* Name & Stats */}
-          <div className="pt-16 lg:pt-20 pb-4">
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">{profile.name}</h1>
-              {isCreator && <CreatorBadge size="lg" />}
-              {targetIsMinor && <MinorProtectedBadge />}
+          {/* Centered profile card pulled up over cover */}
+          <div className="px-4 lg:px-6 -mt-32 lg:-mt-36 relative z-10 flex flex-col items-center text-center">
+            {/* Avatar XXL with tricolor animated ring */}
+            <div className="relative">
+              <div
+                className="rounded-full p-[3px]"
+                style={{
+                  background: 'conic-gradient(from 0deg, #002395, #ED2939, #ffffff, #002395)',
+                  animation: 'spin 12s linear infinite',
+                }}
+              >
+                <div className="rounded-full p-1 bg-background">
+                  <div className="w-28 h-28 lg:w-32 lg:h-32 rounded-full overflow-hidden bg-background shadow-2xl">
+                    {avatarUpload.isUploading ? (
+                      <div className="w-full h-full flex items-center justify-center bg-muted">
+                        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                      </div>
+                    ) : (
+                      <UserAvatar src={profile.avatar_url} alt={profile.name} size="xl" className="w-full h-full" />
+                    )}
+                  </div>
+                </div>
+              </div>
+              {isCreator && (
+                <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-[#002395] flex items-center justify-center border-[3px] border-background shadow-lg">
+                  <Check className="w-4 h-4 text-white" strokeWidth={3} />
+                </div>
+              )}
+              {isOwnProfile && (
+                <button
+                  className="absolute bottom-1 left-1 w-8 h-8 bg-foreground text-background rounded-full flex items-center justify-center border-2 border-background hover:scale-110 transition-transform shadow-lg"
+                  onClick={() => avatarInputRef.current?.click()}
+                  disabled={avatarUpload.isUploading}
+                  aria-label="Changer la photo de profil"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
-            
-            {/* Stats row */}
-            <div className="flex items-center gap-5 mt-2">
-              <Link to="/friends" className="text-center hover:opacity-80 transition-opacity">
-                <span className="text-base font-bold text-foreground">{stats?.friendsCount || 0}</span>
-                <span className="text-sm text-muted-foreground ml-1">amis</span>
+
+            {/* Name + badges */}
+            <div className="mt-5 flex flex-col items-center gap-1.5">
+              <h1
+                className="text-3xl lg:text-4xl font-bold tracking-tight"
+                style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic' }}
+              >
+                {profile.name}
+              </h1>
+              <div className="flex flex-wrap items-center justify-center gap-1.5">
+                {(profile as any).username && (
+                  <span className="text-xs text-muted-foreground font-medium">@{(profile as any).username}</span>
+                )}
+                {isCreator && <CreatorBadge size="sm" />}
+                {targetIsMinor && <MinorProtectedBadge />}
+              </div>
+            </div>
+
+            {/* Tactile stats glass bar */}
+            <div className="mt-6 w-full max-w-md flex items-stretch bg-card/40 backdrop-blur-2xl border border-border/40 rounded-3xl p-1 shadow-[0_18px_50px_-24px_hsl(var(--foreground)/0.25)]">
+              <Link to="/friends" className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl transition-all active:scale-95 hover:bg-accent/40">
+                <span className="text-lg font-bold tracking-tight">{stats?.friendsCount || 0}</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-[0.18em] font-semibold mt-0.5">Amis</span>
               </Link>
-              <span className="text-border">•</span>
-              <div className="text-center">
-                <span className="text-base font-bold text-foreground">{stats?.friendsCount || 0}</span>
-                <span className="text-sm text-muted-foreground ml-1">abonnés</span>
+              <div className="w-px bg-border/50 my-2" />
+              <div className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl">
+                <span className="text-lg font-bold tracking-tight">{stats?.postsCount || 0}</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-[0.18em] font-semibold mt-0.5">Posts</span>
               </div>
-              <span className="text-border">•</span>
-              <div className="text-center">
-                <span className="text-base font-bold text-foreground">{stats?.postsCount || 0}</span>
-                <span className="text-sm text-muted-foreground ml-1">posts</span>
-              </div>
-              <span className="text-border">•</span>
-              <div className="text-center">
-                <span className="text-base font-bold text-foreground">{stats?.likesReceived || 0}</span>
-                <span className="text-sm text-muted-foreground ml-1">j'aime</span>
+              <div className="w-px bg-border/50 my-2" />
+              <div className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl">
+                <span className="text-lg font-bold tracking-tight">{stats?.likesReceived || 0}</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-[0.18em] font-semibold mt-0.5">J'aime</span>
               </div>
             </div>
 
             {/* Bio */}
             {profile.bio && (
-              <p className="text-muted-foreground mt-2.5 text-sm leading-relaxed">{profile.bio}</p>
+              <p className="text-sm text-foreground/80 leading-relaxed mt-5 max-w-md font-light">
+                {profile.bio}
+              </p>
             )}
 
-            {/* Quick info */}
-            <div className="flex flex-wrap items-center gap-4 mt-3 text-sm text-muted-foreground">
-              <div className="flex items-center gap-1.5">
-                <MapPin className="w-4 h-4" />
-                <span>{profile.city || 'France'}</span>
-              </div>
+            {/* Quick info pills */}
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-4 text-xs text-muted-foreground">
+              {profile.city && (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-card/50 border border-border/40">
+                  <MapPin className="w-3 h-3" /><span>{profile.city}</span>
+                </div>
+              )}
               {profile.date_of_birth && (
-                <div className="flex items-center gap-1.5">
-                  <Cake className="w-4 h-4" />
-                  <span>{new Date(profile.date_of_birth).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-card/50 border border-border/40">
+                  <Cake className="w-3 h-3" />
+                  <span>{new Date(profile.date_of_birth).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                 </div>
               )}
               {profile.education_level && (
-                <div className="flex items-center gap-1.5">
-                  <GraduationCap className="w-4 h-4" />
-                  <span>{profile.education_level}{profile.education_city ? ` à ${profile.education_city}` : ''}</span>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-card/50 border border-border/40">
+                  <GraduationCap className="w-3 h-3" />
+                  <span>{profile.education_level}{profile.education_city ? ` · ${profile.education_city}` : ''}</span>
                 </div>
               )}
-              <div className="flex items-center gap-1.5">
-                <Calendar className="w-4 h-4" />
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-card/50 border border-border/40">
+                <Calendar className="w-3 h-3" />
                 <span>Depuis {new Date(profile.created_at).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}</span>
               </div>
             </div>
 
             {/* Mutual friends */}
             {mutualFriends && mutualFriends.length > 0 && (
-              <div className="flex items-center gap-2 mt-3">
-                <div className="flex -space-x-1.5">
+              <div className="flex items-center gap-2 mt-4">
+                <div className="flex -space-x-2">
                   {mutualFriends.slice(0, 3).map((friend) => (
-                    <div key={friend.id} className="w-6 h-6 rounded-full border-2 border-background overflow-hidden">
+                    <div key={friend.id} className="w-7 h-7 rounded-full border-2 border-background overflow-hidden">
                       <UserAvatar src={friend.avatar_url} alt={friend.name} size="xs" className="w-full h-full" />
                     </div>
                   ))}
@@ -669,63 +701,58 @@ export default function Profile() {
               </div>
             )}
 
-            {/* Action buttons */}
-            <div className="flex flex-wrap gap-2 mt-5 pb-1">
+            {/* Premium action buttons */}
+            <div className="flex flex-wrap gap-2 mt-6 justify-center w-full max-w-md">
               {isOwnProfile ? (
                 <>
-                  <Link to="/settings">
-                    <Button className="rounded-xl h-10 text-sm whitespace-nowrap">
+                  <Link to="/settings" className="flex-1 min-w-[140px]">
+                    <Button className="w-full rounded-2xl h-11 text-sm font-semibold bg-foreground text-background hover:bg-foreground/90">
                       <Edit2 className="w-4 h-4 mr-2" />
-                      Modifier le profil
+                      Modifier
                     </Button>
                   </Link>
                   {!isCreator && (
-                    <Link to="/creator">
-                      <Button 
-                        variant="outline" 
-                        className="rounded-xl h-10 text-sm whitespace-nowrap border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
+                    <Link to="/creator" className="flex-1 min-w-[120px]">
+                      <Button
+                        variant="outline"
+                        className="w-full rounded-2xl h-11 text-sm font-semibold border-amber-500/40 text-amber-500 hover:bg-amber-500/10"
                       >
-                        <Crown className="w-4 h-4 mr-1" />
+                        <Crown className="w-4 h-4 mr-1.5" />
                         Créateur
                       </Button>
                     </Link>
-                   )}
-                   {isCreator && <TipButton creatorId={userId!} creatorName={profile.name} />}
-                  <Button 
-                    variant="secondary" 
-                    className="rounded-xl h-10 text-sm whitespace-nowrap"
-                    onClick={() => {
-                      setActiveTab('albums');
-                      setSelectedAlbum(null);
-                    }}
+                  )}
+                  {isCreator && <TipButton creatorId={userId!} creatorName={profile.name} />}
+                  <Button
+                    variant="ghost"
+                    className="rounded-2xl h-11 w-11 p-0 bg-card/50 border border-border/40 backdrop-blur-xl"
+                    onClick={() => { setActiveTab('albums'); setSelectedAlbum(null); }}
+                    aria-label="Mes albums"
                   >
-                    <FolderOpen className="w-4 h-4 mr-2" />
-                    Mes albums
+                    <FolderOpen className="w-4 h-4" />
                   </Button>
                   <Link to="/feed">
-                    <Button variant="secondary" className="rounded-xl h-10 text-sm whitespace-nowrap">
-                      <Newspaper className="w-4 h-4 mr-2" />
-                      Fil d'actu
+                    <Button variant="ghost" className="rounded-2xl h-11 w-11 p-0 bg-card/50 border border-border/40 backdrop-blur-xl" aria-label="Fil d'actu">
+                      <Newspaper className="w-4 h-4" />
                     </Button>
                   </Link>
-                  <Button 
-                    variant="destructive" 
-                    className="rounded-xl h-10 text-sm whitespace-nowrap"
+                  <Button
+                    variant="ghost"
+                    className="rounded-2xl h-11 w-11 p-0 bg-destructive/10 border border-destructive/30 text-destructive hover:bg-destructive/20"
                     onClick={async () => {
                       await supabase.auth.signOut();
                       navigate('/login');
                     }}
+                    aria-label="Déconnexion"
                   >
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Déconnexion
+                    <LogOut className="w-4 h-4" />
                   </Button>
                 </>
               ) : (
                 <>
-                  <FriendshipButton userId={userId!} />
-                  <Button 
-                    variant="secondary" 
-                    className="rounded-xl h-10 text-sm whitespace-nowrap"
+                  <div className="flex-1 min-w-[140px]"><FriendshipButton userId={userId!} /></div>
+                  <Button
+                    className="flex-1 min-w-[140px] rounded-2xl h-11 text-sm font-semibold bg-[#002395] text-white hover:bg-[#002395]/90"
                     disabled={createConversation.isPending}
                     onClick={async () => {
                       if (!userId) return;
@@ -736,35 +763,42 @@ export default function Profile() {
                     <MessageCircle className="w-4 h-4 mr-2" />
                     Message
                   </Button>
-                   {isCreator && <TipButton creatorId={userId!} creatorName={profile.name} />}
-                   <ReportFakeAccountButton reportedUserId={userId!} />
-                   {currentUserIsMinor && <MinorReportButton reportedUserId={userId!} />}
+                  {isCreator && <TipButton creatorId={userId!} creatorName={profile.name} />}
+                  <ReportFakeAccountButton reportedUserId={userId!} />
+                  {currentUserIsMinor && <MinorReportButton reportedUserId={userId!} />}
                 </>
               )}
             </div>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="border-t border-border/30 mt-2">
+        {/* Segmented tabs — sticky, glass, red glow underline */}
+        <div className="sticky top-0 z-20 mt-8 bg-background/70 backdrop-blur-2xl border-y border-border/30">
           <div className="flex gap-0 overflow-x-auto scrollbar-hide px-2 lg:px-4">
-            {tabItems.map((tab) => (
-              <button
-                key={tab.value}
-                onClick={() => {
-                  setActiveTab(tab.value);
-                  if (tab.value === 'albums') setSelectedAlbum(null);
-                }}
-                className={cn(
-                  'flex-1 min-w-fit px-5 py-3.5 text-sm font-medium text-center transition-all duration-200 border-b-2 whitespace-nowrap',
-                  activeTab === tab.value
-                    ? 'text-primary border-primary'
-                    : 'text-muted-foreground border-transparent hover:text-foreground hover:bg-secondary/40'
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
+            {tabItems.map((tab) => {
+              const isActive = activeTab === tab.value;
+              return (
+                <button
+                  key={tab.value}
+                  onClick={() => {
+                    setActiveTab(tab.value);
+                    if (tab.value === 'albums') setSelectedAlbum(null);
+                  }}
+                  className={cn(
+                    'relative flex-1 min-w-fit px-5 py-3.5 text-[11px] font-bold uppercase tracking-[0.18em] text-center transition-all whitespace-nowrap',
+                    isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {tab.label}
+                  {isActive && (
+                    <span
+                      className="absolute left-1/2 -translate-x-1/2 bottom-1 h-[3px] w-8 rounded-full bg-[#ED2939]"
+                      style={{ boxShadow: '0 0 12px hsl(355 86% 51% / 0.6)' }}
+                    />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
