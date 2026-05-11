@@ -1,6 +1,23 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { logAIEvent } from "../_shared/aiEngineLog.ts";
+
+const AI_ENGINE_ACTION_MODULE: Record<string, string> = {
+  moderate: "ai-moderator",
+  analyze_sentiment: "sentiment-analyzer",
+  recommend: "recommendation-engine",
+  smart_reply: "smart-reply",
+  content_enhance: "content-enhancer",
+  profile_risk: "risk-assessor",
+  detect_intrusion: "intrusion-detector",
+  analyze_ip: "ip-analyzer",
+  inspect_packet: "packet-inspector",
+  scan_vulnerabilities: "vuln-scanner",
+  analyze_session: "session-guardian",
+  learn_feedback: "ai-moderator",
+  get_feedback_history: "ai-moderator",
+};
 
 const rateLimiter = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT = 15;
