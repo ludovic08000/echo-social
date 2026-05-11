@@ -348,18 +348,34 @@ export default function Profile() {
   const { data: stats } = useQuery({
     queryKey: ['profile-stats', userId],
     queryFn: async () => {
-      if (!userId) return { postsCount: 0, likesReceived: 0, friendsCount: 0 };
-      const [{ count: postsCount }, { data: postIds }, { count: friendsCount }] = await Promise.all([
+      if (!userId) return { postsCount: 0, likesReceived: 0, friendsCount: 0, followersCount: 0, followingCount: 0 };
+      const [
+        { count: postsCount },
+        { data: postIds },
+        { count: friendsCount },
+        { count: followersCount },
+        { count: followingCount },
+      ] = await Promise.all([
         supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', userId),
         supabase.from('posts').select('id').eq('user_id', userId),
         supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('status', 'accepted').or(`requester_id.eq.${userId},addressee_id.eq.${userId}`),
+        // Insta-style: "followers" = personnes qui m'ont ajouté (je suis addressee)
+        supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('status', 'accepted').eq('addressee_id', userId),
+        // "following" = personnes que j'ai ajoutées (je suis requester)
+        supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('status', 'accepted').eq('requester_id', userId),
       ]);
       let likesReceived = 0;
       if (postIds && postIds.length > 0) {
         const { count } = await supabase.from('likes').select('*', { count: 'exact', head: true }).in('post_id', postIds.map(p => p.id));
         likesReceived = count || 0;
       }
-      return { postsCount: postsCount || 0, likesReceived, friendsCount: friendsCount || 0 };
+      return {
+        postsCount: postsCount || 0,
+        likesReceived,
+        friendsCount: friendsCount || 0,
+        followersCount: followersCount || 0,
+        followingCount: followingCount || 0,
+      };
     },
     enabled: !!userId,
   });
