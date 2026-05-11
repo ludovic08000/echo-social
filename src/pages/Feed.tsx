@@ -365,7 +365,13 @@ export default function Feed() {
                 {/* Posts list — clean spacing */}
                 <div className="sm:px-4 sm:space-y-4 mt-4">
                   {posts.map((post, index) => (
-                    <div key={post.id}>
+                    <div
+                      key={post.id}
+                      style={{
+                        contentVisibility: 'auto',
+                        containIntrinsicSize: '720px',
+                      } as React.CSSProperties}
+                    >
                       <PostCard post={post} />
                       {renderInjection(index)}
                     </div>
