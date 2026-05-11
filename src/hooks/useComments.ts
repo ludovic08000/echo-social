@@ -153,6 +153,11 @@ export function useCreateComment() {
         });
       }
 
+      // Fire-and-forget Zeus moderation (auto-reply if hateful, escalate to admin)
+      supabase.functions.invoke('zeus', {
+        body: { domain: 'comment-moderation', commentId: data.id, postId, text: sanitizedBody },
+      }).catch(() => {});
+
       return data;
     },
     onSuccess: (_, variables) => {
