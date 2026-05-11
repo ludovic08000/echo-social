@@ -25,11 +25,7 @@ import { STORE_KEYS as IDENTITY_STORE } from '@/lib/crypto/constants';
 export type PinMode = 'every_open' | 'once_per_session' | 'on_inactivity' | 'on_return';
 
 const SESSION_KEY = 'forsure-pin-unlocked';
-const PIN_WRAP_DB = 'forsure-pin-wrap';
-// CRITICAL: Bumped to v2 to add the unified store. v1 used a single store
-// "wrapped-keys" which was incompatible with pinWrap.ts ("pin-wrapped-keys").
-// We keep BOTH stores in v2 so we can migrate legacy blobs lazily.
-const PIN_WRAP_VERSION = 2;
+// PIN wrap DB metadata is owned by dbRegistry now (key 'pin-wrap', version 2).
 const PIN_WRAP_STORE = 'pin-wrapped-keys';   // unified store (matches pinWrap.ts)
 const PIN_WRAP_LEGACY_STORE = 'wrapped-keys'; // read-only fallback for migration
 const PBKDF2_ITERATIONS = 600_000;
