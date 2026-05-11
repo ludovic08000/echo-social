@@ -498,11 +498,11 @@ export default function Profile() {
 
         {/* ============= MODERN PROFILE HEADER (Elite Glassmorphism) ============= */}
         <div className="relative">
-          {/* Cover background — blurred, immersive */}
+          {/* Cover — full bleed, properly framed, taller for breathing room */}
           <div
             ref={coverRef}
             className={cn(
-              "relative h-72 lg:h-80 overflow-hidden",
+              "relative h-56 sm:h-64 lg:h-80 overflow-hidden lg:rounded-b-3xl",
               isRepositioning && "cursor-ns-resize"
             )}
             onMouseDown={handleMouseDown}
@@ -517,10 +517,7 @@ export default function Profile() {
               <img
                 src={profile.cover_url}
                 alt="Couverture"
-                className={cn(
-                  "w-full h-full object-cover select-none scale-110",
-                  !isRepositioning && "blur-2xl opacity-50"
-                )}
+                className="w-full h-full object-cover select-none"
                 style={{ objectPosition: `center ${isRepositioning ? coverPositionY : (profile.cover_position_y ?? 50)}%` }}
                 draggable={false}
               />
@@ -532,8 +529,8 @@ export default function Profile() {
                 }} />
               </>
             )}
-            {/* Bottom fade to background */}
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/40 to-background pointer-events-none" />
+            {/* Soft bottom fade so the avatar reads cleanly over any image */}
+            <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-b from-transparent to-background pointer-events-none" />
 
             {coverUpload.isUploading && (
               <div className="absolute inset-0 bg-background/50 flex items-center justify-center">
