@@ -99,52 +99,38 @@ async function loadWrappedKeys(userId: string): Promise<{
   salt: string;
 } | null> {
   try {
-    const db = await openPinDB();
-
     // 1) Try unified store first
-    const fromUnified = await new Promise<any>((resolve, reject) => {
-      const tx = db.transaction(PIN_WRAP_STORE, 'readonly');
-      const req = tx.objectStore(PIN_WRAP_STORE).get(userId);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const fromUnified = await runTxOn('pin-wrap', [PIN_WRAP_STORE], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore(PIN_WRAP_STORE).get(userId)),
+    ).catch(() => null);
 
     if (fromUnified) {
-      // Accept either useChatPin shape or pinWrap.ts shape
-      const wrappedBlob = fromUnified.wrappedBlob ?? fromUnified.ciphertext;
-      if (wrappedBlob && fromUnified.iv && fromUnified.salt) {
-        return { wrappedBlob, iv: fromUnified.iv, salt: fromUnified.salt };
+      const wrappedBlob = (fromUnified as any).wrappedBlob ?? (fromUnified as any).ciphertext;
+      if (wrappedBlob && (fromUnified as any).iv && (fromUnified as any).salt) {
+        return { wrappedBlob, iv: (fromUnified as any).iv, salt: (fromUnified as any).salt };
       }
     }
 
     // 2) Legacy fallback — migrate to unified store on the fly
-    const fromLegacy = await new Promise<any>((resolve, reject) => {
-      try {
-        const tx = db.transaction(PIN_WRAP_LEGACY_STORE, 'readonly');
-        const req = tx.objectStore(PIN_WRAP_LEGACY_STORE).get(userId);
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      } catch (e) {
-        resolve(null);
-      }
-    }).catch(() => null);
+    const fromLegacy = await runTxOn('pin-wrap', [PIN_WRAP_LEGACY_STORE], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore(PIN_WRAP_LEGACY_STORE).get(userId)),
+    ).catch(() => null);
 
-    if (fromLegacy?.wrappedBlob && fromLegacy.iv && fromLegacy.salt) {
+    if (fromLegacy && (fromLegacy as any).wrappedBlob && (fromLegacy as any).iv && (fromLegacy as any).salt) {
       console.warn('[PIN] migrating legacy wrapped-keys → pin-wrapped-keys');
+      const legacy = fromLegacy as any;
       await saveWrappedKeys(userId, {
-        wrappedBlob: fromLegacy.wrappedBlob,
-        iv: fromLegacy.iv,
-        salt: fromLegacy.salt,
+        wrappedBlob: legacy.wrappedBlob,
+        iv: legacy.iv,
+        salt: legacy.salt,
       });
-      // Best-effort cleanup of legacy entry
-      try {
-        const tx = db.transaction(PIN_WRAP_LEGACY_STORE, 'readwrite');
+      await runTxOn('pin-wrap', [PIN_WRAP_LEGACY_STORE], 'readwrite', (tx) => {
         tx.objectStore(PIN_WRAP_LEGACY_STORE).delete(userId);
-      } catch {}
+      }).catch(() => {});
       return {
-        wrappedBlob: fromLegacy.wrappedBlob,
-        iv: fromLegacy.iv,
-        salt: fromLegacy.salt,
+        wrappedBlob: legacy.wrappedBlob,
+        iv: legacy.iv,
+        salt: legacy.salt,
       };
     }
 
