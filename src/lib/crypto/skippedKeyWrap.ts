@@ -21,44 +21,20 @@
  * window and re-wraps on next save.
  */
 import { hardCrypto } from './cryptoIntegrity';
+import { runTxOn, reqToPromise } from './indexedDbTx';
 
-const DB_NAME = 'forsure-crypto-skipped-wrap';
-const DB_VERSION = 1;
 const STORE = 'wrap-keys';
 const KEY_ID = 'swk-v1';
 
 let cached: CryptoKey | null = null;
 
-function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  return openDb().then(
-    (db) =>
-      new Promise<T>((resolve, reject) => {
-        const t = db.transaction(STORE, mode);
-        const s = t.objectStore(STORE);
-        const r = fn(s);
-        r.onsuccess = () => resolve(r.result as T);
-        r.onerror = () => reject(r.error);
-      }),
-  );
-}
-
 /** Get (or generate + persist) the skipped-key wrap key. */
 export async function getSkippedWrapKey(): Promise<CryptoKey> {
   if (cached) return cached;
 
-  const stored = await tx<CryptoKey | undefined>('readonly', (s) => s.get(KEY_ID));
+  const stored = await runTxOn('skipped-wrap', [STORE], 'readonly', (tx) =>
+    reqToPromise(tx.objectStore(STORE).get(KEY_ID)),
+  );
   if (stored && (stored as CryptoKey).type === 'secret') {
     cached = stored as CryptoKey;
     return cached;
@@ -69,7 +45,9 @@ export async function getSkippedWrapKey(): Promise<CryptoKey> {
     /* extractable */ false,
     ['encrypt', 'decrypt'],
   );
-  await tx('readwrite', (s) => s.put(fresh, KEY_ID));
+  await runTxOn('skipped-wrap', [STORE], 'readwrite', (tx) => {
+    tx.objectStore(STORE).put(fresh, KEY_ID);
+  });
   cached = fresh;
   return fresh;
 }
@@ -78,7 +56,9 @@ export async function getSkippedWrapKey(): Promise<CryptoKey> {
 export async function purgeSkippedWrapKey(): Promise<void> {
   cached = null;
   try {
-    await tx('readwrite', (s) => s.delete(KEY_ID));
+    await runTxOn('skipped-wrap', [STORE], 'readwrite', (tx) => {
+      tx.objectStore(STORE).delete(KEY_ID);
+    });
   } catch {
     /* swallow */
   }
