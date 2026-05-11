@@ -476,30 +476,12 @@ export async function hasLocalKeys(): Promise<boolean> {
   } catch {}
 
   try {
-    const db = await openDB('forsure-pin-wrap', 1);
-    let pinCount = 0;
-    if (db.objectStoreNames.contains('pin-wrapped-keys')) {
-      const tx = db.transaction('pin-wrapped-keys', 'readonly');
-      pinCount = await new Promise<number>((r, j) => {
-        const req = tx.objectStore('pin-wrapped-keys').count();
-        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
-      });
-    }
-    db.close();
+    const pinCount = await countSideDB('forsure-pin-wrap', 'pin-wrapped-keys');
     if (pinCount > 0) return true;
   } catch {}
 
   try {
-    const db = await openDB('forsure-ratchet', 1);
-    let ratchetCount = 0;
-    if (db.objectStoreNames.contains('ratchet-states')) {
-      const tx = db.transaction('ratchet-states', 'readonly');
-      ratchetCount = await new Promise<number>((r, j) => {
-        const req = tx.objectStore('ratchet-states').count();
-        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
-      });
-    }
-    db.close();
+    const ratchetCount = await countSideDB('forsure-ratchet', 'ratchet-states');
     if (ratchetCount > 0) return true;
   } catch {}
 
