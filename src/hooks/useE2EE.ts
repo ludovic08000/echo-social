@@ -48,6 +48,32 @@ import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/li
 import { KX_KEY_PARAMS, STORE_PREKEYS, STORE_SESSION } from '@/lib/crypto/constants';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
 import { runTx, runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
+import {
+  saveRatchetLocal,
+  loadRatchetLocal,
+  deleteRatchetLocal,
+  recreateLegacyE2EEDatabase,
+  RATCHET_DB_NAME,
+  RATCHET_DB_VERSION,
+  RATCHET_STORE_NAME,
+} from '@/lib/crypto/ratchetStore';
+import {
+  fetchPeerPublicKeys,
+  getCachedAuthUserId,
+  _peerKeyCache,
+  _peerSyncPromise,
+} from '@/lib/crypto/peerKeyCache';
+import {
+  KNOWN_FP_KEY,
+  getKnownFingerprints,
+  saveKnownFingerprint,
+  saveKnownFingerprintServer,
+  checkFingerprintChange,
+  checkFingerprintChangeWithServer,
+  invalidateFingerprintCheckCache,
+  type FingerprintCheckResult,
+} from '@/lib/crypto/fingerprintTracker';
+import { isPeerSPKStale } from '@/lib/crypto/spkFreshness';
 import { isCryptoJsonBody, isStrictRatchetEnvelopeBody, isUnsupportedEncryptedBody } from '@/lib/messaging/messageCompatibility';
 import { isSenderKeyWire, parseSKDM, SENDER_KEY_PREFIX } from '@/lib/crypto/senderKeys';
 import {
@@ -58,10 +84,9 @@ import {
 import { tryEncryptViaSenderKeys } from '@/lib/crypto/senderKeyOutbound';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
-const RATCHET_DB_NAME = 'forsure-ratchet';
-const RATCHET_DB_VERSION = 1;
-const RATCHET_STORE_NAME = 'ratchet-states';
-const KNOWN_FP_KEY = 'forsure-known-fps';
+
+// ─── Conversation-scoped decrypt serializer & terminal-failure tracking ───
+// Prevents 50 concurrent decrypts from each spawning their own ratchet init.
 
 // ─── Global deduplication & caching layer ───
 // Prevents request storms when multiple hook instances or concurrent decrypts
