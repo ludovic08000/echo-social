@@ -866,11 +866,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             };
 
             if (conversationId) {
-              openRatchetDB().then(db => {
-                try {
-                  const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
-                  tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
-                } catch {}
+              void runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
+                try { tx.objectStore(RATCHET_STORE_NAME).delete(conversationId); } catch {}
               }).catch(() => {});
               ratchetRef.current = null;
               peerHasRespondedRef.current = false;
