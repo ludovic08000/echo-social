@@ -717,12 +717,8 @@ export async function invalidateDeviceSession(
   peerDeviceId: string,
 ): Promise<void> {
   try {
-    const db = await openDB();
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).delete(compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId));
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('device-sessions', [STORE], 'readwrite', (tx) => {
+      tx.objectStore(STORE).delete(compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId));
     });
   } catch {
     // non-fatal
@@ -740,16 +736,12 @@ export async function listKnownSessionIds(
   myDeviceId: string,
 ): Promise<Array<{ peerUserId: string; peerDeviceId: string; sessionId: string; lastUsedAt: number }>> {
   try {
-    const db = await openDB();
-    const tx = db.transaction(STORE, 'readonly');
-    const req = tx.objectStore(STORE).getAll();
-    const all = await new Promise<StoredSession[]>((resolve, reject) => {
-      req.onsuccess = () => resolve((req.result as StoredSession[]) ?? []);
-      req.onerror = () => reject(req.error);
-    });
+    const all = await runTxOn('device-sessions', [STORE], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore(STORE).getAll() as IDBRequest<StoredSession[]>),
+    );
     const prefix = `${myUserId}::${myDeviceId}::`;
     const out: Array<{ peerUserId: string; peerDeviceId: string; sessionId: string; lastUsedAt: number }> = [];
-    for (const s of all) {
+    for (const s of all ?? []) {
       if (!s.id.startsWith(prefix)) continue;
       const parts = s.id.split('::');
       if (parts.length < 4) continue;
@@ -780,12 +772,8 @@ export async function listKnownSessionIds(
  */
 export async function clearAllDeviceSessions(): Promise<void> {
   try {
-    const db = await openDB();
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).clear();
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('device-sessions', [STORE], 'readwrite', (tx) => {
+      tx.objectStore(STORE).clear();
     });
   } catch {
     // non-fatal
