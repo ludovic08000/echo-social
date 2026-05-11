@@ -19,7 +19,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
-import { openE2EEDB } from '@/lib/crypto/indexedDb';
+import { runTx, runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
+import { STORE_KEYS as IDENTITY_STORE } from '@/lib/crypto/constants';
 
 export type PinMode = 'every_open' | 'once_per_session' | 'on_inactivity' | 'on_return';
 
@@ -53,48 +54,20 @@ export interface ChatPinState {
 
 // ─── IndexedDB for wrapped keys ───
 
-function openPinDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(PIN_WRAP_DB, PIN_WRAP_VERSION);
-    req.onerror = () => reject(req.error);
-    req.onsuccess = () => resolve(req.result);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      // Unified store (matches pinWrap.ts)
-      if (!db.objectStoreNames.contains(PIN_WRAP_STORE)) {
-        db.createObjectStore(PIN_WRAP_STORE, { keyPath: 'id' });
-      }
-      // Legacy store kept for one-shot migration (do NOT drop yet — older
-      // builds may still write here during the upgrade window).
-      if (!db.objectStoreNames.contains(PIN_WRAP_LEGACY_STORE)) {
-        db.createObjectStore(PIN_WRAP_LEGACY_STORE, { keyPath: 'id' });
-      }
-    };
-  });
-}
-
 async function saveWrappedKeys(userId: string, data: {
   wrappedBlob: string;
   iv: string;
   salt: string;
 }) {
-  const db = await openPinDB();
-  const tx = db.transaction(PIN_WRAP_STORE, 'readwrite');
-  // Persist using BOTH the useChatPin schema and the pinWrap.ts schema
-  // so any reader (KeyBackupPanel, accountKeyBackup, resyncE2EE) can decode it.
-  tx.objectStore(PIN_WRAP_STORE).put({
-    id: userId,
-    // useChatPin shape
-    wrappedBlob: data.wrappedBlob,
-    iv: data.iv,
-    salt: data.salt,
-    // pinWrap.ts compatibility shape
-    ciphertext: data.wrappedBlob,
-    version: 1,
-  });
-  return new Promise<void>((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+  await runTxOn('pin-wrap', [PIN_WRAP_STORE], 'readwrite', (tx) => {
+    tx.objectStore(PIN_WRAP_STORE).put({
+      id: userId,
+      wrappedBlob: data.wrappedBlob,
+      iv: data.iv,
+      salt: data.salt,
+      ciphertext: data.wrappedBlob,
+      version: 1,
+    });
   });
 }
 
