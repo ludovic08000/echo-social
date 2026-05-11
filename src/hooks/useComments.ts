@@ -38,7 +38,7 @@ export function useComments(postId: string) {
       if (error) throw error;
 
       // Get profile info
-      const userIds = [...new Set(data.map(c => c.user_id))];
+      const userIds = [...new Set(data.map(c => c.user_id).filter((id): id is string => !!id))];
       const { data: profiles } = await supabase
         .from('profiles')
         .select('user_id, name, avatar_url')
