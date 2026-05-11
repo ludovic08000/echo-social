@@ -122,6 +122,7 @@ export default function Admin() {
       case 'users': return <UsersSection />;
       case 'posts': return <PostsSection />;
       case 'reports': return <ReportsSection />;
+      case 'comment_alerts': return <CommentModerationAlertsSection />;
       case 'verifications': return <VerificationsSection />;
       case 'archives': return <ArchivesSection />;
       case 'stats': return <StatsSection />;
