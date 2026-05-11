@@ -1,6 +1,23 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { logAIEvent } from "../_shared/aiEngineLog.ts";
+
+const AI_ENGINE_ACTION_MODULE: Record<string, string> = {
+  moderate: "ai-moderator",
+  analyze_sentiment: "sentiment-analyzer",
+  recommend: "recommendation-engine",
+  smart_reply: "smart-reply",
+  content_enhance: "content-enhancer",
+  profile_risk: "risk-assessor",
+  detect_intrusion: "intrusion-detector",
+  analyze_ip: "ip-analyzer",
+  inspect_packet: "packet-inspector",
+  scan_vulnerabilities: "vuln-scanner",
+  analyze_session: "session-guardian",
+  learn_feedback: "ai-moderator",
+  get_feedback_history: "ai-moderator",
+};
 
 const rateLimiter = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT = 15;
@@ -61,7 +78,7 @@ async function logSecurityAIResult(supabase: ReturnType<typeof createClient>, us
   }
 }
 
-serve(async (req) => {
+async function handle(req: Request): Promise<Response> {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -274,6 +291,50 @@ Focus on defensive fixes: RLS, auth, CSP, upload validation, rate limit, secrets
     console.error("ai-engine error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
+}
+
+serve(async (req) => {
+  const started = performance.now();
+  let action: string | undefined;
+  let userId: string | undefined;
+  let resp: Response;
+  try {
+    // Peek action + auth user without consuming the body twice
+    const cloned = req.clone();
+    try {
+      const peek = await cloned.json();
+      action = typeof peek?.action === "string" ? peek.action : undefined;
+    } catch (_) { /* ignore */ }
+    const authHeader = req.headers.get("Authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+          global: { headers: { Authorization: authHeader } },
+        });
+        const { data: { user: u } } = await userClient.auth.getUser();
+        userId = u?.id;
+      } catch (_) { /* ignore */ }
+    }
+    resp = await handle(req);
+  } catch (e) {
+    resp = new Response(JSON.stringify({ error: (e as Error).message }), { status: 500 });
+  }
+  if (action) {
+    const moduleId = AI_ENGINE_ACTION_MODULE[action] || `ai-engine-${action}`;
+    try {
+      const supa = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      logAIEvent(supa, {
+        module_id: moduleId,
+        source: "ai-engine",
+        action,
+        user_id: userId,
+        latency_ms: performance.now() - started,
+        success: resp.status >= 200 && resp.status < 400,
+      });
+    } catch (_) { /* ignore */ }
+  }
+  return resp;
 });
 
 async function callAI(apiKey: string, systemPrompt: string, userPrompt: string, model = "google/gemini-2.5-flash") {

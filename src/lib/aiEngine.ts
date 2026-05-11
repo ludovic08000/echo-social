@@ -281,37 +281,72 @@ function saveMetrics(metrics: Record<string, AIModuleMetrics>) {
 export function trackAICall(moduleId: string, responseMs: number, success: boolean) {
   const all = loadMetrics();
   const existing = all[moduleId] || { totalCalls: 0, avgResponseMs: 0, successRate: 100, lastUsed: null };
-  
   const newTotal = existing.totalCalls + 1;
   const newAvg = (existing.avgResponseMs * existing.totalCalls + responseMs) / newTotal;
   const successCount = Math.round(existing.successRate / 100 * existing.totalCalls) + (success ? 1 : 0);
-  
   all[moduleId] = {
     totalCalls: newTotal,
     avgResponseMs: Math.round(newAvg),
     successRate: Math.round((successCount / newTotal) * 100),
     lastUsed: new Date().toISOString(),
   };
-  
   saveMetrics(all);
 }
 
-export function getAIModules(): AIModule[] {
-  const metrics = loadMetrics();
-  return AI_MODULE_REGISTRY.map(mod => ({
-    ...mod,
-    metrics: metrics[mod.id] || { totalCalls: 0, avgResponseMs: 0, successRate: 100, lastUsed: null },
-  }));
+// ── Server-side realtime stats (admin) ──
+import { supabase } from '@/integrations/supabase/client';
+
+export async function fetchServerMetrics(windowMinutes = 1440): Promise<Record<string, AIModuleMetrics>> {
+  try {
+    const { data, error } = await supabase.rpc('ai_engine_module_stats' as any, { p_window_minutes: windowMinutes });
+    if (error || !Array.isArray(data)) return {};
+    const out: Record<string, AIModuleMetrics> = {};
+    for (const row of data as Array<{ module_id: string; total_calls: number; avg_latency_ms: number; success_rate: number; last_used: string }>) {
+      out[row.module_id] = {
+        totalCalls: Number(row.total_calls) || 0,
+        avgResponseMs: Number(row.avg_latency_ms) || 0,
+        successRate: Number(row.success_rate) ?? 100,
+        lastUsed: row.last_used,
+      };
+    }
+    return out;
+  } catch {
+    return {};
+  }
 }
 
-export function getAIEngineStats(): AIEngineStats {
-  const modules = getAIModules();
+export function subscribeAIEvents(onEvent: () => void) {
+  const channel = supabase
+    .channel('ai-engine-events')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ai_engine_events' }, () => onEvent())
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
+}
+
+export function getAIModules(serverMetrics?: Record<string, AIModuleMetrics>): AIModule[] {
+  const localMetrics = loadMetrics();
+  return AI_MODULE_REGISTRY.map(mod => {
+    const server = serverMetrics?.[mod.id];
+    const local = localMetrics[mod.id];
+    const merged: AIModuleMetrics = server
+      ? {
+          totalCalls: (server.totalCalls || 0) + (local?.totalCalls || 0),
+          avgResponseMs: server.avgResponseMs || local?.avgResponseMs || 0,
+          successRate: server.successRate ?? local?.successRate ?? 100,
+          lastUsed: server.lastUsed || local?.lastUsed || null,
+        }
+      : (local || { totalCalls: 0, avgResponseMs: 0, successRate: 100, lastUsed: null });
+    return { ...mod, metrics: merged };
+  });
+}
+
+export function getAIEngineStats(serverMetrics?: Record<string, AIModuleMetrics>): AIEngineStats {
+  const modules = getAIModules(serverMetrics);
   const active = modules.filter(m => m.status === 'active');
   const totalInteractions = modules.reduce((sum, m) => sum + m.metrics.totalCalls, 0);
   const avgSuccess = active.length > 0
     ? Math.round(active.reduce((sum, m) => sum + m.metrics.successRate, 0) / active.length)
     : 100;
-
   return {
     totalModules: modules.length,
     activeModules: active.length,

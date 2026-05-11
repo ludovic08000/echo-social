@@ -10,7 +10,8 @@ import { AppLayout } from '@/components/AppLayout';
 import { SEOHead } from '@/components/SEOHead';
 import {
   getAIModules, getCategoryLabel, getCategoryColor,
-  type AIModule, type AICategory,
+  fetchServerMetrics, subscribeAIEvents,
+  type AIModule, type AICategory, type AIModuleMetrics,
 } from '@/lib/aiEngine';
 import { useAIEngine, type ModerationResult, type SentimentResult } from '@/hooks/useAIEngine';
 import {
@@ -49,7 +50,17 @@ export default function AIEngine() {
   const navigate = useNavigate();
   const { data: isAdmin, isLoading: adminLoading } = useIsAdmin();
 
-  const modules = useMemo(() => getAIModules(), []);
+  const [serverMetrics, setServerMetrics] = useState<Record<string, AIModuleMetrics>>({});
+  const refreshServerMetrics = useCallback(async () => {
+    setServerMetrics(await fetchServerMetrics(1440));
+  }, []);
+  useEffect(() => {
+    refreshServerMetrics();
+    const unsub = subscribeAIEvents(() => { refreshServerMetrics(); });
+    const interval = setInterval(refreshServerMetrics, 30_000);
+    return () => { unsub(); clearInterval(interval); };
+  }, [refreshServerMetrics]);
+  const modules = useMemo(() => getAIModules(serverMetrics), [serverMetrics]);
 
   // Real stats from DB
   const { data: realStats = { totalInteractions: 0, healthScore: 100 } } = useQuery({
