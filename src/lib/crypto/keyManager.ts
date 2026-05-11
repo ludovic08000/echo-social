@@ -419,6 +419,7 @@ export async function hasRawIdentityKeys(userId: string): Promise<boolean> {
 }
 
 export async function wipeAllKeys(): Promise<void> {
+  try { memCache.clearAll('wipe_all'); } catch {}
   try {
     const db = await openDB();
     const tx = db.transaction([STORE_KEYS, STORE_SESSION, STORE_PREKEYS], 'readwrite');
