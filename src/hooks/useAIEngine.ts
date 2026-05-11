@@ -65,6 +65,55 @@ export interface LearnedRule {
   created_at: string;
 }
 
+export interface IntrusionDetectionResult {
+  threat_detected: boolean;
+  severity: 'none' | 'low' | 'medium' | 'high' | 'critical';
+  attack_types: string[];
+  confidence: number;
+  evidence: string[];
+  recommended_actions: string[];
+  should_create_incident: boolean;
+  cooldown_seconds: number;
+}
+
+export interface IpAnalysisResult {
+  risk_level: 'safe' | 'low' | 'medium' | 'high' | 'critical';
+  risk_score: number;
+  signals: string[];
+  likely_actor: 'human' | 'bot' | 'scanner' | 'unknown';
+  recommended_rate_limit: string;
+  block_recommended: boolean;
+  review_required: boolean;
+}
+
+export interface PacketInspectionResult {
+  malicious: boolean;
+  severity: 'none' | 'low' | 'medium' | 'high' | 'critical';
+  patterns: string[];
+  safe_summary: string;
+  recommended_actions: string[];
+}
+
+export interface VulnerabilityScanResult {
+  findings: Array<{
+    severity: 'low' | 'medium' | 'high' | 'critical';
+    title: string;
+    description: string;
+    fix: string;
+  }>;
+  overall_risk: 'low' | 'medium' | 'high' | 'critical';
+  priority_order: string[];
+}
+
+export interface SessionAnalysisResult {
+  session_risk: 'safe' | 'low' | 'medium' | 'high' | 'critical';
+  risk_score: number;
+  anomalies: string[];
+  recommended_actions: Array<'allow' | 'step_up_auth' | 'refresh_session' | 'revoke_session' | 'notify_user' | 'lock_account_review'>;
+  device_trust_delta: number;
+  requires_user_notification: boolean;
+}
+
 // ── Hook ──
 export function useAIEngine() {
   const [loading, setLoading] = useState<Record<string, boolean>>({});
@@ -80,12 +129,10 @@ export function useAIEngine() {
     setModuleLoading(moduleId, true);
     const start = performance.now();
     try {
-      // Attempt the call — SDK attaches the current session token automatically
       let { data, error } = await supabase.functions.invoke('ai-engine', {
         body: { action, ...body },
       });
 
-      // If auth error, refresh session once and retry
       if (error && (error.message?.includes('401') || error.message?.includes('auth') || error.message?.includes('Non authentifié'))) {
         const { error: refreshErr } = await supabase.auth.refreshSession();
         if (!refreshErr) {
@@ -117,42 +164,55 @@ export function useAIEngine() {
     }
   }, []);
 
-  // ── Moderation (cache géré côté serveur + skip court côté client) ──
   const moderate = useCallback(async (text: string): Promise<ModerationResult | null> => {
     if (!text || text.trim().length < 3) {
       return { safe: true, score: 0, categories: [], sentiment: 'neutral', emotion: 'trust', confidence: 100, suggestion: '', auto_action: 'allow' };
     }
-    // Skip AI call for very short text — too short to be harmful
     if (text.trim().length < 15) {
       return { safe: true, score: 0, categories: [], sentiment: 'neutral', emotion: 'trust', confidence: 80, suggestion: '', auto_action: 'allow' };
     }
     return callEngine<ModerationResult>('moderate', 'ai-moderator', { text });
   }, [callEngine]);
 
-  // ── Sentiment analysis ──
   const analyzeSentiment = useCallback(async (text: string): Promise<SentimentResult | null> => {
     if (!text) return null;
     return callEngine<SentimentResult>('analyze_sentiment', 'sentiment-analyzer', { text });
   }, [callEngine]);
 
-  // ── Recommendations ──
   const getRecommendations = useCallback(async (context: Record<string, unknown>): Promise<RecommendResult | null> => {
     return callEngine<RecommendResult>('recommend', 'recommendation-engine', { context });
   }, [callEngine]);
 
-  // ── Smart replies ──
   const getSmartReplies = useCallback(async (text: string): Promise<SmartReplyResult | null> => {
     if (!text) return null;
     return callEngine<SmartReplyResult>('smart_reply', 'smart-reply', { text });
   }, [callEngine]);
 
-  // ── Content enhancement ──
   const enhanceContent = useCallback(async (text: string): Promise<ContentEnhanceResult | null> => {
     if (!text) return null;
     return callEngine<ContentEnhanceResult>('content_enhance', 'content-enhancer', { text });
   }, [callEngine]);
 
-  // ── Self-learning feedback (stocké en DB) ──
+  const detectIntrusion = useCallback(async (context: Record<string, unknown>): Promise<IntrusionDetectionResult | null> => {
+    return callEngine<IntrusionDetectionResult>('detect_intrusion', 'intrusion-detector', { context });
+  }, [callEngine]);
+
+  const analyzeIP = useCallback(async (context: Record<string, unknown>): Promise<IpAnalysisResult | null> => {
+    return callEngine<IpAnalysisResult>('analyze_ip', 'ip-analyzer', { context });
+  }, [callEngine]);
+
+  const inspectPacket = useCallback(async (context: Record<string, unknown>): Promise<PacketInspectionResult | null> => {
+    return callEngine<PacketInspectionResult>('inspect_packet', 'packet-inspector', { context });
+  }, [callEngine]);
+
+  const scanVulnerabilities = useCallback(async (context: Record<string, unknown>): Promise<VulnerabilityScanResult | null> => {
+    return callEngine<VulnerabilityScanResult>('scan_vulnerabilities', 'vuln-scanner', { context });
+  }, [callEngine]);
+
+  const analyzeSession = useCallback(async (context: Record<string, unknown>): Promise<SessionAnalysisResult | null> => {
+    return callEngine<SessionAnalysisResult>('analyze_session', 'session-guardian', { context });
+  }, [callEngine]);
+
   const submitFeedback = useCallback(async (entry: Omit<FeedbackEntry, 'created_at' | 'id'>) => {
     if (!user?.id) {
       toast({ title: 'Erreur', description: 'Vous devez être connecté pour soumettre un feedback.', variant: 'destructive' });
@@ -165,12 +225,10 @@ export function useAIEngine() {
 
     if (result) {
       toast({ title: '✨ IA améliorée', description: 'Le feedback a été intégré au modèle d\'apprentissage côté serveur.' });
-      // Refresh history
       loadFeedbackHistory();
     }
   }, [callEngine, user?.id]);
 
-  // ── Load feedback & rules from server ──
   const loadFeedbackHistory = useCallback(async () => {
     if (!user?.id) return;
     const result = await callEngine<{ feedback: FeedbackEntry[]; rules: LearnedRule[] }>(
@@ -182,7 +240,6 @@ export function useAIEngine() {
     }
   }, [callEngine, user?.id]);
 
-  // ── Profile risk assessment ──
   const assessProfileRisk = useCallback(async (context: Record<string, unknown>) => {
     return callEngine<{ risk_level: string; risk_factors: string[]; trust_score: number }>('profile_risk', 'risk-assessor', { context });
   }, [callEngine]);
@@ -195,6 +252,11 @@ export function useAIEngine() {
     enhanceContent,
     submitFeedback,
     assessProfileRisk,
+    detectIntrusion,
+    analyzeIP,
+    inspectPacket,
+    scanVulnerabilities,
+    analyzeSession,
     loadFeedbackHistory,
     loading,
     feedbackHistory,
