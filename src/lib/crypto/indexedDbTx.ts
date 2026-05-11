@@ -16,6 +16,7 @@
  */
 
 import { openE2EEDB, reopenE2EEDB, isIndexedDBClosingError } from './indexedDb';
+import { openDB as openRegistryDB, reopenDB as reopenRegistryDB, type DBKey } from './dbRegistry';
 
 type TxMode = 'readonly' | 'readwrite';
 
