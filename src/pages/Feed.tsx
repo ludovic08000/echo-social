@@ -14,6 +14,7 @@ import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
 import { SponsoredPostCard } from '@/components/feed/SponsoredPostCard';
 import { Coffee, X, Sparkles, Lock, Shield, Radio } from 'lucide-react';
 import { FeedZeusCard } from '@/components/feed/FeedZeusCard';
+import { LazyMount } from '@/components/feed/LazyMount';
 import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgorithm';
 import { Button } from '@/components/ui/button';
 import { useActiveAds } from '@/hooks/useAdCampaigns';
@@ -154,7 +155,7 @@ export default function Feed() {
           fetchNextPage();
         }
       },
-      { rootMargin: '400px' }
+      { rootMargin: '1200px' }
     );
     observer.observe(el);
     return () => observer.disconnect();
@@ -162,25 +163,31 @@ export default function Feed() {
 
   const renderInjection = useCallback((index: number) => {
     const type = INJECTION_MAP[index];
-    
+
     if (!isMobile && activeAds?.length && index > 0 && index % 6 === 0) {
       const adIndex = Math.floor(index / 6) % activeAds.length;
       const ad = activeAds[adIndex];
       if (ad) {
-        return <SponsoredPostCard ad={ad} />;
+        return (
+          <LazyMount minHeight={220}>
+            <SponsoredPostCard ad={ad} />
+          </LazyMount>
+        );
       }
     }
-    
+
     if (!type) return null;
 
     return (
-      <Suspense fallback={<div className="h-32 skeleton rounded-2xl" />}>
-        {type === 'reels' && <FeedReelsSection />}
-        {type === 'suggestions' && <FriendSuggestions />}
-        {type === 'suggestions_city' && <FriendSuggestionsByCity />}
-        {type === 'media' && <FeedMediaSection />}
-        {type === 'marketplace' && <FeedMarketplaceSection />}
-      </Suspense>
+      <LazyMount minHeight={200}>
+        <Suspense fallback={<div className="h-32 skeleton rounded-2xl" />}>
+          {type === 'reels' && <FeedReelsSection />}
+          {type === 'suggestions' && <FriendSuggestions />}
+          {type === 'suggestions_city' && <FriendSuggestionsByCity />}
+          {type === 'media' && <FeedMediaSection />}
+          {type === 'marketplace' && <FeedMarketplaceSection />}
+        </Suspense>
+      </LazyMount>
     );
   }, [isMobile, activeAds]);
 
@@ -358,7 +365,13 @@ export default function Feed() {
                 {/* Posts list — clean spacing */}
                 <div className="sm:px-4 sm:space-y-4 mt-4">
                   {posts.map((post, index) => (
-                    <div key={post.id}>
+                    <div
+                      key={post.id}
+                      style={{
+                        contentVisibility: 'auto',
+                        containIntrinsicSize: '720px',
+                      } as React.CSSProperties}
+                    >
                       <PostCard post={post} />
                       {renderInjection(index)}
                     </div>
