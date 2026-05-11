@@ -140,71 +140,51 @@ export function usePosts() {
 }
 
 /**
- * Blend Monte Carlo ordering with the hybrid ML score v3.
- * v3 = v2 (classic + semantic embeddings) + watch-time predictor bonus.
- * Cold-start users (no signals yet) get the trending+interests-based feed instead.
- * Then applies session re-ranking (live boost from current-session signals)
- * and diversity (max 2 consecutive posts from same author).
+ * Server-side ranking via `feed_score_batch` RPC (Phase A anti-cheat).
+ * All scoring weights, ML blend, recency, friend boost, late-night dampener
+ * live in Postgres — the client only renders the order received.
+ * Light client polish kept: session adjustment (current-session signals)
+ * and author diversity (max 2 consecutive posts from same author).
  */
-async function blendWithMLScore(posts: Post[], userId: string): Promise<Post[]> {
+async function serverRankPosts(
+  posts: Post[],
+  userId: string,
+  algo: 'smart' | 'chronological' | 'friends_first',
+): Promise<Post[]> {
   if (!posts.length) return posts;
 
-  // Cold start check: if user has no ML signals yet, blend trending feed
-  let isColdStart = false;
-  try {
-    const { data: cs } = await supabase.rpc('ml_is_cold_start' as any, { p_user_id: userId });
-    isColdStart = cs === true;
-  } catch {}
+  // Chronological: skip RPC, server already ordered by created_at desc
+  if (algo === 'chronological') {
+    return enforceDiversity(posts, 2);
+  }
 
   try {
-    // BATCH SCORING: 1 RPC for all posts (was N RPC calls)
     const postIds = posts.map((p) => p.id);
-    const scoreMap = new Map<string, number>();
-    try {
-      const { data: batchData, error: batchErr } = await supabase.rpc('ml_pareto_score_batch' as any, {
-        p_user_id: userId,
-        p_post_ids: postIds,
-      });
-      if (!batchErr && Array.isArray(batchData)) {
-        for (const row of batchData as Array<{ post_id: string; score: number }>) {
-          scoreMap.set(row.post_id, Number(row.score) || 0.5);
-        }
-      }
-    } catch {
-      // Fallback: legacy ml_pareto_score per-post if batch unavailable
-      try {
-        const results = await Promise.all(
-          posts.map(async (p) => {
-            const { data } = await supabase.rpc('ml_pareto_score' as any, {
-              p_user_id: userId,
-              p_post_id: p.id,
-            });
-            return [p.id, typeof data === 'number' ? data : 0.5] as const;
-          })
-        );
-        for (const [id, s] of results) scoreMap.set(id, s);
-      } catch {}
-    }
-
-    const scores = posts.map((p, idx) => {
-      const mcScore = 1 - idx / posts.length; // position decay (0..1)
-      const mlScore = scoreMap.get(p.id) ?? 0.5;
-
-      // Cold start: weight more on freshness/MC, less on ML (which is unreliable)
-      const weights = isColdStart ? { mc: 0.7, ml: 0.3 } : { mc: 0.5, ml: 0.5 };
-      let finalScore = mcScore * weights.mc + mlScore * weights.ml;
-
-      // Live session adjustment (±0.15) based on current-session interactions
-      finalScore += getSessionAdjustment(p.user_id);
-
-      return { post: p, finalScore };
+    const { data, error } = await supabase.rpc('feed_score_batch' as any, {
+      p_user_id: userId,
+      p_post_ids: postIds,
+      p_algo: algo,
     });
 
-    const sorted = scores.sort((a, b) => b.finalScore - a.finalScore).map((s) => s.post);
-    // Enforce diversity: avoid same author dominating
+    if (error || !Array.isArray(data) || data.length === 0) {
+      return enforceDiversity(posts, 2);
+    }
+
+    const scoreMap = new Map<string, number>();
+    for (const row of data as Array<{ post_id: string; final_score: number }>) {
+      scoreMap.set(row.post_id, Number(row.final_score) || 0);
+    }
+
+    const scored = posts.map((p) => {
+      const base = scoreMap.get(p.id) ?? 0;
+      // Live session adjustment (±0.15) — small client tie-break, not gameable for global ranking
+      return { post: p, finalScore: base + getSessionAdjustment(p.user_id) * 5 };
+    });
+
+    const sorted = scored.sort((a, b) => b.finalScore - a.finalScore).map((s) => s.post);
     return enforceDiversity(sorted, 2);
   } catch {
-    return posts;
+    return enforceDiversity(posts, 2);
   }
 }
 
