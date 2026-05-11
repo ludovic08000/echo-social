@@ -47,6 +47,7 @@ import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
 import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/lib/crypto/cryptoIntegrity';
 import { KX_KEY_PARAMS, STORE_PREKEYS, STORE_SESSION } from '@/lib/crypto/constants';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
+import { runTx, runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
 import { isCryptoJsonBody, isStrictRatchetEnvelopeBody, isUnsupportedEncryptedBody } from '@/lib/messaging/messageCompatibility';
 import { isSenderKeyWire, parseSKDM, SENDER_KEY_PREFIX } from '@/lib/crypto/senderKeys';
 import {
@@ -183,65 +184,20 @@ async function fetchPeerPublicKeys(peerUserId: string): Promise<{ identity_key: 
 
 // ─── IndexedDB ratchet persistence ───
 
-function openRatchetDBAt(version?: number): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    // When version is undefined, IndexedDB opens at the existing version
-    // (or creates v1 if none exists) without triggering VersionError.
-    const req = version === undefined
-      ? hardGlobals.idbOpen(RATCHET_DB_NAME)
-      : hardGlobals.idbOpen(RATCHET_DB_NAME, version);
-    req.onerror = () => reject(req.error);
-    req.onblocked = () => reject(new Error('ratchet db blocked'));
-    req.onsuccess = () => resolve(req.result);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(RATCHET_STORE_NAME)) {
-        db.createObjectStore(RATCHET_STORE_NAME, { keyPath: 'convId' });
-      }
-    };
-  });
-}
-
-/**
- * Open the ratchet IndexedDB safely:
- *   1. Open without specifying a version → discovers the actual existing version
- *      (avoids VersionError when the DB has been upgraded in another tab/session).
- *   2. If the expected object store is missing (corrupt/legacy install),
- *      bump the version to trigger `onupgradeneeded` and create the store.
- */
-async function openRatchetDB(): Promise<IDBDatabase> {
-  let db = await openRatchetDBAt();
-  if (db.objectStoreNames.contains(RATCHET_STORE_NAME)) return db;
-
-  const nextVersion = (db.version || RATCHET_DB_VERSION) + 1;
-  db.close();
-  console.warn(`[E2EE] Ratchet store missing — upgrading IndexedDB to v${nextVersion} to recreate it`);
-  db = await openRatchetDBAt(nextVersion);
-  if (!db.objectStoreNames.contains(RATCHET_STORE_NAME)) {
-    throw new Error('Failed to provision ratchet object store');
-  }
-  return db;
-}
+// openRatchetDB helpers removed — all ratchet IndexedDB access goes through
+// `runTxOn('ratchet', [RATCHET_STORE_NAME], ...)` (Safari-safe singleton + retries).
 
 function recreateLegacyE2EEDatabase(): Promise<void> {
   return new Promise((resolve) => {
     void (async () => {
       try {
-        const db = await openE2EEDB();
-        const storesToClear = [STORE_SESSION, STORE_PREKEYS].filter((store) => db.objectStoreNames.contains(store));
-
-        if (storesToClear.length > 0) {
-          const tx = db.transaction(storesToClear, 'readwrite');
-          storesToClear.forEach((store) => tx.objectStore(store).clear());
-          await new Promise<void>((txResolve, txReject) => {
-            tx.oncomplete = () => txResolve();
-            tx.onerror = () => txReject(tx.error);
-          });
-          console.log('[E2EE] Repaired IndexedDB schema and cleared transient crypto stores');
-        }
-
-        // openE2EEDB() returns the shared crypto DB singleton; keep it open for
-        // concurrent key restores, calls and media encryption.
+        const storesToClear = [STORE_SESSION, STORE_PREKEYS];
+        await runTx(storesToClear, 'readwrite', (tx) => {
+          for (const s of storesToClear) {
+            try { tx.objectStore(s).clear(); } catch {}
+          }
+        });
+        console.log('[E2EE] Repaired IndexedDB schema and cleared transient crypto stores');
       } catch (error) {
         console.error('[E2EE] Failed to repair E2EE database — identity keys preserved', error);
       } finally {
