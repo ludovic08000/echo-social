@@ -1917,6 +1917,7 @@ Deno.serve(async (req) => {
       case "post": return await handlePostAssistant(LOVABLE_API_KEY, body, cors);
       case "moderation": return await handleModeration(LOVABLE_API_KEY, body, user.id, supabase, cors);
       case "post-moderation": return await handlePostModeration(LOVABLE_API_KEY, body, user.id, supabase, cors);
+      case "comment-moderation": return await handleCommentModeration(LOVABLE_API_KEY, body, user.id, supabase, cors);
       case "ads": return await handleAds(LOVABLE_API_KEY, body, cors);
       case "seller": return await handleSeller(LOVABLE_API_KEY, body, user.id, supabase, cors);
       case "photo": return await handlePhotoGuard(LOVABLE_API_KEY, body, user.id, supabase, cors);
