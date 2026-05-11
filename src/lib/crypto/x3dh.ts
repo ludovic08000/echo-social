@@ -467,18 +467,14 @@ async function saveDeviceSPKPrivate(
   publicBase64: string,
 ): Promise<void> {
   const jwk = await hardCrypto.exportKey('jwk', privateKey);
-  const db = await openSPKDB();
-  const tx = db.transaction(SPK_STORE, 'readwrite');
-  tx.objectStore(SPK_STORE).put({
-    id: deviceSpkKey(userId, deviceId, spkId),
-    spkId,
-    privateKeyJWK: jwk,
-    publicKeyBase64: publicBase64,
-    createdAt: Date.now(),
-  } as StoredSPK);
-  await new Promise<void>((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+  await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
+    tx.objectStore(SPK_STORE).put({
+      id: deviceSpkKey(userId, deviceId, spkId),
+      spkId,
+      privateKeyJWK: jwk,
+      publicKeyBase64: publicBase64,
+      createdAt: Date.now(),
+    } as StoredSPK);
   });
 }
 
@@ -488,13 +484,9 @@ async function loadDeviceSPKRecord(
   spkId: number,
 ): Promise<StoredSPK | null> {
   try {
-    const db = await openSPKDB();
-    const tx = db.transaction(SPK_STORE, 'readonly');
-    const req = tx.objectStore(SPK_STORE).get(deviceSpkKey(userId, deviceId, spkId));
-    const result = await new Promise<StoredSPK | undefined>((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const result = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) =>
+      reqToPromise<StoredSPK | undefined>(tx.objectStore(SPK_STORE).get(deviceSpkKey(userId, deviceId, spkId))),
+    );
     return result ?? null;
   } catch {
     return null;
@@ -503,13 +495,9 @@ async function loadDeviceSPKRecord(
 
 async function getNextDeviceSPKId(userId: string, deviceId: string): Promise<number> {
   try {
-    const db = await openSPKDB();
-    const tx = db.transaction(SPK_STORE, 'readonly');
-    const allKeys = await new Promise<IDBValidKey[]>((resolve, reject) => {
-      const req = tx.objectStore(SPK_STORE).getAllKeys();
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const allKeys = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) =>
+      reqToPromise<IDBValidKey[]>(tx.objectStore(SPK_STORE).getAllKeys()),
+    );
     const prefix = `${userId}::dev::${deviceId}::`;
     let maxId = 0;
     for (const key of allKeys) {
