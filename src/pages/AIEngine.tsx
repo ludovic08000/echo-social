@@ -10,7 +10,8 @@ import { AppLayout } from '@/components/AppLayout';
 import { SEOHead } from '@/components/SEOHead';
 import {
   getAIModules, getCategoryLabel, getCategoryColor,
-  type AIModule, type AICategory,
+  fetchServerMetrics, subscribeAIEvents,
+  type AIModule, type AICategory, type AIModuleMetrics,
 } from '@/lib/aiEngine';
 import { useAIEngine, type ModerationResult, type SentimentResult } from '@/hooks/useAIEngine';
 import {
