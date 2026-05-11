@@ -348,18 +348,34 @@ export default function Profile() {
   const { data: stats } = useQuery({
     queryKey: ['profile-stats', userId],
     queryFn: async () => {
-      if (!userId) return { postsCount: 0, likesReceived: 0, friendsCount: 0 };
-      const [{ count: postsCount }, { data: postIds }, { count: friendsCount }] = await Promise.all([
+      if (!userId) return { postsCount: 0, likesReceived: 0, friendsCount: 0, followersCount: 0, followingCount: 0 };
+      const [
+        { count: postsCount },
+        { data: postIds },
+        { count: friendsCount },
+        { count: followersCount },
+        { count: followingCount },
+      ] = await Promise.all([
         supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', userId),
         supabase.from('posts').select('id').eq('user_id', userId),
         supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('status', 'accepted').or(`requester_id.eq.${userId},addressee_id.eq.${userId}`),
+        // Insta-style: "followers" = personnes qui m'ont ajouté (je suis addressee)
+        supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('status', 'accepted').eq('addressee_id', userId),
+        // "following" = personnes que j'ai ajoutées (je suis requester)
+        supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('status', 'accepted').eq('requester_id', userId),
       ]);
       let likesReceived = 0;
       if (postIds && postIds.length > 0) {
         const { count } = await supabase.from('likes').select('*', { count: 'exact', head: true }).in('post_id', postIds.map(p => p.id));
         likesReceived = count || 0;
       }
-      return { postsCount: postsCount || 0, likesReceived, friendsCount: friendsCount || 0 };
+      return {
+        postsCount: postsCount || 0,
+        likesReceived,
+        friendsCount: friendsCount || 0,
+        followersCount: followersCount || 0,
+        followingCount: followingCount || 0,
+      };
     },
     enabled: !!userId,
   });
@@ -482,11 +498,11 @@ export default function Profile() {
 
         {/* ============= MODERN PROFILE HEADER (Elite Glassmorphism) ============= */}
         <div className="relative">
-          {/* Cover background — blurred, immersive */}
+          {/* Cover — full bleed, properly framed, taller for breathing room */}
           <div
             ref={coverRef}
             className={cn(
-              "relative h-72 lg:h-80 overflow-hidden",
+              "relative h-56 sm:h-64 lg:h-80 overflow-hidden lg:rounded-b-3xl",
               isRepositioning && "cursor-ns-resize"
             )}
             onMouseDown={handleMouseDown}
@@ -501,10 +517,7 @@ export default function Profile() {
               <img
                 src={profile.cover_url}
                 alt="Couverture"
-                className={cn(
-                  "w-full h-full object-cover select-none scale-110",
-                  !isRepositioning && "blur-2xl opacity-50"
-                )}
+                className="w-full h-full object-cover select-none"
                 style={{ objectPosition: `center ${isRepositioning ? coverPositionY : (profile.cover_position_y ?? 50)}%` }}
                 draggable={false}
               />
@@ -516,8 +529,8 @@ export default function Profile() {
                 }} />
               </>
             )}
-            {/* Bottom fade to background */}
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/40 to-background pointer-events-none" />
+            {/* Soft bottom fade so the avatar reads cleanly over any image */}
+            <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-b from-transparent to-background pointer-events-none" />
 
             {coverUpload.isUploading && (
               <div className="absolute inset-0 bg-background/50 flex items-center justify-center">
@@ -581,14 +594,13 @@ export default function Profile() {
           </div>
 
           {/* Centered profile card pulled up over cover */}
-          <div className="px-4 lg:px-6 -mt-32 lg:-mt-36 relative z-10 flex flex-col items-center text-center">
-            {/* Avatar XXL with tricolor animated ring */}
+          <div className="px-4 lg:px-6 -mt-20 lg:-mt-24 relative z-10 flex flex-col items-center text-center">
+            {/* Avatar XXL with static tricolor ring (no rotation) */}
             <div className="relative">
               <div
                 className="rounded-full p-[3px]"
                 style={{
-                  background: 'conic-gradient(from 0deg, #002395, #ED2939, #ffffff, #002395)',
-                  animation: 'spin 12s linear infinite',
+                  background: 'conic-gradient(from 220deg, #002395, #ED2939, #ffffff, #002395)',
                 }}
               >
                 <div className="rounded-full p-1 bg-background">
@@ -637,22 +649,22 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* Tactile stats glass bar */}
+            {/* Tactile stats glass bar — Insta-style: Posts / Followers / Following */}
             <div className="mt-6 w-full max-w-md flex items-stretch bg-card/40 backdrop-blur-2xl border border-border/40 rounded-3xl p-1 shadow-[0_18px_50px_-24px_hsl(var(--foreground)/0.25)]">
-              <Link to="/friends" className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl transition-all active:scale-95 hover:bg-accent/40">
-                <span className="text-lg font-bold tracking-tight">{stats?.friendsCount || 0}</span>
-                <span className="text-[10px] text-muted-foreground uppercase tracking-[0.18em] font-semibold mt-0.5">Amis</span>
-              </Link>
-              <div className="w-px bg-border/50 my-2" />
               <div className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl">
                 <span className="text-lg font-bold tracking-tight">{stats?.postsCount || 0}</span>
                 <span className="text-[10px] text-muted-foreground uppercase tracking-[0.18em] font-semibold mt-0.5">Posts</span>
               </div>
               <div className="w-px bg-border/50 my-2" />
-              <div className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl">
-                <span className="text-lg font-bold tracking-tight">{stats?.likesReceived || 0}</span>
-                <span className="text-[10px] text-muted-foreground uppercase tracking-[0.18em] font-semibold mt-0.5">J'aime</span>
-              </div>
+              <Link to="/friends" className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl transition-all active:scale-95 hover:bg-accent/40">
+                <span className="text-lg font-bold tracking-tight">{stats?.followersCount || 0}</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-[0.18em] font-semibold mt-0.5">Followers</span>
+              </Link>
+              <div className="w-px bg-border/50 my-2" />
+              <Link to="/friends" className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl transition-all active:scale-95 hover:bg-accent/40">
+                <span className="text-lg font-bold tracking-tight">{stats?.followingCount || 0}</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-[0.18em] font-semibold mt-0.5">Abonnements</span>
+              </Link>
             </div>
 
             {/* Bio */}
