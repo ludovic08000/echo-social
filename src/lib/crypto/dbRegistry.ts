@@ -54,6 +54,11 @@ const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
     version: 2,
     stores: [{ name: 'signed-prekeys', keyPath: 'id' }],
   },
+  prekeys: {
+    name: 'forsure-prekeys',
+    version: 1,
+    stores: [{ name: 'private-prekeys', keyPath: 'id' }],
+  },
   'x3dh-replay': {
     name: 'forsure-x3dh-replay',
     version: 1,
