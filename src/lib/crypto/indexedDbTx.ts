@@ -33,8 +33,8 @@ function queueKey(dbKey: DBKey, stores: string[]): string {
   return dbKey + '::' + [...stores].sort().join('|');
 }
 
-function enqueue<T>(stores: string[], run: () => Promise<T>): Promise<T> {
-  const key = queueKey(stores);
+function enqueue<T>(dbKey: DBKey, stores: string[], run: () => Promise<T>): Promise<T> {
+  const key = queueKey(dbKey, stores);
   return new Promise<T>((resolve, reject) => {
     const list = queues.get(key) ?? [];
     list.push({ run: run as () => Promise<unknown>, resolve: resolve as (v: unknown) => void, reject });
