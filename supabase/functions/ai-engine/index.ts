@@ -291,6 +291,50 @@ Focus on defensive fixes: RLS, auth, CSP, upload validation, rate limit, secrets
     console.error("ai-engine error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
+}
+
+serve(async (req) => {
+  const started = performance.now();
+  let action: string | undefined;
+  let userId: string | undefined;
+  let resp: Response;
+  try {
+    // Peek action + auth user without consuming the body twice
+    const cloned = req.clone();
+    try {
+      const peek = await cloned.json();
+      action = typeof peek?.action === "string" ? peek.action : undefined;
+    } catch (_) { /* ignore */ }
+    const authHeader = req.headers.get("Authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+          global: { headers: { Authorization: authHeader } },
+        });
+        const { data: { user: u } } = await userClient.auth.getUser();
+        userId = u?.id;
+      } catch (_) { /* ignore */ }
+    }
+    resp = await handle(req);
+  } catch (e) {
+    resp = new Response(JSON.stringify({ error: (e as Error).message }), { status: 500 });
+  }
+  if (action) {
+    const moduleId = AI_ENGINE_ACTION_MODULE[action] || `ai-engine-${action}`;
+    try {
+      const supa = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      logAIEvent(supa, {
+        module_id: moduleId,
+        source: "ai-engine",
+        action,
+        user_id: userId,
+        latency_ms: performance.now() - started,
+        success: resp.status >= 200 && resp.status < 400,
+      });
+    } catch (_) { /* ignore */ }
+  }
+  return resp;
 });
 
 async function callAI(apiKey: string, systemPrompt: string, userPrompt: string, model = "google/gemini-2.5-flash") {
