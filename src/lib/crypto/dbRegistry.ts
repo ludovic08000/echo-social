@@ -87,7 +87,10 @@ const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
       {
         name: 'outbound',
         keyPath: 'localId',
-        indexes: [{ name: 'conversationId', keyPath: 'conversationId' }],
+        indexes: [
+          { name: 'conversationId', keyPath: 'conversationId' },
+          { name: 'status', keyPath: 'status' },
+        ],
       },
     ],
   },
