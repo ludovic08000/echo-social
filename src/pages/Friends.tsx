@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Users, Clock, UserCheck, UserPlus, Search, UserX, MessageCircle, Sparkles, MapPin } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { useFriendships, useRespondToFriendRequest, useRemoveFriend, useSendFriendRequest } from '@/hooks/useFriendships';
 import { useCreateConversation } from '@/hooks/useMessages';
+import { useAuth } from '@/lib/auth';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,8 +24,15 @@ export default function Friends() {
   const sendRequest = useSendFriendRequest();
   const createConversation = useCreateConversation();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const { data: newUsers, isLoading: loadingNewUsers } = useNewUsers();
+  const tabParam = searchParams.get('tab');
+  const defaultTab = tabParam === 'followers' || tabParam === 'following' ? 'friends' : (tabParam || 'new');
+  const [friendSubTab, setFriendSubTab] = useState<'all' | 'followers' | 'following'>(
+    tabParam === 'followers' ? 'followers' : tabParam === 'following' ? 'following' : 'all'
+  );
 
   const handleAccept = (friendshipId: string) => {
     respondToRequest.mutate(
