@@ -7,6 +7,7 @@ import { safeUUID } from '@/e2ee-session';
 import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto';
 import { wrapOutboundSecureMessage } from '@/lib/crypto/secureMessagePipeline';
+import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
 
 export interface OutboundMessage {
   localId: string;
