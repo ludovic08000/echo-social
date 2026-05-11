@@ -522,6 +522,39 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_engine_events: {
+        Row: {
+          action: string | null
+          created_at: string
+          id: string
+          latency_ms: number
+          module_id: string
+          source: string
+          success: boolean
+          user_id: string | null
+        }
+        Insert: {
+          action?: string | null
+          created_at?: string
+          id?: string
+          latency_ms?: number
+          module_id: string
+          source: string
+          success?: boolean
+          user_id?: string | null
+        }
+        Update: {
+          action?: string | null
+          created_at?: string
+          id?: string
+          latency_ms?: number
+          module_id?: string
+          source?: string
+          success?: boolean
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       ai_feedback: {
         Row: {
           ai_decision: string
@@ -6763,6 +6796,16 @@ export type Database = {
         Args: { _expected_step: number; _user_id: string }
         Returns: number
       }
+      ai_engine_module_stats: {
+        Args: { p_window_minutes?: number }
+        Returns: {
+          avg_latency_ms: number
+          last_used: string
+          module_id: string
+          success_rate: number
+          total_calls: number
+        }[]
+      }
       approve_device_link_request: {
         Args: {
           p_approver_device_id: string
@@ -7289,6 +7332,7 @@ export type Database = {
         }
         Returns: number
       }
+      purge_old_ai_engine_events: { Args: never; Returns: undefined }
       purge_old_audit_logs: { Args: never; Returns: undefined }
       purge_old_crypto_error_logs: { Args: never; Returns: number }
       purge_old_feed_score_tamper_events: { Args: never; Returns: undefined }
