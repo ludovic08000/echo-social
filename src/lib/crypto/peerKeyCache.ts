@@ -25,6 +25,12 @@ let _cachedAuthUserId: string | null = null;
 let _cachedAuthUserIdTs = 0;
 const AUTH_USER_CACHE_TTL = 300_000; // 5 min
 
+/** Warm-up the cached auth user id (e.g. from useAuth's `user.id`). */
+export function primeAuthUserId(id: string | null): void {
+  _cachedAuthUserId = id;
+  _cachedAuthUserIdTs = Date.now();
+}
+
 export async function getCachedAuthUserId(): Promise<string | null> {
   if (_cachedAuthUserId && Date.now() - _cachedAuthUserIdTs < AUTH_USER_CACHE_TTL) {
     return _cachedAuthUserId;
