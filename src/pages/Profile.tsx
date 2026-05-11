@@ -594,14 +594,13 @@ export default function Profile() {
           </div>
 
           {/* Centered profile card pulled up over cover */}
-          <div className="px-4 lg:px-6 -mt-32 lg:-mt-36 relative z-10 flex flex-col items-center text-center">
-            {/* Avatar XXL with tricolor animated ring */}
+          <div className="px-4 lg:px-6 -mt-20 lg:-mt-24 relative z-10 flex flex-col items-center text-center">
+            {/* Avatar XXL with static tricolor ring (no rotation) */}
             <div className="relative">
               <div
                 className="rounded-full p-[3px]"
                 style={{
-                  background: 'conic-gradient(from 0deg, #002395, #ED2939, #ffffff, #002395)',
-                  animation: 'spin 12s linear infinite',
+                  background: 'conic-gradient(from 220deg, #002395, #ED2939, #ffffff, #002395)',
                 }}
               >
                 <div className="rounded-full p-1 bg-background">
