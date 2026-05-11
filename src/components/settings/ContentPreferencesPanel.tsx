@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Brain, Shuffle, Users, Clock, EyeOff, Sparkles, Hash, Sliders } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { loadFeedWeights, type FeedWeights } from '@/lib/feedAlgorithm';
+import { saveFeedPrefs, syncFeedPrefsFromServer } from '@/lib/feedPreferences';
+import { useAuth } from '@/lib/auth';
 
 type FeedAlgorithm = 'smart' | 'chronological' | 'friends_first';
 
