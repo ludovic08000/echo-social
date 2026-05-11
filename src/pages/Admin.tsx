@@ -40,6 +40,7 @@ const NAV_GROUPS = [
       { key: 'users', label: 'Utilisateurs', icon: Users },
       { key: 'posts', label: 'Publications', icon: FileText },
       { key: 'reports', label: 'Signalements', icon: Flag },
+      { key: 'comment_alerts', label: 'Alertes Zeus', icon: MessageSquareWarning },
       { key: 'verifications', label: 'Vérifications', icon: Shield },
       { key: 'archives', label: 'Archives', icon: Archive },
     ],
