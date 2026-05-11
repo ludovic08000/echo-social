@@ -162,6 +162,28 @@ export default function Friends() {
 
         {/* Friends Tab */}
         <TabsContent value="friends" className="mt-4 space-y-4">
+          {/* Sub-segmented control: Tous / Followers / Abonnements (Insta-style) */}
+          <div className="flex items-stretch bg-secondary/30 border border-border/30 rounded-2xl p-1">
+            {([
+              { key: 'all', label: 'Tous', count: allFriends.length },
+              { key: 'followers', label: 'Followers', count: followersList.length },
+              { key: 'following', label: 'Abonnements', count: followingList.length },
+            ] as const).map(seg => (
+              <button
+                key={seg.key}
+                onClick={() => setFriendSubTab(seg.key)}
+                className={`flex-1 flex flex-col items-center justify-center py-2 rounded-xl transition-all text-xs font-medium ${
+                  friendSubTab === seg.key
+                    ? 'bg-card shadow-sm text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <span>{seg.label}</span>
+                <span className="text-[10px] opacity-70 mt-0.5">{seg.count}</span>
+              </button>
+            ))}
+          </div>
+
           {(data?.friends.length ?? 0) > 5 && (
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
