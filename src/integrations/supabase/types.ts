@@ -6767,6 +6767,16 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      feed_score_batch: {
+        Args: { p_algo?: string; p_post_ids: string[]; p_user_id: string }
+        Returns: {
+          classic_score: number
+          final_score: number
+          ml_score: number
+          post_id: string
+          reason: string
+        }[]
+      }
       generate_order_number: { Args: never; Returns: string }
       get_ai_data_sharing_enabled: {
         Args: { p_user_id: string }
