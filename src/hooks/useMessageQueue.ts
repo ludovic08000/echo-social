@@ -177,6 +177,25 @@ export function useMessageQueue(
     if (!isSpecial) recordSentMessage(sanitized);
     if (data?.id) {
       onPlaintextCached?.(data.id, sanitized);
+      // Multi-device fan-out: encrypt the plaintext per recipient device
+      // (sender's other devices + each participant's devices) so iOS / Windows /
+      // Android all receive a readable copy via message_device_copies.
+      // Non-fatal: per-conv ratchet still delivers to the bootstrapping device.
+      if (encryptedSuccessfully) {
+        void fanoutMessageCopies({
+          messageId: data.id,
+          conversationId,
+          senderUserId: user.id,
+          plaintext: sanitized,
+        }).catch((fanoutError) => {
+          console.warn('[MSG_SEND] multi-device fanout failed', {
+            localId,
+            conversationId,
+            messageId: data.id,
+            fanoutError,
+          });
+        });
+      }
       // Critical for iOS/Safari: after the server ACK, persist the newest
       // ratchet state + sender plaintext/media key into the encrypted backup
       // immediately so a WebView cache purge doesn't make recent messages blank.
