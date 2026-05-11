@@ -10,6 +10,7 @@ import {
 import { isIndexedDBClosingError, openE2EEDB, reopenE2EEDB } from './indexedDb';
 import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, base64ToBuffer } from './utils';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
+import * as memCache from './memoryIdentityCache';
 
 export interface IdentityKeyPair {
   publicKey: CryptoKey;
@@ -219,6 +220,14 @@ export async function saveIdentityKeys(userId: string, keys: IdentityKeyPair): P
     createdAt: keys.createdAt,
     fingerprint: keys.fingerprint,
   });
+
+  // Hot RAM cache — survives brief IndexedDB outages on Safari/iOS.
+  try {
+    memCache.set(userId, {
+      identityPrivate: keys.privateKey,
+      identityPublic: keys.publicKey,
+    });
+  } catch {}
 }
 
 export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair | null> {
@@ -232,7 +241,7 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
     importKeyFromJWK(stored.signingPrivateKeyJWK, SIG_KEY_PARAMS as any, ['sign'], false),
   ]);
 
-  return {
+  const result: IdentityKeyPair = {
     publicKey,
     privateKey,
     signingPublicKey,
@@ -241,6 +250,15 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
     fingerprint: stored.fingerprint,
     ...(({ _privJWK: stored.privateKeyJWK, _sigPrivJWK: stored.signingPrivateKeyJWK }) as any),
   };
+
+  try {
+    memCache.set(userId, {
+      identityPrivate: result.privateKey,
+      identityPublic: result.publicKey,
+    });
+  } catch {}
+
+  return result;
 }
 
 async function createFreshIdentity(userId: string, reason: string): Promise<IdentityKeyPair & { isNewIdentity?: boolean; recoveredAfterLoss?: boolean }> {
@@ -390,15 +408,18 @@ export async function incrementSessionMessageCount(conversationId: string): Prom
 }
 
 export async function deleteRawIdentityKeys(userId: string): Promise<void> {
+  try { memCache.clear(userId, 'delete_raw'); } catch {}
   await dbDelete(STORE_KEYS, userId);
 }
 
 export async function hasRawIdentityKeys(userId: string): Promise<boolean> {
+  if (memCache.has(userId)) return true;
   const stored = await dbGet<StoredKeyPair & { id: string }>(STORE_KEYS, userId);
   return !!stored;
 }
 
 export async function wipeAllKeys(): Promise<void> {
+  try { memCache.clearAll('wipe_all'); } catch {}
   try {
     const db = await openDB();
     const tx = db.transaction([STORE_KEYS, STORE_SESSION, STORE_PREKEYS], 'readwrite');

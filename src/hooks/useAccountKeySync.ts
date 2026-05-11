@@ -24,6 +24,7 @@ import {
 } from '@/lib/crypto/accountKeyBackup';
 import { hydrateDeviceId, getCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { isNativePlatform } from '@/lib/nativeStore';
+import { transition, withEnsureLock, getSnapshot } from '@/lib/crypto/CryptoStateMachine';
 
 const SYNC_DEBOUNCE_MS = 5_000;
 // Mobile WebViews can be paused — poll a bit more aggressively when foregrounded.
@@ -75,7 +76,11 @@ export function useAccountKeySync() {
     if (!user) return;
     let cancelled = false;
 
-    void (async () => {
+    // Single-flight guard: concurrent mounts share the same boot promise,
+    // and `identity_creating` is hard-locked to once-per-session by the
+    // CryptoStateMachine — eliminates the IndexedDB-empty → recreate loop.
+    void withEnsureLock(user.id, async () => {
+      try { transition(user.id, 'storage_checking', 'useAccountKeySync.boot'); } catch {}
       try {
         const [{ hasWrappedKeys }, { hasRawIdentityKeys }] = await Promise.all([
           import('@/lib/crypto/pinWrap'),
@@ -190,7 +195,13 @@ export function useAccountKeySync() {
       } catch (e) {
         console.warn('[messaging] startup crypto check failed:', e);
       }
-    })();
+      try {
+        const snap = getSnapshot(user.id);
+        if (snap.state === 'storage_checking') {
+          transition(user.id, await hasLocalKeys() ? 'identity_loaded' : 'backup_restore_required', 'boot.fallback');
+        }
+      } catch {}
+    });
 
     return () => {
       cancelled = true;
