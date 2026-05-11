@@ -16,6 +16,7 @@ import {
   StatsSection, SubscriptionsSection, SecuritySection, SettingsSection,
   AISection, PlatformHealthDashboard, FeedIntelligenceSection, MonitoringSection,
   SecurityMonitoringSection, CryptoErrorsSection, MLFeedSection,
+  CommentModerationAlertsSection,
 } from '@/components/admin';
 import { VerificationsSection } from '@/components/admin/VerificationsSection';
 import { ArchivesSection } from '@/components/admin/ArchivesSection';
