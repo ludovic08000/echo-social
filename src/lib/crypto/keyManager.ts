@@ -408,10 +408,12 @@ export async function incrementSessionMessageCount(conversationId: string): Prom
 }
 
 export async function deleteRawIdentityKeys(userId: string): Promise<void> {
+  try { memCache.clear(userId, 'delete_raw'); } catch {}
   await dbDelete(STORE_KEYS, userId);
 }
 
 export async function hasRawIdentityKeys(userId: string): Promise<boolean> {
+  if (memCache.has(userId)) return true;
   const stored = await dbGet<StoredKeyPair & { id: string }>(STORE_KEYS, userId);
   return !!stored;
 }
