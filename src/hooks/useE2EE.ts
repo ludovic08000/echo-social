@@ -1039,14 +1039,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       if (fingerprintChanged) {
         if (conversationId) {
           try {
-            const db = await openRatchetDB();
-            const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
-            tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
-            await new Promise<void>((resolve, reject) => {
-              tx.oncomplete = () => resolve();
-              tx.onerror = () => reject(tx.error);
+            await runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
+              tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
             });
-            db.close();
           } catch {}
 
           ratchetRef.current = null;
@@ -1079,14 +1074,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
       if (conversationId && forceSessionRefresh) {
         try {
-          const db = await openRatchetDB();
-          const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
-          tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
-          await new Promise<void>((resolve, reject) => {
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+          await runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
+            tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
           });
-          db.close();
         } catch {}
 
         ratchetRef.current = null;
