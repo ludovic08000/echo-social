@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tansta
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { ReactionType } from '@/hooks/useReactions';
-import { loadContentPrefs, loadFeedWeights, containsMutedKeyword, monteCarloRank, loadAlgorithmConfig, type ScoringContext } from '@/lib/feedAlgorithm';
+import { loadContentPrefs, containsMutedKeyword } from '@/lib/feedAlgorithm';
 import { enforceDiversity, getSessionAdjustment } from '@/lib/feedDiversity';
 
 export interface Post {
