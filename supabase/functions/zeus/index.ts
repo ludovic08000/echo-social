@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { logAIEvent, zeusModuleId } from "../_shared/aiEngineLog.ts";
 
 // ═══════════════════════════════════════════════════════════════
 // ⚡ ZEUS — ForSure Central AI Engine
