@@ -22,7 +22,7 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { loadFeedWeights, type FeedWeights } from '@/lib/feedAlgorithm';
 import { saveFeedPrefs } from '@/lib/feedPreferences';
-import { useAuth as useAuthForPrefs } from '@/lib/auth';
+
 
 type Msg = { role: string; content: string };
 type ActiveTab = 'chat' | 'algo' | 'history';
