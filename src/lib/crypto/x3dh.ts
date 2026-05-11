@@ -696,18 +696,14 @@ async function saveDeviceOPKPrivate(
   publicBase64: string,
 ): Promise<void> {
   const jwk = await hardCrypto.exportKey('jwk', privateKey);
-  const db = await openSPKDB();
-  const tx = db.transaction(SPK_STORE, 'readwrite');
-  tx.objectStore(SPK_STORE).put({
-    id: deviceOPKKey(userId, deviceId, opkId),
-    spkId: opkId,
-    privateKeyJWK: jwk,
-    publicKeyBase64: publicBase64,
-    createdAt: Date.now(),
-  } as StoredSPK);
-  await new Promise<void>((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+  await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
+    tx.objectStore(SPK_STORE).put({
+      id: deviceOPKKey(userId, deviceId, opkId),
+      spkId: opkId,
+      privateKeyJWK: jwk,
+      publicKeyBase64: publicBase64,
+      createdAt: Date.now(),
+    } as StoredSPK);
   });
 }
 
@@ -717,13 +713,9 @@ async function loadDeviceOPKPrivate(
   opkId: number,
 ): Promise<CryptoKey | null> {
   try {
-    const db = await openSPKDB();
-    const tx = db.transaction(SPK_STORE, 'readonly');
-    const req = tx.objectStore(SPK_STORE).get(deviceOPKKey(userId, deviceId, opkId));
-    const result = await new Promise<StoredSPK | undefined>((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const result = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) =>
+      reqToPromise<StoredSPK | undefined>(tx.objectStore(SPK_STORE).get(deviceOPKKey(userId, deviceId, opkId))),
+    );
     if (!result) return null;
     return importKeyFromJWK(result.privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits'], false);
   } catch {
@@ -733,25 +725,17 @@ async function loadDeviceOPKPrivate(
 
 async function deleteDeviceOPKPrivate(userId: string, deviceId: string, opkId: number): Promise<void> {
   try {
-    const db = await openSPKDB();
-    const tx = db.transaction(SPK_STORE, 'readwrite');
-    tx.objectStore(SPK_STORE).delete(deviceOPKKey(userId, deviceId, opkId));
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
+      tx.objectStore(SPK_STORE).delete(deviceOPKKey(userId, deviceId, opkId));
     });
   } catch { /* non-fatal */ }
 }
 
 async function getNextDeviceOPKBaseId(userId: string, deviceId: string): Promise<number> {
   try {
-    const db = await openSPKDB();
-    const tx = db.transaction(SPK_STORE, 'readonly');
-    const allKeys = await new Promise<IDBValidKey[]>((resolve, reject) => {
-      const req = tx.objectStore(SPK_STORE).getAllKeys();
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const allKeys = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) =>
+      reqToPromise<IDBValidKey[]>(tx.objectStore(SPK_STORE).getAllKeys()),
+    );
     const prefix = `${userId}::dev::${deviceId}::opk::`;
     let maxId = 0;
     for (const key of allKeys) {
