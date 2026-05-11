@@ -65,103 +65,8 @@ export function usePosts() {
         });
       }
 
-      // ── Authenticated feed with personalization ──
+      // ── Authenticated feed: server-side scoring (anti-cheat) ──
       const prefs = loadContentPrefs();
-      const weights = loadFeedWeights();
-      const algoConfig = await loadAlgorithmConfig();
-
-      // Build Monte Carlo scoring context
-      const mcCtx: ScoringContext = {
-        friendInteractionCounts: new Map(),
-        userId: user.id,
-        prefs,
-        weights,
-        seenAuthors: new Set(),
-        postIndex: 0,
-        userInterests: [],
-        algoConfig,
-      };
-
-      // Load social signals in parallel: friendships, user interactions, interests
-      try {
-        const [friendshipsRes, likesGivenRes, commentsGivenRes, interestsRes] = await Promise.all([
-          supabase
-            .from('friendships')
-            .select('requester_id, addressee_id')
-            .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
-            .eq('status', 'accepted'),
-          // Likes the user gave to other users' posts (last 30 days)
-          supabase
-            .from('likes')
-            .select('post_id')
-            .eq('user_id', user.id)
-            .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
-            .limit(200),
-          // Comments the user wrote (last 30 days)
-          supabase
-            .from('comments')
-            .select('post_id')
-            .eq('user_id', user.id)
-            .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
-            .limit(200),
-          // User interests
-          supabase
-            .from('user_interests')
-            .select('interest_value')
-            .eq('user_id', user.id),
-        ]);
-
-        // Build friend set
-        const friendIds = new Set<string>();
-        if (friendshipsRes.data) {
-          friendshipsRes.data.forEach((f: any) => {
-            const friendId = f.requester_id === user.id ? f.addressee_id : f.requester_id;
-            friendIds.add(friendId);
-            mcCtx.friendInteractionCounts.set(friendId, 1); // base score
-          });
-        }
-
-        // Enrich with interaction counts: resolve post authors for likes/comments
-        const interactedPostIds = new Set<string>();
-        likesGivenRes.data?.forEach((l: any) => interactedPostIds.add(l.post_id));
-        commentsGivenRes.data?.forEach((c: any) => interactedPostIds.add(c.post_id));
-
-        if (interactedPostIds.size > 0) {
-          const { data: postAuthors } = await supabase
-            .from('posts')
-            .select('id, user_id')
-            .in('id', Array.from(interactedPostIds).slice(0, 200));
-
-          if (postAuthors) {
-            const authorInteractions = new Map<string, number>();
-            // Count likes given to each author
-            const postAuthorMap = new Map(postAuthors.map(p => [p.id, p.user_id]));
-            likesGivenRes.data?.forEach((l: any) => {
-              const authorId = postAuthorMap.get(l.post_id);
-              if (authorId && authorId !== user.id) {
-                authorInteractions.set(authorId, (authorInteractions.get(authorId) || 0) + 2);
-              }
-            });
-            commentsGivenRes.data?.forEach((c: any) => {
-              const authorId = postAuthorMap.get(c.post_id);
-              if (authorId && authorId !== user.id) {
-                authorInteractions.set(authorId, (authorInteractions.get(authorId) || 0) + 3);
-              }
-            });
-
-            // Merge into friend interaction counts
-            authorInteractions.forEach((count, authorId) => {
-              const existing = mcCtx.friendInteractionCounts.get(authorId) || 0;
-              mcCtx.friendInteractionCounts.set(authorId, existing + count);
-            });
-          }
-        }
-
-        // Set user interests
-        if (interestsRes.data) {
-          mcCtx.userInterests = interestsRes.data.map((i: any) => i.interest_value);
-        }
-      } catch {}
 
       // ── Strategy 1: Single RPC call ──
       try {
@@ -192,9 +97,7 @@ export function usePosts() {
             user_reaction: post.user_reaction || null,
           })) as Post[];
 
-          // Apply Monte Carlo ranking, then blend with ML hybrid score
-          const mcRanked = monteCarloRank(mapped, mcCtx, 50);
-          return await blendWithMLScore(mcRanked, user.id);
+          return await serverRankPosts(mapped, user.id, prefs.feedAlgorithm);
         }
       } catch {
         // Fall through to legacy fallback
@@ -215,10 +118,8 @@ export function usePosts() {
 
       const filteredPosts = posts.filter(p => !containsMutedKeyword(p.body, prefs.mutedKeywords));
       const enriched = await enrichPosts(filteredPosts.slice(0, PAGE_SIZE), user.id);
-      
-      // Apply Monte Carlo ranking + ML hybrid blending
-      const mcRanked = monteCarloRank(enriched, mcCtx, 50);
-      return await blendWithMLScore(mcRanked, user.id);
+
+      return await serverRankPosts(enriched, user.id, prefs.feedAlgorithm);
     },
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.length < PAGE_SIZE) return undefined;
