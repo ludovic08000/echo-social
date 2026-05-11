@@ -75,6 +75,7 @@ export function usePosts() {
       }
 
       // ── Authenticated feed: server-side scoring (anti-cheat) ──
+      ensureFeedPrefsSynced(user.id);
       const prefs = loadContentPrefs();
 
       // ── Strategy 1: Single RPC call ──
