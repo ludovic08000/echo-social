@@ -163,25 +163,31 @@ export default function Feed() {
 
   const renderInjection = useCallback((index: number) => {
     const type = INJECTION_MAP[index];
-    
+
     if (!isMobile && activeAds?.length && index > 0 && index % 6 === 0) {
       const adIndex = Math.floor(index / 6) % activeAds.length;
       const ad = activeAds[adIndex];
       if (ad) {
-        return <SponsoredPostCard ad={ad} />;
+        return (
+          <LazyMount minHeight={220}>
+            <SponsoredPostCard ad={ad} />
+          </LazyMount>
+        );
       }
     }
-    
+
     if (!type) return null;
 
     return (
-      <Suspense fallback={<div className="h-32 skeleton rounded-2xl" />}>
-        {type === 'reels' && <FeedReelsSection />}
-        {type === 'suggestions' && <FriendSuggestions />}
-        {type === 'suggestions_city' && <FriendSuggestionsByCity />}
-        {type === 'media' && <FeedMediaSection />}
-        {type === 'marketplace' && <FeedMarketplaceSection />}
-      </Suspense>
+      <LazyMount minHeight={200}>
+        <Suspense fallback={<div className="h-32 skeleton rounded-2xl" />}>
+          {type === 'reels' && <FeedReelsSection />}
+          {type === 'suggestions' && <FriendSuggestions />}
+          {type === 'suggestions_city' && <FriendSuggestionsByCity />}
+          {type === 'media' && <FeedMediaSection />}
+          {type === 'marketplace' && <FeedMarketplaceSection />}
+        </Suspense>
+      </LazyMount>
     );
   }, [isMobile, activeAds]);
 
