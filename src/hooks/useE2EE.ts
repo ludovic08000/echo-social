@@ -89,20 +89,8 @@ const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
 // Prevents 50 concurrent decrypts from each spawning their own ratchet init.
 
 // ─── Global deduplication & caching layer ───
-// Prevents request storms when multiple hook instances or concurrent decrypts
-// fire identical API calls.
-
-/** Deduplication lock for ensureKeysAndPeerSync */
-const _peerSyncPromise = new Map<string, Promise<boolean>>();
-
-/** Global cache for peer public keys — prevents repeated fetches */
-const _peerKeyCache = new Map<string, { data: { identity_key: string; signing_key: string; fingerprint: string } | null; ts: number }>();
-const PEER_KEY_TTL = 120_000; // 2 minutes
-
-/** Cached auth user ID — avoids repeated supabase.auth.getUser() network calls */
-let _cachedAuthUserId: string | null = null;
-let _cachedAuthUserIdTs = 0;
-const AUTH_USER_CACHE_TTL = 300_000; // 5 minutes
+// Peer-key cache, auth-user cache, fingerprint tracker and SPK freshness probe
+// have been moved to dedicated modules under `@/lib/crypto/*` (see imports).
 
 /**
  * Global decrypt serializer per conversation.
