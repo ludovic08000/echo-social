@@ -17,7 +17,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
-import { runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
+import { runTx, runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
 import {
   buildDeviceLinkQrData,
   decryptDeviceLinkPayload,
@@ -115,16 +115,13 @@ async function collectLocalKeys(options: { includePlaintextCache?: boolean } = {
 
   try {
     const db = await openE2EEDB();
-    for (const storeName of Array.from(db.objectStoreNames)) {
-      const tx = db.transaction(storeName, 'readonly');
-      const all = await new Promise<any[]>((resolve, reject) => {
-        const req = tx.objectStore(storeName).getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
+    const storeNames = Array.from(db.objectStoreNames);
+    for (const storeName of storeNames) {
+      const all = await runTx([storeName], 'readonly', (tx) =>
+        reqToPromise(tx.objectStore(storeName).getAll() as IDBRequest<any[]>),
+      ).catch(() => []);
       data[`e2ee:${storeName}`] = all;
     }
-    // openE2EEDB() returns the shared crypto DB singleton; keep it open.
   } catch {}
 
   try {
@@ -158,15 +155,11 @@ async function restoreLocalKeys(json: string): Promise<void> {
     const storeName = key.replace('e2ee:', '');
     try {
       const db = await openE2EEDB();
-      if (db.objectStoreNames.contains(storeName)) {
-        const tx = db.transaction(storeName, 'readwrite');
-        for (const record of records) tx.objectStore(storeName).put(record);
-        await new Promise<void>((resolve, reject) => {
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error);
-        });
-      }
-      // openE2EEDB() returns the shared crypto DB singleton; keep it open.
+      if (!db.objectStoreNames.contains(storeName)) continue;
+      await runTx([storeName], 'readwrite', (tx) => {
+        const store = tx.objectStore(storeName);
+        for (const record of records) store.put(record);
+      });
     } catch {}
   }
 
