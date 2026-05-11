@@ -467,26 +467,12 @@ function cleanupLegacyStorage() {
     const migrationKey = 'forsure-e2ee-migration-v4';
     if (!localStorage.getItem(migrationKey)) {
       localStorage.setItem(migrationKey, '1');
-      const req = hardGlobals.idbOpen(RATCHET_DB_NAME, RATCHET_DB_VERSION);
-      req.onsuccess = () => {
-        try {
-          const db = req.result;
-          const tx = db.transaction(RATCHET_STORE_NAME, 'readwrite');
-          tx.objectStore(RATCHET_STORE_NAME).clear();
-          console.log('[E2EE] Cleared stale ratchet states (migration v4)');
-        } catch {}
-      };
-      // Also clear legacy session keys to re-derive — use openE2EEDB to ensure stores exist
-      openE2EEDB().then(db => {
-        try {
-          if (db.objectStoreNames.contains(STORE_SESSION)) {
-            const tx = db.transaction(STORE_SESSION, 'readwrite');
-            tx.objectStore(STORE_SESSION).clear();
-            console.log('[E2EE] Cleared stale session keys (migration v4)');
-          }
-          // openE2EEDB() returns the shared crypto DB singleton; keep it open.
-        } catch {}
-      }).catch(() => {});
+      void runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
+        tx.objectStore(RATCHET_STORE_NAME).clear();
+      }).then(() => console.log('[E2EE] Cleared stale ratchet states (migration v4)')).catch(() => {});
+      void runTx([STORE_SESSION], 'readwrite', (tx) => {
+        try { tx.objectStore(STORE_SESSION).clear(); } catch {}
+      }).then(() => console.log('[E2EE] Cleared stale session keys (migration v4)')).catch(() => {});
     }
   } catch {}
 }
