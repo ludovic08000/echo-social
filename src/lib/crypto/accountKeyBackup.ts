@@ -510,10 +510,8 @@ export async function computeLocalCryptoDigest(): Promise<string> {
     ['forsure-spk', 'signed-prekeys'],
   ]) {
     try {
-      const db = await openDB(dbName, 1);
-      const all = await getAllFromStore(db, storeName);
+      const all = await getAllFromSideDB(dbName, storeName);
       parts.push(`${storeName}:${all.length}:${JSON.stringify(all).length}`);
-      db.close();
     } catch {}
   }
 
