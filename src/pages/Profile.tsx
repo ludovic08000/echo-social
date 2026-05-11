@@ -353,16 +353,11 @@ export default function Profile() {
         { count: postsCount },
         { data: postIds },
         { count: friendsCount },
-        { count: followersCount },
-        { count: followingCount },
       ] = await Promise.all([
         supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', userId),
         supabase.from('posts').select('id').eq('user_id', userId),
+        // Amitiés mutuelles : on compte tous les liens acceptés peu importe qui a initié
         supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('status', 'accepted').or(`requester_id.eq.${userId},addressee_id.eq.${userId}`),
-        // Insta-style: "followers" = personnes qui m'ont ajouté (je suis addressee)
-        supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('status', 'accepted').eq('addressee_id', userId),
-        // "following" = personnes que j'ai ajoutées (je suis requester)
-        supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('status', 'accepted').eq('requester_id', userId),
       ]);
       let likesReceived = 0;
       if (postIds && postIds.length > 0) {
@@ -373,8 +368,8 @@ export default function Profile() {
         postsCount: postsCount || 0,
         likesReceived,
         friendsCount: friendsCount || 0,
-        followersCount: followersCount || 0,
-        followingCount: followingCount || 0,
+        followersCount: friendsCount || 0,
+        followingCount: friendsCount || 0,
       };
     },
     enabled: !!userId,
