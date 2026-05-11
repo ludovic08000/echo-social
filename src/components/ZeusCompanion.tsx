@@ -21,6 +21,8 @@ import { SafeMarkdown } from '@/components/SafeMarkdown';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { loadFeedWeights, type FeedWeights } from '@/lib/feedAlgorithm';
+import { saveFeedPrefs } from '@/lib/feedPreferences';
+
 
 type Msg = { role: string; content: string };
 type ActiveTab = 'chat' | 'algo' | 'history';
@@ -226,6 +228,7 @@ function FeedPreviewBar({ friends, discovery, marketplace, algo, viralReduce, di
 // ── Algorithm Control Panel ──
 function AlgorithmPanel() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [feedAlgo, setFeedAlgo] = useState<FeedAlgorithm>(() => {
     try { return JSON.parse(localStorage.getItem('content-prefs') || '{}').feedAlgorithm || 'smart'; } catch { return 'smart'; }
   });
@@ -243,8 +246,9 @@ function AlgorithmPanel() {
       const prev = JSON.parse(localStorage.getItem('content-prefs') || '{}');
       localStorage.setItem('content-prefs', JSON.stringify({ ...prev, ...patch }));
     } catch {}
+    if (user) void saveFeedPrefs(user.id, patch as any).catch(() => {});
     queryClient.invalidateQueries({ queryKey: ['posts'] });
-  }, [queryClient]);
+  }, [queryClient, user]);
 
   const showFeedback = (label: string) => {
     setLastChanged(label);
@@ -258,8 +262,11 @@ function AlgorithmPanel() {
     toast.success(`Mode "${names[algo]}" activé`, { duration: 2000 });
   };
   const updateWeights = (w: FeedWeights, label: string) => {
-    setFeedWeights(w); localStorage.setItem('feed-weights', JSON.stringify(w));
-    savePrefs({}); showFeedback(label);
+    setFeedWeights(w);
+    localStorage.setItem('feed-weights', JSON.stringify(w));
+    if (user) void saveFeedPrefs(user.id, { weights: w }).catch(() => {});
+    queryClient.invalidateQueries({ queryKey: ['posts'] });
+    showFeedback(label);
   };
   const updateDiversity = (v: number) => { setDiversityBoost(v); savePrefs({ diversityBoost: v }); showFeedback('Diversité'); };
   const updateViral = (v: boolean) => {

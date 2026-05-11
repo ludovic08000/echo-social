@@ -4,6 +4,15 @@ import { useAuth } from '@/lib/auth';
 import { ReactionType } from '@/hooks/useReactions';
 import { loadContentPrefs, containsMutedKeyword } from '@/lib/feedAlgorithm';
 import { enforceDiversity, getSessionAdjustment } from '@/lib/feedDiversity';
+import { syncFeedPrefsFromServer } from '@/lib/feedPreferences';
+
+// One-shot sync per user (refreshes localStorage cache from DB-backed prefs)
+const _syncedPrefsUsers = new Set<string>();
+function ensureFeedPrefsSynced(userId: string) {
+  if (_syncedPrefsUsers.has(userId)) return;
+  _syncedPrefsUsers.add(userId);
+  void syncFeedPrefsFromServer(userId);
+}
 
 export interface Post {
   id: string;
@@ -66,6 +75,7 @@ export function usePosts() {
       }
 
       // ── Authenticated feed: server-side scoring (anti-cheat) ──
+      ensureFeedPrefsSynced(user.id);
       const prefs = loadContentPrefs();
 
       // ── Strategy 1: Single RPC call ──

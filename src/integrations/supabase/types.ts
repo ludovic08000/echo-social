@@ -5786,6 +5786,54 @@ export type Database = {
           },
         ]
       }
+      user_feed_preferences: {
+        Row: {
+          created_at: string
+          diversity_boost: number
+          feed_algorithm: string
+          muted_keywords: string[]
+          priority_topics: string[]
+          seen_posts_hide: boolean
+          sensitive_content_filter: boolean
+          updated_at: string
+          user_id: string
+          viral_content_reduce: boolean
+          weight_discovery: number
+          weight_friends: number
+          weight_marketplace: number
+        }
+        Insert: {
+          created_at?: string
+          diversity_boost?: number
+          feed_algorithm?: string
+          muted_keywords?: string[]
+          priority_topics?: string[]
+          seen_posts_hide?: boolean
+          sensitive_content_filter?: boolean
+          updated_at?: string
+          user_id: string
+          viral_content_reduce?: boolean
+          weight_discovery?: number
+          weight_friends?: number
+          weight_marketplace?: number
+        }
+        Update: {
+          created_at?: string
+          diversity_boost?: number
+          feed_algorithm?: string
+          muted_keywords?: string[]
+          priority_topics?: string[]
+          seen_posts_hide?: boolean
+          sensitive_content_filter?: boolean
+          updated_at?: string
+          user_id?: string
+          viral_content_reduce?: boolean
+          weight_discovery?: number
+          weight_friends?: number
+          weight_marketplace?: number
+        }
+        Relationships: []
+      }
       user_identity_change_events: {
         Row: {
           acknowledged: boolean
