@@ -649,22 +649,22 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* Tactile stats glass bar */}
+            {/* Tactile stats glass bar — Insta-style: Posts / Followers / Following */}
             <div className="mt-6 w-full max-w-md flex items-stretch bg-card/40 backdrop-blur-2xl border border-border/40 rounded-3xl p-1 shadow-[0_18px_50px_-24px_hsl(var(--foreground)/0.25)]">
-              <Link to="/friends" className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl transition-all active:scale-95 hover:bg-accent/40">
-                <span className="text-lg font-bold tracking-tight">{stats?.friendsCount || 0}</span>
-                <span className="text-[10px] text-muted-foreground uppercase tracking-[0.18em] font-semibold mt-0.5">Amis</span>
-              </Link>
-              <div className="w-px bg-border/50 my-2" />
               <div className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl">
                 <span className="text-lg font-bold tracking-tight">{stats?.postsCount || 0}</span>
                 <span className="text-[10px] text-muted-foreground uppercase tracking-[0.18em] font-semibold mt-0.5">Posts</span>
               </div>
               <div className="w-px bg-border/50 my-2" />
-              <div className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl">
-                <span className="text-lg font-bold tracking-tight">{stats?.likesReceived || 0}</span>
-                <span className="text-[10px] text-muted-foreground uppercase tracking-[0.18em] font-semibold mt-0.5">J'aime</span>
-              </div>
+              <Link to="/friends" className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl transition-all active:scale-95 hover:bg-accent/40">
+                <span className="text-lg font-bold tracking-tight">{stats?.followersCount || 0}</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-[0.18em] font-semibold mt-0.5">Followers</span>
+              </Link>
+              <div className="w-px bg-border/50 my-2" />
+              <Link to="/friends" className="flex-1 flex flex-col items-center justify-center py-3 rounded-2xl transition-all active:scale-95 hover:bg-accent/40">
+                <span className="text-lg font-bold tracking-tight">{stats?.followingCount || 0}</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-[0.18em] font-semibold mt-0.5">Abonnements</span>
+              </Link>
             </div>
 
             {/* Bio */}
