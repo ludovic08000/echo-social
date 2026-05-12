@@ -268,7 +268,7 @@ export function CreatePost() {
             description: 'Ton message contient un motif d\'attaque (' + t.category + '). Publication bloquée.',
             variant: 'destructive',
           });
-          setUploading(false);
+          setIsUploading(false);
           setUploadStep('');
           return;
         }
