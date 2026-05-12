@@ -446,13 +446,7 @@ export function StoriesBar() {
 
             {/* RIGHT: STORY VIEWER */}
             <div className="flex-1 flex items-center justify-center relative">
-              {/* Mobile close button */}
-              <button
-                onClick={closeViewer}
-                className="md:hidden absolute top-4 left-4 z-30 w-9 h-9 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              {/* Single close button is in the header on the right */}
 
               {/* Previous group arrow */}
               {groupedStories && (groupedStories.findIndex(g => g.user_id === selectedGroup.user_id) > 0) && (
@@ -552,7 +546,7 @@ export function StoriesBar() {
                       exit={{ scale: 0.98, opacity: 0 }}
                       transition={{ duration: 0.3 }}
                       src={currentStory.image_url}
-                      className="w-full h-full object-cover"
+                      className="max-w-full max-h-full w-auto h-auto object-contain bg-black"
                       autoPlay
                       muted
                       playsInline
@@ -567,7 +561,7 @@ export function StoriesBar() {
                       transition={{ duration: 0.3 }}
                       src={currentStory.image_url}
                       alt="Story"
-                      className="w-full h-full object-cover"
+                      className="max-w-full max-h-full w-auto h-auto object-contain bg-black"
                     />
                   )}
                 </AnimatePresence>
