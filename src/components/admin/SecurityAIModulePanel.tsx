@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Brain, ShieldAlert, Globe, FileSearch, Bug, UserCheck, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAIEngine } from '@/hooks/useAIEngine';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ModuleResult {
   id: string;
@@ -25,6 +27,14 @@ function badgeClass(level: string) {
   return 'bg-secondary text-secondary-foreground';
 }
 
+function compactRows(rows: any[] | undefined, fields: string[]) {
+  return (rows || []).slice(0, 50).map(row => {
+    const out: Record<string, unknown> = {};
+    for (const field of fields) out[field] = row?.[field];
+    return out;
+  });
+}
+
 export function SecurityAIModulePanel() {
   const {
     detectIntrusion,
@@ -36,6 +46,91 @@ export function SecurityAIModulePanel() {
   } = useAIEngine();
   const [results, setResults] = useState<ModuleResult[]>([]);
 
+  const { data: ddosTracker } = useQuery({
+    queryKey: ['security-ai-live-ddos'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ddos_ip_tracker')
+        .select('ip_address, endpoint, request_count, penalty_level, blocked_until, updated_at')
+        .order('updated_at', { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return data || [];
+    },
+    refetchInterval: 10000,
+  });
+
+  const { data: incidents } = useQuery({
+    queryKey: ['security-ai-live-incidents'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('security_incidents')
+        .select('incident_type, severity, status, source_ip, target_endpoint, attack_vector, success, confidence_score, autonomy_level, detection_source, created_at')
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return data || [];
+    },
+    refetchInterval: 10000,
+  });
+
+  const { data: patterns } = useQuery({
+    queryKey: ['security-ai-live-patterns'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('security_ai_patterns')
+        .select('pattern_name, severity, confidence, times_matched, autonomy_level, last_matched_at')
+        .eq('is_active', true)
+        .order('confidence', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return data || [];
+    },
+    refetchInterval: 15000,
+  });
+
+  const { data: qualityMetrics } = useQuery({
+    queryKey: ['security-ai-live-quality'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('security_quality_metrics' as any)
+        .select('autonomy_score, reaction_time_ms, incidents_detected, ai_calls, created_at')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return data || [];
+    },
+    refetchInterval: 15000,
+  });
+
+  const liveContext = useMemo(() => {
+    const dangerousIps = (ddosTracker || []).filter((ip: any) =>
+      Number(ip.penalty_level || 0) >= 2 ||
+      (ip.blocked_until && new Date(ip.blocked_until) > new Date())
+    );
+    const criticalIncidents = (incidents || []).filter((i: any) => i.severity === 'critical' || i.severity === 'high');
+
+    return {
+      source: 'security-dashboard-live',
+      timeWindow: 'latest_runtime_snapshot',
+      generatedAt: new Date().toISOString(),
+      summary: {
+        trackedIpCount: ddosTracker?.length || 0,
+        dangerousIpCount: dangerousIps.length,
+        incidentCount: incidents?.length || 0,
+        criticalIncidentCount: criticalIncidents.length,
+        learnedPatternCount: patterns?.length || 0,
+        recentMetricCount: qualityMetrics?.length || 0,
+      },
+      telemetry: {
+        ddosTracker: compactRows(ddosTracker, ['ip_address', 'endpoint', 'request_count', 'penalty_level', 'blocked_until', 'updated_at']),
+        incidents: compactRows(incidents, ['incident_type', 'severity', 'status', 'source_ip', 'target_endpoint', 'attack_vector', 'success', 'confidence_score', 'autonomy_level', 'detection_source', 'created_at']),
+        securityPatterns: compactRows(patterns, ['pattern_name', 'severity', 'confidence', 'times_matched', 'autonomy_level', 'last_matched_at']),
+        qualityMetrics: compactRows(qualityMetrics as any[], ['autonomy_score', 'reaction_time_ms', 'incidents_detected', 'ai_calls', 'created_at']),
+      },
+    };
+  }, [ddosTracker, incidents, patterns, qualityMetrics]);
+
   const upsertResult = (id: string, label: string, result: unknown) => {
     setResults(prev => [
       { id, label, result, updatedAt: new Date().toISOString() },
@@ -43,46 +138,36 @@ export function SecurityAIModulePanel() {
     ].slice(0, 10));
   };
 
-  const sampleContext = {
-    source: 'security-dashboard',
-    timeWindow: 'last_10_minutes',
-    telemetry: {
-      ddosTracker: 'use security-monitor live tables for production telemetry',
-      auditLogs: 'server-side only',
-      abuseReports: 'server-side only',
-    },
-  };
-
   const modules = [
     {
       id: 'intrusion-detector',
       label: 'Intrusion Detector',
       icon: ShieldAlert,
-      run: async () => upsertResult('intrusion-detector', 'Intrusion Detector', await detectIntrusion(sampleContext)),
+      run: async () => upsertResult('intrusion-detector', 'Intrusion Detector', await detectIntrusion(liveContext)),
     },
     {
       id: 'ip-analyzer',
       label: 'IP Analyzer',
       icon: Globe,
-      run: async () => upsertResult('ip-analyzer', 'IP Analyzer', await analyzeIP(sampleContext)),
+      run: async () => upsertResult('ip-analyzer', 'IP Analyzer', await analyzeIP(liveContext)),
     },
     {
       id: 'packet-inspector',
       label: 'Packet Inspector',
       icon: FileSearch,
-      run: async () => upsertResult('packet-inspector', 'Packet Inspector', await inspectPacket(sampleContext)),
+      run: async () => upsertResult('packet-inspector', 'Packet Inspector', await inspectPacket(liveContext)),
     },
     {
       id: 'vuln-scanner',
       label: 'Vulnerability Scanner',
       icon: Bug,
-      run: async () => upsertResult('vuln-scanner', 'Vulnerability Scanner', await scanVulnerabilities(sampleContext)),
+      run: async () => upsertResult('vuln-scanner', 'Vulnerability Scanner', await scanVulnerabilities(liveContext)),
     },
     {
       id: 'session-guardian',
       label: 'Session Guardian',
       icon: UserCheck,
-      run: async () => upsertResult('session-guardian', 'Session Guardian', await analyzeSession(sampleContext)),
+      run: async () => upsertResult('session-guardian', 'Session Guardian', await analyzeSession(liveContext)),
     },
   ];
 
@@ -92,6 +177,9 @@ export function SecurityAIModulePanel() {
         <CardTitle className="text-sm flex items-center gap-2">
           <Brain className="w-4 h-4 text-primary" />
           Zeus Security AI — modules défensifs
+          <Badge variant="secondary" className="text-[10px]">
+            {liveContext.summary.trackedIpCount} IP / {liveContext.summary.incidentCount} incidents
+          </Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -118,7 +206,7 @@ export function SecurityAIModulePanel() {
         <div className="space-y-2">
           {results.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              Lance un module pour vérifier que l'AI Engine sécurité répond bien. Les analyses sont défensives et les secrets sont redacted côté Edge Function.
+              Lance un module pour analyser les données live du SOC : IP tracker, incidents, patterns appris et métriques IA. Les analyses restent défensives et les secrets sont filtrés côté Edge Function.
             </p>
           ) : results.map((r) => {
             const result = r.result as any;
