@@ -51,32 +51,31 @@ export function useNeuralMetrics() {
     try {
       const since = new Date(Date.now() - 24 * 3600000).toISOString();
       const { data } = await supabase
-        .from('ai_metrics_log')
-        .select('*')
+        .from('ai_engine_events' as any)
+        .select('latency_ms, success, created_at')
         .gte('created_at', since)
         .order('created_at', { ascending: true })
-        .limit(500);
+        .limit(2000);
 
-      if (!data || data.length === 0) {
+      if (!data || (data as any[]).length === 0) {
         setChartData(getEmptyTimeline());
         return;
       }
 
       const buckets: Record<string, { calls: number; latency: number[]; errors: number; threats: number }> = {};
-      for (const row of data) {
+      for (const row of data as any[]) {
         const d = new Date(row.created_at);
         const key = d.toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' });
         if (!buckets[key]) buckets[key] = { calls: 0, latency: [], errors: 0, threats: 0 };
         buckets[key].calls++;
-        buckets[key].latency.push(Number(row.value) || 0);
-        if (row.metric_type === 'error') buckets[key].errors++;
-        if (row.metric_type === 'threat') buckets[key].threats++;
+        buckets[key].latency.push(Number(row.latency_ms) || 0);
+        if (row.success === false) buckets[key].errors++;
       }
 
       const points = Object.entries(buckets).map(([time, b]) => ({
         time,
         calls: b.calls,
-        latency: Math.round(b.latency.reduce((a, c) => a + c, 0) / b.latency.length),
+        latency: b.latency.length > 0 ? Math.round(b.latency.reduce((a, c) => a + c, 0) / b.latency.length) : 0,
         errors: b.errors,
         threats: b.threats,
       }));
@@ -96,7 +95,7 @@ export function useNeuralMetrics() {
       .channel('ai-metrics-realtime')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'ai_metrics_log' },
+        { event: 'INSERT', schema: 'public', table: 'ai_engine_events' },
         () => fetchMetrics()
       )
       .subscribe();
