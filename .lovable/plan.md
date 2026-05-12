@@ -1,124 +1,77 @@
-# Architecture IndexedDB E2EE robuste — type Signal/WhatsApp Web
+# Bouclier IA anti-attaques (AI Threat Shield)
 
-## Objectif
+Aujourd'hui la stack a du rate-limit IP, des bans, de la modération de contenu et un SOC qui *affiche* l'état. Mais rien n'analyse le **payload des requêtes en temps réel avec une IA** pour détecter et bloquer les attaques modernes. C'est ce qu'on ajoute.
 
-Formaliser un accès IndexedDB unifié, Safari/iOS-safe, avec une **machine d'état crypto centrale** qui empêche définitivement la boucle de recréation d'identité et les `database connection is closing` bloquants.
+## Ce qui sera réellement bloqué
 
-## État actuel (audit rapide)
+L'IA (Gemini 2.5 via Lovable AI Gateway) classera chaque requête suspecte parmi :
+- **SQL Injection** (UNION, OR 1=1, sleep(), pg_sleep, char encoding)
+- **XSS / DOM injection** (`<script>`, `onerror=`, `javascript:`, payloads polymorphes)
+- **Prompt injection** vers Zeus / agents IA ("ignore previous instructions", jailbreaks, exfiltration de system prompt)
+- **SSRF / Path traversal** (`../`, `file://`, `gopher://`, IP internes)
+- **Credential stuffing & brute force** (vélocité + UA suspects + listes connues)
+- **Scraping massif** (UA bot, fréquence, headers manquants, fingerprint headless)
+- **Spam / fraude marketplace** (cartes test, comptes jetables, mass-DM)
+- **NoSQL injection / template injection** (`{{7*7}}`, `$where`, `$ne`)
 
-- `src/lib/crypto/indexedDb.ts` existe déjà → singleton DB + override de `db.close()` + `safeIDB`. **Bonne base, à étendre.**
-- `src/lib/crypto/sessionInvalidation.ts` ouvre `forsure-ratchet` via une **2e connexion brute** (pas de singleton, pas de retry).
-- `src/hooks/useAccountKeySync.ts` orchestre la restauration en 4-5 effets React → c'est lui qui décide de relancer la crypto. **C'est là que la boucle peut naître.**
-- Pas de couche "memory cache" formelle ni de state machine — chaque hook décide pour lui-même.
-- `keyManager`, `accountKeyBackup`, `pinWrap`, `keySentinel` cohabitent sans contrat unifié.
-
-## Plan d'implémentation
-
-### 1. Couche d'accès unique IndexedDB (`src/lib/crypto/indexedDb.ts`)
-
-Étendre le singleton existant avec :
-- **Write queue** sérialisée par store (FIFO) → empêche les transactions concurrentes.
-- **Retry exponentiel** (50/150/400 ms) sur `InvalidStateError`, `TransactionInactiveError`, `database connection is closing` → `reopenE2EEDB()` puis rejoue.
-- **Pattern transaction strict** : helper `runTx(stores, mode, fn)` qui ouvre, exécute *synchrone*, attend `complete`. Aucun `await` externe autorisé dans `fn`.
-- Handlers `onclose` / `onversionchange` / `onerror` qui invalident le singleton **sans** déclencher de side-effect crypto.
-- Suppression interdite : `deleteDatabase` ne doit plus être appelé au boot (ajout d'une garde).
-
-### 2. Cache mémoire (`src/lib/crypto/memoryIdentityCache.ts`) — nouveau
-
-- WeakMap-style en module (RAM uniquement, jamais persisté).
-- API : `get(userId)`, `set(userId, identity)`, `clear(userId)`, `clearAll()`.
-- Stocke : référence `CryptoKey` non-extractable, deviceId, derniers ratchet headers chauds.
-- Vidé sur : logout, lock PIN, idle, `visibilitychange`→hidden long, `forsure-e2ee-security-epoch-changed`.
-
-### 3. Machine d'état (`src/lib/crypto/CryptoStateMachine.ts`) — nouveau
-
-États : `uninitialized → storage_checking → (identity_loaded | backup_restore_required → backup_restoring → identity_loaded | identity_creating → identity_loaded) → ready` + terminaux `storage_unavailable`, `compromised`.
-
-Transitions :
-- Une seule instance globale par `userId`.
-- **Verrou** : `identity_creating` n'est atteignable **qu'une fois par session** et seulement après vérification explicite "pas de backup serveur + pas de sentinelle".
-- Émet des events DOM (`forsure:crypto-state`) — les hooks React **écoutent**, ne décident plus.
-- `transition(to, reason)` log structuré + refus si transition illégale.
-
-### 4. KeyManager unifié (`src/lib/crypto/keyManager.ts`)
-
-API publique exposée à l'app :
-- `getIdentity(userId)` : memory → IndexedDB → null (jamais de création implicite).
-- `ensureIdentity(userId)` : passe par la state machine, déclenche le flow boot.
-- `purgeLocal(userId, reason)` : RAM + IndexedDB des clés sensibles uniquement.
-- `setIdentity(...)` : écriture **uniquement** depuis state machine (`identity_creating` ou `backup_restoring`).
-- Rétrocompatible avec les imports existants (`hasRawIdentityKeys`, etc.).
-
-### 5. RecoveryManager (`src/lib/crypto/recoveryManager.ts`) — nouveau
-
-- Centralise les 3 voies : PIN backup (L5), recovery key 64-hex, passkey/WebAuthn.
-- Appelé uniquement depuis l'état `backup_restoring`.
-- Renvoie un résultat typé `{ ok: true, source } | { ok: false, reason }` — la state machine décide ensuite.
-- Wrapper autour de `accountKeyBackup`, `pinWrap`, `passkeyVault`, `recoveryKey` existants (pas de réécriture de la crypto).
-
-### 6. Flow boot unifié
-
-Remplace la cascade actuelle de `useAccountKeySync` par un orchestrateur idempotent :
+## Architecture
 
 ```text
-boot
- └─ memoryCache.get
-     ├─ hit  → state=ready
-     └─ miss → IndexedDB
-                ├─ hit  → state=identity_loaded → ready
-                └─ miss → check server backup (sentinel + user_backups)
-                           ├─ exists → state=backup_restore_required
-                           │            → UI dialog (PIN/recovery/passkey)
-                           │            → restore → identity_loaded
-                           └─ none   → state=identity_creating (1 fois max)
-                                       → bump identity_epoch
-                                       → fire security_code_changed
+Client (hooks sensibles)        Edge Functions               DB
+─────────────────────────       ──────────────────────       ──────────────────────
+auth, signup, message,    ──►   ai-threat-shield       ──►   security_incidents
+post, comment, search,          (Gemini 2.5 + regex)         banned_ips
+checkout, ai-engine             │                            ddos_ip_tracker
+                                ├── 1) regex pré-filtre      ai_engine_events
+                                ├── 2) Gemini scoring        threat_decisions (new)
+                                └── 3) action: allow/log/ban
 ```
 
-### 7. Sessions ratchet & sender keys
+## Composants
 
-- `sessionInvalidation.ts` : remplacer son ouverture brute de `forsure-ratchet` par le helper `runTx` du singleton, mêmes garanties Safari.
-- Sender key state : confirmer que le hot path passe bien par `runTx`.
-- Skipped keys : confirmer wrap SWK + ajouter TTL config (`24h` défaut, max `7j`).
+### 1. Edge function `ai-threat-shield`
+- Reçoit : `endpoint`, `ip`, `user_id?`, `headers` (UA, referer), `payload_sample` (max 4 KB tronqué).
+- **Étape 1 — pré-filtre regex** (sans coût IA) : 30+ signatures haute confiance → bloque immédiatement (latence < 5 ms).
+- **Étape 2 — scoring IA Gemini 2.5 Flash** si suspect mais ambigu : retourne `{ category, confidence 0-100, reason, action }`.
+- **Étape 3 — action automatique** :
+  - `confidence ≥ 85` → insert `banned_ips` (24h) + `security_incidents` (severity critical) + log `ai_engine_events`.
+  - `confidence 60-84` → `ddos_ip_tracker.penalty_level += 1` + alerte SOC.
+  - `< 60` → log seulement (fine-tuning).
+- Bypass admin (`ludovic43@msn.com`) et IPs allowlistées.
+- Cache 60s par IP+endpoint pour éviter de re-scorer.
 
-### 8. Purge hardening
+### 2. Table `threat_decisions` (nouvelle)
+Trace toutes les décisions IA avec : `endpoint`, `ip`, `category`, `confidence`, `reason`, `action_taken`, `payload_hash`, `created_at`. RLS lecture admin seulement, retention 30 jours (cron).
 
-- Hook unique `purgeOnLockEvents` qui écoute `visibilitychange`, idle (> 5 min), explicit lock, logout, `security_epoch_changed` → vide RAM, conserve IndexedDB chiffrée.
-- Après config PIN : aucune clé JWK brute ne reste — déjà géré par `pinWrap`, on ajoute une assertion en debug.
+### 3. Hook client `useThreatShield`
+Wrapper léger autour de `supabase.functions.invoke` et des inputs sensibles (recherche, formulaire signup, post, message). N'envoie que les métadonnées + un échantillon haché si rien de suspect (privacy-first).
 
-### 9. Migration des call sites
+### 4. Intégration SOC (page AIEngine)
+- Nouveau widget **"AI Threat Shield — Live"** : compteur attaques bloquées (1h/24h), top catégories, dernière décision IA, dernière IP bannie par l'IA.
+- Bouton "Tester le bouclier" qui envoie un payload SQLi/XSS factice → confirme que la chaîne fonctionne en direct.
 
-Les hooks/composants existants (`useAccountKeySync`, `useE2EE`, `useMessageQueue`, `senderKeyRotationWatcher`, `keySentinel`, etc.) :
-- ne décident plus de créer une identité ;
-- appellent `keyManager.ensureIdentity()` et écoutent `forsure:crypto-state` ;
-- conservent leurs responsabilités métier (sync backup, queue, watcher membres).
+### 5. Pré-filtre runtime (browser)
+Bloque côté client les payloads évidents avant envoi (UX rapide + économie d'appels), sans jamais faire confiance au client : la décision finale reste serveur.
 
-### 10. Tests (`src/lib/crypto/__tests__/`)
+## Coût & latence
 
-Nouveaux tests Vitest (`fake-indexeddb` déjà setup) :
-- `cryptoStateMachine.test.ts` — interdit `identity_creating` deux fois.
-- `indexedDbResilience.test.ts` — purge Safari simulée, `InvalidStateError`, `TransactionInactiveError`, `db.onclose`.
-- `recoveryManager.test.ts` — PIN / recovery / passkey paths.
-- `memoryIdentityCache.test.ts` — clear sur lock/blur/idle.
-- `bootFlow.test.ts` — IndexedDB vide + backup serveur → restore_required (jamais création).
-- Étendre les tests existants `multiDeviceIntegration` pour vérifier la non-régression sender keys.
+- ~95% des requêtes : regex pré-filtre, **0 appel IA**, < 5 ms.
+- ~5% suspectes : 1 appel Gemini 2.5 Flash, ~300-600 ms, < 0.0001 € / requête.
+- Pas de surcoût visible utilisateur (asynchrone hors auth/checkout).
 
-## Fichiers
+## Limites (transparence)
 
-**Créés** : `memoryIdentityCache.ts`, `CryptoStateMachine.ts`, `recoveryManager.ts` + 5 fichiers de tests.
+- Reste du **L7 applicatif** : pas de DPI réseau (impossible sans WAF type Cloudflare devant Lovable Cloud).
+- L'IA n'est pas infaillible : les seuils sont conservateurs et tout est auditable dans `threat_decisions`.
+- Le bypass humain admin reste prioritaire.
 
-**Étendus** : `indexedDb.ts` (write queue + retry + runTx), `keyManager.ts` (API unifiée), `sessionInvalidation.ts` (passe par singleton), `useAccountKeySync.ts` (devient pur listener).
+## Étapes d'implémentation
 
-**Inchangés** : crypto primitives (`ratchet`, `x3dh`, `senderKeys`, `kdfChain`, `pinWrap`, `accountKeyBackup`), wire formats, schémas DB.
+1. Migration DB : table `threat_decisions` + RLS + index + trigger purge 30j.
+2. Edge function `ai-threat-shield` (regex + Gemini + actions).
+3. Edge function `threat-shield-test` (auto-test santé du bouclier).
+4. Hook `useThreatShield` + intégration dans signup, login, post, message, search, ai-engine.
+5. Widget SOC "AI Threat Shield — Live" sur `/admin/ai-engine`.
+6. Bouton "Test attaque" dans le SOC pour vérifier en 1 clic.
 
-## Garanties post-implémentation
-
-- IndexedDB vide ne déclenche **jamais** une recréation directe — passe toujours par la state machine.
-- Plus de `Maximum update depth` : les hooks React n'ont plus de boucle de décision crypto.
-- `database connection is closing` géré silencieusement par retry/reopen.
-- Safari/iOS : RAM cache permet de tenir le temps qu'IndexedDB se ré-ouvre après ITP/background.
-- Architecture lisible et auditable, alignée Signal/WhatsApp Web.
-
-## Mémoire
-
-À enregistrer après implémentation : nouvelle entrée `mem://tech/messaging/indexeddb-architecture` documentant la state machine + l'interdiction de créer une identité hors d'elle.
+OK pour partir là-dessus ?
