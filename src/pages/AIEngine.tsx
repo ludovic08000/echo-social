@@ -32,6 +32,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useABTests, type ABTest } from '@/hooks/useABTests';
 import { useNeuralMetrics, useTrustScores, useFeedConfig } from '@/hooks/useNeuralMetrics';
 import { Input } from '@/components/ui/input';
+import ThreatShieldWidget from '@/components/admin/ThreatShieldWidget';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   FileText, Languages, Sparkles, BellRing, ShoppingBag, Crown,
@@ -1084,6 +1085,9 @@ function SecurityDashboard() {
           ))}
         </div>
       </div>
+
+      {/* AI Threat Shield — Live */}
+      <ThreatShieldWidget />
 
       {/* Vulnerability Scanner */}
       <div className="rounded-2xl border border-border bg-card p-4">

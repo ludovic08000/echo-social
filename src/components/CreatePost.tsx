@@ -257,6 +257,23 @@ export function CreatePost() {
       }
 
       setUploadStep('Publication…');
+
+      // AI Threat Shield — bloque XSS / prompt-injection / SQLi avant publication
+      try {
+        const { inspectThreat } = await import('@/hooks/useThreatShield');
+        const t = await inspectThreat({ endpoint: 'post.create', payload: body.trim() });
+        if (t.blocked) {
+          toast({
+            title: '🛡️ Bouclier de sécurité',
+            description: 'Ton message contient un motif d\'attaque (' + t.category + '). Publication bloquée.',
+            variant: 'destructive',
+          });
+          setIsUploading(false);
+          setUploadStep('');
+          return;
+        }
+      } catch {}
+
       const newPost = await createPost.mutateAsync({ body: body.trim(), imageUrl, expiresAt, publishAt });
 
       // Zeus moderation check (async, non-blocking)

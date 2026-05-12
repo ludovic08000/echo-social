@@ -160,6 +160,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signUp = async (email: string, password: string, name: string, dateOfBirth?: string) => {
+    // AI Threat Shield — bloque payloads SQLi/XSS/prompt-injection avant tout appel auth
+    try {
+      const { inspectThreat } = await import('@/hooks/useThreatShield');
+      const t = await inspectThreat({ endpoint: 'auth.signup', payload: `${email}|${name}` });
+      if (t.blocked) return { error: { message: 'Requête bloquée par le bouclier de sécurité.' } as any };
+    } catch {}
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -172,6 +178,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
+    try {
+      const { inspectThreat } = await import('@/hooks/useThreatShield');
+      const t = await inspectThreat({ endpoint: 'auth.signin', payload: email });
+      if (t.blocked) return { error: { message: 'Requête bloquée par le bouclier de sécurité.' } as any };
+    } catch {}
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
