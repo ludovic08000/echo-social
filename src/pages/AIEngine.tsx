@@ -953,20 +953,72 @@ function SecurityDashboard() {
   const runScan = useCallback(async () => {
     setScanning(true);
     setScanResult(null);
-    await new Promise(r => setTimeout(r, 3000));
-    setScanResult({
-      score: 94,
-      lastScan: new Date().toLocaleTimeString('fr'),
-      threats: [
-        { type: 'Headers HTTP', severity: 'low', description: 'Header X-Frame-Options manquant sur /api/public', status: 'Auto-corrigé ✅' },
-        { type: 'Rate Limiting', severity: 'medium', description: 'Endpoint /functions/v1/ai-engine sans limite stricte', status: 'Recommandation 📋' },
-        { type: 'CORS', severity: 'low', description: 'Wildcard CORS sur edge functions non-critiques', status: 'Acceptable ⚡' },
-        { type: 'JWT Expiration', severity: 'medium', description: 'Tokens JWT avec TTL >1h sur sessions sensibles', status: 'Recommandation 📋' },
-        { type: 'Dépendances', severity: 'low', description: 'Toutes les dépendances NPM sont à jour', status: 'Sécurisé ✅' },
-        { type: 'RLS Policies', severity: 'low', description: 'Toutes les tables ont des politiques RLS actives', status: 'Sécurisé ✅' },
-      ],
-    });
-    setScanning(false);
+    try {
+      const h24 = new Date(Date.now() - 24 * 3600_000).toISOString();
+      const [incidentsRes, ddosRes, bannedRes, failedAuthRes] = await Promise.all([
+        supabase.from('security_incidents').select('severity, threat_type, action_taken, created_at').gte('created_at', h24).order('created_at', { ascending: false }).limit(50),
+        supabase.from('ddos_ip_tracker').select('ip_address, penalty_level, endpoint, blocked_until').gte('penalty_level', 1).order('updated_at', { ascending: false }).limit(50),
+        supabase.from('banned_ips').select('id', { count: 'exact', head: true }).eq('is_active', true),
+        supabase.from('audit_logs' as any).select('id', { count: 'exact', head: true }).eq('action', 'login_failed').gte('created_at', h24),
+      ]);
+
+      const incidents = (incidentsRes.data || []) as any[];
+      const ddos = (ddosRes.data || []) as any[];
+      const bannedCount = bannedRes.error ? 0 : (bannedRes.count || 0);
+      const failedLogins = failedAuthRes.error ? 0 : (failedAuthRes.count || 0);
+
+      const critical = incidents.filter(i => i.severity === 'critical').length + ddos.filter(d => d.penalty_level >= 4).length;
+      const high = incidents.filter(i => i.severity === 'high').length + ddos.filter(d => d.penalty_level === 3).length;
+      const medium = incidents.filter(i => i.severity === 'medium').length + ddos.filter(d => d.penalty_level === 2).length;
+
+      const score = Math.max(0, 100 - critical * 10 - high * 5 - medium * 2 - Math.min(10, Math.floor(failedLogins / 20)));
+
+      const threats: { type: string; severity: 'critical' | 'high' | 'medium' | 'low'; description: string; status: string }[] = [];
+
+      if (critical === 0 && high === 0 && medium === 0) {
+        threats.push({ type: 'Incidents 24h', severity: 'low', description: 'Aucun incident détecté sur les 24 dernières heures', status: 'Sécurisé ✅' });
+      } else {
+        if (critical > 0) threats.push({ type: 'Incidents critiques', severity: 'critical', description: `${critical} incident(s) critique(s) détecté(s) (24h)`, status: 'Action requise 🚨' });
+        if (high > 0) threats.push({ type: 'Incidents élevés', severity: 'high', description: `${high} menace(s) à haute sévérité`, status: 'Surveillé 👁️' });
+        if (medium > 0) threats.push({ type: 'Incidents moyens', severity: 'medium', description: `${medium} alerte(s) à sévérité moyenne`, status: 'Auto-géré ⚡' });
+      }
+
+      threats.push({
+        type: 'IPs bannies',
+        severity: bannedCount > 50 ? 'high' : bannedCount > 10 ? 'medium' : 'low',
+        description: `${bannedCount} IP(s) actuellement bannie(s) du réseau`,
+        status: bannedCount > 0 ? 'Bloquées 🛡️' : 'Aucune ✅',
+      });
+
+      threats.push({
+        type: 'Tentatives de connexion',
+        severity: failedLogins > 100 ? 'high' : failedLogins > 30 ? 'medium' : 'low',
+        description: `${failedLogins} échec(s) d'authentification (24h)`,
+        status: failedLogins > 30 ? 'Rate-limité 🛡️' : 'Normal ✅',
+      });
+
+      const topDdos = ddos.slice(0, 3);
+      topDdos.forEach(d => {
+        const blocked = d.blocked_until && new Date(d.blocked_until) > new Date();
+        threats.push({
+          type: `DDoS ${d.endpoint || ''}`.trim(),
+          severity: d.penalty_level >= 4 ? 'critical' : d.penalty_level >= 2 ? 'high' : 'medium',
+          description: `IP ${d.ip_address} — niveau ${d.penalty_level}`,
+          status: blocked ? 'Bloqué 🚫' : 'Surveillé 👁️',
+        });
+      });
+
+      setScanResult({
+        score,
+        lastScan: new Date().toLocaleTimeString('fr'),
+        threats,
+      });
+    } catch (e) {
+      console.error('Scan failed:', e);
+      setScanResult({ score: 0, lastScan: new Date().toLocaleTimeString('fr'), threats: [{ type: 'Scan', severity: 'high', description: 'Erreur lors de la collecte des données', status: 'Échec ❌' }] });
+    } finally {
+      setScanning(false);
+    }
   }, []);
 
   const severityColor = (s: string) => {
