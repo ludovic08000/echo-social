@@ -546,7 +546,7 @@ export function StoriesBar() {
                       exit={{ scale: 0.98, opacity: 0 }}
                       transition={{ duration: 0.3 }}
                       src={currentStory.image_url}
-                      className="w-full h-full object-cover"
+                      className="max-w-full max-h-full w-auto h-auto object-contain bg-black"
                       autoPlay
                       muted
                       playsInline
@@ -561,7 +561,7 @@ export function StoriesBar() {
                       transition={{ duration: 0.3 }}
                       src={currentStory.image_url}
                       alt="Story"
-                      className="w-full h-full object-cover"
+                      className="max-w-full max-h-full w-auto h-auto object-contain bg-black"
                     />
                   )}
                 </AnimatePresence>
