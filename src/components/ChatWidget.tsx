@@ -961,7 +961,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       }} />
 
       {/* Header */}
-      <div data-drag-handle className="flex items-center gap-2 px-4 py-3 border-b border-border/30 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-t-2xl cursor-grab active:cursor-grabbing select-none">
+      <div data-drag-handle className="flex items-center gap-2 px-4 py-3 border-b border-border/30 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-t-2xl select-none md:cursor-grab md:active:cursor-grabbing touch-pan-y">
         <button
           onClick={goBack}
           className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all flex-shrink-0 backdrop-blur-sm"
