@@ -1086,6 +1086,9 @@ function SecurityDashboard() {
         </div>
       </div>
 
+      {/* AI Threat Shield — Live */}
+      <ThreatShieldWidget />
+
       {/* Vulnerability Scanner */}
       <div className="rounded-2xl border border-border bg-card p-4">
         <div className="flex items-center justify-between mb-3">
