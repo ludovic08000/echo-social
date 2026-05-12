@@ -1,77 +1,84 @@
-# Bouclier IA anti-attaques (AI Threat Shield)
+# ML auto-entraîné pour le bouclier (Gemini = oracle, ML = filtre rapide)
 
-Aujourd'hui la stack a du rate-limit IP, des bans, de la modération de contenu et un SOC qui *affiche* l'état. Mais rien n'analyse le **payload des requêtes en temps réel avec une IA** pour détecter et bloquer les attaques modernes. C'est ce qu'on ajoute.
+On transforme le bouclier en système **actif** qui apprend tout seul. Gemini reste l'oracle "vérité" qui label des exemples ; un petit modèle ML hébergé dans la DB devient le **premier filtre rapide** qui répond en < 5 ms sans appel IA, et qui s'améliore à chaque nouvelle attaque.
 
-## Ce qui sera réellement bloqué
-
-L'IA (Gemini 2.5 via Lovable AI Gateway) classera chaque requête suspecte parmi :
-- **SQL Injection** (UNION, OR 1=1, sleep(), pg_sleep, char encoding)
-- **XSS / DOM injection** (`<script>`, `onerror=`, `javascript:`, payloads polymorphes)
-- **Prompt injection** vers Zeus / agents IA ("ignore previous instructions", jailbreaks, exfiltration de system prompt)
-- **SSRF / Path traversal** (`../`, `file://`, `gopher://`, IP internes)
-- **Credential stuffing & brute force** (vélocité + UA suspects + listes connues)
-- **Scraping massif** (UA bot, fréquence, headers manquants, fingerprint headless)
-- **Spam / fraude marketplace** (cartes test, comptes jetables, mass-DM)
-- **NoSQL injection / template injection** (`{{7*7}}`, `$where`, `$ne`)
-
-## Architecture
+## Boucle d'apprentissage (active learning)
 
 ```text
-Client (hooks sensibles)        Edge Functions               DB
-─────────────────────────       ──────────────────────       ──────────────────────
-auth, signup, message,    ──►   ai-threat-shield       ──►   security_incidents
-post, comment, search,          (Gemini 2.5 + regex)         banned_ips
-checkout, ai-engine             │                            ddos_ip_tracker
-                                ├── 1) regex pré-filtre      ai_engine_events
-                                ├── 2) Gemini scoring        threat_decisions (new)
-                                └── 3) action: allow/log/ban
+Requête entrante
+   │
+   ▼
+[1] Pré-filtre regex (signatures évidentes)
+   │      ─► attaque évidente : ban + label "attack" (training)
+   │
+   ▼
+[2] Modèle ML local (logistic régression online, 64 features)
+   │      ─► confiance haute (≥ 0.85) : action directe, log
+   │      ─► confiance basse (< 0.15)  : allow, log
+   │
+   ▼  (zone d'incertitude 0.15 - 0.85)
+[3] Gemini 2.5 Flash décide → action + label "attack/benign"
+   │
+   ▼
+[4] Sample sauvegardé dans threat_training_samples
+   │
+   ▼
+[5] Cron nuit : threat-shield-train
+        - Charge tous les samples labelés
+        - Entraîne logistic régression (SGD, 200 époques)
+        - Calcule precision/recall sur 10% holdout
+        - Push weights dans threat_model_weights (versionné)
+        - Si recall < ancien modèle, garde l'ancien
 ```
 
-## Composants
+Résultat : après ~quelques jours, **80-90 % des requêtes sont décidées sans appel Gemini** (latence ÷ 100, coût ÷ 100), tout en gardant Gemini comme garde-fou pour les cas neufs/ambigus.
 
-### 1. Edge function `ai-threat-shield`
-- Reçoit : `endpoint`, `ip`, `user_id?`, `headers` (UA, referer), `payload_sample` (max 4 KB tronqué).
-- **Étape 1 — pré-filtre regex** (sans coût IA) : 30+ signatures haute confiance → bloque immédiatement (latence < 5 ms).
-- **Étape 2 — scoring IA Gemini 2.5 Flash** si suspect mais ambigu : retourne `{ category, confidence 0-100, reason, action }`.
-- **Étape 3 — action automatique** :
-  - `confidence ≥ 85` → insert `banned_ips` (24h) + `security_incidents` (severity critical) + log `ai_engine_events`.
-  - `confidence 60-84` → `ddos_ip_tracker.penalty_level += 1` + alerte SOC.
-  - `< 60` → log seulement (fine-tuning).
-- Bypass admin (`ludovic43@msn.com`) et IPs allowlistées.
-- Cache 60s par IP+endpoint pour éviter de re-scorer.
+## Features extraites de chaque payload (64 dimensions)
 
-### 2. Table `threat_decisions` (nouvelle)
-Trace toutes les décisions IA avec : `endpoint`, `ip`, `category`, `confidence`, `reason`, `action_taken`, `payload_hash`, `created_at`. RLS lecture admin seulement, retention 30 jours (cron).
+- Comptes de caractères (`<`, `>`, `'`, `"`, `;`, `\`, `%`, ratio non-ASCII)
+- Tokens dangereux (UNION, SELECT, script, onerror, ignore previous, ../, etc.)
+- Entropie Shannon (encodage / obfuscation)
+- Longueur normalisée (log) et ratio voyelles/consonnes
+- Endpoint hashé (16 buckets)
+- UA hashé (8 buckets : bot, mobile, headless, etc.)
+- Heure (UTC, 24 buckets)
+- Fréquence IP 1 min (depuis ddos_ip_tracker)
+- Score regex précédent (si match)
 
-### 3. Hook client `useThreatShield`
-Wrapper léger autour de `supabase.functions.invoke` et des inputs sensibles (recherche, formulaire signup, post, message). N'envoie que les métadonnées + un échantillon haché si rien de suspect (privacy-first).
+Tout reste dans une fonction TS pure (pas de WASM, pas de dépendance lourde).
 
-### 4. Intégration SOC (page AIEngine)
-- Nouveau widget **"AI Threat Shield — Live"** : compteur attaques bloquées (1h/24h), top catégories, dernière décision IA, dernière IP bannie par l'IA.
-- Bouton "Tester le bouclier" qui envoie un payload SQLi/XSS factice → confirme que la chaîne fonctionne en direct.
+## Composants à créer
 
-### 5. Pré-filtre runtime (browser)
-Bloque côté client les payloads évidents avant envoi (UX rapide + économie d'appels), sans jamais faire confiance au client : la décision finale reste serveur.
+### Tables (migration)
+- `threat_training_samples` : features (jsonb 64 floats), label (0/1), source (`regex` | `gemini` | `admin`), confidence, created_at
+- `threat_model_weights` : version, weights (jsonb 64 floats), bias, accuracy, precision, recall, samples_used, trained_at, active (bool)
 
-## Coût & latence
+### Edge functions
+- `threat-shield-train` (cron nuit + bouton manuel) : charge samples, entraîne, push nouveaux weights si meilleurs
+- `ai-threat-shield` mis à jour : charge weights actifs (cache 60 s), score ML d'abord, fallback Gemini, sauve sample
 
-- ~95% des requêtes : regex pré-filtre, **0 appel IA**, < 5 ms.
-- ~5% suspectes : 1 appel Gemini 2.5 Flash, ~300-600 ms, < 0.0001 € / requête.
-- Pas de surcoût visible utilisateur (asynchrone hors auth/checkout).
+### Feedback humain
+- Boutons ✅ (vrai positif) / ❌ (faux positif) sur chaque ligne du widget AI Threat Shield → ajoute un sample labelé manuellement (poids ×3 dans l'entraînement)
 
-## Limites (transparence)
+### Widget SOC enrichi
+- Version du modèle actif + accuracy / precision / recall
+- Compteur "Décidé par ML" vs "Décidé par Gemini" sur 24 h
+- Bouton "Réentraîner maintenant"
+- Date du dernier entraînement réussi
 
-- Reste du **L7 applicatif** : pas de DPI réseau (impossible sans WAF type Cloudflare devant Lovable Cloud).
-- L'IA n'est pas infaillible : les seuils sont conservateurs et tout est auditable dans `threat_decisions`.
-- Le bypass humain admin reste prioritaire.
+## Garde-fous
 
-## Étapes d'implémentation
+- Si `samples_used < 200` → on n'active pas le modèle, Gemini gère tout
+- Holdout 10 % obligatoire avant promotion d'un nouveau modèle
+- Rollback automatique si recall chute > 5 pts
+- Tous les weights versionnés (audit + rollback en 1 clic)
 
-1. Migration DB : table `threat_decisions` + RLS + index + trigger purge 30j.
-2. Edge function `ai-threat-shield` (regex + Gemini + actions).
-3. Edge function `threat-shield-test` (auto-test santé du bouclier).
-4. Hook `useThreatShield` + intégration dans signup, login, post, message, search, ai-engine.
-5. Widget SOC "AI Threat Shield — Live" sur `/admin/ai-engine`.
-6. Bouton "Test attaque" dans le SOC pour vérifier en 1 clic.
+## Étapes
 
-OK pour partir là-dessus ?
+1. Migration : `threat_training_samples`, `threat_model_weights`, RLS admin, fonction `feature_extract` côté TS partagé.
+2. Edge `threat-shield-train` (SGD logistic régression en pur TS).
+3. Mise à jour `ai-threat-shield` : extraction features + scoring ML + active learning.
+4. Cron pg_cron nightly (3h du mat).
+5. Widget SOC : feedback ✅/❌, métriques modèle, bouton réentraînement.
+
+OK pour implémenter ?
