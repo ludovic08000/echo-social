@@ -1,10 +1,57 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getCorsHeaders } from "../_shared/cors.ts";
+import { checkRateLimit, getClientIP } from "../_shared/rate-limit.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+function jsonResponse(body: Record<string, unknown>, status: number, corsHeaders: Record<string, string>): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+async function authorizeSecurityMonitor(
+  req: Request,
+  supabase: ReturnType<typeof createClient>,
+  supabaseUrl: string,
+  corsHeaders: Record<string, string>,
+): Promise<{ caller: string; rateKey: string } | Response> {
+  const cronSecret = Deno.env.get("SECURITY_MONITOR_SECRET") || Deno.env.get("CRON_SECRET");
+  const providedCronSecret = req.headers.get("x-security-monitor-secret") || req.headers.get("x-cron-secret");
+  if (cronSecret && providedCronSecret && providedCronSecret === cronSecret) {
+    return { caller: "cron", rateKey: `cron:${getClientIP(req)}` };
+  }
+
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return jsonResponse({ error: "Unauthorized" }, 401, corsHeaders);
+  }
+
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  if (!anonKey) {
+    return jsonResponse({ error: "Supabase anon key missing" }, 500, corsHeaders);
+  }
+
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const token = authHeader.replace("Bearer ", "");
+  const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token);
+  const userId = claimsData?.claims?.sub as string | undefined;
+  if (claimsError || !userId) {
+    return jsonResponse({ error: "Unauthorized" }, 401, corsHeaders);
+  }
+
+  const { data: isAdmin, error: roleError } = await supabase.rpc("has_role", {
+    _user_id: userId,
+    _role: "admin",
+  });
+  if (roleError || !isAdmin) {
+    return jsonResponse({ error: "Forbidden" }, 403, corsHeaders);
+  }
+
+  return { caller: userId, rateKey: `admin:${userId}` };
+}
 
 // ── ÉTAPE 2 : Scoring de confiance local structuré ──────────────────
 interface ConfidenceFactors {
@@ -258,16 +305,32 @@ function heuristicAnalysis(incidents: DetectedIncident[]): {
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method !== "POST") {
+    return jsonResponse({ error: "Method not allowed" }, 405, corsHeaders);
+  }
 
   const scanStart = performance.now();
   const scanId = crypto.randomUUID().slice(0, 8);
 
   try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !serviceRoleKey) {
+      return jsonResponse({ error: "Supabase service configuration missing" }, 500, corsHeaders);
+    }
+
     const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      supabaseUrl,
+      serviceRoleKey,
     );
+
+    const auth = await authorizeSecurityMonitor(req, supabase, supabaseUrl, corsHeaders);
+    if (auth instanceof Response) return auth;
+
+    const rateLimited = await checkRateLimit(`security-monitor:${auth.rateKey}`, 10, 60, corsHeaders);
+    if (rateLimited) return rateLimited;
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
@@ -763,15 +826,13 @@ ${criticalWithIndex.map(({ inc, originalIdx }) => {
         ai_feedback: aiAnalysis?.quality_feedback || null,
         cost_saved: !usedAI,
       },
+      caller: auth.caller === "cron" ? "cron" : "admin",
       self_improvement: aiAnalysis?.self_improvement_notes || null,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
     console.error("Security monitor error:", err);
-    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: err instanceof Error ? err.message : "Unknown error" }, 500, corsHeaders);
   }
 });

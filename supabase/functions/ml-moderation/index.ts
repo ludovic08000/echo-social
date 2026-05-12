@@ -1,11 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sanitizeForAI } from "../_shared/ai-privacy.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders } from "../_shared/cors.ts";
+import { checkRateLimit, getClientIP } from "../_shared/rate-limit.ts";
 
 // Pattern-based moderation features
 const TOXIC_PATTERNS = [
@@ -121,7 +118,14 @@ function determineAction(features: ModerationFeatures, learnedRules: any[]): {
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   try {
     const authHeader = req.headers.get("Authorization");
@@ -131,6 +135,8 @@ serve(async (req) => {
     );
 
     const { action, text, post_id, feedback } = await req.json();
+    const rateLimited = await checkRateLimit(`ml-moderation:${getClientIP(req)}`, 60, 60, corsHeaders);
+    if (rateLimited) return rateLimited;
 
     if (action === "moderate" && text) {
       const start = performance.now();
@@ -266,6 +272,28 @@ serve(async (req) => {
     }
 
     if (action === "metrics") {
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: "Auth requise" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const authClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user } } = await authClient.auth.getUser();
+      if (!user) {
+        return new Response(JSON.stringify({ error: "Non authentifiÃ©" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: isAdmin } = await supabase.rpc("has_role", { _user_id: user.id, _role: "admin" });
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Admin requis" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       // Model performance metrics
       const { data: predictions } = await supabase
         .from("ml_predictions")

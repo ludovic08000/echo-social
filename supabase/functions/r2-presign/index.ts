@@ -41,6 +41,31 @@ const FOLDER_MAX_SIZES: Record<string, number> = {
   uploads: 10 * 1024 * 1024,
 };
 
+const MIME_EXT_MAP: Record<string, string[]> = {
+  "image/jpeg": ["jpg", "jpeg"],
+  "image/png": ["png"],
+  "image/webp": ["webp"],
+  "image/gif": ["gif"],
+  "image/heic": ["heic"],
+  "image/heif": ["heif", "heic"],
+  "video/mp4": ["mp4"],
+  "video/webm": ["webm"],
+  "video/quicktime": ["mov"],
+  "audio/webm": ["webm"],
+  "audio/ogg": ["ogg"],
+  "audio/mp4": ["m4a", "mp4"],
+  "audio/mpeg": ["mp3"],
+  "application/pdf": ["pdf"],
+  "application/octet-stream": ["enc", "bin"],
+};
+
+function validateMimeExtension(mime: string, filename: string, folder?: string): boolean {
+  if (folder === "voice") return true;
+  const ext = filename.split(".").pop()?.toLowerCase() || "";
+  const allowed = MIME_EXT_MAP[mime];
+  return !!allowed && allowed.includes(ext);
+}
+
 // Rate limiting now DB-backed via shared helper (persistent across instances)
 const RATE_LIMIT = 20;
 const RATE_WINDOW_S = 60;
@@ -89,12 +114,19 @@ Deno.serve(async (req) => {
     if (rateLimited) return rateLimited;
 
     const { folder, filename, contentType, fileSize } = await req.json();
+    if (typeof fileSize !== "number" || !Number.isFinite(fileSize) || fileSize <= 0) {
+      throw new Error("Taille de fichier invalide");
+    }
     if (!folder || !filename || !contentType || !fileSize) throw new Error("Paramètres manquants");
 
     const cleanFolder = folder.replace(/[^a-zA-Z0-9\-_]/g, "");
     const baseMime = contentType.split(";")[0].trim();
     const allowed = ALLOWED_MIME_TYPES[cleanFolder] || ALLOWED_MIME_TYPES["uploads"];
     if (!allowed.includes(baseMime)) throw new Error(`Type non autorisé: ${baseMime}`);
+
+    if (!validateMimeExtension(baseMime, filename, cleanFolder)) {
+      throw new Error("L'extension du fichier ne correspond pas a son type MIME");
+    }
 
     const maxSize = FOLDER_MAX_SIZES[cleanFolder] || 10 * 1024 * 1024;
     if (fileSize > maxSize) throw new Error(`Fichier trop volumineux (max ${Math.round(maxSize / 1024 / 1024)} Mo)`);

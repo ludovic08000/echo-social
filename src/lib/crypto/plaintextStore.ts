@@ -11,47 +11,23 @@
  *   ciphertext. This cache only restores the local UX after a page reload.
  */
 
-const DB_NAME = 'forsure-plaintext-cache';
-const DB_VERSION = 1;
+import { reqToPromise, runTxOn } from './indexedDbTx';
+
 const STORE_MESSAGES = 'messages';
 const STORE_KEYS = 'device-keys';
 const DEVICE_KEY_ID = 'plaintext-cache-key-v1';
 
-let dbPromise: Promise<IDBDatabase> | null = null;
 let cachedDeviceKey: CryptoKey | null = null;
 let cachedKeyPromise: Promise<CryptoKey> | null = null;
-
-function openDB(): Promise<IDBDatabase> {
-  if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE_MESSAGES)) {
-        db.createObjectStore(STORE_MESSAGES, { keyPath: 'id' });
-      }
-      if (!db.objectStoreNames.contains(STORE_KEYS)) {
-        db.createObjectStore(STORE_KEYS, { keyPath: 'id' });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-  return dbPromise;
-}
 
 async function getOrCreateDeviceKey(): Promise<CryptoKey> {
   if (cachedDeviceKey) return cachedDeviceKey;
   if (cachedKeyPromise) return cachedKeyPromise;
 
   cachedKeyPromise = (async () => {
-    const db = await openDB();
-    const existing = await new Promise<{ id: string; key: CryptoKey } | undefined>((resolve, reject) => {
-      const tx = db.transaction(STORE_KEYS, 'readonly');
-      const req = tx.objectStore(STORE_KEYS).get(DEVICE_KEY_ID);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const existing = await runTxOn('plaintext-cache', STORE_KEYS, 'readonly', (store) =>
+      reqToPromise<{ id: string; key: CryptoKey } | undefined>(store.get(DEVICE_KEY_ID)),
+    );
 
     if (existing?.key) {
       cachedDeviceKey = existing.key;
@@ -65,11 +41,8 @@ async function getOrCreateDeviceKey(): Promise<CryptoKey> {
       ['encrypt', 'decrypt'],
     );
 
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_KEYS, 'readwrite');
-      tx.objectStore(STORE_KEYS).put({ id: DEVICE_KEY_ID, key });
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('plaintext-cache', STORE_KEYS, 'readwrite', (store) => {
+      store.put({ id: DEVICE_KEY_ID, key });
     });
 
     cachedDeviceKey = key;
@@ -111,29 +84,21 @@ async function saveEntry(id: string, plaintext: string): Promise<void> {
     key,
     new TextEncoder().encode(plaintext),
   );
-  const db = await openDB();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_MESSAGES, 'readwrite');
-    tx.objectStore(STORE_MESSAGES).put({
+  await runTxOn('plaintext-cache', STORE_MESSAGES, 'readwrite', (store) => {
+    store.put({
       id,
       iv: iv.buffer,
       ct,
       ts: Date.now(),
     } satisfies StoredEntry);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
   });
 }
 
 async function loadEntry(id: string): Promise<string | null> {
   if (!id) return null;
-  const db = await openDB();
-  const entry = await new Promise<StoredEntry | undefined>((resolve, reject) => {
-    const tx = db.transaction(STORE_MESSAGES, 'readonly');
-    const req = tx.objectStore(STORE_MESSAGES).get(id);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+  const entry = await runTxOn('plaintext-cache', STORE_MESSAGES, 'readonly', (store) =>
+    reqToPromise<StoredEntry | undefined>(store.get(id)),
+  );
   if (!entry) return null;
   const key = await getOrCreateDeviceKey();
   const pt = await crypto.subtle.decrypt(
@@ -146,13 +111,9 @@ async function loadEntry(id: string): Promise<string | null> {
 
 export async function exportPlaintextCache(): Promise<PlaintextCacheExportEntry[]> {
   try {
-    const db = await openDB();
-    const entries = await new Promise<StoredEntry[]>((resolve, reject) => {
-      const tx = db.transaction(STORE_MESSAGES, 'readonly');
-      const req = tx.objectStore(STORE_MESSAGES).getAll();
-      req.onsuccess = () => resolve(req.result as StoredEntry[]);
-      req.onerror = () => reject(req.error);
-    });
+    const entries = await runTxOn('plaintext-cache', STORE_MESSAGES, 'readonly', (store) =>
+      reqToPromise<StoredEntry[]>(store.getAll()),
+    );
 
     const exported: PlaintextCacheExportEntry[] = [];
     for (const entry of entries) {
@@ -228,12 +189,8 @@ export async function loadPlaintextForCiphertext(ciphertextBody: string): Promis
  */
 export async function removePlaintext(messageId: string): Promise<void> {
   try {
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_MESSAGES, 'readwrite');
-      tx.objectStore(STORE_MESSAGES).delete(messageId);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('plaintext-cache', STORE_MESSAGES, 'readwrite', (store) => {
+      store.delete(messageId);
     });
   } catch (e) {
     console.warn('[plaintextStore] removePlaintext failed', e);
@@ -245,13 +202,9 @@ export async function removePlaintext(messageId: string): Promise<void> {
  */
 export async function wipePlaintextStore(): Promise<void> {
   try {
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction([STORE_MESSAGES, STORE_KEYS], 'readwrite');
-      tx.objectStore(STORE_MESSAGES).clear();
-      tx.objectStore(STORE_KEYS).clear();
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('plaintext-cache', [STORE_MESSAGES, STORE_KEYS], 'readwrite', (stores) => {
+      stores[STORE_MESSAGES].clear();
+      stores[STORE_KEYS].clear();
     });
     cachedDeviceKey = null;
     cachedKeyPromise = null;

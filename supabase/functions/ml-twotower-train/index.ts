@@ -1,11 +1,13 @@
 // Two-Tower training job — nightly mini-batch SGD on ml_interactions
 // Updates user & post embeddings (256d) so dot product approximates engagement.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { getCorsHeaders } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+function isAuthorizedTrainingRun(req: Request): boolean {
+  const secret = Deno.env.get("ML_TRAIN_SECRET") || Deno.env.get("CRON_SECRET");
+  const provided = req.headers.get("x-ml-train-secret") || req.headers.get("x-cron-secret");
+  return !!secret && provided === secret;
+}
 
 const EMBED_DIM = 256;
 const LR = 0.05;
@@ -64,7 +66,20 @@ const SIGNAL_LABEL: Record<string, number> = {
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  if (!isAuthorizedTrainingRun(req)) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   try {
     const supabase = createClient(

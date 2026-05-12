@@ -1,10 +1,12 @@
 // ML Feed trainer: hourly job that learns user preferences and post features
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { getCorsHeaders } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+function isAuthorizedTrainingRun(req: Request): boolean {
+  const secret = Deno.env.get("ML_TRAIN_SECRET") || Deno.env.get("CRON_SECRET");
+  const provided = req.headers.get("x-ml-train-secret") || req.headers.get("x-cron-secret");
+  return !!secret && provided === secret;
+}
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -165,7 +167,20 @@ async function extractFeatures(post: PostRow): Promise<{ topics: string[]; hasht
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  if (!isAuthorizedTrainingRun(req)) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
   const startedAt = Date.now();

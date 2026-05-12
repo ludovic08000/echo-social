@@ -25,6 +25,7 @@ export type OutboundMessageStatus =
 
 import { logCryptoError } from '@/lib/crypto/errorLogger';
 import { safeUUID } from '@/e2ee-session/safeUuid';
+import { reqToPromise, runTxOn } from '@/lib/crypto/indexedDbTx';
 
 /**
  * Emit a low-volume "trace" entry into crypto_error_logs so we can follow a
@@ -107,8 +108,6 @@ interface HandlerEntry {
   registeredAt: number;
 }
 
-const DB_NAME = 'forsure-msg-queue';
-const DB_VERSION = 1;
 const STORE_NAME = 'outbound';
 const MAX_RETRIES = 10;
 const BASE_RETRY_MS = 2000;
@@ -132,7 +131,6 @@ class MessageQueueManager {
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private processing = new Set<string>();
   private processingConversations = new Set<string>();
-  private dbPromise: Promise<IDBDatabase> | null = null;
   private handlersByConversation = new Map<string, Map<string, HandlerEntry>>();
   /** SECURITY: Plaintext stored ONLY in volatile memory, never in IndexedDB */
   private volatilePlaintext = new Map<string, string>();
@@ -143,55 +141,28 @@ class MessageQueueManager {
 
   // ─── DB ───
 
-  private openDB(): Promise<IDBDatabase> {
-    if (!this.dbPromise) {
-      this.dbPromise = new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onerror = () => { this.dbPromise = null; reject(req.error); };
-        req.onsuccess = async () => {
-          const db = req.result;
-          if (!this.legacyPlaintextScrubbed) {
-            this.legacyPlaintextScrubbed = true;
-            try {
-              await this.scrubLegacyPersistedPlaintext(db);
-            } catch (e) {
-              console.warn('[MSG_QUEUE] legacy plaintext scrub failed', e);
-            }
-          }
-          resolve(db);
-        };
-        req.onupgradeneeded = () => {
-          const db = req.result;
-          if (!db.objectStoreNames.contains(STORE_NAME)) {
-            const store = db.createObjectStore(STORE_NAME, { keyPath: 'localId' });
-            store.createIndex('conversationId', 'conversationId', { unique: false });
-            store.createIndex('status', 'status', { unique: false });
-          }
-        };
-      });
+  private async ensureLegacyPlaintextScrubbed(): Promise<void> {
+    if (this.legacyPlaintextScrubbed) return;
+    this.legacyPlaintextScrubbed = true;
+    try {
+      await this.scrubLegacyPersistedPlaintext();
+    } catch (e) {
+      console.warn('[MSG_QUEUE] legacy plaintext scrub failed', e);
     }
-    return this.dbPromise;
   }
 
-  private async scrubLegacyPersistedPlaintext(db: IDBDatabase): Promise<void> {
-    const all = await new Promise<OutboundMessage[]>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const req = tx.objectStore(STORE_NAME).getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
+  private async scrubLegacyPersistedPlaintext(): Promise<void> {
+    const all = await runTxOn('msg-queue', STORE_NAME, 'readonly', (store) => {
+      return reqToPromise<OutboundMessage[]>(store.getAll());
     });
 
     const leaked = all.filter((msg) => typeof msg.plaintext === 'string' && msg.plaintext.length > 0);
     if (!leaked.length) return;
 
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
+    await runTxOn('msg-queue', STORE_NAME, 'readwrite', (store) => {
       for (const msg of leaked) {
         store.put({ ...msg, plaintext: '' });
       }
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
     });
 
     console.warn(`[MSG_QUEUE] scrubbed ${leaked.length} legacy plaintext message(s) from IndexedDB`);
@@ -213,57 +184,41 @@ class MessageQueueManager {
   }
 
   private async dbPut(msg: OutboundMessage): Promise<void> {
-    const db = await this.openDB();
+    await this.ensureLegacyPlaintextScrubbed();
     const persisted = this.toPersistedMessage(msg);
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).put(persisted);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('msg-queue', STORE_NAME, 'readwrite', (store) => {
+      store.put(persisted);
     });
   }
 
   private async dbDelete(localId: string): Promise<void> {
-    const db = await this.openDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).delete(localId);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await this.ensureLegacyPlaintextScrubbed();
+    await runTxOn('msg-queue', STORE_NAME, 'readwrite', (store) => {
+      store.delete(localId);
     });
   }
 
   private async dbGet(localId: string): Promise<OutboundMessage | undefined> {
-    const db = await this.openDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const req = tx.objectStore(STORE_NAME).get(localId);
-      req.onsuccess = () => {
-        const result = req.result as OutboundMessage | undefined;
-        resolve(result ? this.hydrateRuntimeMessage(result) : undefined);
-      };
-      req.onerror = () => reject(req.error);
+    await this.ensureLegacyPlaintextScrubbed();
+    return runTxOn('msg-queue', STORE_NAME, 'readonly', async (store) => {
+      const result = await reqToPromise<OutboundMessage | undefined>(store.get(localId));
+      return result ? this.hydrateRuntimeMessage(result) : undefined;
     });
   }
 
   private async dbGetAll(): Promise<OutboundMessage[]> {
-    const db = await this.openDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const req = tx.objectStore(STORE_NAME).getAll();
-      req.onsuccess = () => resolve((req.result || []).map((msg) => this.hydrateRuntimeMessage(msg)));
-      req.onerror = () => reject(req.error);
+    await this.ensureLegacyPlaintextScrubbed();
+    return runTxOn('msg-queue', STORE_NAME, 'readonly', async (store) => {
+      const result = await reqToPromise<OutboundMessage[]>(store.getAll());
+      return (result || []).map((msg) => this.hydrateRuntimeMessage(msg));
     });
   }
 
   private async dbGetByConversation(conversationId: string): Promise<OutboundMessage[]> {
-    const db = await this.openDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const idx = tx.objectStore(STORE_NAME).index('conversationId');
-      const req = idx.getAll(conversationId);
-      req.onsuccess = () => resolve((req.result || []).map((msg) => this.hydrateRuntimeMessage(msg)));
-      req.onerror = () => reject(req.error);
+    await this.ensureLegacyPlaintextScrubbed();
+    return runTxOn('msg-queue', STORE_NAME, 'readonly', async (store) => {
+      const result = await reqToPromise<OutboundMessage[]>(store.index('conversationId').getAll(conversationId));
+      return (result || []).map((msg) => this.hydrateRuntimeMessage(msg));
     });
   }
 
@@ -282,7 +237,7 @@ class MessageQueueManager {
     try {
       if (handlers.isReady(conversationId)) {
         queueMicrotask(() => {
-          void this.resumeForConversation(conversationId);
+          void this.resumeForConversation(conversationId, { forceReady: true });
         });
       }
     } catch {
@@ -637,12 +592,11 @@ class MessageQueueManager {
             m.status === 'waiting_secure_channel' ||
             m.status === 'retry_pending'
           )
-          .sort((a, b) => a.createdAt - b.createdAt)
-          .find(m =>
-            !this.processing.has(m.localId) &&
-            !this.retryTimers.has(m.localId) &&
-            (this.volatilePlaintext.has(m.localId) || !!m.encryptedBody)
-          );
+          .filter(m => this.volatilePlaintext.has(m.localId) || !!m.encryptedBody)
+          .sort((a, b) => a.createdAt - b.createdAt || a.localId.localeCompare(b.localId))[0];
+        if (!next || this.processing.has(next.localId) || this.retryTimers.has(next.localId)) {
+          return;
+        }
         if (next) {
           if (next.status !== 'pending_local') {
             next.status = 'pending_local';
@@ -759,14 +713,17 @@ class MessageQueueManager {
   }
 
   /** Resume messages for a specific conversation (when encryption becomes ready) */
-  async resumeForConversation(conversationId: string): Promise<void> {
+  async resumeForConversation(
+    conversationId: string,
+    options: { forceReady?: boolean } = {},
+  ): Promise<void> {
     try {
       // Debounce: ignore resume calls that fire less than 1.5s after the previous one.
       // On iOS, React re-renders trigger many redundant resume calls, which short-circuit
       // the secure_wait retry timer (3s) and produce a tight retry loop.
       const now = Date.now();
       const last = this.lastResumeAt.get(conversationId) || 0;
-      if (now - last < 1500) {
+      if (!options.forceReady && now - last < 1500) {
         return;
       }
       this.lastResumeAt.set(conversationId, now);
@@ -776,10 +733,13 @@ class MessageQueueManager {
         m.status === 'waiting_secure_channel' || m.status === 'retry_pending' || m.status === 'pending_local'
       );
 
-      for (const msg of pending) {
+      for (const msg of pending.sort((a, b) => a.createdAt - b.createdAt || a.localId.localeCompare(b.localId))) {
         // Don't restart a message that already has an active retry timer.
         // The timer will fire at the correct delay and call processMessage itself.
-        if (this.retryTimers.has(msg.localId)) continue;
+        if (this.retryTimers.has(msg.localId)) {
+          if (!options.forceReady) continue;
+          this.clearRetryTimer(msg.localId);
+        }
         if (this.processing.has(msg.localId)) continue;
 
         if (this.volatilePlaintext.has(msg.localId) || msg.encryptedBody) {
@@ -787,6 +747,7 @@ class MessageQueueManager {
           msg.status = 'pending_local';
           await this.dbPut(msg);
           this.processMessage(msg);
+          break;
         }
       }
     } catch (err) {

@@ -54,6 +54,85 @@ interface ZeusAlert {
   timestamp: Date;
 }
 
+interface SecurityAIModulePanelProps {
+  incidents: any[];
+  trackedIps: any[];
+  patterns: any[];
+  qualityMetrics: any[];
+  isScanning: boolean;
+  onScan: () => void;
+}
+
+function SecurityAIModulePanel({
+  incidents,
+  trackedIps,
+  patterns,
+  qualityMetrics,
+  isScanning,
+  onScan,
+}: SecurityAIModulePanelProps) {
+  const now = Date.now();
+  const recentIncidents = incidents.filter((incident) => (
+    incident.created_at && now - new Date(incident.created_at).getTime() < 60 * 60 * 1000
+  ));
+  const liveThreatIps = trackedIps.filter((ip) => (
+    ip.penalty_level >= 3 ||
+    (ip.blocked_until && new Date(ip.blocked_until).getTime() > now)
+  ));
+  const activePatterns = patterns.filter((pattern) => pattern.is_active !== false);
+  const latestMetric = qualityMetrics[0];
+  const autonomyScore = Number(latestMetric?.autonomy_score || 0);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Brain className="w-4 h-4 text-primary" />
+            SecurityAIModulePanel
+          </CardTitle>
+          <Button onClick={onScan} disabled={isScanning} size="sm" variant="outline" className="gap-1.5">
+            {isScanning ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+            Scan
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="p-3 rounded-lg border border-border/50 bg-secondary/20">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Activity className="w-3.5 h-3.5" />
+              Incidents live
+            </div>
+            <p className="mt-1 text-xl font-bold text-foreground">{recentIncidents.length}</p>
+          </div>
+          <div className="p-3 rounded-lg border border-border/50 bg-secondary/20">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Globe className="w-3.5 h-3.5" />
+              IP risque
+            </div>
+            <p className="mt-1 text-xl font-bold text-foreground">{liveThreatIps.length}</p>
+          </div>
+          <div className="p-3 rounded-lg border border-border/50 bg-secondary/20">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Target className="w-3.5 h-3.5" />
+              Patterns actifs
+            </div>
+            <p className="mt-1 text-xl font-bold text-foreground">{activePatterns.length}</p>
+          </div>
+          <div className="p-3 rounded-lg border border-border/50 bg-secondary/20">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Gauge className="w-3.5 h-3.5" />
+              Autonomie
+            </div>
+            <p className="mt-1 text-xl font-bold text-foreground">{Math.round(autonomyScore * 100)}%</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function SecurityMonitoringSection() {
   const [search, setSearch] = useState('');
   const [ipSearch, setIpSearch] = useState('');
@@ -367,6 +446,15 @@ export function SecurityMonitoringSection() {
           </motion.div>
         ))}
       </div>
+
+      <SecurityAIModulePanel
+        incidents={incidents || []}
+        trackedIps={allIps || []}
+        patterns={patterns || []}
+        qualityMetrics={qualityMetrics || []}
+        isScanning={runScan.isPending}
+        onScan={() => runScan.mutate()}
+      />
 
       {/* ═══ TABLEAU DES IPs EN CLAIR ═══ */}
       <Card>

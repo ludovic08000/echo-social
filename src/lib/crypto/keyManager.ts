@@ -13,9 +13,9 @@ import {
   STORE_KEYS, STORE_SESSION, STORE_PREKEYS,
   KX_KEY_PARAMS, SIG_KEY_PARAMS,
 } from './constants';
-import { openE2EEDB } from './indexedDb';
+import { reqToPromise, runTxOn } from './indexedDbTx';
 import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, base64ToBuffer, constantTimeEqual } from './utils';
-import { hardCrypto, hardGlobals } from './cryptoIntegrity';
+import { hardCrypto } from './cryptoIntegrity';
 import { supabase } from '@/integrations/supabase/client';
 
 export interface IdentityKeyPair {
@@ -58,44 +58,77 @@ export interface ServerIdentityState {
   fingerprint: string;
 }
 
+export interface ServerContinuityState {
+  identity: ServerIdentityState | null;
+  hasAnyPublicKey: boolean;
+  hasBackup: boolean;
+  backupTypes: string[];
+}
+
 export interface IdentityKeyLoadOptions {
   allowCreate?: boolean;
 }
 
-// ─── IndexedDB helpers ───
+const memCache = new Map<string, IdentityKeyPair>();
 
-function openDB(): Promise<IDBDatabase> {
-  return openE2EEDB();
+function isCompleteIdentityKeys(keys: IdentityKeyPair | undefined): keys is IdentityKeyPair {
+  return !!(
+    keys?.publicKey &&
+    keys.privateKey &&
+    keys.signingPublicKey &&
+    keys.signingPrivateKey &&
+    typeof keys.fingerprint === 'string' &&
+    typeof keys.createdAt === 'number'
+  );
 }
 
+function cacheIdentity(userId: string, keys: IdentityKeyPair): void {
+  const {
+    publicKey,
+    privateKey,
+    signingPublicKey: signingPublic,
+    signingPrivateKey: signingPrivate,
+    fingerprint,
+    createdAt,
+  } = keys;
+
+  memCache.set(userId, {
+    publicKey,
+    privateKey,
+    signingPublicKey: signingPublic,
+    signingPrivateKey: signingPrivate,
+    fingerprint,
+    createdAt,
+  });
+}
+
+export function clearIdentityMemoryCache(userId?: string): void {
+  if (userId) memCache.delete(userId);
+  else memCache.clear();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('forsure-keys-locked', () => clearIdentityMemoryCache());
+}
+
+// ─── IndexedDB helpers ───
+
 function dbGet<T>(storeName: string, key: string): Promise<T | undefined> {
-  return openDB().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, 'readonly');
-    const store = tx.objectStore(storeName);
-    const req = store.get(key);
-    req.onsuccess = () => resolve(req.result as T | undefined);
-    req.onerror = () => reject(req.error);
-  }));
+  return runTxOn('e2ee', storeName, 'readonly', (store) =>
+    reqToPromise<T | undefined>(store.get(key)),
+  );
 }
 
 function dbPut<T>(storeName: string, value: T): Promise<void> {
-  return openDB().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, 'readwrite');
-    const store = tx.objectStore(storeName);
-    const req = store.put(value);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  }));
+  return runTxOn('e2ee', storeName, 'readwrite', (store) => {
+    store.put(value);
+  });
 }
 
 function dbDelete(storeName: string, key: string): Promise<void> {
-  return openDB().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, 'readwrite');
-    const store = tx.objectStore(storeName);
-    const req = store.delete(key);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  }));
+  return runTxOn('e2ee', storeName, 'readwrite', (store) => {
+    store.delete(key);
+  });
 }
 
 // ─── Fingerprint (safety numbers) ───
@@ -195,6 +228,58 @@ export async function fetchServerIdentityState(userId: string): Promise<ServerId
   };
 }
 
+export async function fetchServerContinuityState(userId: string): Promise<ServerContinuityState> {
+  const [publicKeysResult, backupsResult] = await Promise.all([
+    supabase
+      .from('user_public_keys')
+      .select('identity_key, signing_key, fingerprint, is_active')
+      .eq('user_id', userId)
+      .order('is_active', { ascending: false })
+      .limit(5),
+    supabase
+      .from('user_backups' as any)
+      .select('id, backup_type')
+      .eq('user_id', userId)
+      .limit(5),
+  ]);
+
+  if (publicKeysResult.error) {
+    throw new IdentityServerUnavailableError(`Cannot read server public-key continuity: ${publicKeysResult.error.message}`);
+  }
+  if (backupsResult.error) {
+    throw new IdentityServerUnavailableError(`Cannot read server backup continuity: ${backupsResult.error.message}`);
+  }
+
+  const publicKeyRows = (publicKeysResult.data ?? []) as Array<{
+    identity_key?: string | null;
+    signing_key?: string | null;
+    fingerprint?: string | null;
+    is_active?: boolean | null;
+  }>;
+  const activeRow = publicKeyRows.find((row) =>
+    row.is_active === true &&
+    !!row.identity_key &&
+    !!row.signing_key &&
+    !!row.fingerprint,
+  );
+  const backupRows = (backupsResult.data ?? []) as Array<{ backup_type?: string | null }>;
+
+  return {
+    identity: activeRow
+      ? {
+          identityKey: activeRow.identity_key!,
+          signingKey: activeRow.signing_key!,
+          fingerprint: activeRow.fingerprint!,
+        }
+      : null,
+    hasAnyPublicKey: publicKeyRows.length > 0,
+    hasBackup: backupRows.length > 0,
+    backupTypes: backupRows
+      .map((row) => row.backup_type)
+      .filter((type): type is string => typeof type === 'string'),
+  };
+}
+
 async function exportBundleForLocalIdentity(
   userId: string,
   keys: IdentityKeyPair,
@@ -265,9 +350,9 @@ export async function saveIdentityKeys(userId: string, keys: IdentityKeyPair): P
     try {
       privateKeyJWK = await exportKeyToJWK(keys.privateKey);
       signingPrivateKeyJWK = await exportKeyToJWK(keys.signingPrivateKey);
-    } catch {
-      console.warn('[KEY_MGR] Cannot export private keys (already non-extractable). Skipping save.');
-      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Cannot save identity keys: private key export failed (${message})`);
     }
   }
 
@@ -280,10 +365,14 @@ export async function saveIdentityKeys(userId: string, keys: IdentityKeyPair): P
     createdAt: keys.createdAt,
     fingerprint: keys.fingerprint,
   });
+  cacheIdentity(userId, keys);
 }
 
 /** Load identity keys from IndexedDB — private keys are ALWAYS non-extractable */
 export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair | null> {
+  const cached = memCache.get(userId);
+  if (isCompleteIdentityKeys(cached)) return cached;
+
   const stored = await dbGet<StoredKeyPair & { id: string }>(STORE_KEYS, userId);
   if (!stored) return null;
 
@@ -294,7 +383,7 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
     importKeyFromJWK(stored.signingPrivateKeyJWK, SIG_KEY_PARAMS as any, ['sign'], false), // PRIVATE: non-extractable
   ]);
 
-  return {
+  const keys = {
     publicKey,
     privateKey,
     signingPublicKey,
@@ -302,6 +391,28 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
     createdAt: stored.createdAt,
     fingerprint: stored.fingerprint,
   };
+  cacheIdentity(userId, keys);
+  return keys;
+}
+
+async function hasLocalWrappedIdentity(userId: string): Promise<boolean> {
+  try {
+    const { hasWrappedKeys } = await import('./pinWrap');
+    return await hasWrappedKeys(userId);
+  } catch {
+    return false;
+  }
+}
+
+async function fetchContinuityForIdentityCreation(userId: string): Promise<ServerContinuityState> {
+  try {
+    return await fetchServerContinuityState(userId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new IdentityRestoreRequiredError(
+      `Cannot verify server E2EE continuity; recovery required before creating a new identity (${message})`,
+    );
+  }
 }
 
 /**
@@ -317,8 +428,10 @@ export async function getOrCreateIdentityKeys(
   userId: string,
   options: IdentityKeyLoadOptions = {},
 ): Promise<IdentityKeyPair & { isNewIdentity?: boolean }> {
-  const serverIdentity = await fetchServerIdentityState(userId);
+  const continuity = await fetchContinuityForIdentityCreation(userId);
+  const serverIdentity = continuity.identity;
   const existing = await loadIdentityKeys(userId);
+  const hasWrapped = await hasLocalWrappedIdentity(userId);
 
   if (serverIdentity) {
     if (existing) {
@@ -333,14 +446,9 @@ export async function getOrCreateIdentityKeys(
       return existing;
     }
 
-    try {
-      const { hasWrappedKeys } = await import('./pinWrap');
-      if (await hasWrappedKeys(userId)) {
-        console.log('[KEY_MGR] Server identity exists; raw keys missing and PIN-wrapped keys present');
-        throw new PinUnlockRequiredError('PIN unlock required to recover identity keys');
-      }
-    } catch (e) {
-      if (e instanceof PinUnlockRequiredError) throw e;
+    if (hasWrapped) {
+      console.log('[KEY_MGR] Server identity exists; raw keys missing and PIN-wrapped keys present');
+      throw new PinUnlockRequiredError('PIN unlock required to recover identity keys');
     }
 
     console.warn('[KEY_MGR] Server identity exists but no local private identity is available');
@@ -350,12 +458,25 @@ export async function getOrCreateIdentityKeys(
     );
   }
 
+  if (continuity.hasAnyPublicKey || continuity.hasBackup) {
+    if (hasWrapped || continuity.backupTypes.includes('chat_pin')) {
+      throw new PinUnlockRequiredError('PIN unlock required to recover existing E2EE identity');
+    }
+    throw new IdentityRestoreRequiredError(
+      'Server E2EE continuity exists; restore encrypted E2EE vault before creating or publishing identity',
+    );
+  }
+
   if (existing) {
     if (!options.allowCreate) {
       throw new IdentityFirstSetupRequiredError('Server identity is missing; FIRST_SETUP must explicitly publish identity');
     }
     console.log('[KEY_MGR] Local unpublished identity found; treating as first setup material');
     return { ...existing, isNewIdentity: true };
+  }
+
+  if (hasWrapped) {
+    throw new PinUnlockRequiredError('PIN unlock required to recover existing E2EE identity');
   }
 
   if (!options.allowCreate) {
@@ -581,15 +702,12 @@ export async function hasRawIdentityKeys(userId: string): Promise<boolean> {
 
 /** Wipe all keys (logout / account deletion) */
 export async function wipeAllKeys(): Promise<void> {
-  const db = await openDB();
-  const tx = db.transaction([STORE_KEYS, STORE_SESSION, STORE_PREKEYS], 'readwrite');
-  tx.objectStore(STORE_KEYS).clear();
-  tx.objectStore(STORE_SESSION).clear();
-  tx.objectStore(STORE_PREKEYS).clear();
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+  await runTxOn('e2ee', [STORE_KEYS, STORE_SESSION, STORE_PREKEYS], 'readwrite', (stores) => {
+    stores[STORE_KEYS].clear();
+    stores[STORE_SESSION].clear();
+    stores[STORE_PREKEYS].clear();
   });
+  clearIdentityMemoryCache();
 }
 
 /**
@@ -598,37 +716,17 @@ export async function wipeAllKeys(): Promise<void> {
  */
 export async function wipeSessionKeys(userId?: string): Promise<void> {
   try {
-    const db = await openDB();
-    const tx = db.transaction([STORE_SESSION], 'readwrite');
-    tx.objectStore(STORE_SESSION).clear();
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('e2ee', STORE_SESSION, 'readwrite', (store) => {
+      store.clear();
     });
   } catch (e) {
     console.warn('[KEY_MGR] Failed to clear session keys:', e);
   }
 
   try {
-    const ratchetReq = hardGlobals.idbOpen('forsure-ratchet', 1);
-    const ratchetDB = await new Promise<IDBDatabase>((resolve, reject) => {
-      ratchetReq.onerror = () => reject(ratchetReq.error);
-      ratchetReq.onsuccess = () => resolve(ratchetReq.result);
-      ratchetReq.onupgradeneeded = () => {
-        const db = ratchetReq.result;
-        if (!db.objectStoreNames.contains('ratchet-states')) {
-          db.createObjectStore('ratchet-states', { keyPath: 'convId' });
-        }
-      };
+    await runTxOn('ratchet', 'ratchet-states', 'readwrite', (store) => {
+      store.clear();
     });
-    if (ratchetDB.objectStoreNames.contains('ratchet-states')) {
-      const tx = ratchetDB.transaction('ratchet-states', 'readwrite');
-      tx.objectStore('ratchet-states').clear();
-      await new Promise<void>((resolve, reject) => {
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-    }
   } catch (e) {
     console.warn('[KEY_MGR] Failed to clear ratchet states:', e);
   }
@@ -639,13 +737,9 @@ export async function wipeSessionKeys(userId?: string): Promise<void> {
 /** Export all raw session key records from IndexedDB (for PIN wrapping) */
 export async function exportAllSessionKeys(): Promise<StoredSessionKey[]> {
   try {
-    const db = await openDB();
-    const tx = db.transaction(STORE_SESSION, 'readonly');
-    const req = tx.objectStore(STORE_SESSION).getAll();
-    return new Promise((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
+    return await runTxOn('e2ee', STORE_SESSION, 'readonly', (store) =>
+      reqToPromise<StoredSessionKey[]>(store.getAll()),
+    );
   } catch {
     return [];
   }
@@ -654,13 +748,8 @@ export async function exportAllSessionKeys(): Promise<StoredSessionKey[]> {
 /** Import raw session key records into IndexedDB (from PIN unwrap) */
 export async function importAllSessionKeys(records: StoredSessionKey[]): Promise<void> {
   if (!records.length) return;
-  const db = await openDB();
-  const tx = db.transaction(STORE_SESSION, 'readwrite');
-  const store = tx.objectStore(STORE_SESSION);
-  for (const r of records) store.put(r);
-  await new Promise<void>((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+  await runTxOn('e2ee', STORE_SESSION, 'readwrite', (store) => {
+    for (const r of records) store.put(r);
   });
   console.log(`[KEY_MGR] ${records.length} session keys restored`);
 }
@@ -668,24 +757,9 @@ export async function importAllSessionKeys(records: StoredSessionKey[]): Promise
 /** Export all ratchet state records from IndexedDB (for PIN wrapping) */
 export async function exportAllRatchetStates(): Promise<any[]> {
   try {
-    const ratchetReq = hardGlobals.idbOpen('forsure-ratchet', 1);
-    const ratchetDB = await new Promise<IDBDatabase>((resolve, reject) => {
-      ratchetReq.onerror = () => reject(ratchetReq.error);
-      ratchetReq.onsuccess = () => resolve(ratchetReq.result);
-      ratchetReq.onupgradeneeded = () => {
-        const db = ratchetReq.result;
-        if (!db.objectStoreNames.contains('ratchet-states')) {
-          db.createObjectStore('ratchet-states', { keyPath: 'convId' });
-        }
-      };
-    });
-    if (!ratchetDB.objectStoreNames.contains('ratchet-states')) return [];
-    const tx = ratchetDB.transaction('ratchet-states', 'readonly');
-    const req = tx.objectStore('ratchet-states').getAll();
-    return new Promise((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
+    return await runTxOn('ratchet', 'ratchet-states', 'readonly', (store) =>
+      reqToPromise<any[]>(store.getAll()),
+    );
   } catch {
     return [];
   }
@@ -695,23 +769,8 @@ export async function exportAllRatchetStates(): Promise<any[]> {
 export async function importAllRatchetStates(records: any[]): Promise<void> {
   if (!records.length) return;
   try {
-    const ratchetReq = hardGlobals.idbOpen('forsure-ratchet', 1);
-    const ratchetDB = await new Promise<IDBDatabase>((resolve, reject) => {
-      ratchetReq.onerror = () => reject(ratchetReq.error);
-      ratchetReq.onsuccess = () => resolve(ratchetReq.result);
-      ratchetReq.onupgradeneeded = () => {
-        const db = ratchetReq.result;
-        if (!db.objectStoreNames.contains('ratchet-states')) {
-          db.createObjectStore('ratchet-states', { keyPath: 'convId' });
-        }
-      };
-    });
-    const tx = ratchetDB.transaction('ratchet-states', 'readwrite');
-    const store = tx.objectStore('ratchet-states');
-    for (const r of records) store.put(r);
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('ratchet', 'ratchet-states', 'readwrite', (store) => {
+      for (const r of records) store.put(r);
     });
     console.log(`[KEY_MGR] ${records.length} ratchet states restored`);
   } catch (e) {

@@ -16,7 +16,8 @@ import { useCallback, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
-import { openE2EEDB } from '@/lib/crypto/indexedDb';
+import { STORE_KEYS, STORE_PREKEYS, STORE_SESSION } from '@/lib/crypto/constants';
+import { reqToPromise, runTxOn } from '@/lib/crypto/indexedDbTx';
 import {
   buildDeviceLinkQrData,
   decryptDeviceLinkPayload,
@@ -41,6 +42,7 @@ import {
 
 const PBKDF2_ITERATIONS = 600_000;
 const LINK_PRIVATE_KEY_PREFIX = 'forsure:device-link:private:';
+const E2EE_STORES = [STORE_KEYS, STORE_SESSION, STORE_PREKEYS] as const;
 
 interface StoredLinkRequest {
   privateJwk: JsonWebKey;
@@ -112,36 +114,19 @@ async function collectLocalKeys(options: { includePlaintextCache?: boolean } = {
   const includePlaintextCache = options.includePlaintextCache ?? true;
   const data: Record<string, any> = {};
 
-  try {
-    const db = await openE2EEDB();
-    for (const storeName of Array.from(db.objectStoreNames)) {
-      const tx = db.transaction(storeName, 'readonly');
-      const all = await new Promise<any[]>((resolve, reject) => {
-        const req = tx.objectStore(storeName).getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-      data[`e2ee:${storeName}`] = all;
-    }
-    db.close();
-  } catch {}
+  for (const storeName of E2EE_STORES) {
+    try {
+      data[`e2ee:${storeName}`] = await runTxOn('e2ee', storeName, 'readonly', (store) =>
+        reqToPromise<any[]>(store.getAll()),
+      );
+    } catch {}
+  }
 
   try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-ratchet', 1);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result);
+    const all = await runTxOn('ratchet', 'ratchet-states', 'readonly', (store) => {
+      return reqToPromise<any[]>(store.getAll());
     });
-    if (db.objectStoreNames.contains('ratchet-states')) {
-      const tx = db.transaction('ratchet-states', 'readonly');
-      const all = await new Promise<any[]>((resolve, reject) => {
-        const req = tx.objectStore('ratchet-states').getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-      data['ratchet:states'] = all;
-    }
-    db.close();
+    if (all.length > 0) data['ratchet:states'] = all;
   } catch {}
 
   if (includePlaintextCache) {
@@ -166,39 +151,19 @@ async function restoreLocalKeys(json: string): Promise<void> {
   for (const [key, records] of Object.entries(data)) {
     if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
     const storeName = key.replace('e2ee:', '');
+    if (!E2EE_STORES.includes(storeName as (typeof E2EE_STORES)[number])) continue;
     try {
-      const db = await openE2EEDB();
-      if (db.objectStoreNames.contains(storeName)) {
-        const tx = db.transaction(storeName, 'readwrite');
-        for (const record of records) tx.objectStore(storeName).put(record);
-        await new Promise<void>((resolve, reject) => {
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error);
-        });
-      }
-      db.close();
+      await runTxOn('e2ee', storeName, 'readwrite', (store) => {
+        for (const record of records) store.put(record);
+      });
     } catch {}
   }
 
   if (data['ratchet:states'] && Array.isArray(data['ratchet:states'])) {
     try {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const req = indexedDB.open('forsure-ratchet', 1);
-        req.onerror = () => reject(req.error);
-        req.onsuccess = () => resolve(req.result);
-        req.onupgradeneeded = () => {
-          if (!req.result.objectStoreNames.contains('ratchet-states')) {
-            req.result.createObjectStore('ratchet-states', { keyPath: 'convId' });
-          }
-        };
+      await runTxOn('ratchet', 'ratchet-states', 'readwrite', (store) => {
+        for (const r of data['ratchet:states']) store.put(r);
       });
-      const tx = db.transaction('ratchet-states', 'readwrite');
-      for (const r of data['ratchet:states']) tx.objectStore('ratchet-states').put(r);
-      await new Promise<void>((resolve, reject) => {
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-      db.close();
     } catch {}
   }
 

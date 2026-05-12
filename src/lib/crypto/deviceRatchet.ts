@@ -30,9 +30,8 @@ import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import { bufferToBase64, base64ToBuffer, randomBytes, importKeyFromJWK, importOkpPublicKeyFromBase64 } from './utils';
 import { logCryptoError } from './errorLogger';
 import { exportPublicKeyRaw } from './keyManager';
+import { reqToPromise, runTxOn } from './indexedDbTx';
 
-const DB_NAME = 'forsure-device-sessions';
-const DB_VERSION = 2;
 const STORE = 'sessions';
 
 export const RATCHET_PREFIX_V3 = 'x3dh3.'; // legacy (single-secret KDF)
@@ -90,33 +89,16 @@ interface StoredSession {
 
 // ─── IndexedDB helpers ──────────────────────────────────────────────────────
 
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = hardGlobals.idbOpen(DB_NAME, DB_VERSION);
-    req.onerror = () => reject(req.error);
-    req.onsuccess = () => resolve(req.result);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        db.createObjectStore(STORE, { keyPath: 'id' });
-      }
-    };
-  });
-}
-
 function compositeKey(myUserId: string, myDeviceId: string, peerUserId: string, peerDeviceId: string): string {
   return `${myUserId}::${myDeviceId}::${peerUserId}::${peerDeviceId}`;
 }
 
 async function loadSession(key: string): Promise<StoredSession | null> {
   try {
-    const db = await openDB();
-    const tx = db.transaction(STORE, 'readonly');
-    const req = tx.objectStore(STORE).get(key);
-    return await new Promise((resolve, reject) => {
-      req.onsuccess = () => resolve((req.result as StoredSession) ?? null);
-      req.onerror = () => reject(req.error);
-    });
+    const result = await runTxOn('device-sessions', STORE, 'readonly', (store) =>
+      reqToPromise<StoredSession | undefined>(store.get(key)),
+    );
+    return result ?? null;
   } catch {
     return null;
   }
@@ -124,12 +106,8 @@ async function loadSession(key: string): Promise<StoredSession | null> {
 
 async function saveSession(key: string, session: StoredSession): Promise<void> {
   try {
-    const db = await openDB();
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).put({ ...session, id: key });
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('device-sessions', STORE, 'readwrite', (store) => {
+      store.put({ ...session, id: key });
     });
   } catch {
     // non-fatal
@@ -142,13 +120,9 @@ async function lookupSessionById(
   sessionId: string,
 ): Promise<{ key: string; session: StoredSession } | null> {
   try {
-    const db = await openDB();
-    const tx = db.transaction(STORE, 'readonly');
-    const req = tx.objectStore(STORE).getAll();
-    const all = await new Promise<StoredSession[]>((resolve, reject) => {
-      req.onsuccess = () => resolve((req.result as StoredSession[]) ?? []);
-      req.onerror = () => reject(req.error);
-    });
+    const all = await runTxOn('device-sessions', STORE, 'readonly', (store) =>
+      reqToPromise<StoredSession[]>(store.getAll()),
+    );
     const prefix = `${myUserId}::${myDeviceId}::`;
     for (const s of all) {
       if (s.sessionId === sessionId && s.id.startsWith(prefix)) {
@@ -676,12 +650,8 @@ export async function invalidateDeviceSession(
   peerDeviceId: string,
 ): Promise<void> {
   try {
-    const db = await openDB();
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).delete(compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId));
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('device-sessions', STORE, 'readwrite', (store) => {
+      store.delete(compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId));
     });
   } catch {
     // non-fatal
@@ -699,13 +669,9 @@ export async function listKnownSessionIds(
   myDeviceId: string,
 ): Promise<Array<{ peerUserId: string; peerDeviceId: string; sessionId: string; lastUsedAt: number }>> {
   try {
-    const db = await openDB();
-    const tx = db.transaction(STORE, 'readonly');
-    const req = tx.objectStore(STORE).getAll();
-    const all = await new Promise<StoredSession[]>((resolve, reject) => {
-      req.onsuccess = () => resolve((req.result as StoredSession[]) ?? []);
-      req.onerror = () => reject(req.error);
-    });
+    const all = await runTxOn('device-sessions', STORE, 'readonly', (store) =>
+      reqToPromise<StoredSession[]>(store.getAll()),
+    );
     const prefix = `${myUserId}::${myDeviceId}::`;
     const out: Array<{ peerUserId: string; peerDeviceId: string; sessionId: string; lastUsedAt: number }> = [];
     for (const s of all) {
@@ -739,12 +705,8 @@ export async function listKnownSessionIds(
  */
 export async function clearAllDeviceSessions(): Promise<void> {
   try {
-    const db = await openDB();
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).clear();
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    await runTxOn('device-sessions', STORE, 'readwrite', (store) => {
+      store.clear();
     });
   } catch {
     // non-fatal

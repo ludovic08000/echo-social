@@ -18,7 +18,9 @@
 
 import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
-import { openE2EEDB } from '@/lib/crypto/indexedDb';
+import { STORE_KEYS, STORE_PREKEYS, STORE_SESSION } from '@/lib/crypto/constants';
+import { reqToPromise, runTxOn } from '@/lib/crypto/indexedDbTx';
+import type { DbKey } from '@/lib/crypto/dbRegistry';
 import { supabase } from '@/integrations/supabase/client';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
@@ -35,9 +37,9 @@ const BACKUP_TYPE_ACCOUNT = 'account';
 const BACKUP_TYPE_RECOVERY = 'recovery';
 const BACKUP_TYPE_CHAT_PIN = 'chat_pin';
 const KEYCHAIN_SNAPSHOT_PREFIX = 'forsure-e2ee-keychain-snapshot-v1:';
-const PIN_WRAP_DB_VERSION = 2;
 const PIN_WRAP_STORE = 'pin-wrapped-keys';
 const PIN_WRAP_LEGACY_STORE = 'wrapped-keys';
+const E2EE_STORES = [STORE_KEYS, STORE_SESSION, STORE_PREKEYS] as const;
 
 // ── Session State (volatile, never persisted) ──
 let _sessionMasterKey: CryptoKey | null = null;
@@ -126,77 +128,50 @@ function generateMasterKey(): Uint8Array {
 
 // ── IndexedDB helpers (shared with collectAllKeys / restoreAllKeys) ──
 
-async function openDB(name: string, version: number, storeNames?: string[]): Promise<IDBDatabase> {
-  return new Promise<IDBDatabase>((resolve, reject) => {
-    const req = hardGlobals.idbOpen(name, version);
-    req.onerror = () => reject(req.error);
-    req.onsuccess = () => resolve(req.result);
-    if (storeNames) {
-      req.onupgradeneeded = () => {
-        for (const sn of storeNames) {
-          if (!req.result.objectStoreNames.contains(sn)) {
-            req.result.createObjectStore(sn, { keyPath: sn === 'ratchet-states' ? 'convId' : 'id' });
-          }
-        }
-      };
-    }
+async function getAllFromRegisteredStore(dbKey: DbKey, storeName: string): Promise<any[]> {
+  return runTxOn(dbKey, storeName, 'readonly', (store) =>
+    reqToPromise<any[]>(store.getAll()),
+  ).catch(() => []);
+}
+
+async function putAllInRegisteredStore(dbKey: DbKey, storeName: string, records: any[]): Promise<void> {
+  await runTxOn(dbKey, storeName, 'readwrite', (store) => {
+    store.clear();
+    for (const r of records) store.put(r);
   });
 }
 
-async function getAllFromStore(db: IDBDatabase, storeName: string): Promise<any[]> {
-  if (!db.objectStoreNames.contains(storeName)) return [];
-  const tx = db.transaction(storeName, 'readonly');
-  return new Promise<any[]>((resolve, reject) => {
-    const req = tx.objectStore(storeName).getAll();
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function putAllInStore(db: IDBDatabase, storeName: string, records: any[]): Promise<void> {
-  if (!db.objectStoreNames.contains(storeName)) return;
-  const tx = db.transaction(storeName, 'readwrite');
-  const store = tx.objectStore(storeName);
-  store.clear();
-  for (const r of records) store.put(r);
-  await new Promise<void>((r, j) => { tx.oncomplete = () => r(); tx.onerror = () => j(tx.error); });
+async function countFromRegisteredStore(dbKey: DbKey, storeName: string): Promise<number> {
+  return runTxOn(dbKey, storeName, 'readonly', (store) =>
+    reqToPromise<number>(store.count()),
+  ).catch(() => 0);
 }
 
 /** Collect all local E2EE keys for backup */
 async function collectAllKeys(): Promise<string | null> {
   const data: Record<string, any> = {};
 
+  for (const storeName of E2EE_STORES) {
+    try {
+      data[`e2ee:${storeName}`] = await getAllFromRegisteredStore('e2ee', storeName);
+    } catch {}
+  }
+
   try {
-    const db = await openE2EEDB();
-    for (const storeName of Array.from(db.objectStoreNames)) {
-      data[`e2ee:${storeName}`] = await getAllFromStore(db, storeName);
-    }
-    db.close();
+    data['ratchet:states'] = await getAllFromRegisteredStore('ratchet', 'ratchet-states');
   } catch {}
 
   try {
-    const db = await openDB('forsure-ratchet', 1);
-    data['ratchet:states'] = await getAllFromStore(db, 'ratchet-states');
-    db.close();
+    data['pinwrap:keys'] = await getAllFromRegisteredStore('pin-wrap', PIN_WRAP_STORE);
+    data['pinwrap:legacy'] = await getAllFromRegisteredStore('pin-wrap', PIN_WRAP_LEGACY_STORE);
   } catch {}
 
   try {
-    const db = await openDB('forsure-pin-wrap', PIN_WRAP_DB_VERSION, [PIN_WRAP_STORE, PIN_WRAP_LEGACY_STORE]);
-    data['pinwrap:keys'] = await getAllFromStore(db, PIN_WRAP_STORE);
-    data['pinwrap:legacy'] = await getAllFromStore(db, PIN_WRAP_LEGACY_STORE);
-    db.close();
+    data['prekeys:private'] = await getAllFromRegisteredStore('prekeys', 'private-prekeys');
   } catch {}
 
   try {
-    const db = await openDB('forsure-prekeys', 1);
-    data['prekeys:private'] = await getAllFromStore(db, 'private-prekeys');
-    db.close();
-  } catch {}
-
-  try {
-    const db = await openDB('forsure-spk', 1);
-    data['spk:private'] = await getAllFromStore(db, 'signed-prekeys');
-    db.close();
+    data['spk:private'] = await getAllFromRegisteredStore('spk', 'signed-prekeys');
   } catch {}
 
   try {
@@ -291,31 +266,22 @@ async function restoreAllKeys(json: string, userId: string): Promise<void> {
     for (const [key, records] of Object.entries(data)) {
       if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
       const storeName = key.replace('e2ee:', '');
-      const db = await openE2EEDB();
-      if (db.objectStoreNames.contains(storeName)) {
-        const existing = await getAllFromStore(db, storeName);
-        await putAllInStore(db, storeName, records);
-        const sn = storeName;
-        const ed = existing;
-        rollbackOps.push(async () => {
-          const rdb = await openE2EEDB();
-          await putAllInStore(rdb, sn, ed);
-          rdb.close();
-        });
-      }
-      db.close();
+      if (!E2EE_STORES.includes(storeName as (typeof E2EE_STORES)[number])) continue;
+      const existing = await getAllFromRegisteredStore('e2ee', storeName);
+      await putAllInRegisteredStore('e2ee', storeName, records);
+      const sn = storeName;
+      const ed = existing;
+      rollbackOps.push(async () => {
+        await putAllInRegisteredStore('e2ee', sn, ed);
+      });
     }
 
     // Phase 2: Ratchet states
     if (Array.isArray(data['ratchet:states'])) {
-      const db = await openDB('forsure-ratchet', 1, ['ratchet-states']);
-      const existing = await getAllFromStore(db, 'ratchet-states');
-      await putAllInStore(db, 'ratchet-states', data['ratchet:states']);
-      db.close();
+      const existing = await getAllFromRegisteredStore('ratchet', 'ratchet-states');
+      await putAllInRegisteredStore('ratchet', 'ratchet-states', data['ratchet:states']);
       rollbackOps.push(async () => {
-        const rdb = await openDB('forsure-ratchet', 1);
-        await putAllInStore(rdb, 'ratchet-states', existing);
-        rdb.close();
+        await putAllInRegisteredStore('ratchet', 'ratchet-states', existing);
       });
     }
 
@@ -325,40 +291,28 @@ async function restoreAllKeys(json: string, userId: string): Promise<void> {
       ['pinwrap:legacy', PIN_WRAP_LEGACY_STORE],
     ] as const) {
       if (!Array.isArray(data[backupKey])) continue;
-      const db = await openDB('forsure-pin-wrap', PIN_WRAP_DB_VERSION, [PIN_WRAP_STORE, PIN_WRAP_LEGACY_STORE]);
-      const existing = await getAllFromStore(db, storeName);
-      await putAllInStore(db, storeName, data[backupKey]);
-      db.close();
+      const existing = await getAllFromRegisteredStore('pin-wrap', storeName);
+      await putAllInRegisteredStore('pin-wrap', storeName, data[backupKey]);
       rollbackOps.push(async () => {
-        const rdb = await openDB('forsure-pin-wrap', PIN_WRAP_DB_VERSION);
-        await putAllInStore(rdb, storeName, existing);
-        rdb.close();
+        await putAllInRegisteredStore('pin-wrap', storeName, existing);
       });
     }
 
     // Phase 4: Private prekeys
     if (Array.isArray(data['prekeys:private'])) {
-      const db = await openDB('forsure-prekeys', 1, ['private-prekeys']);
-      const existing = await getAllFromStore(db, 'private-prekeys');
-      await putAllInStore(db, 'private-prekeys', data['prekeys:private']);
-      db.close();
+      const existing = await getAllFromRegisteredStore('prekeys', 'private-prekeys');
+      await putAllInRegisteredStore('prekeys', 'private-prekeys', data['prekeys:private']);
       rollbackOps.push(async () => {
-        const rdb = await openDB('forsure-prekeys', 1);
-        await putAllInStore(rdb, 'private-prekeys', existing);
-        rdb.close();
+        await putAllInRegisteredStore('prekeys', 'private-prekeys', existing);
       });
     }
 
     // Phase 4b: Signed prekey private halves (required to decrypt X3DH/device copies)
     if (Array.isArray(data['spk:private'])) {
-      const db = await openDB('forsure-spk', 1, ['signed-prekeys']);
-      const existing = await getAllFromStore(db, 'signed-prekeys');
-      await putAllInStore(db, 'signed-prekeys', data['spk:private']);
-      db.close();
+      const existing = await getAllFromRegisteredStore('spk', 'signed-prekeys');
+      await putAllInRegisteredStore('spk', 'signed-prekeys', data['spk:private']);
       rollbackOps.push(async () => {
-        const rdb = await openDB('forsure-spk', 1);
-        await putAllInStore(rdb, 'signed-prekeys', existing);
-        rdb.close();
+        await putAllInRegisteredStore('spk', 'signed-prekeys', existing);
       });
     }
 
@@ -391,31 +345,14 @@ async function restoreAllKeys(json: string, userId: string): Promise<void> {
  */
 export async function hasLocalKeys(): Promise<boolean> {
   try {
-    const db = await openE2EEDB();
-    let rawCount = 0;
-    if (db.objectStoreNames.contains('identity-keys')) {
-      const tx = db.transaction('identity-keys', 'readonly');
-      rawCount = await new Promise<number>((r, j) => {
-        const req = tx.objectStore('identity-keys').count();
-        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
-      });
-    }
-    db.close();
+    const rawCount = await countFromRegisteredStore('e2ee', 'identity-keys');
     if (rawCount > 0) return true;
   } catch {}
 
   try {
-    const db = await openDB('forsure-pin-wrap', PIN_WRAP_DB_VERSION);
-    let pinCount = 0;
-    for (const storeName of [PIN_WRAP_STORE, PIN_WRAP_LEGACY_STORE]) {
-      if (!db.objectStoreNames.contains(storeName)) continue;
-      const tx = db.transaction(storeName, 'readonly');
-      pinCount += await new Promise<number>((r, j) => {
-        const req = tx.objectStore(storeName).count();
-        req.onsuccess = () => r(req.result); req.onerror = () => j(req.error);
-      });
-    }
-    db.close();
+    const pinCount =
+      await countFromRegisteredStore('pin-wrap', PIN_WRAP_STORE) +
+      await countFromRegisteredStore('pin-wrap', PIN_WRAP_LEGACY_STORE);
     if (pinCount > 0) return true;
   } catch {}
 
@@ -428,27 +365,23 @@ export async function hasLocalKeys(): Promise<boolean> {
 export async function computeLocalCryptoDigest(): Promise<string> {
   const parts: string[] = [];
 
-  try {
-    const db = await openE2EEDB();
-    for (const storeName of Array.from(db.objectStoreNames)) {
-      const all = await getAllFromStore(db, storeName);
+  for (const storeName of E2EE_STORES) {
+    try {
+      const all = await getAllFromRegisteredStore('e2ee', storeName);
       parts.push(`${storeName}:${all.length}:${JSON.stringify(all).length}`);
-    }
-    db.close();
-  } catch {}
+    } catch {}
+  }
 
-  for (const [dbName, version, storeName] of [
-    ['forsure-ratchet', 1, 'ratchet-states'],
-    ['forsure-pin-wrap', PIN_WRAP_DB_VERSION, PIN_WRAP_STORE],
-    ['forsure-pin-wrap', PIN_WRAP_DB_VERSION, PIN_WRAP_LEGACY_STORE],
-    ['forsure-prekeys', 1, 'private-prekeys'],
-    ['forsure-spk', 1, 'signed-prekeys'],
+  for (const [dbKey, storeName] of [
+    ['ratchet', 'ratchet-states'],
+    ['pin-wrap', PIN_WRAP_STORE],
+    ['pin-wrap', PIN_WRAP_LEGACY_STORE],
+    ['prekeys', 'private-prekeys'],
+    ['spk', 'signed-prekeys'],
   ] as const) {
     try {
-      const db = await openDB(dbName, version);
-      const all = await getAllFromStore(db, storeName);
+      const all = await getAllFromRegisteredStore(dbKey, storeName);
       parts.push(`${storeName}:${all.length}:${JSON.stringify(all).length}`);
-      db.close();
     } catch {}
   }
 
