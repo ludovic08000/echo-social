@@ -66,14 +66,13 @@ export default function AIEngine() {
   const { data: realStats = { totalInteractions: 0, healthScore: 100 } } = useQuery({
     queryKey: ['ai-engine-real-stats'],
     queryFn: async () => {
-      const [metricsRes, feedbackRes, incidentsRes] = await Promise.all([
-        supabase.from('ai_metrics_log').select('id', { count: 'exact', head: true }),
+      const [eventsRes, feedbackRes, incidentsRes] = await Promise.all([
+        supabase.from('ai_engine_events' as any).select('id', { count: 'exact', head: true }),
         supabase.from('ai_feedback').select('id', { count: 'exact', head: true }),
         supabase.from('security_incidents').select('id', { count: 'exact', head: true }),
       ]);
-      const totalInteractions = (metricsRes.count || 0) + (feedbackRes.count || 0);
+      const totalInteractions = (eventsRes.count || 0) + (feedbackRes.count || 0);
       const incidentCount = incidentsRes.count || 0;
-      // Health = 100 - (incidents * 2), min 0
       const healthScore = Math.max(0, 100 - incidentCount * 2);
       return { totalInteractions, healthScore };
     },
