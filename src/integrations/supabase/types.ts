@@ -5511,6 +5511,7 @@ export type Database = {
           category: string
           confidence: number
           created_at: string
+          decided_by: string | null
           detector: string
           endpoint: string
           id: string
@@ -5525,6 +5526,7 @@ export type Database = {
           category: string
           confidence: number
           created_at?: string
+          decided_by?: string | null
           detector: string
           endpoint: string
           id?: string
@@ -5539,6 +5541,7 @@ export type Database = {
           category?: string
           confidence?: number
           created_at?: string
+          decided_by?: string | null
           detector?: string
           endpoint?: string
           id?: string
@@ -5547,6 +5550,87 @@ export type Database = {
           reason?: string | null
           user_agent?: string | null
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      threat_model_weights: {
+        Row: {
+          accuracy: number | null
+          active: boolean
+          bias: number
+          f1: number | null
+          id: string
+          notes: string | null
+          precision_score: number | null
+          recall: number | null
+          samples_used: number
+          trained_at: string
+          version: number
+          weights: Json
+        }
+        Insert: {
+          accuracy?: number | null
+          active?: boolean
+          bias?: number
+          f1?: number | null
+          id?: string
+          notes?: string | null
+          precision_score?: number | null
+          recall?: number | null
+          samples_used?: number
+          trained_at?: string
+          version: number
+          weights: Json
+        }
+        Update: {
+          accuracy?: number | null
+          active?: boolean
+          bias?: number
+          f1?: number | null
+          id?: string
+          notes?: string | null
+          precision_score?: number | null
+          recall?: number | null
+          samples_used?: number
+          trained_at?: string
+          version?: number
+          weights?: Json
+        }
+        Relationships: []
+      }
+      threat_training_samples: {
+        Row: {
+          category: string | null
+          created_at: string
+          endpoint: string | null
+          features: Json
+          id: string
+          label: number
+          source: string
+          used_in_version: number | null
+          weight: number
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string
+          endpoint?: string | null
+          features: Json
+          id?: string
+          label: number
+          source: string
+          used_in_version?: number | null
+          weight?: number
+        }
+        Update: {
+          category?: string | null
+          created_at?: string
+          endpoint?: string | null
+          features?: Json
+          id?: string
+          label?: number
+          source?: string
+          used_in_version?: number | null
+          weight?: number
         }
         Relationships: []
       }
@@ -7434,6 +7518,35 @@ export type Database = {
       stripe_mark_event_processed: {
         Args: { p_event_id: string; p_event_type: string }
         Returns: boolean
+      }
+      threat_shield_active_model: {
+        Args: never
+        Returns: {
+          accuracy: number
+          bias: number
+          samples_used: number
+          trained_at: string
+          version: number
+          weights: Json
+        }[]
+      }
+      threat_shield_feedback: {
+        Args: { p_decision_id: string; p_is_attack: boolean }
+        Returns: undefined
+      }
+      threat_shield_ml_stats: {
+        Args: never
+        Returns: {
+          active_accuracy: number
+          active_precision: number
+          active_recall: number
+          active_version: number
+          decided_by_gemini: number
+          decided_by_ml: number
+          decided_by_regex: number
+          positive_samples: number
+          total_samples: number
+        }[]
       }
       threat_shield_stats: {
         Args: { window_minutes?: number }
