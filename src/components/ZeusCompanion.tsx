@@ -467,13 +467,35 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   }, []);
 
   useEffect(() => {
-    if (unacknowledged.length > 0 && !open) {
-      const latest = unacknowledged[0] as any;
-      toast.warning(latest.zeus_message || `${zeusName} a un message pour toi`, {
-        duration: 8000,
-        action: { label: 'Voir', onClick: () => setOpen(true) },
-      });
-    }
+    if (unacknowledged.length === 0 || open) return;
+    const latest = unacknowledged[0] as any;
+    const strikeId: string = latest?.id || 'zeus-strike';
+
+    // Persist dismissal locally so closing the toast (X) silences this strike permanently
+    let dismissed: string[] = [];
+    try { dismissed = JSON.parse(localStorage.getItem('zeus-dismissed-strikes') || '[]'); } catch {}
+    if (dismissed.includes(strikeId)) return;
+
+    const markDismissed = () => {
+      try {
+        const cur = JSON.parse(localStorage.getItem('zeus-dismissed-strikes') || '[]');
+        if (!cur.includes(strikeId)) {
+          cur.push(strikeId);
+          localStorage.setItem('zeus-dismissed-strikes', JSON.stringify(cur.slice(-100)));
+        }
+      } catch {}
+    };
+
+    toast.warning(latest.zeus_message || `${zeusName} a un message pour toi`, {
+      id: `zeus-strike-${strikeId}`,
+      duration: 8000,
+      action: {
+        label: 'Voir',
+        onClick: () => { markDismissed(); setOpen(true); },
+      },
+      onDismiss: markDismissed,
+      onAutoClose: markDismissed,
+    });
   }, [unacknowledged.length]);
 
   const startNewConversation = useCallback(() => {
