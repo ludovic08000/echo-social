@@ -5505,6 +5505,51 @@ export type Database = {
         }
         Relationships: []
       }
+      threat_decisions: {
+        Row: {
+          action_taken: string
+          category: string
+          confidence: number
+          created_at: string
+          detector: string
+          endpoint: string
+          id: string
+          ip: string | null
+          payload_hash: string | null
+          reason: string | null
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          action_taken: string
+          category: string
+          confidence: number
+          created_at?: string
+          detector: string
+          endpoint: string
+          id?: string
+          ip?: string | null
+          payload_hash?: string | null
+          reason?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          action_taken?: string
+          category?: string
+          confidence?: number
+          created_at?: string
+          detector?: string
+          endpoint?: string
+          id?: string
+          ip?: string | null
+          payload_hash?: string | null
+          reason?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       tips: {
         Row: {
           amount: number
@@ -7336,6 +7381,7 @@ export type Database = {
       purge_old_audit_logs: { Args: never; Returns: undefined }
       purge_old_crypto_error_logs: { Args: never; Returns: number }
       purge_old_feed_score_tamper_events: { Args: never; Returns: undefined }
+      purge_old_threat_decisions: { Args: never; Returns: undefined }
       push_my_fingerprint_to_peers: { Args: never; Returns: number }
       read_email_batch: {
         Args: { batch_size: number; queue_name: string; vt: number }
@@ -7388,6 +7434,17 @@ export type Database = {
       stripe_mark_event_processed: {
         Args: { p_event_id: string; p_event_type: string }
         Returns: boolean
+      }
+      threat_shield_stats: {
+        Args: { window_minutes?: number }
+        Returns: {
+          banned: number
+          last_block: string
+          logged: number
+          penalized: number
+          top_category: string
+          total: number
+        }[]
       }
       try_consume_backup_pin_attempt: {
         Args: {
