@@ -160,7 +160,6 @@ export function MobileNav() {
           </Link>
 
           <NavItem path="/live" icon={Radio} label="Live" />
-          <NavItem path={`/profile/${user.id}`} icon={User} label="Profil" />
 
           {/* Bouton Menu */}
           <button
