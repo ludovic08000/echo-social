@@ -66,14 +66,13 @@ export default function AIEngine() {
   const { data: realStats = { totalInteractions: 0, healthScore: 100 } } = useQuery({
     queryKey: ['ai-engine-real-stats'],
     queryFn: async () => {
-      const [metricsRes, feedbackRes, incidentsRes] = await Promise.all([
-        supabase.from('ai_metrics_log').select('id', { count: 'exact', head: true }),
+      const [eventsRes, feedbackRes, incidentsRes] = await Promise.all([
+        supabase.from('ai_engine_events' as any).select('id', { count: 'exact', head: true }),
         supabase.from('ai_feedback').select('id', { count: 'exact', head: true }),
         supabase.from('security_incidents').select('id', { count: 'exact', head: true }),
       ]);
-      const totalInteractions = (metricsRes.count || 0) + (feedbackRes.count || 0);
+      const totalInteractions = (eventsRes.count || 0) + (feedbackRes.count || 0);
       const incidentCount = incidentsRes.count || 0;
-      // Health = 100 - (incidents * 2), min 0
       const healthScore = Math.max(0, 100 - incidentCount * 2);
       return { totalInteractions, healthScore };
     },
@@ -291,15 +290,16 @@ function MetricsDashboard({ modules }: { modules: ReturnType<typeof getAIModules
   const { data: metricsStats = { totalCalls: 0, avgLatency: 0, successRate: 100, threats: 0 } } = useQuery({
     queryKey: ['metrics-dashboard-real'],
     queryFn: async () => {
-      const [metricsRes, threatsRes] = await Promise.all([
-        supabase.from('ai_metrics_log').select('metric_type, value').order('created_at', { ascending: false }).limit(500),
+      const [eventsRes, threatsRes] = await Promise.all([
+        supabase.from('ai_engine_events' as any).select('latency_ms, success').order('created_at', { ascending: false }).limit(500),
         supabase.from('ddos_ip_tracker').select('id', { count: 'exact', head: true }).gte('penalty_level', 1),
       ]);
-      const rows = metricsRes.data || [];
+      const rows = (eventsRes.data as any[]) || [];
       const totalCalls = rows.length;
-      const latencies = rows.filter((r: any) => r.metric_type !== 'error' && r.metric_type !== 'threat').map((r: any) => Number(r.value) || 0);
-      const avgLatency = latencies.length > 0 ? latencies.reduce((a: number, b: number) => a + b, 0) / latencies.length : 0;
-      const errors = rows.filter((r: any) => r.metric_type === 'error').length;
+      const avgLatency = totalCalls > 0
+        ? rows.reduce((a, r) => a + (Number(r.latency_ms) || 0), 0) / totalCalls
+        : 0;
+      const errors = rows.filter(r => r.success === false).length;
       const successRate = totalCalls > 0 ? Math.round(((totalCalls - errors) / totalCalls) * 100) : 100;
       return {
         totalCalls,
