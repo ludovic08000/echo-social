@@ -1107,7 +1107,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       <div
         ref={scrollContainerRef}
         onScroll={handleMessagesScroll}
-        className="flex-1 overflow-y-auto overflow-x-visible px-3 py-2 space-y-0.5 relative"
+        className="flex-1 overflow-y-auto overflow-x-visible px-3 py-2 space-y-0.5 relative overscroll-contain touch-pan-y"
       >
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
