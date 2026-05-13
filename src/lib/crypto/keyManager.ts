@@ -207,8 +207,13 @@ export async function saveIdentityKeys(userId: string, keys: IdentityKeyPair): P
     try {
       privateKeyJWK = await exportKeyToJWK(keys.privateKey);
       signingPrivateKeyJWK = await exportKeyToJWK(keys.signingPrivateKey);
-    } catch {
-      return;
+    } catch (err) {
+      // CRITICAL: never silently "succeed" when the private material can't be
+      // exported. Returning here would leave the caller convinced the identity
+      // is persisted — and the next page load would trigger a fresh identity,
+      // breaking E2EE continuity for every peer. Surface the error instead.
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`saveIdentityKeys: failed to export private keys for persistence (${msg})`);
     }
   }
 
