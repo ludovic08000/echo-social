@@ -228,10 +228,16 @@ export async function saveIdentityKeys(userId: string, keys: IdentityKeyPair): P
   });
 
   // Hot RAM cache — survives brief IndexedDB outages on Safari/iOS.
+  // Store the full identity (kx + signing + fingerprint + createdAt) so a
+  // RAM hit can answer without ever touching IndexedDB.
   try {
     memCache.set(userId, {
       identityPrivate: keys.privateKey,
       identityPublic: keys.publicKey,
+      signingPrivate: keys.signingPrivateKey,
+      signingPublic: keys.signingPublicKey,
+      fingerprint: keys.fingerprint,
+      createdAt: keys.createdAt,
     });
   } catch {}
 }
