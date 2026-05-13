@@ -243,6 +243,29 @@ export async function saveIdentityKeys(userId: string, keys: IdentityKeyPair): P
 }
 
 export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair | null> {
+  // RAM-first: avoid an IndexedDB round-trip when the hot cache already holds
+  // a complete identity. This is what makes Safari/iOS survive transient
+  // IndexedDB-closing windows without forcing a recovery flow.
+  try {
+    const cached = memCache.get(userId);
+    if (
+      cached?.identityPrivate &&
+      cached?.identityPublic &&
+      cached?.signingPrivate &&
+      cached?.signingPublic &&
+      cached?.fingerprint
+    ) {
+      return {
+        publicKey: cached.identityPublic,
+        privateKey: cached.identityPrivate,
+        signingPublicKey: cached.signingPublic,
+        signingPrivateKey: cached.signingPrivate,
+        createdAt: cached.createdAt ?? Date.now(),
+        fingerprint: cached.fingerprint,
+      };
+    }
+  } catch {}
+
   const stored = await dbGet<StoredKeyPair & { id: string }>(STORE_KEYS, userId);
   if (!stored) return null;
 
@@ -267,6 +290,10 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
     memCache.set(userId, {
       identityPrivate: result.privateKey,
       identityPublic: result.publicKey,
+      signingPrivate: result.signingPrivateKey,
+      signingPublic: result.signingPublicKey,
+      fingerprint: result.fingerprint,
+      createdAt: result.createdAt,
     });
   } catch {}
 
