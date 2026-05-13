@@ -311,14 +311,28 @@ export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityK
   const existing = await loadIdentityKeys(userId);
   if (existing) return existing;
 
+  // CONTINUITY GUARD #1 — PIN-wrapped keys exist locally.
+  // The user already has an identity, it's just locked. Generating a fresh
+  // one here would break E2EE for every existing peer. Force unlock instead.
   try {
     const { hasWrappedKeys } = await import('./pinWrap');
     const hasWrap = await hasWrappedKeys(userId);
     if (hasWrap) {
-      return await createFreshIdentity(userId, 'pin_wrapped_keys_present_but_not_unlocked');
+      throw new PinUnlockRequiredError(
+        'PIN_UNLOCK_REQUIRED: encrypted local identity present — unlock with PIN before any send/receive.',
+      );
     }
-  } catch {}
+  } catch (err) {
+    if (err instanceof PinUnlockRequiredError) throw err;
+    // dynamic import / IDB failure — fall through, continuity is still
+    // checked against the server below.
+  }
 
+  // CONTINUITY GUARD #2 — server still pins an active identity or backup
+  // for this account. We must NEVER silently rotate to a brand new key —
+  // peers would lose verification, sealed-sender would break, and devices
+  // would be impersonated. Surface the requirement so the UI can drive the
+  // restore / recovery-key / passkey flow.
   try {
     const { supabase } = await import('@/integrations/supabase/client');
     const [{ data: activeKey }, { data: backup }] = await Promise.all([
@@ -327,12 +341,23 @@ export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityK
     ]);
 
     if (activeKey || backup) {
-      return await createFreshIdentity(userId, 'server_continuity_exists_local_keys_missing');
+      throw new PinUnlockRequiredError(
+        'PIN_UNLOCK_REQUIRED: server identity continuity detected — restore via PIN / recovery key / passkey before generating a new identity.',
+      );
     }
-  } catch {
-    return await createFreshIdentity(userId, 'continuity_check_unavailable');
+  } catch (err) {
+    if (err instanceof PinUnlockRequiredError) throw err;
+    // Continuity check unavailable (offline, RLS hiccup): be CONSERVATIVE.
+    // We cannot prove there's no server identity, so refuse to rotate
+    // silently — surface as PinUnlockRequired so the UI can retry once
+    // the network is back instead of permanently breaking E2EE.
+    throw new PinUnlockRequiredError(
+      'PIN_UNLOCK_REQUIRED: continuity check unavailable — refusing to create a new identity without confirmation.',
+    );
   }
 
+  // Truly first-time signup on this account: no local material, no PIN
+  // wrap, no server pin, no backup. Safe to create a fresh identity.
   const newKeys = await generateIdentityKeys();
   await saveIdentityKeys(userId, newKeys);
   return { ...newKeys, isNewIdentity: true };
