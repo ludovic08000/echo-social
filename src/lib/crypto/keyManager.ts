@@ -207,8 +207,13 @@ export async function saveIdentityKeys(userId: string, keys: IdentityKeyPair): P
     try {
       privateKeyJWK = await exportKeyToJWK(keys.privateKey);
       signingPrivateKeyJWK = await exportKeyToJWK(keys.signingPrivateKey);
-    } catch {
-      return;
+    } catch (err) {
+      // CRITICAL: never silently "succeed" when the private material can't be
+      // exported. Returning here would leave the caller convinced the identity
+      // is persisted — and the next page load would trigger a fresh identity,
+      // breaking E2EE continuity for every peer. Surface the error instead.
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`saveIdentityKeys: failed to export private keys for persistence (${msg})`);
     }
   }
 
@@ -223,15 +228,44 @@ export async function saveIdentityKeys(userId: string, keys: IdentityKeyPair): P
   });
 
   // Hot RAM cache — survives brief IndexedDB outages on Safari/iOS.
+  // Store the full identity (kx + signing + fingerprint + createdAt) so a
+  // RAM hit can answer without ever touching IndexedDB.
   try {
     memCache.set(userId, {
       identityPrivate: keys.privateKey,
       identityPublic: keys.publicKey,
+      signingPrivate: keys.signingPrivateKey,
+      signingPublic: keys.signingPublicKey,
+      fingerprint: keys.fingerprint,
+      createdAt: keys.createdAt,
     });
   } catch {}
 }
 
 export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair | null> {
+  // RAM-first: avoid an IndexedDB round-trip when the hot cache already holds
+  // a complete identity. This is what makes Safari/iOS survive transient
+  // IndexedDB-closing windows without forcing a recovery flow.
+  try {
+    const cached = memCache.get(userId);
+    if (
+      cached?.identityPrivate &&
+      cached?.identityPublic &&
+      cached?.signingPrivate &&
+      cached?.signingPublic &&
+      cached?.fingerprint
+    ) {
+      return {
+        publicKey: cached.identityPublic,
+        privateKey: cached.identityPrivate,
+        signingPublicKey: cached.signingPublic,
+        signingPrivateKey: cached.signingPrivate,
+        createdAt: cached.createdAt ?? Date.now(),
+        fingerprint: cached.fingerprint,
+      };
+    }
+  } catch {}
+
   const stored = await dbGet<StoredKeyPair & { id: string }>(STORE_KEYS, userId);
   if (!stored) return null;
 
@@ -256,31 +290,48 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
     memCache.set(userId, {
       identityPrivate: result.privateKey,
       identityPublic: result.publicKey,
+      signingPrivate: result.signingPrivateKey,
+      signingPublic: result.signingPublicKey,
+      fingerprint: result.fingerprint,
+      createdAt: result.createdAt,
     });
   } catch {}
 
   return result;
 }
 
-async function createFreshIdentity(userId: string, reason: string): Promise<IdentityKeyPair & { isNewIdentity?: boolean; recoveredAfterLoss?: boolean }> {
-  console.warn('[KEY_MGR] Local identity unavailable — creating fresh persistent identity so user can continue.', { reason });
-  const newKeys = await generateIdentityKeys();
-  await saveIdentityKeys(userId, newKeys);
-  return { ...newKeys, isNewIdentity: false, recoveredAfterLoss: true };
-}
+// NOTE: the legacy `createFreshIdentity()` helper was removed on purpose.
+// Any "local keys missing" path that previously generated a brand new
+// identity now throws PinUnlockRequiredError so the UI drives a real
+// restore (PIN / recovery key / passkey) instead of silently breaking
+// E2EE continuity for every peer.
 
 export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityKeyPair & { isNewIdentity?: boolean; recoveredAfterLoss?: boolean }> {
   const existing = await loadIdentityKeys(userId);
   if (existing) return existing;
 
+  // CONTINUITY GUARD #1 — PIN-wrapped keys exist locally.
+  // The user already has an identity, it's just locked. Generating a fresh
+  // one here would break E2EE for every existing peer. Force unlock instead.
   try {
     const { hasWrappedKeys } = await import('./pinWrap');
     const hasWrap = await hasWrappedKeys(userId);
     if (hasWrap) {
-      return await createFreshIdentity(userId, 'pin_wrapped_keys_present_but_not_unlocked');
+      throw new PinUnlockRequiredError(
+        'PIN_UNLOCK_REQUIRED: encrypted local identity present — unlock with PIN before any send/receive.',
+      );
     }
-  } catch {}
+  } catch (err) {
+    if (err instanceof PinUnlockRequiredError) throw err;
+    // dynamic import / IDB failure — fall through, continuity is still
+    // checked against the server below.
+  }
 
+  // CONTINUITY GUARD #2 — server still pins an active identity or backup
+  // for this account. We must NEVER silently rotate to a brand new key —
+  // peers would lose verification, sealed-sender would break, and devices
+  // would be impersonated. Surface the requirement so the UI can drive the
+  // restore / recovery-key / passkey flow.
   try {
     const { supabase } = await import('@/integrations/supabase/client');
     const [{ data: activeKey }, { data: backup }] = await Promise.all([
@@ -289,12 +340,23 @@ export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityK
     ]);
 
     if (activeKey || backup) {
-      return await createFreshIdentity(userId, 'server_continuity_exists_local_keys_missing');
+      throw new PinUnlockRequiredError(
+        'PIN_UNLOCK_REQUIRED: server identity continuity detected — restore via PIN / recovery key / passkey before generating a new identity.',
+      );
     }
-  } catch {
-    return await createFreshIdentity(userId, 'continuity_check_unavailable');
+  } catch (err) {
+    if (err instanceof PinUnlockRequiredError) throw err;
+    // Continuity check unavailable (offline, RLS hiccup): be CONSERVATIVE.
+    // We cannot prove there's no server identity, so refuse to rotate
+    // silently — surface as PinUnlockRequired so the UI can retry once
+    // the network is back instead of permanently breaking E2EE.
+    throw new PinUnlockRequiredError(
+      'PIN_UNLOCK_REQUIRED: continuity check unavailable — refusing to create a new identity without confirmation.',
+    );
   }
 
+  // Truly first-time signup on this account: no local material, no PIN
+  // wrap, no server pin, no backup. Safe to create a fresh identity.
   const newKeys = await generateIdentityKeys();
   await saveIdentityKeys(userId, newKeys);
   return { ...newKeys, isNewIdentity: true };
