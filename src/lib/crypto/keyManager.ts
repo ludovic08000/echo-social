@@ -300,12 +300,11 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
   return result;
 }
 
-async function createFreshIdentity(userId: string, reason: string): Promise<IdentityKeyPair & { isNewIdentity?: boolean; recoveredAfterLoss?: boolean }> {
-  console.warn('[KEY_MGR] Local identity unavailable — creating fresh persistent identity so user can continue.', { reason });
-  const newKeys = await generateIdentityKeys();
-  await saveIdentityKeys(userId, newKeys);
-  return { ...newKeys, isNewIdentity: false, recoveredAfterLoss: true };
-}
+// NOTE: the legacy `createFreshIdentity()` helper was removed on purpose.
+// Any "local keys missing" path that previously generated a brand new
+// identity now throws PinUnlockRequiredError so the UI drives a real
+// restore (PIN / recovery key / passkey) instead of silently breaking
+// E2EE continuity for every peer.
 
 export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityKeyPair & { isNewIdentity?: boolean; recoveredAfterLoss?: boolean }> {
   const existing = await loadIdentityKeys(userId);
