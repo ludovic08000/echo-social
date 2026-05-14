@@ -21,9 +21,10 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
 import { unwrapPlaintextForDevice } from './deviceWrap';
-import { requestDeviceCopyRetry } from './deviceCopyRetryRequest';
+import { requestMessageRefanout } from './deviceCopyRetryRequest';
 import {
   fetchPrekeyBundleForDevice,
+  invalidateDeviceBundleCache,
   peekDeviceSignedPrekey,
   x3dhInitiate,
   x3dhRespond,
@@ -128,8 +129,14 @@ async function x3dhWrapForDevice(
   recipientUserId: string,
   recipientDeviceId: string,
 ): Promise<string | null> {
-  try {
-    const bundle = await fetchPrekeyBundleForDevice(recipientUserId, recipientDeviceId);
+  const maxAttempts = 2;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+    const bundle = await fetchPrekeyBundleForDevice(
+      recipientUserId,
+      recipientDeviceId,
+      { forceRefresh: attempt > 0, retryOnInvalidSignature: true },
+    );
     if (!bundle) return null;
 
     const myKeys = await getOrCreateIdentityKeys(senderUserId);
@@ -174,11 +181,30 @@ async function x3dhWrapForDevice(
     }
 
     return parts.join('.');
-  } catch {
-    // X3DH wrap failed. Caller may try an authenticated ratchet path, but new
-    // sends must not downgrade to unsigned deviceWrap.
-    return null;
+    } catch (e) {
+      if (attempt === 0) {
+        invalidateDeviceBundleCache(recipientUserId, recipientDeviceId, 'x3dh_wrap_failed');
+        logCryptoError({
+          severity: 'warning',
+          context: 'fanout',
+          errorCode: 'E_REFETCH_BUNDLE_RETRY',
+          errorMessage: 'Retrying X3DH once after device bundle/session failure',
+          peerUserId: recipientUserId,
+          peerDeviceId: recipientDeviceId,
+          metadata: { stage: 'x3dh_wrap', senderUserId },
+        });
+        continue;
+      }
+      logCryptoException('fanout', e, {
+        severity: 'warning',
+        peerUserId: recipientUserId,
+        peerDeviceId: recipientDeviceId,
+        metadata: { stage: 'x3dh_wrap_retry_exhausted', senderUserId },
+      });
+      return null;
+    }
   }
+  return null;
 }
 
 async function x3dhUnwrapForDevice(
@@ -572,7 +598,7 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       });
       if (!allCopies || allCopies.length === 0) {
         if (expectedSenderUserId) {
-          void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
+          void requestMessageRefanout({ messageId, senderUserId: expectedSenderUserId });
         }
         return null;
       }
@@ -601,7 +627,7 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
         });
       }
       if (rows.length === 0) {
-        void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
+        void requestMessageRefanout({ messageId, senderUserId: expectedSenderUserId });
         return null;
       }
     }
@@ -615,7 +641,7 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       if (pt !== null) return pt;
     }
     if (expectedSenderUserId) {
-      void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
+      void requestMessageRefanout({ messageId, senderUserId: expectedSenderUserId });
     }
     return null;
   } catch (e) {
@@ -625,7 +651,7 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       metadata: { messageId, stage: 'tryReadDeviceCopy' },
     });
     if (expectedSenderUserId) {
-      void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
+      void requestMessageRefanout({ messageId, senderUserId: expectedSenderUserId });
     }
     return null;
   }

@@ -19,9 +19,11 @@ import { hasMediaKey, parseMediaMessage, buildMediaMessageBody } from '@/lib/cry
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import {
   loadPlaintextForCiphertext,
+  rememberPlaintextForRefanout,
   savePlaintextForCiphertext,
 } from '@/lib/crypto/plaintextStore';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
+import { getMessageRefanoutStatus } from '@/lib/messaging/deviceCopyRetryRequest';
 import { routeIncoming } from '@/e2ee-session';
 import { supabase } from '@/integrations/supabase/client';
 import type { DecryptResult } from '@/hooks/useE2EE';
@@ -33,6 +35,8 @@ export interface DecryptionOutcome {
   mediaKeyB64: string | null;
   /** True when the parsed payload asks the UI to render nothing. */
   hidden: boolean;
+  /** True for terminal recovery messages; never persist as plaintext. */
+  terminal?: boolean;
 }
 
 export function looksEncrypted(body: string): boolean {
@@ -160,10 +164,12 @@ export function buildOutcomeFromText(text: string): DecryptionOutcome {
 }
 
 /** Persist plaintext in IndexedDB so cold-starts don't re-decrypt. */
-export function persistOutcome(body: string, outcome: DecryptionOutcome): string {
+export function persistOutcome(body: string, outcome: DecryptionOutcome, messageId?: string): string {
   const persisted = outcome.mediaKeyB64
     ? buildMediaMessageBody(outcome.text, outcome.mediaKeyB64)
     : outcome.text;
+  void rememberPlaintextForRefanout(persisted, { messageId, ciphertextBody: body });
+  if (outcome.terminal) return persisted;
   void savePlaintextForCiphertext(body, persisted);
   return persisted;
 }
@@ -273,6 +279,19 @@ export async function resolvePlaintext(opts: {
       }
 
       // 4) Nothing produced plaintext. Mark negative + stay silent.
+      if (messageId && senderId) {
+        const status = await getMessageRefanoutStatus({ messageId, senderUserId: senderId });
+        if (status.terminal) {
+          const outcome: DecryptionOutcome = {
+            text: 'message non récupérable sur cet appareil',
+            mediaKeyB64: null,
+            hidden: false,
+            terminal: true,
+          };
+          cache.set(key, outcome);
+          return outcome;
+        }
+      }
       negCache.set(key, Date.now());
       return null;
     })();

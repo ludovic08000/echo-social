@@ -17,7 +17,7 @@ import { useIncomingCall, endActiveCall } from "@/hooks/useIncomingCall";
 import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { useCall } from "@/hooks/useCall";
 import { CallOverlay } from "@/components/CallOverlay";
-import { Suspense, lazy, useCallback, useRef } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef } from "react";
 import { useAccountKeySync } from "@/hooks/useAccountKeySync";
 import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
 import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
@@ -180,6 +180,14 @@ function AccountKeySyncRunner() {
 
 function AppContent() {
   useSettingsInit();
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ message?: string }>).detail;
+      toast.success(detail?.message || 'appareil resynchronisé');
+    };
+    window.addEventListener('forsure-device-resynced', handler);
+    return () => window.removeEventListener('forsure-device-resynced', handler);
+  }, []);
   return (
       <AuthProvider>
         <ParentalGateProvider>

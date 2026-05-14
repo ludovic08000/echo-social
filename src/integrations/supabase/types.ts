@@ -1561,6 +1561,7 @@ export type Database = {
           expires_at: string
           id: string
           is_active: boolean
+          keys_epoch: number
           public_key: string
           signature: string
           spk_id: number
@@ -1572,6 +1573,7 @@ export type Database = {
           expires_at?: string
           id?: string
           is_active?: boolean
+          keys_epoch?: number
           public_key: string
           signature: string
           spk_id: number
@@ -1583,6 +1585,7 @@ export type Database = {
           expires_at?: string
           id?: string
           is_active?: boolean
+          keys_epoch?: number
           public_key?: string
           signature?: string
           spk_id?: number
@@ -6023,6 +6026,10 @@ export type Database = {
         Args: { p_device_id: string; p_user_id: string }
         Returns: number
       }
+      bump_device_keys_epoch: {
+        Args: { p_device_id: string; p_user_id: string }
+        Returns: number
+      }
       create_device_link_request: {
         Args: {
           p_requester_device_id: string
@@ -6136,6 +6143,7 @@ export type Database = {
         Args: { p_device_id: string; p_user_id: string }
         Returns: {
           device_public_key: string
+          keys_epoch: number
           public_key: string
           signature: string
           spk_id: number
@@ -6384,6 +6392,14 @@ export type Database = {
         Returns: undefined
       }
       request_device_copy_retry: {
+        Args: {
+          p_message_id: string
+          p_requester_device_id: string
+          p_sender_user_id: string
+        }
+        Returns: string
+      }
+      request_message_refanout: {
         Args: {
           p_message_id: string
           p_requester_device_id: string

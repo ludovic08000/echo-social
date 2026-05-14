@@ -137,8 +137,8 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
         if (next.mediaKeyB64 && messageId) {
           setMediaKey(messageId, next.mediaKeyB64, isVideoMediaLabel(next.text));
         }
-        if (!next.hidden) {
-          const persisted = persistOutcome(body, next);
+        if (!next.hidden && !next.terminal) {
+          const persisted = persistOutcome(body, next, messageId);
           onDecryptedRef.current?.(persisted);
         }
       })

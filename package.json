@@ -10,6 +10,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:crypto": "vitest run src/lib/crypto/__tests__ src/e2ee-session/__tests__",
+    "test:messaging": "vitest run src/lib/messaging/__tests__ src/components/messages/__tests__",
+    "test:multi-device": "vitest run src/lib/crypto/__tests__/multiDeviceEnvelope.test.ts src/lib/crypto/__tests__/multiDeviceIntegration.test.ts src/lib/crypto/__tests__/multiDeviceFanoutOutOfOrder.test.ts src/lib/crypto/__tests__/multiDeviceAdversarial.test.ts src/lib/crypto/__tests__/multiDeviceRecovery.test.ts src/lib/crypto/__tests__/deviceRatchet.test.ts src/lib/messaging/__tests__/messageRefanout.test.ts src/lib/messaging/__tests__/iosColdStartFlow.test.ts src/lib/messaging/__tests__/iosKeyRotationQueueRebinding.test.ts",
     "test:watch": "vitest"
   },
   "dependencies": {

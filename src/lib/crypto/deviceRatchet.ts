@@ -504,17 +504,18 @@ async function decryptV4WithStored(
   if (Number.isNaN(Ns) || Number.isNaN(PN)) return null;
 
   let session = initialSession;
-  const iv = new Uint8Array(base64ToBuffer(ivB64));
-  const ct = base64ToBuffer(ctB64);
-
-  // 1) Skipped-key fast path
-  const skipped = await trySkippedKeys(session, dhPubB64, Ns, iv, ct);
-  if (skipped) {
-    await saveSession(key, skipped.updated);
-    return skipped.pt;
-  }
 
   try {
+    const iv = new Uint8Array(base64ToBuffer(ivB64));
+    const ct = base64ToBuffer(ctB64);
+
+    // 1) Skipped-key fast path
+    const skipped = await trySkippedKeys(session, dhPubB64, Ns, iv, ct);
+    if (skipped) {
+      await saveSession(key, skipped.updated);
+      return skipped.pt;
+    }
+
     // 2) DH-ratchet step if peer rotated their key
     if (session.dhrPubB64 !== dhPubB64) {
       session = await skipMessageKeys(session, PN);
@@ -652,6 +653,29 @@ export async function invalidateDeviceSession(
   try {
     await runTxOn('device-sessions', STORE, 'readwrite', (store) => {
       store.delete(compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId));
+    });
+  } catch {
+    // non-fatal
+  }
+}
+
+/**
+ * Drop every session owned by one local device. Used only when that device's
+ * local X3DH prekey private material was lost and the device is being
+ * resynchronised with a fresh SPK/OPK set.
+ */
+export async function invalidateLocalDeviceSessions(
+  myUserId: string,
+  myDeviceId: string,
+): Promise<void> {
+  try {
+    await runTxOn('device-sessions', STORE, 'readwrite', async (store) => {
+      const keys = await reqToPromise<IDBValidKey[]>(store.getAllKeys());
+      const prefix = `${myUserId}::${myDeviceId}::`;
+      for (const key of keys) {
+        const raw = String(key);
+        if (raw.startsWith(prefix)) store.delete(key);
+      }
     });
   } catch {
     // non-fatal

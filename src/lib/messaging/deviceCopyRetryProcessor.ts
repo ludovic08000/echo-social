@@ -1,6 +1,9 @@
 import { supabase } from '@/integrations/supabase/client';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
-import { loadPlaintext, loadPlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
+import {
+  loadVolatilePlaintext,
+  loadVolatilePlaintextForCiphertext,
+} from '@/lib/crypto/plaintextStore';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
 import { encryptPlaintextForDeviceTarget } from './multiDeviceFanout';
 
@@ -73,8 +76,8 @@ export async function processDeviceCopyRetryRequests(limit = 20): Promise<RetryP
     for (const row of rows) {
       try {
         const plaintext =
-          (await loadPlaintext(row.message_id)) ||
-          (row.message_body ? await loadPlaintextForCiphertext(row.message_body) : null);
+          (await loadVolatilePlaintext(row.message_id)) ||
+          (row.message_body ? await loadVolatilePlaintextForCiphertext(row.message_body) : null);
 
         if (!plaintext) {
           result.failed += 1;

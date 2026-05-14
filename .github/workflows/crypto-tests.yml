@@ -1,4 +1,4 @@
-name: Crypto Test Suite
+name: Crypto and Multi-Device Test Suite
 
 on:
   push:
@@ -6,9 +6,12 @@ on:
     paths:
       - 'src/lib/crypto/**'
       - 'src/lib/messaging/**'
+      - 'src/e2ee-session/**'
+      - 'src/components/messages/**'
       - 'src/test/**'
       - 'package.json'
       - 'bun.lock'
+      - 'package-lock.json'
       - 'vitest.config.ts'
       - '.github/workflows/crypto-tests.yml'
   pull_request:
@@ -17,7 +20,7 @@ on:
 
 jobs:
   test:
-    name: Run crypto test suite
+    name: Run crypto and multi-device test suite
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -33,16 +36,27 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Run permanent multi-device regression suite
+        id: multi_device_tests
+        run: |
+          mkdir -p test-results
+          bun run test:multi-device -- \
+            --reporter=default \
+            --reporter=junit \
+            --outputFile=test-results/multi-device-junit.xml 2>&1 | tee test-results/multi-device-output.log
+
       - name: Run crypto + messaging test suite
         id: tests
         run: |
           mkdir -p test-results
-          bun run vitest run \
-            src/lib/crypto/__tests__ \
-            src/lib/messaging/__tests__ \
+          bun run test:crypto -- \
             --reporter=default \
             --reporter=junit \
-            --outputFile=test-results/junit.xml 2>&1 | tee test-results/output.log
+            --outputFile=test-results/crypto-junit.xml 2>&1 | tee test-results/crypto-output.log
+          bun run test:messaging -- \
+            --reporter=default \
+            --reporter=junit \
+            --outputFile=test-results/messaging-junit.xml 2>&1 | tee test-results/messaging-output.log
 
       - name: Upload test artifacts on failure
         if: failure()

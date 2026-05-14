@@ -130,4 +130,16 @@ describe('device-pair ratchet envelopes', () => {
     expect('x3dh3.foo'.startsWith('x3dh4.')).toBe(false);
     expect('x3dh4.foo'.startsWith('x3dh3.')).toBe(false);
   });
+
+  it('v5 recovery metadata is not mistaken for a message envelope', () => {
+    const backupV5 = JSON.stringify({
+      version: 5,
+      encrypted_blob: 'ciphertext',
+      iv: 'iv',
+      salt: 'salt',
+    });
+    expect(parse(backupV5)).toBeNull();
+    expect(backupV5.startsWith('x3dh3.')).toBe(false);
+    expect(backupV5.startsWith('x3dh4.')).toBe(false);
+  });
 });

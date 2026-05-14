@@ -19,6 +19,19 @@ const DEVICE_KEY_ID = 'plaintext-cache-key-v1';
 
 let cachedDeviceKey: CryptoKey | null = null;
 let cachedKeyPromise: Promise<CryptoKey> | null = null;
+const VOLATILE_CACHE_CAP = 500;
+const volatilePlaintexts = new Map<string, string>();
+
+function setVolatile(id: string, plaintext: string): void {
+  if (!id || !plaintext) return;
+  if (volatilePlaintexts.has(id)) volatilePlaintexts.delete(id);
+  volatilePlaintexts.set(id, plaintext);
+  while (volatilePlaintexts.size > VOLATILE_CACHE_CAP) {
+    const oldest = volatilePlaintexts.keys().next().value;
+    if (oldest === undefined) break;
+    volatilePlaintexts.delete(oldest);
+  }
+}
 
 async function getOrCreateDeviceKey(): Promise<CryptoKey> {
   if (cachedDeviceKey) return cachedDeviceKey;
@@ -73,6 +86,25 @@ function bufferToHex(buffer: ArrayBuffer): string {
 async function toCiphertextLookupKey(ciphertextBody: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(ciphertextBody));
   return `cipher:${bufferToHex(digest)}`;
+}
+
+export async function rememberPlaintextForRefanout(
+  plaintext: string,
+  opts: { messageId?: string; ciphertextBody?: string },
+): Promise<void> {
+  if (!plaintext) return;
+  if (opts.messageId) setVolatile(`msg:${opts.messageId}`, plaintext);
+  if (opts.ciphertextBody) setVolatile(await toCiphertextLookupKey(opts.ciphertextBody), plaintext);
+}
+
+export async function loadVolatilePlaintext(messageId: string): Promise<string | null> {
+  if (!messageId) return null;
+  return volatilePlaintexts.get(`msg:${messageId}`) ?? null;
+}
+
+export async function loadVolatilePlaintextForCiphertext(ciphertextBody: string): Promise<string | null> {
+  if (!ciphertextBody) return null;
+  return volatilePlaintexts.get(await toCiphertextLookupKey(ciphertextBody)) ?? null;
 }
 
 async function saveEntry(id: string, plaintext: string): Promise<void> {
@@ -206,6 +238,7 @@ export async function wipePlaintextStore(): Promise<void> {
       stores[STORE_MESSAGES].clear();
       stores[STORE_KEYS].clear();
     });
+    volatilePlaintexts.clear();
     cachedDeviceKey = null;
     cachedKeyPromise = null;
   } catch (e) {

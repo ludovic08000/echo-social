@@ -113,23 +113,29 @@ if (typeof window !== 'undefined') {
 
 // ─── IndexedDB helpers ───
 
-function dbGet<T>(storeName: string, key: string): Promise<T | undefined> {
-  return runTxOn('e2ee', storeName, 'readonly', (store) =>
+const E2EE_KEYS_DB = 'e2ee' as const;
+
+function txGet<T>(storeName: string, key: string): Promise<T | undefined> {
+  return runTxOn(E2EE_KEYS_DB, storeName, 'readonly', (store) =>
     reqToPromise<T | undefined>(store.get(key)),
   );
 }
 
-function dbPut<T>(storeName: string, value: T): Promise<void> {
-  return runTxOn('e2ee', storeName, 'readwrite', (store) => {
+function txPut<T>(storeName: string, value: T): Promise<void> {
+  return runTxOn(E2EE_KEYS_DB, storeName, 'readwrite', (store) => {
     store.put(value);
   });
 }
 
-function dbDelete(storeName: string, key: string): Promise<void> {
-  return runTxOn('e2ee', storeName, 'readwrite', (store) => {
+function txDelete(storeName: string, key: string): Promise<void> {
+  return runTxOn(E2EE_KEYS_DB, storeName, 'readwrite', (store) => {
     store.delete(key);
   });
 }
+
+const dbGet = txGet;
+const dbPut = txPut;
+const dbDelete = txDelete;
 
 // ─── Fingerprint (safety numbers) ───
 
@@ -702,7 +708,7 @@ export async function hasRawIdentityKeys(userId: string): Promise<boolean> {
 
 /** Wipe all keys (logout / account deletion) */
 export async function wipeAllKeys(): Promise<void> {
-  await runTxOn('e2ee', [STORE_KEYS, STORE_SESSION, STORE_PREKEYS], 'readwrite', (stores) => {
+  await runTxOn(E2EE_KEYS_DB, [STORE_KEYS, STORE_SESSION, STORE_PREKEYS], 'readwrite', (stores) => {
     stores[STORE_KEYS].clear();
     stores[STORE_SESSION].clear();
     stores[STORE_PREKEYS].clear();
@@ -716,8 +722,8 @@ export async function wipeAllKeys(): Promise<void> {
  */
 export async function wipeSessionKeys(userId?: string): Promise<void> {
   try {
-    await runTxOn('e2ee', STORE_SESSION, 'readwrite', (store) => {
-      store.clear();
+    await runTxOn(E2EE_KEYS_DB, [STORE_SESSION], 'readwrite', (stores) => {
+      stores[STORE_SESSION].clear();
     });
   } catch (e) {
     console.warn('[KEY_MGR] Failed to clear session keys:', e);
@@ -737,8 +743,8 @@ export async function wipeSessionKeys(userId?: string): Promise<void> {
 /** Export all raw session key records from IndexedDB (for PIN wrapping) */
 export async function exportAllSessionKeys(): Promise<StoredSessionKey[]> {
   try {
-    return await runTxOn('e2ee', STORE_SESSION, 'readonly', (store) =>
-      reqToPromise<StoredSessionKey[]>(store.getAll()),
+    return await runTxOn(E2EE_KEYS_DB, [STORE_SESSION], 'readonly', (stores) =>
+      reqToPromise<StoredSessionKey[]>(stores[STORE_SESSION].getAll()),
     );
   } catch {
     return [];
@@ -748,7 +754,8 @@ export async function exportAllSessionKeys(): Promise<StoredSessionKey[]> {
 /** Import raw session key records into IndexedDB (from PIN unwrap) */
 export async function importAllSessionKeys(records: StoredSessionKey[]): Promise<void> {
   if (!records.length) return;
-  await runTxOn('e2ee', STORE_SESSION, 'readwrite', (store) => {
+  await runTxOn(E2EE_KEYS_DB, [STORE_SESSION], 'readwrite', (stores) => {
+    const store = stores[STORE_SESSION];
     for (const r of records) store.put(r);
   });
   console.log(`[KEY_MGR] ${records.length} session keys restored`);

@@ -135,6 +135,13 @@ class MessageQueueManager {
   /** SECURITY: Plaintext stored ONLY in volatile memory, never in IndexedDB */
   private volatilePlaintext = new Map<string, string>();
   private legacyPlaintextScrubbed = false;
+  /**
+   * One-shot guard used by resumeAll(): when plaintext is still in RAM, a
+   * queued ciphertext may have been bound to an older device identity. The
+   * next processor pass must drop that ciphertext and encrypt again with the
+   * currently registered handlers. Manual retry does not set this flag.
+   */
+  private forceReencrypt = new Set<string>();
   /** Debounce resumeForConversation to prevent tight loops on iOS where
    *  React re-renders cause repeated resume calls before retry timers fire. */
   private lastResumeAt = new Map<string, number>();
@@ -341,7 +348,8 @@ class MessageQueueManager {
   }
 
   /** Process a single message through the state machine */
-  private async processMessage(msg: OutboundMessage): Promise<void> {
+  private async processMessage(input: OutboundMessage): Promise<void> {
+    let msg = input;
     if (this.processing.has(msg.localId) || this.processingConversations.has(msg.conversationId)) {
       void this.queueConversationDrain(msg.conversationId);
       return;
@@ -351,6 +359,25 @@ class MessageQueueManager {
     this.clearRetryTimer(msg.localId);
 
     try {
+      if (await this.hasOlderRunnableMessage(msg)) {
+        void this.queueConversationDrain(msg.conversationId);
+        return;
+      }
+
+      const latest = await this.dbGet(msg.localId);
+      if (!latest || latest.status === 'sent') return;
+      msg = latest;
+
+      if (this.forceReencrypt.has(msg.localId)) {
+        this.forceReencrypt.delete(msg.localId);
+        if (this.volatilePlaintext.has(msg.localId)) {
+          msg.encryptedBody = null;
+          msg.status = 'pending_local';
+          msg.updatedAt = Date.now();
+          await this.dbPut(msg);
+        }
+      }
+
       // Step 1: Encrypt
       if (!msg.encryptedBody) {
         await this.updateStatus(msg, 'encrypting');
@@ -492,6 +519,16 @@ class MessageQueueManager {
       }
 
       // Step 2: Send encrypted payload
+      if (this.forceReencrypt.has(msg.localId) && this.volatilePlaintext.has(msg.localId)) {
+        this.forceReencrypt.delete(msg.localId);
+        msg.encryptedBody = null;
+        msg.status = 'pending_local';
+        msg.updatedAt = Date.now();
+        await this.dbPut(msg);
+        void this.queueConversationDrain(msg.conversationId);
+        return;
+      }
+
       // CRITICAL FIX: Hydrate msg.plaintext from volatile memory BEFORE sending.
       // The send handler needs plaintext to cache it for the sender's own display
       // (Double Ratchet can't decrypt own messages — Signal design).
@@ -522,6 +559,7 @@ class MessageQueueManager {
         msg.status = 'sent';
         msg.updatedAt = Date.now();
         this.clearRetryTimer(msg.localId);
+        this.forceReencrypt.delete(msg.localId);
         console.log('[SEND] backend success', msg.localId, serverId);
         traceQueue(msg, 'status:sent', { serverId });
 
@@ -541,7 +579,9 @@ class MessageQueueManager {
         }
 
         // Remove from queue immediately — realtime subscription handles display
-        this.dbDelete(msg.localId).catch(() => {});
+        try {
+          await this.dbDelete(msg.localId);
+        } catch {}
 
         this.notifyListeners(msg.conversationId);
       } catch (err) {
@@ -573,6 +613,23 @@ class MessageQueueManager {
       this.processingConversations.delete(msg.conversationId);
       void this.queueConversationDrain(msg.conversationId);
     }
+  }
+
+  private async hasOlderRunnableMessage(msg: OutboundMessage): Promise<boolean> {
+    const queued = await this.dbGetByConversation(msg.conversationId);
+    return queued.some((candidate) => {
+      if (candidate.localId === msg.localId) return false;
+      if (
+        candidate.status !== 'pending_local' &&
+        candidate.status !== 'waiting_secure_channel' &&
+        candidate.status !== 'retry_pending'
+      ) {
+        return false;
+      }
+      if (!this.volatilePlaintext.has(candidate.localId) && !candidate.encryptedBody) return false;
+      if (candidate.createdAt < msg.createdAt) return true;
+      return candidate.createdAt === msg.createdAt && candidate.localId.localeCompare(msg.localId) < 0;
+    });
   }
 
   private async queueConversationDrain(conversationId: string): Promise<void> {
@@ -668,6 +725,7 @@ class MessageQueueManager {
   /** Retry a failed message manually */
   async retryMessage(localId: string): Promise<void> {
     this.clearRetryTimer(localId);
+    this.forceReencrypt.delete(localId);
     const all = await this.dbGetAll();
     const msg = all.find(m => m.localId === localId);
     if (!msg) return;
@@ -691,14 +749,17 @@ class MessageQueueManager {
       );
 
       for (const msg of pending) {
+        this.clearRetryTimer(msg.localId);
         // Only resume if plaintext is still in volatile memory
         if (this.volatilePlaintext.has(msg.localId)) {
+          this.forceReencrypt.add(msg.localId);
           msg.status = 'pending_local';
           msg.encryptedBody = null;
           await this.dbPut(msg);
           this.processMessage(msg);
         } else if (msg.encryptedBody) {
           // Already encrypted, just needs sending
+          this.forceReencrypt.delete(msg.localId);
           msg.status = 'pending_local';
           await this.dbPut(msg);
           this.processMessage(msg);
@@ -743,6 +804,9 @@ class MessageQueueManager {
         if (this.processing.has(msg.localId)) continue;
 
         if (this.volatilePlaintext.has(msg.localId) || msg.encryptedBody) {
+          if (options.forceReady && this.volatilePlaintext.has(msg.localId) && msg.encryptedBody) {
+            continue;
+          }
           msg.encryptedBody = msg.encryptedBody || null;
           msg.status = 'pending_local';
           await this.dbPut(msg);
@@ -926,6 +990,7 @@ class MessageQueueManager {
   /** Remove a message from the queue (user cancels failed message) */
   async removeMessage(localId: string): Promise<void> {
     this.clearRetryTimer(localId);
+    this.forceReencrypt.delete(localId);
     const existing = await this.dbGet(localId).catch(() => undefined);
     if (existing) {
       traceQueue(existing, 'remove:user', { reason: 'user_cancel', lastStatus: existing.status });
