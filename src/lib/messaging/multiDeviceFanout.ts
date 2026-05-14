@@ -406,7 +406,12 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
       dev.user_id, dev.device_id,
       input.plaintext,
     );
-    if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V4)) {
+    if (
+      encrypted &&
+      !encrypted.startsWith(RATCHET_PREFIX_V5) &&
+      !encrypted.startsWith(RATCHET_PREFIX_V4)
+    ) {
+      // Drop legacy v3 envelopes — accept v4 (DR) and v5 (DR + AAD) only.
       encrypted = null;
     }
 
