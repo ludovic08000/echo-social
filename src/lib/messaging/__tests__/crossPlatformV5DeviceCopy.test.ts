@@ -39,7 +39,7 @@ vi.mock('@/integrations/supabase/client', () => ({
     from: () => ({
       select: () => ({
         eq: () => ({ eq: () => ({ maybeSingle: () => {
-          x3dhUnwrapForDeviceFlag.called = true;
+          mocks.x3dhUnwrapForDeviceFlag.called = true;
           return Promise.resolve({ data: null });
         } }) }),
       }),
