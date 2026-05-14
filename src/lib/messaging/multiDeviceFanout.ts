@@ -601,8 +601,19 @@ async function tryDecryptCopy(
 ): Promise<string | null> {
   try {
 
-    // Path 0: cached device-pair ratchet (v3 legacy KDF chain or v4 Double Ratchet).
+    // Path 0: cached device-pair ratchet — v3 (legacy KDF chain),
+    // v4 (Double Ratchet, no AAD) and **v5** (Double Ratchet + AAD).
+    //
+    // Bug history: this branch used to only check V3/V4 prefixes. The sender
+    // emits V5 envelopes (`x3dh5.`) for every device-pair message, so V5
+    // device-copies fell through every decoder and the recipient was stuck
+    // displaying ciphertext. This was the root cause of the cross-platform
+    // (Windows ↔ iOS) "message stays encrypted" symptom: same-platform pairs
+    // often had a conversation-level ratchet session as a side path, while
+    // first-contact cross-platform pairs depended exclusively on the device
+    // copy path — which did not recognise V5.
     if (
+      row.encrypted_body.startsWith(RATCHET_PREFIX_V5) ||
       row.encrypted_body.startsWith(RATCHET_PREFIX_V4) ||
       row.encrypted_body.startsWith(RATCHET_PREFIX_V3)
     ) {
