@@ -11,14 +11,16 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// --- mocks must be declared before importing the module under test ---
-
-const ratchetDecryptWithSession = vi.fn();
-const x3dhUnwrapForDeviceFlag = { called: false };
+// Hoisted so the vi.mock factories below can reference these handles safely.
+const mocks = vi.hoisted(() => ({
+  ratchetDecryptWithSession: vi.fn(),
+  x3dhUnwrapForDeviceFlag: { called: false },
+}));
+const { ratchetDecryptWithSession, x3dhUnwrapForDeviceFlag } = mocks;
 
 vi.mock('@/lib/crypto/deviceRatchet', () => ({
   ratchetEncrypt: vi.fn(),
-  ratchetDecryptWithSession,
+  ratchetDecryptWithSession: mocks.ratchetDecryptWithSession,
   establishDeviceSession: vi.fn(),
   getSessionPeerSpkId: vi.fn(),
   invalidateDeviceSession: vi.fn(),
