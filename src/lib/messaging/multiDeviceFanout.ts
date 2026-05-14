@@ -263,7 +263,13 @@ export async function encryptPlaintextForDeviceTarget(
       input.recipientDeviceId,
       input.plaintext,
     );
-    if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V4)) {
+    if (
+      encrypted &&
+      !encrypted.startsWith(RATCHET_PREFIX_V5) &&
+      !encrypted.startsWith(RATCHET_PREFIX_V4)
+    ) {
+      // Drop legacy v3 envelopes — force fresh X3DH so new traffic stays on
+      // Double Ratchet (v4) or DR + AAD (v5).
       encrypted = null;
     }
   } catch (e) {
