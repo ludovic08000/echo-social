@@ -4918,6 +4918,45 @@ export type Database = {
         }
         Relationships: []
       }
+      security_auto_mitigations: {
+        Row: {
+          action_result: Json | null
+          autonomy_level: number | null
+          confidence_score: number | null
+          created_at: string
+          id: string
+          incident_id: string | null
+          mitigation_type: string
+          reason: string
+          severity: string | null
+          source_ip: string | null
+        }
+        Insert: {
+          action_result?: Json | null
+          autonomy_level?: number | null
+          confidence_score?: number | null
+          created_at?: string
+          id?: string
+          incident_id?: string | null
+          mitigation_type: string
+          reason: string
+          severity?: string | null
+          source_ip?: string | null
+        }
+        Update: {
+          action_result?: Json | null
+          autonomy_level?: number | null
+          confidence_score?: number | null
+          created_at?: string
+          id?: string
+          incident_id?: string | null
+          mitigation_type?: string
+          reason?: string
+          severity?: string | null
+          source_ip?: string | null
+        }
+        Relationships: []
+      }
       security_incidents: {
         Row: {
           ai_analysis: string | null
@@ -6935,6 +6974,7 @@ export type Database = {
           total_calls: number
         }[]
       }
+      apply_security_auto_mitigations: { Args: never; Returns: Json }
       approve_device_link_request: {
         Args: {
           p_approver_device_id: string
@@ -7515,6 +7555,7 @@ export type Database = {
         Args: { p_fingerprints: string[]; p_platform?: string }
         Returns: string
       }
+      security_monitor_cron_tick: { Args: never; Returns: undefined }
       stripe_mark_event_processed: {
         Args: { p_event_id: string; p_event_type: string }
         Returns: boolean
