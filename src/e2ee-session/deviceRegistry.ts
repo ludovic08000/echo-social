@@ -9,7 +9,10 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
 import { fetchTrustedDeviceList } from '@/lib/crypto/signedDeviceList';
+import { peekDeviceSignedPrekey } from '@/lib/crypto/x3dh';
 import type { DeviceDescriptor, UserId, DeviceId } from './types';
+
+const MAX_DEVICE_STALE_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 
 /** Stable device id of the current installation. Persisted in Keychain on iOS. */
 export function selfDeviceId(): DeviceId {
@@ -23,6 +26,51 @@ export function selfDeviceId(): DeviceId {
  */
 export function isSelfDeviceIdTemporary(): boolean {
   return isDeviceIdTemporary();
+}
+
+function normalizeLastSeen(raw?: string): number | undefined {
+  if (!raw) return undefined;
+  const ts = new Date(raw).getTime();
+  return Number.isFinite(ts) ? ts : undefined;
+}
+
+function isDeviceTooOld(lastSeen?: number): boolean {
+  if (!lastSeen) return false;
+  return (Date.now() - lastSeen) > MAX_DEVICE_STALE_MS;
+}
+
+async function hygieneFilterDevices(devices: DeviceDescriptor[]): Promise<DeviceDescriptor[]> {
+  const deduped = new Map<string, DeviceDescriptor>();
+
+  for (const device of devices) {
+    if (!device.deviceId || !device.devicePublicKey) continue;
+
+    const previous = deduped.get(device.deviceId);
+    if (!previous || (device.lastSeen ?? 0) > (previous.lastSeen ?? 0)) {
+      deduped.set(device.deviceId, device);
+    }
+  }
+
+  const candidates = Array.from(deduped.values())
+    .filter(device => !isDeviceTooOld(device.lastSeen));
+
+  const verified = await Promise.all(candidates.map(async (device) => {
+    try {
+      const spk = await peekDeviceSignedPrekey(device.userId, device.deviceId);
+      if (!spk) {
+        console.warn('[A1] skipping device without valid signed prekey', {
+          userId: device.userId,
+          deviceId: device.deviceId,
+        });
+        return null;
+      }
+      return device;
+    } catch {
+      return null;
+    }
+  }));
+
+  return verified.filter(Boolean) as DeviceDescriptor[];
 }
 
 /**
@@ -47,14 +95,16 @@ export async function listDevicesForUser(userId: UserId): Promise<DeviceDescript
   try {
     const trusted = await fetchTrustedDeviceList(userId);
     if (trusted.length > 0) {
-      return trusted
-        .filter(t => !!t.devicePublicKey)
-        .map(t => ({
-          userId,
-          deviceId: t.deviceId,
-          devicePublicKey: t.devicePublicKey,
-          lastSeen: undefined,
-        }));
+      return hygieneFilterDevices(
+        trusted
+          .filter(t => !!t.devicePublicKey)
+          .map(t => ({
+            userId,
+            deviceId: t.deviceId,
+            devicePublicKey: t.devicePublicKey,
+            lastSeen: undefined,
+          })),
+      );
     }
   } catch (e) {
     // RPC error — fall through to legacy. Logged below at fallback boundary.
@@ -72,16 +122,17 @@ export async function listDevicesForUser(userId: UserId): Promise<DeviceDescript
     if (typeof console !== 'undefined') {
       console.warn(`[A1] using LEGACY device list for ${userId} (no signed entries) — pair a device or rotate to migrate`);
     }
-    return (data as Array<{ device_id: string; device_public_key: string; last_seen_at?: string; last_seen?: string }>)
+
+    const mapped = (data as Array<{ device_id: string; device_public_key: string; last_seen_at?: string; last_seen?: string }>)
       .filter(d => !!d.device_public_key)
       .map(d => ({
         userId,
         deviceId: d.device_id,
         devicePublicKey: d.device_public_key,
-        lastSeen: d.last_seen_at
-          ? new Date(d.last_seen_at).getTime()
-          : (d.last_seen ? new Date(d.last_seen).getTime() : undefined),
+        lastSeen: normalizeLastSeen(d.last_seen_at ?? d.last_seen),
       }));
+
+    return hygieneFilterDevices(mapped);
   } catch {
     return [];
   }
