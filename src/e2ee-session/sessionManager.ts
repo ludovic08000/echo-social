@@ -6,7 +6,7 @@
  *   1. **ensure**   — return a usable session, bootstrapping X3DH on miss
  *                     (mirrors `multiDeviceFanout`'s bootstrap so callers
  *                     outside the fan-out can request a session up-front).
- *   2. **encrypt**  — layered: cached Double Ratchet (v4 enforced) → null
+ *   2. **encrypt**  — layered: cached Double Ratchet (v5/v4 modern) → null
  *                     (caller falls through to multiDeviceFanout for X3DH +
  *                     legacy device-wrap).
  *   3. **inspect**  — `getSessionState` / `listActiveSessionsForPeer` give
@@ -19,7 +19,8 @@
  * Sesame guarantees enforced here:
  *   - existing sessions are NEVER overwritten silently.
  *   - failures fall through instead of aborting send.
- *   - new sessions ALWAYS start on v4 (`x3dh4.`). v3 is read-only legacy.
+ *   - new sessions use the modern ratchet wire formats (`x3dh5.` preferred,
+ *     `x3dh4.` still accepted). v3 is read-only legacy and is never produced.
  */
 import {
   ratchetEncrypt,
@@ -27,6 +28,7 @@ import {
   invalidateDeviceSession,
   listKnownSessionIds,
   RATCHET_PREFIX_V4,
+  RATCHET_PREFIX_V5,
 } from '@/lib/crypto/deviceRatchet';
 import {
   fetchPrekeyBundleForDevice,
@@ -37,15 +39,22 @@ import type { DeviceDescriptor, SessionDescriptor, UserId } from './types';
 import { describeSession, markSessionUsed } from './sessionStore';
 import { selfDeviceId } from './deviceRegistry';
 
+function modernRatchetLayer(ciphertext: string): 'ratchet-v5' | 'ratchet-v4' | null {
+  if (ciphertext.startsWith(RATCHET_PREFIX_V5)) return 'ratchet-v5';
+  if (ciphertext.startsWith(RATCHET_PREFIX_V4)) return 'ratchet-v4';
+  return null;
+}
+
 /**
- * Encrypt for ONE peer device. Strict v4 path.
+ * Encrypt for ONE peer device.
  *
  * Returns the wire string (already prefixed by the underlying layer) or
  * `null` if the cached ratchet has no usable sending chain — caller MUST
  * then run `multiDeviceFanout` which owns the X3DH + legacy fallbacks.
  *
- * Hard invariant: any non-null return value starts with `x3dh4.`. v3
- * envelopes are read-only legacy and will never be produced here.
+ * Hard invariant: any non-null return value is a modern ratchet envelope
+ * (`x3dh5.` or `x3dh4.`). v3 envelopes are read-only legacy and will never
+ * be produced from this manager.
  */
 export async function encryptForDevice(
   senderUserId: UserId,
@@ -57,14 +66,18 @@ export async function encryptForDevice(
 
   try {
     const ct = await ratchetEncrypt(senderUserId, me, peer.userId, peer.deviceId, plaintext);
-    if (ct && ct.startsWith(RATCHET_PREFIX_V4)) {
-      markSessionUsed(desc.sessionId, 'ratchet-v4');
-      return ct;
+    if (ct) {
+      const layer = modernRatchetLayer(ct);
+      if (layer) {
+        markSessionUsed(desc.sessionId, layer);
+        return ct;
+      }
+
+      // Hard guard: a non-modern ciphertext escaped from the cached session —
+      // drop it and let the fan-out re-bootstrap. Producing v3 here would
+      // silently re-introduce the legacy single-secret HKDF for new traffic.
+      return null;
     }
-    // Hard guard: a non-v4 ciphertext escaped from the cached session — drop
-    // it and let the fan-out re-bootstrap. Producing v3 here would silently
-    // re-introduce the legacy single-secret HKDF for new traffic.
-    if (ct) return null;
   } catch {
     /* fall through */
   }
@@ -75,7 +88,7 @@ export async function encryptForDevice(
  * Ensure a usable session exists with `peer`. If the cache is empty, runs
  * X3DH against the peer's published bundle and persists the new session as
  * the *initiator* — guaranteeing the next `encryptForDevice` call produces
- * a valid v4 ciphertext on the first try.
+ * a valid modern ciphertext on the first try.
  *
  * Idempotent: returns the existing descriptor when the session is already
  * active (no destructive re-bootstrap, per Sesame).
@@ -97,8 +110,8 @@ export async function ensureSession(
     (s) => s.peerUserId === peer.userId && s.peerDeviceId === peer.deviceId,
   );
   if (cached) {
-    markSessionUsed(desc.sessionId, 'ratchet-v4');
-    return { ...desc, status: 'active', lastUsedAt: Date.now() };
+    markSessionUsed(desc.sessionId, 'ratchet-v5');
+    return { ...desc, status: 'active', lastUsedAt: Date.now(), layer: 'ratchet-v5' };
   }
 
   // Cold path — run X3DH and seed an initiator session.
