@@ -67,6 +67,25 @@ function traceQueue(
   });
 }
 
+function normalizeCryptoError(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’]/g, "'")
+    .trim();
+}
+
+function isPermanentSafetyMismatch(normalized: string): boolean {
+  return (
+    normalized.includes('cle de securite du contact modifiee') ||
+    normalized.includes('security key changed') ||
+    normalized.includes('safety number changed') ||
+    normalized.includes('verification obligatoire avant envoi') ||
+    normalized.includes("verifiez l'identite avant d'envoyer") ||
+    normalized.includes('fingerprint changed')
+  );
+}
 
 export interface OutboundMessage {
   localId: string;
@@ -219,75 +238,45 @@ class MessageQueueManager {
     return all.map((msg) => this.hydrateRuntimeMessage(msg));
   }
 
-  // ─── Public API ───
-
-  /** Register handlers for encryption and sending */
   registerHandlers(conversationId: string, handlerId: string, handlers: QueueHandlers) {
     const existing = this.handlersByConversation.get(conversationId) || new Map<string, HandlerEntry>();
-    existing.set(handlerId, {
-      id: handlerId,
-      handlers,
-      registeredAt: Date.now(),
-    });
+    existing.set(handlerId, { id: handlerId, handlers, registeredAt: Date.now() });
     this.handlersByConversation.set(conversationId, existing);
   }
 
-  /** Unregister handlers when a conversation hook unmounts */
   unregisterHandlers(conversationId: string, handlerId: string) {
     const entries = this.handlersByConversation.get(conversationId);
     if (!entries) return;
-
     entries.delete(handlerId);
-
     if (entries.size === 0) {
       this.handlersByConversation.delete(conversationId);
       return;
     }
-
     this.handlersByConversation.set(conversationId, entries);
   }
 
-  /** Return the most recently registered active handlers for a conversation */
   private getHandlers(conversationId: string): QueueHandlers | null {
     const entries = this.handlersByConversation.get(conversationId);
     if (!entries || entries.size === 0) return null;
-
     let latest: HandlerEntry | null = null;
     for (const entry of entries.values()) {
-      if (!latest || entry.registeredAt > latest.registeredAt) {
-        latest = entry;
-      }
+      if (!latest || entry.registeredAt > latest.registeredAt) latest = entry;
     }
-
     return latest?.handlers || null;
   }
 
-  /** Return a handler only when its secure channel is ready. */
   private getReadyAwareHandlers(conversationId: string): QueueHandlers | null {
     const entries = this.handlersByConversation.get(conversationId);
     if (!entries || entries.size === 0) return null;
-
     for (const entry of entries.values()) {
       try {
-        if (entry.handlers.isReady(conversationId)) {
-          return entry.handlers;
-        }
-      } catch {
-        // continue checking other mounted handlers
-      }
+        if (entry.handlers.isReady(conversationId)) return entry.handlers;
+      } catch {}
     }
-
     return null;
   }
 
-  /** Enqueue a new outbound message */
-  async enqueue(params: {
-    conversationId: string;
-    senderId: string;
-    plaintext: string;
-    imageUrl?: string | null;
-  }): Promise<OutboundMessage> {
-    // Idempotency: check for duplicate within 2 seconds
+  async enqueue(params: { conversationId: string; senderId: string; plaintext: string; imageUrl?: string | null; }): Promise<OutboundMessage> {
     const recent = await this.dbGetByConversation(params.conversationId);
     const duplicate = recent.find(m =>
       m.senderId === params.senderId &&
@@ -304,7 +293,7 @@ class MessageQueueManager {
       traceId: safeUUID(),
       conversationId: params.conversationId,
       senderId: params.senderId,
-      plaintext: '', // NEVER stored in IndexedDB
+      plaintext: '',
       encryptedBody: null,
       imageUrl: params.imageUrl || null,
       status: 'pending_local',
@@ -316,9 +305,7 @@ class MessageQueueManager {
       serverId: null,
     };
 
-    // Store plaintext ONLY in volatile memory
     this.volatilePlaintext.set(msg.localId, params.plaintext);
-
     await this.dbPut(msg);
     console.log('[MSG_QUEUE] created local message', msg.localId, 'trace', msg.traceId);
     traceQueue(msg, 'enqueue', { plaintextLen: params.plaintext.length, hasImage: !!params.imageUrl });
@@ -327,18 +314,11 @@ class MessageQueueManager {
     return msg;
   }
 
-  /** Process a single message through the state machine */
   private async processMessage(msg: OutboundMessage): Promise<void> {
     const trace = (step: string, extra: Record<string, unknown> = {}) => {
       const ageMs = Date.now() - msg.createdAt;
       console.log(`%c[MSG_TRACE]%c ${step}`, 'color:#fff;background:#002395;padding:2px 6px;border-radius:3px;font-weight:bold', 'color:#002395;font-weight:bold', {
-        traceId: msg.traceId.slice(0, 8),
-        localId: msg.localId,
-        conv: msg.conversationId.slice(0, 8),
-        retry: msg.retryCount,
-        ageMs,
-        status: msg.status,
-        ...extra,
+        traceId: msg.traceId.slice(0, 8), localId: msg.localId, conv: msg.conversationId.slice(0, 8), retry: msg.retryCount, ageMs, status: msg.status, ...extra,
       });
     };
     if (this.processing.has(msg.localId)) { trace('SKIP (already processing localId)'); return; }
@@ -349,7 +329,6 @@ class MessageQueueManager {
     this.clearRetryTimer(msg.localId);
 
     try {
-      // Step 1: Encrypt
       if (!msg.encryptedBody) {
         trace('STEP 1 ▸ encrypt required');
         await this.updateStatus(msg, 'encrypting');
@@ -380,24 +359,15 @@ class MessageQueueManager {
         try {
           const t0 = Date.now();
           const encryptPromise = handlers.encrypt(plaintext, msg.conversationId, msg.localId);
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Timeout chiffrement (15s)')), 15_000)
-          );
+          const timeoutPromise = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout chiffrement (15s)')), 15_000));
           const encrypted = await Promise.race([encryptPromise, timeoutPromise]);
           const withLocalId = this.attachLocalId(encrypted, msg.localId, msg.traceId);
           trace('  encrypt() returned', { tookMs: Date.now() - t0, ctLen: withLocalId?.length ?? 0, prefix: withLocalId?.slice(0, 8) });
 
-          const looksCiphertext =
-            !!withLocalId &&
-            withLocalId !== plaintext &&
-            (
-              withLocalId.startsWith('{') ||
-              withLocalId.startsWith('x3dh5.') ||
-              withLocalId.startsWith('x3dh4.') ||
-              withLocalId.startsWith('x3dh3.') ||
-              withLocalId.startsWith('x3dh2.') ||
-              withLocalId.startsWith('x3dh1.')
-            );
+          const looksCiphertext = !!withLocalId && withLocalId !== plaintext && (
+            withLocalId.startsWith('{') || withLocalId.startsWith('x3dh5.') || withLocalId.startsWith('x3dh4.') ||
+            withLocalId.startsWith('x3dh3.') || withLocalId.startsWith('x3dh2.') || withLocalId.startsWith('x3dh1.')
+          );
           if (!looksCiphertext) {
             trace('✗ encrypt output is NOT ciphertext — schedule retry');
             console.error('[E2EE] encrypt failed — output is plaintext or empty', msg.localId);
@@ -411,30 +381,19 @@ class MessageQueueManager {
           await this.dbPut(msg);
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
-          const normalized = errMsg.toLowerCase();
+          const normalized = normalizeCryptoError(errMsg);
           const waitingForKeys =
-            normalized.includes('not ready') ||
-            normalized.includes('initializ') ||
-            normalized.includes('keys not ready') ||
-            normalized.includes('encryption not available') ||
-            normalized.includes('message en attente chiffrée') ||
-            normalized.includes('bundle x3dh') ||
-            normalized.includes('double ratchet') ||
-            normalized.includes('clés du contact indisponibles') ||
-            normalized.includes('chiffrement requis') ||
-            normalized.includes('contact n\'a pas encore de clés') ||
-            normalized.includes('contact n\'a pas encore publié ses clés') ||
+            normalized.includes('not ready') || normalized.includes('initializ') || normalized.includes('keys not ready') ||
+            normalized.includes('encryption not available') || normalized.includes('message en attente chiffree') ||
+            normalized.includes('bundle x3dh') || normalized.includes('double ratchet') ||
+            normalized.includes('cles du contact indisponibles') || normalized.includes('chiffrement requis') ||
+            normalized.includes("contact n'a pas encore de cles") || normalized.includes("contact n'a pas encore publie ses cles") ||
             (normalized.includes('key') && normalized.includes('ready'));
           const transientCryptoPressure =
-            normalized.includes('rate limited') ||
-            normalized.includes('exfiltration attempt') ||
-            normalized.includes('opération limitée');
-          const permanentSafetyMismatch =
-            normalized.includes('clé de sécurité du contact modifiée') ||
-            normalized.includes('verification obligatoire avant envoi') ||
-            normalized.includes('vérifiez l\'identité avant d\'envoyer') ||
-            normalized.includes('fingerprint changed');
+            normalized.includes('rate limited') || normalized.includes('exfiltration attempt') || normalized.includes('operation limitee');
+          const permanentSafetyMismatch = isPermanentSafetyMismatch(normalized);
           const canUseMultiDeviceFallback =
+            !permanentSafetyMismatch &&
             errMsg.startsWith(MULTI_DEVICE_FALLBACK_PREFIX) &&
             typeof plaintext === 'string' &&
             plaintext.length > 0;
@@ -443,6 +402,11 @@ class MessageQueueManager {
           console.error('[E2EE] encrypt failed', msg.localId, errMsg);
 
           if (permanentSafetyMismatch) {
+            try {
+              window.dispatchEvent(new CustomEvent('forsure:e2ee-contact-verification-required', {
+                detail: { conversationId: msg.conversationId, localId: msg.localId, reason: errMsg },
+              }));
+            } catch {}
             await this.updateStatus(msg, 'failed_visible', errMsg);
             return;
           }
@@ -452,7 +416,6 @@ class MessageQueueManager {
             trace('↪ fallback multi-device copies — parent envelope prepared');
             await this.dbPut(msg);
           } else {
-
             const age = Date.now() - msg.createdAt;
             if (waitingForKeys && age > SECURE_CHANNEL_HARD_TIMEOUT_MS) {
               trace('✗ FAIL — peer keys missing after hard timeout');
@@ -479,11 +442,8 @@ class MessageQueueManager {
         trace('STEP 1 ▸ already encrypted, skipping');
       }
 
-      // Step 2: Send encrypted payload
       const volatilePt = this.volatilePlaintext.get(msg.localId);
-      if (volatilePt) {
-        msg.plaintext = volatilePt;
-      }
+      if (volatilePt) msg.plaintext = volatilePt;
 
       trace('STEP 2 ▸ sending', { ctLen: msg.encryptedBody?.length ?? 0 });
       await this.updateStatus(msg, 'sending');
@@ -513,9 +473,7 @@ class MessageQueueManager {
         } catch (persistErr) {
           trace('⚠ local persist failed after ACK — deleting from queue', { err: String(persistErr) });
           console.warn('[SEND] local persistence failed after backend success', msg.localId, persistErr);
-          try {
-            await this.dbDelete(msg.localId);
-          } catch {}
+          try { await this.dbDelete(msg.localId); } catch {}
           this.notifyListeners(msg.conversationId);
           return;
         }
@@ -535,7 +493,6 @@ class MessageQueueManager {
           this.scheduleRetry(msg);
         }
       }
-
     } finally {
       this.processing.delete(msg.localId);
       this.processingConversations.delete(msg.conversationId);
@@ -546,28 +503,16 @@ class MessageQueueManager {
             .filter(m => m.status === 'pending_local')
             .sort((a, b) => a.createdAt - b.createdAt)
             .find(m => !this.processing.has(m.localId) && !this.retryTimers.has(m.localId));
-          if (next) {
-            void this.processMessage(next);
-          }
+          if (next) void this.processMessage(next);
         } catch {}
       });
     }
   }
 
-  /**
-   * Schedule retry:
-   * - secure_wait: fast polling for E2EE readiness (instant UX)
-   * - retry: exponential backoff for real errors/network issues
-   */
   private scheduleRetry(msg: OutboundMessage, mode: 'retry' | 'secure_wait' = 'retry') {
     this.clearRetryTimer(msg.localId);
-
     const SECURE_WAIT_RETRY_MS = 3_000;
-
-    const delay = mode === 'secure_wait'
-      ? SECURE_WAIT_RETRY_MS
-      : Math.min(BASE_RETRY_MS * Math.pow(2, msg.retryCount), MAX_RETRY_MS);
-
+    const delay = mode === 'secure_wait' ? SECURE_WAIT_RETRY_MS : Math.min(BASE_RETRY_MS * Math.pow(2, msg.retryCount), MAX_RETRY_MS);
     console.log(`[SEND] retry scheduled for ${msg.localId} in ${delay}ms (${mode})`);
     traceQueue(msg, 'retry:scheduled', { mode, delayMs: delay });
 
@@ -575,17 +520,9 @@ class MessageQueueManager {
       this.retryTimers.delete(msg.localId);
       const latest = await this.dbGet(msg.localId);
       if (!latest || latest.status === 'sent') return;
-
-      if (mode === 'retry') {
-        latest.retryCount++;
-      }
-
+      if (mode === 'retry') latest.retryCount++;
       latest.updatedAt = Date.now();
-      // Preserve already-encrypted payload on normal retry.
-      // This is CRITICAL for first X3DH/ratchet messages: retry must resend the exact same payload/header.
-      if (mode === 'secure_wait') {
-        latest.encryptedBody = null;
-      }
+      if (mode === 'secure_wait') latest.encryptedBody = null;
       await this.dbPut(latest);
       this.processMessage(latest);
     }, delay);
@@ -593,30 +530,23 @@ class MessageQueueManager {
     this.retryTimers.set(msg.localId, timer);
   }
 
-  /** Update message status and persist */
   private async updateStatus(msg: OutboundMessage, status: OutboundMessageStatus, error?: string) {
     const previous = msg.status;
     msg.status = status;
     msg.lastError = error || null;
     msg.updatedAt = Date.now();
     await this.dbPut(msg);
-    // Trace every transition (skip no-op transitions to keep volume sane)
     if (previous !== status) {
-      traceQueue(msg, `status:${status}` as Parameters<typeof traceQueue>[1], {
-        previous,
-        error: error || null,
-      });
+      traceQueue(msg, `status:${status}` as Parameters<typeof traceQueue>[1], { previous, error: error || null });
     }
     this.notifyListeners(msg.conversationId);
   }
 
-  /** Retry a failed message manually */
   async retryMessage(localId: string): Promise<void> {
     this.clearRetryTimer(localId);
     const all = await this.dbGetAll();
     const msg = all.find(m => m.localId === localId);
     if (!msg) return;
-
     msg.retryCount = 0;
     msg.lastError = null;
     msg.status = 'pending_local';
@@ -627,28 +557,21 @@ class MessageQueueManager {
     this.processMessage(msg);
   }
 
-  /** Resume all pending messages (call on app load / network restore) */
   async resumeAll(): Promise<void> {
     try {
       const all = await this.dbGetAll();
-      const pending = all.filter(m =>
-        m.status !== 'sent' && m.status !== 'draft' && m.status !== 'failed_visible'
-      );
-
+      const pending = all.filter(m => m.status !== 'sent' && m.status !== 'draft' && m.status !== 'failed_visible');
       for (const msg of pending) {
-        // Only resume if plaintext is still in volatile memory
         if (this.volatilePlaintext.has(msg.localId)) {
           msg.status = 'pending_local';
           msg.encryptedBody = null;
           await this.dbPut(msg);
           this.processMessage(msg);
         } else if (msg.encryptedBody) {
-          // Already encrypted, just needs sending
           msg.status = 'pending_local';
           await this.dbPut(msg);
           this.processMessage(msg);
         } else {
-          // Plaintext lost (page reload) — mark as failed
           await this.updateStatus(msg, 'failed_visible', 'Message perdu (rechargement de page)');
         }
       }
@@ -657,30 +580,19 @@ class MessageQueueManager {
     }
   }
 
-  /** Resume messages for a specific conversation (when encryption becomes ready) */
   async resumeForConversation(conversationId: string): Promise<void> {
     try {
-      // Debounce: ignore resume calls that fire less than 1.5s after the previous one.
-      // On iOS, React re-renders trigger many redundant resume calls, which short-circuit
-      // the secure_wait retry timer (3s) and produce a tight retry loop.
       const now = Date.now();
       const last = this.lastResumeAt.get(conversationId) || 0;
-      if (now - last < 1500) {
-        return;
-      }
+      if (now - last < 1500) return;
       this.lastResumeAt.set(conversationId, now);
 
       const msgs = await this.dbGetByConversation(conversationId);
-      const pending = msgs.filter(m =>
-        m.status === 'waiting_secure_channel' || m.status === 'retry_pending' || m.status === 'pending_local'
-      );
+      const pending = msgs.filter(m => m.status === 'waiting_secure_channel' || m.status === 'retry_pending' || m.status === 'pending_local');
 
       for (const msg of pending) {
-        // Don't restart a message that already has an active retry timer.
-        // The timer will fire at the correct delay and call processMessage itself.
         if (this.retryTimers.has(msg.localId)) continue;
         if (this.processing.has(msg.localId)) continue;
-
         if (this.volatilePlaintext.has(msg.localId) || msg.encryptedBody) {
           msg.encryptedBody = msg.encryptedBody || null;
           msg.status = 'pending_local';
@@ -693,7 +605,6 @@ class MessageQueueManager {
     }
   }
 
-  /** Get pending messages for a conversation (for UI display) */
   async getPendingMessages(conversationId: string): Promise<OutboundMessage[]> {
     try {
       const msgs = await this.dbGetByConversation(conversationId);
@@ -703,23 +614,17 @@ class MessageQueueManager {
     }
   }
 
-  /** Subscribe to queue changes */
   subscribe(listener: QueueListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
-  /**
-   * Reconcile local pending queue with messages already persisted on backend.
-   * Useful when HTTP acknowledgement was lost but insert actually succeeded.
-   */
   async reconcileDelivered(
     conversationId: string,
     serverMessages: Array<{ id?: string | null; senderId?: string | null; body?: string | null; createdAt?: string | null }>,
   ): Promise<void> {
     try {
       type ServerMatch = { id: string | null; senderId: string | null; createdAtMs: number | null };
-
       const byLocalId = new Map<string, ServerMatch>();
       const byEncryptedBody = new Map<string, ServerMatch>();
       const byServerId = new Map<string, ServerMatch>();
@@ -727,25 +632,11 @@ class MessageQueueManager {
 
       for (const serverMsg of serverMessages) {
         const createdAtMs = serverMsg.createdAt ? new Date(serverMsg.createdAt).getTime() : null;
-        const matchMeta: ServerMatch = {
-          id: serverMsg.id || null,
-          senderId: serverMsg.senderId || null,
-          createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : null,
-        };
-
-        if (matchMeta.id) {
-          byServerId.set(matchMeta.id, matchMeta);
-        }
-
-        if (serverMsg.body) {
-          byEncryptedBody.set(serverMsg.body, matchMeta);
-        }
-
+        const matchMeta: ServerMatch = { id: serverMsg.id || null, senderId: serverMsg.senderId || null, createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : null };
+        if (matchMeta.id) byServerId.set(matchMeta.id, matchMeta);
+        if (serverMsg.body) byEncryptedBody.set(serverMsg.body, matchMeta);
         const localId = this.extractLocalId(serverMsg.body || '');
-        if (localId) {
-          byLocalId.set(localId, matchMeta);
-        }
-
+        if (localId) byLocalId.set(localId, matchMeta);
         if (matchMeta.senderId && matchMeta.createdAtMs) {
           const senderMatches = bySenderTime.get(matchMeta.senderId) || [];
           senderMatches.push(matchMeta);
@@ -754,9 +645,6 @@ class MessageQueueManager {
       }
 
       bySenderTime.forEach((list) => list.sort((a, b) => (a.createdAtMs || 0) - (b.createdAtMs || 0)));
-
-      // Continue reconciliation even when __lid metadata is absent:
-      // fallback matching by encrypted payload is still valid.
       if (byLocalId.size === 0 && byEncryptedBody.size === 0 && byServerId.size === 0 && bySenderTime.size === 0) return;
 
       const queued = await this.dbGetByConversation(conversationId);
@@ -764,19 +652,15 @@ class MessageQueueManager {
 
       for (const msg of queued) {
         if (msg.status === 'sent') continue;
-
         let serverMatch = byLocalId.get(msg.localId)
           ?? (msg.serverId ? byServerId.get(msg.serverId) : undefined)
           ?? (msg.encryptedBody ? byEncryptedBody.get(msg.encryptedBody) : undefined);
 
-        // Last-resort fallback for legacy stuck messages (no __lid/serverId match):
-        // match by same sender and very close timestamp.
         if (!serverMatch && msg.senderId) {
           const senderMatches = bySenderTime.get(msg.senderId);
           if (senderMatches?.length) {
             let bestIdx = -1;
             let bestDelta = Number.POSITIVE_INFINITY;
-
             for (let i = 0; i < senderMatches.length; i++) {
               const candidateTs = senderMatches[i].createdAtMs;
               if (!candidateTs) continue;
@@ -786,22 +670,17 @@ class MessageQueueManager {
                 bestIdx = i;
               }
             }
-
-            if (bestIdx >= 0) {
-              serverMatch = senderMatches.splice(bestIdx, 1)[0];
-            }
+            if (bestIdx >= 0) serverMatch = senderMatches.splice(bestIdx, 1)[0];
           }
         }
 
         if (!serverMatch) continue;
         if (serverMatch.senderId && serverMatch.senderId !== msg.senderId) continue;
-
         const timer = this.retryTimers.get(msg.localId);
         if (timer) {
           clearTimeout(timer);
           this.retryTimers.delete(msg.localId);
         }
-
         msg.serverId = serverMatch.id || msg.serverId;
         msg.status = 'sent';
         msg.lastError = null;
@@ -810,13 +689,10 @@ class MessageQueueManager {
         this.volatilePlaintext.delete(msg.localId);
         traceQueue(msg, 'reconciled', { serverId: msg.serverId });
         await this.dbDelete(msg.localId);
-
         changed = true;
       }
 
-      if (changed) {
-        this.notifyListeners(conversationId);
-      }
+      if (changed) this.notifyListeners(conversationId);
     } catch (err) {
       console.warn('[MSG_QUEUE] reconcileDelivered failed:', err);
     }
@@ -827,11 +703,7 @@ class MessageQueueManager {
       const msgs = await this.dbGetByConversation(conversationId);
       const pending = msgs
         .filter(m => m.status !== 'sent')
-        .map(m => ({
-          ...m,
-          // Re-inject volatile plaintext so UI can display the message text
-          plaintext: this.volatilePlaintext.get(m.localId) || m.plaintext || '',
-        }));
+        .map(m => ({ ...m, plaintext: this.volatilePlaintext.get(m.localId) || m.plaintext || '' }));
       this.listeners.forEach(fn => fn(pending));
     } catch {}
   }
@@ -872,13 +744,10 @@ class MessageQueueManager {
     });
   }
 
-  /** Remove a message from the queue (user cancels failed message) */
   async removeMessage(localId: string): Promise<void> {
     this.clearRetryTimer(localId);
     const existing = await this.dbGet(localId).catch(() => undefined);
-    if (existing) {
-      traceQueue(existing, 'remove:user', { reason: 'user_cancel', lastStatus: existing.status });
-    }
+    if (existing) traceQueue(existing, 'remove:user', { reason: 'user_cancel', lastStatus: existing.status });
     this.volatilePlaintext.delete(localId);
     await this.dbDelete(localId);
   }
@@ -890,21 +759,15 @@ class MessageQueueManager {
     this.retryTimers.delete(localId);
   }
 
-  /** Cleanup: remove all sent messages from DB */
   async cleanup(): Promise<void> {
     const all = await this.dbGetAll();
     for (const msg of all) {
-      if (msg.status === 'sent') {
-        await this.dbDelete(msg.localId);
-      }
+      if (msg.status === 'sent') await this.dbDelete(msg.localId);
     }
   }
 }
 
-// Singleton
 export const messageQueue = new MessageQueueManager();
-
-// ─── Status labels for UI ───
 
 export function getStatusLabel(status: OutboundMessageStatus): string {
   switch (status) {
