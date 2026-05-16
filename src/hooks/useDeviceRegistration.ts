@@ -29,7 +29,9 @@ import {
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
   refreshSignedPrekeyIfNeeded,
+  peekDeviceSignedPrekey,
 } from '@/lib/crypto/x3dh';
+import { repairCurrentDevicePrekeys } from '@/lib/crypto/devicePrekeyRepair';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
 import {
@@ -225,12 +227,20 @@ export function useDeviceRegistration() {
         }
 
         // 3. Ensure a per-device Signed PreKey exists & is fresh.
-        //    This is what makes targeted X3DH per device possible.
+        //    This is what makes targeted X3DH per device possible. After the
+        //    normal refresh, peek the SPK without consuming OPK. If it is still
+        //    invalid/missing, run the repair helper: purge stale SPK/OPK state,
+        //    publish a fresh SPK, and refill OPKs.
         try {
           await refreshDeviceSignedPrekeyIfNeeded(user.id, deviceId, keys.signingPrivateKey);
+          const currentSpk = await peekDeviceSignedPrekey(user.id, deviceId);
+          if (!currentSpk) {
+            await repairCurrentDevicePrekeys(user.id, deviceId, keys.signingPrivateKey, 'current-device-spk-invalid-after-refresh');
+            try { window.dispatchEvent(new CustomEvent('forsure-keys-restored', { detail: { source: 'device-prekey-repair', deviceId } })); } catch {}
+            try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch {}
+          }
         } catch (spkErr) {
-          // Non-fatal: fan-out can still fall back to deviceWrap or legacy ratchet.
-          console.warn('[useDeviceRegistration] device SPK refresh failed (non-fatal):', spkErr);
+          console.warn('[useDeviceRegistration] device SPK refresh/repair failed (non-fatal):', spkErr);
         }
 
         // 4. Refill the OPK pool if low (forward secrecy on bursts).
