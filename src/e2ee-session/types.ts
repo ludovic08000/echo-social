@@ -30,18 +30,18 @@ export interface SessionDescriptor {
   peerDeviceId: DeviceId;
   status: SessionStatus;
   /** Crypto layer that owns this session (informational). */
-  layer: 'ratchet-v4' | 'ratchet-v3-legacy' | 'x3dh-bootstrap' | 'device-wrap-legacy';
+  layer: 'ratchet-v5' | 'ratchet-v4' | 'ratchet-v3-legacy' | 'x3dh-bootstrap' | 'device-wrap-legacy';
   createdAt: number;
   lastUsedAt: number;
 }
 
 /**
- * Canonical envelope shape for *new* messages (v4).
+ * Canonical envelope shape for *new* messages (v4/v5 ratchet wire format).
  * Old wire formats are still understood by `legacyDecryptRouter` — we never
  * change the shape of historical envelopes already on the server.
  */
 export interface EncryptedMessageEnvelope {
-  version: 4;
+  version: 4 | 5;
   type: 'initial' | 'ratchet' | 'legacy';
   fromUserId: UserId;
   toUserId: UserId;
@@ -63,6 +63,7 @@ export interface DecryptResult {
   plaintext: string | null;
   /** Which path actually decrypted (for diagnostics, never shown to user). */
   via?:
+    | 'ratchet-v5'
     | 'ratchet-v4'
     | 'ratchet-v3'
     | 'x3dh-bootstrap'
