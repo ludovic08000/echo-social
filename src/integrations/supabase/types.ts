@@ -1776,6 +1776,7 @@ export type Database = {
           id: string
           is_active: boolean
           is_last_resort: boolean
+          keys_epoch: number
           public_key: string
           signature: string
           signature_version: number
@@ -1789,6 +1790,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_last_resort?: boolean
+          keys_epoch?: number
           public_key: string
           signature: string
           signature_version?: number
@@ -1802,6 +1804,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_last_resort?: boolean
+          keys_epoch?: number
           public_key?: string
           signature?: string
           signature_version?: number
@@ -6983,6 +6986,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      bump_device_keys_epoch: {
+        Args: { p_device_id: string; p_user_id: string }
+        Returns: number
+      }
       call_signal: {
         Args: {
           p_action: string
@@ -7204,6 +7211,7 @@ export type Database = {
         Args: { p_device_id: string; p_user_id: string }
         Returns: {
           device_public_key: string
+          keys_epoch: number
           public_key: string
           signature: string
           spk_id: number
@@ -7536,6 +7544,14 @@ export type Database = {
         }[]
       }
       request_device_copy_retry: {
+        Args: {
+          p_message_id: string
+          p_requester_device_id: string
+          p_sender_user_id: string
+        }
+        Returns: string
+      }
+      request_message_refanout: {
         Args: {
           p_message_id: string
           p_requester_device_id: string
