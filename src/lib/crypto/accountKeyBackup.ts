@@ -29,6 +29,7 @@ import {
   importPlaintextCache,
   type PlaintextCacheExportEntry,
 } from '@/lib/crypto/plaintextStore';
+import { runPostRestoreSync, type RestoreReason } from '@/lib/crypto/postRestoreSync';
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
