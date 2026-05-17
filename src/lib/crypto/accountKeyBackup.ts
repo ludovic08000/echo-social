@@ -29,6 +29,7 @@ import {
   importPlaintextCache,
   type PlaintextCacheExportEntry,
 } from '@/lib/crypto/plaintextStore';
+import { runPostRestoreSync, type RestoreReason } from '@/lib/crypto/postRestoreSync';
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
@@ -801,6 +802,7 @@ export async function restoreAccountKeysFromActiveSession(userId?: string): Prom
       errorMessage: 'E2EE keys restored from active in-memory session',
       metadata: { userId: targetUserId, durationMs: Math.round(performance.now() - t0) },
     });
+    void runPostRestoreSync(targetUserId, 'password_active_session');
     return 'restored';
   } catch (err) {
     console.error('[MasterKey] Active-session restore failed:', err);
@@ -850,6 +852,7 @@ export async function restoreFromInMemoryMasterKey(userId?: string): Promise<'re
       errorMessage: 'E2EE keys silently restored using in-memory Master Key',
       metadata: { userId: targetUserId },
     });
+    void runPostRestoreSync(targetUserId, 'in_memory_master_key');
     return 'restored';
   } catch (e) {
     console.warn('[MasterKey] In-memory MK restore failed:', e);
@@ -901,6 +904,7 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
         errorMessage: 'E2EE keys restored via recovery key',
         metadata: { userId, durationMs: Math.round(performance.now() - t0) },
       });
+      void runPostRestoreSync(userId, 'recovery_key');
       return true;
     }
     logCryptoError({
@@ -1237,6 +1241,7 @@ export async function restoreWithBackupPin(pin: string, userId: string): Promise
         errorMessage: 'E2EE keys restored via backup PIN',
         metadata: { userId, durationMs: Math.round(performance.now() - t0) },
       });
+      void runPostRestoreSync(userId, 'pin_backup');
       return { status: 'restored' };
     }
     return { status: 'error' };
