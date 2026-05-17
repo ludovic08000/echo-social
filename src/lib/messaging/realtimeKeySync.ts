@@ -1,5 +1,5 @@
 /**
- * Realtime Key Sync (PR #14)
+ * Realtime Key Sync
  *
  * Subscribes to Supabase Realtime on the tables that drive E2EE readiness:
  *   - user_public_keys
@@ -13,6 +13,13 @@
  * `messageQueue.resumeAll()` so any message that was waiting on a missing
  * bundle is retried automatically. UX result: WhatsApp-style invisible queue.
  *
+ * EPOCH-AWARE INVALIDATION (Lot 1 — Signal-style recovery):
+ *   When a row in `device_signed_prekeys` is UPDATED with a higher `keys_epoch`
+ *   AND the affected user is NOT us, we eagerly invalidate every cached
+ *   Double-Ratchet session we hold with that peer device. The next outbound
+ *   message will then re-run X3DH against the fresh bundle, healing the
+ *   silent-decryption window after the peer restored from backup.
+ *
  * Strict rules:
  *   - never log key material
  *   - never expose plaintext
@@ -22,6 +29,8 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { messageQueue } from './messageQueue';
+import { getCurrentDeviceId } from './currentDevice';
+import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
 
 const KEY_TABLES = [
   'user_public_keys',
@@ -45,7 +54,6 @@ function scheduleResume(reason: string): void {
     resumeTimer = null;
     const now = Date.now();
     if (now - lastResumeAt < RESUME_MIN_INTERVAL_MS) {
-      // Re-debounce slightly to coalesce bursts
       scheduleResume(reason);
       return;
     }
@@ -59,6 +67,42 @@ function scheduleResume(reason: string): void {
   }, RESUME_DEBOUNCE_MS);
 }
 
+/**
+ * Handle a UPDATE on `device_signed_prekeys`. If the peer (NOT us) bumped
+ * `keys_epoch`, drop our cached session — next message will re-run X3DH.
+ */
+async function handleDeviceSpkUpdate(payload: any, selfUserId: string): Promise<void> {
+  try {
+    const newRow = payload?.new;
+    const oldRow = payload?.old;
+    if (!newRow || typeof newRow !== 'object') return;
+
+    const peerUserId = newRow.user_id as string | undefined;
+    const peerDeviceId = newRow.device_id as string | undefined;
+    if (!peerUserId || !peerDeviceId) return;
+    if (peerUserId === selfUserId) return; // own device → not a peer rotation
+
+    const newEpoch = Number(newRow.keys_epoch ?? 0);
+    const oldEpoch = Number(oldRow?.keys_epoch ?? 0);
+    if (!(newEpoch > oldEpoch)) return; // not an epoch bump
+
+    const myDeviceId = (() => {
+      try { return getCurrentDeviceId(); } catch { return null; }
+    })();
+    if (!myDeviceId) return;
+
+    await invalidateDeviceSession(selfUserId, myDeviceId, peerUserId, peerDeviceId);
+    console.log('[RT_KEYS] peer keys_epoch bump → session invalidated', {
+      peer: peerUserId.slice(0, 8),
+      device: peerDeviceId.slice(0, 8),
+      oldEpoch,
+      newEpoch,
+    });
+  } catch (e) {
+    console.warn('[RT_KEYS] handleDeviceSpkUpdate failed:', e);
+  }
+}
+
 export interface RealtimeKeySyncOptions {
   userId: string;
 }
@@ -66,11 +110,9 @@ export interface RealtimeKeySyncOptions {
 export function startRealtimeKeySync({ userId }: RealtimeKeySyncOptions): () => void {
   if (!userId) return () => {};
 
-  // Already running for this user? noop.
   if (activeChannel && activeUserId === userId) {
     return () => stopRealtimeKeySync();
   }
-  // Switching user → tear down previous channel first.
   if (activeChannel) stopRealtimeKeySync();
 
   activeUserId = userId;
@@ -78,11 +120,14 @@ export function startRealtimeKeySync({ userId }: RealtimeKeySyncOptions): () => 
 
   for (const table of KEY_TABLES) {
     channel.on(
-      // postgres_changes payload is heterogeneous — keep as any for the listener
       'postgres_changes' as any,
       { event: '*', schema: 'public', table },
-      (payload: { eventType?: string; table?: string }) => {
+      (payload: any) => {
         scheduleResume(`${payload?.table ?? table}:${payload?.eventType ?? 'change'}`);
+        // Epoch-aware session invalidation on peer SPK rotation/restore.
+        if (table === 'device_signed_prekeys' && payload?.eventType === 'UPDATE') {
+          void handleDeviceSpkUpdate(payload, userId);
+        }
       },
     );
   }
@@ -90,7 +135,6 @@ export function startRealtimeKeySync({ userId }: RealtimeKeySyncOptions): () => 
   channel.subscribe(status => {
     if (status === 'SUBSCRIBED') {
       console.log('[RT_KEYS] subscribed');
-      // Run an immediate resume in case keys arrived during boot
       scheduleResume('subscribe');
     } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
       console.warn('[RT_KEYS] channel status:', status);
