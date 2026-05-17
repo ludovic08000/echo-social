@@ -1241,6 +1241,7 @@ export async function restoreWithBackupPin(pin: string, userId: string): Promise
         errorMessage: 'E2EE keys restored via backup PIN',
         metadata: { userId, durationMs: Math.round(performance.now() - t0) },
       });
+      void runPostRestoreSync(userId, 'pin_backup');
       return { status: 'restored' };
     }
     return { status: 'error' };
