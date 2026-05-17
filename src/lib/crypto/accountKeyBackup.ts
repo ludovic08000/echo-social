@@ -802,6 +802,7 @@ export async function restoreAccountKeysFromActiveSession(userId?: string): Prom
       errorMessage: 'E2EE keys restored from active in-memory session',
       metadata: { userId: targetUserId, durationMs: Math.round(performance.now() - t0) },
     });
+    void runPostRestoreSync(targetUserId, 'password_active_session');
     return 'restored';
   } catch (err) {
     console.error('[MasterKey] Active-session restore failed:', err);
