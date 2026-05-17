@@ -852,6 +852,7 @@ export async function restoreFromInMemoryMasterKey(userId?: string): Promise<'re
       errorMessage: 'E2EE keys silently restored using in-memory Master Key',
       metadata: { userId: targetUserId },
     });
+    void runPostRestoreSync(targetUserId, 'in_memory_master_key');
     return 'restored';
   } catch (e) {
     console.warn('[MasterKey] In-memory MK restore failed:', e);
