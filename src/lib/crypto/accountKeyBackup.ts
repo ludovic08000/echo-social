@@ -904,6 +904,7 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
         errorMessage: 'E2EE keys restored via recovery key',
         metadata: { userId, durationMs: Math.round(performance.now() - t0) },
       });
+      void runPostRestoreSync(userId, 'recovery_key');
       return true;
     }
     logCryptoError({
