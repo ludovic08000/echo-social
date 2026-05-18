@@ -6145,6 +6145,7 @@ export type Database = {
         Row: {
           acknowledged: boolean
           acknowledged_at: string | null
+          change_type: string
           id: number
           new_fingerprint: string
           observed_at: string
@@ -6155,6 +6156,7 @@ export type Database = {
         Insert: {
           acknowledged?: boolean
           acknowledged_at?: string | null
+          change_type?: string
           id?: number
           new_fingerprint: string
           observed_at?: string
@@ -6165,6 +6167,7 @@ export type Database = {
         Update: {
           acknowledged?: boolean
           acknowledged_at?: string | null
+          change_type?: string
           id?: number
           new_fingerprint?: string
           observed_at?: string
@@ -6314,6 +6317,30 @@ export type Database = {
           pq_public_key?: string | null
           signing_key?: string
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_recovery_events: {
+        Row: {
+          fingerprint: string
+          id: number
+          occurred_at: string
+          reason: string
+          user_id: string
+        }
+        Insert: {
+          fingerprint: string
+          id?: number
+          occurred_at?: string
+          reason?: string
+          user_id: string
+        }
+        Update: {
+          fingerprint?: string
+          id?: number
+          occurred_at?: string
+          reason?: string
           user_id?: string
         }
         Relationships: []
