@@ -5,7 +5,7 @@
 // action that acknowledges the change.
 
 import { useEffect, useState, useCallback } from 'react';
-import { ShieldAlert, Check, X } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, Check } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
