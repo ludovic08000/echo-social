@@ -79,7 +79,26 @@ export async function runPostRestoreSync(userId: string, reason: RestoreReason):
     }
   }
 
-  // 2. Emit event for UI + sender-key watchers.
+  // 2. Publish a recovery marker so peers classify the upcoming fingerprint
+  //    rotation as a benign restore (TOFU recovery-aware) instead of MITM.
+  try {
+    const [{ loadIdentityKeys }, { publishRecoveryMarker }] = await Promise.all([
+      import('./keyManager'),
+      import('./recoveryMarkers'),
+    ]);
+    const keys = await loadIdentityKeys(userId).catch(() => null);
+    if (keys?.fingerprint) {
+      await publishRecoveryMarker({ userId, fingerprint: keys.fingerprint, reason });
+    }
+  } catch (e) {
+    logCryptoException('restore', e, {
+      severity: 'warning',
+      myDeviceId: deviceId ?? undefined,
+      metadata: { stage: 'publish_recovery_marker', reason },
+    });
+  }
+
+  // 3. Emit event for UI + sender-key watchers.
   try {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('forsure:e2ee-post-restore', {

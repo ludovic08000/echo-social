@@ -10,6 +10,7 @@ import { ChatWidgetProvider, useChatWidget } from "@/components/ChatWidgetContex
 import { ChatWidget } from "@/components/ChatWidget";
 import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
 import { RecoveryFlowGuard } from "@/components/RecoveryFlowGuard";
+import { SafetyNumberRevalidationBanner } from "@/components/messages/SafetyNumberRevalidationBanner";
 import { CookieConsentBanner } from "@/components/CookieConsentBanner";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
 import { useVersionWatcher } from "@/hooks/useVersionWatcher";
@@ -275,6 +276,7 @@ function AppContent() {
           <BrowserRouter>
             <RecoveryFlowGuard />
             <AccountKeySyncRunner />
+            <SafetyNumberRevalidationBanner />
             <IncomingCallHandler />
             <RoutedErrorBoundary>
             <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>

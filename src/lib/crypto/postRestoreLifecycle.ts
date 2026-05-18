@@ -57,12 +57,13 @@ async function revalidateCurrentDevicePrekeys(userId: string, deviceId: string):
 
 async function refreshSignedDeviceListBestEffort(userId: string, deviceId: string): Promise<void> {
   try {
-    const { data: device } = await supabase
+    const { data: deviceRow } = await supabase
       .from('user_devices' as any)
       .select('device_public_key')
       .eq('user_id', userId)
       .eq('device_id', deviceId)
       .maybeSingle();
+    const device = deviceRow as { device_public_key?: string } | null;
 
     if (!device?.device_public_key) return;
 
