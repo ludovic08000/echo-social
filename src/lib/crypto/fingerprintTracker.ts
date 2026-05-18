@@ -122,12 +122,17 @@ export async function checkFingerprintChangeWithServer(
       }
       console.warn('[PEER_KEY] ⚠️ Server-side fingerprint mismatch for', peerUserId, '(was previously verified)');
       try {
-        const { recordIdentityChange } = await import('@/lib/crypto/identityChangeLedger');
+        const [{ recordIdentityChange }, { peerHasRecentRecoveryMarker }] = await Promise.all([
+          import('@/lib/crypto/identityChangeLedger'),
+          import('@/lib/crypto/recoveryMarkers'),
+        ]);
+        const isRecovery = await peerHasRecentRecoveryMarker(peerUserId, currentFp);
         await recordIdentityChange({
           observerUserId: currentUserId,
           peerUserId,
           previousFingerprint: data.fingerprint,
           newFingerprint: currentFp,
+          changeType: isRecovery ? 'recovery_restore' : 'identity_rotation',
         });
       } catch (e) {
         console.warn('[A4] recordIdentityChange failed', e);
