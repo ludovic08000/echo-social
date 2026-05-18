@@ -10,6 +10,7 @@ import { ChatWidgetProvider, useChatWidget } from "@/components/ChatWidgetContex
 import { ChatWidget } from "@/components/ChatWidget";
 import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
 import { RecoveryFlowGuard } from "@/components/RecoveryFlowGuard";
+import { SafetyNumberRevalidationBanner } from "@/components/messages/SafetyNumberRevalidationBanner";
 import { CookieConsentBanner } from "@/components/CookieConsentBanner";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
 import { useVersionWatcher } from "@/hooks/useVersionWatcher";
