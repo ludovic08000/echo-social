@@ -11,6 +11,8 @@
  * `CryptoStateMachine` decide what to do next.
  */
 
+import { runPostRestoreLifecycle } from './postRestoreLifecycle';
+
 export type RecoverySource = 'pin' | 'recovery_key' | 'passkey';
 
 export type RecoveryAttempt =
@@ -21,6 +23,19 @@ export type RecoveryAttempt =
 export type RecoveryResult =
   | { ok: true; source: RecoverySource }
   | { ok: false; source: RecoverySource; reason: string };
+
+async function finishSuccessfulRecovery(userId: string, source: RecoverySource): Promise<RecoveryResult> {
+  const lifecycle = await runPostRestoreLifecycle(userId, source).catch((err) => {
+    console.warn('[E2EE][recovery] post-restore lifecycle failed', err);
+    return null;
+  });
+
+  if (lifecycle && !lifecycle.ok) {
+    console.warn('[E2EE][recovery] post-restore lifecycle incomplete', lifecycle);
+  }
+
+  return { ok: true, source };
+}
 
 /**
  * Probe whether a server-side backup exists for this user.
@@ -57,7 +72,7 @@ export async function attemptRecovery(
       }
       const out = await fn(userId, attempt.pin);
       return out
-        ? { ok: true, source: 'pin' }
+        ? await finishSuccessfulRecovery(userId, 'pin')
         : { ok: false, source: 'pin', reason: 'pin_invalid_or_no_blob' };
     }
 
@@ -69,7 +84,7 @@ export async function attemptRecovery(
       }
       const out = await fn(userId, attempt.key);
       return out
-        ? { ok: true, source: 'recovery_key' }
+        ? await finishSuccessfulRecovery(userId, 'recovery_key')
         : { ok: false, source: 'recovery_key', reason: 'recovery_key_invalid' };
     }
 
@@ -81,7 +96,7 @@ export async function attemptRecovery(
       }
       const out = await fn(userId);
       return out
-        ? { ok: true, source: 'passkey' }
+        ? await finishSuccessfulRecovery(userId, 'passkey')
         : { ok: false, source: 'passkey', reason: 'passkey_cancelled_or_failed' };
     }
 
