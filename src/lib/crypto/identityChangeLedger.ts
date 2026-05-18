@@ -7,6 +7,8 @@
 
 import { supabase } from '@/integrations/supabase/client';
 
+export type IdentityChangeType = 'identity_rotation' | 'recovery_restore';
+
 export interface IdentityChangeEvent {
   id: number;
   peerUserId: string;
@@ -14,6 +16,7 @@ export interface IdentityChangeEvent {
   newFingerprint: string;
   acknowledged: boolean;
   observedAt: string;
+  changeType: IdentityChangeType;
 }
 
 /** Record a peer's fingerprint rotation. Idempotent within ~5 min via dedup. */
@@ -22,24 +25,36 @@ export async function recordIdentityChange(params: {
   peerUserId: string;
   previousFingerprint: string | null;
   newFingerprint: string;
+  changeType?: IdentityChangeType;
 }): Promise<void> {
+  const changeType: IdentityChangeType = params.changeType ?? 'identity_rotation';
   // Dedup: skip if an unacknowledged event with same new fp already exists.
   const { data: existing } = await supabase
     .from('user_identity_change_events' as any)
-    .select('id')
+    .select('id, change_type')
     .eq('observer_user_id', params.observerUserId)
     .eq('peer_user_id', params.peerUserId)
     .eq('new_fingerprint', params.newFingerprint)
     .eq('acknowledged', false)
     .limit(1)
     .maybeSingle();
-  if (existing) return;
+  if (existing) {
+    const existingType = (existing as any).change_type as IdentityChangeType | undefined;
+    if (changeType === 'recovery_restore' && existingType !== 'recovery_restore') {
+      await supabase
+        .from('user_identity_change_events' as any)
+        .update({ change_type: 'recovery_restore' })
+        .eq('id', (existing as any).id);
+    }
+    return;
+  }
 
   await supabase.from('user_identity_change_events' as any).insert({
     observer_user_id: params.observerUserId,
     peer_user_id: params.peerUserId,
     previous_fingerprint: params.previousFingerprint,
     new_fingerprint: params.newFingerprint,
+    change_type: changeType,
   });
 }
 
@@ -49,7 +64,7 @@ export async function fetchUnacknowledgedIdentityChanges(
 ): Promise<IdentityChangeEvent[]> {
   let q = supabase
     .from('user_identity_change_events' as any)
-    .select('id, peer_user_id, previous_fingerprint, new_fingerprint, acknowledged, observed_at')
+    .select('id, peer_user_id, previous_fingerprint, new_fingerprint, acknowledged, observed_at, change_type')
     .eq('observer_user_id', observerUserId)
     .eq('acknowledged', false)
     .order('observed_at', { ascending: false });
@@ -62,6 +77,7 @@ export async function fetchUnacknowledgedIdentityChanges(
     newFingerprint: r.new_fingerprint,
     acknowledged: r.acknowledged,
     observedAt: r.observed_at,
+    changeType: (r.change_type as IdentityChangeType) ?? 'identity_rotation',
   }));
 }
 
