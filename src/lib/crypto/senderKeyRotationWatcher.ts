@@ -60,8 +60,57 @@ async function handleMembershipChange(
   }
 }
 
+/**
+ * Rotate EVERY owned chain for `userId` on `myDeviceId`. Used by the
+ * post-restore lifecycle: after a key restore, all sender keys held by
+ * peers for this device are likely stale, so we rotate proactively and
+ * the next outbound send re-fans a fresh SKDM to every recipient.
+ */
+async function rotateAllOwnedChains(userId: string): Promise<void> {
+  if (!userId) return;
+  if (isDeviceIdTemporary()) return;
+  const senderDeviceId = getCurrentDeviceId();
+  try {
+    const { data, error } = await supabase
+      .from('sender_key_state')
+      .select('conversation_id')
+      .eq('sender_user_id', userId)
+      .eq('sender_device_id', senderDeviceId)
+      .eq('is_owner', true);
+    if (error || !data?.length) return;
+
+    let rotated = 0;
+    for (const row of data) {
+      const convId = (row as any).conversation_id as string;
+      if (!convId) continue;
+      try {
+        await rotateOwnerSession(convId, userId, senderDeviceId);
+        invalidateSenderKeysFlag(convId);
+        rotated += 1;
+      } catch (e) {
+        console.warn('[SK_ROTATE] post-restore rotation failed', { convId, e });
+      }
+    }
+    console.info('[SK_ROTATE] post-restore rotated chains', { rotated, total: data.length });
+  } catch (e) {
+    console.warn('[SK_ROTATE] post-restore enumeration failed', e);
+  }
+}
+
+let postRestoreWired = false;
+function wirePostRestoreListenerOnce(): void {
+  if (postRestoreWired || typeof window === 'undefined') return;
+  postRestoreWired = true;
+  window.addEventListener('forsure:e2ee-post-restore', (ev: any) => {
+    const uid = ev?.detail?.userId as string | undefined;
+    if (uid) void rotateAllOwnedChains(uid);
+  });
+}
+
 export function subscribeSenderKeyRotation(userId: string): () => void {
   if (!userId) return () => {};
+
+  wirePostRestoreListenerOnce();
 
   const existing = activeWatchers.get(userId);
   if (existing) {
