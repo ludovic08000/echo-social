@@ -19,6 +19,7 @@ import { tryEveryRatchetSession } from './fallbackDecrypt';
 import { legacyDecryptByMessageId, isKnownLegacyFormat } from './legacyDecryptRouter';
 import { hasSeenMessage, markSeenMessage, makeSeenKey } from './seenMessageStore';
 import { requestRefanout } from './refanoutQueue';
+import { noteDecryptFailure, clearDecryptFailure } from './refanoutQueue';
 import type { DecryptResult, UserId } from './types';
 
 interface RouteInput {
