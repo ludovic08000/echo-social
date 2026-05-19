@@ -86,6 +86,7 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
     try {
       const pt = await deviceRatchetDecrypt(recipientUserId, me, encryptedBody);
       if (pt !== null) {
+        clearDecryptFailure(messageId);
         markSeenMessage(seenKey);
         return {
           ok: true,
@@ -105,15 +106,25 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
         messageId,
       );
       if (fb.ok) {
+        clearDecryptFailure(messageId);
         markSeenMessage(seenKey);
         return fb;
       }
     } else if (messageId) {
       const r = await legacyDecryptByMessageId(messageId, senderUserId);
       if (r.ok) {
+        clearDecryptFailure(messageId);
         markSeenMessage(seenKey);
         return r;
       }
+    }
+
+    // Persistent failure: ask sender to re-fan-out a fresh device copy.
+    // If the request was actually dispatched, DO NOT markSeenMessage —
+    // the next realtime/queue resume will retry with the new envelope.
+    const refanoutSent = await noteDecryptFailure(messageId, senderUserId);
+    if (refanoutSent) {
+      return { ok: false, plaintext: null, errorCode: 'REFANOUT_REQUESTED' };
     }
 
     markSeenMessage(seenKey);
@@ -123,8 +134,14 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
   if (messageId && isKnownLegacyFormat(encryptedBody)) {
     const r = await legacyDecryptByMessageId(messageId, senderUserId);
     if (r.ok) {
+      clearDecryptFailure(messageId);
       markSeenMessage(seenKey);
       return r;
+    }
+
+    const refanoutSent = await noteDecryptFailure(messageId, senderUserId);
+    if (refanoutSent) {
+      return { ok: false, plaintext: null, errorCode: 'REFANOUT_REQUESTED' };
     }
 
     markSeenMessage(seenKey);
