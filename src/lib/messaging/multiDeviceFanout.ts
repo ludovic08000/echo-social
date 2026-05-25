@@ -26,7 +26,6 @@ import {
   fetchPrekeyBundleForDevice,
   peekDeviceSignedPrekey,
   x3dhInitiate,
-  x3dhRespond,
   x3dhRespondForDevice,
 } from '@/lib/crypto/x3dh';
 import { getOrCreateIdentityKeys, PinUnlockRequiredError } from '@/lib/crypto/keyManager';
@@ -67,13 +66,26 @@ interface DeviceEncryptTargetInput {
   plaintext: string;
 }
 
-// ─── X3DH-wrapped envelopes ─────────────────────────────────────────────────
-// Two on-wire formats, both per-device:
-//   v1 (legacy, no OPK): "x3dh1." iv "." ct "." ek "." spkId
-//   v2 (with OPK):       "x3dh2." iv "." ct "." ek "." spkId "." opkId
-// On read we detect the prefix and route to the right responder.
 const X3DH_PREFIX_V1 = 'x3dh1.';
 const X3DH_PREFIX_V2 = 'x3dh2.';
+
+// Production hotfix: Lovable/Supabase access may not be available to run the
+// quarantine migration immediately. These device ids were observed with SPK
+// signatures that do not verify against the active account signing key. Treat
+// them as cryptographically dead routing ids client-side so the app stops
+// fetching their bundles and stops re-logging the same X3DH warning.
+const KNOWN_INVALID_DEVICE_IDS = new Set<string>([
+  '52adb13ff236ae5c833c9d9049c0df71',
+  'b166de502d729356dcbd6c0b5b1a39b0',
+  '49cfdeab59355de3051925b4f09fba75',
+  '92585130870cedf210af1019379dbc61',
+  '450c0cd9af35807214bf3aa161dd03a',
+  '84aaa52143235807214bf3aa161dd03a',
+]);
+
+function isKnownInvalidDeviceId(deviceId: string | null | undefined): boolean {
+  return !!deviceId && KNOWN_INVALID_DEVICE_IDS.has(deviceId);
+}
 
 async function aesFromSecret(secret: ArrayBuffer): Promise<CryptoKey> {
   return hardCrypto.importKey('raw', secret.slice(0, 32), { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
@@ -85,6 +97,7 @@ async function x3dhWrapForDevice(
   recipientUserId: string,
   recipientDeviceId: string,
 ): Promise<string | null> {
+  if (isKnownInvalidDeviceId(recipientDeviceId)) return null;
   try {
     const bundle = await fetchPrekeyBundleForDevice(recipientUserId, recipientDeviceId);
     if (!bundle) return null;
@@ -108,10 +121,6 @@ async function x3dhWrapForDevice(
     ];
     if (result.usedOTPKId !== undefined) parts.push(String(result.usedOTPKId));
 
-    // After a successful X3DH, cache the device-pair session so subsequent
-    // messages skip the full handshake. The peer's SPK acts as their initial
-    // DH ratchet public key — initiator immediately performs a DH-ratchet
-    // step so the very first DR message carries a fresh ratchet pub.
     try {
       const myDeviceId = getCurrentDeviceId();
       await establishDeviceSession(
@@ -125,19 +134,13 @@ async function x3dhWrapForDevice(
           peerSpkId: bundle.signedPrekeyId,
         },
       );
-    } catch {
-      // Non-fatal: session cache write failure means the next message will
-      // re-run X3DH. Silenced to keep the hot path quiet.
-    }
+    } catch {}
 
     return parts.join('.');
   } catch (e) {
-    // Bubble PIN-unlock signal up so the UI can prompt the user; never swallow it
-    // (otherwise fanout silently downgrades and the message is sent without per-device copies).
     if (e instanceof PinUnlockRequiredError || String(e).toLowerCase().includes('pin unlock required')) {
       throw e;
     }
-    // Other errors → caller falls back to deviceWrap. Silent.
     return null;
   }
 }
@@ -168,7 +171,6 @@ async function x3dhUnwrapForDevice(
     const myKeys = await getOrCreateIdentityKeys(recipientUserId);
     const myDeviceId = getCurrentDeviceId();
 
-    // Per-device responder: loads device-scoped SPK private + (optionally) the OPK private.
     const { sharedSecret, spkKeyPair } = await x3dhRespondForDevice(myKeys, recipientUserId, myDeviceId, {
       ik: senderIdentityKeyB64,
       ek: ekB64,
@@ -182,12 +184,6 @@ async function x3dhUnwrapForDevice(
       base64ToBuffer(ctB64),
     );
 
-    // Cache the device-pair session so the NEXT message from this peer device
-    // can be decrypted via the v3 fast path (no X3DH respond needed).
-    // SESAME PRIMING: seed our local DH ratchet pair with the device SPK
-    // keypair. This mirrors what the initiator did
-    // (`DH(initiatorEphemeral, SPK_pub)`) so the very first inbound v4
-    // message can complete a DH-ratchet step without us having to send first.
     try {
       const spkPrivJwk = await hardCrypto.exportKey('jwk', spkKeyPair.privateKey);
       const spkPubRaw = await hardCrypto.exportKey('raw', spkKeyPair.publicKey);
@@ -204,25 +200,20 @@ async function x3dhUnwrapForDevice(
           selfInitialDhPubB64: spkPubB64,
         },
       );
-    } catch {
-      // Non-fatal: session cache write failure means the next message will
-      // re-run X3DH. Silenced to keep the hot path quiet.
-    }
+    } catch {}
 
     return new hardGlobals.TextDecoder().decode(pt);
   } catch {
-    // X3DH unwrap failed — caller will try deviceWrap legacy path. Silent.
     return null;
   }
 }
-
-// ─── Public API ─────────────────────────────────────────────────────────────
 
 export async function encryptPlaintextForDeviceTarget(
   input: DeviceEncryptTargetInput,
 ): Promise<{ encryptedBody: string; senderDeviceId: string } | null> {
   if (!input.recipientDevicePublicKey) return null;
   if (isDeviceIdTemporary()) return null;
+  if (isKnownInvalidDeviceId(input.recipientDeviceId)) return null;
 
   const senderDeviceId = input.senderDeviceId ?? getCurrentDeviceId();
 
@@ -264,13 +255,7 @@ export async function encryptPlaintextForDeviceTarget(
       input.recipientDeviceId,
       input.plaintext,
     );
-    if (
-      encrypted &&
-      !encrypted.startsWith(RATCHET_PREFIX_V5) &&
-      !encrypted.startsWith(RATCHET_PREFIX_V4)
-    ) {
-      // Drop legacy v3 envelopes — force fresh X3DH so new traffic stays on
-      // Double Ratchet (v4) or DR + AAD (v5).
+    if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V5) && !encrypted.startsWith(RATCHET_PREFIX_V4)) {
       encrypted = null;
     }
   } catch (e) {
@@ -318,17 +303,11 @@ export async function encryptPlaintextForDeviceTarget(
 }
 
 export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserted: number; multiDevice: boolean }> {
-  // SAFETY: Never bind a fresh ratchet session to a temporary device id —
-  // doing so would orphan all session state once Keychain hydrates with
-  // the real one. Skip fan-out entirely; the per-conv ratchet still
-  // delivers to the primary device.
   if (isDeviceIdTemporary()) {
-    // Silent skip: per-conv ratchet still delivers to the primary device.
     return { inserted: 0, multiDevice: false };
   }
   const senderDeviceId = getCurrentDeviceId();
 
-  // 1. Get all participants of the conversation
   const { data: participants } = await supabase
     .from('conversation_participants')
     .select('user_id')
@@ -337,7 +316,6 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
   if (!participants?.length) return { inserted: 0, multiDevice: false };
   const userIds = participants.map(p => p.user_id);
 
-  // 2. List active devices per participant
   const deviceLists = await Promise.all(
     userIds.map(async (uid) => {
       try {
@@ -354,26 +332,17 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
   );
   const allDevices = deviceLists.flat();
 
-  // Multi-device only relevant if at least 1 device beyond the current sender device
   const targets = allDevices.filter(d =>
-    !(d.user_id === input.senderUserId && d.device_id === senderDeviceId),
+    !(d.user_id === input.senderUserId && d.device_id === senderDeviceId) &&
+    !isKnownInvalidDeviceId(d.device_id),
   );
   if (targets.length === 0) return { inserted: 0, multiDevice: false };
 
-  // 3. For each target device:
-  //    pre) detect peer SPK rotation → invalidate stale session (avoids
-  //         silent decryption failures on the recipient side)
-  //    a)   ratchet v3/v4 (existing session, fastest)
-  //    b)   X3DH per-device (v1/v2, also caches a session for next time)
-  //    c)   deviceWrap (legacy ECDH fallback)
   const rows: Array<Record<string, string>> = [];
   for (const dev of targets) {
     if (!dev.device_public_key) continue;
+    if (isKnownInvalidDeviceId(dev.device_id)) continue;
 
-    // (pre) Check whether the cached session was negotiated against an SPK
-    // that the peer has since rotated. If so, drop the session so step (b)
-    // re-runs X3DH with the fresh prekey. We only fetch the bundle when a
-    // session actually exists (cheap fast-path otherwise).
     try {
       const cachedSpkId = await getSessionPeerSpkId(
         input.senderUserId, senderDeviceId, dev.user_id, dev.device_id,
@@ -397,25 +366,15 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
       });
     }
 
-    // (a) Try the cached device-pair ratchet first. STRICT v4 — if the
-    //     cache returns a v3 envelope (legacy session that hasn't been
-    //     re-bootstrapped yet), drop it and force fresh X3DH below so new
-    //     traffic stays on Double Ratchet w/ DH ratchet.
     let encrypted: string | null = await ratchetEncrypt(
       input.senderUserId, senderDeviceId,
       dev.user_id, dev.device_id,
       input.plaintext,
     );
-    if (
-      encrypted &&
-      !encrypted.startsWith(RATCHET_PREFIX_V5) &&
-      !encrypted.startsWith(RATCHET_PREFIX_V4)
-    ) {
-      // Drop legacy v3 envelopes — accept v4 (DR) and v5 (DR + AAD) only.
+    if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V5) && !encrypted.startsWith(RATCHET_PREFIX_V4)) {
       encrypted = null;
     }
 
-    // (b) Fresh X3DH (v1 or v2) — this also seeds the ratchet for next time.
     if (!encrypted) {
       encrypted = await x3dhWrapForDevice(
         input.plaintext,
@@ -425,7 +384,6 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
       );
     }
 
-    // (c) Legacy deviceWrap fallback.
     if (!encrypted) {
       try {
         encrypted = await wrapPlaintextForDevice(
@@ -475,7 +433,6 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
     return { inserted: 0, multiDevice: true };
   }
 
-  // 4. Tag the parent message as multi-device for downstream readers
   await supabase
     .from('messages')
     .update({ body_kind: 'multi_device' } as any)
@@ -484,11 +441,6 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
   return { inserted: rows.length, multiDevice: true };
 }
 
-/**
- * Try to read a message via the per-device copy table.
- * Returns plaintext or null. Used by DecryptedMessageBody as fallback when the
- * ratchet decrypt fails (typical case: secondary device).
- */
 interface TryReadDeviceCopyOptions {
   requestRetry?: boolean;
 }
@@ -504,7 +456,6 @@ export async function tryReadDeviceCopy(
   if (!user) return null;
 
   try {
-    // Primary: copy explicitly addressed to this device_id.
     type CopyRow = {
       encrypted_body: string;
       sender_user_id: string;
@@ -519,10 +470,6 @@ export async function tryReadDeviceCopy(
     if (targeted && targeted.length > 0) {
       rows = (targeted as CopyRow[]).map(r => ({ ...r, recipient_device_id: r.recipient_device_id ?? myDeviceId }));
     } else {
-      // Fallback: device_id changed (localStorage/Keychain wiped on iOS).
-      // Try every copy addressed to this user — and for each one, attempt
-      // decryption using the ORIGINAL recipient_device_id from the row, since
-      // that's the device id the message was actually encrypted for.
       const { data: allCopies } = await supabase.rpc('get_device_copies_for_user', {
         p_message_id: messageId,
       });
@@ -564,9 +511,6 @@ export async function tryReadDeviceCopy(
       }
     }
 
-    // Try each candidate row in order; first successful decryption wins.
-    // Use the row's recipient_device_id (when present) so iOS-restored installs
-    // can still decrypt copies originally targeted at the previous device id.
     for (const row of rows) {
       const targetDeviceId = row.recipient_device_id || myDeviceId;
       const pt = await tryDecryptCopy(row, user.id, targetDeviceId);
@@ -589,7 +533,6 @@ export async function tryReadDeviceCopy(
   }
 }
 
-/** Attempt decryption of a single device-targeted encrypted row. Returns plaintext or null. */
 export async function tryDecryptDeviceTargetedBody(
   row: { encrypted_body: string; sender_user_id: string; sender_device_id: string },
   userId: string,
@@ -598,25 +541,12 @@ export async function tryDecryptDeviceTargetedBody(
   return tryDecryptCopy(row, userId, myDeviceId);
 }
 
-/** Attempt decryption of a single device copy row. Returns plaintext or null. */
 async function tryDecryptCopy(
   row: { encrypted_body: string; sender_user_id: string; sender_device_id: string },
   userId: string,
   myDeviceId: string,
 ): Promise<string | null> {
   try {
-
-    // Path 0: cached device-pair ratchet — v3 (legacy KDF chain),
-    // v4 (Double Ratchet, no AAD) and **v5** (Double Ratchet + AAD).
-    //
-    // Bug history: this branch used to only check V3/V4 prefixes. The sender
-    // emits V5 envelopes (`x3dh5.`) for every device-pair message, so V5
-    // device-copies fell through every decoder and the recipient was stuck
-    // displaying ciphertext. This was the root cause of the cross-platform
-    // (Windows ↔ iOS) "message stays encrypted" symptom: same-platform pairs
-    // often had a conversation-level ratchet session as a side path, while
-    // first-contact cross-platform pairs depended exclusively on the device
-    // copy path — which did not recognise V5.
     if (
       row.encrypted_body.startsWith(RATCHET_PREFIX_V5) ||
       row.encrypted_body.startsWith(RATCHET_PREFIX_V4) ||
@@ -672,7 +602,6 @@ async function tryDecryptCopy(
       senderPubLegacy?.identity_key ?? null,
     );
   } catch {
-    // Single-copy decrypt failure — caller iterates remaining rows. Silent.
     return null;
   }
 }
