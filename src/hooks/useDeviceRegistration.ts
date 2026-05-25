@@ -23,6 +23,7 @@ import {
   hydrateDeviceId,
   isDeviceIdTemporary,
   getDeviceFingerprint,
+  rotateCurrentDeviceId,
 } from '@/lib/messaging/currentDevice';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle, PinUnlockRequiredError } from '@/lib/crypto/keyManager';
 import {
@@ -40,6 +41,8 @@ import {
   restoreKeysFromKeychainSnapshot,
 } from '@/lib/crypto/accountKeyBackup';
 
+const REVOKED_DEVICE_ERROR_RE = /USER_DEVICES_REACTIVATION_BLOCKED|revoked_device_cannot_be_reactivated|DEVICE_REVOKED|DEVICE_REVOKED_OR_LOCKED/i;
+
 export function useDeviceRegistration() {
   const { user } = useAuth();
   const ranRef = useRef(false);
@@ -48,12 +51,12 @@ export function useDeviceRegistration() {
   useEffect(() => {
     if (!user) return;
 
-    const registerCurrentDevice = async (reason: string) => {
+    const registerCurrentDevice = async (reason: string, attempt = 0) => {
       if (ranRef.current || inFlightRef.current) return;
       ranRef.current = true;
       inFlightRef.current = true;
       try {
-        console.log('[useDeviceRegistration] publishing current device', { reason });
+        console.log('[useDeviceRegistration] publishing current device', { reason, attempt });
         const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
         if (isDeviceIdTemporary()) {
           console.warn('[useDeviceRegistration] device id still temporary - delaying device publish');
@@ -94,10 +97,25 @@ export function useDeviceRegistration() {
         try {
           const { data: existing } = await supabase
             .from('user_devices')
-            .select('device_public_key')
+            .select('device_public_key,is_active')
             .eq('user_id', user.id)
             .eq('device_id', deviceId)
             .maybeSingle();
+
+          if (existing && existing.is_active === false) {
+            console.warn('[useDeviceRegistration] server says current device id is revoked — rotating local id instead of reactivating', {
+              deviceId: deviceId.slice(0, 8),
+              attempt,
+            });
+            if (attempt < 2) {
+              rotateCurrentDeviceId('server-revoked-before-publish');
+              ranRef.current = false;
+              inFlightRef.current = false;
+              return registerCurrentDevice('rotated-revoked-device', attempt + 1);
+            }
+            return;
+          }
+
           serverDevicePublicKey = (existing?.device_public_key as string | null) ?? null;
         } catch (lookupErr) {
           console.warn('[useDeviceRegistration] server device lookup failed:', lookupErr);
@@ -194,13 +212,53 @@ export function useDeviceRegistration() {
           last_seen_at: new Date().toISOString(),
         };
 
-        // 1. Register the device (idempotent upsert)
-        const { error: devErr } = await supabase
-          .from('user_devices')
-          .upsert(payload, { onConflict: 'user_id,device_id' });
-        if (devErr) {
-          console.warn('[useDeviceRegistration] device upsert failed:', devErr.message);
-          return;
+        // 1. Register the device.
+        // Prefer the safe RPC added in the matching migration; fall back to the
+        // legacy upsert while still detecting the revoked-device SQL error.
+        let registered = false;
+        try {
+          const { data: rpcResult, error: rpcErr } = await (supabase as any).rpc('register_user_device_safe', {
+            p_user_id: payload.user_id,
+            p_device_id: payload.device_id,
+            p_device_name: payload.device_name,
+            p_device_public_key: payload.device_public_key,
+            p_device_fingerprint: payload.device_fingerprint,
+            p_platform: payload.platform,
+            p_user_agent: payload.user_agent,
+          });
+
+          if (!rpcErr && rpcResult?.ok === true) {
+            registered = true;
+          } else if (!rpcErr && REVOKED_DEVICE_ERROR_RE.test(String(rpcResult?.code ?? rpcResult?.message ?? ''))) {
+            console.warn('[useDeviceRegistration] safe RPC rejected revoked device — rotating local id', rpcResult);
+            if (attempt < 2) {
+              rotateCurrentDeviceId('rpc-revoked-device');
+              ranRef.current = false;
+              inFlightRef.current = false;
+              return registerCurrentDevice('rotated-after-rpc-revoked', attempt + 1);
+            }
+            return;
+          } else if (rpcErr) {
+            console.warn('[useDeviceRegistration] safe RPC unavailable/failed, falling back to legacy upsert:', rpcErr.message);
+          }
+        } catch (rpcUnexpectedErr) {
+          console.warn('[useDeviceRegistration] safe RPC unexpected failure, falling back to legacy upsert:', rpcUnexpectedErr);
+        }
+
+        if (!registered) {
+          const { error: devErr } = await supabase
+            .from('user_devices')
+            .upsert(payload, { onConflict: 'user_id,device_id' });
+          if (devErr) {
+            console.warn('[useDeviceRegistration] device upsert failed:', devErr.message);
+            if (REVOKED_DEVICE_ERROR_RE.test(devErr.message) && attempt < 2) {
+              rotateCurrentDeviceId('upsert-revoked-device');
+              ranRef.current = false;
+              inFlightRef.current = false;
+              return registerCurrentDevice('rotated-after-upsert-revoked', attempt + 1);
+            }
+            return;
+          }
         }
 
         // Mark stale/revoke old devices and delete our local sessions to
