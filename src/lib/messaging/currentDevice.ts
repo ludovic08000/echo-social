@@ -128,6 +128,32 @@ export function setCurrentDeviceId(id: string): string {
   return persistEverywhere(id);
 }
 
+/**
+ * Rotate away from a server-revoked routing id.
+ *
+ * Security invariant: a revoked device_id must never be silently reactivated.
+ * When the server says the current id is revoked, we generate a fresh routing id
+ * and persist it everywhere. Cryptographic identity keys remain account-scoped;
+ * per-device KX/SPK/OPK material will be regenerated for the new id by the
+ * registration flow.
+ */
+export function rotateCurrentDeviceId(reason = 'revoked-device'): string {
+  const previous = memoryDeviceId || nativeGetSync(STORAGE_KEY) || null;
+  const next = generateId();
+
+  // Break any pending hydration cache so future startup code cannot overwrite
+  // this new id with the just-rejected revoked value.
+  hydrationPromise = null;
+
+  console.warn('[device-id] rotating current device id', {
+    reason,
+    previous: previous ? previous.slice(0, 8) : 'none',
+    next: next.slice(0, 8),
+  });
+
+  return persistEverywhere(next);
+}
+
 export function getCurrentDeviceId(): string {
   if (memoryDeviceId) return memoryDeviceId;
 
@@ -197,7 +223,7 @@ export async function hydrateDeviceId(): Promise<string> {
 
       // 3) Fall back to the SERVER fingerprint binding so iOS reuses the
       //    same device_id after Safari purges everything (ITP). This is
-      //    what stops anciens messages from becoming undecipherable on
+      //    what stops anciens messages from devenir undecipherable on
       //    every cold start.
       try {
         const candidates = await getDeviceFingerprintCandidates();
