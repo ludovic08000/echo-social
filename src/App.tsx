@@ -32,24 +32,18 @@ import { PushAutoSubscribe } from "@/components/push/PushAutoSubscribe";
 import { E2EERestorePromptDialog } from "@/components/messages/E2EERestorePromptDialog";
 import { ContactVerificationDialog } from "@/components/messages/ContactVerificationDialog";
 
-// Eager-load critical routes
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Feed from "./pages/Feed";
 import Profile from "./pages/Profile";
-// Dashboard and AdsManager are heavy admin/creator surfaces; lazy-load them
-// so they don't bloat the initial bundle for casual visitors landing on /.
 import NotFound from "./pages/NotFound";
 
-// Lazy-load with auto-retry on chunk errors (deploy / cache invalidation / HMR races)
 const isChunkLoadError = (e: unknown): boolean => {
   const msg = (e as Error)?.message || '';
   return /Failed to fetch dynamically imported module|Importing a module script failed|ChunkLoadError|Loading chunk \d+ failed|error loading dynamically imported module/i.test(msg);
 };
 
-// Clear stale retry flags after the app has lived 5s without crashing,
-// so a future chunk failure can still recover via reload.
 if (typeof window !== 'undefined') {
   setTimeout(() => {
     try {
@@ -71,14 +65,12 @@ const lazyWithOneRetry = <TModule extends { default: React.ComponentType<any> }>
     return mod;
   } catch (e1) {
     if (!isChunkLoadError(e1)) throw e1;
-    // The browser module map caches the failed URL — re-importing the same URL
-    // won't help. Hard reload to fetch a fresh ?t= timestamp / new build hash.
     const lastRetry = Number(sessionStorage.getItem(retryKey) || '0');
     const canRetry = !lastRetry || Date.now() - lastRetry > 8000;
     if (canRetry) {
       sessionStorage.setItem(retryKey, String(Date.now()));
       window.location.reload();
-      return new Promise<TModule>(() => {}); // suspend until reload
+      return new Promise<TModule>(() => {});
     }
     throw e1;
   }
@@ -110,7 +102,6 @@ const ProductDetailPage = lazyWithOneRetry(() => import("./pages/ProductDetail")
 const LegalTerms = lazyWithOneRetry(() => import("./pages/LegalTerms"), 'r-legal');
 const PrivacyPolicy = lazyWithOneRetry(() => import("./pages/PrivacyPolicy"), 'r-privacy');
 const AIEngine = lazyWithOneRetry(() => import("./pages/AIEngine"), 'r-ai');
-
 const AIAgents = lazyWithOneRetry(() => import("./pages/AIAgents"), 'r-agents');
 const Admin = lazyWithOneRetry(() => import("./pages/Admin"), 'r-admin');
 const KeyTransparencyAudit = lazyWithOneRetry(() => import("./pages/KeyTransparencyAudit"), 'r-kt-audit');
@@ -131,12 +122,10 @@ const AdsManager = lazyWithOneRetry(() => import("./pages/AdsManager"), 'r-ads')
 
 const queryClient = new QueryClient();
 
-/** Global incoming call listener — renders the ringing UI + handles accept */
 function IncomingCallHandler() {
   const { user } = useAuth();
   const { incomingCall, acceptCall, declineCall } = useIncomingCall();
   const { openChat } = useChatWidget();
-
   const activeIncomingCallIdRef = useRef<string | null>(null);
   const activeIncomingConversationIdRef = useRef<string | null>(null);
 
@@ -159,7 +148,6 @@ function IncomingCallHandler() {
     try {
       const accepted = await acceptCall();
       if (!accepted) return;
-
       activeIncomingCallIdRef.current = accepted.id;
       activeIncomingConversationIdRef.current = accepted.conversation_id;
       call.startCall(accepted.conversation_id, accepted.call_type, accepted.decryptedCallKey);
@@ -174,13 +162,7 @@ function IncomingCallHandler() {
   return (
     <>
       <PushAutoSubscribe />
-      {incomingCall && (
-        <IncomingCallOverlay
-          call={incomingCall}
-          onAccept={handleAccept}
-          onDecline={declineCall}
-        />
-      )}
+      {incomingCall && <IncomingCallOverlay call={incomingCall} onAccept={handleAccept} onDecline={declineCall} />}
       {call.callState !== 'idle' && (
         <CallOverlay
           callState={call.callState}
@@ -211,17 +193,12 @@ function AccountKeySyncRunner() {
   useCryptoMaintenance();
   useDeviceRegistration();
 
-  // PR #14 — Realtime key sync: when any party publishes / rotates a key,
-  // silently retry queued messages so the user never sees "waiting for key".
   useEffect(() => {
     if (!user?.id) return;
     const stop = startRealtimeKeySync({ userId: user.id });
     return () => stop();
   }, [user?.id]);
 
-  // Auto-backfill: re-emit per-device copies for recent messages this device
-  // sent before multi-device fan-out was wired (or while the recipient device
-  // was still bootstrapping its prekey bundle). Idempotent + debounced 5min.
   useEffect(() => {
     if (!user?.id) return;
     void import('@/lib/messaging/backfillMissingCopies').then(({ scheduleBackfillMissingDeviceCopies }) => {
@@ -229,8 +206,49 @@ function AccountKeySyncRunner() {
     });
   }, [user?.id]);
 
-  // Sender Keys inbound: catch up undelivered SKDMs at boot, then subscribe
-  // to realtime inserts so opted-in conversations install the chain on the fly.
+  // Process durable retry requests. When Windows cannot decrypt a message copy,
+  // it requests a fresh copy. The original sender device processes the queue
+  // when it comes back online and still has plaintext cached.
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    const run = () => {
+      if (cancelled) return;
+      void import('@/lib/messaging/deviceCopyRetryProcessor').then(({ processDeviceCopyRetryRequests }) => {
+        void processDeviceCopyRetryRequests(50);
+      }).catch(() => {});
+    };
+    const initial = window.setTimeout(run, 12_000);
+    const interval = window.setInterval(run, 60_000);
+    const onFocus = () => run();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [user?.id]);
+
+  // Keep the active-device list clean so stale iOS/Web devices with invalid SPKs
+  // stop receiving new copies and stop producing repeated SPK invalid warnings.
+  useEffect(() => {
+    if (!user?.id) return;
+    const t = window.setTimeout(() => {
+      void Promise.all([
+        import('@/integrations/supabase/client'),
+        import('@/lib/messaging/currentDevice'),
+      ]).then(([{ supabase }, { getCurrentDeviceId, isDeviceIdTemporary }]) => {
+        if (isDeviceIdTemporary()) return;
+        void (supabase as any).rpc('cleanup_current_user_stale_devices', {
+          p_current_device_id: getCurrentDeviceId(),
+          p_stale_after: '14 days',
+        });
+      }).catch(() => {});
+    }, 20_000);
+    return () => window.clearTimeout(t);
+  }, [user?.id]);
+
   useEffect(() => {
     if (!user?.id) return;
     void catchUpSenderKeyDistribution(user.id);
@@ -245,7 +263,6 @@ function AccountKeySyncRunner() {
     };
   }, [user?.id]);
 
-  // PR #13 — listen for forced device-kx restore (server has a key we can't match)
   useEffect(() => {
     const onRestoreNeeded = (e: Event) => {
       const detail = (e as CustomEvent).detail || {};
@@ -267,101 +284,91 @@ function AppContent() {
   useSettingsInit();
   useVersionWatcher();
   return (
-      <AuthProvider>
-        <ParentalGateProvider>
+    <AuthProvider>
+      <ParentalGateProvider>
         <ChatWidgetProvider>
           <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <RecoveryFlowGuard />
-            <AccountKeySyncRunner />
-            <SafetyNumberRevalidationBanner />
-            <IncomingCallHandler />
-            <RoutedErrorBoundary>
-            <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
-            <Routes>
-              {/* Public routes */}
-              <Route path="/" element={<Navigate to="/feed" replace />} />
-              <Route path="/landing" element={<Landing />} />
-              <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
-              <Route path="/signup" element={<PublicOnlyRoute><Signup /></PublicOnlyRoute>} />
-              <Route path="/legal" element={<LegalTerms />} />
-              <Route path="/legal/terms" element={<LegalTerms />} />
-              <Route path="/legal/privacy" element={<PrivacyPolicy />} />
-              <Route path="/privacy" element={<PrivacyPolicy />} />
-              <Route path="/a-propos" element={<SEOLanding />} />
-              <Route path="/reseau-social-securise" element={<SEOSecurity />} />
-              <Route path="/messagerie-chiffree" element={<SEOMessaging />} />
-              <Route path="/ia-moderation" element={<SEOModeration />} />
-              <Route path="/protection-donnees" element={<SEOProtection />} />
-              <Route path="/feed-intelligent" element={<SEOFeed />} />
-              {/* Legacy SEO redirects */}
-              <Route path="/fonctionnalites/messagerie-chiffree" element={<SEOMessaging />} />
-              <Route path="/fonctionnalites/securite" element={<SEOSecurity />} />
-              <Route path="/fonctionnalites/moderation-ia" element={<SEOModeration />} />
-              <Route path="/fonctionnalites/protection-utilisateurs" element={<SEOProtection />} />
-              <Route path="/fonctionnalites/feed-intelligent" element={<SEOFeed />} />
-              <Route path="/forgot-password" element={<PublicOnlyRoute><ForgotPassword /></PublicOnlyRoute>} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/onboarding" element={<Onboarding />} />
-              <Route path="/auth/confirm" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}><AuthConfirmPage /></Suspense>} />
-              
-              {/* Browsable routes (guest-friendly) */}
-              <Route path="/feed" element={<Feed />} />
-              <Route path="/post/:id" element={<PostDetail />} />
-              <Route path="/profile/:id" element={<Profile />} />
-              <Route path="/search" element={<Search />} />
-              <Route path="/videos" element={<Videos />} />
-              <Route path="/lives" element={<LiveScreen />} />
-              <Route path="/live/:id" element={<LiveWatch />} />
-              <Route path="/marketplace" element={<Marketplace />} />
-              <Route path="/marketplace/product/:id" element={<ProductDetailPage />} />
-              <Route path="/challenges" element={<Challenges />} />
-              <Route path="/channels" element={<Channels />} />
-              <Route path="/games" element={<Games />} />
-
-              {/* Protected routes (require auth) */}
-              <Route path="/create" element={<ProtectedRoute><CreatePostPage /></ProtectedRoute>} />
-              <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-              <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
-              <Route path="/security/device" element={<ProtectedRoute><SecurityDeviceVerify /></ProtectedRoute>} />
-              <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-              <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
-              <Route path="/messages/:conversationId" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
-              <Route path="/friends" element={<ProtectedRoute><Friends /></ProtectedRoute>} />
-              <Route path="/groups" element={<ProtectedRoute><Groups /></ProtectedRoute>} />
-              <Route path="/groups/:id" element={<ProtectedRoute><GroupDetail /></ProtectedRoute>} />
-              <Route path="/pages" element={<ProtectedRoute><Pages /></ProtectedRoute>} />
-              <Route path="/pages/:id" element={<ProtectedRoute><PageDetail /></ProtectedRoute>} />
-              <Route path="/live" element={<ProtectedRoute><LiveScreen /></ProtectedRoute>} />
-              <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
-              <Route path="/friend-match" element={<ProtectedRoute><FriendMatch /></ProtectedRoute>} />
-              <Route path="/ai-engine" element={<ProtectedRoute><AIEngine /></ProtectedRoute>} />
-              <Route path="/ads" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
-              <Route path="/publicites" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
-              <Route path="/ai-agents" element={<ProtectedRoute><AIAgents /></ProtectedRoute>} />
-              <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
-              <Route path="/settings/transparence-cles" element={<ProtectedRoute><KeyTransparencyAudit /></ProtectedRoute>} />
-              <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />
-              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-              
-              {/* Public utility */}
-              <Route path="/unsubscribe" element={<Unsubscribe />} />
-              
-              {/* 404 */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-            </Suspense>
-            </RoutedErrorBoundary>
-            <ChatWidget />
-            <E2EERestorePromptDialog />
-            <ContactVerificationDialog />
-            <CookieConsentBanner />
-          </BrowserRouter>
-        </TooltipProvider>
-      </ChatWidgetProvider>
-        </ParentalGateProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <RecoveryFlowGuard />
+              <AccountKeySyncRunner />
+              <SafetyNumberRevalidationBanner />
+              <IncomingCallHandler />
+              <RoutedErrorBoundary>
+                <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
+                  <Routes>
+                    <Route path="/" element={<Navigate to="/feed" replace />} />
+                    <Route path="/landing" element={<Landing />} />
+                    <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
+                    <Route path="/signup" element={<PublicOnlyRoute><Signup /></PublicOnlyRoute>} />
+                    <Route path="/legal" element={<LegalTerms />} />
+                    <Route path="/legal/terms" element={<LegalTerms />} />
+                    <Route path="/legal/privacy" element={<PrivacyPolicy />} />
+                    <Route path="/privacy" element={<PrivacyPolicy />} />
+                    <Route path="/a-propos" element={<SEOLanding />} />
+                    <Route path="/reseau-social-securise" element={<SEOSecurity />} />
+                    <Route path="/messagerie-chiffree" element={<SEOMessaging />} />
+                    <Route path="/ia-moderation" element={<SEOModeration />} />
+                    <Route path="/protection-donnees" element={<SEOProtection />} />
+                    <Route path="/feed-intelligent" element={<SEOFeed />} />
+                    <Route path="/fonctionnalites/messagerie-chiffree" element={<SEOMessaging />} />
+                    <Route path="/fonctionnalites/securite" element={<SEOSecurity />} />
+                    <Route path="/fonctionnalites/moderation-ia" element={<SEOModeration />} />
+                    <Route path="/fonctionnalites/protection-utilisateurs" element={<SEOProtection />} />
+                    <Route path="/fonctionnalites/feed-intelligent" element={<SEOFeed />} />
+                    <Route path="/forgot-password" element={<PublicOnlyRoute><ForgotPassword /></PublicOnlyRoute>} />
+                    <Route path="/reset-password" element={<ResetPassword />} />
+                    <Route path="/onboarding" element={<Onboarding />} />
+                    <Route path="/auth/confirm" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}><AuthConfirmPage /></Suspense>} />
+                    <Route path="/feed" element={<Feed />} />
+                    <Route path="/post/:id" element={<PostDetail />} />
+                    <Route path="/profile/:id" element={<Profile />} />
+                    <Route path="/search" element={<Search />} />
+                    <Route path="/videos" element={<Videos />} />
+                    <Route path="/lives" element={<LiveScreen />} />
+                    <Route path="/live/:id" element={<LiveWatch />} />
+                    <Route path="/marketplace" element={<Marketplace />} />
+                    <Route path="/marketplace/product/:id" element={<ProductDetailPage />} />
+                    <Route path="/challenges" element={<Challenges />} />
+                    <Route path="/channels" element={<Channels />} />
+                    <Route path="/games" element={<Games />} />
+                    <Route path="/create" element={<ProtectedRoute><CreatePostPage /></ProtectedRoute>} />
+                    <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                    <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+                    <Route path="/security/device" element={<ProtectedRoute><SecurityDeviceVerify /></ProtectedRoute>} />
+                    <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                    <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
+                    <Route path="/messages/:conversationId" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
+                    <Route path="/friends" element={<ProtectedRoute><Friends /></ProtectedRoute>} />
+                    <Route path="/groups" element={<ProtectedRoute><Groups /></ProtectedRoute>} />
+                    <Route path="/groups/:id" element={<ProtectedRoute><GroupDetail /></ProtectedRoute>} />
+                    <Route path="/pages" element={<ProtectedRoute><Pages /></ProtectedRoute>} />
+                    <Route path="/pages/:id" element={<ProtectedRoute><PageDetail /></ProtectedRoute>} />
+                    <Route path="/live" element={<ProtectedRoute><LiveScreen /></ProtectedRoute>} />
+                    <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
+                    <Route path="/friend-match" element={<ProtectedRoute><FriendMatch /></ProtectedRoute>} />
+                    <Route path="/ai-engine" element={<ProtectedRoute><AIEngine /></ProtectedRoute>} />
+                    <Route path="/ads" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
+                    <Route path="/publicites" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
+                    <Route path="/ai-agents" element={<ProtectedRoute><AIAgents /></ProtectedRoute>} />
+                    <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+                    <Route path="/settings/transparence-cles" element={<ProtectedRoute><KeyTransparencyAudit /></ProtectedRoute>} />
+                    <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />
+                    <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                    <Route path="/unsubscribe" element={<Unsubscribe />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </Suspense>
+              </RoutedErrorBoundary>
+              <ChatWidget />
+              <E2EERestorePromptDialog />
+              <ContactVerificationDialog />
+              <CookieConsentBanner />
+            </BrowserRouter>
+          </TooltipProvider>
+        </ChatWidgetProvider>
+      </ParentalGateProvider>
     </AuthProvider>
   );
 }
