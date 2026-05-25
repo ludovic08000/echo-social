@@ -17,7 +17,7 @@
   <body>
     <div class="box">
       <h1>Nettoyage cache Forsure</h1>
-      <p>Cette page désactive les anciens service workers, vide Cache Storage, supprime les anciens device_id E2EE invalides et recharge la dernière version.</p>
+      <p>Cette page désactive les anciens service workers, vide Cache Storage, supprime les anciens device_id E2EE invalides, supprime les sessions Supabase expirées et recharge la dernière version.</p>
       <button id="run">Nettoyer maintenant</button>
       <pre id="log">Prêt.</pre>
     </div>
@@ -40,6 +40,24 @@
         const b = new Uint8Array(16); crypto.getRandomValues(b);
         return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
       }
+      function purgeStorage(storage) {
+        const keys = [];
+        for (let i = 0; i < storage.length; i++) {
+          const k = storage.key(i);
+          if (!k) continue;
+          if (
+            k.startsWith('sb-') ||
+            k.startsWith('supabase.auth.') ||
+            k.includes('auth-token') ||
+            k.includes('supabase') ||
+            k === 'forsure:last-seen-build-version' ||
+            k === 'forsure:legacy-cache-cleanup:v2' ||
+            k === 'forsure:e2ee-clean-startup:v1'
+          ) keys.push(k);
+        }
+        keys.forEach(k => storage.removeItem(k));
+        return keys.length;
+      }
       async function run() {
         out.textContent = 'Nettoyage en cours...';
         try {
@@ -57,6 +75,8 @@
             log('Ancien device_id remplacé: ' + id.slice(0, 8) + '...');
           }
 
+          log('Sessions Supabase supprimées: local=' + purgeStorage(localStorage) + ', session=' + purgeStorage(sessionStorage));
+
           if ('caches' in window) {
             const keys = await caches.keys();
             await Promise.all(keys.map(k => caches.delete(k)));
@@ -69,12 +89,8 @@
             log('Service workers désenregistrés: ' + regs.length + '.');
           }
 
-          localStorage.removeItem('forsure:legacy-cache-cleanup:v2');
-          localStorage.removeItem('forsure:e2ee-clean-startup:v1');
-          localStorage.removeItem('forsure:last-seen-build-version');
-          log('Marqueurs de version réinitialisés.');
-          log('Redirection vers la version neuve...');
-          setTimeout(() => location.replace('/?reset=' + Date.now()), 800);
+          log('Redirection vers connexion/version neuve...');
+          setTimeout(() => location.replace('/auth?reset=' + Date.now()), 800);
         } catch (e) {
           log('ERREUR: ' + (e && e.message ? e.message : String(e)));
         }
