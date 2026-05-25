@@ -51,9 +51,21 @@ function registrationContinuity() {
   writeFileSync(p, s);
 }
 
+function mainStartup() {
+  const p = resolve(__dirname, '..', 'src/main.tsx');
+  let s = readFileSync(p, 'utf8');
+  if (!s.includes('runE2EECleanStartup')) {
+    s = s.replace(`import { installGlobalCrashHandlers } from "@/lib/crashLogger";`, `import { installGlobalCrashHandlers } from "@/lib/crashLogger";\nimport { runE2EECleanStartup } from "@/lib/e2eeCleanStartup";`);
+    s = s.replace(`async function bootstrap() {\n  // Render the app ASAP`, `async function bootstrap() {\n  await runE2EECleanStartup().catch(() => {});\n\n  // Render the app ASAP`);
+  }
+  if (!s.includes('await runE2EECleanStartup()')) throw new Error('clean startup hook missing');
+  writeFileSync(p, s);
+}
+
 fanout();
 currentDevice();
 registrationContinuity();
+mainStartup();
 
 const out = resolve(__dirname, '..', 'public/version.json');
 mkdirSync(dirname(out), { recursive: true });
