@@ -56,6 +56,7 @@ const INVALID_DEVICE_STORE_KEY = 'forsure:invalid-device-spk-cache:v1';
 
 const KNOWN_INVALID_DEVICE_IDS = new Set<string>([
   '75e575fcbfaa8066bcbc9105fc5f4ac8',
+  'c6601674b0f700f28c9f2956774eca97',
   '52adb13ff236ae5c833c9d9049c0df71',
   'b166de502d729356dcbd6c0b5b1a39b0',
   '49cfdeab59355de3051925b4f09fba75',
