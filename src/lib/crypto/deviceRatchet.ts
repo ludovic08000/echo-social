@@ -90,17 +90,10 @@ interface StoredSession {
   legacyRecvCounter?: number;
 }
 
-// ─── IndexedDB helpers (via dbRegistry/runTxOn) ──────────────────────────────
-
 function compositeKey(myUserId: string, myDeviceId: string, peerUserId: string, peerDeviceId: string): string {
   return `${myUserId}::${myDeviceId}::${peerUserId}::${peerDeviceId}`;
 }
 
-/**
- * Canonical AAD for v5 envelopes. Sorted device-pair tags + sessionId so
- * both sides derive the exact same bytes. Binds ciphertext to the device
- * pair + session — defeats cross-session and cross-pair swap attacks.
- */
 function buildDevAAD(
   myUserId: string,
   myDeviceId: string,
@@ -114,7 +107,6 @@ function buildDevAAD(
   return new hardGlobals.TextEncoder().encode(`${AD_PREFIX_DEV_V5}${sessionId}|${a}|${b}`);
 }
 
-/** Parse the four IDs back from a composite key. */
 function parseCompositeKey(key: string): { myUserId: string; myDeviceId: string; peerUserId: string; peerDeviceId: string } | null {
   const parts = key.split('::');
   if (parts.length !== 4) return null;
@@ -163,8 +155,6 @@ async function lookupSessionById(
   }
 }
 
-// ─── Crypto primitives ──────────────────────────────────────────────────────
-
 async function hkdf(ikm: ArrayBuffer, salt: ArrayBuffer, info: string, lenBits: number): Promise<ArrayBuffer> {
   const baseKey = await hardCrypto.importKey('raw', ikm, 'HKDF', false, ['deriveBits']);
   return hardCrypto.deriveBits(
@@ -179,7 +169,6 @@ async function hkdf(ikm: ArrayBuffer, salt: ArrayBuffer, info: string, lenBits: 
   );
 }
 
-/** KDF_RK(rk, dh_out) -> (rk', ck) — Signal spec. */
 async function kdfRK(rkB64: string, dhOut: ArrayBuffer): Promise<{ rk: string; ck: string }> {
   const out = await hkdf(dhOut, base64ToBuffer(rkB64), 'ForSureDR:RootKey', 512);
   const u8 = new Uint8Array(out);
@@ -189,7 +178,6 @@ async function kdfRK(rkB64: string, dhOut: ArrayBuffer): Promise<{ rk: string; c
   };
 }
 
-/** KDF_CK(ck) -> (ck', mk) using HMAC-SHA256 with constants 0x01 (mk) and 0x02 (ck). */
 async function kdfCK(ckB64: string): Promise<{ ck: string; mk: string }> {
   const ckBuf = base64ToBuffer(ckB64);
   const hmacKey = await hardCrypto.importKey(
@@ -231,11 +219,7 @@ async function dh(privJwk: JsonWebKey, peerPubB64: string): Promise<ArrayBuffer>
   return hardCrypto.deriveBits({ name: 'X25519', public: pub } as any, priv, 256);
 }
 
-// ─── DH-ratchet step ────────────────────────────────────────────────────────
-
-/** Receiver-side DH-ratchet: peer sent a new ratchet pub. Updates root + chains. */
 async function dhRatchet(session: StoredSession, peerNewPubB64: string): Promise<StoredSession> {
-  // Save current sending chain length, then derive new receiving chain from peer's new pub.
   const newPN = session.Ns;
   let s: StoredSession = { ...session, PN: newPN, Ns: 0, Nr: 0 };
 
@@ -244,11 +228,9 @@ async function dhRatchet(session: StoredSession, peerNewPubB64: string): Promise
     const r1 = await kdfRK(s.rootKeyB64, dhOut1);
     s = { ...s, rootKeyB64: r1.rk, ckRecvB64: r1.ck, dhrPubB64: peerNewPubB64 };
   } else {
-    // First-ever ratchet on this side: just remember peer pub, generate our pair below.
     s = { ...s, dhrPubB64: peerNewPubB64 };
   }
 
-  // Generate fresh local ratchet pair and derive new sending chain.
   const fresh = await generateRatchetKeyPair();
   const dhOut2 = await dh(fresh.privJwk, peerNewPubB64);
   const r2 = await kdfRK(s.rootKeyB64, dhOut2);
@@ -262,8 +244,6 @@ async function dhRatchet(session: StoredSession, peerNewPubB64: string): Promise
   return s;
 }
 
-// ─── Skipped-key cache ──────────────────────────────────────────────────────
-
 async function trySkippedKeys(
   session: StoredSession,
   dhPubB64: string,
@@ -271,6 +251,7 @@ async function trySkippedKeys(
   iv: Uint8Array,
   ct: ArrayBuffer,
   aad: Uint8Array | null,
+  requireAAD = false,
 ): Promise<{ pt: string; updated: StoredSession } | null> {
   const idx = session.skipped.findIndex(s => s.dhPubB64 === dhPubB64 && s.n === n);
   if (idx === -1) return null;
@@ -287,8 +268,8 @@ async function trySkippedKeys(
           { name: 'AES-GCM', iv: ivCopy as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> } as AesGcmParams,
           aes, ctCopy,
         );
-      } catch {
-        // v4 fallback (no AAD) for in-flight legacy messages
+      } catch (err) {
+        if (requireAAD) throw err;
         const ivCopy2 = new Uint8Array(iv.byteLength); ivCopy2.set(iv);
         const ctCopy2 = (ct as ArrayBuffer).slice(0);
         pt = await hardCrypto.decrypt(
@@ -323,21 +304,12 @@ async function skipMessageKeys(session: StoredSession, until: number): Promise<S
     s.ckRecvB64 = ck;
     s.Nr += 1;
   }
-  // Trim if global skipped budget exceeded (drop oldest).
   if (s.skipped.length > MAX_SKIPPED_TOTAL) {
     s.skipped = s.skipped.slice(s.skipped.length - MAX_SKIPPED_TOTAL);
   }
   return s;
 }
 
-// ─── Public API ─────────────────────────────────────────────────────────────
-
-/**
- * Establish a new device-pair session from a freshly negotiated X3DH secret.
- * Initiator passes `peerInitialDhPubB64` (peer's signed prekey acts as their
- * initial ratchet pub); responder leaves it null until the first inbound
- * message reveals the initiator's ratchet pub.
- */
 export async function establishDeviceSession(
   myUserId: string,
   myDeviceId: string,
@@ -349,12 +321,6 @@ export async function establishDeviceSession(
     peerInitialDhPubB64?: string | null;
     isInitiator?: boolean;
     peerSpkId?: number | null;
-    /**
-     * Responder priming: seed the local DH ratchet pair with the device SPK
-     * keypair so the very first inbound v4 message can complete a DH-ratchet
-     * step (DH(SPK_priv, initiatorRatchetPub)). Without this, the responder
-     * stays unable to encrypt and every reply triggers a fresh X3DH burst.
-     */
     selfInitialDhPrivJwk?: JsonWebKey | null;
     selfInitialDhPubB64?: string | null;
   },
@@ -382,8 +348,6 @@ export async function establishDeviceSession(
     peerSpkId: opts?.peerSpkId ?? null,
   };
 
-  // Initiator immediately runs a DH-ratchet step against the peer's initial
-  // pub so the very first outbound message carries a fresh ratchet key.
   if (opts?.isInitiator && opts.peerInitialDhPubB64) {
     const fresh = await generateRatchetKeyPair();
     const dhOut = await dh(fresh.privJwk, opts.peerInitialDhPubB64);
@@ -401,10 +365,6 @@ export async function establishDeviceSession(
   return finalSessionId;
 }
 
-/**
- * Encrypt with the device-pair ratchet. Returns null if no session — caller
- * must fall back to X3DH (and then call `establishDeviceSession`).
- */
 export async function ratchetEncrypt(
   myUserId: string,
   myDeviceId: string,
@@ -425,13 +385,10 @@ export async function ratchetEncrypt(
     return null;
   }
 
-  // Legacy v3 session — keep using it (no DH key material to upgrade safely).
   if (session.legacySharedSecretB64 && !session.ckSendB64 && !session.dhsPubB64) {
     return legacyEncryptV3(key, session, plaintext);
   }
 
-  // If we have no sending chain yet (e.g. responder before its first reply),
-  // we cannot encrypt under DR yet → signal caller to fall back to X3DH.
   if (!session.ckSendB64 || !session.dhsPubB64) {
     void logCryptoError({
       severity: 'info',
@@ -466,9 +423,6 @@ export async function ratchetEncrypt(
   ].join('.');
 }
 
-/**
- * Decrypt a v3 (legacy), v4 (DR no AAD) or v5 (DR + AAD) envelope.
- */
 export async function ratchetDecrypt(
   myUserId: string,
   myDeviceId: string,
@@ -498,16 +452,14 @@ async function decryptV4or5(
   const found = await lookupSessionById(myUserId, myDeviceId, sessionId);
   if (!found) return null;
   const peer = parseCompositeKey(found.key);
-  const aad = (prefix === RATCHET_PREFIX_V5 && peer)
+  const isV5 = prefix === RATCHET_PREFIX_V5;
+  if (isV5 && !peer) return null;
+  const aad = isV5 && peer
     ? buildDevAAD(peer.myUserId, peer.myDeviceId, peer.peerUserId, peer.peerDeviceId, sessionId)
     : null;
-  return decryptV4WithStored(found.key, found.session, parts, aad);
+  return decryptV4WithStored(found.key, found.session, parts, aad, isV5);
 }
 
-/**
- * Public escape hatch: attempt v4/v5 decryption against a *specific* locally
- * stored session, ignoring the sessionId in the payload header.
- */
 export async function ratchetDecryptWithSession(
   myUserId: string,
   myDeviceId: string,
@@ -537,45 +489,39 @@ export async function ratchetDecryptWithSession(
   const aad = isV5
     ? buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, parts[0])
     : null;
-  return decryptV4WithStored(key, session, parts, aad);
+  return decryptV4WithStored(key, session, parts, aad, isV5);
 }
 
-/**
- * Core v4/v5 decrypt loop, factored out so both header-routed and
- * session-forced callers share the exact same crypto path.
- */
 async function decryptV4WithStored(
   key: string,
   initialSession: StoredSession,
   parts: string[],
   aad: Uint8Array | null,
+  requireAAD = false,
 ): Promise<string | null> {
   const [sessionId, dhPubB64, NsStr, PNStr, ivB64, ctB64] = parts;
   const Ns = parseInt(NsStr, 10);
   const PN = parseInt(PNStr, 10);
   if (Number.isNaN(Ns) || Number.isNaN(PN)) return null;
+  if (requireAAD && !aad) return null;
 
   let session = initialSession;
   const iv = new Uint8Array(base64ToBuffer(ivB64));
   const ct = base64ToBuffer(ctB64);
 
-  // 1) Skipped-key fast path
-  const skipped = await trySkippedKeys(session, dhPubB64, Ns, iv, ct, aad);
+  const skipped = await trySkippedKeys(session, dhPubB64, Ns, iv, ct, aad, requireAAD);
   if (skipped) {
     await saveSession(key, skipped.updated);
     return skipped.pt;
   }
 
   try {
-    // 2) DH-ratchet step if peer rotated their key
     if (session.dhrPubB64 !== dhPubB64) {
       session = await skipMessageKeys(session, PN);
       session = await dhRatchet(session, dhPubB64);
     }
-    // 3) Skip up to Ns in current receiving chain
     session = await skipMessageKeys(session, Ns);
 
-    // 4) Derive next message key
     const { ck, mk } = await kdfCK(session.ckRecvB64!);
     const aes = await importMessageKey(mk);
     let pt: ArrayBuffer;
@@ -585,8 +531,8 @@ async function decryptV4WithStored(
           { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> } as AesGcmParams,
           aes, ct,
         );
-      } catch {
-        // Defensive v4 fallback: legacy in-flight envelope mislabelled v5.
+      } catch (err) {
+        if (requireAAD) throw err;
         pt = await hardCrypto.decrypt(
           { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ct,
         );
@@ -606,13 +552,11 @@ async function decryptV4WithStored(
       errorCode: 'E_DECRYPT_V4',
       errorMessage: err instanceof Error ? err.message : String(err),
       myDeviceId: key.split('::')[1] ?? 'unknown',
-      metadata: { sessionId, Ns, PN },
+      metadata: { sessionId, Ns, PN, requireAAD },
     });
     return null;
   }
 }
-
-// ─── Legacy v3 fallback (keeps in-flight messages decryptable) ──────────────
 
 async function legacyEncryptV3(key: string, session: StoredSession, plaintext: string): Promise<string | null> {
   if (!session.legacySharedSecretB64) return null;
@@ -682,11 +626,6 @@ async function decryptV3WithStored(
   }
 }
 
-/**
- * Returns the SPK id of the peer device used at handshake time, or null if
- * the session is unknown / pre-tracking. Callers compare this with the
- * latest published bundle to detect peer-side rotation.
- */
 export async function getSessionPeerSpkId(
   myUserId: string,
   myDeviceId: string,
@@ -697,19 +636,6 @@ export async function getSessionPeerSpkId(
   return session?.peerSpkId ?? null;
 }
 
-/**
- * Drop the session for ONE peer device. Used when we detect that the peer
- * has rotated its SignedPreKey: the cached root/chain keys are no longer
- * derivable on the peer side, so any further v3/v4 message would silently
- * fail to decrypt. Forcing re-X3DH heals the link.
- *
- * SECURITY: do NOT call this automatically as an "error recovery" hack.
- * Active sessions may be required to decrypt in-flight messages from the
- * pending queue. Only call when:
- *   - the peer has demonstrably rotated SPK (see multiDeviceFanout)
- *   - the user explicitly resets the chat from settings
- *   - a verified key restore from backup is in progress
- */
 export async function invalidateDeviceSession(
   myUserId: string,
   myDeviceId: string,
@@ -725,12 +651,6 @@ export async function invalidateDeviceSession(
   }
 }
 
-/**
- * Read-only enumeration of every (peerUserId, peerDeviceId, sessionId)
- * tuple known locally for the given self device. Used by the e2ee-session
- * router to diagnose unknown-sessionId ciphertexts and to log multi-device
- * mismatches without touching crypto state.
- */
 export async function listKnownSessionIds(
   myUserId: string,
   myDeviceId: string,
@@ -758,18 +678,6 @@ export async function listKnownSessionIds(
   }
 }
 
-/**
- * Drop ALL device-pair sessions.
- *
- * SECURITY: this is destructive — old sessions may still be needed to read
- * in-flight messages currently sitting in `pendingMessageQueue`. Reserved
- * STRICTLY for explicit user-initiated flows:
- *   - logout
- *   - manual "reset E2EE" from settings
- *   - verified key restore from encrypted backup (`resyncE2EE`)
- *
- * Never call as part of an automatic error-recovery path.
- */
 export async function clearAllDeviceSessions(): Promise<void> {
   try {
     await runTxOn('device-sessions', [STORE], 'readwrite', (tx) => {
