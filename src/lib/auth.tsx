@@ -5,7 +5,7 @@ import { generateFingerprint } from '@/hooks/useTrustAndSafety';
 import { startSessionGuard, stopSessionGuard } from '@/lib/sessionGuard';
 import { detectAndStoreRecoveryFromHash, isRecoveryPending, setRecoveryFlag } from '@/lib/authRecovery';
 import { getSafeRedirectUrl } from '@/lib/urlUtils';
-import { hasLocalKeys, initAccountKeySync, restoreKeysFromKeychainSnapshot } from '@/lib/crypto/accountKeyBackup';
+import { hasLocalKeys, initAccountKeySync, restoreKeysFromKeychainSnapshot, clearAccountKeySession } from '@/lib/crypto/accountKeyBackup';
 
 /** Check URL hash for recovery tokens BEFORE any session is exposed */
 function detectRecoveryFromHash(): boolean {
@@ -23,9 +23,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Detect recovery from URL hash synchronously at module load
 const initialRecovery = detectRecoveryFromHash() || isRecoveryPending();
-
 
 async function inspectCryptoReadiness(userId: string | undefined, reason: 'session_restored' | 'signed_in') {
   if (!userId) return;
@@ -58,7 +56,6 @@ async function inspectCryptoReadiness(userId: string | undefined, reason: 'sessi
   }
 }
 
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -75,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const clearSessionState = () => {
       stopSessionGuard();
+      clearAccountKeySession();
       setSession(null);
       setUser(null);
       setLoading(false);
@@ -160,7 +158,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signUp = async (email: string, password: string, name: string, dateOfBirth?: string) => {
-    // AI Threat Shield — bloque payloads SQLi/XSS/prompt-injection avant tout appel auth
     try {
       const { inspectThreat } = await import('@/hooks/useThreatShield');
       const t = await inspectThreat({ endpoint: 'auth.signup', payload: `${email}|${name}` });
@@ -202,13 +199,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    // Stop background guard FIRST so its idle-refresh loop can't resurrect the session
     try { stopSessionGuard(); } catch {}
-    // Local clear immediately — don't wait on network
+    clearAccountKeySession();
     setSession(null);
     setUser(null);
 
-    // Try global signOut (revokes refresh token server-side); fall back to local on failure
     try {
       const { error } = await supabase.auth.signOut({ scope: 'global' });
       if (error) {
@@ -220,7 +215,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
     }
 
-    // Hard purge any leftover Supabase tokens that could let refreshSession resurrect us
     try {
       const purge = (storage: Storage) => {
         const keys: string[] = [];
