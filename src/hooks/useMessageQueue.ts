@@ -21,6 +21,7 @@ import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
 import { processDeviceCopyRetryRequests } from '@/lib/messaging/deviceCopyRetryProcessor';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { safeUUID } from '@/e2ee-session';
+import { isOutboundEncryptedBody } from '@/lib/messaging/messageCompatibility';
 
 export function useMessageQueue(
   conversationId: string,
@@ -88,6 +89,17 @@ export function useMessageQueue(
       send: async (msg: OutboundMessage) => {
         if (!msg.encryptedBody) {
           throw new Error('Message not encrypted');
+        }
+        if (!isOutboundEncryptedBody(msg.encryptedBody)) {
+          logCryptoError({
+            severity: 'error',
+            context: 'queue.send',
+            errorCode: 'E_INSERT_BODY_INVALID',
+            errorMessage: 'Blocked invalid encrypted body before messages insert',
+            conversationId: msg.conversationId,
+            metadata: { localId: msg.localId, traceId: msg.traceId },
+          });
+          throw new Error('Encrypted body invalid - database insert blocked');
         }
 
         // SECURITY: Drop orphan messages from a previous user session.
@@ -324,7 +336,6 @@ export function useMessageQueue(
 
   // Enrich pending messages with volatile plaintext from memory cache
   const pendingMessages = rawPendingMessages
-    .filter(m => m.status !== 'failed_visible')
     .map(m => ({
       ...m,
       plaintext: m.plaintext || plaintextCacheRef.current.get(m.localId) || '',

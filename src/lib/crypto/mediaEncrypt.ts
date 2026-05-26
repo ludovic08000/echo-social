@@ -10,6 +10,11 @@
  *
  * The per-file key is exported as raw base64 and transmitted inside the
  * message body with a `MKEY:` prefix.
+ *
+ * TODO(e2ee-gif-proxy): GIF picker URLs are encrypted as message text, but the
+ * remote GIF provider still sees client fetches. For full media E2EE, download
+ * the GIF bytes client-side, encrypt them with this helper, upload only the
+ * encrypted blob, and distribute the media key via device fan-out/backfill.
  */
 
 import { hardCrypto } from './cryptoIntegrity';

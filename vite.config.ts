@@ -17,12 +17,21 @@ export default defineConfig(({ mode }) => ({
     modulePreload: {
       polyfill: false,
     },
+    rollupOptions: {
+      output: {
+        entryFileNames: "assets/index-e2ee-final-[hash].js",
+        chunkFileNames: "assets/[name]-[hash].js",
+        assetFileNames: "assets/[name]-[hash][extname]",
+      },
+    },
   },
   plugins: [
     react(),
     mode === "development" && componentTagger(),
     VitePWA({
+      cacheId: "forsure-e2ee-final-v2",
       registerType: "autoUpdate",
+      selfDestroying: true,
       includeAssets: ["favicon.png", "favicon.ico", "og-image.png"],
       workbox: {
         maximumFileSizeToCacheInBytes: 5242880,

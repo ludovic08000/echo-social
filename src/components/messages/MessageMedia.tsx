@@ -7,14 +7,27 @@
  */
 
 import { useState, useEffect, memo } from 'react';
+import { Lock } from 'lucide-react';
 import { EncryptedMedia } from './EncryptedMedia';
 import { isVideoMediaLabel, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
-import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import { isOutboundEncryptedBody } from '@/lib/messaging/messageCompatibility';
 import { getMediaKey, subscribeMediaKey } from './mediaKeyCache';
 import type { DecryptResult } from '@/hooks/useE2EE';
 
 function looksEncryptedMessage(body: string): boolean {
-  return isStrictRatchetEnvelopeBody(body);
+  return isOutboundEncryptedBody(body);
+}
+
+function LockedMediaPlaceholder() {
+  return (
+    <div
+      className="flex items-center justify-center gap-2 p-4 rounded-lg bg-muted/50 border border-border/40 min-h-[72px] max-w-full"
+      aria-label="Media chiffre en attente"
+    >
+      <Lock className="w-4 h-4 text-muted-foreground" />
+      <span className="text-xs text-muted-foreground">Media chiffre en attente</span>
+    </div>
+  );
 }
 
 interface MessageMediaProps {
@@ -33,6 +46,7 @@ export const MessageMedia = memo(function MessageMedia({
   isEncryptionActive,
   messageId,
 }: MessageMediaProps) {
+  const isEncryptedContext = isEncryptionActive || looksEncryptedMessage(body);
   const [mediaKey, setMediaKey] = useState<string | null>(() => {
     if (!messageId) return null;
     const cached = getMediaKey(messageId);
@@ -43,12 +57,14 @@ export const MessageMedia = memo(function MessageMedia({
     return getMediaKey(messageId)?.isVideo ?? false;
   });
   const [resolved, setResolved] = useState<boolean>(() => {
-    if (!isEncryptionActive) return true;
+    if (!isEncryptedContext) return true;
     if (messageId && getMediaKey(messageId)) return true;
     return false;
   });
 
   useEffect(() => {
+    const encryptedContext = isEncryptionActive || looksEncryptedMessage(body);
+
     // Fast path — DecryptedMessageBody already resolved the media key.
     if (messageId) {
       const cached = getMediaKey(messageId);
@@ -60,13 +76,13 @@ export const MessageMedia = memo(function MessageMedia({
       }
     }
 
-    const shouldAttemptDecrypt = isEncryptionActive || looksEncryptedMessage(body);
-
-    if (!shouldAttemptDecrypt || !looksEncryptedMessage(body)) {
+    if (!encryptedContext || !looksEncryptedMessage(body)) {
+      setMediaKey(null);
       setResolved(true);
       return;
     }
 
+    setResolved(false);
     let cancelled = false;
 
     // Subscribe — DecryptedMessageBody pushes the key the moment it's ready.
@@ -110,6 +126,10 @@ export const MessageMedia = memo(function MessageMedia({
         isVideo={isVideo}
       />
     );
+  }
+
+  if (isEncryptedContext) {
+    return <LockedMediaPlaceholder />;
   }
 
   const isVideoFile = /\.(mp4|mov|webm|avi|mkv)/i.test(imageUrl);

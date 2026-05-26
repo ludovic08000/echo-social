@@ -1298,7 +1298,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         ? <VoiceMessagePlayer audioUrl={vd.url} duration={vd.duration} isMe />
                         : 'Message vocal';
                     }
-                    return media?.label || text || '...';
+                    return media?.label || text || (pm.status === 'failed_visible' ? 'Non envoye' : '...');
                   })()}
                 </div>
                 <OutboundStatusIndicator

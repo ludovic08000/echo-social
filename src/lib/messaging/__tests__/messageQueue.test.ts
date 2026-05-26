@@ -10,6 +10,7 @@
  *  - reconcileDelivered marks already-acked messages as sent.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 
 vi.mock('@/lib/crypto/errorLogger', () => ({
   logCryptoError: vi.fn(),
@@ -20,6 +21,20 @@ import { messageQueue, type OutboundMessage } from '@/lib/messaging/messageQueue
 
 const CONV = 'conv-1';
 const SENDER = 'user-1';
+
+function strictJsonEnvelope(): string {
+  return JSON.stringify({
+    encryptionMode: 'ratchet',
+    v: PROTOCOL_VERSION,
+    kem: 'X25519',
+    hdr: { dh: 'peer-dh', pn: 0, n: 1 },
+    iv: 'iv',
+    ct: 'ciphertext',
+    sig: 'signature',
+    fp: 'fingerprint',
+    ts: Date.now(),
+  });
+}
 
 async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 2000): Promise<void> {
   const start = Date.now();
@@ -70,7 +85,7 @@ describe('MessageQueue', () => {
     messageQueue.unregisterHandlers(CONV, 'h1');
   });
 
-  it('rejects "ciphertext" that does not start with a known protocol prefix', async () => {
+  it('rejects "ciphertext" that does not match a known outbound protocol shape', async () => {
     // Plaintext containing JSON-looking text must NOT slip through under the
     // old `startsWith("{")` heuristic. The new strict check requires the
     // output to differ from the plaintext AND start with a known prefix.
@@ -88,10 +103,29 @@ describe('MessageQueue', () => {
     messageQueue.unregisterHandlers(CONV, 'h2');
   });
 
+  it('rejects arbitrary JSON from encrypt before any send attempt', async () => {
+    const sent = vi.fn().mockResolvedValue('srv-json');
+    messageQueue.registerHandlers(CONV, 'h-json-invalid', {
+      encrypt: async () => '{"hello":"not crypto"}',
+      send: async (m) => sent(m),
+      isReady: () => true,
+    });
+
+    const msg = await messageQueue.enqueue({ conversationId: CONV, senderId: SENDER, plaintext: 'hi' });
+    await waitFor(async () => {
+      const pending = await messageQueue.getPendingMessages(CONV);
+      return pending.some(m => m.localId === msg.localId && m.status === 'waiting_secure_channel');
+    });
+
+    expect(sent).not.toHaveBeenCalled();
+    await messageQueue.removeMessage(msg.localId);
+    messageQueue.unregisterHandlers(CONV, 'h-json-invalid');
+  });
+
   it('accepts a JSON envelope (conv-level ratchet) as valid ciphertext', async () => {
     const sent = vi.fn().mockResolvedValue('srv-200');
     messageQueue.registerHandlers(CONV, 'h3', {
-      encrypt: async () => '{"v":4,"ct":"abc","iv":"xyz"}',
+      encrypt: async () => strictJsonEnvelope(),
       send: async (m) => sent(m),
       isReady: () => true,
     });
@@ -103,6 +137,31 @@ describe('MessageQueue', () => {
     expect(sentMsg.encryptedBody).toBeTruthy();
     expect(sentMsg.encryptedBody!.startsWith('{')).toBe(true);
     messageQueue.unregisterHandlers(CONV, 'h3');
+  });
+
+  it('does not send when encryption reports a contact key mismatch', async () => {
+    const sent = vi.fn().mockResolvedValue('srv-blocked');
+    messageQueue.registerHandlers(CONV, 'h-key-blocked', {
+      encrypt: async () => {
+        throw new Error('Cle de securite du contact modifiee - verification obligatoire avant envoi');
+      },
+      send: async (m) => sent(m),
+      isReady: () => true,
+    });
+
+    const msg = await messageQueue.enqueue({ conversationId: CONV, senderId: SENDER, plaintext: 'blocked' });
+    await waitFor(async () => {
+      const pending = await messageQueue.getPendingMessages(CONV);
+      return pending.some(m =>
+        m.localId === msg.localId &&
+        m.status === 'failed_visible' &&
+        m.lastError === 'secure_channel_blocked'
+      );
+    });
+
+    expect(sent).not.toHaveBeenCalled();
+    await messageQueue.removeMessage(msg.localId);
+    messageQueue.unregisterHandlers(CONV, 'h-key-blocked');
   });
 
   it('accepts a v4 device ratchet envelope (x3dh4. prefix)', async () => {
@@ -143,7 +202,7 @@ describe('MessageQueue', () => {
 
   it('does not persist plaintext to IndexedDB (in-memory only)', async () => {
     messageQueue.registerHandlers(CONV, 'h6', {
-      encrypt: async () => '{"ct":"x"}',
+      encrypt: async () => strictJsonEnvelope(),
       send: async () => 'srv-300',
       isReady: () => true,
     });
@@ -181,7 +240,7 @@ describe('MessageQueue', () => {
 
   it('reconcileDelivered marks queued messages as sent when backend already accepted them', async () => {
     messageQueue.registerHandlers(CONV, 'h7', {
-      encrypt: async () => '{"ct":"recon"}',
+      encrypt: async () => strictJsonEnvelope(),
       send: async () => { throw new Error('network error'); }, // simulate ack lost
       isReady: () => true,
     });
@@ -197,12 +256,16 @@ describe('MessageQueue', () => {
       return !!found && (!!found.encryptedBody || found.status === 'retry_pending');
     });
 
+    const encryptedBody = (await messageQueue.getPendingMessages(CONV))
+      .find(p => p.localId === m.localId)?.encryptedBody;
+    expect(encryptedBody).toBeTruthy();
+
     // Simulate backend already received this exact encrypted body
     await messageQueue.reconcileDelivered(CONV, [
       {
         id: 'srv-real',
         senderId: SENDER,
-        body: '{"ct":"recon"}',
+        body: encryptedBody!,
         createdAt: new Date(m.createdAt + 1000).toISOString(),
       },
     ]);

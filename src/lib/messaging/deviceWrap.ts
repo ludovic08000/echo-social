@@ -26,6 +26,7 @@ import { randomBytes, bufferToBase64, base64ToBuffer, importOkpPublicKeyFromBase
 import { getOrCreateIdentityKeys } from '@/lib/crypto/keyManager';
 import { loadDeviceKxKey, getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import { isInvalidDeviceId } from '@/lib/crypto/invalidDeviceCache';
 
 const IV_LEN = 12;
 const SEP = '.';
@@ -85,6 +86,10 @@ export async function wrapPlaintextForDevice(
   recipientDevicePublicKeyB64: string,
   recipientDeviceId: string,
 ): Promise<string> {
+  if (isInvalidDeviceId(recipientDeviceId)) {
+    throw new Error('DEVICE_CRYPTO_INVALID');
+  }
+
   const myDeviceId = getCurrentDeviceId();
 
   // 1) Preferred: dedicated per-device kx key
@@ -134,6 +139,10 @@ export async function unwrapPlaintextForDevice(
   myDeviceId: string,
   senderLegacyIdentityKeyB64?: string | null,
 ): Promise<string> {
+  if (isInvalidDeviceId(myDeviceId)) {
+    throw new Error('DEVICE_CRYPTO_INVALID');
+  }
+
   if (!payload.includes(SEP)) throw new Error('Invalid device-wrapped payload');
   const [ivB64, ctB64] = payload.split(SEP);
   const iv = new Uint8Array(base64ToBuffer(ivB64));

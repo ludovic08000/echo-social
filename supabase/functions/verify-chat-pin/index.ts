@@ -19,6 +19,25 @@ const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS = 5 * 60_000;
 const PBKDF2_ITERATIONS = 600_000;
 const RESET_CODE_EXPIRY_MS = 10 * 60_000;
+const RELEASE_ATTESTATION_TTL_MS = 60_000;
+
+interface RateLimitInfo {
+  allowed: boolean;
+  failedAttempts: number;
+  attemptsRemaining: number;
+  lockedUntil: string | null;
+  retryAfterSeconds: number;
+}
+
+interface BackupReleaseAttestationPayload {
+  version: "svr2";
+  action: "release_backup_pin_blob";
+  userId: string;
+  issuedAt: string;
+  expiresAt: string;
+  nonce: string;
+  backupSecretHash: string;
+}
 
 function bytesToBase64(bytes: Uint8Array): string {
   let bin = "";
@@ -72,21 +91,109 @@ function generateBackupWrapSecret(): string {
   return bytesToBase64(crypto.getRandomValues(new Uint8Array(32)));
 }
 
+function retryAfterSecondsUntil(lockedUntil: string | null): number {
+  if (!lockedUntil) return 0;
+  return Math.max(0, Math.ceil((new Date(lockedUntil).getTime() - Date.now()) / 1000));
+}
+
+function uiBackoffForFailedAttempts(failedAttempts: number): number {
+  if (failedAttempts <= 0) return 0;
+  return Math.min(60, 2 ** Math.min(failedAttempts - 1, 5));
+}
+
+function rateLimitInfo(failedAttempts: number, lockedUntil: string | null): RateLimitInfo {
+  const retryAfterSeconds = lockedUntil
+    ? retryAfterSecondsUntil(lockedUntil)
+    : uiBackoffForFailedAttempts(failedAttempts);
+  return {
+    allowed: !lockedUntil && failedAttempts < MAX_ATTEMPTS,
+    failedAttempts,
+    attemptsRemaining: Math.max(0, MAX_ATTEMPTS - failedAttempts),
+    lockedUntil,
+    retryAfterSeconds,
+  };
+}
+
+function rateLimitOk(): RateLimitInfo {
+  return {
+    allowed: true,
+    failedAttempts: 0,
+    attemptsRemaining: MAX_ATTEMPTS,
+    lockedUntil: null,
+    retryAfterSeconds: 0,
+  };
+}
+
+async function sha256Base64(bytes: Uint8Array): Promise<string> {
+  return bytesToBase64(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)));
+}
+
+function canonicalReleasePayload(payload: BackupReleaseAttestationPayload): string {
+  return JSON.stringify({
+    version: payload.version,
+    action: payload.action,
+    userId: payload.userId,
+    issuedAt: payload.issuedAt,
+    expiresAt: payload.expiresAt,
+    nonce: payload.nonce,
+    backupSecretHash: payload.backupSecretHash,
+  });
+}
+
+async function signReleasePayload(
+  backupWrapSecret: string,
+  payload: BackupReleaseAttestationPayload,
+): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    base64ToBytes(backupWrapSecret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(canonicalReleasePayload(payload)),
+  );
+  return bytesToBase64(new Uint8Array(signature));
+}
+
+async function buildBackupReleaseAttestation(
+  userId: string,
+  backupWrapSecret: string,
+) {
+  const issuedAtMs = Date.now();
+  const payload: BackupReleaseAttestationPayload = {
+    version: "svr2",
+    action: "release_backup_pin_blob",
+    userId,
+    issuedAt: new Date(issuedAtMs).toISOString(),
+    expiresAt: new Date(issuedAtMs + RELEASE_ATTESTATION_TTL_MS).toISOString(),
+    nonce: bytesToBase64(crypto.getRandomValues(new Uint8Array(16))),
+    backupSecretHash: await sha256Base64(base64ToBytes(backupWrapSecret)),
+  };
+  return {
+    ...payload,
+    signature: await signReleasePayload(backupWrapSecret, payload),
+  };
+}
+
 /** Check rate limit from DB — returns true if allowed */
 async function checkRateLimitDB(
   supabase: any,
   userId: string,
-): Promise<boolean> {
+): Promise<RateLimitInfo> {
   const { data } = await supabase
     .from("user_chat_pins")
     .select("failed_attempts, locked_until")
     .eq("user_id", userId)
     .maybeSingle();
 
-  if (!data) return true; // No PIN record = no rate limit
+  if (!data) return rateLimitOk(); // No PIN record = no rate limit
   
   if (data.locked_until && new Date(data.locked_until) > new Date()) {
-    return false; // Still locked
+    return rateLimitInfo(data.failed_attempts || MAX_ATTEMPTS, data.locked_until);
   }
 
   // If lockout expired, reset counter
@@ -95,13 +202,14 @@ async function checkRateLimitDB(
       failed_attempts: 0,
       locked_until: null,
     }).eq("user_id", userId);
+    return rateLimitOk();
   }
 
-  return (data.failed_attempts || 0) < MAX_ATTEMPTS;
+  return rateLimitInfo(data.failed_attempts || 0, null);
 }
 
 /** Record a failed attempt in DB */
-async function recordFailedDB(supabase: any, userId: string) {
+async function recordFailedDB(supabase: any, userId: string): Promise<RateLimitInfo> {
   const { data } = await supabase
     .from("user_chat_pins")
     .select("failed_attempts")
@@ -117,6 +225,8 @@ async function recordFailedDB(supabase: any, userId: string) {
     failed_attempts: newCount,
     locked_until: lockedUntil,
   }).eq("user_id", userId);
+
+  return rateLimitInfo(newCount, lockedUntil);
 }
 
 /** Clear failed attempts on success */
@@ -165,8 +275,9 @@ Deno.serve(async (req) => {
 
     // ─── REQUEST RESET (send OTP email) ───
     if (action === "request-reset") {
-      if (!await checkRateLimitDB(supabase, user.id)) {
-        return new Response(JSON.stringify({ ok: false, error: "Trop de demandes. Réessayez dans 5 minutes." }), {
+      const rateLimit = await checkRateLimitDB(supabase, user.id);
+      if (!rateLimit.allowed) {
+        return new Response(JSON.stringify({ ok: false, error: "Trop de demandes. Reessayez plus tard.", ...rateLimit }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -234,8 +345,9 @@ Deno.serve(async (req) => {
         });
       }
 
-      if (!await checkRateLimitDB(supabase, user.id)) {
-        return new Response(JSON.stringify({ ok: false, error: "Trop de tentatives." }), {
+      const rateLimit = await checkRateLimitDB(supabase, user.id);
+      if (!rateLimit.allowed) {
+        return new Response(JSON.stringify({ ok: false, error: "Trop de tentatives.", ...rateLimit }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -261,8 +373,8 @@ Deno.serve(async (req) => {
       const salt = base64ToBytes(data.reset_code_salt);
       const computedHash = await hashPinPBKDF2(code, salt);
       if (!constantTimeEqual(computedHash, data.reset_code_hash)) {
-        await recordFailedDB(supabase, user.id);
-        return new Response(JSON.stringify({ ok: false, error: "Code incorrect" }), {
+        const failed = await recordFailedDB(supabase, user.id);
+        return new Response(JSON.stringify({ ok: false, error: "Code incorrect", ...failed }), {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -304,14 +416,22 @@ Deno.serve(async (req) => {
         if (error) throw error;
 
         console.log(`[chat-pin] setup ok user=${user.id}`);
-        return new Response(JSON.stringify({ ok: true, salt: saltB64, backupSecret: backupWrapSecret }), {
+        const releaseAttestation = await buildBackupReleaseAttestation(user.id, backupWrapSecret);
+        return new Response(JSON.stringify({
+          ok: true,
+          salt: saltB64,
+          backupSecret: backupWrapSecret,
+          releaseAttestation,
+          ...rateLimitOk(),
+        }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
       case "verify": {
-        if (!await checkRateLimitDB(supabase, user.id)) {
-          return new Response(JSON.stringify({ ok: false, error: "Trop de tentatives. Réessayez dans 5 minutes." }), {
+        const rateLimit = await checkRateLimitDB(supabase, user.id);
+        if (!rateLimit.allowed) {
+          return new Response(JSON.stringify({ ok: false, error: "Trop de tentatives. Reessayez plus tard.", ...rateLimit }), {
             status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
@@ -356,13 +476,20 @@ Deno.serve(async (req) => {
           }
           await clearFailedDB(supabase, user.id);
           console.log(`[chat-pin] verify ok user=${user.id}`);
-          return new Response(JSON.stringify({ ok: true, salt: data.salt, backupSecret: backupWrapSecret }), {
+          const releaseAttestation = await buildBackupReleaseAttestation(user.id, backupWrapSecret);
+          return new Response(JSON.stringify({
+            ok: true,
+            salt: data.salt,
+            backupSecret: backupWrapSecret,
+            releaseAttestation,
+            ...rateLimitOk(),
+          }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         } else {
-          await recordFailedDB(supabase, user.id);
+          const failed = await recordFailedDB(supabase, user.id);
           console.warn(`[chat-pin] verify failed user=${user.id}`);
-          return new Response(JSON.stringify({ ok: false, error: "PIN incorrect" }), {
+          return new Response(JSON.stringify({ ok: false, error: "PIN incorrect", ...failed }), {
             status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }

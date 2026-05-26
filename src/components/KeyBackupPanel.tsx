@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, QrCode, Download, Upload, Loader2, Check, AlertCircle, Copy, RefreshCw, Cloud, Bug, ChevronDown, ChevronUp } from 'lucide-react';
+import { Shield, QrCode, Download, Upload, Loader2, AlertCircle, Copy, RefreshCw, Cloud, Bug, ChevronDown, ChevronUp, KeyRound } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +26,9 @@ export function KeyBackupPanel() {
   const [diagMode, setDiagMode] = useState(false);
   const [lastReport, setLastReport] = useState<ResyncReport | null>(null);
   const [showTrace, setShowTrace] = useState(false);
+  const [recoveryInput, setRecoveryInput] = useState('');
+  const [generatedRecoveryKey, setGeneratedRecoveryKey] = useState<string | null>(null);
+  const [recoveryBusy, setRecoveryBusy] = useState<'create' | 'restore' | null>(null);
   // Device transfer
   const [qrData, setQrData] = useState<string | null>(null);
   const [scanInput, setScanInput] = useState('');
@@ -97,6 +100,51 @@ export function KeyBackupPanel() {
       toast.success('Demande de liaison creee (expire dans 10 min)');
     } else {
       toast.error(deviceLink.error || 'Erreur');
+    }
+  };
+
+  const handleCreateRecoveryKey = async () => {
+    if (!user) { toast.error('Connecte-toi pour creer une cle'); return; }
+    setRecoveryBusy('create');
+    try {
+      const key = await backup.createBackup();
+      if (!key) {
+        toast.error(backup.error || 'Creation impossible');
+        return;
+      }
+      setGeneratedRecoveryKey(key);
+      setHasExisting(true);
+      toast.success('Cle de recuperation creee');
+    } finally {
+      setRecoveryBusy(null);
+    }
+  };
+
+  const handleRestoreRecoveryKey = async () => {
+    if (!user) { toast.error('Connecte-toi pour restaurer'); return; }
+    const key = recoveryInput.trim();
+    if (!key) { toast.error('Colle ta cle de recuperation'); return; }
+    setRecoveryBusy('restore');
+    try {
+      const ok = await backup.restoreBackup(key);
+      if (!ok) {
+        toast.error(backup.error || 'Restauration impossible');
+        return;
+      }
+      setRecoveryInput('');
+      setHasLocal(true);
+      setHasExisting(true);
+      try {
+        window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+          detail: { status: 'recovery_key_restored' },
+        }));
+        window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
+      } catch {
+        /* SSR safe */
+      }
+      toast.success('Cles restaurees');
+    } finally {
+      setRecoveryBusy(null);
     }
   };
 
@@ -180,6 +228,66 @@ export function KeyBackupPanel() {
                   ⚠️ Aucune clé locale ni sauvegarde — envoie un premier message chiffré pour générer tes clés
                 </p>
               )}
+            </div>
+
+            <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <KeyRound className="h-3.5 w-3.5 text-primary" />
+                <span className="text-xs font-medium">Cle de recuperation</span>
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                <Button
+                  onClick={handleCreateRecoveryKey}
+                  disabled={backup.isLoading || recoveryBusy !== null || !hasLocal}
+                  size="sm"
+                  variant="outline"
+                  className="w-full gap-1"
+                >
+                  {recoveryBusy === 'create' ? <Loader2 className="h-3 w-3 animate-spin" /> : <KeyRound className="h-3 w-3" />}
+                  Creer une cle de recuperation
+                </Button>
+                {generatedRecoveryKey && (
+                  <div className="flex gap-1">
+                    <code className="text-[10px] bg-background p-2 rounded flex-1 break-all">
+                      {generatedRecoveryKey}
+                    </code>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedRecoveryKey);
+                        toast.success('Cle copiee');
+                      }}
+                      className="shrink-0"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
+                <div className="flex gap-1">
+                  <Input
+                    placeholder="Cle de recuperation"
+                    value={recoveryInput}
+                    onChange={e => setRecoveryInput(e.target.value)}
+                    className="h-9 text-xs font-mono"
+                  />
+                  <Button
+                    onClick={handleRestoreRecoveryKey}
+                    disabled={backup.isLoading || recoveryBusy !== null || !recoveryInput.trim()}
+                    size="sm"
+                    variant="secondary"
+                    className="shrink-0 gap-1"
+                  >
+                    {recoveryBusy === 'restore' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                    Restaurer
+                  </Button>
+                </div>
+                {backup.error && (
+                  <p className="text-xs text-destructive flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" /> {backup.error}
+                  </p>
+                )}
+              </div>
             </div>
 
             {/* Manual sync + resync buttons */}

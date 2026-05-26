@@ -43,6 +43,21 @@ function persistEverywhere(id: string): string {
   return id;
 }
 
+export async function rotateCurrentDeviceId(reason = 'manual_device_reset'): Promise<string> {
+  const fresh = generateId();
+  hydrationPromise = null;
+  memoryDeviceId = fresh;
+  memoryDeviceIdIsTemporary = false;
+  try { localStorage.setItem(STORAGE_KEY, fresh); } catch {}
+  try { sessionStorage.setItem(STORAGE_KEY, fresh); } catch {}
+  await Promise.allSettled([
+    secureSet(STORAGE_KEY, fresh),
+    nativeSet(STORAGE_KEY, fresh),
+  ]);
+  console.log('[device-id] rotated current device id', { reason, next: fresh.slice(0, 8) });
+  return fresh;
+}
+
 /**
  * Synchronous accessor — used everywhere today.
  * On native platforms, the first call after install may return a fresh ID

@@ -41,6 +41,14 @@ import { type IdentityKeyPair, exportPublicKeyRaw } from './keyManager';
 import { reqToPromise, runTxOn } from './indexedDbTx';
 import { invalidateLocalDeviceSessions } from './deviceRatchet';
 import { logCryptoError, logCryptoException } from './errorLogger';
+import {
+  clearDeviceCryptoInvalid,
+  getDeviceCryptoInvalid,
+  markDeviceCryptoInvalid,
+  requestDevicePrekeyRepair,
+} from '@/lib/messaging/deviceCryptoInvalid';
+
+export const X3DH_OPK_PRIVATE_MISSING = 'X3DH_OPK_PRIVATE_MISSING';
 
 // ─── Types ───
 
@@ -99,6 +107,7 @@ const X3DH_SALT_BYTES = 32; // All zeros as per Signal spec
 const SPK_ROTATION_DAYS = 7;
 const SPK_STORE = 'signed-prekeys';
 const DEVICE_BUNDLE_CACHE_TTL_MS = 5 * 60 * 1000;
+const DEVICE_BUNDLE_REJECT_TTL_MS = 5 * 60 * 1000;
 
 interface DevicePrekeyMaterial {
   identityKey: string;
@@ -114,6 +123,7 @@ interface CachedDevicePrekeyMaterial extends DevicePrekeyMaterial {
 }
 
 const deviceBundleCache = new Map<string, CachedDevicePrekeyMaterial>();
+const rejectedDeviceBundleCache = new Map<string, { rejectedAt: number; reason: string }>();
 
 function deviceBundleCacheKey(userId: string, deviceId: string): string {
   return `${userId}::${deviceId}`;
@@ -137,14 +147,85 @@ function readCachedDeviceBundle(userId: string, deviceId: string): DevicePrekeyM
 }
 
 function writeCachedDeviceBundle(userId: string, deviceId: string, material: DevicePrekeyMaterial): void {
-  deviceBundleCache.set(deviceBundleCacheKey(userId, deviceId), {
+  const key = deviceBundleCacheKey(userId, deviceId);
+  rejectedDeviceBundleCache.delete(key);
+  clearDeviceCryptoInvalid(userId, deviceId);
+  deviceBundleCache.set(key, {
     ...material,
     cachedAt: Date.now(),
   });
 }
 
+async function markDeviceBundleRejected(
+  peerUserId: string,
+  peerDeviceId: string,
+  reason: string,
+): Promise<'ignored' | 'rejected' | 'repaired'> {
+  const key = deviceBundleCacheKey(peerUserId, peerDeviceId);
+  rejectedDeviceBundleCache.set(key, { rejectedAt: Date.now(), reason });
+  markDeviceCryptoInvalid(peerUserId, peerDeviceId, reason);
+  void requestDevicePrekeyRepair(peerUserId, peerDeviceId, reason);
+
+  try {
+    const auth = (supabase as any).auth;
+    const { data } = auth?.getUser ? await auth.getUser() : { data: null };
+    if (data?.user?.id !== peerUserId) return 'ignored';
+
+    try {
+      const { getCurrentDeviceId, hydrateDeviceId, isDeviceIdTemporary } = await import('@/lib/messaging/currentDevice');
+      const currentDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+      if (!isDeviceIdTemporary() && currentDeviceId === peerDeviceId) {
+        try {
+          const { getOrCreateIdentityKeys } = await import('@/lib/crypto/keyManager');
+          const keys = await getOrCreateIdentityKeys(peerUserId);
+          await repairLocalDevicePrekeys(peerUserId, peerDeviceId, keys.signingPrivateKey);
+          rejectedDeviceBundleCache.delete(key);
+          clearDeviceCryptoInvalid(peerUserId, peerDeviceId);
+          return 'repaired';
+        } catch (repairErr) {
+          logCryptoException('key.rotate', repairErr, {
+            severity: 'warning',
+            myDeviceId: peerDeviceId,
+            metadata: { stage: 'self_device_invalid_spk_repair', userId: peerUserId, reason },
+          });
+          return 'ignored';
+        }
+      }
+    } catch {
+      // Fall through: if this is another device owned by the same user, mark it stale.
+    }
+
+    const staleAt = new Date().toISOString();
+    const payloads: Array<Record<string, unknown>> = [
+      {
+        is_active: false,
+        stale_at: staleAt,
+        crypto_invalid_at: staleAt,
+        crypto_invalid_reason: reason,
+        prekey_repair_requested_at: staleAt,
+        revoke_reason: reason,
+      },
+      { is_active: false, stale_at: staleAt },
+    ];
+
+    for (const payload of payloads) {
+      const { error } = await supabase
+        .from('user_devices')
+        .update(payload as any)
+        .eq('user_id', peerUserId)
+        .eq('device_id', peerDeviceId);
+      if (!error) return 'rejected';
+    }
+  } catch {
+    // Best effort only: remote devices may be protected by RLS.
+  }
+  return 'ignored';
+}
+
 export function invalidateDeviceBundleCache(userId: string, deviceId: string, reason = 'manual'): void {
-  deviceBundleCache.delete(deviceBundleCacheKey(userId, deviceId));
+  const key = deviceBundleCacheKey(userId, deviceId);
+  deviceBundleCache.delete(key);
+  rejectedDeviceBundleCache.delete(key);
   logCryptoError({
     severity: 'info',
     context: 'key.fetch',
@@ -278,7 +359,6 @@ export async function generateAndUploadSignedPrekey(
     .neq('spk_id', spkId);
 
   console.log(`[X3DH] ✅ Signed prekey #${spkId} generated & uploaded`);
-  invalidateDeviceBundleCache(userId, deviceId, 'device_spk_regenerated');
   return { spkId, publicKey: publicBase64, signature: signatureBase64 };
 }
 
@@ -842,6 +922,11 @@ export async function repairLocalDevicePrekeys(
     await refillDeviceOneTimePrekeysIfNeeded(userId, deviceId);
     await invalidateLocalDeviceSessions(userId, deviceId);
     await bumpDeviceKeysEpoch(userId, deviceId, 'local_device_prekey_repair_completed');
+    await supabase.rpc('clear_device_prekey_repair_needed' as any, {
+      p_user_id: userId,
+      p_device_id: deviceId,
+    }).catch(() => ({ data: null, error: null }));
+    clearDeviceCryptoInvalid(userId, deviceId);
 
     const message = 'appareil resynchronisé';
     logCryptoError({
@@ -948,6 +1033,37 @@ async function fetchDevicePrekeyMaterial(
   peerDeviceId: string,
   opts: { forceRefresh?: boolean; retryOnInvalidSignature?: boolean } = {},
 ): Promise<DevicePrekeyMaterial | null> {
+  const localInvalid = getDeviceCryptoInvalid(peerUserId, peerDeviceId);
+  if (!opts.forceRefresh && localInvalid) {
+    logCryptoError({
+      severity: 'info',
+      context: 'key.fetch',
+      errorCode: 'E_DEVICE_BUNDLE_CRYPTO_INVALID_LOCAL',
+      errorMessage: 'Skipping locally crypto-invalid device prekey bundle',
+      peerUserId,
+      peerDeviceId,
+      metadata: { reason: localInvalid.reason, expiresAt: localInvalid.expiresAt },
+    });
+    return null;
+  }
+
+  const rejected = rejectedDeviceBundleCache.get(deviceBundleCacheKey(peerUserId, peerDeviceId));
+  if (!opts.forceRefresh && rejected && Date.now() - rejected.rejectedAt < DEVICE_BUNDLE_REJECT_TTL_MS) {
+    logCryptoError({
+      severity: 'info',
+      context: 'key.fetch',
+      errorCode: 'E_DEVICE_BUNDLE_REJECTED_RECENTLY',
+      errorMessage: 'Skipping recently rejected device prekey bundle',
+      peerUserId,
+      peerDeviceId,
+      metadata: { reason: rejected.reason },
+    });
+    return null;
+  }
+  if (rejected && Date.now() - rejected.rejectedAt >= DEVICE_BUNDLE_REJECT_TTL_MS) {
+    rejectedDeviceBundleCache.delete(deviceBundleCacheKey(peerUserId, peerDeviceId));
+  }
+
   if (!opts.forceRefresh) {
     const cached = readCachedDeviceBundle(peerUserId, peerDeviceId);
     if (
@@ -965,7 +1081,17 @@ async function fetchDevicePrekeyMaterial(
     return material;
   }
 
-  if (opts.retryOnInvalidSignature === false) return null;
+  if (opts.retryOnInvalidSignature === false) {
+    const action = await markDeviceBundleRejected(peerUserId, peerDeviceId, 'invalid_spk_signature');
+    if (action === 'repaired') {
+      const repaired = await fetchDevicePrekeyMaterialFromServer(peerUserId, peerDeviceId);
+      if (repaired && await verifyDevicePrekeyMaterial(repaired, peerUserId, peerDeviceId, 'server')) {
+        writeCachedDeviceBundle(peerUserId, peerDeviceId, repaired);
+        return repaired;
+      }
+    }
+    return null;
+  }
   logCryptoError({
     severity: 'info',
     context: 'key.fetch',
@@ -979,6 +1105,14 @@ async function fetchDevicePrekeyMaterial(
   const retried = await fetchDevicePrekeyMaterialFromServer(peerUserId, peerDeviceId);
   if (!retried) return null;
   if (!(await verifyDevicePrekeyMaterial(retried, peerUserId, peerDeviceId, 'server'))) {
+    const action = await markDeviceBundleRejected(peerUserId, peerDeviceId, 'invalid_spk_signature');
+    if (action === 'repaired') {
+      const repaired = await fetchDevicePrekeyMaterialFromServer(peerUserId, peerDeviceId);
+      if (repaired && await verifyDevicePrekeyMaterial(repaired, peerUserId, peerDeviceId, 'server')) {
+        writeCachedDeviceBundle(peerUserId, peerDeviceId, repaired);
+        return repaired;
+      }
+    }
     return null;
   }
 
@@ -1020,6 +1154,7 @@ export async function peekDeviceSignedPrekey(
   const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature);
   if (!sigValid) {
     console.warn(`[X3DH-DEV] device SPK signature INVALID for ${peerUserId}/${peerDeviceId}`);
+    void markDeviceBundleRejected(peerUserId, peerDeviceId, 'invalid_spk_signature_probe');
     return null;
   }
 
@@ -1042,6 +1177,7 @@ export async function fetchPrekeyBundleForDevice(
   const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature);
   if (!sigValid) {
     console.warn(`[X3DH-DEV] ⛔ device SPK signature INVALID for ${peerUserId}/${peerDeviceId}`);
+    void markDeviceBundleRejected(peerUserId, peerDeviceId, 'invalid_spk_signature_fetch');
     return null;
   }
 
@@ -1367,9 +1503,7 @@ export async function x3dhRespondForDevice(
         myDeviceId,
         metadata: { userId: myUserId, opkId: initialMessage.opkId },
       });
-      throw new Error(
-        `[X3DH-DEV] OPK #${initialMessage.opkId} private MISSING locally for ${myDeviceId.slice(0, 8)}; cannot decrypt 4-DH envelope`,
-      );
+      throw new Error(X3DH_OPK_PRIVATE_MISSING);
     }
   }
 

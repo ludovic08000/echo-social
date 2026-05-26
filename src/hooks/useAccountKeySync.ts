@@ -314,8 +314,15 @@ export function useAccountKeySync() {
         const report = await resyncE2EE(user.id);
         console.log('[AccountKeySync] resync report:', report);
         try {
-          sessionStorage.setItem(RESYNC_DONE_KEY, String(Date.now()));
-          sessionStorage.removeItem(RESYNC_PENDING_KEY);
+          if (report.needsPinUnlock) {
+            sessionStorage.setItem(RESYNC_PENDING_KEY, JSON.stringify({
+              at: Date.now(),
+              detail: { status: 'pin_unlock_required', report },
+            }));
+          } else {
+            sessionStorage.setItem(RESYNC_DONE_KEY, String(Date.now()));
+            sessionStorage.removeItem(RESYNC_PENDING_KEY);
+          }
         } catch {}
       } catch (e) {
         console.warn('[AccountKeySync] resync failed:', e);
@@ -326,6 +333,13 @@ export function useAccountKeySync() {
 
     const onKeysRestored = (ev: Event) => {
       const detail = (ev as CustomEvent).detail ?? {};
+      if (detail?.resynced) {
+        try {
+          sessionStorage.setItem(RESYNC_DONE_KEY, String(Date.now()));
+          sessionStorage.removeItem(RESYNC_PENDING_KEY);
+        } catch {}
+        return;
+      }
       try { sessionStorage.setItem(RESYNC_PENDING_KEY, JSON.stringify({ at: Date.now(), detail })); } catch {}
       void runResync('keys-restored-event', detail);
     };

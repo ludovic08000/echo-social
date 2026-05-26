@@ -26,6 +26,7 @@ export type OutboundMessageStatus =
 import { logCryptoError } from '@/lib/crypto/errorLogger';
 import { safeUUID } from '@/e2ee-session/safeUuid';
 import { reqToPromise, runTxOn } from '@/lib/crypto/indexedDbTx';
+import { isOutboundEncryptedBody } from '@/lib/messaging/messageCompatibility';
 
 /**
  * Emit a low-volume "trace" entry into crypto_error_logs so we can follow a
@@ -424,13 +425,7 @@ class MessageQueueManager {
           const looksCiphertext =
             !!withLocalId &&
             withLocalId !== plaintext &&
-            (
-              withLocalId.startsWith('{') ||                  // conv-level JSON envelope
-              withLocalId.startsWith('x3dh4.') ||             // device Double Ratchet
-              withLocalId.startsWith('x3dh3.') ||             // legacy device ratchet
-              withLocalId.startsWith('x3dh2.') ||             // X3DH per-device with OPK
-              withLocalId.startsWith('x3dh1.')                // X3DH per-device w/o OPK
-            );
+            isOutboundEncryptedBody(withLocalId);
           if (!looksCiphertext) {
             logCryptoError({
               severity: 'warning',
@@ -519,6 +514,29 @@ class MessageQueueManager {
       }
 
       // Step 2: Send encrypted payload
+      if (msg.encryptedBody && !isOutboundEncryptedBody(msg.encryptedBody)) {
+        logCryptoError({
+          severity: 'error',
+          context: 'queue.send',
+          errorCode: 'E_SEND_BODY_INVALID',
+          errorMessage: 'Invalid encrypted message body blocked before database insert',
+          conversationId: msg.conversationId,
+          metadata: { localId: msg.localId, traceId: msg.traceId },
+        });
+
+        if (this.volatilePlaintext.has(msg.localId)) {
+          msg.encryptedBody = null;
+          msg.status = 'pending_local';
+          msg.lastError = 'secure_encrypt_retry';
+          msg.updatedAt = Date.now();
+          await this.dbPut(msg);
+          void this.queueConversationDrain(msg.conversationId);
+        } else {
+          await this.updateStatus(msg, 'failed_visible', 'secure_encrypt_unavailable');
+        }
+        return;
+      }
+
       if (this.forceReencrypt.has(msg.localId) && this.volatilePlaintext.has(msg.localId)) {
         this.forceReencrypt.delete(msg.localId);
         msg.encryptedBody = null;

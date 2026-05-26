@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isKnownCryptoEnvelopeBody,
+  isOutboundEncryptedBody,
   isStrictRatchetEnvelopeBody,
   isUnsupportedEncryptedBody,
 } from '@/lib/messaging/messageCompatibility';
@@ -47,5 +48,13 @@ describe('messageCompatibility', () => {
 
     expect(isKnownCryptoEnvelopeBody(body)).toBe(false);
     expect(isUnsupportedEncryptedBody(body)).toBe(true);
+  });
+
+  it('accepts only strict JSON ratchet or device v4/v5 for outbound sends', () => {
+    expect(isOutboundEncryptedBody(JSON.stringify(baseRatchetEnvelope))).toBe(true);
+    expect(isOutboundEncryptedBody('x3dh4.session.dh.0.0.iv.ct')).toBe(true);
+    expect(isOutboundEncryptedBody('x3dh5.session.dh.0.0.iv.ct')).toBe(true);
+    expect(isOutboundEncryptedBody('x3dh3.session.dh.0.0.iv.ct')).toBe(false);
+    expect(isOutboundEncryptedBody('{"hello":"not crypto"}')).toBe(false);
   });
 });

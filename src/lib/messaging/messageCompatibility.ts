@@ -52,6 +52,12 @@ export function isStrictRatchetEnvelopeBody(body: string | null | undefined): bo
   }
 }
 
+export function isOutboundEncryptedBody(body: string | null | undefined): body is string {
+  if (!body || typeof body !== 'string') return false;
+  if (body.startsWith('x3dh5.') || body.startsWith('x3dh4.')) return true;
+  return isStrictRatchetEnvelopeBody(body);
+}
+
 export function isKnownCryptoEnvelopeBody(body: string | null | undefined): boolean {
   if (!isCryptoJsonBody(body)) return false;
 

@@ -47,12 +47,18 @@ export function startRealtimeKeySync(userId: string, options: RealtimeKeySyncOpt
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'user_devices', filter: `user_id=eq.${userId}` },
-      () => scheduleProvision('realtime_user_devices'),
+      () => {
+        resetAutoKeyProvisioningCache(userId);
+        scheduleProvision('realtime_user_devices', true);
+      },
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'device_signed_prekeys', filter: `user_id=eq.${userId}` },
-      () => scheduleProvision('realtime_device_signed_prekeys'),
+      () => {
+        resetAutoKeyProvisioningCache(userId);
+        scheduleProvision('realtime_device_signed_prekeys', true);
+      },
     )
     .on(
       'postgres_changes',

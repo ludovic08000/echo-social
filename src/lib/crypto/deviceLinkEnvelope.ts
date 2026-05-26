@@ -12,9 +12,17 @@ export interface DeviceLinkKeyPair {
 }
 
 export interface DeviceLinkQrPayload {
-  v: 2;
+  v: 3;
   type: typeof DEVICE_LINK_QR_TYPE;
   t: string;
+  k: JsonWebKey;
+  kh?: string;
+}
+
+export interface ParsedDeviceLinkQrData {
+  token: string;
+  requesterPublicJwk?: JsonWebKey;
+  requesterPublicKeyHash?: string;
 }
 
 export interface DeviceLinkTransferEnvelope {
@@ -44,6 +52,20 @@ function assertP256Jwk(jwk: JsonWebKey, role: 'public' | 'private'): void {
   if (role === 'private' && typeof jwk.d !== 'string') {
     throw new Error('Invalid linked-device private key');
   }
+}
+
+function canonicalPublicJwk(jwk: JsonWebKey): JsonWebKey {
+  assertP256Jwk(jwk, 'public');
+  return {
+    kty: 'EC',
+    crv: 'P-256',
+    x: jwk.x,
+    y: jwk.y,
+  };
+}
+
+function canonicalPublicJwkJson(jwk: JsonWebKey): string {
+  return JSON.stringify(canonicalPublicJwk(jwk));
 }
 
 async function importPublicKey(jwk: JsonWebKey): Promise<CryptoKey> {
@@ -87,29 +109,75 @@ export async function hashDeviceLinkToken(token: string): Promise<string> {
   return hexFromBuffer(digest);
 }
 
-export function buildDeviceLinkQrData(token: string): string {
+export async function fingerprintDeviceLinkPublicKey(publicJwk: JsonWebKey): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalPublicJwkJson(publicJwk)));
+  return `sha256.${bytesToBase64Url(new Uint8Array(digest))}`;
+}
+
+export function buildDeviceLinkQrData(
+  token: string,
+  requesterPublicJwk: JsonWebKey,
+  requesterPublicKeyHash?: string,
+): string {
   const payload: DeviceLinkQrPayload = {
-    v: 2,
+    v: 3,
     type: DEVICE_LINK_QR_TYPE,
     t: token,
+    k: canonicalPublicJwk(requesterPublicJwk),
+    kh: requesterPublicKeyHash,
   };
   return JSON.stringify(payload);
 }
 
-export function parseDeviceLinkToken(qrData: string): string {
+export function parseDeviceLinkQrData(qrData: string): ParsedDeviceLinkQrData {
   const raw = qrData.trim();
   if (!raw) throw new Error('Code de liaison vide');
 
   try {
     const parsed = JSON.parse(raw) as Partial<DeviceLinkQrPayload> & { token?: unknown };
     const token = typeof parsed.t === 'string' ? parsed.t : typeof parsed.token === 'string' ? parsed.token : '';
-    if (token) return token;
+    if (token) {
+      const requesterPublicJwk = parsed.k && typeof parsed.k === 'object'
+        ? canonicalPublicJwk(parsed.k as JsonWebKey)
+        : undefined;
+      return {
+        token,
+        requesterPublicJwk,
+        requesterPublicKeyHash: typeof parsed.kh === 'string' ? parsed.kh : undefined,
+      };
+    }
   } catch {
     // Plain token fallback for copy/paste flows.
   }
 
-  if (/^[A-Za-z0-9_-]{32,}$/.test(raw)) return raw;
+  if (/^[A-Za-z0-9_-]{32,}$/.test(raw)) return { token: raw };
   throw new Error('Code de liaison invalide');
+}
+
+export function parseDeviceLinkToken(qrData: string): string {
+  return parseDeviceLinkQrData(qrData).token;
+}
+
+export async function verifyDeviceLinkQrKeyBinding(
+  parsedQr: ParsedDeviceLinkQrData,
+  serverRequesterPublicKey: JsonWebKey,
+): Promise<void> {
+  if (!parsedQr.requesterPublicJwk) {
+    throw new Error('QR non authentifie: regenere une demande de liaison securisee');
+  }
+
+  const qrKeyJson = canonicalPublicJwkJson(parsedQr.requesterPublicJwk);
+  const serverKeyJson = canonicalPublicJwkJson(serverRequesterPublicKey);
+  if (qrKeyJson !== serverKeyJson) {
+    throw new Error('Cle du nouveau device modifiee: liaison refusee');
+  }
+
+  if (parsedQr.requesterPublicKeyHash) {
+    const serverHash = await fingerprintDeviceLinkPublicKey(serverRequesterPublicKey);
+    if (serverHash !== parsedQr.requesterPublicKeyHash) {
+      throw new Error('Empreinte de cle device invalide: liaison refusee');
+    }
+  }
 }
 
 export async function generateDeviceLinkKeyPair(): Promise<DeviceLinkKeyPair> {

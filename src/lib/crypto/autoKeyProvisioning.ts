@@ -15,17 +15,20 @@ import {
 } from '@/lib/crypto/accountKeyBackup';
 import {
   refillDeviceOneTimePrekeysIfNeeded,
+  repairLocalDevicePrekeys,
   refreshDeviceSignedPrekeyIfNeeded,
   refreshSignedPrekeyIfNeeded,
 } from '@/lib/crypto/x3dh';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
+import { clearDeviceCryptoInvalid } from '@/lib/messaging/deviceCryptoInvalid';
 import {
   getCurrentDeviceId,
   getCurrentDeviceLabel,
   getCurrentPlatform,
   hydrateDeviceId,
   isDeviceIdTemporary,
+  rotateCurrentDeviceId,
 } from '@/lib/messaging/currentDevice';
 
 export type AutoKeyProvisionStatus =
@@ -151,24 +154,44 @@ async function doProvision(userId: string, options: AutoKeyProvisionOptions = {}
     if (error) throw error;
   }
 
+  const { data: previousDeviceRow } = await supabase
+    .from('user_devices')
+    .select('crypto_invalid_at, crypto_invalid_reason, prekey_repair_requested_at')
+    .eq('user_id', userId)
+    .eq('device_id', deviceId)
+    .maybeSingle();
+  const repairRequested =
+    !!previousDeviceRow?.crypto_invalid_at ||
+    !!previousDeviceRow?.prekey_repair_requested_at;
+
   const kx = await getOrCreateDeviceKxKey(deviceId);
+  const devicePayload = {
+    user_id: userId,
+    device_id: deviceId,
+    device_name: getCurrentDeviceLabel(),
+    device_public_key: kx.publicB64,
+    platform: getCurrentPlatform(),
+    user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
+    is_active: true,
+    last_seen_at: new Date().toISOString(),
+  };
   const { error: deviceError } = await supabase
     .from('user_devices')
-    .upsert({
-      user_id: userId,
-      device_id: deviceId,
-      device_name: getCurrentDeviceLabel(),
-      device_public_key: kx.publicB64,
-      platform: getCurrentPlatform(),
-      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
-      is_active: true,
-      last_seen_at: new Date().toISOString(),
-    }, { onConflict: 'user_id,device_id' });
+    .upsert(devicePayload as any, { onConflict: 'user_id,device_id' });
   if (deviceError) throw deviceError;
 
   await refreshSignedPrekeyIfNeeded(userId, keys.signingPrivateKey);
-  await refreshDeviceSignedPrekeyIfNeeded(userId, deviceId, keys.signingPrivateKey);
-  await refillDeviceOneTimePrekeysIfNeeded(userId, deviceId);
+  if (repairRequested) {
+    await repairLocalDevicePrekeys(userId, deviceId, keys.signingPrivateKey);
+  } else {
+    await refreshDeviceSignedPrekeyIfNeeded(userId, deviceId, keys.signingPrivateKey);
+    await refillDeviceOneTimePrekeysIfNeeded(userId, deviceId);
+    await supabase.rpc('clear_device_prekey_repair_needed' as any, {
+      p_user_id: userId,
+      p_device_id: deviceId,
+    }).catch(() => ({ data: null, error: null }));
+    clearDeviceCryptoInvalid(userId, deviceId);
+  }
   await syncKeychainSnapshotFromLocal(userId).catch(() => false);
   await syncAvailableBackupsToServer(userId).catch(() => false);
 
@@ -229,4 +252,39 @@ export function ensureAutoKeyProvisioning(
 
   inflight.set(userId, promise);
   return promise;
+}
+
+export async function resetCurrentDeviceProvisioning(
+  userId: string,
+): Promise<AutoKeyProvisionResult & { oldDeviceId: string; newDeviceId: string }> {
+  const oldDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+  await supabase
+    .from('user_devices')
+    .update({
+      is_active: false,
+      revoked_at: new Date().toISOString(),
+      revoke_reason: 'local_device_reset',
+    })
+    .eq('user_id', userId)
+    .eq('device_id', oldDeviceId);
+
+  const newDeviceId = await rotateCurrentDeviceId('local_device_reset');
+  resetAutoKeyProvisioningCache(userId);
+  const provisioned = await ensureAutoKeyProvisioning(userId, {
+    reason: 'local_device_reset',
+    force: true,
+  });
+
+  logCryptoError({
+    severity: provisioned.status === 'ready' ? 'info' : 'warning',
+    context: 'restore',
+    errorCode: provisioned.status === 'ready'
+      ? 'DEVICE_RESET_PROVISIONED'
+      : 'DEVICE_RESET_REQUIRES_RESTORE',
+    errorMessage: provisioned.reason,
+    myDeviceId: newDeviceId,
+    metadata: { userId, oldDeviceId, status: provisioned.status },
+  });
+
+  return { ...provisioned, oldDeviceId, newDeviceId };
 }

@@ -21,8 +21,10 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
 import { unwrapPlaintextForDevice } from './deviceWrap';
-import { requestMessageRefanout } from './deviceCopyRetryRequest';
+import { requestDeviceCopyRetry, requestMessageRefanout } from './deviceCopyRetryRequest';
+import { getDeviceCryptoInvalid, requestDevicePrekeyRepair } from './deviceCryptoInvalid';
 import {
+  X3DH_OPK_PRIVATE_MISSING,
   fetchPrekeyBundleForDevice,
   invalidateDeviceBundleCache,
   peekDeviceSignedPrekey,
@@ -41,8 +43,11 @@ import {
   invalidateDeviceSession,
   RATCHET_PREFIX_V3,
   RATCHET_PREFIX_V4,
+  RATCHET_PREFIX_V5,
+  isModernRatchetPayload,
 } from '@/lib/crypto/deviceRatchet';
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
+import { listDevicesForUser } from '@/e2ee-session/deviceRegistry';
 
 interface FanoutInput {
   messageId: string;
@@ -55,6 +60,7 @@ interface ActiveDevice {
   user_id: string;
   device_id: string;
   device_public_key: string;
+  last_seen_at?: string;
 }
 
 export interface FanoutResult {
@@ -106,7 +112,8 @@ async function loadCurrentSenderDevice(senderUserId: string, senderDeviceId: str
       device_id: data.device_id,
       device_public_key: data.device_public_key,
     };
-  } catch {
+  } catch (e) {
+    if (isX3dhOpkPrivateMissingError(e)) throw e;
     return null;
   }
 }
@@ -118,6 +125,11 @@ async function loadCurrentSenderDevice(senderUserId: string, senderDeviceId: str
 // On read we detect the prefix and route to the right responder.
 const X3DH_PREFIX_V1 = 'x3dh1.';
 const X3DH_PREFIX_V2 = 'x3dh2.';
+
+function isX3dhOpkPrivateMissingError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return message === X3DH_OPK_PRIVATE_MISSING;
+}
 
 async function aesFromSecret(secret: ArrayBuffer): Promise<CryptoKey> {
   return hardCrypto.importKey('raw', secret.slice(0, 32), { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
@@ -182,6 +194,20 @@ async function x3dhWrapForDevice(
 
     return parts.join('.');
     } catch (e) {
+      const invalid = getDeviceCryptoInvalid(recipientUserId, recipientDeviceId);
+      if (invalid) {
+        void requestDevicePrekeyRepair(recipientUserId, recipientDeviceId, invalid.reason);
+        logCryptoError({
+          severity: 'warning',
+          context: 'fanout',
+          errorCode: 'E_SKIP_CRYPTO_INVALID_DEVICE',
+          errorMessage: 'X3DH rejected a crypto-invalid device; refusing legacy fallback',
+          peerUserId: recipientUserId,
+          peerDeviceId: recipientDeviceId,
+          metadata: { stage: 'x3dh_wrap_rejected', senderUserId, reason: invalid.reason },
+        });
+        return null;
+      }
       if (attempt === 0) {
         invalidateDeviceBundleCache(recipientUserId, recipientDeviceId, 'x3dh_wrap_failed');
         logCryptoError({
@@ -275,7 +301,8 @@ async function x3dhUnwrapForDevice(
     }
 
     return new hardGlobals.TextDecoder().decode(pt);
-  } catch {
+  } catch (e) {
+    if (isX3dhOpkPrivateMissingError(e)) throw e;
     // X3DH unwrap failed. Legacy deviceWrap reads are attempted only by the
     // outer compatibility path for historical copies.
     return null;
@@ -291,6 +318,22 @@ export async function encryptPlaintextForDeviceTarget(
   if (isDeviceIdTemporary()) return null;
 
   const senderDeviceId = input.senderDeviceId ?? getCurrentDeviceId();
+  const invalid = getDeviceCryptoInvalid(input.recipientUserId, input.recipientDeviceId);
+  if (invalid) {
+    void requestDevicePrekeyRepair(input.recipientUserId, input.recipientDeviceId, invalid.reason);
+    logCryptoError({
+      severity: 'warning',
+      context: 'fanout',
+      errorCode: 'E_SKIP_CRYPTO_INVALID_DEVICE',
+      errorMessage: 'Skipping locally crypto-invalid recipient device',
+      conversationId: input.conversationId,
+      myDeviceId: senderDeviceId,
+      peerUserId: input.recipientUserId,
+      peerDeviceId: input.recipientDeviceId,
+      metadata: { reason: invalid.reason, expiresAt: invalid.expiresAt },
+    });
+    return null;
+  }
 
   try {
     const cachedSpkId = await getSessionPeerSpkId(
@@ -330,7 +373,7 @@ export async function encryptPlaintextForDeviceTarget(
       input.recipientDeviceId,
       input.plaintext,
     );
-    if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V4)) {
+    if (encrypted && !isModernRatchetPayload(encrypted)) {
       encrypted = null;
     }
   } catch (e) {
@@ -354,6 +397,22 @@ export async function encryptPlaintextForDeviceTarget(
   }
 
   if (!encrypted) {
+    const invalidAfterX3dh = getDeviceCryptoInvalid(input.recipientUserId, input.recipientDeviceId);
+    if (invalidAfterX3dh) {
+      void requestDevicePrekeyRepair(input.recipientUserId, input.recipientDeviceId, invalidAfterX3dh.reason);
+      logCryptoError({
+        severity: 'warning',
+        context: 'fanout',
+        errorCode: 'E_SKIP_CRYPTO_INVALID_DEVICE',
+        errorMessage: 'Skipping crypto-invalid device after authenticated X3DH failed',
+        conversationId: input.conversationId,
+        myDeviceId: senderDeviceId,
+        peerUserId: input.recipientUserId,
+        peerDeviceId: input.recipientDeviceId,
+        metadata: { reason: invalidAfterX3dh.reason, expiresAt: invalidAfterX3dh.expiresAt },
+      });
+      return null;
+    }
     logCryptoError({
       severity: 'error',
       context: 'fanout',
@@ -395,11 +454,12 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<FanoutRes
   const deviceLists = await Promise.all(
     userIds.map(async (uid) => {
       try {
-        const { data } = await supabase.rpc('list_active_devices_for_user', { p_user_id: uid });
-        return (data || []).map((d: any) => ({
-          user_id: uid,
-          device_id: d.device_id as string,
-          device_public_key: d.device_public_key as string,
+        const devices = await listDevicesForUser(uid);
+        return devices.map((d) => ({
+          user_id: d.userId,
+          device_id: d.deviceId,
+          device_public_key: d.devicePublicKey,
+          last_seen_at: d.lastSeen ? new Date(d.lastSeen).toISOString() : undefined,
         })) as ActiveDevice[];
       } catch {
         return [] as ActiveDevice[];
@@ -429,6 +489,24 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<FanoutRes
   let failed = 0;
   for (const dev of targets) {
     if (!dev.device_public_key) {
+      failed++;
+      continue;
+    }
+
+    const invalid = getDeviceCryptoInvalid(dev.user_id, dev.device_id);
+    if (invalid) {
+      void requestDevicePrekeyRepair(dev.user_id, dev.device_id, invalid.reason);
+      logCryptoError({
+        severity: 'warning',
+        context: 'fanout',
+        errorCode: 'E_SKIP_CRYPTO_INVALID_DEVICE',
+        errorMessage: 'Skipping locally crypto-invalid recipient device',
+        conversationId: input.conversationId,
+        myDeviceId: senderDeviceId,
+        peerUserId: dev.user_id,
+        peerDeviceId: dev.device_id,
+        metadata: { reason: invalid.reason, expiresAt: invalid.expiresAt },
+      });
       failed++;
       continue;
     }
@@ -471,7 +549,7 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<FanoutRes
         dev.user_id, dev.device_id,
         input.plaintext,
       );
-      if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V4)) {
+      if (encrypted && !isModernRatchetPayload(encrypted)) {
         encrypted = null;
       }
     } catch (e) {
@@ -496,6 +574,23 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<FanoutRes
     }
 
     if (!encrypted) {
+      const invalidAfterX3dh = getDeviceCryptoInvalid(dev.user_id, dev.device_id);
+      if (invalidAfterX3dh) {
+        void requestDevicePrekeyRepair(dev.user_id, dev.device_id, invalidAfterX3dh.reason);
+        logCryptoError({
+          severity: 'warning',
+          context: 'fanout',
+          errorCode: 'E_SKIP_CRYPTO_INVALID_DEVICE',
+          errorMessage: 'Skipping crypto-invalid device after authenticated X3DH failed',
+          conversationId: input.conversationId,
+          myDeviceId: senderDeviceId,
+          peerUserId: dev.user_id,
+          peerDeviceId: dev.device_id,
+          metadata: { reason: invalidAfterX3dh.reason, expiresAt: invalidAfterX3dh.expiresAt },
+        });
+        failed++;
+        continue;
+      }
       logCryptoError({
         severity: 'error',
         context: 'fanout',
@@ -635,11 +730,33 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
     // Try each candidate row in order; first successful decryption wins.
     // Use the row's recipient_device_id (when present) so iOS-restored installs
     // can still decrypt copies originally targeted at the previous device id.
+    let opkPrivateMissing = false;
     for (const row of rows) {
       const targetDeviceId = row.recipient_device_id || myDeviceId;
-      const pt = await tryDecryptCopy(row, user.id, targetDeviceId);
+      let pt: string | null = null;
+      try {
+        pt = await tryDecryptCopy(row, user.id, targetDeviceId);
+      } catch (e) {
+        if (isX3dhOpkPrivateMissingError(e)) {
+          opkPrivateMissing = true;
+          void requestDeviceCopyRetry({ messageId, senderUserId: row.sender_user_id });
+          logCryptoError({
+            severity: 'warning',
+            context: 'decrypt',
+            errorCode: 'X3DH_OPK_PRIVATE_MISSING',
+            errorMessage: 'Local OPK private half is missing; requested a fresh encrypted device copy',
+            myDeviceId,
+            peerUserId: row.sender_user_id,
+            peerDeviceId: row.sender_device_id,
+            metadata: { messageId, targetDeviceId },
+          });
+          continue;
+        }
+        throw e;
+      }
       if (pt !== null) return pt;
     }
+    if (opkPrivateMissing) return null;
     if (expectedSenderUserId) {
       void requestMessageRefanout({ messageId, senderUserId: expectedSenderUserId });
     }
@@ -667,6 +784,7 @@ async function tryDecryptCopy(
 
     // Path 0: cached device-pair ratchet (v3 legacy KDF chain or v4 Double Ratchet).
     if (
+      row.encrypted_body.startsWith(RATCHET_PREFIX_V5) ||
       row.encrypted_body.startsWith(RATCHET_PREFIX_V4) ||
       row.encrypted_body.startsWith(RATCHET_PREFIX_V3)
     ) {
@@ -719,7 +837,8 @@ async function tryDecryptCopy(
       myDeviceId,
       senderPubLegacy?.identity_key ?? null,
     );
-  } catch {
+  } catch (e) {
+    if (isX3dhOpkPrivateMissingError(e)) throw e;
     // Single-copy decrypt failure — caller iterates remaining rows. Silent.
     return null;
   }

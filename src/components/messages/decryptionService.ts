@@ -40,7 +40,14 @@ export interface DecryptionOutcome {
 }
 
 export function looksEncrypted(body: string): boolean {
-  return isStrictRatchetEnvelopeBody(body);
+  return (
+    isStrictRatchetEnvelopeBody(body) ||
+    body.startsWith('x3dh5.') ||
+    body.startsWith('x3dh4.') ||
+    body.startsWith('x3dh3.') ||
+    body.startsWith('x3dh2.') ||
+    body.startsWith('x3dh1.')
+  );
 }
 
 /** Bounded LRU plaintext cache shared across mounted bubbles. */
@@ -283,7 +290,7 @@ export async function resolvePlaintext(opts: {
         const status = await getMessageRefanoutStatus({ messageId, senderUserId: senderId });
         if (status.terminal) {
           const outcome: DecryptionOutcome = {
-            text: 'message non récupérable sur cet appareil',
+            text: 'Message non récupérable sur cet appareil',
             mediaKeyB64: null,
             hidden: false,
             terminal: true,

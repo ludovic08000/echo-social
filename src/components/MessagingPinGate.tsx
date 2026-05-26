@@ -54,6 +54,12 @@ export function MessagingPinGate({ children, compact = false }: MessagingPinGate
             error={pin.error}
             onRequestReset={pin.requestReset}
             onConfirmReset={pin.confirmReset}
+            restoreRequired={pin.restoreRequired}
+            pinFailedAttempts={pin.pinFailedAttempts}
+            pinAttemptsRemaining={pin.pinAttemptsRemaining}
+            pinRetryAfterSeconds={pin.pinRetryAfterSeconds}
+            pinLockedUntil={pin.pinLockedUntil}
+            pinReleaseAttestationOk={pin.pinReleaseAttestationOk}
           />
       }
     </CompactCtx.Provider>
@@ -169,6 +175,20 @@ function usePinHandlers(setter: React.Dispatch<React.SetStateAction<string>>) {
   }, [setter]);
 
   return { handleDigit, handleBackspace };
+}
+
+const PIN_MAX_ATTEMPTS = 5;
+
+function retrySecondsForAttempt(failedAttempts: number): number {
+  if (failedAttempts <= 0) return 0;
+  return Math.min(60, 2 ** Math.min(failedAttempts - 1, 5));
+}
+
+function secondsUntil(iso: string | null | undefined, now: number): number {
+  if (!iso) return 0;
+  const target = new Date(iso).getTime();
+  if (!Number.isFinite(target)) return 0;
+  return Math.max(0, Math.ceil((target - now) / 1000));
 }
 
 // ─── PIN Setup Screen ───
@@ -363,15 +383,34 @@ function PinSetupScreen({ onSetup, processing, error }: {
 
 // ─── PIN Entry Screen ───
 
-function PinEntryScreen({ onVerify, processing, error, onRequestReset, onConfirmReset }: {
+function PinEntryScreen({
+  onVerify,
+  processing,
+  error,
+  onRequestReset,
+  onConfirmReset,
+  restoreRequired,
+  pinFailedAttempts,
+  pinAttemptsRemaining,
+  pinRetryAfterSeconds,
+  pinLockedUntil,
+}: {
   onVerify: (pin: string) => Promise<boolean>; processing: boolean; error: string | null;
   onRequestReset: () => Promise<boolean>;
   onConfirmReset: (code: string) => Promise<boolean>;
+  restoreRequired: boolean;
+  pinFailedAttempts: number;
+  pinAttemptsRemaining: number;
+  pinRetryAfterSeconds: number;
+  pinLockedUntil: string | null;
+  pinReleaseAttestationOk: boolean;
 }) {
   const compact = useContext(CompactCtx);
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
-  const [attempts, setAttempts] = useState(0);
+  const [localAttempts, setLocalAttempts] = useState(0);
+  const [cooldownUntilMs, setCooldownUntilMs] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const submittingRef = useRef(false);
   const { handleDigit, handleBackspace } = usePinHandlers(setPin);
 
@@ -382,16 +421,63 @@ function PinEntryScreen({ onVerify, processing, error, onRequestReset, onConfirm
   const { handleDigit: handleCodeDigit, handleBackspace: handleCodeBackspace } = usePinHandlers(setResetCode);
 
   useEffect(() => {
-    if (pin.length === 6 && !processing && !submittingRef.current && attempts < 5 && resetStep === 'none') {
+    if (pinFailedAttempts === 0) setLocalAttempts(0);
+  }, [pinFailedAttempts]);
+
+  useEffect(() => {
+    if (pinRetryAfterSeconds > 0) {
+      setCooldownUntilMs(Date.now() + pinRetryAfterSeconds * 1000);
+      setNowMs(Date.now());
+    }
+  }, [pinRetryAfterSeconds, pinFailedAttempts]);
+
+  useEffect(() => {
+    if (!cooldownUntilMs && !pinLockedUntil) return;
+    const id = window.setInterval(() => {
+      const nextNow = Date.now();
+      setNowMs(nextNow);
+      if (cooldownUntilMs && cooldownUntilMs <= nextNow) {
+        setCooldownUntilMs(null);
+      }
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [cooldownUntilMs, pinLockedUntil]);
+
+  const displayFailedAttempts = Math.min(PIN_MAX_ATTEMPTS, Math.max(pinFailedAttempts, localAttempts));
+  const displayAttemptsRemaining = Math.max(
+    0,
+    Math.min(PIN_MAX_ATTEMPTS, pinAttemptsRemaining ?? PIN_MAX_ATTEMPTS - displayFailedAttempts),
+  );
+  const lockedRemainingSeconds = secondsUntil(pinLockedUntil, nowMs);
+  const cooldownRemainingSeconds = cooldownUntilMs
+    ? Math.max(0, Math.ceil((cooldownUntilMs - nowMs) / 1000))
+    : 0;
+  const retryRemainingSeconds = Math.max(lockedRemainingSeconds, cooldownRemainingSeconds);
+  const isCoolingDown = retryRemainingSeconds > 0 && displayAttemptsRemaining > 0;
+  const isLocked = displayAttemptsRemaining <= 0 || lockedRemainingSeconds > 0;
+  const inputDisabled = processing || isCoolingDown;
+
+  useEffect(() => {
+    if (pin.length === 6 && !processing && !submittingRef.current && !isLocked && !isCoolingDown && resetStep === 'none') {
       submittingRef.current = true;
       onVerify(pin).then(ok => {
         submittingRef.current = false;
-        if (!ok) { setAttempts(a => a + 1); setPin(''); }
+        if (!ok) {
+          setLocalAttempts(a => {
+            const next = Math.min(PIN_MAX_ATTEMPTS, a + 1);
+            const effectiveFailed = Math.max(pinFailedAttempts, next);
+            const retrySeconds = retrySecondsForAttempt(effectiveFailed);
+            if (retrySeconds > 0 && effectiveFailed < PIN_MAX_ATTEMPTS) {
+              setCooldownUntilMs(Date.now() + retrySeconds * 1000);
+              setNowMs(Date.now());
+            }
+            return next;
+          });
+          setPin('');
+        }
       });
     }
-  }, [pin, processing, attempts, onVerify, resetStep]);
-
-  const isLocked = attempts >= 5;
+  }, [pin, processing, isLocked, isCoolingDown, onVerify, resetStep, pinFailedAttempts]);
 
   const handleRequestReset = async () => {
     setResetStep('sending');
@@ -540,12 +626,18 @@ function PinEntryScreen({ onVerify, processing, error, onRequestReset, onConfirm
             'font-bold text-foreground tracking-tight',
             compact ? 'text-sm mb-0.5' : 'text-lg sm:text-xl mb-1.5',
           )}>
-            {isLocked ? 'Accès bloqué' : (compact ? 'Code PIN' : 'Déverrouiller la messagerie')}
+            {isLocked
+              ? 'Accès bloqué'
+              : restoreRequired
+                ? 'Déverrouillage requis'
+                : (compact ? 'Code PIN' : 'Déverrouiller la messagerie')}
           </h2>
           <p className={cn('text-muted-foreground', compact ? 'text-[10px]' : 'text-xs sm:text-sm')}>
             {isLocked
               ? (compact ? 'Réinitialisez par email.' : 'Trop de tentatives. Réinitialisez votre PIN par email.')
-              : (compact ? 'Entrez votre code à 6 chiffres.' : 'Saisissez votre code à 6 chiffres pour accéder à vos messages.')}
+              : restoreRequired
+                ? 'Déverrouillage requis pour restaurer vos messages chiffrés'
+                : (compact ? 'Entrez votre code à 6 chiffres.' : 'Saisissez votre code à 6 chiffres pour accéder à vos messages.')}
           </p>
         </div>
 
@@ -557,12 +649,33 @@ function PinEntryScreen({ onVerify, processing, error, onRequestReset, onConfirm
                 value={pin}
                 showPin={showPin}
                 hasError={!!error && !processing}
-                disabled={processing}
+                disabled={inputDisabled}
                 onDigit={handleDigit}
                 onBackspace={handleBackspace}
               />
             </div>
             <VisibilityToggle show={showPin} onToggle={() => setShowPin(!showPin)} />
+            <div className={cn('flex flex-col items-center gap-1.5', compact ? 'mt-2' : 'mt-3')}>
+              <div className="flex items-center justify-center gap-1.5" aria-live="polite">
+                {Array.from({ length: PIN_MAX_ATTEMPTS }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      'w-1.5 h-1.5 rounded-full',
+                      i < displayFailedAttempts ? 'bg-destructive' : 'bg-border/50',
+                    )}
+                  />
+                ))}
+                <span className="text-[10px] text-muted-foreground ml-1">
+                  {displayAttemptsRemaining} restante{displayAttemptsRemaining > 1 ? 's' : ''}
+                </span>
+              </div>
+              {isCoolingDown && (
+                <p className={cn('text-muted-foreground font-medium', compact ? 'text-[10px]' : 'text-xs')}>
+                  Nouvelle tentative dans {retryRemainingSeconds}s
+                </p>
+              )}
+            </div>
           </>
         )}
 
@@ -594,20 +707,12 @@ function PinEntryScreen({ onVerify, processing, error, onRequestReset, onConfirm
               className={cn('text-center', compact ? 'mt-1.5' : 'mt-3')}
             >
               <p className={cn('text-destructive font-medium', compact ? 'text-[10px]' : 'text-xs sm:text-sm')}>{error}</p>
-              {attempts > 0 && (
-                <div className="flex items-center justify-center gap-1 mt-1.5">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className={cn('w-1.5 h-1.5 rounded-full', i < attempts ? 'bg-destructive' : 'bg-border/40')} />
-                  ))}
-                  <span className="text-[9px] text-muted-foreground ml-1">{5 - attempts} restante{5 - attempts > 1 ? 's' : ''}</span>
-                </div>
-              )}
             </motion.div>
           )}
         </AnimatePresence>
 
         {/* Forgot PIN button — always visible */}
-        {!isLocked && attempts >= 2 && (
+        {!isLocked && displayFailedAttempts >= 2 && (
           <button
             onClick={handleRequestReset}
             disabled={processing || resetStep === 'sending'}
@@ -636,7 +741,14 @@ function PinEntryScreen({ onVerify, processing, error, onRequestReset, onConfirm
               compact ? 'rounded-lg p-2.5' : 'rounded-xl sm:rounded-2xl p-4',
             )}>
               <Lock className={cn('mx-auto mb-1', compact ? 'w-4 h-4 text-destructive' : 'w-6 h-6 text-destructive')} />
-              <p className={cn('text-destructive font-semibold', compact ? 'text-[10px]' : 'text-sm')}>5 tentatives échouées</p>
+              <p className={cn('text-destructive font-semibold', compact ? 'text-[10px]' : 'text-sm')}>
+                {PIN_MAX_ATTEMPTS} tentatives échouées
+              </p>
+              {lockedRemainingSeconds > 0 && (
+                <p className={cn('text-muted-foreground mt-1', compact ? 'text-[10px]' : 'text-xs')}>
+                  Nouvelle tentative dans {lockedRemainingSeconds}s
+                </p>
+              )}
             </div>
 
             <Button

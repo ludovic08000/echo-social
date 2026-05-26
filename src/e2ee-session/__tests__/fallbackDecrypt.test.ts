@@ -35,6 +35,7 @@ import {
   ratchetDecrypt,
   listKnownSessionIds,
   RATCHET_PREFIX_V4,
+  RATCHET_PREFIX_V5,
 } from '@/lib/crypto/deviceRatchet';
 import { listDevicesForUser } from '../deviceRegistry';
 import { legacyDecryptByMessageId } from '../legacyDecryptRouter';
@@ -45,6 +46,10 @@ const ME = 'user-alice';
 function makeV4Ciphertext(sessionId = 'sess-1'): string {
   // Shape only — fallbackDecrypt routes by prefix + header sessionId, not real crypto.
   return `${RATCHET_PREFIX_V4}${sessionId}.AAAA.0.0.AAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBB`;
+}
+
+function makeV5Ciphertext(sessionId = 'sess-1'): string {
+  return `${RATCHET_PREFIX_V5}${sessionId}.AAAA.0.0.AAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBB`;
 }
 
 describe('fallbackDecrypt.tryEveryRatchetSession', () => {
@@ -76,6 +81,13 @@ describe('fallbackDecrypt.tryEveryRatchetSession', () => {
       expect(r.plaintext).toBe('hello world');
       expect(r.via).toBe('fallback-session');
     }
+  });
+
+  it('accepts v5 ratchet ciphertexts in the fallback router', async () => {
+    (ratchetDecrypt as any).mockResolvedValue('hello v5');
+    const r = await tryEveryRatchetSession(ME, PEER, makeV5Ciphertext());
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.plaintext).toBe('hello v5');
   });
 
   it('falls back to the device-copy path when the ratchet returns null', async () => {

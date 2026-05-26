@@ -36,6 +36,23 @@ const STORE = 'sessions';
 
 export const RATCHET_PREFIX_V3 = 'x3dh3.'; // legacy (single-secret KDF)
 export const RATCHET_PREFIX_V4 = 'x3dh4.'; // Double Ratchet w/ DH
+export const RATCHET_PREFIX_V5 = 'x3dh5.'; // Double Ratchet w/ device hygiene metadata
+
+export function ratchetPrefixForPayload(payload: string): string | null {
+  if (payload.startsWith(RATCHET_PREFIX_V5)) return RATCHET_PREFIX_V5;
+  if (payload.startsWith(RATCHET_PREFIX_V4)) return RATCHET_PREFIX_V4;
+  if (payload.startsWith(RATCHET_PREFIX_V3)) return RATCHET_PREFIX_V3;
+  return null;
+}
+
+export function isModernRatchetPayload(payload: string): boolean {
+  const prefix = ratchetPrefixForPayload(payload);
+  return prefix === RATCHET_PREFIX_V4 || prefix === RATCHET_PREFIX_V5;
+}
+
+export function isDeviceRatchetPayload(payload: string): boolean {
+  return ratchetPrefixForPayload(payload) !== null;
+}
 
 const MAX_SKIP = 256;            // max skipped message keys per chain
 const MAX_SKIPPED_TOTAL = 2048;  // hard cap across all stored skipped keys
@@ -430,17 +447,23 @@ export async function ratchetDecrypt(
   myDeviceId: string,
   payload: string,
 ): Promise<string | null> {
-  if (payload.startsWith(RATCHET_PREFIX_V4)) {
-    return decryptV4(myUserId, myDeviceId, payload);
+  const prefix = ratchetPrefixForPayload(payload);
+  if (prefix === RATCHET_PREFIX_V4 || prefix === RATCHET_PREFIX_V5) {
+    return decryptModern(myUserId, myDeviceId, payload, prefix);
   }
-  if (payload.startsWith(RATCHET_PREFIX_V3)) {
+  if (prefix === RATCHET_PREFIX_V3) {
     return decryptV3(myUserId, myDeviceId, payload);
   }
   return null;
 }
 
-async function decryptV4(myUserId: string, myDeviceId: string, payload: string): Promise<string | null> {
-  const parts = payload.slice(RATCHET_PREFIX_V4.length).split('.');
+async function decryptModern(
+  myUserId: string,
+  myDeviceId: string,
+  payload: string,
+  prefix: string,
+): Promise<string | null> {
+  const parts = payload.slice(prefix.length).split('.');
   if (parts.length !== 6) return null;
   const [sessionId] = parts;
   const found = await lookupSessionById(myUserId, myDeviceId, sessionId);
@@ -465,9 +488,10 @@ export async function ratchetDecryptWithSession(
   peerDeviceId: string,
   payload: string,
 ): Promise<string | null> {
-  if (!payload.startsWith(RATCHET_PREFIX_V4)) {
+  const prefix = ratchetPrefixForPayload(payload);
+  if (prefix !== RATCHET_PREFIX_V4 && prefix !== RATCHET_PREFIX_V5) {
     // v3 has no DH state to ratchet — re-route through the standard path.
-    if (payload.startsWith(RATCHET_PREFIX_V3)) {
+    if (prefix === RATCHET_PREFIX_V3) {
       const parts = payload.slice(RATCHET_PREFIX_V3.length).split('.');
       if (parts.length !== 4) return null;
       const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
@@ -477,7 +501,7 @@ export async function ratchetDecryptWithSession(
     }
     return null;
   }
-  const parts = payload.slice(RATCHET_PREFIX_V4.length).split('.');
+  const parts = payload.slice(prefix.length).split('.');
   if (parts.length !== 6) return null;
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
   const session = await loadSession(key);

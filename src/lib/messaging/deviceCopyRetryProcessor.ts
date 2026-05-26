@@ -75,6 +75,11 @@ export async function processDeviceCopyRetryRequests(limit = 20): Promise<RetryP
 
     for (const row of rows) {
       try {
+        if (row.requester_user_id === user.id && row.requester_device_id === senderDeviceId) {
+          result.skipped += 1;
+          continue;
+        }
+
         const plaintext =
           (await loadVolatilePlaintext(row.message_id)) ||
           (row.message_body ? await loadVolatilePlaintextForCiphertext(row.message_body) : null);

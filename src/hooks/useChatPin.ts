@@ -45,6 +45,15 @@ export interface ChatPinState {
   processing: boolean;
   /** Current PIN mode */
   pinMode: PinMode;
+  /** true when local E2EE material must be restored with the PIN before messaging opens */
+  restoreRequired: boolean;
+  /** Server/UI-safe PIN attempt counters */
+  pinFailedAttempts: number;
+  pinAttemptsRemaining: number;
+  pinRetryAfterSeconds: number;
+  pinLockedUntil: string | null;
+  /** Last backup secret release was attested by the edge function */
+  pinReleaseAttestationOk: boolean;
 }
 
 // ─── IndexedDB for wrapped keys ───
@@ -154,6 +163,128 @@ function bytesToBase64(bytes: Uint8Array): string {
   let bin = '';
   for (const b of bytes) bin += String.fromCharCode(b);
   return hardGlobals.btoa(bin);
+}
+
+const PIN_MAX_ATTEMPTS = 5;
+
+type PinAttemptState = Pick<
+  ChatPinState,
+  'pinFailedAttempts' | 'pinAttemptsRemaining' | 'pinRetryAfterSeconds' | 'pinLockedUntil'
+>;
+
+interface PinReleaseAttestation {
+  version: 'svr2';
+  action: 'release_backup_pin_blob';
+  userId: string;
+  issuedAt: string;
+  expiresAt: string;
+  nonce: string;
+  backupSecretHash: string;
+  signature: string;
+}
+
+const PIN_ATTEMPT_RESET: PinAttemptState = {
+  pinFailedAttempts: 0,
+  pinAttemptsRemaining: PIN_MAX_ATTEMPTS,
+  pinRetryAfterSeconds: 0,
+  pinLockedUntil: null,
+};
+
+function pinAttemptStateFromServer(payload: any): PinAttemptState {
+  const failed = Number.isFinite(Number(payload?.failedAttempts))
+    ? Math.max(0, Number(payload.failedAttempts))
+    : Math.max(0, PIN_MAX_ATTEMPTS - Number(payload?.attemptsRemaining ?? PIN_MAX_ATTEMPTS));
+  const remaining = Number.isFinite(Number(payload?.attemptsRemaining))
+    ? Math.max(0, Number(payload.attemptsRemaining))
+    : Math.max(0, PIN_MAX_ATTEMPTS - failed);
+  const retryAfter = Number.isFinite(Number(payload?.retryAfterSeconds))
+    ? Math.max(0, Number(payload.retryAfterSeconds))
+    : 0;
+  return {
+    pinFailedAttempts: failed,
+    pinAttemptsRemaining: remaining,
+    pinRetryAfterSeconds: retryAfter,
+    pinLockedUntil: typeof payload?.lockedUntil === 'string' ? payload.lockedUntil : null,
+  };
+}
+
+async function readFunctionErrorPayload(error: unknown): Promise<any | null> {
+  const response = (error as { context?: unknown } | null)?.context;
+  if (!response || typeof (response as Response).clone !== 'function') return null;
+  try {
+    return await (response as Response).clone().json();
+  } catch {
+    return null;
+  }
+}
+
+function constantTimeEqualBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) result |= a[i] ^ b[i];
+  return result === 0;
+}
+
+function canonicalReleasePayload(payload: Omit<PinReleaseAttestation, 'signature'>): string {
+  return JSON.stringify({
+    version: payload.version,
+    action: payload.action,
+    userId: payload.userId,
+    issuedAt: payload.issuedAt,
+    expiresAt: payload.expiresAt,
+    nonce: payload.nonce,
+    backupSecretHash: payload.backupSecretHash,
+  });
+}
+
+async function sha256BytesBase64(bytes: Uint8Array): Promise<string> {
+  return bytesToBase64(new Uint8Array(await hardCrypto.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>)));
+}
+
+async function hmacBase64(secretB64: string, payload: string): Promise<string> {
+  const key = await hardCrypto.importKey(
+    'raw',
+    base64ToBytes(secretB64) as Uint8Array<ArrayBuffer>,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = await hardCrypto.sign('HMAC', key, new TextEncoder().encode(payload));
+  return bytesToBase64(new Uint8Array(sig));
+}
+
+async function verifyBackupReleaseAttestation(
+  backupSecret: string,
+  attestation: unknown,
+  userId: string,
+): Promise<boolean> {
+  const att = attestation as Partial<PinReleaseAttestation> | null;
+  if (!att || att.version !== 'svr2' || att.action !== 'release_backup_pin_blob') return false;
+  if (att.userId !== userId || !att.signature || !att.expiresAt || !att.issuedAt || !att.nonce || !att.backupSecretHash) {
+    return false;
+  }
+  const expiresAt = new Date(att.expiresAt).getTime();
+  const issuedAt = new Date(att.issuedAt).getTime();
+  const now = Date.now();
+  if (!Number.isFinite(expiresAt) || !Number.isFinite(issuedAt)) return false;
+  if (expiresAt < now || issuedAt - now > 30_000) return false;
+
+  const secretHash = await sha256BytesBase64(base64ToBytes(backupSecret));
+  if (secretHash !== att.backupSecretHash) return false;
+
+  const expected = await hmacBase64(
+    backupSecret,
+    canonicalReleasePayload({
+      version: 'svr2',
+      action: 'release_backup_pin_blob',
+      userId: att.userId,
+      issuedAt: att.issuedAt,
+      expiresAt: att.expiresAt,
+      nonce: att.nonce,
+      backupSecretHash: att.backupSecretHash,
+    }),
+  );
+  return constantTimeEqualBytes(base64ToBytes(expected), base64ToBytes(att.signature));
 }
 
 function isPinMode(value: unknown): value is PinMode {
@@ -347,6 +478,9 @@ export function useChatPin() {
     error: null,
     processing: false,
     pinMode: 'every_open',
+    restoreRequired: false,
+    ...PIN_ATTEMPT_RESET,
+    pinReleaseAttestationOk: false,
   });
   const checkedRef = useRef(false);
   const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -420,12 +554,58 @@ export function useChatPin() {
           error: null,
           processing: false,
           pinMode: mode,
+          restoreRequired: hasPin && !rawIdentityPresent,
+          ...PIN_ATTEMPT_RESET,
+          pinReleaseAttestationOk: false,
         });
       } catch (err) {
         console.error('[PIN] Check failed:', err);
         setState(s => ({ ...s, loaded: true, error: 'Erreur vérification PIN' }));
       }
     })();
+  }, [user, fetchPinMode]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const handleKeysUnlocked = async () => {
+      try {
+        if (!await hasUsableRawIdentity(user.id)) return;
+        const mode = await fetchPinMode();
+        pinModeRef.current = mode;
+        sessionStorage.setItem(SESSION_KEY, user.id);
+        setState(s => ({
+          ...s,
+          loaded: true,
+          hasPin: true,
+          unlocked: true,
+          error: null,
+          processing: false,
+          pinMode: mode,
+          restoreRequired: false,
+          ...PIN_ATTEMPT_RESET,
+        }));
+      } catch (e) {
+        console.warn('[PIN] global unlock state refresh failed:', e);
+      }
+    };
+
+    const handleKeysLocked = () => {
+      setState(s => ({
+        ...s,
+        unlocked: false,
+        processing: false,
+        restoreRequired: s.hasPin,
+        pinReleaseAttestationOk: false,
+      }));
+    };
+
+    window.addEventListener('forsure-keys-unlocked', handleKeysUnlocked);
+    window.addEventListener('forsure-keys-locked', handleKeysLocked);
+    return () => {
+      window.removeEventListener('forsure-keys-unlocked', handleKeysUnlocked);
+      window.removeEventListener('forsure-keys-locked', handleKeysLocked);
+    };
   }, [user, fetchPinMode]);
 
   const lockWithoutWiping = useCallback(async () => {
@@ -470,7 +650,12 @@ export function useChatPin() {
     runtimeWrapSaltRef.current = null;
     runtimePinRef.current = null;
     runtimeBackupSecretRef.current = null;
-    setState(s => ({ ...s, unlocked: false }));
+    setState(s => ({
+      ...s,
+      unlocked: false,
+      restoreRequired: true,
+      pinReleaseAttestationOk: false,
+    }));
   }, [user]);
 
   // Handle 'on_return' mode: re-lock when tab loses visibility
@@ -581,7 +766,13 @@ export function useChatPin() {
         body: { action: 'setup', pin },
       });
       if (fnError || !setupResult?.ok) {
-        setState(s => ({ ...s, processing: false, error: setupResult?.error || 'Erreur création PIN' }));
+        const errorPayload = fnError ? await readFunctionErrorPayload(fnError) : setupResult;
+        setState(s => ({
+          ...s,
+          processing: false,
+          error: errorPayload?.error || setupResult?.error || 'Erreur creation PIN',
+          ...pinAttemptStateFromServer(errorPayload),
+        }));
         return false;
       }
 
@@ -589,6 +780,15 @@ export function useChatPin() {
       const backupSecret = typeof setupResult.backupSecret === 'string' ? setupResult.backupSecret : null;
       if (!backupSecret) {
         setState(s => ({ ...s, processing: false, error: 'Erreur creation PIN: secret de sauvegarde absent' }));
+        return false;
+      }
+      if (!await verifyBackupReleaseAttestation(backupSecret, setupResult.releaseAttestation, user.id)) {
+        setState(s => ({
+          ...s,
+          processing: false,
+          error: 'Attestation PIN invalide. Restauration refusee.',
+          pinReleaseAttestationOk: false,
+        }));
         return false;
       }
 
@@ -665,6 +865,9 @@ export function useChatPin() {
         error: null,
         processing: false,
         pinMode: 'every_open',
+        restoreRequired: false,
+        ...PIN_ATTEMPT_RESET,
+        pinReleaseAttestationOk: true,
       });
       window.dispatchEvent(new CustomEvent('forsure-keys-unlocked'));
       window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
@@ -687,7 +890,7 @@ export function useChatPin() {
 
     try {
       if (!/^\d{6}$/.test(pin)) {
-        setState(s => ({ ...s, processing: false, error: 'PIN invalide' }));
+        setState(s => ({ ...s, processing: false, error: 'PIN invalide', pinReleaseAttestationOk: false }));
         return false;
       }
 
@@ -696,17 +899,39 @@ export function useChatPin() {
       });
 
       if (fnError) {
-        setState(s => ({ ...s, processing: false, error: 'Erreur serveur' }));
+        const errorPayload = await readFunctionErrorPayload(fnError);
+        setState(s => ({
+          ...s,
+          processing: false,
+          error: errorPayload?.error || 'Erreur serveur',
+          ...pinAttemptStateFromServer(errorPayload),
+          pinReleaseAttestationOk: false,
+        }));
         return false;
       }
 
       if (!verifyResult?.ok) {
-        setState(s => ({ ...s, processing: false, error: verifyResult?.error || 'PIN incorrect' }));
+        setState(s => ({
+          ...s,
+          processing: false,
+          error: verifyResult?.error || 'PIN incorrect',
+          ...pinAttemptStateFromServer(verifyResult),
+          pinReleaseAttestationOk: false,
+        }));
         return false;
       }
 
       let cryptoReady = false;
       const backupSecret = typeof verifyResult.backupSecret === 'string' ? verifyResult.backupSecret : null;
+      if (backupSecret && !await verifyBackupReleaseAttestation(backupSecret, verifyResult.releaseAttestation, user.id)) {
+        setState(s => ({
+          ...s,
+          processing: false,
+          error: 'Attestation PIN invalide. Restauration refusee.',
+          pinReleaseAttestationOk: false,
+        }));
+        return false;
+      }
       runtimePinRef.current = pin;
       runtimeBackupSecretRef.current = backupSecret;
 
@@ -754,6 +979,7 @@ export function useChatPin() {
             ...s,
             processing: false,
             error: 'Restauration crypto incomplète — veuillez réessayer',
+            restoreRequired: true,
           }));
           return false;
         }
@@ -766,6 +992,7 @@ export function useChatPin() {
               ...s,
               processing: false,
               error: 'PIN valide, mais aucune sauvegarde web n a pu restaurer tes cles. Lie ce device depuis un appareil connecte ou utilise la cle de recuperation.',
+              restoreRequired: true,
             }));
             return false;
           }
@@ -783,6 +1010,7 @@ export function useChatPin() {
             ...s,
             processing: false,
             error: 'PIN valide, mais restauration crypto impossible sur ce device.',
+            restoreRequired: true,
           }));
           return false;
         }
@@ -795,6 +1023,7 @@ export function useChatPin() {
           ...s,
           processing: false,
           error: 'PIN valide, mais aucune cle E2EE locale n a ete restauree.',
+          restoreRequired: true,
         }));
         return false;
       }
@@ -805,10 +1034,20 @@ export function useChatPin() {
           JSON.stringify({ at: Date.now(), detail: { status: 'pin_unlocked' } }),
         );
       } catch {}
+      sessionStorage.setItem(SESSION_KEY, user.id);
       window.dispatchEvent(new CustomEvent('forsure-keys-unlocked'));
-      window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
-        detail: { status: 'pin_unlocked' },
-      }));
+
+      let resyncOk = false;
+      try {
+        const { resyncE2EE } = await import('@/lib/crypto/resyncE2EE');
+        const report = await resyncE2EE(user.id);
+        resyncOk = report.steps.identity === 'ok' && !report.needsPinUnlock;
+        if (!resyncOk) {
+          console.warn('[PIN] Post-unlock E2EE resync incomplete:', report);
+        }
+      } catch (resyncErr) {
+        console.warn('[PIN] Post-unlock E2EE resync failed:', resyncErr);
+      }
 
       if (backupSecret) {
         try {
@@ -819,7 +1058,6 @@ export function useChatPin() {
         }
       }
 
-      sessionStorage.setItem(SESSION_KEY, user.id);
       const mode = await fetchPinMode();
       pinModeRef.current = mode;
 
@@ -830,7 +1068,21 @@ export function useChatPin() {
         error: null,
         processing: false,
         pinMode: mode,
+        restoreRequired: false,
+        ...PIN_ATTEMPT_RESET,
+        pinReleaseAttestationOk: !!backupSecret,
       });
+
+      try {
+        sessionStorage.removeItem(`forsure:e2ee-pin-unlock-required:${user.id}`);
+        if (resyncOk) {
+          sessionStorage.setItem(`forsure:e2ee-resync-done:${user.id}`, String(Date.now()));
+          sessionStorage.removeItem(`forsure:e2ee-resync-pending:${user.id}`);
+        }
+      } catch {}
+      window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+        detail: { status: 'pin_unlocked', resynced: resyncOk },
+      }));
 
       return true;
     } catch (err) {
@@ -854,7 +1106,13 @@ export function useChatPin() {
         body: { action: 'request-reset' },
       });
       if (error || !data?.ok) {
-        setState(s => ({ ...s, processing: false, error: data?.error || 'Erreur envoi email' }));
+        const errorPayload = error ? await readFunctionErrorPayload(error) : data;
+        setState(s => ({
+          ...s,
+          processing: false,
+          error: errorPayload?.error || data?.error || 'Erreur envoi email',
+          ...pinAttemptStateFromServer(errorPayload),
+        }));
         return false;
       }
       setState(s => ({ ...s, processing: false }));
@@ -874,7 +1132,13 @@ export function useChatPin() {
         body: { action: 'confirm-reset', code },
       });
       if (error || !data?.ok) {
-        setState(s => ({ ...s, processing: false, error: data?.error || 'Code incorrect' }));
+        const errorPayload = error ? await readFunctionErrorPayload(error) : data;
+        setState(s => ({
+          ...s,
+          processing: false,
+          error: errorPayload?.error || data?.error || 'Code incorrect',
+          ...pinAttemptStateFromServer(errorPayload),
+        }));
         return false;
       }
       sessionStorage.removeItem(SESSION_KEY);
@@ -885,6 +1149,9 @@ export function useChatPin() {
         error: null,
         processing: false,
         pinMode: 'every_open',
+        restoreRequired: false,
+        ...PIN_ATTEMPT_RESET,
+        pinReleaseAttestationOk: false,
       });
       return true;
     } catch {

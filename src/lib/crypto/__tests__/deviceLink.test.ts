@@ -7,9 +7,12 @@ import {
   buildDeviceLinkQrData,
   decryptDeviceLinkPayload,
   encryptDeviceLinkPayload,
+  fingerprintDeviceLinkPublicKey,
   generateDeviceLinkKeyPair,
   generateDeviceLinkToken,
+  parseDeviceLinkQrData,
   parseDeviceLinkToken,
+  verifyDeviceLinkQrKeyBinding,
 } from '../deviceLinkEnvelope';
 
 const PBKDF2_ITERATIONS = 600_000;
@@ -35,12 +38,14 @@ describe('Device link crypto (new device)', () => {
       'plaintext:cache': [{ id: 'msg1', plaintext: 'cached history' }],
     });
     const token = generateDeviceLinkToken();
-    const qrData = buildDeviceLinkQrData(token);
+    const keyHash = await fingerprintDeviceLinkPublicKey(requester.publicJwk);
+    const qrData = buildDeviceLinkQrData(token, requester.publicJwk, keyHash);
 
     const envelope = await encryptDeviceLinkPayload(keysJson, requester.publicJwk);
     const wire = JSON.stringify(envelope);
 
     expect(parseDeviceLinkToken(qrData)).toBe(token);
+    expect(parseDeviceLinkQrData(qrData).requesterPublicJwk?.x).toBe(requester.publicJwk.x);
     expect(qrData).not.toContain('secret');
     expect(qrData).not.toContain('cached history');
     expect(wire).not.toContain('secret');
@@ -49,6 +54,23 @@ describe('Device link crypto (new device)', () => {
     const restored = JSON.parse(await decryptDeviceLinkPayload(envelope, requester.privateJwk));
     expect(restored['e2ee:identity-keys'][0].key).toBe('secret');
     expect(restored['plaintext:cache'][0].plaintext).toBe('cached history');
+  });
+
+  it('binds the approval QR to the requester public key', async () => {
+    const requester = await generateDeviceLinkKeyPair();
+    const attacker = await generateDeviceLinkKeyPair();
+    const token = generateDeviceLinkToken();
+    const qrData = buildDeviceLinkQrData(
+      token,
+      requester.publicJwk,
+      await fingerprintDeviceLinkPublicKey(requester.publicJwk),
+    );
+    const parsed = parseDeviceLinkQrData(qrData);
+
+    await expect(verifyDeviceLinkQrKeyBinding(parsed, requester.publicJwk)).resolves.toBeUndefined();
+    await expect(verifyDeviceLinkQrKeyBinding(parsed, attacker.publicJwk))
+      .rejects
+      .toThrow(/modifiee|Empreinte/);
   });
 
   it('rejects an approved transfer on the wrong requesting private key', async () => {
@@ -118,12 +140,14 @@ describe('Device link crypto (new device)', () => {
     ).rejects.toThrow();
   });
 
-  it('QR code contains only claim token, not encryption PIN', () => {
+  it('QR code contains the requester public key but not the legacy encryption PIN', async () => {
     const pin = 'XYZW5678';
     const token = 'abc-123-def';
-    const qrData = JSON.stringify({ t: token });
+    const requester = await generateDeviceLinkKeyPair();
+    const qrData = buildDeviceLinkQrData(token, requester.publicJwk);
 
     expect(qrData).toContain(token);
+    expect(qrData).toContain(requester.publicJwk.x as string);
     expect(qrData).not.toContain(pin);
   });
 });

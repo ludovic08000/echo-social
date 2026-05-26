@@ -30,12 +30,14 @@ import {
   refreshSignedPrekeyIfNeeded,
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
+  repairLocalDevicePrekeys,
 } from '@/lib/crypto/x3dh';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { clearAllDeviceSessions } from '@/lib/crypto/deviceRatchet';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
 import { syncAvailableBackupsToServer, syncKeychainSnapshotFromLocal, hasLocalKeys } from '@/lib/crypto/accountKeyBackup';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
+import { clearDeviceCryptoInvalid } from '@/lib/messaging/deviceCryptoInvalid';
 
 export type ResyncStep = 'identity' | 'spk' | 'opks' | 'ratchets' | 'replay' | 'snapshot' | 'backup';
 
@@ -77,6 +79,7 @@ export interface ResyncReport {
 
 const RECENT_MESSAGE_WINDOW = 50;
 const RESYNC_BUILD = 'e2ee-ios-device-v3';
+const PIN_UNLOCK_REQUIRED_MESSAGE = 'Déverrouillage requis pour restaurer vos messages chiffrés';
 
 function describeError(error: unknown): string {
   if (error instanceof Error) {
@@ -100,6 +103,64 @@ class DiagRecorder {
     else console.log(tag, message, data ?? '');
   }
   drain(): DiagEntry[] { return this.entries.slice(); }
+}
+
+async function hasChatPinServerBackup(userId: string): Promise<boolean> {
+  try {
+    const { data } = await supabase
+      .from('user_backups' as any)
+      .select('id')
+      .eq('user_id', userId)
+      .eq('backup_type', 'chat_pin')
+      .maybeSingle();
+    return !!data;
+  } catch {
+    return false;
+  }
+}
+
+function pauseForPinUnlock(
+  userId: string,
+  report: ResyncReport,
+  diag: DiagRecorder,
+  replayDetails: MessageReplayDetail[] | null,
+  startedAt: number,
+  diagnostic: boolean,
+  reason: string,
+): ResyncReport {
+  report.needsPinUnlock = true;
+  report.scannedMessages = 0;
+  report.recoveredMessages = 0;
+  report.steps.replay = 'skipped';
+  report.steps.snapshot = 'skipped';
+  report.steps.backup = 'skipped';
+  if (!report.errors.some((err) => err.includes(PIN_UNLOCK_REQUIRED_MESSAGE))) {
+    report.errors.push(PIN_UNLOCK_REQUIRED_MESSAGE);
+  }
+  report.durationMs = Date.now() - startedAt;
+
+  diag.push('done', 'warn', 'resync paused until PIN unlock', {
+    ok: false,
+    errors: report.errors.length,
+    reason,
+  });
+  if (diagnostic) {
+    report.trace = diag.drain();
+    report.replayDetails = replayDetails ?? [];
+  }
+
+  try {
+    const detail = { ...report, userId, reason, message: PIN_UNLOCK_REQUIRED_MESSAGE };
+    sessionStorage.setItem(
+      `forsure:e2ee-pin-unlock-required:${userId}`,
+      JSON.stringify({ at: Date.now(), detail }),
+    );
+    window.dispatchEvent(
+      new CustomEvent('forsure:e2ee-pin-unlock-required', { detail }),
+    );
+  } catch {}
+
+  return report;
 }
 
 /**
@@ -190,6 +251,15 @@ async function republishDeviceIdentity(
   const platform = normalizePlatform(getCurrentPlatform());
   const deviceName = (getCurrentDeviceLabel() || 'Unknown device').slice(0, 120);
   const userAgent = typeof navigator !== 'undefined' ? (navigator.userAgent || '').slice(0, 500) : null;
+  const { data: previousDeviceRow } = await supabase
+    .from('user_devices')
+    .select('crypto_invalid_at, crypto_invalid_reason, prekey_repair_requested_at')
+    .eq('user_id', userId)
+    .eq('device_id', deviceId)
+    .maybeSingle();
+  const repairRequested =
+    !!previousDeviceRow?.crypto_invalid_at ||
+    !!previousDeviceRow?.prekey_repair_requested_at;
 
   const payload = {
     user_id: userId,
@@ -241,7 +311,7 @@ async function republishDeviceIdentity(
   });
   const { error: devErr } = await supabase
     .from('user_devices')
-    .upsert(payload, { onConflict: 'user_id,device_id' });
+    .upsert(payload as any, { onConflict: 'user_id,device_id' });
   if (devErr) {
     console.error('[resync] user_devices.upsert failed', {
       code: (devErr as any).code,
@@ -260,7 +330,16 @@ async function republishDeviceIdentity(
   }
 
   try {
-    await refreshDeviceSignedPrekeyIfNeeded(userId, deviceId, keys.signingPrivateKey);
+    if (repairRequested) {
+      await repairLocalDevicePrekeys(userId, deviceId, keys.signingPrivateKey);
+    } else {
+      await refreshDeviceSignedPrekeyIfNeeded(userId, deviceId, keys.signingPrivateKey);
+      await supabase.rpc('clear_device_prekey_repair_needed' as any, {
+        p_user_id: userId,
+        p_device_id: deviceId,
+      }).catch(() => ({ data: null, error: null }));
+      clearDeviceCryptoInvalid(userId, deviceId);
+    }
     result.spk = true;
   } catch (e) {
     console.warn('[resync] device SPK refresh failed:', e);
@@ -419,6 +498,22 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
   }
 
   if (!(await hasLocalKeys())) {
+    if (await hasChatPinServerBackup(userId)) {
+      report.steps.identity = 'error';
+      report.errors.push('identity locked: chat PIN backup restore required');
+      diag.push('init', 'warn', 'local identity missing, chat PIN backup available', {
+        message: PIN_UNLOCK_REQUIRED_MESSAGE,
+      });
+      return pauseForPinUnlock(
+        userId,
+        report,
+        diag,
+        replayDetails,
+        t0,
+        diagnostic,
+        'local_identity_missing_chat_pin_backup',
+      );
+    }
     report.errors.push('no local keys to resync — restore first');
     report.durationMs = Date.now() - t0;
     diag.push('init', 'error', 'no local keys — abort (restore first)');
@@ -451,22 +546,15 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
     logCryptoException('restore', e, { severity: 'error', metadata: { stage: 'resync_republish', userId } });
 
     if (e instanceof PinUnlockRequiredError || msg.toLowerCase().includes('pin unlock required')) {
-      report.needsPinUnlock = true;
-      report.durationMs = Date.now() - t0;
-      diag.push('done', 'warn', 'resync paused until PIN unlock', {
-        ok: false,
-        errors: report.errors.length,
-      });
-      if (diagnostic) {
-        report.trace = diag.drain();
-        report.replayDetails = replayDetails ?? [];
-      }
-      try {
-        window.dispatchEvent(
-          new CustomEvent('forsure:e2ee-pin-unlock-required', { detail: report }),
-        );
-      } catch {}
-      return report;
+      return pauseForPinUnlock(
+        userId,
+        report,
+        diag,
+        replayDetails,
+        t0,
+        diagnostic,
+        'identity_republish_pin_required',
+      );
     }
   }
 
@@ -584,6 +672,7 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
 
   // Notify the rest of the app — message lists can refresh, banners can hide.
   try {
+    sessionStorage.removeItem(`forsure:e2ee-pin-unlock-required:${userId}`);
     window.dispatchEvent(
       new CustomEvent('forsure:e2ee-resync-complete', { detail: report }),
     );

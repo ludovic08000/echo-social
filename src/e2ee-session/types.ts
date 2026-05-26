@@ -20,6 +20,14 @@ export interface DeviceDescriptor {
   devicePublicKey: string;
   /** Last time we successfully exchanged with this device, ms epoch. */
   lastSeen?: number;
+  /** Server lifecycle flags, when available from user_devices. */
+  isActive?: boolean;
+  revokedAt?: number | null;
+  staleAt?: number | null;
+  /** True when the active SPK signature was known invalid during hygiene checks. */
+  signatureInvalid?: boolean;
+  /** False when the device has no current, verified signed prekey. */
+  hasActiveSignedPrekey?: boolean;
 }
 
 export interface SessionDescriptor {
@@ -30,7 +38,7 @@ export interface SessionDescriptor {
   peerDeviceId: DeviceId;
   status: SessionStatus;
   /** Crypto layer that owns this session (informational). */
-  layer: 'ratchet-v4' | 'ratchet-v3-legacy' | 'x3dh-bootstrap' | 'device-wrap-legacy';
+  layer: 'ratchet-v5' | 'ratchet-v4' | 'ratchet-v3-legacy' | 'x3dh-bootstrap' | 'device-wrap-legacy';
   createdAt: number;
   lastUsedAt: number;
 }
@@ -64,6 +72,7 @@ export interface DecryptResult {
   /** Which path actually decrypted (for diagnostics, never shown to user). */
   via?:
     | 'ratchet-v4'
+    | 'ratchet-v5'
     | 'ratchet-v3'
     | 'x3dh-bootstrap'
     | 'device-wrap'

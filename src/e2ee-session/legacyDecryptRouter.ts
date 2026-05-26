@@ -18,6 +18,7 @@
 import {
   RATCHET_PREFIX_V3,
   RATCHET_PREFIX_V4,
+  RATCHET_PREFIX_V5,
   ratchetDecrypt as deviceRatchetDecrypt,
 } from '@/lib/crypto/deviceRatchet';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
@@ -40,6 +41,12 @@ export async function legacyDecryptDeviceCopy(args: {
   const me = selfDeviceId();
 
   // v3 / v4 device-pair ratchet — fastest, handles 99% of recent traffic.
+  if (encryptedBody.startsWith(RATCHET_PREFIX_V5)) {
+    try {
+      const pt = await deviceRatchetDecrypt(args.recipientUserId, me, encryptedBody);
+      if (pt !== null) return { ok: true, plaintext: pt, via: 'ratchet-v5' };
+    } catch { /* fall through */ }
+  }
   if (encryptedBody.startsWith(RATCHET_PREFIX_V4)) {
     try {
       const pt = await deviceRatchetDecrypt(args.recipientUserId, me, encryptedBody);
@@ -85,6 +92,7 @@ export async function legacyDecryptByMessageId(messageId: string, expectedSender
  */
 export function isKnownLegacyFormat(encryptedBody: string): boolean {
   return (
+    encryptedBody.startsWith(RATCHET_PREFIX_V5) ||
     encryptedBody.startsWith(RATCHET_PREFIX_V4) ||
     encryptedBody.startsWith(RATCHET_PREFIX_V3) ||
     encryptedBody.startsWith('x3dh1.') ||

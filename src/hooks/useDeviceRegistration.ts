@@ -22,19 +22,23 @@ import {
   getCurrentPlatform,
   hydrateDeviceId,
   isDeviceIdTemporary,
+  rotateCurrentDeviceId,
 } from '@/lib/messaging/currentDevice';
 import {
   getOrCreateIdentityKeys,
   exportPublicKeyBundle,
   fetchServerIdentityState,
+  identityBundleMatchesServer,
 } from '@/lib/crypto/keyManager';
 import {
   refreshDeviceSignedPrekeyIfNeeded,
+  repairLocalDevicePrekeys,
   refillDeviceOneTimePrekeysIfNeeded,
   refreshSignedPrekeyIfNeeded,
 } from '@/lib/crypto/x3dh';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
+import { clearDeviceCryptoInvalid } from '@/lib/messaging/deviceCryptoInvalid';
 
 export function useDeviceRegistration() {
   const { user } = useAuth();
@@ -46,7 +50,7 @@ export function useDeviceRegistration() {
 
     void (async () => {
       try {
-        const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+        let deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
         if (isDeviceIdTemporary()) {
           console.warn('[useDeviceRegistration] device id still temporary - delaying device publish');
           ranRef.current = false;
@@ -75,18 +79,80 @@ export function useDeviceRegistration() {
           return;
         }
 
+        if (!identityBundleMatchesServer(bundle, serverIdentity)) {
+          console.warn('[useDeviceRegistration] local identity does not match server identity - abort device publish');
+          try {
+            window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
+              detail: {
+                userId: user.id,
+                reason: 'device_registration_identity_mismatch',
+                source: 'useDeviceRegistration',
+              },
+            }));
+          } catch {}
+          ranRef.current = false;
+          return;
+        }
+
+        let { data: previousDeviceRow } = await supabase
+          .from('user_devices')
+          .select('device_public_key,is_active,revoked_at,revoke_reason,crypto_invalid_at,crypto_invalid_reason,prekey_repair_requested_at')
+          .eq('user_id', user.id)
+          .eq('device_id', deviceId)
+          .maybeSingle();
+
+        if (
+          previousDeviceRow?.revoked_at ||
+          previousDeviceRow?.revoke_reason === 'USER_DEVICES_REACTIVATION_BLOCKED'
+        ) {
+          const oldDeviceId = deviceId;
+          deviceId = await rotateCurrentDeviceId('server_device_revoked');
+          console.warn('[useDeviceRegistration] server revoked this device id - rotated to a fresh device id', {
+            oldDeviceId: oldDeviceId.slice(0, 8),
+            nextDeviceId: deviceId.slice(0, 8),
+          });
+          previousDeviceRow = null;
+        }
+
         // Per-device dedicated X25519 key (true cryptographic isolation per device).
         // Generated locally + persisted in IndexedDB; private key never leaves the
-        // browser. We publish ONLY the public part. If generation fails for any
-        // reason, we fall back to the legacy shared-identity behaviour so we never
-        // leave a device unable to receive messages.
-        let devicePublicKeyB64 = bundle.identityKey;
+        // browser. We publish ONLY the public part. If this key is unavailable,
+        // registration stops instead of downgrading to a shared identity key.
+        let devicePublicKeyB64: string | null = null;
         try {
           const kx = await getOrCreateDeviceKxKey(deviceId);
-          if (kx?.publicB64) devicePublicKeyB64 = kx.publicB64;
+          if (kx?.publicB64 && kx?.privateKey) devicePublicKeyB64 = kx.publicB64;
         } catch (kxErr) {
-          console.warn('[useDeviceRegistration] device kx key unavailable, falling back to identityKey:', kxErr);
+          console.warn('[useDeviceRegistration] device kx key unavailable - abort device publish:', kxErr);
         }
+        if (!devicePublicKeyB64) {
+          console.warn('[useDeviceRegistration] local device key missing - abort device publish');
+          ranRef.current = false;
+          return;
+        }
+
+        if (
+          previousDeviceRow?.device_public_key &&
+          previousDeviceRow.device_public_key !== devicePublicKeyB64
+        ) {
+          console.warn('[useDeviceRegistration] server device public key differs from local key - abort device publish');
+          try {
+            window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
+              detail: {
+                userId: user.id,
+                deviceId,
+                reason: 'device_registration_device_key_mismatch',
+                source: 'useDeviceRegistration',
+              },
+            }));
+          } catch {}
+          ranRef.current = false;
+          return;
+        }
+
+        const repairRequested =
+          !!previousDeviceRow?.crypto_invalid_at ||
+          !!previousDeviceRow?.prekey_repair_requested_at;
 
         const payload = {
           user_id: user.id,
@@ -104,8 +170,13 @@ export function useDeviceRegistration() {
         // 1. Register the device (idempotent upsert)
         const { error: devErr } = await supabase
           .from('user_devices')
-          .upsert(payload, { onConflict: 'user_id,device_id' });
+          .upsert(payload as any, { onConflict: 'user_id,device_id' });
         if (devErr) {
+          if (/USER_DEVICES_REACTIVATION_BLOCKED|revoked/i.test(devErr.message ?? '')) {
+            await rotateCurrentDeviceId('server_reactivation_blocked');
+            ranRef.current = false;
+            return;
+          }
           console.warn('[useDeviceRegistration] device upsert failed:', devErr.message);
           return;
         }
@@ -136,7 +207,16 @@ export function useDeviceRegistration() {
         // 3. Ensure a per-device Signed PreKey exists & is fresh.
         //    This is what makes targeted X3DH per device possible.
         try {
-          await refreshDeviceSignedPrekeyIfNeeded(user.id, deviceId, keys.signingPrivateKey);
+          if (repairRequested) {
+            await repairLocalDevicePrekeys(user.id, deviceId, keys.signingPrivateKey);
+          } else {
+            await refreshDeviceSignedPrekeyIfNeeded(user.id, deviceId, keys.signingPrivateKey);
+            await supabase.rpc('clear_device_prekey_repair_needed' as any, {
+              p_user_id: user.id,
+              p_device_id: deviceId,
+            }).catch(() => ({ data: null, error: null }));
+            clearDeviceCryptoInvalid(user.id, deviceId);
+          }
         } catch (spkErr) {
           // Non-fatal: fan-out can still fall back to deviceWrap or legacy ratchet.
           console.warn('[useDeviceRegistration] device SPK refresh failed (non-fatal):', spkErr);

@@ -11,6 +11,7 @@ import { ChatWidget } from "@/components/ChatWidget";
 import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
 import { RecoveryFlowGuard } from "@/components/RecoveryFlowGuard";
 import { DeviceKxRestoreGuard } from "@/components/DeviceKxRestoreGuard";
+import { E2EEPinUnlockModal } from "@/components/E2EEPinUnlockModal";
 import { CookieConsentBanner } from "@/components/CookieConsentBanner";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
 import { useIncomingCall, endActiveCall } from "@/hooks/useIncomingCall";
@@ -21,6 +22,7 @@ import { Suspense, lazy, useCallback, useEffect, useRef } from "react";
 import { useAccountKeySync } from "@/hooks/useAccountKeySync";
 import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
 import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
+import { usePostRestoreLifecycle } from "@/hooks/usePostRestoreLifecycle";
 import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
@@ -175,6 +177,7 @@ function AccountKeySyncRunner() {
   useAccountKeySync();
   useCryptoMaintenance();
   useDeviceRegistration();
+  usePostRestoreLifecycle();
   return null;
 }
 
@@ -198,6 +201,7 @@ function AppContent() {
           <BrowserRouter>
             <RecoveryFlowGuard />
             <DeviceKxRestoreGuard />
+            <E2EEPinUnlockModal />
             <AccountKeySyncRunner />
             <IncomingCallHandler />
             <ErrorBoundary>

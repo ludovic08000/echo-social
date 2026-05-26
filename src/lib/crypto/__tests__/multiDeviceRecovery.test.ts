@@ -39,10 +39,13 @@ vi.mock('@/integrations/supabase/client', () => ({
 }));
 
 import {
+  X3DH_OPK_PRIVATE_MISSING,
   fetchPrekeyBundleForDevice,
+  generateAndUploadDeviceSignedPrekey,
   invalidateDeviceBundleCache,
   refillDeviceOneTimePrekeysIfNeeded,
   repairLocalDevicePrekeys,
+  x3dhRespondForDevice,
 } from '../x3dh';
 
 function makeBuilder(table: string) {
@@ -117,6 +120,12 @@ async function generateX25519PublicB64(): Promise<string> {
   return bufferToBase64(await hardCrypto.exportKey('raw', pair.publicKey) as ArrayBuffer);
 }
 
+async function generateX25519Pair(): Promise<CryptoKeyPair & { publicB64: string }> {
+  const pair = await hardCrypto.generateKey({ name: 'X25519' } as any, true, ['deriveBits']) as CryptoKeyPair;
+  const publicB64 = bufferToBase64(await hardCrypto.exportKey('raw', pair.publicKey) as ArrayBuffer);
+  return { ...pair, publicB64 };
+}
+
 async function generateSigningIdentity(): Promise<{ privateKey: CryptoKey; publicB64: string }> {
   const pair = await hardCrypto.generateKey({ name: 'Ed25519' } as any, true, ['sign', 'verify']) as CryptoKeyPair;
   const publicB64 = bufferToBase64(await hardCrypto.exportKey('raw', pair.publicKey) as ArrayBuffer);
@@ -146,6 +155,7 @@ beforeEach(async () => {
   supabaseMock.state.epoch = 1;
   supabaseMock.rpc.mockReset();
   supabaseMock.from.mockReset();
+  localStorage.removeItem('forsure:e2ee:crypto-invalid-devices:v1');
   supabaseMock.from.mockImplementation((table: string) => makeBuilder(table));
   supabaseMock.rpc.mockImplementation(async (name: string) => {
     if (name === 'get_device_prekey_bundle') {
@@ -203,6 +213,15 @@ describe('multi-device X3DH recovery hardening', () => {
 
     await expect(fetchPrekeyBundleForDevice('bob', 'B1')).resolves.toBeNull();
     expect(supabaseMock.state.bundleCalls).toBe(2);
+    await expect(fetchPrekeyBundleForDevice('bob', 'B1')).resolves.toBeNull();
+    expect(supabaseMock.state.bundleCalls).toBe(2);
+    expect(supabaseMock.state.updates).toContainEqual({
+      table: 'user_devices',
+      payload: expect.objectContaining({
+        is_active: false,
+        revoke_reason: 'invalid_spk_signature',
+      }),
+    });
   });
 
   it('repairs local SPK/OPK loss, purges server prekeys, republishes, and new bundle verifies', async () => {
@@ -235,5 +254,29 @@ describe('multi-device X3DH recovery hardening', () => {
 
     expect(supabaseMock.state.deletes).toContain('device_one_time_prekeys');
     expect(supabaseMock.state.insertedOpks).toHaveLength(50);
+  });
+
+  it('fails strictly when an inbound X3DH envelope announces an OPK whose private half is missing', async () => {
+    const signing = await generateSigningIdentity();
+    const bobIdentity = await generateX25519Pair();
+    const aliceIdentity = await generateX25519Pair();
+    const aliceEphemeral = await generateX25519Pair();
+    const spk = await generateAndUploadDeviceSignedPrekey('bob', 'B1', signing.privateKey);
+
+    await expect(x3dhRespondForDevice({
+      publicKey: bobIdentity.publicKey,
+      privateKey: bobIdentity.privateKey,
+      signingPublicKey: (await hardCrypto.generateKey({ name: 'Ed25519' } as any, true, ['sign', 'verify']) as CryptoKeyPair).publicKey,
+      signingPrivateKey: signing.privateKey,
+      createdAt: Date.now(),
+      fingerprint: 'bob-fingerprint',
+    }, 'bob', 'B1', {
+      ik: aliceIdentity.publicB64,
+      ek: aliceEphemeral.publicB64,
+      spkId: spk.spkId,
+      opkId: 404,
+    })).rejects.toThrow(X3DH_OPK_PRIVATE_MISSING);
+
+    expect(supabaseMock.state.deletes).toContain('device_one_time_prekeys');
   });
 });

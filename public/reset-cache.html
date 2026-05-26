@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="cache-control" content="no-store" />
+    <title>Reset cache Forsure</title>
+  </head>
+  <body>
+    <script>
+      (async () => {
+        try {
+          const registrations = await navigator.serviceWorker?.getRegistrations?.() ?? [];
+          await Promise.all(registrations.map((registration) => registration.unregister()));
+        } catch {}
+        try {
+          const keys = await caches.keys();
+          await Promise.all(keys.map((key) => caches.delete(key)));
+        } catch {}
+        try {
+          location.replace('/?cache-reset=' + Date.now());
+        } catch {
+          location.href = '/';
+        }
+      })();
+    </script>
+  </body>
+</html>

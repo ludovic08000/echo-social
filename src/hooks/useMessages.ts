@@ -8,6 +8,7 @@ import { isCryptoJsonBody, isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBo
 import { pendingMessageQueue, routeIncoming } from '@/e2ee-session';
 import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { processDeviceCopyRetryRequests } from '@/lib/messaging/deviceCopyRetryProcessor';
+import { requestMessageRefanout } from '@/lib/messaging/deviceCopyRetryRequest';
 
 async function hideMessagesForUser(userId: string, messageIds: string[]) {
   if (!userId || messageIds.length === 0) return;
@@ -472,18 +473,25 @@ export function useMessages(conversationId: string) {
     (async () => {
       const { data: msgs } = await supabase
         .from('messages')
-        .select('id, body')
+        .select('id, body, sender_id')
         .eq('conversation_id', conversationId)
         .in('status', ['delivered', 'pending'])
         .order('created_at', { ascending: false })
         .limit(500);
       if (cancelled || !msgs) return;
-      const ids = msgs.filter(m => isUnsupportedEncryptedBody(m.body)).map(m => m.id);
-      if (ids.length > 0) {
+      const unsupported = msgs.filter(m => isUnsupportedEncryptedBody(m.body));
+      if (unsupported.length > 0) {
         console.warn('[messaging] unsupported encrypted messages left visible for recovery', {
           conversationId,
-          count: ids.length,
+          count: unsupported.length,
         });
+        for (const msg of unsupported) {
+          if (!msg.sender_id) continue;
+          void requestMessageRefanout({
+            messageId: msg.id,
+            senderUserId: msg.sender_id,
+          }).catch(() => {});
+        }
       }
     })();
     return () => { cancelled = true; };

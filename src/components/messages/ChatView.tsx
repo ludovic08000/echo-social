@@ -1008,7 +1008,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                       if (voice) {
                         return <VoiceMessagePlayer audioUrl={voice.url} duration={voice.duration} isMe />;
                       }
-                      return media?.label || text || '...';
+                      return media?.label || text || (pm.status === 'failed_visible' ? 'Non envoye' : '...');
                     })()}
                   </div>
                   <OutboundStatusIndicator

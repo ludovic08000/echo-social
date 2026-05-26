@@ -9,8 +9,10 @@ export { safeUUID, shortId } from './safeUuid';
 export {
   selfDeviceId,
   isSelfDeviceIdTemporary,
+  isDeviceStale,
   listDevicesForUser,
   listFanoutTargets,
+  resolveActiveDeviceDescriptor,
 } from './deviceRegistry';
 export {
   makeSessionId,

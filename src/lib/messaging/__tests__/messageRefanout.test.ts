@@ -71,8 +71,8 @@ beforeEach(() => {
           message_id: 'message-old',
           conversation_id: 'conv-1',
           message_body: 'x3dh4.session.dh.0.0.iv.ct',
-          requester_user_id: 'user-new-device',
-          requester_device_id: 'device-new',
+          requester_user_id: 'user-requester',
+          requester_device_id: 'device-requester',
           requester_device_public_key: 'pub',
           attempt_count: 0,
         }],
@@ -138,5 +138,37 @@ describe('message re-fanout recovery requests', () => {
     expect(result.failed).toBe(1);
     expect(mocks.encryptPlaintextForDeviceTarget).not.toHaveBeenCalled();
     expect(mocks.failedMarks[0].error).toMatch(/^PLAINTEXT_UNAVAILABLE:/);
+  });
+
+  it('does not let the requester device terminally fail its own same-user re-fanout request', async () => {
+    mocks.rpc.mockImplementation(async (name: string, args: Record<string, string>) => {
+      if (name === 'list_pending_device_copy_retries') {
+        return {
+          data: [{
+            request_id: 'retry-same-user',
+            message_id: 'message-own-old',
+            conversation_id: 'conv-1',
+            message_body: 'x3dh4.session.dh.0.0.iv.ct',
+            requester_user_id: 'user-new-device',
+            requester_device_id: 'device-new',
+            requester_device_public_key: 'pub',
+            attempt_count: 0,
+          }],
+          error: null,
+        };
+      }
+      if (name === 'mark_device_copy_retry_failed') {
+        mocks.failedMarks.push({ requestId: args.p_request_id, error: args.p_error });
+      }
+      return { data: null, error: null };
+    });
+
+    const result = await processDeviceCopyRetryRequests();
+
+    expect(result.skipped).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(mocks.loadVolatilePlaintext).not.toHaveBeenCalled();
+    expect(mocks.encryptPlaintextForDeviceTarget).not.toHaveBeenCalled();
+    expect(mocks.failedMarks).toHaveLength(0);
   });
 });

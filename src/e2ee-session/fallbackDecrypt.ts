@@ -17,6 +17,7 @@ import {
   ratchetDecryptWithSession,
   RATCHET_PREFIX_V3,
   RATCHET_PREFIX_V4,
+  RATCHET_PREFIX_V5,
   listKnownSessionIds,
 } from '@/lib/crypto/deviceRatchet';
 import { listDevicesForUser, selfDeviceId } from './deviceRegistry';
@@ -25,7 +26,9 @@ import type { DecryptResult, UserId } from './types';
 
 /** Extract the sessionId from a v3/v4 ciphertext header. Returns null on parse failure. */
 function readSessionIdFromHeader(encryptedBody: string): string | null {
-  const prefix = encryptedBody.startsWith(RATCHET_PREFIX_V4)
+  const prefix = encryptedBody.startsWith(RATCHET_PREFIX_V5)
+    ? RATCHET_PREFIX_V5
+    : encryptedBody.startsWith(RATCHET_PREFIX_V4)
     ? RATCHET_PREFIX_V4
     : encryptedBody.startsWith(RATCHET_PREFIX_V3)
       ? RATCHET_PREFIX_V3
@@ -45,7 +48,8 @@ export async function tryEveryRatchetSession(
 ): Promise<DecryptResult> {
   if (
     !encryptedBody.startsWith(RATCHET_PREFIX_V3) &&
-    !encryptedBody.startsWith(RATCHET_PREFIX_V4)
+    !encryptedBody.startsWith(RATCHET_PREFIX_V4) &&
+    !encryptedBody.startsWith(RATCHET_PREFIX_V5)
   ) {
     return { ok: false, plaintext: null, errorCode: 'NOT_RATCHET_CIPHERTEXT' };
   }
@@ -86,7 +90,13 @@ export async function tryEveryRatchetSession(
 
   // Skip the session whose id matches the header — already attempted above.
   const candidates = knownForPeer.filter((s) => s.sessionId !== headerSessionId);
-  if (candidates.length > 0 && encryptedBody.startsWith(RATCHET_PREFIX_V4)) {
+  if (
+    candidates.length > 0 &&
+    (
+      encryptedBody.startsWith(RATCHET_PREFIX_V4) ||
+      encryptedBody.startsWith(RATCHET_PREFIX_V5)
+    )
+  ) {
     // Race them in parallel — first success wins. AbortController-style
     // early-exit isn't worth it: each attempt is a single AES-GCM op.
     const probes = candidates.map((s) =>

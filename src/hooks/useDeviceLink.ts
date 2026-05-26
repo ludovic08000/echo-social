@@ -2,10 +2,11 @@
  * useDeviceLink - approved linked-device E2EE transfer.
  *
  * New flow (Signal-style shape):
- *   1. The new device creates a short-lived QR request containing only a token.
+ *   1. The new device creates a short-lived QR request containing a token and
+ *      its ephemeral public key.
  *   2. The already-connected device approves that token.
- *   3. Local keys + decryptable history cache are encrypted to the new device's
- *      ephemeral public key and uploaded as ciphertext.
+ *   3. The approver verifies the server row still matches the QR public key,
+ *      then encrypts local keys + decryptable history cache to that key.
  *   4. The new device decrypts locally, restores IndexedDB, then triggers resync.
  *
  * The legacy PIN flow is kept for backwards compatibility with old links, but
@@ -22,10 +23,13 @@ import {
   buildDeviceLinkQrData,
   decryptDeviceLinkPayload,
   encryptDeviceLinkPayload,
+  fingerprintDeviceLinkPublicKey,
   generateDeviceLinkKeyPair,
   generateDeviceLinkToken,
   hashDeviceLinkToken,
+  parseDeviceLinkQrData,
   parseDeviceLinkToken,
+  verifyDeviceLinkQrKeyBinding,
   type DeviceLinkTransferEnvelope,
 } from '@/lib/crypto/deviceLinkEnvelope';
 import {
@@ -46,6 +50,8 @@ const E2EE_STORES = [STORE_KEYS, STORE_SESSION, STORE_PREKEYS] as const;
 
 interface StoredLinkRequest {
   privateJwk: JsonWebKey;
+  publicJwk?: JsonWebKey;
+  publicKeyHash?: string;
   requesterDeviceId: string;
   createdAt: number;
 }
@@ -195,8 +201,11 @@ export function useDeviceLink() {
       const token = generateDeviceLinkToken();
       const tokenHash = await hashDeviceLinkToken(token);
       const pair = await generateDeviceLinkKeyPair();
+      const publicKeyHash = await fingerprintDeviceLinkPublicKey(pair.publicJwk);
       persistPendingLink(token, {
         privateJwk: pair.privateJwk,
+        publicJwk: pair.publicJwk,
+        publicKeyHash,
         requesterDeviceId,
         createdAt: Date.now(),
       });
@@ -209,7 +218,7 @@ export function useDeviceLink() {
       });
       if (rpcError) throw rpcError;
 
-      return { qrData: buildDeviceLinkQrData(token), token };
+      return { qrData: buildDeviceLinkQrData(token, pair.publicJwk, publicKeyHash), token };
     } catch (err: any) {
       setError(err.message || 'Erreur de creation de demande');
       return null;
@@ -228,7 +237,11 @@ export function useDeviceLink() {
     setError(null);
 
     try {
-      const token = parseDeviceLinkToken(qrData);
+      const parsedQr = parseDeviceLinkQrData(qrData);
+      if (!parsedQr.requesterPublicJwk) {
+        throw new Error('QR non authentifie: regenere une demande de liaison securisee');
+      }
+      const token = parsedQr.token;
       const tokenHash = await hashDeviceLinkToken(token);
       const currentDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
 
@@ -242,14 +255,15 @@ export function useDeviceLink() {
       if (request.requester_device_id === currentDeviceId) {
         throw new Error('Ouvre ce QR depuis un autre appareil deja connecte');
       }
+      await verifyDeviceLinkQrKeyBinding(parsedQr, request.requester_public_key as JsonWebKey);
 
       let keysJson = await collectLocalKeys();
-      let envelope = await encryptDeviceLinkPayload(keysJson, request.requester_public_key as JsonWebKey);
+      let envelope = await encryptDeviceLinkPayload(keysJson, parsedQr.requesterPublicJwk);
       let encryptedPayload = JSON.stringify(envelope);
 
       if (encryptedPayload.length > 1_900_000) {
         keysJson = await collectLocalKeys({ includePlaintextCache: false });
-        envelope = await encryptDeviceLinkPayload(keysJson, request.requester_public_key as JsonWebKey);
+        envelope = await encryptDeviceLinkPayload(keysJson, parsedQr.requesterPublicJwk);
         encryptedPayload = JSON.stringify(envelope);
       }
 

@@ -17,6 +17,7 @@
 import {
   RATCHET_PREFIX_V3,
   RATCHET_PREFIX_V4,
+  RATCHET_PREFIX_V5,
   ratchetDecrypt as deviceRatchetDecrypt,
 } from '@/lib/crypto/deviceRatchet';
 import { selfDeviceId } from './deviceRegistry';
@@ -55,6 +56,7 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
   // 1) Ratchet v3/v4 fast path.
   if (
     encryptedBody.startsWith(RATCHET_PREFIX_V4) ||
+    encryptedBody.startsWith(RATCHET_PREFIX_V5) ||
     encryptedBody.startsWith(RATCHET_PREFIX_V3)
   ) {
     try {
@@ -64,7 +66,11 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
         return {
           ok: true,
           plaintext: pt,
-          via: encryptedBody.startsWith(RATCHET_PREFIX_V4) ? 'ratchet-v4' : 'ratchet-v3',
+          via: encryptedBody.startsWith(RATCHET_PREFIX_V5)
+            ? 'ratchet-v5'
+            : encryptedBody.startsWith(RATCHET_PREFIX_V4)
+              ? 'ratchet-v4'
+              : 'ratchet-v3',
         };
       }
     } catch {
