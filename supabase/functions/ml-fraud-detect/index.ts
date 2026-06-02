@@ -109,7 +109,23 @@ serve(async (req) => {
     }
 
     const { action, target_user_id } = await req.json();
-    const targetId = target_user_id || user.id;
+
+    // Authorization: a non-admin user can only scan THEMSELVES.
+    // For batch_scan, the existing admin gate later in this file applies.
+    let targetId = user.id;
+    if (target_user_id && target_user_id !== user.id) {
+      const { data: isAdmin } = await supabase.rpc("has_role", {
+        _user_id: user.id,
+        _role: "admin",
+      });
+      if (isAdmin !== true) {
+        return new Response(JSON.stringify({ error: "FORBIDDEN" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      targetId = target_user_id;
+    }
 
     if (action === "scan") {
       const start = performance.now();
