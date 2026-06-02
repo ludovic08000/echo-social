@@ -1263,6 +1263,8 @@ export async function restoreWithBackupPin(pin: string, userId: string): Promise
     _sessionRawMasterKey = masterKeyRaw;
     _sessionMasterKey = await importMasterKey(masterKeyRaw);
     _sessionUserId = userId;
+    dispatchSessionUnlocked(userId);
+
 
     const result = await restoreFromInMemoryMasterKey(userId);
     if (result === 'restored' || result === 'local_ok') {
