@@ -7457,6 +7457,7 @@ export type Database = {
           user_id: string
         }[]
       }
+      get_my_seller_revenue: { Args: never; Returns: number }
       get_my_stream_key: { Args: { p_stream_id: string }; Returns: string }
       get_onboarding_state: { Args: { _user_id: string }; Returns: Json }
       get_parental_controls: {
