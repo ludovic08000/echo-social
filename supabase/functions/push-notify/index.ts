@@ -143,6 +143,12 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers });
 
   try {
+    // Require authenticated caller. Senders can only push to themselves;
+    // admins / service role can push to anyone (used for system notifications).
+    const { requireAuthenticated } = await import("../_shared/auth-guard.ts");
+    const authed = await requireAuthenticated(req, headers);
+    if (!("userId" in authed)) return authed.response;
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
