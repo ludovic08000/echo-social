@@ -153,9 +153,9 @@ export function MobileNav() {
           <NavItem path="/friends" icon={Users} label="Amis" />
 
           {/* Bouton Créer — centré */}
-          <Link to="/create" className="flex flex-col items-center justify-center flex-1 min-w-0">
+          <Link to="/create" aria-label="Créer une publication" className="flex flex-col items-center justify-center flex-1 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-[image:var(--premium-gradient)] text-primary-foreground flex items-center justify-center shadow-[var(--shadow-gold)] active:scale-90 transition-transform duration-150">
-              <Plus className="w-5 h-5 stroke-[2.5]" />
+              <Plus className="w-5 h-5 stroke-[2.5]" aria-hidden="true" />
             </div>
           </Link>
 
