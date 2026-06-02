@@ -7755,6 +7755,7 @@ export type Database = {
       purge_old_feed_score_tamper_events: { Args: never; Returns: undefined }
       purge_old_threat_decisions: { Args: never; Returns: undefined }
       push_my_fingerprint_to_peers: { Args: never; Returns: number }
+      quarantine_ghost_e2ee_devices: { Args: never; Returns: number }
       quarantine_own_invalid_device: {
         Args: { p_device_id: string; p_reason?: string }
         Returns: Json
