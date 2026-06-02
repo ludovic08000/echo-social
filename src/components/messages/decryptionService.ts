@@ -24,6 +24,7 @@ import {
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
 import { routeIncoming } from '@/e2ee-session';
 import { supabase } from '@/integrations/supabase/client';
+import { decryptArchive, isArchivePayload } from '@/lib/messaging/archive/archiveKey';
 import type { DecryptResult } from '@/hooks/useE2EE';
 
 export interface DecryptionOutcome {
