@@ -86,7 +86,9 @@ export async function signCompanionDevice(args: {
 }
 
 /**
- * Persist a freshly produced signature in `user_device_signatures`.
+ * Persist a freshly produced signature in `user_device_signatures` AND
+ * republish the canonical signed device list via `upsert_signed_device_list`
+ * (L4 — rogue-companion defense via the new server-side list).
  */
 export async function publishCompanionSignature(
   row: Awaited<ReturnType<typeof signCompanionDevice>>,
@@ -95,6 +97,49 @@ export async function publishCompanionSignature(
     .from('user_device_signatures')
     .upsert(row, { onConflict: 'user_id,device_id,primary_device_id' });
   if (error) throw new Error(`UDS_PUBLISH_FAILED: ${error.message}`);
+  try {
+    await publishOwnSignedDeviceList({
+      signerDeviceId: row.primary_device_id,
+      signatureB64: row.signature_b64,
+    });
+  } catch (publishErr) {
+    console.warn('[signedDeviceList] publishOwnSignedDeviceList failed (non-fatal):', publishErr);
+  }
+}
+
+/**
+ * Republish the caller's full signed device list to `signed_device_lists`
+ * via the `upsert_signed_device_list` RPC. Idempotent — safe to call after
+ * any device add / rotation / revocation.
+ */
+export async function publishOwnSignedDeviceList(args?: {
+  signerDeviceId?: string | null;
+  signatureB64?: string | null;
+}): Promise<{ ok: boolean; deviceCount?: number; error?: string }> {
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = userData?.user?.id;
+  if (!uid) return { ok: false, error: 'NOT_AUTHENTICATED' };
+  const { data: rows, error: listErr } = await supabase
+    .from('user_devices')
+    .select('device_id')
+    .eq('user_id', uid)
+    .eq('is_active', true);
+  if (listErr) return { ok: false, error: listErr.message };
+  const deviceIds = (rows ?? [])
+    .map(r => String((r as any).device_id || ''))
+    .filter(id => id.length >= 8);
+  const { data, error } = await supabase.rpc('upsert_signed_device_list', {
+    p_device_ids: deviceIds,
+    p_signer_device_id: args?.signerDeviceId ?? null,
+    p_signature: args?.signatureB64 ?? null,
+  });
+  if (error) return { ok: false, error: error.message };
+  const result = data as any;
+  return {
+    ok: result?.ok === true,
+    deviceCount: typeof result?.device_count === 'number' ? result.device_count : undefined,
+    error: result?.ok === true ? undefined : (result?.code || 'UPSERT_FAILED'),
+  };
 }
 
 /**
