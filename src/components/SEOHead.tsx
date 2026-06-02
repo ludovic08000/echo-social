@@ -14,14 +14,25 @@ interface SEOHeadProps {
 const SITE_NAME = 'Forsure';
 const SITE_BASE = 'https://forsure.fans';
 const DEFAULT_IMAGE = `${SITE_BASE}/og-image.jpg`;
-const DEFAULT_DESC = "Forsure est le réseau social éthique français 100% gratuit, sans publicité ni tracking. Messagerie privée chiffrée, live streaming, marketplace, appels vidéo et canaux TV.";
+const DEFAULT_DESC = "Forsure : réseau social éthique français, sans pub ni tracking. Messagerie chiffrée, lives, marketplace et appels vidéo.";
+const DEFAULT_TITLE = 'Forsure — Réseau social éthique sans pub';
+
+function buildTitle(title?: string): string {
+  if (!title) return DEFAULT_TITLE;
+  const suffix = ` — ${SITE_NAME}`;
+  const full = `${title}${suffix}`;
+  if (full.length <= 60) return full;
+  // Title alone if it fits, else truncate
+  if (title.length <= 60) return title;
+  return `${title.slice(0, 57).trimEnd()}…`;
+}
 
 /**
  * SEO component using react-helmet-async.
  * Inject directly in any page; Helmet merges & deduplicates head tags.
  */
 export function SEOHead({ title, description, image, url, type = 'website', username, noindex, jsonLd }: SEOHeadProps) {
-  const fullTitle = title ? `${title} — ${SITE_NAME}` : `${SITE_NAME} — Réseau social gratuit sans pub | Alternative Facebook Instagram TikTok`;
+  const fullTitle = buildTitle(title);
   const desc = description || DEFAULT_DESC;
   const pageUrl = url || (typeof window !== 'undefined' ? `${SITE_BASE}${window.location.pathname}` : SITE_BASE);
   const ogImage = image || DEFAULT_IMAGE;
