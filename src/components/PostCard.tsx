@@ -253,8 +253,8 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         <div className="flex items-center">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
-                <MoreHorizontal className="w-5 h-5" />
+              <button aria-label="Options de la publication" className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
+                <MoreHorizontal className="w-5 h-5" aria-hidden="true" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="rounded-xl border-border/30 shadow-lg">

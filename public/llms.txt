@@ -1,0 +1,25 @@
+# Forsure
+
+> Le premier réseau social intelligent et sécurisé : vous contrôlez l'algorithme du fil d'actualité, vos messages sont chiffrés de bout en bout avec le protocole Signal (X3DH + Double Ratchet), zéro publicité, zéro tracking.
+
+Forsure est un réseau social français destiné au grand public. Il propose un fil d'actualité dont l'algorithme est paramétrable par l'utilisateur, une messagerie chiffrée niveau Signal, des lives vidéo en 1080×1920, un marketplace européen, des appels audio/vidéo chiffrés, des chaînes TV thématiques, des jeux multijoueur et un assistant IA (Zeus / Gemini 2.5). Le modèle économique repose sur un abonnement Créateur (5 €/mois), une commission marketplace (5 %) et les pourboires (15 %).
+
+## Pages
+
+- [Accueil](/): présentation du réseau social Forsure.
+- [Landing](/landing): page de présentation produit et inscription.
+- [À propos](/a-propos): mission, équipe et philosophie de Forsure.
+- [Réseau social sécurisé](/reseau-social-securise): détails sur la sécurité et la vie privée.
+- [Messagerie chiffrée](/messagerie-chiffree): protocole Signal (X3DH + Double Ratchet) et chiffrement de bout en bout.
+- [IA et modération](/ia-moderation): rôle de l'IA Zeus et règles de modération automatisée.
+- [Protection des données](/protection-donnees): engagements RGPD et politique zéro tracking.
+- [Feed intelligent](/feed-intelligent): comment l'utilisateur contrôle son algorithme.
+- [Inscription](/signup): création d'un compte Forsure.
+- [Connexion](/login): accès à un compte existant.
+
+## Optional
+
+- [Mentions légales](/legal): mentions légales de Forsure.
+- [Conditions générales](/legal/terms): CGU du service.
+- [Politique de confidentialité](/legal/privacy): politique de confidentialité détaillée.
+- [Confidentialité (résumé)](/privacy): version courte de la politique de confidentialité.
