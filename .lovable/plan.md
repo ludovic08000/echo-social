@@ -1,90 +1,91 @@
+# Stabilisation E2EE — « Aucun message perdu »
 
-# Audit recovery E2EE & plan d'alignement Signal
+## Problème
 
-## 1. Ce qui existe déjà (✅ bon socle)
+Aujourd'hui chaque message est chiffré par Double Ratchet (forward secrecy). Si le device qui détenait la session DR disparaît (nouveau navigateur, cache iOS purgé, ghost device quarantiné), **les anciens messages deviennent définitivement illisibles** — c'est ce qui s'est passé pour 7 messages de la conv `b20b5f51…`.
 
-| Brique | Statut | Fichier |
-|---|---|---|
-| Master Key v5 (PBKDF2 600k, dual wrap password + recovery key) | ✅ live | `accountKeyBackup.ts` + `useAccountKeySync.ts` |
-| PIN L5 WhatsApp-style (rate-limit serveur 10/24h) | ✅ live | `pinWrap.ts` + RPC `release_backup_pin_blob` |
-| Recovery key 64-hex single-use | ✅ live | `recoveryKey.ts` |
-| Passkey / WebAuthn vault | ✅ live | `passkeyVault.ts` |
-| RecoveryManager (router 3 sources) | ✅ live | `recoveryManager.ts` |
-| Signed Device List (L4, Ed25519) | ✅ live | `signedDeviceList.ts` |
-| Trust-gated fanout (A1) | ✅ live | `deviceRegistry.ts` |
-| Identity-change ledger + TOFU banner (A4) | ✅ live | `identityChangeLedger.ts` |
-| Key Transparency Merkle (L6) | ✅ live | `ktMerkle.ts` + cron |
-| `senderKeySession` orchestrateur | ⚠️ écrit, **pas câblé** | `senderKeySession.ts` |
-| `keys_epoch` + `request_message_refanout` (DB) | ⚠️ migration appliquée, **aucun client n'appelle** | RPC SQL |
+Le fanout multi-device (A1) ne résout que les **futurs** messages. Il faut une couche d'archive pour le passé.
 
-## 2. Gaps identifiés par scénario
+## Solution : Archive Key par conversation
 
-### A. Réinstall / cache wipe iOS (même device, IDB vide)
-- `useAccountKeySync` détecte mais le **TOFU banner ne distingue pas** « recovery » d'un vrai changement d'identité → contacts paniquent.
-- Après restore, **pas de force-pull** des `bump_device_keys_epoch` côté contacts → ils continuent d'utiliser le bundle en cache.
-- `request_message_refanout` **jamais appelée** quand un message arrive avec `decrypt failure` post-restore.
+On ajoute une **clé symétrique long-life** par conversation (`ConvArchiveKey`, AES-256-GCM), chiffrée par la clé maître du compte (déjà existante via Backup PIN L5 / Key Sync Backup). À chaque envoi, on duplique le ciphertext :
 
-### B. Nouveau device (linking style Sesame)
-- `devicePairing.ts` existe mais **pas de SKDM auto** envoyé aux groupes auxquels le nouveau device participe.
-- Pas de **re-signature de la device list** atomique après ajout (fenêtre rogue-device).
-- Pas de pull historique chiffré (le device 2 voit chat vide jusqu'au prochain message).
+- **Payload DR** (inchangé) → forward secrecy pour le temps réel
+- **Payload Archive** → chiffré avec `ConvArchiveKey`, lisible par tout device qui peut dériver la clé maître
 
-### C. Perte totale (PIN/recovery uniquement)
-- Restore fonctionne mais **pas de nouvel epoch publié** ni de notif explicite « j'ai restauré sur un nouveau téléphone » aux contacts.
-- Pas d'alignement SVR2 : `release_backup_pin_blob` est bien rate-limité mais **pas de attestation** ni de tentative-counter visible UX.
-- Sender keys du user → **pas rotées** après restore (les groupes restent sur l'ancien SK que le user ne peut plus déchiffrer entrant).
+Un nouveau device qui s'authentifie récupère la clé maître (via password/PIN/recovery code → backup déjà en place), déchiffre toutes les `ConvArchiveKey` de l'utilisateur, et peut relire 100 % de l'historique.
 
-## 3. Plan priorisé (4 lots, livrables indépendants)
+C'est exactement le modèle WhatsApp **« sauvegarde chiffrée de bout en bout »** activée.
 
-### Lot 1 — Câbler `keys_epoch` + re-fanout (1 migration déjà OK, code client manquant)
-1. **`x3dh.ts` / `peerKeyCache`** : stocker `keys_epoch` dans le cache bundle ; invalider quand mismatch.
-2. **`accountKeyBackup.restoreFromMasterKey`** : appeler `bump_device_keys_epoch` à la fin du restore.
-3. **`messageRouter` / `fallbackDecrypt`** : sur échec de déchiffrement persistent (>2 tentatives), appeler `request_message_refanout` au lieu d'abandonner.
-4. **`useAccountKeySync` polling** : ajouter watch realtime sur `device_signed_prekeys.keys_epoch` des contacts → purger `peerKeyCache` ciblé.
-
-### Lot 2 — SVR2-like hardening du PIN
-1. Exposer dans UI Settings un compteur « tentatives restantes avant lockout 24h » (lecture depuis RPC).
-2. Ajouter **attestation HMAC** côté edge function pour empêcher replay du blob (`pinWrap` → bind à `user_id + device_id + epoch`).
-3. UX : écran dédié « Restaurer avec PIN » avec backoff visuel (Signal SVR2 style).
-4. Optionnel : seconde sauvegarde derivée pour secret-sharing 2-of-3 si user le veut.
-
-### Lot 3 — Sesame device-linking complet
-1. Câbler `senderKeySession` dans `e2ee.ts` pipeline d'envoi (déjà tracké dans memory `sender-key-session-orchestrator`).
-2. À l'ajout d'un device via `devicePairing` :
-   - Re-signer atomiquement la device list (transaction).
-   - Pour chaque conversation de groupe : envoyer un **SKDM** au nouveau device + déclencher rotation SK (`maybeAutoRotate` forcé).
-   - Backfill : appeler `request_message_refanout` sur les N derniers messages de chaque thread du nouveau device.
-3. Ajouter `devicePairingProgress` event → UI shows « Synchronisation… 12/47 conversations ».
-
-### Lot 4 — TOFU recovery-aware + sender keys post-restore
-1. Étendre `identityChangeLedger` avec un type `recovery_restore` distinct de `key_change`.
-2. `IdentityChangeBanner` : copy spécifique « Marie a restauré son compte sur un nouvel appareil » (rassurant, pas alarmant) avec lien vers Safety Number.
-3. **`senderKeyRotationWatcher`** : déclencher rotation forcée sur **tous** les groupes de l'user après restore (pas seulement membership change).
-4. Auto-fast-forward decrypt sur messages reçus pendant la fenêtre de restore (utiliser `request_message_refanout` + nouveau SKDM).
-
-## 4. Détails techniques transverses
-
-- **Aucune nouvelle migration DB requise** : `keys_epoch` + `request_message_refanout` + `bump_device_keys_epoch` + `get_device_prekey_bundle` sont déjà déployés et validés.
-- **Edge functions à créer/modifier** :
-  - `pin-backup-release` (existante) → ajouter attestation HMAC.
-  - `device-link-progress` (nouvelle) → orchestrer SKDM + refanout en lot pour pas saturer le client.
-- **Tests à ajouter** :
-  - `accountKeyBackup.restore.test.ts` : vérifier `bump_device_keys_epoch` appelé.
-  - `messageRouter.refanout.test.ts` : vérifier déclenchement après 3 échecs.
-  - `devicePairing.fanout.test.ts` : vérifier SKDM envoyé + device list re-signée.
-- **Mémoire à mettre à jour** après chaque lot livré (`features/messaging/silent-recovery-ux`, `tech/messaging/encryption-protocol`).
-
-## 5. Ordre d'exécution recommandé
+## Architecture
 
 ```text
-Lot 1 (cablage epoch+refanout) ──► quick win, débloque la chaîne
-   └─► Lot 4 (TOFU + SK rotation post-restore) ──► UX confiance
-         └─► Lot 3 (Sesame complet) ──► gros chantier, dépend de Lot 1
-               └─► Lot 2 (SVR2 hardening) ──► polish sécurité
+account_master_key  (déjà dérivé par PBKDF2 du password, jamais en DB clair)
+        │
+        ▼ wrap (AES-GCM)
+conversation_archive_keys   ← nouvelle table (RLS user)
+  conversation_id | wrapped_key | created_at
+        │
+        ▼ unwrap en RAM
+ConvArchiveKey  (AES-GCM 256)
+        │
+        ▼ encrypt
+messages.archive_body  ← nouvelle colonne nullable
 ```
 
-Lot 1 + 4 = 80% de la valeur perçue utilisateur en quelques itérations. Lot 3 est le plus gros (touche pipeline d'envoi). Lot 2 est polish.
+À l'envoi : `body` (DR fanout) **+** `archive_body` (single archive payload).
+À la lecture : essayer DR → fallback archive → fallback placeholder.
 
----
+## Lots de livraison
 
-**Question avant de coder** : on attaque **Lot 1** en premier (câblage `keys_epoch` + `request_message_refanout`) ? C'est le pré-requis de tout le reste et c'est ~3 fichiers à toucher.
+### Lot 1 — Backend (migration)
+- Table `conversation_archive_keys (conversation_id, user_id, wrapped_key, kdf_version, created_at)` + RLS owner + GRANTs.
+- Colonne `messages.archive_body text NULL`.
+- RPC `get_or_create_archive_key(conv_id)` (security definer, retourne le wrapped_key existant ou exige du client qu'il en publie un nouveau).
+- Trigger : `archive_body` immuable après insert.
+
+### Lot 2 — Crypto client (`src/lib/messaging/archive/`)
+- `archiveKeyManager.ts` : génère/dérive/wrap `ConvArchiveKey` à la 1ère utilisation d'une conv, persiste dans IndexedDB **et** sur Supabase (wrappé).
+- `encryptArchive(plaintext, convId)` / `decryptArchive(payload, convId)`.
+- Hook dans `messageSender.ts` : duplique le plaintext en `archive_body` avant insert.
+
+### Lot 3 — Lecture
+- Dans `decryptIncomingMessage` : si DR échoue (2 essais + refanout déjà tenté), tenter `decryptArchive`. Logger en INFO, pas en ERROR.
+- Suppression du log « unsupported encrypted messages left visible ».
+
+### Lot 4 — Restauration nouveau device
+- À l'unlock du compte (via password ou Backup PIN), déclencher `restoreArchiveKeys()` : récupère toutes les `wrapped_key`, les unwrap en RAM, déchiffre l'historique.
+- Bandeau « Historique restauré ✓ » discret.
+
+### Lot 5 — Migration des messages existants
+- Impossible pour les 7 messages déjà perdus (plaintexts inexistants).
+- Pour les conversations actives, à la prochaine ouverture le sender produit la `ConvArchiveKey` et tous les **nouveaux** messages seront archivés. Un message bot système une fois indique « ✓ Historique chiffré activé ».
+
+### Lot 6 — UX
+- Toggle dans `Paramètres → Sécurité` : « Sauvegarde chiffrée d'historique » (activé par défaut).
+- Si désactivé → comportement actuel (forward secrecy stricte).
+- Note explicative : « Permet de relire vos messages sur un nouvel appareil. Toujours chiffré de bout en bout, le serveur ne peut pas les lire. »
+
+## Garanties préservées
+
+- **Zero-access** : le serveur ne voit que `wrapped_key` (chiffré par la clé maître dérivée du password, jamais transmise).
+- **PIN purge** : l'archive key est elle aussi purgée d'IndexedDB sur blur/idle/PIN, comme les autres clés.
+- **Quarantaine** : ghost devices toujours filtrés (A1 + quarantine_ghost_e2ee_devices déjà en place).
+- **Audit** : chaque création/restauration loggée dans `user_recovery_events`.
+
+## Trade-off assumé
+
+Cette couche **assouplit la forward secrecy** : si la clé maître est compromise, l'attaquant peut déchiffrer tout l'historique archivé. C'est le compromis que font WhatsApp/Telegram/iMessage avec leurs backups. L'utilisateur peut le refuser via le toggle.
+
+## Détails techniques
+
+- AES-256-GCM avec IV 12 octets aléatoires par message d'archive.
+- `wrapped_key` = AES-GCM(account_master_key, ConvArchiveKey) + IV.
+- Rotation : `ConvArchiveKey` rotée à chaque changement de PIN (re-wrap en lot).
+- Format de `archive_body` : `{v:1, iv, ct}` JSON base64 (~ +30 % de taille par message).
+
+## Ordre d'exécution
+
+1. Migration SQL (Lot 1) — bloquante, requiert approbation.
+2. Code crypto + sender + decryptor (Lots 2-3) — en parallèle après migration.
+3. Restauration + UX (Lots 4-6) — après tests Lots 2-3.

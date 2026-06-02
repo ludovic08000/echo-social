@@ -1065,6 +1065,22 @@ export function clearAccountKeySession(): void {
   // an explicit "remove account from this device" action instead.
 }
 
+/**
+ * Returns the in-RAM account master key for the active session, if any.
+ * Used by features that derive long-lived per-resource keys wrapped under
+ * the user's master key (e.g. conversation archive keys).
+ *
+ * Returns null when no session is unlocked — callers must degrade gracefully
+ * (no archive, no recovery), never throw.
+ */
+export function getSessionMasterKey(): CryptoKey | null {
+  return _sessionMasterKey;
+}
+
+export function getSessionUserId(): string | null {
+  return _sessionUserId;
+}
+
 /** Explicit per-device account unlink — wipes the secure sentinel. */
 export async function clearKeySentinelForAccount(): Promise<void> {
   if (_sessionUserId) {

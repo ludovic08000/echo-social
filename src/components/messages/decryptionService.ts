@@ -24,6 +24,7 @@ import {
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
 import { routeIncoming } from '@/e2ee-session';
 import { supabase } from '@/integrations/supabase/client';
+import { decryptArchive, isArchivePayload } from '@/lib/messaging/archive/archiveKey';
 import type { DecryptResult } from '@/hooks/useE2EE';
 
 export interface DecryptionOutcome {
@@ -265,7 +266,34 @@ export async function resolvePlaintext(opts: {
         }
       }
 
-      // 4) Nothing produced plaintext. Mark negative + stay silent.
+      // 4) Encrypted archive fallback (long-life, wrapped under account master key).
+      //    Survives device rotation, cache purge, ghost-device quarantine.
+      if (messageId) {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const { data: row } = await supabase
+              .from('messages')
+              .select('archive_body, conversation_id')
+              .eq('id', messageId)
+              .maybeSingle();
+            const ab = (row as any)?.archive_body as string | null | undefined;
+            const convId = (row as any)?.conversation_id as string | null | undefined;
+            if (ab && convId && isArchivePayload(ab)) {
+              const pt = await decryptArchive(ab, convId, user.id);
+              if (pt !== null) {
+                const outcome = buildOutcomeFromText(pt);
+                cache.set(key, outcome);
+                return outcome;
+              }
+            }
+          }
+        } catch {
+          /* swallow */
+        }
+      }
+
+      // 5) Nothing produced plaintext. Mark negative + stay silent.
       negCache.set(key, Date.now());
       return null;
     })();
