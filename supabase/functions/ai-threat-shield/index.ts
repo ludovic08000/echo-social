@@ -102,9 +102,17 @@ Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  // Require an authenticated caller so anonymous attackers can't poison the
+  // training set or trigger auto-bans of arbitrary IPs.
+  const { requireAuthenticated } = await import("../_shared/auth-guard.ts");
+  const authed = await requireAuthenticated(req, corsHeaders);
+  if (!("userId" in authed)) return authed.response;
+
   try {
     const body = await req.json().catch(() => ({}));
-    const { endpoint = "unknown", payload = "", headers: hdrs = {}, user_id = null, mode = "inspect" } = body ?? {};
+    const { endpoint = "unknown", payload = "", headers: hdrs = {}, mode = "inspect" } = body ?? {};
+    // user_id is always derived from the verified JWT — never trust client input.
+    const user_id = authed.userId;
 
     const ip = req.headers.get("cf-connecting-ip") ||
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
