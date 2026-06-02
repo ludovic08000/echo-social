@@ -1331,6 +1331,44 @@ export type Database = {
           },
         ]
       }
+      conversation_archive_keys: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          id: string
+          kdf_version: number
+          rotated_at: string | null
+          user_id: string
+          wrapped_key: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          id?: string
+          kdf_version?: number
+          rotated_at?: string | null
+          user_id: string
+          wrapped_key: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          kdf_version?: number
+          rotated_at?: string | null
+          user_id?: string
+          wrapped_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_archive_keys_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversation_participants: {
         Row: {
           conversation_id: string
@@ -3221,6 +3259,7 @@ export type Database = {
       }
       messages: {
         Row: {
+          archive_body: string | null
           body: string
           body_kind: string
           conversation_id: string
@@ -3238,6 +3277,7 @@ export type Database = {
           viewed_at: string | null
         }
         Insert: {
+          archive_body?: string | null
           body: string
           body_kind?: string
           conversation_id: string
@@ -3255,6 +3295,7 @@ export type Database = {
           viewed_at?: string | null
         }
         Update: {
+          archive_body?: string | null
           body?: string
           body_kind?: string
           conversation_id?: string
@@ -7561,6 +7602,15 @@ export type Database = {
           public_key: string
           signature: string
           spk_id: number
+        }[]
+      }
+      get_user_archive_keys: {
+        Args: never
+        Returns: {
+          conversation_id: string
+          created_at: string
+          kdf_version: number
+          wrapped_key: string
         }[]
       }
       has_backup_pin: { Args: { _user_id?: string }; Returns: boolean }
