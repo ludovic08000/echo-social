@@ -6611,6 +6611,48 @@ export type Database = {
           },
         ]
       }
+      wellbeing_preferences: {
+        Row: {
+          bedtime_hour: number
+          bedtime_reminder_enabled: boolean
+          created_at: string
+          daily_limit_minutes: number
+          focus_mode_enabled: boolean
+          grayscale_after_limit: boolean
+          hide_like_counts: boolean
+          scroll_pause_enabled: boolean
+          scroll_pause_minutes: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bedtime_hour?: number
+          bedtime_reminder_enabled?: boolean
+          created_at?: string
+          daily_limit_minutes?: number
+          focus_mode_enabled?: boolean
+          grayscale_after_limit?: boolean
+          hide_like_counts?: boolean
+          scroll_pause_enabled?: boolean
+          scroll_pause_minutes?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bedtime_hour?: number
+          bedtime_reminder_enabled?: boolean
+          created_at?: string
+          daily_limit_minutes?: number
+          focus_mode_enabled?: boolean
+          grayscale_after_limit?: boolean
+          hide_like_counts?: boolean
+          scroll_pause_enabled?: boolean
+          scroll_pause_minutes?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       wellbeing_scores: {
         Row: {
           break_frequency_score: number
