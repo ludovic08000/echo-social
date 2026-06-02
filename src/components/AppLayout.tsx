@@ -64,9 +64,10 @@ function MobileHeader() {
           {/* Notification button — glassmorphism capsule */}
           <Link 
             to="/notifications" 
+            aria-label="Notifications"
             className="relative group w-12 h-12 rounded-2xl bg-gradient-to-br from-accent/60 to-secondary/40 backdrop-blur-md border border-border/15 flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/25 hover:shadow-[0_0_12px_hsl(var(--primary)/0.12)] transition-all duration-300 active:scale-90"
           >
-            <Bell className="w-6 h-6 transition-transform duration-300 group-hover:scale-110" strokeWidth={2} />
+            <Bell className="w-6 h-6 transition-transform duration-300 group-hover:scale-110" strokeWidth={2} aria-hidden="true" />
             {unreadCount && unreadCount > 0 && (
               <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] rounded-full bg-destructive text-destructive-foreground text-[11px] font-bold flex items-center justify-center px-1 ring-2 ring-background shadow-sm animate-scale-in" />
             )}
@@ -75,9 +76,10 @@ function MobileHeader() {
           {/* Messages button — glassmorphism capsule */}
           <button 
             onClick={() => openChat()}
+            aria-label="Messages"
             className="relative group w-12 h-12 rounded-2xl bg-gradient-to-br from-accent/60 to-secondary/40 backdrop-blur-md border border-border/15 flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/25 hover:shadow-[0_0_12px_hsl(var(--primary)/0.12)] transition-all duration-300 active:scale-90"
           >
-            <MessageCircle className="w-6 h-6 transition-transform duration-300 group-hover:scale-110" strokeWidth={2} />
+            <MessageCircle className="w-6 h-6 transition-transform duration-300 group-hover:scale-110" strokeWidth={2} aria-hidden="true" />
             {unreadMessages > 0 && (
               <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] rounded-full bg-destructive text-destructive-foreground text-[11px] font-bold flex items-center justify-center px-1 ring-2 ring-background shadow-sm animate-scale-in">
                 {unreadMessages > 9 ? '9+' : unreadMessages}
