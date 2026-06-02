@@ -251,7 +251,13 @@ export async function refreshSignedPrekeyIfNeeded(userId: string, signingPrivate
       console.warn('[X3DH] ⚠️ SPK signature verification error:', verifyErr);
       signatureValid = false;
     }
-    if (!signatureValid) { await generateAndUploadSignedPrekey(userId, signingPrivateKey); return; }
+    if (!signatureValid) {
+      // Legacy account-wide SPK has no device_id, so we just regenerate.
+      // (Device-scoped SPKs handle their own quarantine in
+      //  refreshDeviceSignedPrekeyIfNeeded below.)
+      await generateAndUploadSignedPrekey(userId, signingPrivateKey);
+      return;
+    }
     const localRecord = await loadSPKRecord(userId, data.spk_id);
     if (!localRecord) { await generateAndUploadSignedPrekey(userId, signingPrivateKey); return; }
     const ageMs = Date.now() - new Date(data.created_at).getTime();
@@ -324,7 +330,35 @@ export async function refreshDeviceSignedPrekeyIfNeeded(userId: string, deviceId
     const { data: pubKeyData, error: pubKeyErr } = await supabase.from('user_public_keys').select('identity_key, signing_key').eq('user_id', userId).eq('is_active', true).maybeSingle();
     if (pubKeyErr || !pubKeyData?.signing_key) { await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey); return; }
     const currentSignatureValid = await verifySignedPrekey(pubKeyData.signing_key, data.public_key, data.signature, { source: 'refreshDeviceSignedPrekeyIfNeeded.current_device_spk', identityKeyB64: pubKeyData.identity_key, userId, deviceId, spkId: data.spk_id });
-    if (!currentSignatureValid) { await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey); return; }
+    if (!currentSignatureValid) {
+      // P2: server-side quarantine of the bad device SPK so peers stop
+      // targeting it. If regeneration also fails, escalate by quarantining
+      // the device itself. Both RPCs are best-effort — failure must never
+      // block local regeneration.
+      try {
+        await (supabase as any).rpc('quarantine_own_invalid_device_spk', {
+          p_device_id: deviceId,
+          p_spk_id: data.spk_id,
+          p_reason: 'own_device_spk_signature_invalid',
+        });
+      } catch (qErr) {
+        console.warn('[X3DH-DEV] quarantine_own_invalid_device_spk failed (non-fatal):', qErr);
+      }
+      try {
+        await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
+      } catch (regenErr) {
+        console.warn('[X3DH-DEV] SPK regeneration failed — quarantining device:', regenErr);
+        try {
+          await (supabase as any).rpc('quarantine_own_invalid_device', {
+            p_device_id: deviceId,
+            p_reason: 'own_device_spk_regeneration_failed',
+          });
+        } catch (qErr2) {
+          console.warn('[X3DH-DEV] quarantine_own_invalid_device failed (non-fatal):', qErr2);
+        }
+      }
+      return;
+    }
     const local = await loadDeviceSPKRecord(userId, deviceId, data.spk_id);
     if (!local) { await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey); return; }
     const now = Date.now();

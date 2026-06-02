@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { useActiveAds } from '@/hooks/useAdCampaigns';
 import { useCustomBackground } from '@/hooks/useCustomBackground';
 import { useFeedCustomization } from '@/hooks/useFeedCustomization';
+import { useWellbeingPreferences, readLocalWellbeingPrefs } from '@/hooks/useWellbeingPreferences';
 import { useParentalGate } from '@/components/ParentalGate';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useFeedScrollMemory } from '@/hooks/useFeedScrollMemory';
@@ -119,12 +120,16 @@ export default function Feed() {
     return () => { clearInterval(iv); clearTimeout(t); };
   }, []);
 
+  // P5: hydrate cloud-synced wellbeing prefs into the localStorage cache that
+  // the minute-tick loop below reads synchronously.
+  useWellbeingPreferences();
+
   useEffect(() => {
     const interval = setInterval(() => {
       trackMinute();
       if (pauseDismissed) return;
       try {
-        const wellbeingPrefs = JSON.parse(localStorage.getItem('wellbeing-prefs') || '{}');
+        const wellbeingPrefs = readLocalWellbeingPrefs();
         if (wellbeingPrefs.scrollPauseEnabled) {
           const sessionMin = getSessionMinutes();
           if (sessionMin >= (wellbeingPrefs.scrollPauseMinutes || 15)) {

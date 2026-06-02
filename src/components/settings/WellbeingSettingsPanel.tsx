@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { Timer, Moon, Eye, TrendingDown, Clock, Coffee, Zap, Shield } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
@@ -8,28 +7,7 @@ import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { DetoxSchedulePanel } from './DetoxSchedulePanel';
 import { getTodayMinutes, getWeeklyUsage } from '@/lib/feedAlgorithm';
-
-interface WellbeingPrefs {
-  dailyLimitMinutes: number;
-  focusModeEnabled: boolean;
-  bedtimeReminderEnabled: boolean;
-  bedtimeHour: number;
-  scrollPauseEnabled: boolean;
-  scrollPauseMinutes: number;
-  hideLikeCounts: boolean;
-  grayscaleAfterLimit: boolean;
-}
-
-const defaultPrefs: WellbeingPrefs = {
-  dailyLimitMinutes: 60,
-  focusModeEnabled: false,
-  bedtimeReminderEnabled: false,
-  bedtimeHour: 23,
-  scrollPauseEnabled: true,
-  scrollPauseMinutes: 15,
-  hideLikeCounts: false,
-  grayscaleAfterLimit: false,
-};
+import { useWellbeingPreferences } from '@/hooks/useWellbeingPreferences';
 
 function formatMinutes(m: number) {
   if (m >= 60) {
@@ -42,27 +20,12 @@ function formatMinutes(m: number) {
 
 export function WellbeingSettingsPanel() {
   const { t } = useTranslation();
-  const [prefs, setPrefs] = useState<WellbeingPrefs>(() => {
-    try {
-      const saved = localStorage.getItem('wellbeing-prefs');
-      return saved ? { ...defaultPrefs, ...JSON.parse(saved) } : defaultPrefs;
-    } catch {
-      return defaultPrefs;
-    }
-  });
+  const { prefs, update } = useWellbeingPreferences();
 
   const todayMinutes = getTodayMinutes();
   const weekData = getWeeklyUsage();
   const weekAvg = Math.round(weekData.reduce((a, b) => a + b, 0) / weekData.length);
   const maxWeek = Math.max(1, ...weekData);
-
-  useEffect(() => {
-    localStorage.setItem('wellbeing-prefs', JSON.stringify(prefs));
-  }, [prefs]);
-
-  const update = (patch: Partial<WellbeingPrefs>) => {
-    setPrefs(prev => ({ ...prev, ...patch }));
-  };
 
   const usagePercent = Math.min(100, Math.round((todayMinutes / prefs.dailyLimitMinutes) * 100));
   const daysOfWeek = [

@@ -308,6 +308,19 @@ export function useDeviceRegistration() {
         } catch (opkErr) {
           console.warn('[useDeviceRegistration] OPK refill failed (non-fatal):', opkErr);
         }
+
+        // 5. Publish the canonical signed device list (L4 / P1 — peers route
+        //    fanout through `signed_device_lists`; without this entry, the
+        //    rogue-companion defense is incomplete in production).
+        try {
+          const { publishOwnSignedDeviceList } = await import('@/lib/crypto/signedDeviceList');
+          const res = await publishOwnSignedDeviceList({ signerDeviceId: deviceId });
+          if (!res.ok) {
+            console.warn('[useDeviceRegistration] publishOwnSignedDeviceList non-ok:', res.error);
+          }
+        } catch (sdlErr) {
+          console.warn('[useDeviceRegistration] publishOwnSignedDeviceList failed (non-fatal):', sdlErr);
+        }
       } catch (err) {
         if (err instanceof PinUnlockRequiredError || String(err).toLowerCase().includes('pin unlock required')) {
           ranRef.current = false;
