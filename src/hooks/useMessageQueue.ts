@@ -150,6 +150,17 @@ export function useMessageQueue(
       }
     }
 
+    // Long-life encrypted archive copy (zero-access, wrapped under account master key).
+    // Allows any future device that can unlock the account to re-read this message.
+    let archiveBody: string | null = null;
+    if (!isSpecial && encryptedSuccessfully) {
+      try {
+        archiveBody = await encryptArchive(sanitized, conversationId, user.id);
+      } catch {
+        archiveBody = null;
+      }
+    }
+
     const { data, error } = await supabase
       .from('messages')
       .insert({
@@ -157,6 +168,7 @@ export function useMessageQueue(
         sender_id: user.id,
         body: bodyToStore,
         image_url: imageUrl || null,
+        ...(archiveBody ? { archive_body: archiveBody } : {}),
         ...(extra || {}),
       })
       .select('id')
