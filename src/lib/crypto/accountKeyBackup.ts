@@ -717,6 +717,7 @@ export async function initAccountKeySync(password: string, userId: string): Prom
         }
         _sessionRawMasterKey = result.masterKeyRaw;
         _sessionMasterKey = result.masterKey;
+        dispatchSessionUnlocked(userId);
         await writeKeychainSnapshot(userId);
         console.log('[MasterKey] ✅ Keys restored from server (validated)');
         logCryptoError({
