@@ -1077,6 +1077,18 @@ export function getSessionMasterKey(): CryptoKey | null {
   return _sessionMasterKey;
 }
 
+/**
+ * Broadcasts that the session master key just became available. Listeners
+ * (e.g. conversation archive preloader) can warm up their caches.
+ * Safe no-op outside the browser.
+ */
+export function dispatchSessionUnlocked(userId: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.dispatchEvent(new CustomEvent('forsure:e2ee-unlocked', { detail: { userId: userId || _sessionUserId } }));
+  } catch { /* noop */ }
+}
+
 export function getSessionUserId(): string | null {
   return _sessionUserId;
 }
