@@ -7585,14 +7585,6 @@ export type Database = {
           salt: string
         }[]
       }
-      request_device_copy_retry: {
-        Args: {
-          p_message_id: string
-          p_requester_device_id: string
-          p_sender_user_id: string
-        }
-        Returns: string
-      }
       request_message_refanout: {
         Args: {
           p_message_id: string
@@ -7607,10 +7599,6 @@ export type Database = {
       }
       resolve_device_id_by_fingerprint: {
         Args: { p_fingerprint: string }
-        Returns: string
-      }
-      resolve_device_id_by_fingerprints: {
-        Args: { p_fingerprints: string[]; p_platform?: string }
         Returns: string
       }
       security_monitor_cron_tick: { Args: never; Returns: undefined }
