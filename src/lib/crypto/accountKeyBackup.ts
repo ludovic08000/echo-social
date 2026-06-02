@@ -797,6 +797,7 @@ export async function restoreAccountKeysFromActiveSession(userId?: string): Prom
 
     _sessionRawMasterKey = result.masterKeyRaw;
     _sessionMasterKey = result.masterKey;
+    dispatchSessionUnlocked(targetUserId);
     await writeKeychainSnapshot(targetUserId);
     console.log('[MasterKey] ✅ Keys restored from active session');
     logCryptoError({
