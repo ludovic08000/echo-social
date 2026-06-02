@@ -686,6 +686,7 @@ export async function initAccountKeySync(password: string, userId: string): Prom
         const mk = await importMasterKey(mkRaw);
         _sessionRawMasterKey = mkRaw;
         _sessionMasterKey = mk;
+        dispatchSessionUnlocked(userId);
         uploadBackup(mkRaw, mk, password, userId, 'account', secret).catch((e) => {
           logCryptoException('backup', e, { severity: 'warning', metadata: { stage: 'first_upload', userId } });
         });
@@ -716,6 +717,7 @@ export async function initAccountKeySync(password: string, userId: string): Prom
         }
         _sessionRawMasterKey = result.masterKeyRaw;
         _sessionMasterKey = result.masterKey;
+        dispatchSessionUnlocked(userId);
         await writeKeychainSnapshot(userId);
         console.log('[MasterKey] ✅ Keys restored from server (validated)');
         logCryptoError({
@@ -795,6 +797,7 @@ export async function restoreAccountKeysFromActiveSession(userId?: string): Prom
 
     _sessionRawMasterKey = result.masterKeyRaw;
     _sessionMasterKey = result.masterKey;
+    dispatchSessionUnlocked(targetUserId);
     await writeKeychainSnapshot(targetUserId);
     console.log('[MasterKey] ✅ Keys restored from active session');
     logCryptoError({
@@ -891,6 +894,7 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
       }
       _sessionRawMasterKey = result.masterKeyRaw;
       _sessionMasterKey = result.masterKey;
+      dispatchSessionUnlocked(userId);
       await writeKeychainSnapshot(userId);
       // Re-wrap with current password if available
       if (_sessionPassword && _sessionUserId) {
@@ -1077,6 +1081,18 @@ export function getSessionMasterKey(): CryptoKey | null {
   return _sessionMasterKey;
 }
 
+/**
+ * Broadcasts that the session master key just became available. Listeners
+ * (e.g. conversation archive preloader) can warm up their caches.
+ * Safe no-op outside the browser.
+ */
+export function dispatchSessionUnlocked(userId: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.dispatchEvent(new CustomEvent('forsure:e2ee-unlocked', { detail: { userId: userId || _sessionUserId } }));
+  } catch { /* noop */ }
+}
+
 export function getSessionUserId(): string | null {
   return _sessionUserId;
 }
@@ -1247,6 +1263,8 @@ export async function restoreWithBackupPin(pin: string, userId: string): Promise
     _sessionRawMasterKey = masterKeyRaw;
     _sessionMasterKey = await importMasterKey(masterKeyRaw);
     _sessionUserId = userId;
+    dispatchSessionUnlocked(userId);
+
 
     const result = await restoreFromInMemoryMasterKey(userId);
     if (result === 'restored' || result === 'local_ok') {
