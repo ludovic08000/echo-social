@@ -6126,6 +6126,8 @@ export type Database = {
       user_devices: {
         Row: {
           created_at: string
+          crypto_invalid_at: string | null
+          crypto_invalid_reason: string | null
           device_fingerprint: string | null
           device_id: string
           device_name: string | null
@@ -6135,6 +6137,7 @@ export type Database = {
           is_primary: boolean
           last_seen_at: string
           platform: string | null
+          prekey_repair_requested_at: string | null
           revoke_reason: string | null
           revoked_at: string | null
           stale_at: string | null
@@ -6144,6 +6147,8 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          crypto_invalid_at?: string | null
+          crypto_invalid_reason?: string | null
           device_fingerprint?: string | null
           device_id: string
           device_name?: string | null
@@ -6153,6 +6158,7 @@ export type Database = {
           is_primary?: boolean
           last_seen_at?: string
           platform?: string | null
+          prekey_repair_requested_at?: string | null
           revoke_reason?: string | null
           revoked_at?: string | null
           stale_at?: string | null
@@ -6162,6 +6168,8 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          crypto_invalid_at?: string | null
+          crypto_invalid_reason?: string | null
           device_fingerprint?: string | null
           device_id?: string
           device_name?: string | null
@@ -6171,6 +6179,7 @@ export type Database = {
           is_primary?: boolean
           last_seen_at?: string
           platform?: string | null
+          prekey_repair_requested_at?: string | null
           revoke_reason?: string | null
           revoked_at?: string | null
           stale_at?: string | null
