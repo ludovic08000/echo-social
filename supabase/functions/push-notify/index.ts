@@ -161,6 +161,15 @@ Deno.serve(async (req) => {
         status: 400, headers: { ...headers, "Content-Type": "application/json" },
       });
     }
+    // Non-admin callers may only push to themselves.
+    if (user_id !== authed.userId) {
+      const { data: isAdmin } = await supabase.rpc("has_role", { _user_id: authed.userId, _role: "admin" });
+      if (isAdmin !== true) {
+        return new Response(JSON.stringify({ error: "FORBIDDEN" }), {
+          status: 403, headers: { ...headers, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     const VAPID_PUBLIC = Deno.env.get("VAPID_PUBLIC_KEY");
     const VAPID_PRIVATE = Deno.env.get("VAPID_PRIVATE_KEY");
