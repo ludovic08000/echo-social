@@ -8,6 +8,7 @@ import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto';
 import { wrapOutboundSecureMessage } from '@/lib/crypto/secureMessagePipeline';
 import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
+import { encryptArchive } from '@/lib/messaging/archive/archiveKey';
 
 export interface OutboundMessage {
   localId: string;
