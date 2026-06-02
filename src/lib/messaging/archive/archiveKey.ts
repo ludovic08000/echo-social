@@ -30,6 +30,19 @@ export function clearArchiveKeyCache(): void {
 if (typeof window !== 'undefined') {
   window.addEventListener('forsure:e2ee-purge', clearArchiveKeyCache);
   window.addEventListener('forsure:e2ee-restore-needed', clearArchiveKeyCache);
+
+  // Pre-warm all archive keys as soon as the session master key is unlocked.
+  // This guarantees that the user's full message history is decryptable
+  // synchronously, even after device rotation or cache purge.
+  const preloadOnUnlock = (ev: Event) => {
+    const detail = (ev as CustomEvent).detail || {};
+    const uid = (detail as any).userId as string | undefined;
+    if (!uid) return;
+    // Fire-and-forget; safe to run multiple times (idempotent on cache).
+    void preloadAllArchiveKeys(uid).catch(() => {});
+  };
+  window.addEventListener('forsure:e2ee-unlocked', preloadOnUnlock);
+  window.addEventListener('forsure:e2ee-post-restore', preloadOnUnlock);
 }
 
 interface ArchiveKeyRow {
