@@ -77,12 +77,24 @@ export async function requireAuthenticated(
 }
 
 /**
- * Validate JWT AND check has_role(uid, 'admin').
+ * Validate JWT AND check has_role(uid, 'admin'). Service-role JWTs (used by
+ * pg_cron / trusted backend) pass automatically.
  */
 export async function requireAdmin(
   req: Request,
   corsHeaders: Record<string, string>,
 ): Promise<AuthAllowedUser | AuthDeniedResponse> {
+  const auth = req.headers.get("authorization") || "";
+  if (!auth.toLowerCase().startsWith("bearer ")) {
+    return deny(corsHeaders, 401, "UNAUTHORIZED");
+  }
+  const token = auth.slice(7).trim();
+
+  // Service-role token short-circuits to allow (used by pg_cron / trusted backends).
+  if (token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {
+    return { ok: true, userId: "service_role", token };
+  }
+
   const authResult = await requireAuthenticated(req, corsHeaders);
   if (!("userId" in authResult)) return authResult;
 
