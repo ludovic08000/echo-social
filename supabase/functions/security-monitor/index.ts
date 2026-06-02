@@ -260,6 +260,10 @@ function heuristicAnalysis(incidents: DetectedIncident[]): {
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  const { requireAdmin } = await import("../_shared/auth-guard.ts");
+  const guard = await requireAdmin(req, corsHeaders);
+  if (!("userId" in guard)) return guard.response;
+
   const scanStart = performance.now();
   const scanId = crypto.randomUUID().slice(0, 8);
 

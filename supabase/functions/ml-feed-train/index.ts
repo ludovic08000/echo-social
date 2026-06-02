@@ -167,6 +167,11 @@ async function extractFeatures(post: PostRow): Promise<{ topics: string[]; hasht
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  // Auth: admin user OR service-role / cron call only
+  const { requireAdmin } = await import("../_shared/auth-guard.ts");
+  const guard = await requireAdmin(req, corsHeaders);
+  if (!("userId" in guard)) return guard.response;
+
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
   const startedAt = Date.now();
 

@@ -71,6 +71,10 @@ const SOFT_BUDGET_MS = 90_000;
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
+  const { requireAdmin } = await import("../_shared/auth-guard.ts");
+  const guard = await requireAdmin(req, corsHeaders);
+  if (!("userId" in guard)) return guard.response;
+
   const startedAt = Date.now();
   const overBudget = () => Date.now() - startedAt > SOFT_BUDGET_MS;
 

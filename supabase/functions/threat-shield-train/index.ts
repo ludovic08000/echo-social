@@ -69,6 +69,10 @@ Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  const { requireAdmin } = await import("../_shared/auth-guard.ts");
+  const guard = await requireAdmin(req, corsHeaders);
+  if (!("userId" in guard)) return guard.response;
+
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,

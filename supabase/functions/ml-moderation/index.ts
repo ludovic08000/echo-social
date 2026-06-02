@@ -124,13 +124,22 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const authHeader = req.headers.get("Authorization");
+    const { requireAuthenticated, requireAdmin } = await import("../_shared/auth-guard.ts");
+    const authed = await requireAuthenticated(req, corsHeaders);
+    if (!("userId" in authed)) return authed.response;
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
     const { action, text, post_id, feedback } = await req.json();
+
+    // metrics action leaks model accuracy/confidence — admin only.
+    if (action === "metrics") {
+      const adminGuard = await requireAdmin(req, corsHeaders);
+      if (!("userId" in adminGuard)) return adminGuard.response;
+    }
 
     if (action === "moderate" && text) {
       const start = performance.now();

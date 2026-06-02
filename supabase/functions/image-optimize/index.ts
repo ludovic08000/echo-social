@@ -34,13 +34,29 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Validate URL is from trusted domains
-    const parsedUrl = new URL(imageUrl);
-    const trustedDomains = [
-      "vkpmoqfzrihcijjochks.supabase.co",
-      "pub-",  // R2 public URLs
-    ];
-    const isTrusted = trustedDomains.some(d => parsedUrl.hostname.includes(d));
+    // Validate URL — exact host or strict suffix match only (no substring SSRF).
+    // Allowed: Supabase storage host, Cloudflare R2 public hosts (*.r2.dev),
+    // and our configured R2_PUBLIC_URL host.
+    let parsedUrl: URL;
+    try { parsedUrl = new URL(imageUrl); } catch {
+      return new Response(JSON.stringify({ error: "Invalid URL" }),
+        { status: 400, headers: { ...headers, "Content-Type": "application/json" } });
+    }
+    if (parsedUrl.protocol !== "https:") {
+      return new Response(JSON.stringify({ error: "Only https URLs allowed" }),
+        { status: 403, headers: { ...headers, "Content-Type": "application/json" } });
+    }
+    const host = parsedUrl.hostname.toLowerCase();
+    const r2PublicHost = (() => {
+      try { return new URL(Deno.env.get("R2_PUBLIC_URL") || "").hostname.toLowerCase(); }
+      catch { return ""; }
+    })();
+    const isTrusted =
+      host === "vkpmoqfzrihcijjochks.supabase.co" ||
+      host.endsWith(".supabase.co") && host.startsWith("vkpmoqfzrihcijjochks.") ||
+      host.endsWith(".r2.dev") ||
+      host.endsWith(".r2.cloudflarestorage.com") ||
+      (r2PublicHost && host === r2PublicHost);
     if (!isTrusted) {
       return new Response(
         JSON.stringify({ error: "Untrusted image source" }),

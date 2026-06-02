@@ -143,6 +143,12 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers });
 
   try {
+    // Require authenticated caller. Senders can only push to themselves;
+    // admins / service role can push to anyone (used for system notifications).
+    const { requireAuthenticated } = await import("../_shared/auth-guard.ts");
+    const authed = await requireAuthenticated(req, headers);
+    if (!("userId" in authed)) return authed.response;
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -154,6 +160,15 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "user_id and title required" }), {
         status: 400, headers: { ...headers, "Content-Type": "application/json" },
       });
+    }
+    // Non-admin callers may only push to themselves.
+    if (user_id !== authed.userId) {
+      const { data: isAdmin } = await supabase.rpc("has_role", { _user_id: authed.userId, _role: "admin" });
+      if (isAdmin !== true) {
+        return new Response(JSON.stringify({ error: "FORBIDDEN" }), {
+          status: 403, headers: { ...headers, "Content-Type": "application/json" },
+        });
+      }
     }
 
     const VAPID_PUBLIC = Deno.env.get("VAPID_PUBLIC_KEY");
