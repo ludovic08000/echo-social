@@ -7099,15 +7099,6 @@ export type Database = {
         }
         Returns: boolean
       }
-      claim_device_one_time_prekey: {
-        Args: { p_device_id: string; p_user_id: string }
-        Returns: {
-          opk_id: number
-          public_key: string
-          signature: string
-          signature_version: number
-        }[]
-      }
       claim_x3dh_initial: { Args: { p_fingerprint: string }; Returns: boolean }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_edge_rate_limits: { Args: never; Returns: undefined }
@@ -7276,16 +7267,6 @@ export type Database = {
           status: string
         }[]
       }
-      get_device_prekey_bundle: {
-        Args: { p_device_id: string; p_user_id: string }
-        Returns: {
-          device_public_key: string
-          keys_epoch: number
-          public_key: string
-          signature: string
-          spk_id: number
-        }[]
-      }
       get_feed_posts: {
         Args: { p_limit?: number; p_offset?: number; p_user_id: string }
         Returns: {
@@ -7419,14 +7400,6 @@ export type Database = {
         Returns: boolean
       }
       is_user_minor: { Args: { p_user_id: string }; Returns: boolean }
-      list_active_devices_for_user: {
-        Args: { p_user_id: string }
-        Returns: {
-          device_id: string
-          device_public_key: string
-          last_seen_at: string
-        }[]
-      }
       list_pending_device_copy_retries: {
         Args: { p_limit?: number }
         Returns: {
