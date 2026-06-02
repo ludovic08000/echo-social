@@ -894,6 +894,7 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
       }
       _sessionRawMasterKey = result.masterKeyRaw;
       _sessionMasterKey = result.masterKey;
+      dispatchSessionUnlocked(userId);
       await writeKeychainSnapshot(userId);
       // Re-wrap with current password if available
       if (_sessionPassword && _sessionUserId) {
