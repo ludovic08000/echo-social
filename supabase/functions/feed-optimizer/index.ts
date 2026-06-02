@@ -24,6 +24,11 @@ Deno.serve(async (req) => {
   const rateLimited = await checkRateLimit(`feed-opt:${ip}`, 10, 60, corsHeaders);
   if (rateLimited) return rateLimited;
 
+  // Admin only — exposes & mutates feed algorithm config.
+  const { requireAdmin } = await import("../_shared/auth-guard.ts");
+  const guard = await requireAdmin(req, corsHeaders);
+  if (!("userId" in guard)) return guard.response;
+
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
