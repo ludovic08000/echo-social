@@ -213,6 +213,7 @@ export default function Feed() {
         image={feedMeta.image}
         jsonLd={feedMeta.jsonLd}
       />
+      <h1 className="sr-only">Fil d'actualité Forsure</h1>
       {feedBgStyle && (
         <div className="fixed inset-0 -z-10 opacity-30" style={feedBgStyle} />
       )}
