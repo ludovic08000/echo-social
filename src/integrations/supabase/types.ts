@@ -7457,7 +7457,7 @@ export type Database = {
           user_id: string
         }[]
       }
-      get_my_stream_key: { Args: { stream_id: string }; Returns: string }
+      get_my_stream_key: { Args: { p_stream_id: string }; Returns: string }
       get_onboarding_state: { Args: { _user_id: string }; Returns: Json }
       get_parental_controls: {
         Args: { p_user_id: string }
