@@ -124,7 +124,11 @@ export default function Feed() {
       trackMinute();
       if (pauseDismissed) return;
       try {
-        const wellbeingPrefs = JSON.parse(localStorage.getItem('wellbeing-prefs') || '{}');
+        // P5: prefs live in `wellbeing_preferences` (cloud-synced) with
+        // localStorage as a synchronous read cache populated by the
+        // useWellbeingPreferences hook elsewhere in the app.
+        const { readLocalWellbeingPrefs } = require('@/hooks/useWellbeingPreferences');
+        const wellbeingPrefs = readLocalWellbeingPrefs();
         if (wellbeingPrefs.scrollPauseEnabled) {
           const sessionMin = getSessionMinutes();
           if (sessionMin >= (wellbeingPrefs.scrollPauseMinutes || 15)) {

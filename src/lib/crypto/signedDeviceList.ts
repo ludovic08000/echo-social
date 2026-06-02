@@ -128,7 +128,7 @@ export async function publishOwnSignedDeviceList(args?: {
   const deviceIds = (rows ?? [])
     .map(r => String((r as any).device_id || ''))
     .filter(id => id.length >= 8);
-  const { data, error } = await supabase.rpc('upsert_signed_device_list', {
+  const { data, error } = await (supabase as any).rpc('upsert_signed_device_list', {
     p_device_ids: deviceIds,
     p_signer_device_id: args?.signerDeviceId ?? null,
     p_signature: args?.signatureB64 ?? null,

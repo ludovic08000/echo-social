@@ -336,7 +336,7 @@ export async function refreshDeviceSignedPrekeyIfNeeded(userId: string, deviceId
       // the device itself. Both RPCs are best-effort — failure must never
       // block local regeneration.
       try {
-        await supabase.rpc('quarantine_own_invalid_device_spk', {
+        await (supabase as any).rpc('quarantine_own_invalid_device_spk', {
           p_device_id: deviceId,
           p_spk_id: data.spk_id,
           p_reason: 'own_device_spk_signature_invalid',
@@ -349,7 +349,7 @@ export async function refreshDeviceSignedPrekeyIfNeeded(userId: string, deviceId
       } catch (regenErr) {
         console.warn('[X3DH-DEV] SPK regeneration failed — quarantining device:', regenErr);
         try {
-          await supabase.rpc('quarantine_own_invalid_device', {
+          await (supabase as any).rpc('quarantine_own_invalid_device', {
             p_device_id: deviceId,
             p_reason: 'own_device_spk_regeneration_failed',
           });
