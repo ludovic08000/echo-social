@@ -686,6 +686,7 @@ export async function initAccountKeySync(password: string, userId: string): Prom
         const mk = await importMasterKey(mkRaw);
         _sessionRawMasterKey = mkRaw;
         _sessionMasterKey = mk;
+        dispatchSessionUnlocked(userId);
         uploadBackup(mkRaw, mk, password, userId, 'account', secret).catch((e) => {
           logCryptoException('backup', e, { severity: 'warning', metadata: { stage: 'first_upload', userId } });
         });
