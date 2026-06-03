@@ -208,6 +208,7 @@ export function isArchivePayload(s: string | null | undefined): boolean {
  */
 export async function encryptArchive(plaintext: string, conversationId: string, userId: string): Promise<string | null> {
   if (!plaintext) return null;
+  if (!isArchiveBackupEnabled()) return null;
   const key = await getOrCreateArchiveKey(conversationId, userId);
   if (!key) return null;
   try {
