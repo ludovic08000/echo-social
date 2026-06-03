@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { KeyBackupPanel } from '@/components/KeyBackupPanel';
+import { ArchiveBackupToggle } from '@/components/settings/ArchiveBackupToggle';
 import { Shield, Eye, MessageCircle, Heart, Search, BarChart3, Ghost, Globe, Lock, Trash2, AlertTriangle, KeyRound } from 'lucide-react';
 import { usePrivacySettings, useUpdatePrivacySettings } from '@/hooks/usePrivacySettings';
 import { RestrictedFriendsPanel } from './RestrictedFriendsPanel';
@@ -565,6 +566,9 @@ export function PrivacySettingsPanel() {
 
       {/* E2EE Key Backup & Transfer */}
       <KeyBackupPanel />
+
+      {/* Conversation-level encrypted history backup */}
+      <ArchiveBackupToggle />
 
       {/* Data Export */}
       <DataExportSection />

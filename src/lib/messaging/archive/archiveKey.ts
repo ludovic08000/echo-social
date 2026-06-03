@@ -15,6 +15,28 @@ import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
 import { getSessionMasterKey } from '@/lib/crypto/accountKeyBackup';
+import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
+
+const ACTIVATED_FLAG = 'forsure:archive-activated-toast-shown:v1';
+
+function maybeShowActivationToastOnce(): void {
+  try {
+    if (typeof window === 'undefined') return;
+    if (localStorage.getItem(ACTIVATED_FLAG) === '1') return;
+    localStorage.setItem(ACTIVATED_FLAG, '1');
+    // Dynamic import to keep the crypto module UI-free.
+    void import('sonner')
+      .then(({ toast }) => {
+        toast.success('Sauvegarde chiffrée d\u2019historique activ\u00e9e', {
+          description: 'Vos messages restent lisibles sur tous vos appareils. Toujours chiffrés de bout en bout.',
+          duration: 6000,
+        });
+      })
+      .catch(() => {});
+  } catch {
+    /* swallow */
+  }
+}
 
 const KDF_VERSION = 1;
 const IV_LEN = 12;
@@ -157,6 +179,7 @@ export async function getOrCreateArchiveKey(conversationId: string, userId: stri
     const ck = await importAesKey(raw);
     raw.fill(0);
     ramCache.set(cacheKey, ck);
+    maybeShowActivationToastOnce();
     return ck;
   } catch {
     return null;
@@ -186,6 +209,7 @@ export function isArchivePayload(s: string | null | undefined): boolean {
  */
 export async function encryptArchive(plaintext: string, conversationId: string, userId: string): Promise<string | null> {
   if (!plaintext) return null;
+  if (!isArchiveBackupEnabled()) return null;
   const key = await getOrCreateArchiveKey(conversationId, userId);
   if (!key) return null;
   try {
