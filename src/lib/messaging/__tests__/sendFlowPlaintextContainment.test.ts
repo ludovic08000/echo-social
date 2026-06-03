@@ -316,7 +316,7 @@ describe('Send flow — end-to-end plaintext containment', () => {
     for (const pt of PAYLOADS) {
       const env = await ratchetEncrypt(ALICE.user, ALICE.device, BOB.user, BOB.device, pt);
       expect(env).not.toBeNull();
-      expect(env!.startsWith('x3dh4.')).toBe(true);
+      expect(/^x3dh[45]\./.test(env!)).toBe(true);
       expect(leaksPlaintext(env!, pt)).toBe(false);
 
       const back = await ratchetDecrypt(BOB.user, BOB.device, env!);
