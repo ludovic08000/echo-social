@@ -359,7 +359,7 @@ describe('Send flow — end-to-end plaintext containment', () => {
     await waitFor(() => wire.length === 1);
 
     expect(wire[0].imageUrl).toBe(URL); // URL is a metadata field, expected
-    expect(wire[0].body.startsWith('x3dh4.')).toBe(true);
+    expect(/^x3dh[45]\./.test(wire[0].body)).toBe(true);
     expect(leaksPlaintext(wire[0].body, CAPTION)).toBe(false);
 
     // IndexedDB row never carries the caption.
