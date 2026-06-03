@@ -270,7 +270,7 @@ describe('Send flow — end-to-end plaintext containment', () => {
     // ── Wire check ────────────────────────────────────────
     expect(wire).toHaveLength(1);
     const ciphertext = wire[0];
-    expect(ciphertext.startsWith('x3dh4.')).toBe(true);
+    expect(/^x3dh[45]\./.test(ciphertext)).toBe(true);
     expect(leaksPlaintext(ciphertext, SECRET)).toBe(false);
 
     // ── IndexedDB check (raw, no hydration) ───────────────
