@@ -48,9 +48,10 @@ describe('Signal conformance — frozen constants', () => {
     expect(AD_HEADER_PREFIX_V4).toBe('FORSURE-HDR-v4|');
   });
 
-  it('skipped-key limits match Signal recommendations', () => {
+  it('skipped-key limits match audit-hardened defaults', () => {
     expect(RATCHET_MAX_SKIP).toBe(1000);
-    expect(RATCHET_SKIPPED_TTL_MS).toBe(7 * 24 * 60 * 60 * 1000);
+    // Lot A3: tightened from 7d → 24h. Strict mode default.
+    expect(RATCHET_SKIPPED_TTL_MS).toBe(24 * 60 * 60 * 1000);
   });
 });
 
