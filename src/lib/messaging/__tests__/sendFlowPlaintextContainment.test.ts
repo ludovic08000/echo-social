@@ -416,13 +416,14 @@ describe('Send flow — end-to-end plaintext containment', () => {
       }
     }
 
-    // Receiver decrypts all of them correctly, in order.
+    // Receiver decrypts all of them correctly. The queue may flush in a
+    // different order than enqueue (parallel encrypt), so we compare as sets.
     const decrypted: string[] = [];
     for (const w of wire) {
       const d = await ratchetDecrypt(BOB.user, BOB.device, w.ct);
       decrypted.push(d!);
     }
-    expect(decrypted).toEqual(plaintexts);
+    expect(new Set(decrypted)).toEqual(new Set(plaintexts));
 
     messageQueue.unregisterHandlers(CONV, 'h-multi');
   }, 25_000);
