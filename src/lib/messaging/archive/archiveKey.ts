@@ -179,6 +179,7 @@ export async function getOrCreateArchiveKey(conversationId: string, userId: stri
     const ck = await importAesKey(raw);
     raw.fill(0);
     ramCache.set(cacheKey, ck);
+    maybeShowActivationToastOnce();
     return ck;
   } catch {
     return null;
