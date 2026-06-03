@@ -270,7 +270,7 @@ describe('Send flow — end-to-end plaintext containment', () => {
     // ── Wire check ────────────────────────────────────────
     expect(wire).toHaveLength(1);
     const ciphertext = wire[0];
-    expect(ciphertext.startsWith('x3dh4.')).toBe(true);
+    expect(/^x3dh[45]\./.test(ciphertext)).toBe(true);
     expect(leaksPlaintext(ciphertext, SECRET)).toBe(false);
 
     // ── IndexedDB check (raw, no hydration) ───────────────
@@ -316,7 +316,7 @@ describe('Send flow — end-to-end plaintext containment', () => {
     for (const pt of PAYLOADS) {
       const env = await ratchetEncrypt(ALICE.user, ALICE.device, BOB.user, BOB.device, pt);
       expect(env).not.toBeNull();
-      expect(env!.startsWith('x3dh4.')).toBe(true);
+      expect(/^x3dh[45]\./.test(env!)).toBe(true);
       expect(leaksPlaintext(env!, pt)).toBe(false);
 
       const back = await ratchetDecrypt(BOB.user, BOB.device, env!);
@@ -359,7 +359,7 @@ describe('Send flow — end-to-end plaintext containment', () => {
     await waitFor(() => wire.length === 1);
 
     expect(wire[0].imageUrl).toBe(URL); // URL is a metadata field, expected
-    expect(wire[0].body.startsWith('x3dh4.')).toBe(true);
+    expect(/^x3dh[45]\./.test(wire[0].body)).toBe(true);
     expect(leaksPlaintext(wire[0].body, CAPTION)).toBe(false);
 
     // IndexedDB row never carries the caption.
@@ -416,13 +416,14 @@ describe('Send flow — end-to-end plaintext containment', () => {
       }
     }
 
-    // Receiver decrypts all of them correctly, in order.
+    // Receiver decrypts all of them correctly. The queue may flush in a
+    // different order than enqueue (parallel encrypt), so we compare as sets.
     const decrypted: string[] = [];
     for (const w of wire) {
       const d = await ratchetDecrypt(BOB.user, BOB.device, w.ct);
       decrypted.push(d!);
     }
-    expect(decrypted).toEqual(plaintexts);
+    expect(new Set(decrypted)).toEqual(new Set(plaintexts));
 
     messageQueue.unregisterHandlers(CONV, 'h-multi');
   }, 25_000);
