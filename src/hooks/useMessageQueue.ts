@@ -224,7 +224,7 @@ export function useMessageQueue(
       // (sender's other devices + each participant's devices) so iOS / Windows /
       // Android all receive a readable copy via message_device_copies.
       // Non-fatal: per-conv ratchet still delivers to the bootstrapping device.
-      if (encryptedSuccessfully) {
+      if (encryptedSuccessfully || encryptionWasRequired) {
         void fanoutMessageCopies({
           messageId: data.id,
           conversationId,
