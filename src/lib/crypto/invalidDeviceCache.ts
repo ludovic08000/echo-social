@@ -1,7 +1,6 @@
 const INVALID_DEVICE_STORE_KEY = 'forsure:invalid-device-spk-cache:v1';
 
 const BUILTIN_INVALID_DEVICE_IDS = new Set<string>([
-  '84aaa52143235807214bf3aa161dd03a',
   '6508eb47a200893f49720fe84b9290b3',
   '9da8c742a4fe81d1d9ce6c0ffb4e055b',
   '75e575fcbfaa8066bcbc9105fc5f4ac8',
@@ -12,6 +11,27 @@ const BUILTIN_INVALID_DEVICE_IDS = new Set<string>([
   '92585130870cedf210af1019379dbc61',
   '450c0cd9af35813c8a99ec5bc0f39ab8',
 ]);
+
+// IDs previously flagged invalid but now back in legitimate use — strip from
+// any persisted local cache so they stop being skipped during fan-out.
+const REHABILITATED_DEVICE_IDS = new Set<string>([
+  '84aaa52143235807214bf3aa161dd03a',
+]);
+
+try {
+  if (typeof localStorage !== 'undefined') {
+    const raw = localStorage.getItem(INVALID_DEVICE_STORE_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        const cleaned = arr.filter((id: unknown) => typeof id === 'string' && !REHABILITATED_DEVICE_IDS.has(id));
+        if (cleaned.length !== arr.length) {
+          localStorage.setItem(INVALID_DEVICE_STORE_KEY, JSON.stringify(cleaned));
+        }
+      }
+    }
+  }
+} catch {}
 
 export function loadInvalidDeviceIds(): Set<string> {
   const out = new Set(BUILTIN_INVALID_DEVICE_IDS);

@@ -6,7 +6,6 @@ const INVALID_CACHE_KEY = 'forsure:invalid-device-spk-cache:v1';
 const CLEAN_VERSION_KEY = 'forsure:e2ee-clean-startup:v1';
 
 const INVALID_DEVICE_IDS = [
-  '84aaa52143235807214bf3aa161dd03a',
   '6508eb47a200893f49720fe84b9290b3',
   '9da8c742a4fe81d1d9ce6c0ffb4e055b',
   '75e575fcbfaa8066bcbc9105fc5f4ac8',
