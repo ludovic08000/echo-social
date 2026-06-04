@@ -22,6 +22,13 @@ vi.mock('@/lib/crypto/signedDeviceList', () => ({
   fetchTrustedDeviceList: (...args: unknown[]) => fetchTrustedMock(...args),
 }));
 
+// Hygiene filter calls peekDeviceSignedPrekey; in unit-test mode we treat
+// every candidate as having a valid SPK so the trust gate logic is what's
+// actually under test.
+vi.mock('@/lib/crypto/x3dh', () => ({
+  peekDeviceSignedPrekey: vi.fn(async () => ({ spkId: 1, spkPub: 'PUB', spkSig: 'SIG' })),
+}));
+
 import { supabase } from '@/integrations/supabase/client';
 import { listDevicesForUser } from '../deviceRegistry';
 
