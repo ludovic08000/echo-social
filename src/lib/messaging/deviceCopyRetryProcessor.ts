@@ -94,6 +94,8 @@ export async function processDeviceCopyRetryRequests(limit = 20): Promise<RetryP
           recipientDeviceId: row.requester_device_id,
           recipientDevicePublicKey: row.requester_device_public_key,
           plaintext,
+          forceFreshSession: true,
+          useOneTimePrekey: false,
         });
 
         if (!encrypted) {
@@ -115,6 +117,7 @@ export async function processDeviceCopyRetryRequests(limit = 20): Promise<RetryP
         }
 
         result.completed += 1;
+        try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch {}
         logCryptoError({
           severity: 'info',
           context: 'fanout',
