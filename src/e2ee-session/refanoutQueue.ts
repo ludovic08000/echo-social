@@ -86,13 +86,18 @@ export async function requestRefanout(
   requesterDeviceId: string,
 ): Promise<boolean> {
   try {
-    const { error } = await (supabase as any).rpc('request_message_refanout', {
+    const { data, error } = await (supabase as any).rpc('request_message_refanout', {
       p_message_id: messageId,
       p_sender_user_id: senderUserId,
       p_requester_device_id: requesterDeviceId,
     });
     if (error) {
       console.warn('[REFANOUT] RPC failed', { messageId, error: error.message });
+      return false;
+    }
+    const result = data as { ok?: boolean; code?: string } | null;
+    if (result?.ok === false || result?.code === 'RETRY_BUDGET_EXHAUSTED' || result?.code === 'RETRY_ALREADY_DONE') {
+      console.info('[REFANOUT] not queued', { messageId: messageId.slice(0, 8), code: result.code });
       return false;
     }
     console.info('[REFANOUT] requested', { messageId: messageId.slice(0, 8) });
