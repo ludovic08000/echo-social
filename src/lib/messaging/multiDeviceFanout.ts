@@ -49,6 +49,7 @@ interface DeviceEncryptTargetInput {
   recipientDevicePublicKey: string;
   plaintext: string;
   forceFreshSession?: boolean;
+  forceX3DH?: boolean;
   useOneTimePrekey?: boolean;
 }
 
@@ -288,29 +289,36 @@ export async function encryptPlaintextForDeviceTarget(
   }
 
   let encrypted: string | null = null;
-  try {
-    encrypted = await ratchetEncrypt(
-      input.senderUserId,
-      senderDeviceId,
-      input.recipientUserId,
-      input.recipientDeviceId,
-      input.plaintext,
-    );
-    if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V5) && !encrypted.startsWith(RATCHET_PREFIX_V4)) {
-      encrypted = null;
+  if (!input.forceX3DH) {
+    try {
+      encrypted = await ratchetEncrypt(
+        input.senderUserId,
+        senderDeviceId,
+        input.recipientUserId,
+        input.recipientDeviceId,
+        input.plaintext,
+      );
+      if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V5) && !encrypted.startsWith(RATCHET_PREFIX_V4)) {
+        encrypted = null;
+      }
+    } catch (e) {
+      logCryptoException('fanout', e, {
+        severity: 'warning',
+        conversationId: input.conversationId,
+        myDeviceId: senderDeviceId,
+        peerUserId: input.recipientUserId,
+        peerDeviceId: input.recipientDeviceId,
+        metadata: { stage: 'ratchet_encrypt' },
+      });
     }
-  } catch (e) {
-    logCryptoException('fanout', e, {
-      severity: 'warning',
-      conversationId: input.conversationId,
-      myDeviceId: senderDeviceId,
-      peerUserId: input.recipientUserId,
-      peerDeviceId: input.recipientDeviceId,
-      metadata: { stage: 'ratchet_encrypt' },
-    });
   }
 
   if (!encrypted) encrypted = await x3dhWrapForDevice(input.plaintext, input.senderUserId, input.recipientUserId, input.recipientDeviceId, { useOneTimePrekey: input.useOneTimePrekey });
+
+  // Retry/refanout repair must be a new X3DH pre-key message. Reusing a broken
+  // Double Ratchet chain, or falling back to legacy deviceWrap, just recreates
+  // the Signal/WhatsApp anti-pattern that causes infinite decrypt loops.
+  if (input.forceX3DH && !encrypted) return null;
 
   if (!encrypted) {
     try {
