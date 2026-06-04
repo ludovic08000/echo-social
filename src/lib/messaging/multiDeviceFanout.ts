@@ -5,7 +5,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
 import { wrapPlaintextForDevice, unwrapPlaintextForDevice } from './deviceWrap';
-import { requestDeviceCopyRetry } from './deviceCopyRetryRequest';
+// requestDeviceCopyRetry removed — refanout in messageRouter is the single retry path
 import {
   fetchPrekeyBundleForDevice,
   peekDeviceSignedPrekey,
@@ -49,6 +49,7 @@ interface DeviceEncryptTargetInput {
   recipientDevicePublicKey: string;
   plaintext: string;
   forceFreshSession?: boolean;
+  /** @deprecated Kept for type-compat; ignored. v5-only outbound. */
   forceX3DH?: boolean;
   useOneTimePrekey?: boolean;
 }
@@ -289,36 +290,30 @@ export async function encryptPlaintextForDeviceTarget(
   }
 
   let encrypted: string | null = null;
-  if (!input.forceX3DH) {
-    try {
-      encrypted = await ratchetEncrypt(
-        input.senderUserId,
-        senderDeviceId,
-        input.recipientUserId,
-        input.recipientDeviceId,
-        input.plaintext,
-      );
-      if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V5) && !encrypted.startsWith(RATCHET_PREFIX_V4)) {
-        encrypted = null;
-      }
-    } catch (e) {
-      logCryptoException('fanout', e, {
-        severity: 'warning',
-        conversationId: input.conversationId,
-        myDeviceId: senderDeviceId,
-        peerUserId: input.recipientUserId,
-        peerDeviceId: input.recipientDeviceId,
-        metadata: { stage: 'ratchet_encrypt' },
-      });
+  try {
+    encrypted = await ratchetEncrypt(
+      input.senderUserId,
+      senderDeviceId,
+      input.recipientUserId,
+      input.recipientDeviceId,
+      input.plaintext,
+    );
+    if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V5) && !encrypted.startsWith(RATCHET_PREFIX_V4)) {
+      encrypted = null;
     }
+  } catch (e) {
+    logCryptoException('fanout', e, {
+      severity: 'warning',
+      conversationId: input.conversationId,
+      myDeviceId: senderDeviceId,
+      peerUserId: input.recipientUserId,
+      peerDeviceId: input.recipientDeviceId,
+      metadata: { stage: 'ratchet_encrypt' },
+    });
   }
 
   if (!encrypted) encrypted = await x3dhWrapForDevice(input.plaintext, input.senderUserId, input.recipientUserId, input.recipientDeviceId, { useOneTimePrekey: input.useOneTimePrekey });
 
-  // Retry/refanout repair must be a new X3DH pre-key message. Reusing a broken
-  // Double Ratchet chain, or falling back to legacy deviceWrap, just recreates
-  // the Signal/WhatsApp anti-pattern that causes infinite decrypt loops.
-  if (input.forceX3DH && !encrypted) return null;
 
   if (!encrypted) {
     try {
@@ -413,9 +408,8 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
 
 interface TryReadDeviceCopyOptions { requestRetry?: boolean; }
 
-export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?: string, options: TryReadDeviceCopyOptions = {}): Promise<string | null> {
+export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?: string, _options: TryReadDeviceCopyOptions = {}): Promise<string | null> {
   const myDeviceId = getCurrentDeviceId();
-  const shouldRequestRetry = options.requestRetry !== false;
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
@@ -428,7 +422,6 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
     } else {
       const { data: allCopies } = await supabase.rpc('get_device_copies_for_user', { p_message_id: messageId });
       if (!allCopies || allCopies.length === 0) {
-        if (shouldRequestRetry && expectedSenderUserId) void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
         return null;
       }
       rows = allCopies as CopyRow[];
@@ -440,7 +433,6 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       rows = rows.filter(row => row.sender_user_id === expectedSenderUserId);
       if (before !== rows.length) logCryptoError({ severity: 'warning', context: 'decrypt', errorCode: 'DEVICE_COPY_SENDER_MISMATCH', errorMessage: 'Rejected device copies whose sender does not match parent message', myDeviceId, metadata: { messageId, expectedSenderUserId, rejected: before - rows.length } });
       if (rows.length === 0) {
-        if (shouldRequestRetry) void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
         return null;
       }
     }
@@ -450,14 +442,13 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       const pt = await tryDecryptCopy(row, user.id, targetDeviceId);
       if (pt !== null) return pt;
     }
-    if (shouldRequestRetry && expectedSenderUserId) void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
     return null;
   } catch (e) {
     logCryptoException('decrypt', e, { severity: 'error', myDeviceId, metadata: { messageId, stage: 'tryReadDeviceCopy' } });
-    if (shouldRequestRetry && expectedSenderUserId) void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
     return null;
   }
 }
+
 
 export async function tryDecryptDeviceTargetedBody(row: { encrypted_body: string; sender_user_id: string; sender_device_id: string }, userId: string, myDeviceId: string): Promise<string | null> {
   return tryDecryptCopy(row, userId, myDeviceId);

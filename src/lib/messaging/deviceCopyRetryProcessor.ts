@@ -35,7 +35,12 @@ async function markRetryFailed(requestId: string, errorMessage: string): Promise
   }
 }
 
-export async function processDeviceCopyRetryRequests(limit = 20): Promise<RetryProcessingResult> {
+export async function processDeviceCopyRetryRequests(_limit = 20): Promise<RetryProcessingResult> {
+  // Disabled: refanout in messageRouter is the single retry path.
+  // Kept as a no-op so existing schedulers/imports don't break.
+  return { scanned: 0, completed: 0, skipped: 0, failed: 0 };
+
+  // eslint-disable-next-line no-unreachable
   if (inFlight) return inFlight;
 
   inFlight = (async () => {
@@ -48,12 +53,13 @@ export async function processDeviceCopyRetryRequests(limit = 20): Promise<RetryP
 
     if (isDeviceIdTemporary()) return result;
 
+
     const senderDeviceId = getCurrentDeviceId();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return result;
 
     const { data, error } = await (supabase as any).rpc("list_pending_device_copy_retries", {
-      p_limit: limit,
+      p_limit: _limit,
     });
 
     if (error) {
