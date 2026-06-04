@@ -135,11 +135,40 @@ export function useMessageQueue(
             }
           }
         } catch (encryptError) {
-          console.warn('[MSG_SEND] encrypt failed; compatibility send will continue', {
+          // STRICT E2EE: never send plaintext when encryption was required.
+          // Safety-number / fingerprint mismatch and any other crypto failure
+          // must surface to the UI (user can re-trust identity) and the
+          // multi-device fan-out below will still deliver encrypted copies
+          // to peer devices via message_device_copies.
+          const errMsg = encryptError instanceof Error ? encryptError.message : String(encryptError);
+          const normalized = errMsg
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+          const isSafetyMismatch =
+            normalized.includes('cle de securite du contact modifiee') ||
+            normalized.includes('safety number changed') ||
+            normalized.includes('security key changed') ||
+            normalized.includes('verification obligatoire avant envoi') ||
+            normalized.includes('fingerprint changed');
+
+          console.warn('[MSG_SEND] encrypt failed; will NOT send plaintext (strict E2EE)', {
             localId,
             conversationId,
+            isSafetyMismatch,
             encryptError,
           });
+
+          if (isSafetyMismatch) {
+            throw encryptError instanceof Error
+              ? encryptError
+              : new Error(errMsg);
+          }
+
+          // For non-safety failures (missing peer bundle, transient ratchet
+          // bootstrap), attempt the fan-out path: store an empty placeholder
+          // body and rely on per-device copies for delivery.
+          bodyToStore = '';
         }
       } else {
         console.warn('[MSG_SEND] encrypt handler missing; compatibility send will continue', {
@@ -153,7 +182,8 @@ export function useMessageQueue(
     // Long-life encrypted archive copy (zero-access, wrapped under account master key).
     // Allows any future device that can unlock the account to re-read this message.
     let archiveBody: string | null = null;
-    if (!isSpecial && encryptedSuccessfully) {
+    const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
+    if (!isSpecial && (encryptedSuccessfully || encryptionWasRequired)) {
       try {
         archiveBody = await encryptArchive(sanitized, conversationId, user.id);
       } catch {
@@ -194,7 +224,7 @@ export function useMessageQueue(
       // (sender's other devices + each participant's devices) so iOS / Windows /
       // Android all receive a readable copy via message_device_copies.
       // Non-fatal: per-conv ratchet still delivers to the bootstrapping device.
-      if (encryptedSuccessfully) {
+      if (encryptedSuccessfully || encryptionWasRequired) {
         void fanoutMessageCopies({
           messageId: data.id,
           conversationId,
