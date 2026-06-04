@@ -64,6 +64,13 @@ async function unwrapAndValidateInbound(input: RouteInput): Promise<{ body: stri
 export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
   const unwrapped = await unwrapAndValidateInbound(input);
   if ('errorCode' in unwrapped) {
+    if (input.messageId && unwrapped.errorCode === 'REPLAY_DETECTED') {
+      const r = await legacyDecryptByMessageId(input.messageId, input.senderUserId);
+      if (r.ok) {
+        clearDecryptFailure(input.messageId);
+        return r;
+      }
+    }
     return dropUnreadableEnvelope(input.messageId, unwrapped.errorCode);
   }
 
