@@ -3,13 +3,10 @@
  * ever shipped. Sesame rule: a message that was once readable must stay
  * readable forever. We never delete a decoder.
  *
- * Supported formats (most recent first):
+ * Supported runtime formats (most recent first):
  *   - `x3dh5.` Double Ratchet w/ DH + AAD              (deviceRatchet v5)
+ *   - `x3dh5.init.` authenticated X3DH bootstrap       (multiDeviceFanout)
  *   - `x3dh4.` Double Ratchet w/ DH ratchet            (deviceRatchet v4)
- *   - `x3dh3.` legacy single-secret KDF chain          (deviceRatchet v3)
- *   - `x3dh2.` X3DH bootstrap with one-time prekey     (multiDeviceFanout)
- *   - `x3dh1.` X3DH bootstrap, no OTPK                 (multiDeviceFanout)
- *   - `<iv>.<ct>` raw device-wrap ECDH                 (deviceWrap legacy)
  *   - JSON `{v, kem, iv, ct, sig, hdr...}` conv-level  (ratchet/e2ee)
  *
  * For conversation-level (per-conv ratchet) envelopes we just delegate to
@@ -17,7 +14,6 @@
  * don't reimplement them here.
  */
 import {
-  RATCHET_PREFIX_V3,
   RATCHET_PREFIX_V4,
   RATCHET_PREFIX_V5,
   ratchetDecrypt as deviceRatchetDecrypt,
@@ -30,26 +26,24 @@ import { supabase } from '@/integrations/supabase/client';
 /**
  * Extinction plan for the legacy router.
  *
- * The router exists to read EVERY ciphertext format we have ever shipped
- * (Sesame promise: a message that was once readable must stay readable
- * forever). Each successful decode bumps a per-format counter so we can
+ * The router is now pinned to v5, with v4 kept as a temporary compatibility
+ * reader. Each successful decode bumps a per-format counter so we can
  * see — empirically — when the legacy formats stop being used.
  *
  * After `LEGACY_ROUTER_EXTINCTION_DATE` we will:
- *   1. Stop accepting NEW writes in any pre-v4 format (already true today
+ *   1. Keep rejecting NEW writes in any pre-v5 format (already true today
  *      for outbound traffic — only `ratchetEncrypt` is used).
- *   2. If 30 consecutive days of zero hits on `legacy-router` and `v3`,
- *      remove the corresponding decoders.
+ *   2. If 30 consecutive days of zero hits on `legacy-router`, remove the
+ *      remaining compatibility decoder.
  *
  * Until then, every legacy hit is logged silently for the SOC dashboard.
  */
-export const LEGACY_ROUTER_EXTINCTION_DATE = '2026-09-01';
+export const LEGACY_ROUTER_EXTINCTION_DATE = '2026-06-04';
 
-type LegacyHitKey = 'ratchet-v5' | 'ratchet-v4' | 'ratchet-v3' | 'legacy-router';
+type LegacyHitKey = 'ratchet-v5' | 'ratchet-v4' | 'legacy-router';
 const HITS: Record<LegacyHitKey, { count: number; last: string | null }> = {
   'ratchet-v5': { count: 0, last: null },
   'ratchet-v4': { count: 0, last: null },
-  'ratchet-v3': { count: 0, last: null },
   'legacy-router': { count: 0, last: null },
 };
 
@@ -108,20 +102,8 @@ export async function legacyDecryptDeviceCopy(args: {
       }
     } catch { /* fall through */ }
   }
-  if (encryptedBody.startsWith(RATCHET_PREFIX_V3)) {
-    try {
-      const pt = await deviceRatchetDecrypt(args.recipientUserId, me, encryptedBody);
-      if (pt !== null) {
-        recordHit('ratchet-v3');
-        return { ok: true, plaintext: pt, via: 'ratchet-v3' };
-      }
-    } catch { /* fall through */ }
-  }
-
-  // X3DH-bootstrap and deviceWrap fallbacks are handled by the existing
-  // `tryReadDeviceCopy` pipeline (which loops over every device-copy row
-  // and tries every (priv, peerPub) candidate). We delegate so we keep ONE
-  // implementation for those legacy paths.
+  // X3DH v5 bootstrap copies are handled by the existing `tryReadDeviceCopy`
+  // pipeline, which keeps one implementation for device-copy recovery.
   if (args.messageId) {
     try {
       const pt = await tryReadDeviceCopy(args.messageId, args.senderUserId);
@@ -158,10 +140,6 @@ export function isKnownLegacyFormat(encryptedBody: string): boolean {
   return (
     encryptedBody.startsWith(RATCHET_PREFIX_V5) ||
     encryptedBody.startsWith(RATCHET_PREFIX_V4) ||
-    encryptedBody.startsWith(RATCHET_PREFIX_V3) ||
-    encryptedBody.startsWith('x3dh1.') ||
-    encryptedBody.startsWith('x3dh2.') ||
-    /^[A-Za-z0-9+/=]+\.[A-Za-z0-9+/=]+$/.test(encryptedBody) ||  // device-wrap iv.ct
     encryptedBody.startsWith('{')                                  // JSON envelope
   );
 }

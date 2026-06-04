@@ -85,7 +85,7 @@ function makeChannel(initial: Partial<FakeChannel> = {}): FakeChannel {
     ready: initial.ready ?? false,
     encrypt:
       initial.encrypt ??
-      (async (pt: string) => `x3dh4.sess.AAAA.0.0.IV.${btoa(unescape(encodeURIComponent(pt)))}`),
+      (async (pt: string) => `x3dh5.sess.AAAA.0.0.IV.${btoa(unescape(encodeURIComponent(pt)))}`),
     send: initial.send ?? (async () => `srv-${Math.random().toString(36).slice(2, 8)}`),
     sentBodies: [],
     sentLocalIds: [],
@@ -106,8 +106,8 @@ function registerChannel(ch: FakeChannel, handlerId = 'h-default') {
       // to regress. Failing here means the queue would have leaked plaintext
       // or sent before the channel was secure.
       if (!ch.ready) throw new Error('INVARIANT: send() called while channel not ready');
-      if (!m.encryptedBody || !m.encryptedBody.startsWith('x3dh4.')) {
-        throw new Error('INVARIANT: send() called without v4 ciphertext');
+      if (!m.encryptedBody || !m.encryptedBody.startsWith('x3dh5.')) {
+        throw new Error('INVARIANT: send() called without v5 ciphertext');
       }
       const id = await ch.send(m);
       ch.sentBodies.push(m.encryptedBody);

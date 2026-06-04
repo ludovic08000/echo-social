@@ -48,6 +48,28 @@ export interface X3DHInitialMessage {
   kemCt?: string;
 }
 
+export type DevicePrekeyBundleErrorCode = 'DEVICE_PREKEY_BUNDLE_UNAVAILABLE' | 'DEVICE_SPK_SIGNATURE_INVALID';
+
+export class DevicePrekeyBundleError extends Error {
+  code: DevicePrekeyBundleErrorCode;
+  peerUserId: string;
+  peerDeviceId: string;
+  spkId?: number;
+
+  constructor(code: DevicePrekeyBundleErrorCode, peerUserId: string, peerDeviceId: string, spkId?: number) {
+    super(code);
+    this.name = 'DevicePrekeyBundleError';
+    this.code = code;
+    this.peerUserId = peerUserId;
+    this.peerDeviceId = peerDeviceId;
+    this.spkId = spkId;
+  }
+}
+
+export function isDevicePrekeyBundleError(value: unknown, code?: DevicePrekeyBundleErrorCode): value is DevicePrekeyBundleError {
+  return value instanceof DevicePrekeyBundleError && (!code || value.code === code);
+}
+
 const X3DH_INFO = 'ForSure-X3DH-v1';
 const X3DH_SALT_BYTES = 32;
 const SPK_ROTATION_DAYS = 7;
@@ -480,7 +502,10 @@ export async function peekDeviceSignedPrekey(peerUserId: string, peerDeviceId: s
   const material = await fetchDevicePrekeyMaterial(peerUserId, peerDeviceId);
   if (!material) return null;
   const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature, { source: 'peekDeviceSignedPrekey', identityKeyB64: material.identityKey, userId: peerUserId, deviceId: peerDeviceId, spkId: material.spkId });
-  if (!sigValid) { console.warn('[X3DH-DEV] device SPK signature INVALID', { user_id: peerUserId, device_id: peerDeviceId, spk_id: material.spkId, valid: false }); return null; }
+  if (!sigValid) {
+    console.warn('[X3DH-DEV] device SPK signature INVALID', { user_id: peerUserId, device_id: peerDeviceId, spk_id: material.spkId, valid: false });
+    throw new DevicePrekeyBundleError('DEVICE_SPK_SIGNATURE_INVALID', peerUserId, peerDeviceId, material.spkId);
+  }
   return { signedPrekeyId: material.spkId };
 }
 
@@ -488,7 +513,10 @@ export async function fetchPrekeyBundleForDevice(peerUserId: string, peerDeviceI
   const material = await fetchDevicePrekeyMaterial(peerUserId, peerDeviceId);
   if (!material) return null;
   const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature, { source: 'fetchPrekeyBundleForDevice', identityKeyB64: material.identityKey, userId: peerUserId, deviceId: peerDeviceId, spkId: material.spkId });
-  if (!sigValid) { console.warn('[X3DH-DEV] ⛔ device SPK signature INVALID', { user_id: peerUserId, device_id: peerDeviceId, spk_id: material.spkId, valid: false }); return null; }
+  if (!sigValid) {
+    console.warn('[X3DH-DEV] device SPK signature INVALID', { user_id: peerUserId, device_id: peerDeviceId, spk_id: material.spkId, valid: false });
+    throw new DevicePrekeyBundleError('DEVICE_SPK_SIGNATURE_INVALID', peerUserId, peerDeviceId, material.spkId);
+  }
   const opk = await claimPeerDeviceOPK(peerUserId, peerDeviceId);
   return { identityKey: material.identityKey, signingKey: material.signingKey, signedPrekey: material.publicKey, signedPrekeySignature: material.signature, signedPrekeyId: material.spkId, oneTimePrekey: opk?.publicKey, oneTimePrekeyId: opk?.opkId };
 }
@@ -558,10 +586,11 @@ export async function x3dhRespondForDevice(myKeys: IdentityKeyPair, myUserId: st
   let dh4: ArrayBuffer | null = null;
   if (initialMessage.opkId !== undefined) {
     const opkPriv = await loadDeviceOPKPrivate(myUserId, myDeviceId, initialMessage.opkId);
-    if (opkPriv) {
-      dh4 = await hardCrypto.deriveBits({ name: 'X25519', public: aliceEK } as any, opkPriv, 256);
-      await deleteDeviceOPKPrivate(myUserId, myDeviceId, initialMessage.opkId);
+    if (!opkPriv) {
+      throw new Error('X3DH_OPK_PRIVATE_MISSING');
     }
+    dh4 = await hardCrypto.deriveBits({ name: 'X25519', public: aliceEK } as any, opkPriv, 256);
+    await deleteDeviceOPKPrivate(myUserId, myDeviceId, initialMessage.opkId);
   }
   const filler = new Uint8Array(32).fill(0xFF);
   const dhConcat = dh4 ? concatBuffers(filler.buffer as ArrayBuffer, dh1, dh2, dh3, dh4) : concatBuffers(filler.buffer as ArrayBuffer, dh1, dh2, dh3);

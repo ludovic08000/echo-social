@@ -167,6 +167,7 @@ class MessageQueueManager {
   private async ensureLegacyScrub(): Promise<void> {
     if (this.legacyPlaintextScrubbed) return;
     this.legacyPlaintextScrubbed = true;
+
     try {
       const all = await this.dbGetAllRaw();
       const leaked = all.filter((msg) => typeof msg.plaintext === 'string' && msg.plaintext.length > 0);
@@ -322,11 +323,25 @@ class MessageQueueManager {
       });
     };
     if (this.processing.has(msg.localId)) { trace('SKIP (already processing localId)'); return; }
-    if (this.processingConversations.has(msg.conversationId)) { trace('SKIP (conv busy)'); return; }
+    if (this.processingConversations.has(msg.conversationId)) {
+      trace('SKIP (conv busy) - defer');
+      if (!this.retryTimers.has(msg.localId)) {
+        const timer = setTimeout(async () => {
+          this.retryTimers.delete(msg.localId);
+          const latest = await this.dbGet(msg.localId);
+          if (!latest || latest.status === 'sent') return;
+          this.processMessage(latest);
+        }, 75);
+        this.retryTimers.set(msg.localId, timer);
+      }
+      return;
+    }
     trace('▶ processMessage START');
     this.processing.add(msg.localId);
     this.processingConversations.add(msg.conversationId);
     this.clearRetryTimer(msg.localId);
+
+    let sentNow = false;
 
     try {
       if (!msg.encryptedBody) {
@@ -365,8 +380,7 @@ class MessageQueueManager {
           trace('  encrypt() returned', { tookMs: Date.now() - t0, ctLen: withLocalId?.length ?? 0, prefix: withLocalId?.slice(0, 8) });
 
           const looksCiphertext = !!withLocalId && withLocalId !== plaintext && (
-            withLocalId.startsWith('{') || withLocalId.startsWith('x3dh5.') || withLocalId.startsWith('x3dh4.') ||
-            withLocalId.startsWith('x3dh3.') || withLocalId.startsWith('x3dh2.') || withLocalId.startsWith('x3dh1.')
+            withLocalId.startsWith('{') || withLocalId.startsWith('x3dh5.') || withLocalId.startsWith('x3dh4.')
           );
           if (!looksCiphertext) {
             trace('✗ encrypt output is NOT ciphertext — schedule retry');
@@ -481,6 +495,7 @@ class MessageQueueManager {
         this.dbDelete(msg.localId).catch(() => {});
         trace('🏁 message removed from local queue (realtime takes over)');
         this.notifyListeners(msg.conversationId);
+        sentNow = true;
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         trace('✗ STEP 2 send THROW', { errMsg, retryCount: msg.retryCount, maxRetries: msg.maxRetries });
@@ -499,10 +514,13 @@ class MessageQueueManager {
       queueMicrotask(async () => {
         try {
           const queued = await this.dbGetByConversation(msg.conversationId);
+          const drainableStatuses: OutboundMessageStatus[] = sentNow
+            ? ['pending_local', 'waiting_secure_channel', 'retry_pending']
+            : ['pending_local'];
           const next = queued
-            .filter(m => m.status === 'pending_local')
+            .filter(m => drainableStatuses.includes(m.status))
             .sort((a, b) => a.createdAt - b.createdAt)
-            .find(m => !this.processing.has(m.localId) && !this.retryTimers.has(m.localId));
+            .find(m => !this.processing.has(m.localId) && (sentNow || !this.retryTimers.has(m.localId)));
           if (next) void this.processMessage(next);
         } catch {}
       });

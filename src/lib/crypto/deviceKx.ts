@@ -1,11 +1,10 @@
 /**
  * Per-device X25519 key exchange pair (true cryptographic isolation per device).
  *
- * Until now, `user_devices.device_public_key` was published as the user's
- * SHARED identityKey, meaning the `deviceWrap` fallback derived ECDH from a
- * key common to every device of the same user. This module fixes that by
- * generating a *dedicated* X25519 keypair per device, stored locally in
- * IndexedDB and never leaving the browser.
+ * `user_devices.device_public_key` is a dedicated X25519 keypair per device,
+ * stored locally in IndexedDB and never leaving the browser as private
+ * material. Pairwise messaging now uses authenticated X3DH/Double Ratchet v5;
+ * the retired raw device wrapper must not be reintroduced.
  *
  * Storage model — strictly additive:
  *   IndexedDB store `identity-keys` (existing), key = `device-kx::<deviceId>`

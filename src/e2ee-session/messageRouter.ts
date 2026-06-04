@@ -9,7 +9,6 @@
  * - unreadable old payloads are dropped once, never retried forever.
  */
 import {
-  RATCHET_PREFIX_V3,
   RATCHET_PREFIX_V4,
   RATCHET_PREFIX_V5,
   ratchetDecrypt as deviceRatchetDecrypt,
@@ -89,8 +88,7 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
 
   if (
     encryptedBody.startsWith(RATCHET_PREFIX_V5) ||
-    encryptedBody.startsWith(RATCHET_PREFIX_V4) ||
-    encryptedBody.startsWith(RATCHET_PREFIX_V3)
+    encryptedBody.startsWith(RATCHET_PREFIX_V4)
   ) {
     try {
       const pt = await deviceRatchetDecrypt(recipientUserId, me, encryptedBody);
@@ -102,9 +100,7 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
           plaintext: pt,
           via: encryptedBody.startsWith(RATCHET_PREFIX_V5)
             ? 'ratchet-v5'
-            : encryptedBody.startsWith(RATCHET_PREFIX_V4)
-              ? 'ratchet-v4'
-              : 'ratchet-v3',
+            : 'ratchet-v4',
         };
       }
     } catch {

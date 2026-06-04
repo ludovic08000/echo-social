@@ -5,7 +5,7 @@
  * ratchet prefixes and let v5 (`x3dh5.`) envelopes silently fall through
  * every decoder, leaving the message displayed as ciphertext.
  *
- * The recipient-side fan-out path MUST route v3, v4 AND v5 device-pair
+ * The recipient-side fan-out path MUST route v4 AND v5 device-pair
  * envelopes to `ratchetDecryptWithSession`. Anything else regresses
  * cross-platform first contact.
  */
@@ -24,7 +24,6 @@ vi.mock('@/lib/crypto/deviceRatchet', () => ({
   establishDeviceSession: vi.fn(),
   getSessionPeerSpkId: vi.fn(),
   invalidateDeviceSession: vi.fn(),
-  RATCHET_PREFIX_V3: 'x3dh3.',
   RATCHET_PREFIX_V4: 'x3dh4.',
   RATCHET_PREFIX_V5: 'x3dh5.',
 }));
@@ -52,11 +51,6 @@ vi.mock('@/integrations/supabase/client', () => ({
 vi.mock('@/lib/messaging/currentDevice', () => ({
   getCurrentDeviceId: () => 'device-ios',
   isDeviceIdTemporary: () => false,
-}));
-
-vi.mock('@/lib/messaging/deviceWrap', () => ({
-  wrapPlaintextForDevice: vi.fn(),
-  unwrapPlaintextForDevice: vi.fn(),
 }));
 
 vi.mock('@/lib/messaging/deviceCopyRetryRequest', () => ({
@@ -141,7 +135,7 @@ describe('tryDecryptCopy — cross-platform v5 envelope routing', () => {
     expect(ratchetDecryptWithSession).toHaveBeenCalledTimes(1);
   });
 
-  it('still routes legacy v3 (`x3dh3.`) copies to ratchetDecryptWithSession', async () => {
+  it('does not route disabled v3 (`x3dh3.`) copies through the v5/v4 path', async () => {
     ratchetDecryptWithSession.mockResolvedValue('hello v3');
 
     const pt = await tryDecryptDeviceTargetedBody(
@@ -154,8 +148,8 @@ describe('tryDecryptCopy — cross-platform v5 envelope routing', () => {
       ME.deviceId,
     );
 
-    expect(pt).toBe('hello v3');
-    expect(ratchetDecryptWithSession).toHaveBeenCalledTimes(1);
+    expect(pt).toBeNull();
+    expect(ratchetDecryptWithSession).not.toHaveBeenCalled();
   });
 
   it('returns null (no misroute) when ratchet decrypt fails on v5 copy', async () => {
