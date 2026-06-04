@@ -49,6 +49,7 @@ interface DeviceEncryptTargetInput {
   recipientDevicePublicKey: string;
   plaintext: string;
   forceFreshSession?: boolean;
+  /** @deprecated Kept for type-compat; ignored. v5-only outbound. */
   forceX3DH?: boolean;
   useOneTimePrekey?: boolean;
 }
