@@ -151,8 +151,16 @@ export function rotateCurrentDeviceId(reason = 'revoked-device'): string {
     next: next.slice(0, 8),
   });
 
-  return persistEverywhere(next);
+  // Persist synchronously to memory + sync stores first. Native secure stores
+  // (Keychain on iOS, Keystore on Android) are written fire-and-forget by
+  // `persistEverywhere`. The next `hydrateDeviceId()` call races against
+  // those writes; to stop the OLD revoked id from resurfacing, mark the
+  // hydration cache as already resolved with the new id.
+  persistEverywhere(next);
+  hydrationPromise = Promise.resolve(next);
+  return next;
 }
+
 
 export function getCurrentDeviceId(): string {
   if (memoryDeviceId) return memoryDeviceId;
