@@ -59,7 +59,7 @@ export async function processDeviceCopyRetryRequests(_limit = 20): Promise<Retry
     if (!user) return result;
 
     const { data, error } = await (supabase as any).rpc("list_pending_device_copy_retries", {
-      p_limit: limit,
+      p_limit: _limit,
     });
 
     if (error) {
