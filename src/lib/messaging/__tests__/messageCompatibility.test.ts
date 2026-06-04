@@ -38,6 +38,17 @@ describe('messageCompatibility', () => {
     expect(isUnsupportedEncryptedBody(body)).toBe(false);
   });
 
+  it('accepts secure-pipeline wrapped ratchet envelopes as recoverable crypto', () => {
+    const body = JSON.stringify({
+      fs_secure_pipeline: 1,
+      body: JSON.stringify(baseRatchetEnvelope),
+      meta: { identityEpoch: 1, payload: { localId: 'local-test' } },
+    });
+
+    expect(isKnownCryptoEnvelopeBody(body)).toBe(true);
+    expect(isUnsupportedEncryptedBody(body)).toBe(false);
+  });
+
   it('still flags malformed crypto JSON as unsupported', () => {
     const body = JSON.stringify({
       encryptionMode: 'ratchet',
