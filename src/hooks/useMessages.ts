@@ -8,6 +8,7 @@ import { isCryptoJsonBody, isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBo
 import { pendingMessageQueue, routeIncoming } from '@/e2ee-session';
 import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { processDeviceCopyRetryRequests } from '@/lib/messaging/deviceCopyRetryProcessor';
+import { clearNegativeCache } from '@/components/messages/decryptionService';
 
 async function hideMessagesForUser(userId: string, messageIds: string[]) {
   if (!userId || messageIds.length === 0) return;
@@ -422,6 +423,20 @@ export function useMessages(conversationId: string) {
               }
             }).catch(() => {});
           }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'message_device_copies',
+          filter: `recipient_user_id=eq.${user.id}`,
+        },
+        () => {
+          clearNegativeCache();
+          queryClient.invalidateQueries({ queryKey: messagesKey(conversationId, user.id) });
+          try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
         }
       )
       .on(

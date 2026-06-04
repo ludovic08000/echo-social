@@ -48,6 +48,8 @@ interface DeviceEncryptTargetInput {
   recipientDeviceId: string;
   recipientDevicePublicKey: string;
   plaintext: string;
+  forceFreshSession?: boolean;
+  useOneTimePrekey?: boolean;
 }
 
 const X3DH_PREFIX_V1 = 'x3dh1.';
@@ -118,6 +120,7 @@ async function x3dhWrapForDevice(
   senderUserId: string,
   recipientUserId: string,
   recipientDeviceId: string,
+  options: { useOneTimePrekey?: boolean } = {},
 ): Promise<string | null> {
   if (isKnownInvalidDeviceId(recipientDeviceId)) return null;
   try {
@@ -125,6 +128,10 @@ async function x3dhWrapForDevice(
     if (!bundle) {
       markInvalidDeviceId(recipientDeviceId);
       return null;
+    }
+    if (options.useOneTimePrekey === false) {
+      delete bundle.oneTimePrekey;
+      delete bundle.oneTimePrekeyId;
     }
 
     const myKeys = await getOrCreateIdentityKeys(senderUserId);
@@ -243,6 +250,10 @@ export async function encryptPlaintextForDeviceTarget(
 
   const senderDeviceId = input.senderDeviceId ?? getCurrentDeviceId();
 
+  if (input.forceFreshSession) {
+    await invalidateDeviceSession(input.senderUserId, senderDeviceId, input.recipientUserId, input.recipientDeviceId).catch(() => {});
+  }
+
   try {
     const cachedSpkId = await getSessionPeerSpkId(
       input.senderUserId,
@@ -299,7 +310,7 @@ export async function encryptPlaintextForDeviceTarget(
     });
   }
 
-  if (!encrypted) encrypted = await x3dhWrapForDevice(input.plaintext, input.senderUserId, input.recipientUserId, input.recipientDeviceId);
+  if (!encrypted) encrypted = await x3dhWrapForDevice(input.plaintext, input.senderUserId, input.recipientUserId, input.recipientDeviceId, { useOneTimePrekey: input.useOneTimePrekey });
 
   if (!encrypted) {
     try {
