@@ -7305,7 +7305,7 @@ export type Database = {
           p_request_id: string
           p_sender_device_id: string
         }
-        Returns: boolean
+        Returns: Json
       }
       complete_device_link_request: {
         Args: { p_requester_device_id: string; p_token_hash: string }
@@ -7684,8 +7684,8 @@ export type Database = {
         }[]
       }
       mark_device_copy_retry_failed: {
-        Args: { p_error: string; p_request_id: string }
-        Returns: boolean
+        Args: { p_error?: string; p_request_id: string }
+        Returns: Json
       }
       mark_device_copy_retry_request: {
         Args: { p_error?: string; p_request_id: string; p_status: string }
