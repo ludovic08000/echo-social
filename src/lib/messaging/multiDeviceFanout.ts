@@ -408,9 +408,8 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
 
 interface TryReadDeviceCopyOptions { requestRetry?: boolean; }
 
-export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?: string, options: TryReadDeviceCopyOptions = {}): Promise<string | null> {
+export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?: string, _options: TryReadDeviceCopyOptions = {}): Promise<string | null> {
   const myDeviceId = getCurrentDeviceId();
-  const shouldRequestRetry = options.requestRetry !== false;
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
@@ -423,7 +422,6 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
     } else {
       const { data: allCopies } = await supabase.rpc('get_device_copies_for_user', { p_message_id: messageId });
       if (!allCopies || allCopies.length === 0) {
-        if (shouldRequestRetry && expectedSenderUserId) void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
         return null;
       }
       rows = allCopies as CopyRow[];
@@ -435,7 +433,6 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       rows = rows.filter(row => row.sender_user_id === expectedSenderUserId);
       if (before !== rows.length) logCryptoError({ severity: 'warning', context: 'decrypt', errorCode: 'DEVICE_COPY_SENDER_MISMATCH', errorMessage: 'Rejected device copies whose sender does not match parent message', myDeviceId, metadata: { messageId, expectedSenderUserId, rejected: before - rows.length } });
       if (rows.length === 0) {
-        if (shouldRequestRetry) void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
         return null;
       }
     }
@@ -445,14 +442,13 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       const pt = await tryDecryptCopy(row, user.id, targetDeviceId);
       if (pt !== null) return pt;
     }
-    if (shouldRequestRetry && expectedSenderUserId) void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
     return null;
   } catch (e) {
     logCryptoException('decrypt', e, { severity: 'error', myDeviceId, metadata: { messageId, stage: 'tryReadDeviceCopy' } });
-    if (shouldRequestRetry && expectedSenderUserId) void requestDeviceCopyRetry({ messageId, senderUserId: expectedSenderUserId });
     return null;
   }
 }
+
 
 export async function tryDecryptDeviceTargetedBody(row: { encrypted_body: string; sender_user_id: string; sender_device_id: string }, userId: string, myDeviceId: string): Promise<string | null> {
   return tryDecryptCopy(row, userId, myDeviceId);
