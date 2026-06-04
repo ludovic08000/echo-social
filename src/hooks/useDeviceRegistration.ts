@@ -146,13 +146,19 @@ export function useDeviceRegistration() {
           }
 
           if (!localKx) {
-            console.warn('[useDeviceRegistration] server device key exists but local material is still unavailable — waiting silently for restore');
+            console.warn('[useDeviceRegistration] server device key exists but local material is still unavailable — rotating device id');
             try {
               window.dispatchEvent(new CustomEvent('forsure:e2ee-silent-restore-retry', {
                 detail: { source: 'device-registration', deviceId, reason: 'local-missing' },
               }));
             } catch {}
-            ranRef.current = false; // allow retry once user has restored
+            if (attempt < 2) {
+              rotateCurrentDeviceId('missing-local-device-kx');
+              ranRef.current = false;
+              inFlightRef.current = false;
+              return registerCurrentDevice('rotated-missing-local-kx', attempt + 1);
+            }
+            ranRef.current = false;
             return;
           }
 
@@ -164,7 +170,7 @@ export function useDeviceRegistration() {
             // specific one. Anything else is a hard mismatch → BLOCK.
             const isLegacyShared = serverDevicePublicKey === bundle.identityKey;
             if (!isLegacyShared) {
-              console.warn('[useDeviceRegistration] server/local device key mismatch — preserving server key and waiting silently for restore');
+              console.warn('[useDeviceRegistration] server/local device key mismatch — rotating device id');
               try {
                 window.dispatchEvent(new CustomEvent('forsure:e2ee-silent-restore-retry', {
                   detail: {
@@ -174,6 +180,12 @@ export function useDeviceRegistration() {
                   },
                 }));
               } catch {}
+              if (attempt < 2) {
+                rotateCurrentDeviceId('device-kx-mismatch');
+                ranRef.current = false;
+                inFlightRef.current = false;
+                return registerCurrentDevice('rotated-device-kx-mismatch', attempt + 1);
+              }
               ranRef.current = false;
               return;
             }
