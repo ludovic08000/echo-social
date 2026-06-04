@@ -62,8 +62,29 @@ const KNOWN_INVALID_DEVICE_IDS = new Set<string>([
   '49cfdeab59355de3051925b4f09fba75',
   '92585130870cedf210af1019379dbc61',
   '450c0cd9af35813c8a99ec5bc0f39ab8',
+]);
+
+// Device IDs that were previously blocklisted by mistake — purge from any
+// persisted local cache so live iOS / web installs stop being skipped during
+// fan-out. Safe to extend; entries here are *removed* from the user's cache.
+const FORMERLY_INVALID_DEVICE_IDS = new Set<string>([
   '84aaa52143235807214bf3aa161dd03a',
 ]);
+
+try {
+  if (typeof localStorage !== 'undefined') {
+    const raw = localStorage.getItem(INVALID_DEVICE_STORE_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        const cleaned = arr.filter((id: unknown) => typeof id === 'string' && !FORMERLY_INVALID_DEVICE_IDS.has(id));
+        if (cleaned.length !== arr.length) {
+          localStorage.setItem(INVALID_DEVICE_STORE_KEY, JSON.stringify(cleaned));
+        }
+      }
+    }
+  }
+} catch {}
 
 function loadInvalidDeviceCache(): Set<string> {
   const out = new Set(KNOWN_INVALID_DEVICE_IDS);
