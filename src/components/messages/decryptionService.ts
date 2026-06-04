@@ -16,7 +16,7 @@
  * the neutral placeholder. No console noise on the hot path either.
  */
 import { hasMediaKey, parseMediaMessage, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
-import { isMultiDeviceEnvelopeBody, isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import { isMultiDeviceEnvelopeBody, isSecurePipelineEnvelopeBody, isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import {
   loadPlaintextForCiphertext,
   savePlaintextForCiphertext,
@@ -37,7 +37,7 @@ export interface DecryptionOutcome {
 }
 
 export function looksEncrypted(body: string): boolean {
-  return isStrictRatchetEnvelopeBody(body) || isMultiDeviceEnvelopeBody(body);
+  return isStrictRatchetEnvelopeBody(body) || isMultiDeviceEnvelopeBody(body) || isSecurePipelineEnvelopeBody(body);
 }
 
 /** Bounded LRU plaintext cache shared across mounted bubbles. */
