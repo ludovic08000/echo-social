@@ -76,6 +76,7 @@ import {
 } from '@/lib/crypto/fingerprintTracker';
 import { isPeerSPKStale } from '@/lib/crypto/spkFreshness';
 import { isCryptoJsonBody, isStrictRatchetEnvelopeBody, isUnsupportedEncryptedBody } from '@/lib/messaging/messageCompatibility';
+import { unwrapSecurePipelineEnvelope } from '@/lib/crypto/secureMessagePipeline';
 import { isSenderKeyWire, parseSKDM, SENDER_KEY_PREFIX } from '@/lib/crypto/senderKeys';
 import {
   installSKDM,
@@ -1125,10 +1126,12 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       }
 
       try {
-        const parsed = hardGlobals.jsonParse(body);
+        const secureWrapped = unwrapSecurePipelineEnvelope(body);
+        const decryptBody = secureWrapped?.body || body;
+        const parsed = hardGlobals.jsonParse(decryptBody);
 
-        if (isStrictRatchetEnvelopeBody(body)) {
-          return await decryptRatchetMessage(parsed, body);
+        if (isStrictRatchetEnvelopeBody(decryptBody)) {
+          return await decryptRatchetMessage(parsed, decryptBody);
         }
 
         if (conversationId) {

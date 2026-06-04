@@ -22,9 +22,26 @@ export interface MultiDeviceEnvelopeShape {
   ts: number;
 }
 
+export interface SecurePipelineEnvelopeShape {
+  fs_secure_pipeline: 1;
+  body: string;
+  meta?: unknown;
+}
+
+export function isSecurePipelineEnvelopeBody(body: string | null | undefined): body is string {
+  if (!body || typeof body !== 'string' || !body.startsWith('{')) return false;
+
+  try {
+    const parsed = JSON.parse(body) as Partial<SecurePipelineEnvelopeShape>;
+    return parsed.fs_secure_pipeline === 1 && typeof parsed.body === 'string' && parsed.body.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function isCryptoJsonBody(body: string | null | undefined): boolean {
   if (!body || typeof body !== 'string' || !body.startsWith('{')) return false;
-  return body.includes('"ct"') || body.includes('"hdr"') || body.includes('"kem"') || body.includes('"encryptionMode"');
+  return body.includes('"ct"') || body.includes('"hdr"') || body.includes('"kem"') || body.includes('"encryptionMode"') || body.includes('"fs_secure_pipeline"');
 }
 
 export function isStrictRatchetEnvelopeBody(body: string | null | undefined): body is string {
@@ -81,6 +98,10 @@ export function isKnownCryptoEnvelopeBody(body: string | null | undefined): bool
   try {
     const parsed = JSON.parse(body);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+
+    if (parsed.fs_secure_pipeline === 1 && typeof parsed.body === 'string') {
+      return true;
+    }
 
     if (isStrictRatchetEnvelopeBody(body)) return true;
     if (isMultiDeviceEnvelopeBody(body)) return true;
