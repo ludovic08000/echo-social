@@ -182,7 +182,8 @@ export function useMessageQueue(
     // Long-life encrypted archive copy (zero-access, wrapped under account master key).
     // Allows any future device that can unlock the account to re-read this message.
     let archiveBody: string | null = null;
-    if (!isSpecial && encryptedSuccessfully) {
+    const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
+    if (!isSpecial && (encryptedSuccessfully || encryptionWasRequired)) {
       try {
         archiveBody = await encryptArchive(sanitized, conversationId, user.id);
       } catch {
