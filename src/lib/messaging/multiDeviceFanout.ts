@@ -5,7 +5,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
 import { wrapPlaintextForDevice, unwrapPlaintextForDevice } from './deviceWrap';
-import { requestDeviceCopyRetry } from './deviceCopyRetryRequest';
+// requestDeviceCopyRetry removed — refanout in messageRouter is the single retry path
 import {
   fetchPrekeyBundleForDevice,
   peekDeviceSignedPrekey,
