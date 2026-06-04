@@ -549,7 +549,7 @@ async function decryptV4WithStored(
     void logCryptoError({
       severity: 'error',
       context: 'decrypt',
-      errorCode: 'E_DECRYPT_V4',
+      errorCode: requireAAD ? 'E_DECRYPT_V5' : 'E_DECRYPT_V4',
       errorMessage: err instanceof Error ? err.message : String(err),
       myDeviceId: key.split('::')[1] ?? 'unknown',
       metadata: { sessionId, Ns, PN, requireAAD },
