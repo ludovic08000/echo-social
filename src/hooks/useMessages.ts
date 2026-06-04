@@ -427,6 +427,20 @@ export function useMessages(conversationId: string) {
       .on(
         'postgres_changes',
         {
+          event: '*',
+          schema: 'public',
+          table: 'message_device_copies',
+          filter: `recipient_user_id=eq.${user.id}`,
+        },
+        () => {
+          clearNegativeCache();
+          queryClient.invalidateQueries({ queryKey: messagesKey(conversationId, user.id) });
+          try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
           event: 'DELETE',
           schema: 'public',
           table: 'messages',
