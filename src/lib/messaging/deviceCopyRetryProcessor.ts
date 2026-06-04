@@ -95,6 +95,7 @@ export async function processDeviceCopyRetryRequests(limit = 20): Promise<RetryP
           recipientDevicePublicKey: row.requester_device_public_key,
           plaintext,
           forceFreshSession: true,
+          forceX3DH: true,
           useOneTimePrekey: false,
         });
 

@@ -11,6 +11,7 @@
 import {
   RATCHET_PREFIX_V3,
   RATCHET_PREFIX_V4,
+  RATCHET_PREFIX_V5,
   ratchetDecrypt as deviceRatchetDecrypt,
 } from '@/lib/crypto/deviceRatchet';
 import { validateInboundSecureEnvelope } from '@/lib/crypto/secureMessagePipeline';
@@ -80,6 +81,7 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
   }
 
   if (
+    encryptedBody.startsWith(RATCHET_PREFIX_V5) ||
     encryptedBody.startsWith(RATCHET_PREFIX_V4) ||
     encryptedBody.startsWith(RATCHET_PREFIX_V3)
   ) {
@@ -91,7 +93,11 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
         return {
           ok: true,
           plaintext: pt,
-          via: encryptedBody.startsWith(RATCHET_PREFIX_V4) ? 'ratchet-v4' : 'ratchet-v3',
+          via: encryptedBody.startsWith(RATCHET_PREFIX_V5)
+            ? 'ratchet-v5'
+            : encryptedBody.startsWith(RATCHET_PREFIX_V4)
+              ? 'ratchet-v4'
+              : 'ratchet-v3',
         };
       }
     } catch {

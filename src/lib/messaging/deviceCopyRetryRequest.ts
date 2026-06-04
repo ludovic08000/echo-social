@@ -22,7 +22,7 @@ export async function requestDeviceCopyRetry(input: RetryRequestInput): Promise<
   lastRequestAt.set(key, now);
 
   try {
-    const { error } = await (supabase as any).rpc("request_device_copy_retry", {
+    const { data, error } = await (supabase as any).rpc("request_device_copy_retry", {
       p_message_id: input.messageId,
       p_sender_user_id: input.senderUserId,
       p_requester_device_id: requesterDeviceId,
@@ -34,6 +34,19 @@ export async function requestDeviceCopyRetry(input: RetryRequestInput): Promise<
         context: 'decrypt',
         errorCode: 'DEVICE_COPY_RETRY_REQUEST_FAILED',
         errorMessage: error.message,
+        myDeviceId: requesterDeviceId,
+        metadata: { messageId: input.messageId, senderUserId: input.senderUserId },
+      });
+      return false;
+    }
+
+    const result = data as { ok?: boolean; code?: string } | null;
+    if (result?.ok === false || result?.code === 'RETRY_BUDGET_EXHAUSTED' || result?.code === 'RETRY_ALREADY_DONE') {
+      logCryptoError({
+        severity: 'info',
+        context: 'decrypt',
+        errorCode: result.code || 'DEVICE_COPY_RETRY_NOT_QUEUED',
+        errorMessage: 'Fresh device-copy retry was not queued',
         myDeviceId: requesterDeviceId,
         metadata: { messageId: input.messageId, senderUserId: input.senderUserId },
       });

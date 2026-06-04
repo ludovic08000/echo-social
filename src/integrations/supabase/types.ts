@@ -7876,7 +7876,7 @@ export type Database = {
           p_requester_device_id: string
           p_sender_user_id: string
         }
-        Returns: string
+        Returns: Json
       }
       reset_backup_pin_attempts: {
         Args: { _user_id: string }

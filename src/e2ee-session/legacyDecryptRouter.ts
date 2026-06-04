@@ -4,6 +4,7 @@
  * readable forever. We never delete a decoder.
  *
  * Supported formats (most recent first):
+ *   - `x3dh5.` Double Ratchet w/ DH + AAD              (deviceRatchet v5)
  *   - `x3dh4.` Double Ratchet w/ DH ratchet            (deviceRatchet v4)
  *   - `x3dh3.` legacy single-secret KDF chain          (deviceRatchet v3)
  *   - `x3dh2.` X3DH bootstrap with one-time prekey     (multiDeviceFanout)
@@ -18,6 +19,7 @@
 import {
   RATCHET_PREFIX_V3,
   RATCHET_PREFIX_V4,
+  RATCHET_PREFIX_V5,
   ratchetDecrypt as deviceRatchetDecrypt,
 } from '@/lib/crypto/deviceRatchet';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
@@ -43,8 +45,9 @@ import { supabase } from '@/integrations/supabase/client';
  */
 export const LEGACY_ROUTER_EXTINCTION_DATE = '2026-09-01';
 
-type LegacyHitKey = 'ratchet-v4' | 'ratchet-v3' | 'legacy-router';
+type LegacyHitKey = 'ratchet-v5' | 'ratchet-v4' | 'ratchet-v3' | 'legacy-router';
 const HITS: Record<LegacyHitKey, { count: number; last: string | null }> = {
+  'ratchet-v5': { count: 0, last: null },
   'ratchet-v4': { count: 0, last: null },
   'ratchet-v3': { count: 0, last: null },
   'legacy-router': { count: 0, last: null },
@@ -86,7 +89,16 @@ export async function legacyDecryptDeviceCopy(args: {
   const { encryptedBody } = args;
   const me = selfDeviceId();
 
-  // v3 / v4 device-pair ratchet — fastest, handles 99% of recent traffic.
+  // v3 / v4 / v5 device-pair ratchet — fastest, handles recent traffic.
+  if (encryptedBody.startsWith(RATCHET_PREFIX_V5)) {
+    try {
+      const pt = await deviceRatchetDecrypt(args.recipientUserId, me, encryptedBody);
+      if (pt !== null) {
+        recordHit('ratchet-v5');
+        return { ok: true, plaintext: pt, via: 'ratchet-v5' };
+      }
+    } catch { /* fall through */ }
+  }
   if (encryptedBody.startsWith(RATCHET_PREFIX_V4)) {
     try {
       const pt = await deviceRatchetDecrypt(args.recipientUserId, me, encryptedBody);
@@ -144,6 +156,7 @@ export async function legacyDecryptByMessageId(messageId: string, expectedSender
  */
 export function isKnownLegacyFormat(encryptedBody: string): boolean {
   return (
+    encryptedBody.startsWith(RATCHET_PREFIX_V5) ||
     encryptedBody.startsWith(RATCHET_PREFIX_V4) ||
     encryptedBody.startsWith(RATCHET_PREFIX_V3) ||
     encryptedBody.startsWith('x3dh1.') ||
