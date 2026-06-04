@@ -15,7 +15,6 @@
 import {
   ratchetDecrypt,
   ratchetDecryptWithSession,
-  RATCHET_PREFIX_V3,
   RATCHET_PREFIX_V4,
   RATCHET_PREFIX_V5,
   listKnownSessionIds,
@@ -24,15 +23,13 @@ import { listDevicesForUser, selfDeviceId } from './deviceRegistry';
 import { legacyDecryptByMessageId } from './legacyDecryptRouter';
 import type { DecryptResult, UserId } from './types';
 
-/** Extract the sessionId from a v3/v4/v5 ciphertext header. Returns null on parse failure. */
+/** Extract the sessionId from a v4/v5 ciphertext header. Returns null on parse failure. */
 function readSessionIdFromHeader(encryptedBody: string): string | null {
   const prefix = encryptedBody.startsWith(RATCHET_PREFIX_V5)
     ? RATCHET_PREFIX_V5
     : encryptedBody.startsWith(RATCHET_PREFIX_V4)
       ? RATCHET_PREFIX_V4
-      : encryptedBody.startsWith(RATCHET_PREFIX_V3)
-        ? RATCHET_PREFIX_V3
-        : null;
+      : null;
   if (!prefix) return null;
   const rest = encryptedBody.slice(prefix.length);
   const dot = rest.indexOf('.');
@@ -48,7 +45,6 @@ export async function tryEveryRatchetSession(
 ): Promise<DecryptResult> {
   if (
     !encryptedBody.startsWith(RATCHET_PREFIX_V5) &&
-    !encryptedBody.startsWith(RATCHET_PREFIX_V3) &&
     !encryptedBody.startsWith(RATCHET_PREFIX_V4)
   ) {
     return { ok: false, plaintext: null, errorCode: 'NOT_RATCHET_CIPHERTEXT' };

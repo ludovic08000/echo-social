@@ -1,19 +1,11 @@
 /**
- * v4 envelope contract — integration tests.
+ * v5 envelope contract integration tests.
  *
  * Guarantees:
- *  1. New outbound messages from a freshly established session ALWAYS use
- *     the `x3dh5.` Double-Ratchet wire format. The legacy `x3dh3.` prefix
- *     must never leak into outbound traffic for new sessions.
- *  2. The decryption path correctly handles BOTH:
- *     - v4 envelopes (current Double Ratchet wire format).
- *     - v3 legacy envelopes (single-secret HKDF) for in-flight messages
- *       from sessions established before the v4 upgrade.
- *  3. A peer that holds a legacy v3 session keeps using v3 for its own
- *     outbound traffic (no destructive upgrade) — guarantees zero message
- *     loss during the transition window.
- *  4. Mixed sessions decrypt correctly on the recipient side regardless of
- *     which prefix arrives.
+ *  1. New outbound messages from a freshly established session always use the
+ *     `x3dh5.` Double-Ratchet wire format.
+ *  2. Retired v3 sessions cannot emit new v3 traffic.
+ *  3. Retired v3 state cannot contaminate a valid v5 device pair.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
@@ -21,7 +13,6 @@ import {
   ratchetEncrypt,
   ratchetDecrypt,
   clearAllDeviceSessions,
-  RATCHET_PREFIX_V3,
   RATCHET_PREFIX_V5,
 } from '@/lib/crypto/deviceRatchet';
 
@@ -56,14 +47,11 @@ function bufToB64(b: ArrayBuffer): string {
   return btoa(String.fromCharCode(...new Uint8Array(b)));
 }
 
-/**
- * Open the same IndexedDB used by `deviceRatchet` and seed a synthetic
- * legacy v3 session — emulates a session that was established before the
- * v4 upgrade and persisted on disk.
- */
-async function seedLegacyV3Session(opts: {
-  myUserId: string; myDeviceId: string;
-  peerUserId: string; peerDeviceId: string;
+async function seedRetiredV3Session(opts: {
+  myUserId: string;
+  myDeviceId: string;
+  peerUserId: string;
+  peerDeviceId: string;
   sharedSecret: ArrayBuffer;
   sessionId: string;
 }): Promise<void> {
@@ -86,14 +74,15 @@ async function seedLegacyV3Session(opts: {
       id,
       sessionId: opts.sessionId,
       rootKeyB64: bufToB64(opts.sharedSecret.slice(0, 32)),
-      // Legacy markers: no DH ratchet material, only a shared secret.
       legacySharedSecretB64: bufToB64(opts.sharedSecret.slice(0, 32)),
       dhsPrivJwk: null,
       dhsPubB64: null,
       dhrPubB64: null,
       ckSendB64: null,
       ckRecvB64: null,
-      Ns: 0, Nr: 0, PN: 0,
+      Ns: 0,
+      Nr: 0,
+      PN: 0,
       skipped: [],
       createdAt: Date.now(),
       peerSpkId: null,
@@ -104,17 +93,22 @@ async function seedLegacyV3Session(opts: {
   db.close();
 }
 
-describe('v4 envelope contract — outbound + legacy read', () => {
+describe('v5 envelope contract outbound + retired legacy guard', () => {
   beforeEach(async () => {
     await clearAllDeviceSessions();
   });
 
-  it('a freshly established session ALWAYS produces x3dh4 envelopes', async () => {
+  it('a freshly established session always produces x3dh5 envelopes', async () => {
     const ss = makeSharedSecret(1);
     const peerSpk = await generateX25519();
 
     await establishDeviceSession(
-      A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
+      A_USER,
+      A_DEV,
+      B_USER,
+      B_DEV,
+      ss,
+      undefined,
       { isInitiator: true, peerInitialDhPubB64: peerSpk.pubB64, peerSpkId: 1 },
     );
 
@@ -122,16 +116,21 @@ describe('v4 envelope contract — outbound + legacy read', () => {
       const ct = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, `msg-${i}`);
       expect(ct).not.toBeNull();
       expect(ct!.startsWith(RATCHET_PREFIX_V5)).toBe(true);
-      expect(ct!.startsWith(RATCHET_PREFIX_V3)).toBe(false);
+      expect(ct!.startsWith('x3dh3.')).toBe(false);
     }
   });
 
-  it('v4 envelopes carry the full Double-Ratchet header (sessionId, dhPub, Ns, PN, iv, ct)', async () => {
+  it('x3dh5 envelopes carry the full Double-Ratchet header', async () => {
     const ss = makeSharedSecret(2);
     const peerSpk = await generateX25519();
 
     const sessionId = await establishDeviceSession(
-      A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
+      A_USER,
+      A_DEV,
+      B_USER,
+      B_DEV,
+      ss,
+      undefined,
       { isInitiator: true, peerInitialDhPubB64: peerSpk.pubB64, peerSpkId: 7 },
     );
 
@@ -142,81 +141,77 @@ describe('v4 envelope contract — outbound + legacy read', () => {
     for (const ct of [ct0, ct1, ct2]) {
       expect(ct!.startsWith(RATCHET_PREFIX_V5)).toBe(true);
       const parts = ct!.slice(RATCHET_PREFIX_V5.length).split('.');
-      // Header layout: sessionId.dhPub.Ns.PN.iv.ct — exactly 6 dot-separated parts.
       expect(parts).toHaveLength(6);
       expect(parts[0]).toBe(sessionId);
-      // dhPub must be present (Double Ratchet ephemeral) — proves we are NOT
-      // emitting the v3 single-secret envelope.
       expect(parts[1].length).toBeGreaterThan(0);
     }
 
-    // Counters strictly increase across consecutive sends.
-    const Ns = (ct: string) => parseInt(ct.slice(RATCHET_PREFIX_V5.length).split('.')[2], 10);
-    expect(Ns(ct0!)).toBe(0);
-    expect(Ns(ct1!)).toBe(1);
-    expect(Ns(ct2!)).toBe(2);
+    const ns = (ct: string) => parseInt(ct.slice(RATCHET_PREFIX_V5.length).split('.')[2], 10);
+    expect(ns(ct0!)).toBe(0);
+    expect(ns(ct1!)).toBe(1);
+    expect(ns(ct2!)).toBe(2);
   });
 
-  it('legacy v3 envelope round-trips through ratchetDecrypt', async () => {
-    // Seed identical legacy v3 sessions on both sides — emulates an old
-    // pre-upgrade session that still carries in-flight messages.
+  it('retired v3 sessions cannot emit or decrypt new ciphertext', async () => {
     const ss = makeSharedSecret(3);
-    const sessionId = 'legacy-sess-1';
 
-    await seedLegacyV3Session({
-      myUserId: A_USER, myDeviceId: A_DEV,
-      peerUserId: B_USER, peerDeviceId: B_DEV,
-      sharedSecret: ss, sessionId,
+    await seedRetiredV3Session({
+      myUserId: A_USER,
+      myDeviceId: A_DEV,
+      peerUserId: B_USER,
+      peerDeviceId: B_DEV,
+      sharedSecret: ss,
+      sessionId: 'legacy-sess-1',
     });
-    await seedLegacyV3Session({
-      myUserId: B_USER, myDeviceId: B_DEV,
-      peerUserId: A_USER, peerDeviceId: A_DEV,
-      sharedSecret: ss, sessionId,
+    await seedRetiredV3Session({
+      myUserId: B_USER,
+      myDeviceId: B_DEV,
+      peerUserId: A_USER,
+      peerDeviceId: A_DEV,
+      sharedSecret: ss,
+      sessionId: 'legacy-sess-1',
     });
 
-    // The legacy session must keep using v3 for its own outbound traffic
-    // (no destructive upgrade) — guarantees zero in-flight loss.
     const ct = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'legacy hello');
-    expect(ct).not.toBeNull();
-    expect(ct!.startsWith(RATCHET_PREFIX_V3)).toBe(true);
+    expect(ct).toBeNull();
 
-    // The recipient decrypts the v3 envelope cleanly through the same
-    // unified ratchetDecrypt entry point used for v4.
-    const pt = await ratchetDecrypt(B_USER, B_DEV, ct!);
-    expect(pt).toBe('legacy hello');
+    const pt = await ratchetDecrypt(B_USER, B_DEV, 'x3dh3.legacy-sess-1.0.iv.ct');
+    expect(pt).toBeNull();
   });
 
-  it('legacy + new sessions coexist: each device pair keeps its own wire format', async () => {
-    // Pair #1 (A_DEV ↔ B_DEV): legacy v3.
-    const ssLegacy = makeSharedSecret(4);
-    await seedLegacyV3Session({
-      myUserId: A_USER, myDeviceId: A_DEV,
-      peerUserId: B_USER, peerDeviceId: B_DEV,
-      sharedSecret: ssLegacy, sessionId: 'legacy-mix',
+  it('retired v3 state does not contaminate a valid v5 device pair', async () => {
+    await seedRetiredV3Session({
+      myUserId: A_USER,
+      myDeviceId: A_DEV,
+      peerUserId: B_USER,
+      peerDeviceId: B_DEV,
+      sharedSecret: makeSharedSecret(4),
+      sessionId: 'legacy-mix',
     });
 
-    // Pair #2 (A_DEV2 ↔ B_DEV): brand-new v4.
-    const A_DEV2 = 'dev-alice-2';
-    const ssNew = makeSharedSecret(5);
+    const aDev2 = 'dev-alice-2';
     const peerSpk = await generateX25519();
     await establishDeviceSession(
-      A_USER, A_DEV2, B_USER, B_DEV, ssNew, undefined,
+      A_USER,
+      aDev2,
+      B_USER,
+      B_DEV,
+      makeSharedSecret(5),
+      undefined,
       { isInitiator: true, peerInitialDhPubB64: peerSpk.pubB64, peerSpkId: 99 },
     );
 
     const ctLegacy = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'from-legacy');
-    const ctNew = await ratchetEncrypt(A_USER, A_DEV2, B_USER, B_DEV, 'from-v4');
+    const ctNew = await ratchetEncrypt(A_USER, aDev2, B_USER, B_DEV, 'from-v5');
 
-    // Each pair holds the line on its own wire format — no cross-contamination.
-    expect(ctLegacy!.startsWith(RATCHET_PREFIX_V3)).toBe(true);
-    expect(ctLegacy!.startsWith(RATCHET_PREFIX_V5)).toBe(false);
+    expect(ctLegacy).toBeNull();
+    expect(ctNew).not.toBeNull();
     expect(ctNew!.startsWith(RATCHET_PREFIX_V5)).toBe(true);
-    expect(ctNew!.startsWith(RATCHET_PREFIX_V3)).toBe(false);
+    expect(ctNew!.startsWith('x3dh3.')).toBe(false);
   });
 
-  it('an unknown prefix is rejected (no silent leak through wrong path)', async () => {
-    const garbage = 'x3dhX.whatever.payload';
-    const pt = await ratchetDecrypt(B_USER, B_DEV, garbage);
+  it('an unknown prefix is rejected', async () => {
+    const pt = await ratchetDecrypt(B_USER, B_DEV, 'x3dhX.whatever.payload');
     expect(pt).toBeNull();
   });
 });

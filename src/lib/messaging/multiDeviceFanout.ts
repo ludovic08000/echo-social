@@ -4,10 +4,10 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
-import { wrapPlaintextForDevice, unwrapPlaintextForDevice } from './deviceWrap';
 // requestDeviceCopyRetry removed — refanout in messageRouter is the single retry path
 import {
   fetchPrekeyBundleForDevice,
+  isDevicePrekeyBundleError,
   peekDeviceSignedPrekey,
   x3dhInitiate,
   x3dhRespondForDevice,
@@ -21,7 +21,6 @@ import {
   establishDeviceSession,
   getSessionPeerSpkId,
   invalidateDeviceSession,
-  RATCHET_PREFIX_V3,
   RATCHET_PREFIX_V4,
   RATCHET_PREFIX_V5,
 } from '@/lib/crypto/deviceRatchet';
@@ -54,11 +53,12 @@ interface DeviceEncryptTargetInput {
   useOneTimePrekey?: boolean;
 }
 
-const X3DH_PREFIX_V1 = 'x3dh1.';
-const X3DH_PREFIX_V2 = 'x3dh2.';
+const X3DH_BOOTSTRAP_PREFIX_V5 = 'x3dh5.init.';
 const INVALID_DEVICE_STORE_KEY = 'forsure:invalid-device-spk-cache:v1';
 
 const KNOWN_INVALID_DEVICE_IDS = new Set<string>([
+  '9da8c742a4fe81d1d9ce6c0ffb4e055b',
+  '6508eb47a200893f49720fe84b9290b3',
   '75e575fcbfaa8066bcbc9105fc5f4ac8',
   'c6601674b0f700f28c9f2956774eca97',
   '52adb13ff236ae5c833c9d9049c0df71',
@@ -128,7 +128,14 @@ async function x3dhWrapForDevice(
   try {
     const bundle = await fetchPrekeyBundleForDevice(recipientUserId, recipientDeviceId);
     if (!bundle) {
-      markInvalidDeviceId(recipientDeviceId);
+      logCryptoError({
+        severity: 'warning',
+        context: 'fanout',
+        errorCode: 'DEVICE_PREKEY_BUNDLE_UNAVAILABLE',
+        errorMessage: 'Recipient device has no usable v5 bootstrap bundle',
+        peerUserId: recipientUserId,
+        peerDeviceId: recipientDeviceId,
+      });
       return null;
     }
     if (options.useOneTimePrekey === false) {
@@ -146,9 +153,8 @@ async function x3dhWrapForDevice(
       new hardGlobals.TextEncoder().encode(plaintext),
     );
 
-    const head = result.usedOTPKId !== undefined ? X3DH_PREFIX_V2 : X3DH_PREFIX_V1;
     const parts = [
-      head + bufferToBase64(iv.buffer as ArrayBuffer),
+      X3DH_BOOTSTRAP_PREFIX_V5 + bufferToBase64(iv.buffer as ArrayBuffer),
       bufferToBase64(ct as ArrayBuffer),
       result.ephemeralKey,
       String(result.usedSPKId),
@@ -175,7 +181,22 @@ async function x3dhWrapForDevice(
     if (e instanceof PinUnlockRequiredError || String(e).toLowerCase().includes('pin unlock required')) {
       throw e;
     }
-    markInvalidDeviceId(recipientDeviceId);
+    if (isDevicePrekeyBundleError(e, 'DEVICE_SPK_SIGNATURE_INVALID')) {
+      markInvalidDeviceId(recipientDeviceId);
+      logCryptoException('fanout', e, {
+        severity: 'error',
+        peerUserId: recipientUserId,
+        peerDeviceId: recipientDeviceId,
+        metadata: { stage: 'x3dh5_bootstrap', action: 'device_quarantined' },
+      });
+    } else {
+      logCryptoException('fanout', e, {
+        severity: 'warning',
+        peerUserId: recipientUserId,
+        peerDeviceId: recipientDeviceId,
+        metadata: { stage: 'x3dh5_bootstrap' },
+      });
+    }
     return null;
   }
 }
@@ -188,20 +209,16 @@ async function x3dhUnwrapForDevice(
   senderDeviceId: string,
 ): Promise<string | null> {
   try {
-    const isV2 = payload.startsWith(X3DH_PREFIX_V2);
-    const isV1 = payload.startsWith(X3DH_PREFIX_V1);
-    if (!isV1 && !isV2) return null;
+    if (!payload.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) return null;
 
-    const prefix = isV2 ? X3DH_PREFIX_V2 : X3DH_PREFIX_V1;
-    const parts = payload.slice(prefix.length).split('.');
-    const expectedLen = isV2 ? 5 : 4;
-    if (parts.length !== expectedLen) return null;
+    const parts = payload.slice(X3DH_BOOTSTRAP_PREFIX_V5.length).split('.');
+    if (parts.length !== 4 && parts.length !== 5) return null;
 
     const [ivB64, ctB64, ekB64, spkIdStr, opkIdStr] = parts;
     const spkId = parseInt(spkIdStr, 10);
     if (Number.isNaN(spkId)) return null;
-    const opkId = isV2 ? parseInt(opkIdStr, 10) : undefined;
-    if (isV2 && Number.isNaN(opkId as number)) return null;
+    const opkId = opkIdStr !== undefined ? parseInt(opkIdStr, 10) : undefined;
+    if (opkIdStr !== undefined && Number.isNaN(opkId as number)) return null;
 
     const myKeys = await getOrCreateIdentityKeys(recipientUserId);
     const myDeviceId = getCurrentDeviceId();
@@ -266,10 +283,18 @@ export async function encryptPlaintextForDeviceTarget(
     if (cachedSpkId !== null) {
       const spk = await peekDeviceSignedPrekey(input.recipientUserId, input.recipientDeviceId);
       if (!spk) {
-        markInvalidDeviceId(input.recipientDeviceId);
-        return null;
-      }
-      if (spk.signedPrekeyId !== cachedSpkId) {
+        logCryptoError({
+          severity: 'warning',
+          context: 'fanout',
+          errorCode: 'DEVICE_PREKEY_BUNDLE_UNAVAILABLE',
+          errorMessage: 'Skipping SPK freshness check because peer v5 bundle is unavailable',
+          conversationId: input.conversationId,
+          myDeviceId: senderDeviceId,
+          peerUserId: input.recipientUserId,
+          peerDeviceId: input.recipientDeviceId,
+          metadata: { cachedSpkId },
+        });
+      } else if (spk.signedPrekeyId !== cachedSpkId) {
         await invalidateDeviceSession(
           input.senderUserId,
           senderDeviceId,
@@ -279,6 +304,18 @@ export async function encryptPlaintextForDeviceTarget(
       }
     }
   } catch (e) {
+    if (isDevicePrekeyBundleError(e, 'DEVICE_SPK_SIGNATURE_INVALID')) {
+      markInvalidDeviceId(input.recipientDeviceId);
+      logCryptoException('fanout', e, {
+        severity: 'error',
+        conversationId: input.conversationId,
+        myDeviceId: senderDeviceId,
+        peerUserId: input.recipientUserId,
+        peerDeviceId: input.recipientDeviceId,
+        metadata: { stage: 'spk_rotation_check', action: 'device_quarantined' },
+      });
+      return null;
+    }
     logCryptoException('fanout', e, {
       severity: 'warning',
       conversationId: input.conversationId,
@@ -298,7 +335,7 @@ export async function encryptPlaintextForDeviceTarget(
       input.recipientDeviceId,
       input.plaintext,
     );
-    if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V5) && !encrypted.startsWith(RATCHET_PREFIX_V4)) {
+    if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V5)) {
       encrypted = null;
     }
   } catch (e) {
@@ -316,19 +353,18 @@ export async function encryptPlaintextForDeviceTarget(
 
 
   if (!encrypted) {
-    try {
-      encrypted = await wrapPlaintextForDevice(input.plaintext, input.senderUserId, input.recipientDevicePublicKey, input.recipientDeviceId);
-    } catch (e) {
-      logCryptoException('fanout', e, {
-        severity: 'error',
-        conversationId: input.conversationId,
-        myDeviceId: senderDeviceId,
-        peerUserId: input.recipientUserId,
-        peerDeviceId: input.recipientDeviceId,
-        metadata: { stage: 'all_paths_failed' },
-      });
-      return null;
-    }
+    logCryptoError({
+      severity: 'warning',
+      context: 'fanout',
+      errorCode: 'E_FANOUT_NO_V5_PATH',
+      errorMessage: 'No v5 ratchet/bootstrap path for recipient device',
+      conversationId: input.conversationId,
+      myDeviceId: senderDeviceId,
+      peerUserId: input.recipientUserId,
+      peerDeviceId: input.recipientDeviceId,
+      metadata: { stage: 'all_paths_failed' },
+    });
+    return null;
   }
 
   return encrypted ? { encryptedBody: encrypted, senderDeviceId } : null;
@@ -368,27 +404,49 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
       if (cachedSpkId !== null) {
         const spk = await peekDeviceSignedPrekey(dev.user_id, dev.device_id);
         if (!spk) {
-          markInvalidDeviceId(dev.device_id);
-          continue;
-        }
-        if (spk.signedPrekeyId !== cachedSpkId) {
+          logCryptoError({
+            severity: 'warning',
+            context: 'fanout',
+            errorCode: 'DEVICE_PREKEY_BUNDLE_UNAVAILABLE',
+            errorMessage: 'Skipping SPK freshness check because peer v5 bundle is unavailable',
+            conversationId: input.conversationId,
+            myDeviceId: senderDeviceId,
+            peerUserId: dev.user_id,
+            peerDeviceId: dev.device_id,
+            metadata: { cachedSpkId },
+          });
+        } else if (spk.signedPrekeyId !== cachedSpkId) {
           await invalidateDeviceSession(input.senderUserId, senderDeviceId, dev.user_id, dev.device_id);
         }
       }
     } catch (e) {
+      if (isDevicePrekeyBundleError(e, 'DEVICE_SPK_SIGNATURE_INVALID')) {
+        markInvalidDeviceId(dev.device_id);
+        logCryptoException('fanout', e, { severity: 'error', conversationId: input.conversationId, myDeviceId: senderDeviceId, peerUserId: dev.user_id, peerDeviceId: dev.device_id, metadata: { stage: 'spk_rotation_check', action: 'device_quarantined' } });
+        continue;
+      }
       logCryptoException('fanout', e, { severity: 'warning', conversationId: input.conversationId, myDeviceId: senderDeviceId, peerUserId: dev.user_id, peerDeviceId: dev.device_id, metadata: { stage: 'spk_rotation_check' } });
     }
 
     let encrypted: string | null = await ratchetEncrypt(input.senderUserId, senderDeviceId, dev.user_id, dev.device_id, input.plaintext);
-    if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V5) && !encrypted.startsWith(RATCHET_PREFIX_V4)) encrypted = null;
-    if (!encrypted) encrypted = await x3dhWrapForDevice(input.plaintext, input.senderUserId, dev.user_id, dev.device_id);
+    if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V5)) encrypted = null;
     if (!encrypted) {
-      try {
-        encrypted = await wrapPlaintextForDevice(input.plaintext, input.senderUserId, dev.device_public_key, dev.device_id);
-      } catch (e) {
-        logCryptoException('fanout', e, { severity: 'error', conversationId: input.conversationId, myDeviceId: senderDeviceId, peerUserId: dev.user_id, peerDeviceId: dev.device_id, metadata: { stage: 'all_paths_failed' } });
-        continue;
-      }
+      encrypted = await x3dhWrapForDevice(input.plaintext, input.senderUserId, dev.user_id, dev.device_id);
+      if (!encrypted && isKnownInvalidDeviceId(dev.device_id)) continue;
+    }
+    if (!encrypted) {
+      logCryptoError({
+        severity: 'warning',
+        context: 'fanout',
+        errorCode: 'E_FANOUT_NO_V5_PATH',
+        errorMessage: 'No v5 ratchet/bootstrap path for recipient device',
+        conversationId: input.conversationId,
+        myDeviceId: senderDeviceId,
+        peerUserId: dev.user_id,
+        peerDeviceId: dev.device_id,
+        metadata: { stage: 'all_paths_failed' },
+      });
+      continue;
     }
 
     rows.push({ message_id: input.messageId, recipient_user_id: dev.user_id, recipient_device_id: dev.device_id, sender_user_id: input.senderUserId, sender_device_id: senderDeviceId, encrypted_body: encrypted });
@@ -456,24 +514,18 @@ export async function tryDecryptDeviceTargetedBody(row: { encrypted_body: string
 
 async function tryDecryptCopy(row: { encrypted_body: string; sender_user_id: string; sender_device_id: string }, userId: string, myDeviceId: string): Promise<string | null> {
   try {
-    if (row.encrypted_body.startsWith(RATCHET_PREFIX_V5) || row.encrypted_body.startsWith(RATCHET_PREFIX_V4) || row.encrypted_body.startsWith(RATCHET_PREFIX_V3)) {
+    if (row.encrypted_body.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) {
+      const { data: senderPub } = await supabase.from('user_public_keys').select('identity_key').eq('user_id', row.sender_user_id).eq('is_active', true).maybeSingle();
+      if (!senderPub?.identity_key) return null;
+      return await x3dhUnwrapForDevice(row.encrypted_body, userId, senderPub.identity_key, row.sender_user_id, row.sender_device_id);
+    }
+
+    if (row.encrypted_body.startsWith(RATCHET_PREFIX_V5) || row.encrypted_body.startsWith(RATCHET_PREFIX_V4)) {
       const pt = await ratchetDecryptWithSession(userId, myDeviceId, row.sender_user_id, row.sender_device_id, row.encrypted_body);
       return pt ?? null;
     }
 
-    if (row.encrypted_body.startsWith(X3DH_PREFIX_V1) || row.encrypted_body.startsWith(X3DH_PREFIX_V2)) {
-      const { data: senderPub } = await supabase.from('user_public_keys').select('identity_key').eq('user_id', row.sender_user_id).eq('is_active', true).maybeSingle();
-      if (!senderPub?.identity_key) return null;
-      const pt = await x3dhUnwrapForDevice(row.encrypted_body, userId, senderPub.identity_key, row.sender_user_id, row.sender_device_id);
-      if (pt !== null) return pt;
-    }
-
-    const { data: senderDevices } = await supabase.rpc('list_active_devices_for_user', { p_user_id: row.sender_user_id });
-    const senderDev = (senderDevices || []).find((d: any) => d.device_id === row.sender_device_id);
-    if (!senderDev?.device_public_key) return null;
-
-    const { data: senderPubLegacy } = await supabase.from('user_public_keys').select('identity_key').eq('user_id', row.sender_user_id).eq('is_active', true).maybeSingle();
-    return await unwrapPlaintextForDevice(row.encrypted_body, userId, senderDev.device_public_key, myDeviceId, senderPubLegacy?.identity_key ?? null);
+    return null;
   } catch {
     return null;
   }

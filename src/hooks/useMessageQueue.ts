@@ -179,6 +179,16 @@ export function useMessageQueue(
       }
     }
 
+    if (isEncryptionActive && !allowPlaintext && !encryptedSuccessfully) {
+      console.warn('[MSG_SEND] blocked non-v5/plaintext fallback for E2EE conversation', {
+        localId,
+        conversationId,
+        isEncryptionReady,
+        hasEncryptHandler: !!encrypt,
+      });
+      throw new Error('Chiffrement v5 indisponible - restaurez les cles avant envoi.');
+    }
+
     // Long-life encrypted archive copy (zero-access, wrapped under account master key).
     // Allows any future device that can unlock the account to re-read this message.
     let archiveBody: string | null = null;

@@ -1,11 +1,10 @@
 /**
  * Sender Keys inbound consumer.
  *
- * Pulls SKDM rows from `sender_key_distribution` addressed to this user/device,
- * decrypts them via the existing pairwise transports (Double Ratchet → X3DH →
- * deviceWrap fallback — same router as `tryReadDeviceCopy`), then installs the
- * resulting chain via `installSKDM`. Once installed, marks the row as delivered
- * so it isn't re-processed.
+ * Pulls SKDM rows from `sender_key_distribution` addressed to this user/device.
+ * It decrypts them via Double Ratchet v5/v4 or authenticated X3DH v5 bootstrap,
+ * then installs the resulting chain via `installSKDM`. Once installed, marks
+ * the row as delivered so it isn't re-processed.
  *
  * Two trigger surfaces:
  *   • `catchUpSenderKeyDistribution()` — one-shot poll (called on app boot,

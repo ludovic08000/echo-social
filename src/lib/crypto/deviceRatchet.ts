@@ -17,9 +17,8 @@
  *     - Ns       : message number in current sending chain
  *     - PN       : length of previous sending chain (lets receiver skip keys)
  *
- * Backwards-compat: prefix `x3dh3.` (single shared-secret HKDF) is still
- * decoded so existing in-flight v3 messages keep working until sessions are
- * naturally re-established.
+ * New traffic must be `x3dh5.` only. `x3dh4.` is accepted for short-term
+ * compatibility; pre-v4 device-copy formats are retired from runtime routing.
  *
  * Storage: IndexedDB `forsure-device-sessions` / `sessions`
  *   key   = `${myUserId}::${myDeviceId}::${peerUserId}::${peerDeviceId}`
@@ -34,7 +33,6 @@ import { runTxOn, reqToPromise } from './indexedDbTx';
 
 const STORE = 'sessions';
 
-export const RATCHET_PREFIX_V3 = 'x3dh3.'; // legacy (single-secret KDF)
 export const RATCHET_PREFIX_V4 = 'x3dh4.'; // Double Ratchet w/ DH (no AAD)
 export const RATCHET_PREFIX_V5 = 'x3dh5.'; // Double Ratchet w/ DH + AAD (X3DH §3.3)
 
@@ -386,7 +384,14 @@ export async function ratchetEncrypt(
   }
 
   if (session.legacySharedSecretB64 && !session.ckSendB64 && !session.dhsPubB64) {
-    return legacyEncryptV3(key, session, plaintext);
+    void logCryptoError({
+      severity: 'warning',
+      context: 'encrypt',
+      errorCode: 'E_V3_OUTBOUND_DISABLED',
+      errorMessage: 'Legacy v3 outbound disabled; caller must re-bootstrap v5',
+      myDeviceId, peerUserId, peerDeviceId,
+    });
+    return null;
   }
 
   if (!session.ckSendB64 || !session.dhsPubB64) {
@@ -434,9 +439,6 @@ export async function ratchetDecrypt(
   if (payload.startsWith(RATCHET_PREFIX_V4)) {
     return decryptV4or5(myUserId, myDeviceId, payload, RATCHET_PREFIX_V4);
   }
-  if (payload.startsWith(RATCHET_PREFIX_V3)) {
-    return decryptV3(myUserId, myDeviceId, payload);
-  }
   return null;
 }
 
@@ -470,14 +472,6 @@ export async function ratchetDecryptWithSession(
   const isV5 = payload.startsWith(RATCHET_PREFIX_V5);
   const isV4 = payload.startsWith(RATCHET_PREFIX_V4);
   if (!isV5 && !isV4) {
-    if (payload.startsWith(RATCHET_PREFIX_V3)) {
-      const parts = payload.slice(RATCHET_PREFIX_V3.length).split('.');
-      if (parts.length !== 4) return null;
-      const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
-      const session = await loadSession(key);
-      if (!session) return null;
-      return decryptV3WithStored(key, session, parts);
-    }
     return null;
   }
   const prefix = isV5 ? RATCHET_PREFIX_V5 : RATCHET_PREFIX_V4;
@@ -554,74 +548,6 @@ async function decryptV4WithStored(
       myDeviceId: key.split('::')[1] ?? 'unknown',
       metadata: { sessionId, Ns, PN, requireAAD },
     });
-    return null;
-  }
-}
-
-async function legacyEncryptV3(key: string, session: StoredSession, plaintext: string): Promise<string | null> {
-  if (!session.legacySharedSecretB64) return null;
-  const counter = session.legacySendCounter ?? 0;
-  const ikm = await hardCrypto.importKey(
-    'raw', base64ToBuffer(session.legacySharedSecretB64), 'HKDF', false, ['deriveBits'],
-  );
-  const info = new hardGlobals.TextEncoder().encode(`ForSureDevRatchet:${counter}`);
-  const bits = await hardCrypto.deriveBits(
-    { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info } as any, ikm, 256,
-  );
-  const aes = await hardCrypto.importKey('raw', bits, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
-  const iv = randomBytes(12);
-  const ct = await hardCrypto.encrypt(
-    { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 },
-    aes,
-    new hardGlobals.TextEncoder().encode(plaintext),
-  );
-  await saveSession(key, { ...session, legacySendCounter: counter + 1 });
-  return [
-    RATCHET_PREFIX_V3 + session.sessionId,
-    String(counter),
-    bufferToBase64(iv.buffer as ArrayBuffer),
-    bufferToBase64(ct as ArrayBuffer),
-  ].join('.');
-}
-
-async function decryptV3(myUserId: string, myDeviceId: string, payload: string): Promise<string | null> {
-  const parts = payload.slice(RATCHET_PREFIX_V3.length).split('.');
-  if (parts.length !== 4) return null;
-  const [sessionId] = parts;
-  const found = await lookupSessionById(myUserId, myDeviceId, sessionId);
-  if (!found || !found.session.legacySharedSecretB64) return null;
-  return decryptV3WithStored(found.key, found.session, parts);
-}
-
-async function decryptV3WithStored(
-  key: string,
-  session: StoredSession,
-  parts: string[],
-): Promise<string | null> {
-  const [, counterStr, ivB64, ctB64] = parts;
-  const counter = parseInt(counterStr, 10);
-  if (Number.isNaN(counter) || !session.legacySharedSecretB64) return null;
-  try {
-    const ikm = await hardCrypto.importKey(
-      'raw', base64ToBuffer(session.legacySharedSecretB64), 'HKDF', false, ['deriveBits'],
-    );
-    const info = new hardGlobals.TextEncoder().encode(`ForSureDevRatchet:${counter}`);
-    const bits = await hardCrypto.deriveBits(
-      { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info } as any, ikm, 256,
-    );
-    const aes = await hardCrypto.importKey(
-      'raw', bits, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'],
-    );
-    const pt = await hardCrypto.decrypt(
-      { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(ivB64)), tagLength: 128 },
-      aes,
-      base64ToBuffer(ctB64),
-    );
-    if (counter >= (session.legacyRecvCounter ?? 0)) {
-      await saveSession(key, { ...session, legacyRecvCounter: counter + 1 });
-    }
-    return new hardGlobals.TextDecoder().decode(pt);
-  } catch {
     return null;
   }
 }
