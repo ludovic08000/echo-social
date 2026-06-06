@@ -226,4 +226,59 @@ describe('tryDecryptCopy — cross-platform v5 envelope routing', () => {
     expect(ratchetDecryptWithSession).toHaveBeenCalledTimes(1);
     expect(requestDeviceCopyRetry).not.toHaveBeenCalled();
   });
+
+  it('does not try to decrypt another device copy when the current device has no targeted row', async () => {
+    ratchetDecryptWithSession.mockResolvedValue('should-not-be-used');
+    supabaseRpc.mockImplementation((name: string) => {
+      if (name === 'get_device_copy_for_message') {
+        return Promise.resolve({ data: [] });
+      }
+      if (name === 'get_device_copies_for_user') {
+        return Promise.resolve({
+          data: [{
+            encrypted_body: 'x3dh5.session-abc.peerDh.0.0.aaaa.bbbb',
+            sender_user_id: SENDER.user_id,
+            sender_device_id: SENDER.device_id,
+            recipient_device_id: 'some-other-device',
+          }],
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    const pt = await tryReadDeviceCopy('message-needs-refanout', SENDER.user_id);
+
+    expect(pt).toBeNull();
+    expect(ratchetDecryptWithSession).not.toHaveBeenCalled();
+    expect(requestDeviceCopyRetry).toHaveBeenCalledWith({
+      messageId: 'message-needs-refanout',
+      senderUserId: SENDER.user_id,
+      senderDeviceId: SENDER.device_id,
+    });
+  });
+
+  it('does not request refanout for missing targeted rows during diagnostic scans', async () => {
+    supabaseRpc.mockImplementation((name: string) => {
+      if (name === 'get_device_copy_for_message') {
+        return Promise.resolve({ data: [] });
+      }
+      if (name === 'get_device_copies_for_user') {
+        return Promise.resolve({
+          data: [{
+            encrypted_body: 'x3dh5.session-abc.peerDh.0.0.aaaa.bbbb',
+            sender_user_id: SENDER.user_id,
+            sender_device_id: SENDER.device_id,
+            recipient_device_id: 'some-other-device',
+          }],
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    const pt = await tryReadDeviceCopy('message-diagnostic-missing-target', SENDER.user_id, { requestRetry: false });
+
+    expect(pt).toBeNull();
+    expect(ratchetDecryptWithSession).not.toHaveBeenCalled();
+    expect(requestDeviceCopyRetry).not.toHaveBeenCalled();
+  });
 });

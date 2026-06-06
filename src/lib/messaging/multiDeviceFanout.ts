@@ -65,6 +65,13 @@ interface DeviceCopyDecryptAttempt {
   reason?: string;
 }
 
+type CopyRow = {
+  encrypted_body: string;
+  sender_user_id: string;
+  sender_device_id: string;
+  recipient_device_id?: string;
+};
+
 function classifyDeviceCopyPrefix(body: string): DeviceCopyPrefix {
   if (body.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) return 'x3dh5.init';
   if (body.startsWith(RATCHET_PREFIX_V5)) return 'x3dh5';
@@ -489,7 +496,6 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
   const shouldRequestRetry = options.requestRetry !== false;
 
   try {
-    type CopyRow = { encrypted_body: string; sender_user_id: string; sender_device_id: string; recipient_device_id?: string };
     let rows: CopyRow[] = [];
     const { data: targeted } = await supabase.rpc('get_device_copy_for_message', { p_message_id: messageId, p_device_id: myDeviceId });
     if (targeted && targeted.length > 0) {
@@ -499,13 +505,42 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       if (!allCopies || allCopies.length === 0) {
         return null;
       }
-      rows = allCopies as CopyRow[];
-      logCryptoError({ severity: 'info', context: 'decrypt', errorCode: 'DEVICE_COPY_FALLBACK', errorMessage: `Trying ${rows.length} device copies (current device_id has no targeted copy)`, myDeviceId, metadata: { messageId, candidates: rows.length } });
+      const fallbackRows = filterCopyRowsByExpectedSender(allCopies as CopyRow[], expectedSenderUserId);
+      const firstSender = fallbackRows[0] ?? (allCopies as CopyRow[])[0];
+      logCryptoError({
+        severity: 'info',
+        context: 'decrypt',
+        errorCode: 'DEVICE_COPY_TARGET_MISSING',
+        errorMessage: 'No encrypted device copy targets the current device; requesting sender refanout',
+        myDeviceId,
+        peerUserId: firstSender?.sender_user_id,
+        peerDeviceId: firstSender?.sender_device_id,
+        metadata: {
+          messageId,
+          candidates: (allCopies as CopyRow[]).length,
+          expectedSenderUserId,
+          retryEnabled: shouldRequestRetry,
+        },
+      });
+      if (shouldRequestRetry) {
+        const retrySenders = new Map<string, string | null>();
+        for (const row of fallbackRows) {
+          if (!retrySenders.has(row.sender_user_id)) {
+            retrySenders.set(row.sender_user_id, row.sender_device_id);
+          }
+        }
+        await Promise.all(
+          [...retrySenders.entries()].map(([senderUserId, senderDeviceId]) =>
+            requestDeviceCopyRetry({ messageId, senderUserId, senderDeviceId }),
+          ),
+        );
+      }
+      return null;
     }
 
     if (expectedSenderUserId) {
       const before = rows.length;
-      rows = rows.filter(row => row.sender_user_id === expectedSenderUserId);
+      rows = filterCopyRowsByExpectedSender(rows, expectedSenderUserId);
       if (before !== rows.length) logCryptoError({ severity: 'warning', context: 'decrypt', errorCode: 'DEVICE_COPY_SENDER_MISMATCH', errorMessage: 'Rejected device copies whose sender does not match parent message', myDeviceId, metadata: { messageId, expectedSenderUserId, rejected: before - rows.length } });
       if (rows.length === 0) {
         return null;
@@ -565,6 +600,11 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
     logCryptoException('decrypt', e, { severity: 'error', myDeviceId, metadata: { messageId, stage: 'tryReadDeviceCopy' } });
     return null;
   }
+}
+
+function filterCopyRowsByExpectedSender(rows: CopyRow[], expectedSenderUserId?: string): CopyRow[] {
+  if (!expectedSenderUserId) return rows;
+  return rows.filter(row => row.sender_user_id === expectedSenderUserId);
 }
 
 
