@@ -15,6 +15,7 @@ export interface DeviceLinkQrPayload {
   v: 2;
   type: typeof DEVICE_LINK_QR_TYPE;
   t: string;
+  pk?: JsonWebKey;
 }
 
 export interface DeviceLinkTransferEnvelope {
@@ -43,6 +44,24 @@ function assertP256Jwk(jwk: JsonWebKey, role: 'public' | 'private'): void {
   }
   if (role === 'private' && typeof jwk.d !== 'string') {
     throw new Error('Invalid linked-device private key');
+  }
+}
+
+function canonicalPublicJwk(jwk: JsonWebKey): JsonWebKey {
+  assertP256Jwk(jwk, 'public');
+  return {
+    kty: 'EC',
+    crv: 'P-256',
+    x: jwk.x,
+    y: jwk.y,
+  };
+}
+
+export function deviceLinkPublicKeysEqual(a: JsonWebKey, b: JsonWebKey): boolean {
+  try {
+    return JSON.stringify(canonicalPublicJwk(a)) === JSON.stringify(canonicalPublicJwk(b));
+  } catch {
+    return false;
   }
 }
 
@@ -87,13 +106,34 @@ export async function hashDeviceLinkToken(token: string): Promise<string> {
   return hexFromBuffer(digest);
 }
 
-export function buildDeviceLinkQrData(token: string): string {
+export function buildDeviceLinkQrData(token: string, requesterPublicJwk?: JsonWebKey): string {
   const payload: DeviceLinkQrPayload = {
     v: 2,
     type: DEVICE_LINK_QR_TYPE,
     t: token,
+    ...(requesterPublicJwk ? { pk: canonicalPublicJwk(requesterPublicJwk) } : {}),
   };
   return JSON.stringify(payload);
+}
+
+export function parseDeviceLinkQrPayload(qrData: string): DeviceLinkQrPayload {
+  const raw = qrData.trim();
+  if (!raw) throw new Error('Code de liaison vide');
+  const parsed = JSON.parse(raw) as Partial<DeviceLinkQrPayload> & { token?: unknown };
+  const token = typeof parsed.t === 'string' ? parsed.t : typeof parsed.token === 'string' ? parsed.token : '';
+  if (!token) throw new Error('Code de liaison invalide');
+  if (parsed.v !== 2 || parsed.type !== DEVICE_LINK_QR_TYPE) {
+    throw new Error('Code de liaison non authentifie');
+  }
+  if (!parsed.pk) {
+    throw new Error('Code de liaison sans cle publique');
+  }
+  return {
+    v: 2,
+    type: DEVICE_LINK_QR_TYPE,
+    t: token,
+    pk: canonicalPublicJwk(parsed.pk),
+  };
 }
 
 export function parseDeviceLinkToken(qrData: string): string {

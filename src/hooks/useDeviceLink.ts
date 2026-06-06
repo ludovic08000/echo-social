@@ -21,10 +21,12 @@ import { runTx, runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
 import {
   buildDeviceLinkQrData,
   decryptDeviceLinkPayload,
+  deviceLinkPublicKeysEqual,
   encryptDeviceLinkPayload,
   generateDeviceLinkKeyPair,
   generateDeviceLinkToken,
   hashDeviceLinkToken,
+  parseDeviceLinkQrPayload,
   parseDeviceLinkToken,
   type DeviceLinkTransferEnvelope,
 } from '@/lib/crypto/deviceLinkEnvelope';
@@ -214,7 +216,7 @@ export function useDeviceLink() {
       });
       if (rpcError) throw rpcError;
 
-      return { qrData: buildDeviceLinkQrData(token), token };
+      return { qrData: buildDeviceLinkQrData(token, pair.publicJwk), token };
     } catch (err: any) {
       setError(err.message || 'Erreur de creation de demande');
       return null;
@@ -233,7 +235,8 @@ export function useDeviceLink() {
     setError(null);
 
     try {
-      const token = parseDeviceLinkToken(qrData);
+      const qr = parseDeviceLinkQrPayload(qrData);
+      const token = qr.t;
       const tokenHash = await hashDeviceLinkToken(token);
       const currentDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
 
@@ -246,6 +249,9 @@ export function useDeviceLink() {
       if (!request) throw new Error('Demande expiree ou deja approuvee');
       if (request.requester_device_id === currentDeviceId) {
         throw new Error('Ouvre ce QR depuis un autre appareil deja connecte');
+      }
+      if (!deviceLinkPublicKeysEqual(request.requester_public_key as JsonWebKey, qr.pk as JsonWebKey)) {
+        throw new Error('QR de liaison non authentifie: cle publique differente');
       }
 
       let keysJson = await collectLocalKeys();

@@ -6,9 +6,11 @@ import { bufferToBase64, base64ToBuffer } from '../utils';
 import {
   buildDeviceLinkQrData,
   decryptDeviceLinkPayload,
+  deviceLinkPublicKeysEqual,
   encryptDeviceLinkPayload,
   generateDeviceLinkKeyPair,
   generateDeviceLinkToken,
+  parseDeviceLinkQrPayload,
   parseDeviceLinkToken,
 } from '../deviceLinkEnvelope';
 
@@ -35,7 +37,7 @@ describe('Device link crypto (new device)', () => {
       'plaintext:cache': [{ id: 'msg1', plaintext: 'cached history' }],
     });
     const token = generateDeviceLinkToken();
-    const qrData = buildDeviceLinkQrData(token);
+    const qrData = buildDeviceLinkQrData(token, requester.publicJwk);
 
     const envelope = await encryptDeviceLinkPayload(keysJson, requester.publicJwk);
     const wire = JSON.stringify(envelope);
@@ -43,6 +45,7 @@ describe('Device link crypto (new device)', () => {
     expect(parseDeviceLinkToken(qrData)).toBe(token);
     expect(qrData).not.toContain('secret');
     expect(qrData).not.toContain('cached history');
+    expect(deviceLinkPublicKeysEqual(parseDeviceLinkQrPayload(qrData).pk!, requester.publicJwk)).toBe(true);
     expect(wire).not.toContain('secret');
     expect(wire).not.toContain('cached history');
 
@@ -118,12 +121,26 @@ describe('Device link crypto (new device)', () => {
     ).rejects.toThrow();
   });
 
-  it('QR code contains only claim token, not encryption PIN', () => {
+  it('QR code contains token and requester public key, but no PIN or private material', async () => {
     const pin = 'XYZW5678';
-    const token = 'abc-123-def';
-    const qrData = JSON.stringify({ t: token });
+    const token = generateDeviceLinkToken();
+    const requester = await generateDeviceLinkKeyPair();
+    const qrData = buildDeviceLinkQrData(token, requester.publicJwk);
+    const parsed = parseDeviceLinkQrPayload(qrData);
 
     expect(qrData).toContain(token);
     expect(qrData).not.toContain(pin);
+    expect(qrData).not.toContain(requester.privateJwk.d);
+    expect(deviceLinkPublicKeysEqual(parsed.pk!, requester.publicJwk)).toBe(true);
+  });
+
+  it('detects requester public key substitution during approval', async () => {
+    const requester = await generateDeviceLinkKeyPair();
+    const substituted = await generateDeviceLinkKeyPair();
+    const token = generateDeviceLinkToken();
+    const qrData = buildDeviceLinkQrData(token, requester.publicJwk);
+
+    expect(deviceLinkPublicKeysEqual(parseDeviceLinkQrPayload(qrData).pk!, requester.publicJwk)).toBe(true);
+    expect(deviceLinkPublicKeysEqual(parseDeviceLinkQrPayload(qrData).pk!, substituted.publicJwk)).toBe(false);
   });
 });
