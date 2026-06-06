@@ -599,7 +599,7 @@ export function useMessages(conversationId: string) {
         if (anyDecrypted && typeof window !== 'undefined') {
           try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
         }
-        void processDeviceCopyRetryRequests().catch(() => {});
+        // v5: deviceCopyRetryProcessor removed
       }
 
       const senderIds = [...new Set(compatibleMessages.map(m => m.sender_id))];
