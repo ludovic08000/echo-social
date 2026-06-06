@@ -278,8 +278,8 @@ async function x3dhUnwrapForDevice(
     } catch {}
 
     return new hardGlobals.TextDecoder().decode(pt);
-  } catch {
-    return null;
+  } catch (e) {
+    throw e;
   }
 }
 

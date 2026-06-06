@@ -16,9 +16,20 @@ const mocks = vi.hoisted(() => ({
   ratchetDecryptWithSession: vi.fn(),
   requestDeviceCopyRetry: vi.fn(),
   supabaseRpc: vi.fn(),
+  x3dhRespondForDevice: vi.fn(),
+  getOrCreateIdentityKeys: vi.fn(),
+  senderIdentityKey: { value: null as string | null },
   x3dhUnwrapForDeviceFlag: { called: false },
 }));
-const { ratchetDecryptWithSession, requestDeviceCopyRetry, supabaseRpc, x3dhUnwrapForDeviceFlag } = mocks;
+const {
+  ratchetDecryptWithSession,
+  requestDeviceCopyRetry,
+  supabaseRpc,
+  x3dhRespondForDevice,
+  getOrCreateIdentityKeys,
+  senderIdentityKey,
+  x3dhUnwrapForDeviceFlag,
+} = mocks;
 
 vi.mock('@/lib/crypto/deviceRatchet', () => ({
   ratchetEncrypt: vi.fn(),
@@ -41,7 +52,11 @@ vi.mock('@/integrations/supabase/client', () => ({
       select: () => ({
         eq: () => ({ eq: () => ({ maybeSingle: () => {
           mocks.x3dhUnwrapForDeviceFlag.called = true;
-          return Promise.resolve({ data: null });
+          return Promise.resolve({
+            data: mocks.senderIdentityKey.value
+              ? { identity_key: mocks.senderIdentityKey.value }
+              : null,
+          });
         } }) }),
       }),
     }),
@@ -64,11 +79,11 @@ vi.mock('@/lib/crypto/x3dh', () => ({
   peekDeviceSignedPrekey: vi.fn(),
   x3dhInitiate: vi.fn(),
   x3dhRespond: vi.fn(),
-  x3dhRespondForDevice: vi.fn(),
+  x3dhRespondForDevice: mocks.x3dhRespondForDevice,
 }));
 
 vi.mock('@/lib/crypto/keyManager', () => ({
-  getOrCreateIdentityKeys: vi.fn(),
+  getOrCreateIdentityKeys: mocks.getOrCreateIdentityKeys,
   PinUnlockRequiredError: class PinUnlockRequiredError extends Error {},
 }));
 
@@ -94,6 +109,10 @@ beforeEach(() => {
   requestDeviceCopyRetry.mockResolvedValue(true);
   supabaseRpc.mockReset();
   supabaseRpc.mockResolvedValue({ data: [] });
+  x3dhRespondForDevice.mockReset();
+  getOrCreateIdentityKeys.mockReset();
+  getOrCreateIdentityKeys.mockResolvedValue({});
+  senderIdentityKey.value = null;
   x3dhUnwrapForDeviceFlag.called = false;
 });
 
@@ -280,5 +299,38 @@ describe('tryDecryptCopy — cross-platform v5 envelope routing', () => {
     expect(pt).toBeNull();
     expect(ratchetDecryptWithSession).not.toHaveBeenCalled();
     expect(requestDeviceCopyRetry).not.toHaveBeenCalled();
+  });
+
+  it('requests a fresh copy when x3dh5.init used an OPK missing from local storage', async () => {
+    senderIdentityKey.value = 'sender-identity-key-b64';
+    x3dhRespondForDevice.mockRejectedValue(new Error('X3DH_OPK_PRIVATE_MISSING'));
+    supabaseRpc.mockImplementation((name: string) => {
+      if (name === 'get_device_copy_for_message') {
+        return Promise.resolve({
+          data: [{
+            encrypted_body: 'x3dh5.init.AAAA.AAAA.AAAA.1.7',
+            sender_user_id: SENDER.user_id,
+            sender_device_id: SENDER.device_id,
+            recipient_device_id: ME.deviceId,
+          }],
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    const pt = await tryReadDeviceCopy('message-opk-missing', SENDER.user_id);
+
+    expect(pt).toBeNull();
+    expect(x3dhRespondForDevice).toHaveBeenCalledWith(
+      expect.anything(),
+      ME.userId,
+      ME.deviceId,
+      expect.objectContaining({ opkId: 7 }),
+    );
+    expect(requestDeviceCopyRetry).toHaveBeenCalledWith({
+      messageId: 'message-opk-missing',
+      senderUserId: SENDER.user_id,
+      senderDeviceId: SENDER.device_id,
+    });
   });
 });

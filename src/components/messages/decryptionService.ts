@@ -75,7 +75,7 @@ const inflight = new Map<string, Promise<DecryptionOutcome | null>>();
  * The cache is invalidated by the global `forsure-decrypt-retry` event
  * (dispatched after key restoration / pending-queue success).
  */
-const NEG_TTL_MS = 5_000;
+const NEG_TTL_MS = 60_000;
 const negCache = new Map<string, number>();
 function negCacheHit(k: string): boolean {
   const at = negCache.get(k);
@@ -242,6 +242,15 @@ export async function resolvePlaintext(opts: {
             return outcome;
           }
         }
+      }
+
+      // WhatsApp-style multi-device parent envelopes are placeholders: the
+      // real ciphertext lives in the per-device copy. Retrying legacy routes
+      // here only duplicates refanout requests and can never decrypt the
+      // parent body itself.
+      if (isMultiDeviceEnvelopeBody(body)) {
+        negCache.set(key, Date.now());
+        return null;
       }
 
       // 3) e2ee-session façade (multi-session ratchet + queue).
