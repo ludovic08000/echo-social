@@ -88,6 +88,11 @@ interface StoredSession {
   legacyRecvCounter?: number;
 }
 
+interface DecryptLogContext {
+  peerUserId?: string;
+  peerDeviceId?: string;
+}
+
 function compositeKey(myUserId: string, myDeviceId: string, peerUserId: string, peerDeviceId: string): string {
   return `${myUserId}::${myDeviceId}::${peerUserId}::${peerDeviceId}`;
 }
@@ -459,7 +464,7 @@ async function decryptV4or5(
   const aad = isV5 && peer
     ? buildDevAAD(peer.myUserId, peer.myDeviceId, peer.peerUserId, peer.peerDeviceId, sessionId)
     : null;
-  return decryptV4WithStored(found.key, found.session, parts, aad, isV5);
+  return decryptV4WithStored(found.key, found.session, parts, aad, isV5, peer ?? undefined);
 }
 
 export async function ratchetDecryptWithSession(
@@ -483,7 +488,7 @@ export async function ratchetDecryptWithSession(
   const aad = isV5
     ? buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, parts[0])
     : null;
-  return decryptV4WithStored(key, session, parts, aad, isV5);
+  return decryptV4WithStored(key, session, parts, aad, isV5, { peerUserId, peerDeviceId });
 }
 
 async function decryptV4WithStored(
@@ -492,6 +497,7 @@ async function decryptV4WithStored(
   parts: string[],
   aad: Uint8Array | null,
   requireAAD = false,
+  logContext: DecryptLogContext = {},
 ): Promise<string | null> {
   const [sessionId, dhPubB64, NsStr, PNStr, ivB64, ctB64] = parts;
   const Ns = parseInt(NsStr, 10);
@@ -546,6 +552,8 @@ async function decryptV4WithStored(
       errorCode: requireAAD ? 'E_DECRYPT_V5' : 'E_DECRYPT_V4',
       errorMessage: err instanceof Error ? err.message : String(err),
       myDeviceId: key.split('::')[1] ?? 'unknown',
+      peerUserId: logContext.peerUserId,
+      peerDeviceId: logContext.peerDeviceId,
       metadata: { sessionId, Ns, PN, requireAAD },
     });
     return null;

@@ -14,9 +14,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Hoisted so the vi.mock factories below can reference these handles safely.
 const mocks = vi.hoisted(() => ({
   ratchetDecryptWithSession: vi.fn(),
+  requestDeviceCopyRetry: vi.fn(),
+  supabaseRpc: vi.fn(),
   x3dhUnwrapForDeviceFlag: { called: false },
 }));
-const { ratchetDecryptWithSession, x3dhUnwrapForDeviceFlag } = mocks;
+const { ratchetDecryptWithSession, requestDeviceCopyRetry, supabaseRpc, x3dhUnwrapForDeviceFlag } = mocks;
 
 vi.mock('@/lib/crypto/deviceRatchet', () => ({
   ratchetEncrypt: vi.fn(),
@@ -43,7 +45,7 @@ vi.mock('@/integrations/supabase/client', () => ({
         } }) }),
       }),
     }),
-    rpc: () => Promise.resolve({ data: [] }),
+    rpc: mocks.supabaseRpc,
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'user-recipient' } } }) },
   },
 }));
@@ -54,7 +56,7 @@ vi.mock('@/lib/messaging/currentDevice', () => ({
 }));
 
 vi.mock('@/lib/messaging/deviceCopyRetryRequest', () => ({
-  requestDeviceCopyRetry: vi.fn(),
+  requestDeviceCopyRetry: mocks.requestDeviceCopyRetry,
 }));
 
 vi.mock('@/lib/crypto/x3dh', () => ({
@@ -81,13 +83,17 @@ vi.mock('@/lib/crypto/utils', () => ({
   base64ToBuffer: (s: string) => Buffer.from(s, 'base64').buffer,
 }));
 
-import { tryDecryptDeviceTargetedBody } from '@/lib/messaging/multiDeviceFanout';
+import { tryDecryptDeviceTargetedBody, tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
 
 const SENDER = { user_id: 'user-windows', device_id: 'device-windows' };
 const ME = { userId: 'user-recipient', deviceId: 'device-ios' };
 
 beforeEach(() => {
   ratchetDecryptWithSession.mockReset();
+  requestDeviceCopyRetry.mockReset();
+  requestDeviceCopyRetry.mockResolvedValue(true);
+  supabaseRpc.mockReset();
+  supabaseRpc.mockResolvedValue({ data: [] });
   x3dhUnwrapForDeviceFlag.called = false;
 });
 
@@ -169,5 +175,54 @@ describe('tryDecryptCopy — cross-platform v5 envelope routing', () => {
     expect(ratchetDecryptWithSession).toHaveBeenCalledTimes(1);
     // Still must not fall through to X3DH unwrap (would consume an OPK for nothing).
     expect(x3dhUnwrapForDeviceFlag.called).toBe(false);
+  });
+
+  it('requests a fresh device copy when a v5 row exists but decrypt fails', async () => {
+    ratchetDecryptWithSession.mockResolvedValue(null);
+    supabaseRpc.mockImplementation((name: string) => {
+      if (name === 'get_device_copy_for_message') {
+        return Promise.resolve({
+          data: [{
+            encrypted_body: 'x3dh5.session-abc.peerDh.0.0.aaaa.bbbb',
+            sender_user_id: SENDER.user_id,
+            sender_device_id: SENDER.device_id,
+            recipient_device_id: ME.deviceId,
+          }],
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    const pt = await tryReadDeviceCopy('message-v5-failed', SENDER.user_id);
+
+    expect(pt).toBeNull();
+    expect(ratchetDecryptWithSession).toHaveBeenCalledTimes(1);
+    expect(requestDeviceCopyRetry).toHaveBeenCalledWith({
+      messageId: 'message-v5-failed',
+      senderUserId: SENDER.user_id,
+    });
+  });
+
+  it('does not request retry during diagnostic resync scans', async () => {
+    ratchetDecryptWithSession.mockResolvedValue(null);
+    supabaseRpc.mockImplementation((name: string) => {
+      if (name === 'get_device_copy_for_message') {
+        return Promise.resolve({
+          data: [{
+            encrypted_body: 'x3dh5.session-abc.peerDh.0.0.aaaa.bbbb',
+            sender_user_id: SENDER.user_id,
+            sender_device_id: SENDER.device_id,
+            recipient_device_id: ME.deviceId,
+          }],
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    const pt = await tryReadDeviceCopy('message-resync-scan', SENDER.user_id, { requestRetry: false });
+
+    expect(pt).toBeNull();
+    expect(ratchetDecryptWithSession).toHaveBeenCalledTimes(1);
+    expect(requestDeviceCopyRetry).not.toHaveBeenCalled();
   });
 });

@@ -4,7 +4,7 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
-// requestDeviceCopyRetry removed — refanout in messageRouter is the single retry path
+import { requestDeviceCopyRetry } from './deviceCopyRetryRequest';
 import {
   fetchPrekeyBundleForDevice,
   isDevicePrekeyBundleError,
@@ -55,6 +55,22 @@ interface DeviceEncryptTargetInput {
 
 const X3DH_BOOTSTRAP_PREFIX_V5 = 'x3dh5.init.';
 const INVALID_DEVICE_STORE_KEY = 'forsure:invalid-device-spk-cache:v1';
+
+type DeviceCopyPrefix = 'x3dh5.init' | 'x3dh5' | 'x3dh4' | 'unsupported';
+
+interface DeviceCopyDecryptAttempt {
+  plaintext: string | null;
+  attemptedSupportedEnvelope: boolean;
+  retryable: boolean;
+  reason?: string;
+}
+
+function classifyDeviceCopyPrefix(body: string): DeviceCopyPrefix {
+  if (body.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) return 'x3dh5.init';
+  if (body.startsWith(RATCHET_PREFIX_V5)) return 'x3dh5';
+  if (body.startsWith(RATCHET_PREFIX_V4)) return 'x3dh4';
+  return 'unsupported';
+}
 
 const KNOWN_INVALID_DEVICE_IDS = new Set<string>([
   '9da8c742a4fe81d1d9ce6c0ffb4e055b',
@@ -466,10 +482,11 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
 
 interface TryReadDeviceCopyOptions { requestRetry?: boolean; }
 
-export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?: string, _options: TryReadDeviceCopyOptions = {}): Promise<string | null> {
+export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?: string, options: TryReadDeviceCopyOptions = {}): Promise<string | null> {
   const myDeviceId = getCurrentDeviceId();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
+  const shouldRequestRetry = options.requestRetry !== false;
 
   try {
     type CopyRow = { encrypted_body: string; sender_user_id: string; sender_device_id: string; recipient_device_id?: string };
@@ -495,11 +512,49 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       }
     }
 
+    const retrySenderIds = new Set<string>();
+    const failedAttempts: Array<Record<string, string>> = [];
     for (const row of rows) {
       const targetDeviceId = row.recipient_device_id || myDeviceId;
-      const pt = await tryDecryptCopy(row, user.id, targetDeviceId);
-      if (pt !== null) return pt;
+      const attempt = await tryDecryptCopy(row, user.id, targetDeviceId);
+      if (attempt.plaintext !== null) return attempt.plaintext;
+      if (!attempt.attemptedSupportedEnvelope) continue;
+
+      failedAttempts.push({
+        senderUserId: row.sender_user_id,
+        senderDeviceId: row.sender_device_id,
+        targetDeviceId,
+        prefix: classifyDeviceCopyPrefix(row.encrypted_body),
+        reason: attempt.reason ?? 'decrypt_returned_null',
+      });
+      if (attempt.retryable) retrySenderIds.add(row.sender_user_id);
     }
+
+    if (failedAttempts.length > 0) {
+      logCryptoError({
+        severity: 'warning',
+        context: 'decrypt',
+        errorCode: 'DEVICE_COPY_DECRYPT_FAILED',
+        errorMessage: 'Supported device-copy envelopes were present but none decrypted',
+        myDeviceId,
+        metadata: {
+          messageId,
+          candidates: rows.length,
+          failed: failedAttempts.slice(0, 8),
+          retryEligibleSenders: [...retrySenderIds],
+          retryEnabled: shouldRequestRetry,
+        },
+      });
+    }
+
+    if (shouldRequestRetry && retrySenderIds.size > 0) {
+      await Promise.all(
+        [...retrySenderIds].map(senderUserId =>
+          requestDeviceCopyRetry({ messageId, senderUserId }),
+        ),
+      );
+    }
+
     return null;
   } catch (e) {
     logCryptoException('decrypt', e, { severity: 'error', myDeviceId, metadata: { messageId, stage: 'tryReadDeviceCopy' } });
@@ -509,24 +564,44 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
 
 
 export async function tryDecryptDeviceTargetedBody(row: { encrypted_body: string; sender_user_id: string; sender_device_id: string }, userId: string, myDeviceId: string): Promise<string | null> {
-  return tryDecryptCopy(row, userId, myDeviceId);
+  return (await tryDecryptCopy(row, userId, myDeviceId)).plaintext;
 }
 
-async function tryDecryptCopy(row: { encrypted_body: string; sender_user_id: string; sender_device_id: string }, userId: string, myDeviceId: string): Promise<string | null> {
+async function tryDecryptCopy(row: { encrypted_body: string; sender_user_id: string; sender_device_id: string }, userId: string, myDeviceId: string): Promise<DeviceCopyDecryptAttempt> {
+  const prefix = classifyDeviceCopyPrefix(row.encrypted_body);
   try {
-    if (row.encrypted_body.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) {
+    if (prefix === 'x3dh5.init') {
       const { data: senderPub } = await supabase.from('user_public_keys').select('identity_key').eq('user_id', row.sender_user_id).eq('is_active', true).maybeSingle();
-      if (!senderPub?.identity_key) return null;
-      return await x3dhUnwrapForDevice(row.encrypted_body, userId, senderPub.identity_key, row.sender_user_id, row.sender_device_id);
+      if (!senderPub?.identity_key) {
+        return { plaintext: null, attemptedSupportedEnvelope: true, retryable: false, reason: 'sender_identity_key_missing' };
+      }
+      const plaintext = await x3dhUnwrapForDevice(row.encrypted_body, userId, senderPub.identity_key, row.sender_user_id, row.sender_device_id);
+      return {
+        plaintext,
+        attemptedSupportedEnvelope: true,
+        retryable: plaintext === null,
+        reason: plaintext === null ? 'x3dh5_init_decrypt_returned_null' : undefined,
+      };
     }
 
-    if (row.encrypted_body.startsWith(RATCHET_PREFIX_V5) || row.encrypted_body.startsWith(RATCHET_PREFIX_V4)) {
+    if (prefix === 'x3dh5' || prefix === 'x3dh4') {
       const pt = await ratchetDecryptWithSession(userId, myDeviceId, row.sender_user_id, row.sender_device_id, row.encrypted_body);
-      return pt ?? null;
+      return {
+        plaintext: pt ?? null,
+        attemptedSupportedEnvelope: true,
+        retryable: pt === null,
+        reason: pt === null ? `${prefix}_decrypt_returned_null` : undefined,
+      };
     }
 
-    return null;
-  } catch {
-    return null;
+    return { plaintext: null, attemptedSupportedEnvelope: false, retryable: false, reason: 'unsupported_prefix' };
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    return {
+      plaintext: null,
+      attemptedSupportedEnvelope: prefix !== 'unsupported',
+      retryable: prefix !== 'unsupported',
+      reason,
+    };
   }
 }
