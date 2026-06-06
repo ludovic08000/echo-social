@@ -180,6 +180,11 @@ export function useMessageQueue(
           });
 
           if (isSafetyMismatch) {
+            try {
+              window.dispatchEvent(new CustomEvent('forsure:e2ee-contact-verification-required', {
+                detail: { conversationId, localId, reason: errMsg },
+              }));
+            } catch {}
             throw encryptError instanceof Error
               ? encryptError
               : new Error(errMsg);

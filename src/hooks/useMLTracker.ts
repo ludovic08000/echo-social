@@ -29,7 +29,16 @@ const SIGNAL_WEIGHT: Record<SignalType, number> = {
 const POSITIVE_SIGNALS: SignalType[] = ["like", "comment", "share", "dwell_long", "click"];
 const NEGATIVE_SIGNALS: SignalType[] = ["hide", "report", "skip_fast"];
 
-const queue: Array<{ user_id: string; post_id: string; signal_type: SignalType; weight: number; dwell_ms?: number; scroll_depth?: number }> = [];
+type QueuedInteraction = {
+  user_id: string;
+  post_id: string;
+  signal_type: SignalType;
+  weight: number;
+  dwell_ms?: number;
+  scroll_depth?: number;
+};
+
+const queue: QueuedInteraction[] = [];
 const watchTimeQueue: Array<{ post_id: string; dwell_ms: number }> = [];
 let flushTimer: number | null = null;
 
@@ -47,15 +56,19 @@ function flushSoon() {
     const watchBatch = watchTimeQueue.splice(0, watchTimeQueue.length);
 
     if (batch.length) {
-      const now = new Date();
-      const rows = batch.map((b) => ({
-        ...b,
-        hour_of_day: now.getHours(),
-        day_of_week: now.getDay(),
-        is_weekend: now.getDay() === 0 || now.getDay() === 6,
-      }));
+      const rows = batch.map(sanitizeInteraction);
       try {
-        await supabase.from("ml_interactions").insert(rows);
+        const { error } = await supabase.from("ml_interactions").insert(rows);
+        if (error) {
+          const minimalRows = rows.map(({ user_id, post_id, signal_type, weight }) => ({
+            user_id,
+            post_id,
+            signal_type,
+            weight,
+          }));
+          const { error: fallbackError } = await supabase.from("ml_interactions").insert(minimalRows);
+          if (fallbackError) throw fallbackError;
+        }
       } catch (e) {
         console.warn("[ML] Failed to flush interactions", e);
       }
@@ -84,6 +97,21 @@ function flushSoon() {
       }
     }
   }, 1500);
+}
+
+function sanitizeInteraction(row: QueuedInteraction): QueuedInteraction {
+  const next: QueuedInteraction = {
+    user_id: row.user_id,
+    post_id: row.post_id,
+    signal_type: row.signal_type,
+    weight: Number.isFinite(row.weight) ? Math.max(-9.99, Math.min(9.99, row.weight)) : 1,
+  };
+
+  if (typeof row.dwell_ms === "number" && Number.isFinite(row.dwell_ms)) {
+    next.dwell_ms = Math.max(0, Math.min(24 * 60 * 60 * 1000, Math.round(row.dwell_ms)));
+  }
+
+  return next;
 }
 
 /**
