@@ -7,7 +7,7 @@ import { messageQueue } from '@/lib/messaging/messageQueue';
 import { isCryptoJsonBody, isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { pendingMessageQueue, routeIncoming } from '@/e2ee-session';
 import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
-import { processDeviceCopyRetryRequests } from '@/lib/messaging/deviceCopyRetryProcessor';
+// v5: deviceCopyRetryProcessor removed
 import { clearNegativeCache } from '@/components/messages/decryptionService';
 
 async function hideMessagesForUser(userId: string, messageIds: string[]) {
