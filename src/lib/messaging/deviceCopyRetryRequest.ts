@@ -8,6 +8,7 @@ const lastRequestAt = new Map<string, number>();
 interface RetryRequestInput {
   messageId: string;
   senderUserId: string;
+  senderDeviceId?: string | null;
 }
 
 export async function requestDeviceCopyRetry(input: RetryRequestInput): Promise<boolean> {
@@ -35,7 +36,9 @@ export async function requestDeviceCopyRetry(input: RetryRequestInput): Promise<
         errorCode: 'DEVICE_COPY_RETRY_REQUEST_FAILED',
         errorMessage: error.message,
         myDeviceId: requesterDeviceId,
-        metadata: { messageId: input.messageId, senderUserId: input.senderUserId },
+        peerUserId: input.senderUserId,
+        peerDeviceId: input.senderDeviceId,
+        metadata: { messageId: input.messageId, senderUserId: input.senderUserId, senderDeviceId: input.senderDeviceId },
       });
       return false;
     }
@@ -48,7 +51,9 @@ export async function requestDeviceCopyRetry(input: RetryRequestInput): Promise<
         errorCode: result.code || 'DEVICE_COPY_RETRY_NOT_QUEUED',
         errorMessage: 'Fresh device-copy retry was not queued',
         myDeviceId: requesterDeviceId,
-        metadata: { messageId: input.messageId, senderUserId: input.senderUserId },
+        peerUserId: input.senderUserId,
+        peerDeviceId: input.senderDeviceId,
+        metadata: { messageId: input.messageId, senderUserId: input.senderUserId, senderDeviceId: input.senderDeviceId },
       });
       return false;
     }
@@ -59,7 +64,9 @@ export async function requestDeviceCopyRetry(input: RetryRequestInput): Promise<
       errorCode: 'DEVICE_COPY_RETRY_REQUESTED',
       errorMessage: 'Requested a fresh encrypted device copy from sender',
       myDeviceId: requesterDeviceId,
-      metadata: { messageId: input.messageId, senderUserId: input.senderUserId },
+      peerUserId: input.senderUserId,
+      peerDeviceId: input.senderDeviceId,
+      metadata: { messageId: input.messageId, senderUserId: input.senderUserId, senderDeviceId: input.senderDeviceId },
     });
     return true;
   } catch (e) {

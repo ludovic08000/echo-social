@@ -512,7 +512,7 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       }
     }
 
-    const retrySenderIds = new Set<string>();
+    const retrySenders = new Map<string, string | null>();
     const failedAttempts: Array<Record<string, string>> = [];
     for (const row of rows) {
       const targetDeviceId = row.recipient_device_id || myDeviceId;
@@ -527,30 +527,35 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
         prefix: classifyDeviceCopyPrefix(row.encrypted_body),
         reason: attempt.reason ?? 'decrypt_returned_null',
       });
-      if (attempt.retryable) retrySenderIds.add(row.sender_user_id);
+      if (attempt.retryable && !retrySenders.has(row.sender_user_id)) {
+        retrySenders.set(row.sender_user_id, row.sender_device_id);
+      }
     }
 
     if (failedAttempts.length > 0) {
+      const firstFailure = failedAttempts[0];
       logCryptoError({
         severity: 'warning',
         context: 'decrypt',
         errorCode: 'DEVICE_COPY_DECRYPT_FAILED',
         errorMessage: 'Supported device-copy envelopes were present but none decrypted',
         myDeviceId,
+        peerUserId: firstFailure?.senderUserId,
+        peerDeviceId: firstFailure?.senderDeviceId,
         metadata: {
           messageId,
           candidates: rows.length,
           failed: failedAttempts.slice(0, 8),
-          retryEligibleSenders: [...retrySenderIds],
+          retryEligibleSenders: [...retrySenders.keys()],
           retryEnabled: shouldRequestRetry,
         },
       });
     }
 
-    if (shouldRequestRetry && retrySenderIds.size > 0) {
+    if (shouldRequestRetry && retrySenders.size > 0) {
       await Promise.all(
-        [...retrySenderIds].map(senderUserId =>
-          requestDeviceCopyRetry({ messageId, senderUserId }),
+        [...retrySenders.entries()].map(([senderUserId, senderDeviceId]) =>
+          requestDeviceCopyRetry({ messageId, senderUserId, senderDeviceId }),
         ),
       );
     }
@@ -586,6 +591,9 @@ async function tryDecryptCopy(row: { encrypted_body: string; sender_user_id: str
 
     if (prefix === 'x3dh5' || prefix === 'x3dh4') {
       const pt = await ratchetDecryptWithSession(userId, myDeviceId, row.sender_user_id, row.sender_device_id, row.encrypted_body);
+      if (pt === null) {
+        await invalidateDeviceSession(userId, myDeviceId, row.sender_user_id, row.sender_device_id).catch(() => {});
+      }
       return {
         plaintext: pt ?? null,
         attemptedSupportedEnvelope: true,

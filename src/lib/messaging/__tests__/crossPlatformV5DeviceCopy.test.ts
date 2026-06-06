@@ -200,6 +200,7 @@ describe('tryDecryptCopy — cross-platform v5 envelope routing', () => {
     expect(requestDeviceCopyRetry).toHaveBeenCalledWith({
       messageId: 'message-v5-failed',
       senderUserId: SENDER.user_id,
+      senderDeviceId: SENDER.device_id,
     });
   });
 
