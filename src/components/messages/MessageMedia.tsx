@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, memo, useMemo } from 'react';
+import { Lock } from 'lucide-react';
 import { EncryptedMedia } from './EncryptedMedia';
 import { isVideoMediaLabel, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
@@ -41,10 +42,10 @@ export const MessageMedia = memo(function MessageMedia({
   // where the message was inserted in compatibility mode (encrypt failed
   // upstream, body contains label + \x00MKEY:keyB64 in clear).
   const inlineMedia = useMemo(() => {
-    const source = cachedPlaintext || body;
+    const source = cachedPlaintext || (!isEncryptionActive ? body : '');
     if (!source) return null;
     return parseMediaMessage(source);
-  }, [body, cachedPlaintext]);
+  }, [body, cachedPlaintext, isEncryptionActive]);
 
   const [mediaKey, setMediaKey] = useState<string | null>(() => {
     if (messageId) {
@@ -121,11 +122,23 @@ export const MessageMedia = memo(function MessageMedia({
       });
     }
 
+    // Subscribe before any early return: multi-device parent envelopes do not
+    // look like strict ratchet bodies, but DecryptedMessageBody can still
+    // recover their per-device copy and publish the media key later.
+    const earlyUnsubscribe = messageId
+      ? subscribeMediaKey(messageId, (entry) => {
+          if (cancelled) return;
+          setMediaKey(entry.mediaKeyB64);
+          setIsVideo(entry.isVideo);
+          setResolved(true);
+        })
+      : () => {};
+
     const shouldAttemptDecrypt = isEncryptionActive || looksEncryptedMessage(body);
 
     if (!shouldAttemptDecrypt || !looksEncryptedMessage(body)) {
       setResolved(true);
-      return () => { cancelled = true; };
+      return () => { cancelled = true; earlyUnsubscribe(); };
     }
 
     // Subscribe — DecryptedMessageBody pushes the key the moment it's ready.
@@ -156,7 +169,7 @@ export const MessageMedia = memo(function MessageMedia({
       });
     }, 1000);
 
-    return () => { cancelled = true; unsubscribe(); clearTimeout(fallbackTimer); };
+    return () => { cancelled = true; earlyUnsubscribe(); unsubscribe(); clearTimeout(fallbackTimer); };
   }, [body, cachedPlaintext, decrypt, inlineMedia, isEncryptionActive, messageId, retryTick]);
 
   if (!resolved) return null;
@@ -168,6 +181,15 @@ export const MessageMedia = memo(function MessageMedia({
         mediaKeyB64={mediaKey}
         isVideo={isVideo}
       />
+    );
+  }
+
+  if (isEncryptionActive) {
+    return (
+      <div className="flex items-center justify-center gap-2 p-4 rounded-lg bg-muted/50 min-h-[72px] max-w-full">
+        <Lock className="w-4 h-4 text-muted-foreground" />
+        <span className="text-xs text-muted-foreground">Média chiffré en attente de clé</span>
+      </div>
     );
   }
 

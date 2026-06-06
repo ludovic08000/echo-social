@@ -37,16 +37,6 @@ export default defineConfig(({ mode }) => ({
         cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/vkpmoqfzrihcijjochks\.supabase\.co\/rest\/.*/i,
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "supabase-api-e2ee-final-v1",
-              expiration: { maxEntries: 20, maxAgeSeconds: 30 },
-              networkTimeoutSeconds: 3,
-              cacheableResponse: { statuses: [200] },
-            },
-          },
-          {
             urlPattern: /^https:\/\/vkpmoqfzrihcijjochks\.supabase\.co\/storage\/.*/i,
             handler: "CacheFirst",
             options: {
