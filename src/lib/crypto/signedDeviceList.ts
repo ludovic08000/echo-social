@@ -42,6 +42,16 @@ function canonicalPayload(args: {
   return JSON.stringify({ u: args.userId, d: args.deviceId, dp: args.devicePub, ts: args.signedAt });
 }
 
+function hasSignedDeviceTrustMaterial(list: SignedDeviceEntry[]): boolean {
+  return list.some(e =>
+    e.isPrimary === true
+    || Boolean(e.primaryDeviceId)
+    || Boolean(e.primaryPubB64)
+    || Boolean(e.signatureB64)
+    || Boolean(e.signedAt)
+  );
+}
+
 /**
  * Sign a companion device's public key with the primary device's Ed25519
  * private. Returns the row to insert into `user_device_signatures`.
@@ -241,10 +251,11 @@ export async function fetchVerifiedDeviceList(userId: string): Promise<{
   verifications: DeviceVerificationResult[];
 }> {
   const list = await fetchSignedDeviceList(userId);
+  const signedListPresent = hasSignedDeviceTrustMaterial(list);
   const verifications = await verifySignedDeviceList(userId, list);
   const trusted = new Set(verifications.filter(v => v.ok).map(v => v.deviceId));
   return {
-    signedListPresent: list.length > 0,
+    signedListPresent,
     trusted: list.filter(e => trusted.has(e.deviceId)),
     verifications,
   };
@@ -267,4 +278,4 @@ export async function revokeCompanionSignature(args: {
   if (error) throw new Error(`UDS_REVOKE_FAILED: ${error.message}`);
 }
 
-export const __test__ = { canonicalPayload };
+export const __test__ = { canonicalPayload, hasSignedDeviceTrustMaterial };

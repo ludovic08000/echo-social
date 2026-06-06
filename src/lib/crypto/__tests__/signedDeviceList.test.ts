@@ -15,6 +15,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { hardCrypto } from '../cryptoIntegrity';
 import { bufferToBase64 } from '../utils';
 import {
+  __test__,
   signCompanionDevice,
   verifySignedDeviceList,
   type SignedDeviceEntry,
@@ -185,5 +186,43 @@ describe('L4 — signed device list', () => {
     const r = await verifySignedDeviceList(USER, list);
     expect(r.find(x => x.deviceId === COMP_DEV)?.ok).toBe(false);
     expect(r.find(x => x.deviceId === COMP_DEV)?.reason).toBe('BAD_SIGNATURE');
+  });
+
+  it('does not treat legacy device rows without primary/signature material as a signed list', () => {
+    expect(__test__.hasSignedDeviceTrustMaterial([
+      {
+        deviceId: 'legacy-dev',
+        devicePublicKey: companionPubB64,
+        isPrimary: false,
+        primaryDeviceId: null,
+        primaryPubB64: null,
+        signatureB64: null,
+        signedAt: null,
+      },
+    ])).toBe(false);
+  });
+
+  it('treats primary rows and signed companion rows as signed-list trust material', async () => {
+    const sig = await signCompanionDevice({
+      userId: USER,
+      primaryDeviceId: PRIMARY_DEV,
+      primaryEdPrivate: primaryKp.privateKey,
+      primaryEdPublicB64: primaryPubB64,
+      companionDeviceId: COMP_DEV,
+      companionPublicKeyB64: companionPubB64,
+    });
+
+    expect(__test__.hasSignedDeviceTrustMaterial([primaryEntry()])).toBe(true);
+    expect(__test__.hasSignedDeviceTrustMaterial([
+      {
+        deviceId: COMP_DEV,
+        devicePublicKey: companionPubB64,
+        isPrimary: false,
+        primaryDeviceId: sig.primary_device_id,
+        primaryPubB64: sig.primary_pub_b64,
+        signatureB64: sig.signature_b64,
+        signedAt: sig.signed_at,
+      },
+    ])).toBe(true);
   });
 });
