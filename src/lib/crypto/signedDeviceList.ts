@@ -235,6 +235,21 @@ export async function fetchTrustedDeviceList(userId: string): Promise<SignedDevi
   return list.filter(e => trusted.has(e.deviceId));
 }
 
+export async function fetchVerifiedDeviceList(userId: string): Promise<{
+  signedListPresent: boolean;
+  trusted: SignedDeviceEntry[];
+  verifications: DeviceVerificationResult[];
+}> {
+  const list = await fetchSignedDeviceList(userId);
+  const verifications = await verifySignedDeviceList(userId, list);
+  const trusted = new Set(verifications.filter(v => v.ok).map(v => v.deviceId));
+  return {
+    signedListPresent: list.length > 0,
+    trusted: list.filter(e => trusted.has(e.deviceId)),
+    verifications,
+  };
+}
+
 /**
  * Revoke a previously-signed companion (e.g. user removes a device from
  * the security panel). Sets `revoked_at` so peers stop trusting it.

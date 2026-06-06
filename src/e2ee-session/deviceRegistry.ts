@@ -8,7 +8,7 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
-import { fetchTrustedDeviceList } from '@/lib/crypto/signedDeviceList';
+import { fetchVerifiedDeviceList } from '@/lib/crypto/signedDeviceList';
 import { peekDeviceSignedPrekey } from '@/lib/crypto/x3dh';
 import type { DeviceDescriptor, UserId, DeviceId } from './types';
 
@@ -93,10 +93,16 @@ async function hygieneFilterDevices(devices: DeviceDescriptor[]): Promise<Device
 export async function listDevicesForUser(userId: UserId): Promise<DeviceDescriptor[]> {
   // 1) Trusted (signed) list first.
   try {
-    const trusted = await fetchTrustedDeviceList(userId);
-    if (trusted.length > 0) {
+    const verified = await fetchVerifiedDeviceList(userId);
+    if (verified.signedListPresent) {
+      if (verified.trusted.length === 0 && typeof console !== 'undefined') {
+        console.warn('[A1] signed device list present but no device verified; refusing raw fallback', {
+          userId,
+          rejected: verified.verifications.length,
+        });
+      }
       return hygieneFilterDevices(
-        trusted
+        verified.trusted
           .filter(t => !!t.devicePublicKey)
           .map(t => ({
             userId,
@@ -107,10 +113,10 @@ export async function listDevicesForUser(userId: UserId): Promise<DeviceDescript
       );
     }
   } catch (e) {
-    // RPC error — fall through to legacy. Logged below at fallback boundary.
     if (typeof console !== 'undefined') {
-      console.warn('[A1] signed device list fetch failed; falling back to raw RPC', e);
+      console.warn('[A1] signed device list fetch failed; refusing raw fallback', e);
     }
+    return [];
   }
 
   // 2) Legacy fallback for users who haven't published any signature yet.

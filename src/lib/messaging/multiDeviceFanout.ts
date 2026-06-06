@@ -25,18 +25,13 @@ import {
   RATCHET_PREFIX_V5,
 } from '@/lib/crypto/deviceRatchet';
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
+import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';
 
 interface FanoutInput {
   messageId: string;
   conversationId: string;
   senderUserId: string;
   plaintext: string;
-}
-
-interface ActiveDevice {
-  user_id: string;
-  device_id: string;
-  device_public_key: string;
 }
 
 interface DeviceEncryptTargetInput {
@@ -401,31 +396,20 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
   if (!participants?.length) return { inserted: 0, multiDevice: false };
   const userIds = participants.map(p => p.user_id);
 
-  const deviceLists = await Promise.all(
-    userIds.map(async (uid) => {
-      try {
-        const { data } = await supabase.rpc('list_active_devices_for_user', { p_user_id: uid });
-        return (data || []).map((d: any) => ({ user_id: uid, device_id: d.device_id as string, device_public_key: d.device_public_key as string })) as ActiveDevice[];
-      } catch {
-        return [] as ActiveDevice[];
-      }
-    }),
-  );
-
-  const targets = deviceLists.flat().filter(d =>
-    !(d.user_id === input.senderUserId && d.device_id === senderDeviceId) &&
-    !isKnownInvalidDeviceId(d.device_id),
+  const targets = (await listFanoutTargets(input.senderUserId, userIds)).filter(d =>
+    !(d.userId === input.senderUserId && d.deviceId === senderDeviceId) &&
+    !isKnownInvalidDeviceId(d.deviceId),
   );
   if (targets.length === 0) return { inserted: 0, multiDevice: false };
 
   const rows: Array<Record<string, string>> = [];
   for (const dev of targets) {
-    if (!dev.device_public_key || isKnownInvalidDeviceId(dev.device_id)) continue;
+    if (!dev.devicePublicKey || isKnownInvalidDeviceId(dev.deviceId)) continue;
 
     try {
-      const cachedSpkId = await getSessionPeerSpkId(input.senderUserId, senderDeviceId, dev.user_id, dev.device_id);
+      const cachedSpkId = await getSessionPeerSpkId(input.senderUserId, senderDeviceId, dev.userId, dev.deviceId);
       if (cachedSpkId !== null) {
-        const spk = await peekDeviceSignedPrekey(dev.user_id, dev.device_id);
+        const spk = await peekDeviceSignedPrekey(dev.userId, dev.deviceId);
         if (!spk) {
           logCryptoError({
             severity: 'warning',
@@ -434,28 +418,28 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
             errorMessage: 'Skipping SPK freshness check because peer v5 bundle is unavailable',
             conversationId: input.conversationId,
             myDeviceId: senderDeviceId,
-            peerUserId: dev.user_id,
-            peerDeviceId: dev.device_id,
+            peerUserId: dev.userId,
+            peerDeviceId: dev.deviceId,
             metadata: { cachedSpkId },
           });
         } else if (spk.signedPrekeyId !== cachedSpkId) {
-          await invalidateDeviceSession(input.senderUserId, senderDeviceId, dev.user_id, dev.device_id);
+          await invalidateDeviceSession(input.senderUserId, senderDeviceId, dev.userId, dev.deviceId);
         }
       }
     } catch (e) {
       if (isDevicePrekeyBundleError(e, 'DEVICE_SPK_SIGNATURE_INVALID')) {
-        markInvalidDeviceId(dev.device_id);
-        logCryptoException('fanout', e, { severity: 'error', conversationId: input.conversationId, myDeviceId: senderDeviceId, peerUserId: dev.user_id, peerDeviceId: dev.device_id, metadata: { stage: 'spk_rotation_check', action: 'device_quarantined' } });
+        markInvalidDeviceId(dev.deviceId);
+        logCryptoException('fanout', e, { severity: 'error', conversationId: input.conversationId, myDeviceId: senderDeviceId, peerUserId: dev.userId, peerDeviceId: dev.deviceId, metadata: { stage: 'spk_rotation_check', action: 'device_quarantined' } });
         continue;
       }
-      logCryptoException('fanout', e, { severity: 'warning', conversationId: input.conversationId, myDeviceId: senderDeviceId, peerUserId: dev.user_id, peerDeviceId: dev.device_id, metadata: { stage: 'spk_rotation_check' } });
+      logCryptoException('fanout', e, { severity: 'warning', conversationId: input.conversationId, myDeviceId: senderDeviceId, peerUserId: dev.userId, peerDeviceId: dev.deviceId, metadata: { stage: 'spk_rotation_check' } });
     }
 
-    let encrypted: string | null = await ratchetEncrypt(input.senderUserId, senderDeviceId, dev.user_id, dev.device_id, input.plaintext);
+    let encrypted: string | null = await ratchetEncrypt(input.senderUserId, senderDeviceId, dev.userId, dev.deviceId, input.plaintext);
     if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V5)) encrypted = null;
     if (!encrypted) {
-      encrypted = await x3dhWrapForDevice(input.plaintext, input.senderUserId, dev.user_id, dev.device_id);
-      if (!encrypted && isKnownInvalidDeviceId(dev.device_id)) continue;
+      encrypted = await x3dhWrapForDevice(input.plaintext, input.senderUserId, dev.userId, dev.deviceId);
+      if (!encrypted && isKnownInvalidDeviceId(dev.deviceId)) continue;
     }
     if (!encrypted) {
       logCryptoError({
@@ -465,14 +449,14 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
         errorMessage: 'No v5 ratchet/bootstrap path for recipient device',
         conversationId: input.conversationId,
         myDeviceId: senderDeviceId,
-        peerUserId: dev.user_id,
-        peerDeviceId: dev.device_id,
+        peerUserId: dev.userId,
+        peerDeviceId: dev.deviceId,
         metadata: { stage: 'all_paths_failed' },
       });
       continue;
     }
 
-    rows.push({ message_id: input.messageId, recipient_user_id: dev.user_id, recipient_device_id: dev.device_id, sender_user_id: input.senderUserId, sender_device_id: senderDeviceId, encrypted_body: encrypted });
+    rows.push({ message_id: input.messageId, recipient_user_id: dev.userId, recipient_device_id: dev.deviceId, sender_user_id: input.senderUserId, sender_device_id: senderDeviceId, encrypted_body: encrypted });
   }
 
   if (!rows.length) return { inserted: 0, multiDevice: true };

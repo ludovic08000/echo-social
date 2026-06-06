@@ -34,8 +34,13 @@ vi.mock('@/lib/messaging/multiDeviceFanout', () => ({
   })),
 }));
 
+vi.mock('@/e2ee-session/deviceRegistry', () => ({
+  listDevicesForUser: vi.fn(),
+}));
+
 import { supabase } from '@/integrations/supabase/client';
 import { encryptPlaintextForDeviceTarget } from '@/lib/messaging/multiDeviceFanout';
+import { listDevicesForUser } from '@/e2ee-session/deviceRegistry';
 import {
   tryEncryptViaSenderKeys,
   invalidateSenderKeysFlag,
@@ -143,20 +148,19 @@ beforeEach(() => {
   (supabase.from as any).mockReset();
   (supabase.rpc as any).mockReset();
   (encryptPlaintextForDeviceTarget as any).mockClear();
-  // Default RPC: list_active_devices_for_user returns 1 device per user.
+  (listDevicesForUser as any).mockReset();
+  // Default verified registry: 1 device per user.
   // Alice's device id matches the mocked getCurrentDeviceId() so she's
   // filtered out of the peer list (the orchestrator skips self).
-  (supabase.rpc as any).mockImplementation(async (_fn: string, args: any) => {
-    const isAlice = args.p_user_id === ALICE;
-    return {
-      data: [
-        {
-          device_id: isAlice ? 'alice-dev-1' : `${args.p_user_id.slice(0, 4)}-dev-1`,
-          device_public_key: 'AAA=',
-        },
-      ],
-      error: null,
-    };
+  (listDevicesForUser as any).mockImplementation(async (userId: string) => {
+    const isAlice = userId === ALICE;
+    return [
+      {
+        userId,
+        deviceId: isAlice ? 'alice-dev-1' : `${userId.slice(0, 4)}-dev-1`,
+        devicePublicKey: 'AAA=',
+      },
+    ];
   });
 });
 
@@ -264,5 +268,24 @@ describe('senderKeyOutbound — opt-in gating', () => {
     await tryEncryptViaSenderKeys(conv, ALICE, 'a');
     await tryEncryptViaSenderKeys(conv, ALICE, 'b');
     expect(convQueries).toBe(1);
+  });
+
+  it('uses the verified device registry for SKDM fanout and never calls the raw device RPC', async () => {
+    const conv = makeConvId('reg');
+    const inserts: any[] = [];
+    (supabase.from as any).mockImplementation(
+      makeFromHandler({
+        enableSenderKeys: true,
+        participants: [ALICE, BOB],
+        insertSink: inserts,
+      }),
+    );
+
+    await tryEncryptViaSenderKeys(conv, ALICE, 'registry-only');
+
+    expect(listDevicesForUser).toHaveBeenCalledWith(ALICE);
+    expect(listDevicesForUser).toHaveBeenCalledWith(BOB);
+    expect(supabase.rpc).not.toHaveBeenCalledWith('list_active_devices_for_user', expect.anything());
+    expect(inserts.map((r) => r.recipient_device_id)).toEqual(['bbbb-dev-1']);
   });
 });

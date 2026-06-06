@@ -23,6 +23,7 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
+import { listDevicesForUser } from '@/e2ee-session/deviceRegistry';
 import {
   ensureOwnerSession,
   encryptForGroup,
@@ -33,9 +34,9 @@ import {
 import { encryptPlaintextForDeviceTarget } from '@/lib/messaging/multiDeviceFanout';
 
 interface ActiveDevice {
-  user_id: string;
-  device_id: string;
-  device_public_key: string;
+  userId: string;
+  deviceId: string;
+  devicePublicKey: string;
 }
 
 const FLAG_TTL_MS = 30_000;
@@ -99,11 +100,10 @@ async function listPeerDevices(
   const lists = await Promise.all(
     userIds.map(async (uid) => {
       try {
-        const { data } = await supabase.rpc('list_active_devices_for_user', { p_user_id: uid });
-        return ((data as any[]) || []).map((d: any) => ({
-          user_id: uid,
-          device_id: d.device_id as string,
-          device_public_key: d.device_public_key as string,
+        return (await listDevicesForUser(uid)).map((d) => ({
+          userId: d.userId,
+          deviceId: d.deviceId,
+          devicePublicKey: d.devicePublicKey,
         })) as ActiveDevice[];
       } catch {
         return [] as ActiveDevice[];
@@ -112,8 +112,8 @@ async function listPeerDevices(
   );
   return lists
     .flat()
-    .filter((d) => d.device_public_key)
-    .filter((d) => !(d.user_id === selfUserId && d.device_id === selfDeviceId));
+    .filter((d) => d.devicePublicKey)
+    .filter((d) => !(d.userId === selfUserId && d.deviceId === selfDeviceId));
 }
 
 async function fanoutSKDM(
@@ -132,9 +132,9 @@ async function fanoutSKDM(
         conversationId,
         senderUserId: selfUserId,
         senderDeviceId: selfDeviceId,
-        recipientUserId: dev.user_id,
-        recipientDeviceId: dev.device_id,
-        recipientDevicePublicKey: dev.device_public_key,
+        recipientUserId: dev.userId,
+        recipientDeviceId: dev.deviceId,
+        recipientDevicePublicKey: dev.devicePublicKey,
         plaintext: skdmPlaintext,
       });
       if (!wrapped) continue;
@@ -142,12 +142,12 @@ async function fanoutSKDM(
         conversation_id: conversationId,
         sender_user_id: selfUserId,
         sender_device_id: selfDeviceId,
-        recipient_user_id: dev.user_id,
-        recipient_device_id: dev.device_id,
+        recipient_user_id: dev.userId,
+        recipient_device_id: dev.deviceId,
         encrypted_skdm: wrapped.encryptedBody,
       });
     } catch (e) {
-      console.warn('[SK_FANOUT] device wrap failed', { peer: dev.device_id, e });
+      console.warn('[SK_FANOUT] device wrap failed', { peer: dev.deviceId, e });
     }
   }
   if (!rows.length) return;

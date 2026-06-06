@@ -17,9 +17,9 @@ vi.mock('@/lib/messaging/currentDevice', () => ({
   isDeviceIdTemporary: () => false,
 }));
 
-const fetchTrustedMock = vi.fn();
+const fetchVerifiedMock = vi.fn();
 vi.mock('@/lib/crypto/signedDeviceList', () => ({
-  fetchTrustedDeviceList: (...args: unknown[]) => fetchTrustedMock(...args),
+  fetchVerifiedDeviceList: (...args: unknown[]) => fetchVerifiedMock(...args),
 }));
 
 // Hygiene filter calls peekDeviceSignedPrekey; in unit-test mode we treat
@@ -38,9 +38,11 @@ beforeEach(() => {
 
 describe('Lot A1 — trust-gated device list', () => {
   it('returns only signed devices and ignores rogue raw entries', async () => {
-    fetchTrustedMock.mockResolvedValue([
-      { deviceId: 'dev-good', devicePublicKey: 'PUB_GOOD' },
-    ]);
+    fetchVerifiedMock.mockResolvedValue({
+      signedListPresent: true,
+      trusted: [{ deviceId: 'dev-good', devicePublicKey: 'PUB_GOOD' }],
+      verifications: [{ deviceId: 'dev-good', ok: true, reason: 'VALID' }],
+    });
     // Even if the raw RPC has a rogue entry, the trust path wins.
     (supabase.rpc as any).mockResolvedValue({
       data: [
@@ -56,7 +58,11 @@ describe('Lot A1 — trust-gated device list', () => {
   });
 
   it('falls back to legacy RPC when no signed entry exists', async () => {
-    fetchTrustedMock.mockResolvedValue([]); // L4 not yet adopted
+    fetchVerifiedMock.mockResolvedValue({
+      signedListPresent: false,
+      trusted: [],
+      verifications: [],
+    }); // L4 not yet adopted
     (supabase.rpc as any).mockResolvedValue({
       data: [{ device_id: 'dev-legacy', device_public_key: 'PUB_LEGACY' }],
       error: null,
@@ -67,18 +73,43 @@ describe('Lot A1 — trust-gated device list', () => {
   });
 
   it('returns [] when both paths fail', async () => {
-    fetchTrustedMock.mockRejectedValue(new Error('rpc down'));
+    fetchVerifiedMock.mockRejectedValue(new Error('rpc down'));
     (supabase.rpc as any).mockResolvedValue({ data: null, error: new Error('also down') });
     const out = await listDevicesForUser('user-789');
     expect(out).toEqual([]);
+    expect(supabase.rpc).not.toHaveBeenCalledWith('list_active_devices_for_user', expect.anything());
   });
 
   it('strips devices with empty public keys from the trusted set', async () => {
-    fetchTrustedMock.mockResolvedValue([
-      { deviceId: 'dev-a', devicePublicKey: 'PUB_A' },
-      { deviceId: 'dev-b', devicePublicKey: '' },
-    ]);
+    fetchVerifiedMock.mockResolvedValue({
+      signedListPresent: true,
+      trusted: [
+        { deviceId: 'dev-a', devicePublicKey: 'PUB_A' },
+        { deviceId: 'dev-b', devicePublicKey: '' },
+      ],
+      verifications: [
+        { deviceId: 'dev-a', ok: true, reason: 'VALID' },
+        { deviceId: 'dev-b', ok: true, reason: 'VALID' },
+      ],
+    });
     const out = await listDevicesForUser('user-x');
     expect(out.map(d => d.deviceId)).toEqual(['dev-a']);
+  });
+
+  it('does not downgrade to raw RPC when a signed list exists but verifies to zero trusted devices', async () => {
+    fetchVerifiedMock.mockResolvedValue({
+      signedListPresent: true,
+      trusted: [],
+      verifications: [{ deviceId: 'dev-bad', ok: false, reason: 'BAD_SIGNATURE' }],
+    });
+    (supabase.rpc as any).mockResolvedValue({
+      data: [{ device_id: 'dev-rogue', device_public_key: 'PUB_ROGUE' }],
+      error: null,
+    });
+
+    const out = await listDevicesForUser('user-signed-bad');
+
+    expect(out).toEqual([]);
+    expect(supabase.rpc).not.toHaveBeenCalledWith('list_active_devices_for_user', expect.anything());
   });
 });
