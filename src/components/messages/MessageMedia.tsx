@@ -12,7 +12,7 @@ import { EncryptedMedia } from './EncryptedMedia';
 import { isVideoMediaLabel, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
 import { getMediaKey, subscribeMediaKey } from './mediaKeyCache';
 import { loadPlaintext } from '@/lib/crypto/plaintextStore';
-import { looksEncrypted as looksEncryptedMessage } from './decryptionService';
+import { looksEncrypted as looksEncryptedMessage, resolvePlaintext } from './decryptionService';
 import type { DecryptResult } from '@/hooks/useE2EE';
 
 interface MessageMediaProps {
@@ -151,13 +151,11 @@ export const MessageMedia = memo(function MessageMedia({
     const fallbackTimer = setTimeout(() => {
       if (cancelled) return;
       if (messageId && getMediaKey(messageId)) return;
-      Promise.resolve(decrypt(body)).then(result => {
+      resolvePlaintext({ body, messageId, decrypt }).then(result => {
         if (cancelled) return;
-        if (!result || result.incompatible || (result.encrypted && !result.verified)) { setResolved(true); return; }
-        const parsed = parseMediaMessage(result.text);
-        if (parsed) {
-          setMediaKey(parsed.keyB64);
-          setIsVideo(isVideoMediaLabel(parsed.label));
+        if (result?.mediaKeyB64) {
+          setMediaKey(result.mediaKeyB64);
+          setIsVideo(isVideoMediaLabel(result.text));
         }
         setResolved(true);
       }).catch(() => {
