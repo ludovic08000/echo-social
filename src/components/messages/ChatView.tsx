@@ -30,6 +30,7 @@ import { compressImageForChat } from '@/lib/messaging/compressImage';
 import { MessageMedia } from './MessageMedia';
 import { EncryptedMedia } from './EncryptedMedia';
 import { rememberDecryptedMedia } from './decryptedMediaCache';
+import { setMediaKey } from './mediaKeyCache';
 import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { EncryptionBadge, EncryptionStatusBar } from './EncryptionBadge';
 import { DecryptedMessageBody } from './DecryptedMessageBody';
@@ -210,6 +211,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
   // Persisted to IndexedDB (device-key encrypted) so the message stays readable
   // after a page reload.
   const handlePlaintextCached = useCallback((serverId: string, plaintext: string) => {
+    const media = parseMediaMessage(plaintext);
+    if (media) setMediaKey(serverId, media.keyB64, isVideoMediaLabel(media.label));
     decryptedCache.set(serverId, plaintext);
     bumpCache();
     void savePlaintext(serverId, plaintext);
@@ -574,6 +577,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   /** Callback from DecryptedMessageBody to cache decrypted text + persist it */
   const onDecrypted = useCallback((msgId: string, text: string) => {
     const parsed = parseMediaMessage(text);
+    if (parsed) setMediaKey(msgId, parsed.keyB64, isVideoMediaLabel(parsed.label));
     decryptedCache.set(msgId, parsed ? text : text);
     bumpCache();
     void savePlaintext(msgId, parsed ? text : text);
@@ -591,7 +595,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
         if (decryptedCache.has(msg.id)) continue;
         const pt = await loadPlaintext(msg.id);
         if (cancelled) return;
-        if (pt) { decryptedCache.set(msg.id, pt); added = true; }
+        if (pt) {
+          const media = parseMediaMessage(pt);
+          if (media) setMediaKey(msg.id, media.keyB64, isVideoMediaLabel(media.label));
+          decryptedCache.set(msg.id, pt);
+          added = true;
+        }
       }
       if (added && !cancelled) bumpCache();
     })();

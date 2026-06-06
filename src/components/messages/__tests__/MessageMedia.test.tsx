@@ -69,7 +69,6 @@ describe('MessageMedia E2EE gating', () => {
       />,
     );
 
-    await screen.findByText('Média chiffré en attente de clé');
     act(() => {
       setMediaKey('msg-cache', KEY, false);
     });

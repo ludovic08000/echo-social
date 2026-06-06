@@ -10,14 +10,10 @@ import { useState, useEffect, memo, useMemo } from 'react';
 import { Lock } from 'lucide-react';
 import { EncryptedMedia } from './EncryptedMedia';
 import { isVideoMediaLabel, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
-import { isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { getMediaKey, subscribeMediaKey } from './mediaKeyCache';
 import { loadPlaintext } from '@/lib/crypto/plaintextStore';
+import { looksEncrypted as looksEncryptedMessage } from './decryptionService';
 import type { DecryptResult } from '@/hooks/useE2EE';
-
-function looksEncryptedMessage(body: string): boolean {
-  return isStrictRatchetEnvelopeBody(body);
-}
 
 interface MessageMediaProps {
   imageUrl: string;
@@ -155,9 +151,9 @@ export const MessageMedia = memo(function MessageMedia({
     const fallbackTimer = setTimeout(() => {
       if (cancelled) return;
       if (messageId && getMediaKey(messageId)) return;
-      decrypt(body).then(result => {
+      Promise.resolve(decrypt(body)).then(result => {
         if (cancelled) return;
-        if (result.incompatible || (result.encrypted && !result.verified)) { setResolved(true); return; }
+        if (!result || result.incompatible || (result.encrypted && !result.verified)) { setResolved(true); return; }
         const parsed = parseMediaMessage(result.text);
         if (parsed) {
           setMediaKey(parsed.keyB64);

@@ -45,6 +45,7 @@ import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody
 import { EncryptionBadge, EncryptionStatusBar } from '@/components/messages/EncryptionBadge';
 import { OutboundStatusIndicator } from '@/components/messages/OutboundStatus';
 import { ConversationPreviewText } from '@/components/messages/ConversationPreviewText';
+import { setMediaKey } from '@/components/messages/mediaKeyCache';
 import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
 import { MessagingPinGate } from '@/components/MessagingPinGate';
 import { useMessageReactions } from '@/hooks/useMessageReactions';
@@ -419,6 +420,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
   const decryptedCacheRef = useRef<Map<string, string>>(new Map());
   const cachePlaintext = useCallback((msgId: string, text: string) => {
+    const media = parseMediaMessage(text);
+    if (media) setMediaKey(msgId, media.keyB64, isVideoMediaLabel(media.label));
     decryptedCacheRef.current.set(msgId, text);
     bumpCache();
     void savePlaintext(msgId, text);
@@ -789,6 +792,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         const pt = await loadPlaintext(msg.id);
         if (cancelled) return;
         if (pt) {
+          const media = parseMediaMessage(pt);
+          if (media) setMediaKey(msg.id, media.keyB64, isVideoMediaLabel(media.label));
           decryptedCacheRef.current.set(msg.id, pt);
           added = true;
         }
