@@ -7,7 +7,7 @@ import { messageQueue } from '@/lib/messaging/messageQueue';
 import { isCryptoJsonBody, isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { pendingMessageQueue, routeIncoming } from '@/e2ee-session';
 import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
-import { processDeviceCopyRetryRequests } from '@/lib/messaging/deviceCopyRetryProcessor';
+// v5: deviceCopyRetryProcessor removed
 import { clearNegativeCache } from '@/components/messages/decryptionService';
 
 async function hideMessagesForUser(userId: string, messageIds: string[]) {
@@ -599,7 +599,7 @@ export function useMessages(conversationId: string) {
         if (anyDecrypted && typeof window !== 'undefined') {
           try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
         }
-        void processDeviceCopyRetryRequests().catch(() => {});
+        // v5: deviceCopyRetryProcessor removed
       }
 
       const senderIds = [...new Set(compatibleMessages.map(m => m.sender_id))];

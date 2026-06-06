@@ -206,29 +206,7 @@ function AccountKeySyncRunner() {
     });
   }, [user?.id]);
 
-  // Process durable retry requests. When Windows cannot decrypt a message copy,
-  // it requests a fresh copy. The original sender device processes the queue
-  // when it comes back online and still has plaintext cached.
-  useEffect(() => {
-    if (!user?.id) return;
-    let cancelled = false;
-    const run = () => {
-      if (cancelled) return;
-      void import('@/lib/messaging/deviceCopyRetryProcessor').then(({ processDeviceCopyRetryRequests }) => {
-        void processDeviceCopyRetryRequests(50);
-      }).catch(() => {});
-    };
-    const initial = window.setTimeout(run, 12_000);
-    const interval = window.setInterval(run, 60_000);
-    const onFocus = () => run();
-    window.addEventListener('focus', onFocus);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(initial);
-      window.clearInterval(interval);
-      window.removeEventListener('focus', onFocus);
-    };
-  }, [user?.id]);
+  // v5: deviceCopyRetryProcessor removed — refanout in messageRouter is the single retry path.
 
   // Keep the active-device list clean so stale iOS/Web devices with invalid SPKs
   // stop receiving new copies and stop producing repeated SPK invalid warnings.
