@@ -150,34 +150,31 @@ export async function getOrCreateArchiveKey(conversationId: string, userId: stri
 
     const { error } = await supabase
       .from('conversation_archive_keys' as any)
-      .insert({
+      .upsert({
         conversation_id: conversationId,
         user_id: userId,
         wrapped_key: wrapped,
         kdf_version: KDF_VERSION,
-      });
+      }, { onConflict: 'conversation_id,user_id', ignoreDuplicates: true });
 
-    // Tolerate unique-constraint races: re-read.
     if (error) {
-      const { data: existing } = await supabase
-        .from('conversation_archive_keys' as any)
-        .select('wrapped_key')
-        .eq('conversation_id', conversationId)
-        .eq('user_id', userId)
-        .maybeSingle();
-      if (existing && (existing as any).wrapped_key) {
-        const r = await unwrapKey((existing as any).wrapped_key, masterKey, aad);
-        const ck = await importAesKey(r);
-        r.fill(0);
-        ramCache.set(cacheKey, ck);
-        return ck;
-      }
       raw.fill(0);
       return null;
     }
 
-    const ck = await importAesKey(raw);
+    const { data: existing } = await supabase
+      .from('conversation_archive_keys' as any)
+      .select('wrapped_key')
+      .eq('conversation_id', conversationId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
     raw.fill(0);
+    if (!existing || !(existing as any).wrapped_key) return null;
+
+    const storedRaw = await unwrapKey((existing as any).wrapped_key, masterKey, aad);
+    const ck = await importAesKey(storedRaw);
+    storedRaw.fill(0);
     ramCache.set(cacheKey, ck);
     maybeShowActivationToastOnce();
     return ck;

@@ -1419,7 +1419,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const acknowledgeFingerprint = useCallback(async () => {
     if (peerKeyRef.current && peerUserId) {
       saveKnownFingerprint(peerUserId, peerKeyRef.current.fingerprint);
-      saveKnownFingerprintServer(peerUserId, peerKeyRef.current.fingerprint, true);
+      await saveKnownFingerprintServer(peerUserId, peerKeyRef.current.fingerprint, true);
     }
     if (conversationId) {
       // Clear old ratchet state
@@ -1435,6 +1435,18 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     }
     setState(s => ({ ...s, fingerprintChanged: false, ready: true, ratchetActive: false, initError: null }));
   }, [peerUserId, conversationId]);
+
+  useEffect(() => {
+    if (!conversationId) return;
+    const onContactVerified = (event: Event) => {
+      const detail = (event as CustomEvent<{ conversationId?: string }>).detail || {};
+      if (detail.conversationId && detail.conversationId !== conversationId) return;
+      if (!state.fingerprintChanged) return;
+      void acknowledgeFingerprint();
+    };
+    window.addEventListener('forsure:e2ee-contact-verified', onContactVerified as EventListener);
+    return () => window.removeEventListener('forsure:e2ee-contact-verified', onContactVerified as EventListener);
+  }, [acknowledgeFingerprint, conversationId, state.fingerprintChanged]);
 
   const acknowledgeSentPayload = useCallback(async (localId: string) => {
     pendingPayloadRef.current.delete(localId);
