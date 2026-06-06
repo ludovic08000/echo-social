@@ -9,6 +9,7 @@ import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto';
 import { wrapOutboundSecureMessage } from '@/lib/crypto/secureMessagePipeline';
 import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
 import { encryptArchive } from '@/lib/messaging/archive/archiveKey';
+import { hasMediaKey } from '@/lib/crypto/mediaEncrypt';
 
 export interface OutboundMessage {
   localId: string;
@@ -47,6 +48,25 @@ function isSpecialMessage(body: string, imageUrl?: string | null): boolean {
     body === '🎬 Vidéo' ||
     body === '🎞️ GIF'
   );
+}
+
+export function shouldArchiveMessageBody({
+  sanitized,
+  isSpecial,
+  viewOnce,
+  encryptedSuccessfully,
+  encryptionWasRequired,
+}: {
+  sanitized: string;
+  isSpecial: boolean;
+  viewOnce?: boolean;
+  encryptedSuccessfully: boolean;
+  encryptionWasRequired: boolean;
+}): boolean {
+  if (!(encryptedSuccessfully || encryptionWasRequired)) return false;
+  if (viewOnce) return false;
+  if (!isSpecial) return true;
+  return hasMediaKey(sanitized);
 }
 
 export function useMessageQueue(
@@ -193,7 +213,13 @@ export function useMessageQueue(
     // Allows any future device that can unlock the account to re-read this message.
     let archiveBody: string | null = null;
     const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
-    if (!isSpecial && (encryptedSuccessfully || encryptionWasRequired)) {
+    if (shouldArchiveMessageBody({
+      sanitized,
+      isSpecial,
+      viewOnce: extra?.view_once === true,
+      encryptedSuccessfully,
+      encryptionWasRequired,
+    })) {
       try {
         archiveBody = await encryptArchive(sanitized, conversationId, user.id);
       } catch {
