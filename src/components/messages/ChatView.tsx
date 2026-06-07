@@ -925,7 +925,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
           <div className="flex items-center justify-center py-12">
             <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
           </div>
-        ) : messages?.length === 0 && queue.pendingMessages.length === 0 ? (
+        ) : messages?.length === 0 && queue.pendingMessages.length === 0 && mediaPlaceholders.length === 0 ? (
           (recoveryState?.serverMessageCount ?? 0) > 0 && (
             e2ee.initError === 'pin_unlock_required' ||
             e2ee.initError === 'identity_lost_backup_available' ||
