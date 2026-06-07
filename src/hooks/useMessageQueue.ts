@@ -90,12 +90,6 @@ export function useMessageQueue(
     const effectiveBody = inferMediaBody(body, imageUrl);
     if (!user || (!effectiveBody.trim() && !imageUrl)) return;
 
-    const { data: sess } = await supabase.auth.getSession();
-    const liveUserId = sess.session?.user?.id;
-    if (!liveUserId || liveUserId !== user.id) {
-      throw new Error('Session expirée — reconnectez-vous pour envoyer.');
-    }
-
     const isSpecial = isSpecialMessage(effectiveBody, imageUrl);
 
     if (!isSpecial) {
@@ -107,6 +101,38 @@ export function useMessageQueue(
     const now = Date.now();
     const localId = `local-${now}-${Math.random().toString(36).slice(2, 8)}`;
     const traceId = safeUUID();
+
+    // Optimistic UI: bubble appears instantly while crypto + insert run.
+    const optimistic: OutboundMessage = {
+      localId,
+      traceId,
+      conversationId,
+      senderId: user.id,
+      plaintext: sanitized,
+      encryptedBody: null,
+      imageUrl: imageUrl || null,
+      status: 'encrypting',
+      retryCount: 0,
+      maxRetries: 3,
+      lastError: null,
+      createdAt: now,
+      updatedAt: now,
+      serverId: null,
+    };
+    setPendingMessages(prev => [...prev, optimistic]);
+
+    // Session freshness check is non-blocking for the UI; throw still cleans pending below.
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const liveUserId = sess.session?.user?.id;
+      if (!liveUserId || liveUserId !== user.id) {
+        setPendingMessages(prev => prev.filter(m => m.localId !== localId));
+        throw new Error('Session expirée — reconnectez-vous pour envoyer.');
+      }
+    } catch (e) {
+      // network glitch on getSession shouldn't kill the send if user is present
+      console.warn('[MSG_SEND] getSession soft-failed; continuing', e);
+    }
 
     let bodyToStore = sanitized;
     let encryptedSuccessfully = false;
