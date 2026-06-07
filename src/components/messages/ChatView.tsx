@@ -251,6 +251,18 @@ export function ChatView({ conversationId }: ChatViewProps) {
     bucket: 'post-images',
   });
 
+  // Optimistic media placeholders: bubble appears the instant the user picks a
+  // file, showing the local objectURL while compression + encryption + upload
+  // run in the background (WhatsApp-style perceived-instant send).
+  const [mediaPlaceholders, setMediaPlaceholders] = useState<
+    { id: string; previewUrl: string; isVideo: boolean; failed?: boolean }[]
+  >([]);
+  useEffect(() => () => {
+    // Revoke any leftover objectURLs when the chat unmounts.
+    mediaPlaceholders.forEach(p => { try { URL.revokeObjectURL(p.previewUrl); } catch {} });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
+
   // Wrap upload: encrypt media before upload when E2EE is active
   const handleMediaFile = useCallback(async (file: File) => {
     const isVideo = /\.(mp4|mov|webm|avi|mkv)/i.test(file.name) || file.type.startsWith('video/');
