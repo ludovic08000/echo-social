@@ -7,6 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
  */
 
 const PRESIGN_THRESHOLD = 8 * 1024 * 1024; // 8 MB
+const ENCRYPTED_MEDIA_PRESIGN_THRESHOLD = 512 * 1024; // avoid proxy double-hop for chat E2EE media
 const DEFAULT_CONTENT_TYPE = 'application/octet-stream';
 
 export interface UploadProgress {
@@ -67,7 +68,13 @@ export async function uploadToR2(
   if (!session) throw new Error('Not authenticated');
 
   const fileName = customFileName || (file instanceof File ? file.name : `file-${Date.now()}.bin`);
-  const shouldPreferPresignedUpload = category === 'stories' || file.size >= PRESIGN_THRESHOLD;
+  const isEncryptedMediaUpload =
+    normalizeContentType(file) === DEFAULT_CONTENT_TYPE
+    && /\.enc(?:\.|$)/i.test(fileName);
+  const shouldPreferPresignedUpload =
+    category === 'stories'
+    || file.size >= PRESIGN_THRESHOLD
+    || (isEncryptedMediaUpload && file.size >= ENCRYPTED_MEDIA_PRESIGN_THRESHOLD);
 
   if (shouldPreferPresignedUpload) {
     try {

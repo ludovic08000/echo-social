@@ -75,7 +75,9 @@ export function useImageUpload({ bucket, onSuccess, maxSizeMB }: UseImageUploadO
 
     try {
       setProgress(30);
-      const { url } = await uploadToR2(file, bucket);
+      const { url } = await uploadToR2(file, bucket, undefined, (p) => {
+        setProgress(Math.max(30, Math.min(99, p.percent)));
+      });
       setProgress(100);
 
       // Silent success — no toast needed

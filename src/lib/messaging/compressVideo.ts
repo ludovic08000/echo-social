@@ -15,6 +15,7 @@ const TARGET_VIDEO_BITRATE = '1500k';
 const TARGET_AUDIO_BITRATE = '64k';
 const TARGET_HEIGHT = 720;
 const MAX_INPUT_BYTES = 200 * 1024 * 1024; // refuse > 200 MB inputs outright
+const SKIP_BELOW_BYTES = 12 * 1024 * 1024; // wasm startup is slower than direct upload for small chat clips
 
 let ffmpegSingleton: { ffmpeg: any; loaded: Promise<void> } | null = null;
 
@@ -59,6 +60,9 @@ export async function compressVideoForChat(
 ): Promise<CompressResult> {
   if (input.size > MAX_INPUT_BYTES) {
     return { blob: input, compressed: false, reason: 'input-too-large' };
+  }
+  if (input.size <= SKIP_BELOW_BYTES) {
+    return { blob: input, compressed: false, reason: 'small-fast-path' };
   }
   if (!canRunFfmpegWasm()) {
     return { blob: input, compressed: false, reason: 'no-shared-array-buffer' };

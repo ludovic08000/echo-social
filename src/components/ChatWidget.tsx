@@ -24,6 +24,7 @@ import { useChatWidget } from './ChatWidgetContext';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { generateMediaKey, encryptMedia, buildMediaMessageBody, parseMediaMessage, isVideoMediaLabel } from '@/lib/crypto/mediaEncrypt';
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
+import { compressImageForChat } from '@/lib/messaging/compressImage';
 import { MessageMedia } from '@/components/messages/MessageMedia';
 import { EncryptedMedia } from '@/components/messages/EncryptedMedia';
 import { useCall, formatCallDuration, type CallEndInfo, generateCallE2EEKey } from '@/hooks/useCall';
@@ -694,6 +695,21 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
     const label = isVideo ? '🎬 Vidéo' : '📷 Photo';
 
+    if (!isZeusConversation) {
+      if (e2ee.peerKeyMissing) {
+        toast.error('Clés du contact indisponibles — impossible d’envoyer un média pour le moment.');
+        return;
+      }
+      if (e2ee.initError === 'pin_unlock_required') {
+        toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer un média.');
+        return;
+      }
+      if (e2ee.initError === 'identity_lost_backup_available') {
+        toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer un média.');
+        return;
+      }
+    }
+
     let prepared: File = file;
     if (isVideo) {
       try {
@@ -705,6 +721,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       } catch {
         prepared = file;
       }
+    } else if (isImage) {
+      const compressed = await compressImageForChat(file);
+      prepared = compressed instanceof File ? compressed : new File([compressed], file.name, { type: file.type });
     }
 
     if (isZeusConversation) {
@@ -744,7 +763,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       logCryptoException('media', err, { severity: 'error', conversationId, metadata: { stage: 'encrypt_upload', sizeBytes: file.size, mime: file.type } });
       toast.error(err instanceof Error ? `Erreur : ${err.message}` : 'Erreur de chiffrement du média');
     }
-  }, [isZeusConversation, rawUpload, conversationId, sendMessage, queue, e2ee.peerKeyMissing, viewOnceArmed]);
+  }, [isZeusConversation, rawUpload, conversationId, sendMessage, queue, e2ee.peerKeyMissing, e2ee.initError, viewOnceArmed]);
 
   useEffect(() => {
     lastScrollSigRef.current = '';

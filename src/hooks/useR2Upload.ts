@@ -33,7 +33,9 @@ export function useR2Upload({ folder, onSuccess, maxSizeMB = 5 }: UseR2UploadOpt
 
     try {
       setProgress(30);
-      const { url } = await uploadToR2(file, folder);
+      const { url } = await uploadToR2(file, folder, undefined, (p) => {
+        setProgress(Math.max(30, Math.min(99, p.percent)));
+      });
       setProgress(100);
 
       // Silent success — no toast needed

@@ -293,6 +293,23 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
     const label = isVideo ? '🎬 Vidéo' : '📷 Photo';
 
+    if (!isZeusConversation) {
+      if (e2ee.peerKeyMissing) {
+        toast.error('Clés du contact indisponibles — impossible d’envoyer un média pour le moment.');
+        return;
+      }
+
+      if (e2ee.initError === 'pin_unlock_required') {
+        toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer un média.');
+        return;
+      }
+
+      if (e2ee.initError === 'identity_lost_backup_available') {
+        toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer un média.');
+        return;
+      }
+    }
+
     let prepared: File = file;
     if (isVideo) {
       try {
@@ -314,21 +331,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
       if (url) {
         botPlaintextSend.mutate({ conversationId, body: label, imageUrl: url });
       }
-      return;
-    }
-
-    if (e2ee.peerKeyMissing) {
-      toast.error('Clés du contact indisponibles — impossible d’envoyer un média pour le moment.');
-      return;
-    }
-
-    if (e2ee.initError === 'pin_unlock_required') {
-      toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer un média.');
-      return;
-    }
-
-    if (e2ee.initError === 'identity_lost_backup_available') {
-      toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer un média.');
       return;
     }
 
