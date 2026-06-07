@@ -78,7 +78,33 @@ export function useDevicePrimaryRepair(): {
       await handleAutoPromoted(row, user.id);
       return;
     }
-    // Manual reasons surface in the UI.
+
+    // If the user has a backup (PIN/password/recovery key), prefer silent
+    // restore over forcing logout. Most "no_eligible_device" events after a
+    // browser cache wipe are recoverable via the backup unlock flow.
+    if (row.reason === 'no_eligible_device') {
+      try {
+        const { data: backup } = await supabase
+          .from('user_backups' as any)
+          .select('id')
+          .eq('user_id', user.id)
+          .limit(1)
+          .maybeSingle();
+        if (backup) {
+          try {
+            window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
+              detail: { userId: user.id, reason: 'no_eligible_device_cache_wipe' },
+            }));
+          } catch {}
+          await markResolved(row.id);
+          return;
+        }
+      } catch (err) {
+        console.warn('[device-primary-repair] backup probe failed', err);
+      }
+    }
+
+    // Manual reasons (or no backup available) surface in the UI.
     setPending(prev => (prev ? prev : row));
   }, [user?.id]);
 
