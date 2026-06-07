@@ -50,13 +50,18 @@ export async function compressImageForChat(file: File): Promise<File> {
       (bitmap as ImageBitmap).close();
     }
 
+    // WebP @ 0.80 ≈ 30% smaller than JPEG @ 0.82 at equal perceived quality.
+    const useWebp = canEncodeWebp();
+    const outMime = useWebp ? 'image/webp' : 'image/jpeg';
+    const outExt = useWebp ? '.webp' : '.jpg';
+
     const blob: Blob | null = await new Promise(resolve =>
-      canvas.toBlob(resolve, 'image/jpeg', QUALITY)
+      canvas.toBlob(resolve, outMime, QUALITY)
     );
     if (!blob || blob.size >= file.size) return file;
 
-    const newName = file.name.replace(/\.(heic|heif|png|webp|jpe?g)$/i, '') + '.jpg';
-    return new File([blob], newName, { type: 'image/jpeg', lastModified: Date.now() });
+    const newName = file.name.replace(/\.(heic|heif|png|webp|jpe?g)$/i, '') + outExt;
+    return new File([blob], newName, { type: outMime, lastModified: Date.now() });
   } catch {
     return file;
   }
