@@ -13,10 +13,22 @@
  */
 
 const MAX_DIMENSION = 1600;
-const QUALITY = 0.82;
+const QUALITY = 0.80;
 const SKIP_BELOW_BYTES = 200 * 1024;
 
 const STILL_IMAGE_MIME = /^image\/(jpeg|jpg|png|webp|heic|heif)$/i;
+
+// Detect WebP encoder support (all evergreen browsers; falls back to JPEG on older Safari).
+let _webpSupported: boolean | null = null;
+function canEncodeWebp(): boolean {
+  if (_webpSupported !== null) return _webpSupported;
+  try {
+    const c = document.createElement('canvas');
+    c.width = 1; c.height = 1;
+    _webpSupported = c.toDataURL('image/webp').startsWith('data:image/webp');
+  } catch { _webpSupported = false; }
+  return _webpSupported;
+}
 
 export async function compressImageForChat(file: File): Promise<File> {
   try {
