@@ -216,19 +216,45 @@ export function useVideoFeed(limit: number = 10) {
         (profiles || []).map(p => [p.user_id, { name: p.name, avatar_url: p.avatar_url }])
       );
 
-      // 8. Calculer les scores et trier
-      const scoredVideos = videos.map(video => ({
+      // 8. Server-side ranking (anti-cheat). Fallback to client scoring on error.
+      let orderedIds: string[] | null = null;
+      try {
+        const { data: serverScores, error: rpcErr } = await (supabase.rpc as any)('video_score_batch', {
+          p_user_id: user.id,
+          p_video_ids: videos.map(v => v.id),
+        });
+        if (!rpcErr && Array.isArray(serverScores) && serverScores.length > 0) {
+          orderedIds = serverScores.map((r: any) => r.video_id);
+        }
+      } catch {
+        // silent fallback
+      }
+
+      const decorated = videos.map(video => ({
         ...video,
         author: profileMap.get(video.user_id),
         is_liked: likedVideoIds.has(video.id),
         is_saved: savedVideoIds.has(video.id),
-        _score: calculateRelevanceScore(video, userInterests, followingIds, viewMap)
       }));
 
-      // Trier par score et retourner le top
-      scoredVideos.sort((a, b) => b._score - a._score);
+      let sorted: any[];
+      if (orderedIds) {
+        const byId = new Map(decorated.map(v => [v.id, v]));
+        sorted = orderedIds.map(id => byId.get(id)).filter(Boolean) as any[];
+        // append any not scored at the tail
+        const seen = new Set(orderedIds);
+        for (const v of decorated) if (!seen.has(v.id)) sorted.push(v);
+      } else {
+        const scored = decorated.map(video => ({
+          ...video,
+          _score: calculateRelevanceScore(video, userInterests, followingIds, viewMap),
+        }));
+        scored.sort((a, b) => b._score - a._score);
+        sorted = scored.map(({ _score, ...v }) => v);
+      }
 
-      return scoredVideos.slice(0, limit).map(({ _score, ...video }) => video) as ShortVideo[];
+      return sorted.slice(0, limit) as ShortVideo[];
+
     },
     enabled: !!user,
     staleTime: 2 * 60_000,   // 2 min cache — videos don't change fast
