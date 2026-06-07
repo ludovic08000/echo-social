@@ -1878,6 +1878,33 @@ export type Database = {
         }
         Relationships: []
       }
+      device_primary_repair_requests: {
+        Row: {
+          candidate_device_ids: string[]
+          created_at: string
+          id: string
+          reason: string
+          resolved_at: string | null
+          user_id: string
+        }
+        Insert: {
+          candidate_device_ids?: string[]
+          created_at?: string
+          id?: string
+          reason: string
+          resolved_at?: string | null
+          user_id: string
+        }
+        Update: {
+          candidate_device_ids?: string[]
+          created_at?: string
+          id?: string
+          reason?: string
+          resolved_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       device_signed_prekeys: {
         Row: {
           created_at: string

@@ -207,72 +207,7 @@ function AccountKeySyncRunner() {
     });
   }, [user?.id]);
 
-  useEffect(() => {
-    if (!user?.id) return;
-
-    let cancelled = false;
-    let lastRunAt = 0;
-    let startupTimer: ReturnType<typeof window.setTimeout> | null = null;
-    let intervalTimer: ReturnType<typeof window.setInterval> | null = null;
-
-    const runRetryProcessor = (origin: string) => {
-      const now = Date.now();
-      if (origin !== 'startup' && now - lastRunAt < 5_000) return;
-      lastRunAt = now;
-
-      void import('@/lib/messaging/deviceCopyRetryProcessor')
-        .then(({ processDeviceCopyRetryRequests }) => processDeviceCopyRetryRequests(20))
-        .then((result) => {
-          if (cancelled || result.scanned === 0) return;
-          console.info('[E2EE] device-copy retry processor ran', {
-            origin,
-            scanned: result.scanned,
-            completed: result.completed,
-            skipped: result.skipped,
-            failed: result.failed,
-          });
-        })
-        .catch((error) => {
-          if (!cancelled) console.warn('[E2EE] device-copy retry processor failed', { origin, error });
-        });
-    };
-
-    startupTimer = window.setTimeout(() => runRetryProcessor('startup'), 2_000);
-    intervalTimer = window.setInterval(() => runRetryProcessor('interval'), 20_000);
-
-    const onWake = () => runRetryProcessor('wake');
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') runRetryProcessor('visible');
-    };
-
-    window.addEventListener('focus', onWake);
-    window.addEventListener('online', onWake);
-    document.addEventListener('visibilitychange', onVisible);
-
-    const channel = supabase
-      .channel(`device-copy-retries:${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'device_copy_retry_requests',
-          filter: `sender_user_id=eq.${user.id}`,
-        },
-        () => runRetryProcessor('realtime'),
-      )
-      .subscribe();
-
-    return () => {
-      cancelled = true;
-      if (startupTimer) window.clearTimeout(startupTimer);
-      if (intervalTimer) window.clearInterval(intervalTimer);
-      window.removeEventListener('focus', onWake);
-      window.removeEventListener('online', onWake);
-      document.removeEventListener('visibilitychange', onVisible);
-      void supabase.removeChannel(channel);
-    };
-  }, [user?.id]);
+  // [v5] device-copy retry processor removed — refanout is now the single retry path.
 
   // Keep the active-device list clean so stale iOS/Web devices with invalid SPKs
   // stop receiving new copies and stop producing repeated SPK invalid warnings.
