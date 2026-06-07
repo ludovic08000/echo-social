@@ -251,6 +251,18 @@ export function ChatView({ conversationId }: ChatViewProps) {
     bucket: 'post-images',
   });
 
+  // Optimistic media placeholders: bubble appears the instant the user picks a
+  // file, showing the local objectURL while compression + encryption + upload
+  // run in the background (WhatsApp-style perceived-instant send).
+  const [mediaPlaceholders, setMediaPlaceholders] = useState<
+    { id: string; previewUrl: string; isVideo: boolean; failed?: boolean }[]
+  >([]);
+  useEffect(() => () => {
+    // Revoke any leftover objectURLs when the chat unmounts.
+    mediaPlaceholders.forEach(p => { try { URL.revokeObjectURL(p.previewUrl); } catch {} });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
+
   // Wrap upload: encrypt media before upload when E2EE is active
   const handleMediaFile = useCallback(async (file: File) => {
     const isVideo = /\.(mp4|mov|webm|avi|mkv)/i.test(file.name) || file.type.startsWith('video/');
@@ -293,61 +305,108 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
     const label = isVideo ? '🎬 Vidéo' : '📷 Photo';
 
-    let prepared: File = file;
-    if (isVideo) {
-      try {
-        const { compressVideoForChat } = await import('@/lib/messaging/compressVideo');
-        const result = await compressVideoForChat(file);
-        prepared = result.compressed
-          ? new File([result.blob], file.name.replace(/\.[^.]+$/, '.mp4'), { type: 'video/mp4' })
-          : file;
-      } catch {
-        prepared = file;
+    // ── 1) Optimistic bubble: show the local file IMMEDIATELY ──
+    // WhatsApp/iMessage UX: the user sees their photo/video in the chat the
+    // millisecond they tap send, while compress + encrypt + upload run async.
+    const placeholderId = `ph-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const previewUrl = (() => {
+      try { return URL.createObjectURL(file); } catch { return ''; }
+    })();
+    if (previewUrl) {
+      setMediaPlaceholders(prev => [...prev, { id: placeholderId, previewUrl, isVideo }]);
+    }
+    const finishPlaceholder = (failed = false) => {
+      setMediaPlaceholders(prev => {
+        const next = failed
+          ? prev.map(p => p.id === placeholderId ? { ...p, failed: true } : p)
+          : prev.filter(p => p.id !== placeholderId);
+        if (!failed && previewUrl) { try { URL.revokeObjectURL(previewUrl); } catch {} }
+        return next;
+      });
+    };
+
+    // ── 2) Parallel pipeline: compression + media key generation in parallel ──
+    // The key generation (CSPRNG + WebCrypto importKey) runs while the canvas
+    // compression / ffmpeg.wasm transcode is busy on the main thread.
+    const compressP = (async (): Promise<File> => {
+      if (isVideo) {
+        try {
+          const { compressVideoForChat } = await import('@/lib/messaging/compressVideo');
+          const result = await compressVideoForChat(file);
+          return result.compressed
+            ? new File([result.blob], file.name.replace(/\.[^.]+$/, '.mp4'), { type: 'video/mp4' })
+            : file;
+        } catch { return file; }
       }
-    } else {
       const compressed = await compressImageForChat(file);
-      prepared = compressed instanceof File ? compressed : new File([compressed], file.name, { type: file.type });
+      return compressed instanceof File ? compressed : new File([compressed], file.name, { type: file.type });
+    })();
+
+    let prepared: File = file;
+    let mediaKey: { key: CryptoKey; keyB64: string } | null = null;
+    try {
+      const [c, k] = await Promise.all([
+        compressP,
+        isZeusConversation ? Promise.resolve(null) : generateMediaKey(),
+      ]);
+      prepared = c;
+      mediaKey = k as { key: CryptoKey; keyB64: string } | null;
+    } catch (err) {
+      finishPlaceholder(true);
+      logCryptoException('media', err, { severity: 'error', conversationId, metadata: { stage: 'compress_or_keygen', isVideo } });
+      toast.error('Erreur de préparation du média');
+      return;
     }
 
     if (isZeusConversation) {
       const url = await rawUpload(prepared);
       if (url) {
         botPlaintextSend.mutate({ conversationId, body: label, imageUrl: url });
+        finishPlaceholder();
+      } else {
+        finishPlaceholder(true);
       }
       return;
     }
 
     if (e2ee.peerKeyMissing) {
+      finishPlaceholder(true);
       toast.error('Clés du contact indisponibles — impossible d’envoyer un média pour le moment.');
       return;
     }
 
     if (e2ee.initError === 'pin_unlock_required') {
+      finishPlaceholder(true);
       toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer un média.');
       return;
     }
 
     if (e2ee.initError === 'identity_lost_backup_available') {
+      finishPlaceholder(true);
       toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer un média.');
       return;
     }
 
     const t0 = performance.now();
     try {
-      const { key, keyB64 } = await generateMediaKey();
+      if (!mediaKey) throw new Error('media key missing');
+      const { key, keyB64 } = mediaKey;
       const encryptedBlob = await encryptMedia(prepared, key);
       const encFile = new File([encryptedBlob], `${prepared.name}.enc`, { type: 'application/octet-stream' });
       const url = await rawUpload(encFile);
       if (url) {
         try {
-          const localUrl = URL.createObjectURL(prepared);
-          rememberDecryptedMedia(url, localUrl, isVideo);
+          // Cache decrypted media against the remote URL so it renders instantly.
+          rememberDecryptedMedia(url, previewUrl || URL.createObjectURL(prepared), isVideo);
         } catch { /* noop */ }
         const body = buildMediaMessageBody(label, keyB64);
-        queue.sendMessage(body, url, { view_once: armedVO }).catch((e) => {
-          logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send', isVideo } });
-          toast.error('Erreur envoi média');
-        });
+        queue.sendMessage(body, url, { view_once: armedVO })
+          .then(() => finishPlaceholder())
+          .catch((e) => {
+            finishPlaceholder(true);
+            logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send', isVideo } });
+            toast.error('Erreur envoi média');
+          });
         logCryptoError({
           severity: 'info', context: 'media', errorCode: 'MEDIA_ENCRYPT_OK',
           errorMessage: 'Media encrypted and uploaded',
@@ -355,6 +414,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
           metadata: { sizeBytes: prepared.size, mime: prepared.type, isVideo, durationMs: Math.round(performance.now() - t0), viewOnce: armedVO },
         });
       } else {
+        finishPlaceholder(true);
         logCryptoError({
           severity: 'error', context: 'media', errorCode: 'MEDIA_UPLOAD_FAILED',
           errorMessage: 'Encrypted media upload returned no URL',
@@ -363,6 +423,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         });
       }
     } catch (err) {
+      finishPlaceholder(true);
       console.error('Media encryption failed:', err);
       logCryptoException('media', err, {
         severity: 'error',
@@ -864,7 +925,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
           <div className="flex items-center justify-center py-12">
             <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
           </div>
-        ) : messages?.length === 0 && queue.pendingMessages.length === 0 ? (
+        ) : messages?.length === 0 && queue.pendingMessages.length === 0 && mediaPlaceholders.length === 0 ? (
           (recoveryState?.serverMessageCount ?? 0) > 0 && (
             e2ee.initError === 'pin_unlock_required' ||
             e2ee.initError === 'identity_lost_backup_available' ||
@@ -1153,6 +1214,28 @@ export function ChatView({ conversationId }: ChatViewProps) {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            ))}
+
+            {/* Optimistic local-preview bubbles for media being compressed/encrypted/uploaded */}
+            {mediaPlaceholders.map(ph => (
+              <div key={ph.id} className="flex items-end gap-1.5 mt-2 flex-row-reverse">
+                <div className="w-7 flex-shrink-0 mb-0.5" />
+                <div className="max-w-[70%] flex flex-col items-end">
+                  <div className={cn(
+                    'px-1 py-1 rounded-[18px] overflow-hidden',
+                    ph.failed ? 'bg-destructive/20 border border-destructive/30' : 'bg-primary/70',
+                  )}>
+                    {ph.isVideo ? (
+                      <video src={ph.previewUrl} className="max-w-full max-h-[260px] rounded-[14px] object-cover opacity-80" muted playsInline />
+                    ) : (
+                      <img src={ph.previewUrl} alt="Envoi…" className="max-w-full max-h-[260px] rounded-[14px] object-cover opacity-80" />
+                    )}
+                  </div>
+                  <div className="text-[11px] mt-0.5 text-muted-foreground">
+                    {ph.failed ? 'Échec' : 'Envoi…'}
+                  </div>
                 </div>
               </div>
             ))}

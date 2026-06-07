@@ -75,7 +75,8 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
 
       const { mimeType, ext } = getSupportedMimeType();
 
-      const recorderOptions: MediaRecorderOptions = {};
+      // WhatsApp-style voice: mono Opus/AAC @ 24 kbps → ~180 KB/min, much faster upload.
+      const recorderOptions: MediaRecorderOptions = { audioBitsPerSecond: 24000 };
       if (mimeType) {
         recorderOptions.mimeType = mimeType;
       }
