@@ -7922,6 +7922,10 @@ export type Database = {
         Returns: boolean
       }
       security_monitor_cron_tick: { Args: never; Returns: undefined }
+      set_message_archive_body: {
+        Args: { p_archive_body: string; p_message_id: string }
+        Returns: boolean
+      }
       stripe_mark_event_processed: {
         Args: { p_event_id: string; p_event_type: string }
         Returns: boolean
