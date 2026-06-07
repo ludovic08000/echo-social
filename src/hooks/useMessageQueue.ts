@@ -258,6 +258,15 @@ export function useMessageQueue(
       }
     }
 
+    // Long-life encrypted archive: ALWAYS done in background after insert
+    // (retroactive RPC path below). This removes ~50-200ms from perceived send latency.
+    const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
+    const archiveBody: string | null = null;
+
+    setPendingMessages(prev => prev.map(m =>
+      m.localId === localId ? { ...m, status: 'sending', updatedAt: Date.now() } : m
+    ));
+
     const { data, error } = await supabase
       .from('messages')
       .insert({
@@ -265,7 +274,6 @@ export function useMessageQueue(
         sender_id: user.id,
         body: bodyToStore,
         image_url: imageUrl || null,
-        ...(archiveBody ? { archive_body: archiveBody } : {}),
         ...(extra || {}),
       })
       .select('id')
@@ -273,6 +281,11 @@ export function useMessageQueue(
 
     if (error) {
       console.error('[MSG_SEND] database insert failed', { conversationId, localId, error });
+      setPendingMessages(prev => prev.map(m =>
+        m.localId === localId
+          ? { ...m, status: 'failed_visible', lastError: error.message, updatedAt: Date.now() }
+          : m
+      ));
       throw error;
     }
 
@@ -288,10 +301,8 @@ export function useMessageQueue(
     if (data?.id) {
       onPlaintextCached?.(data.id, sanitized);
 
-      // Retroactive archive fallback: if the archive key wasn't available at
-      // insert time (e.g. master key still unlocking), try again now and
-      // populate archive_body via the RPC. Non-fatal — logs only.
-      if (!archiveBody && shouldArchiveMessageBody({
+      // Background archive (non-blocking)
+      if (shouldArchiveMessageBody({
         sanitized,
         isSpecial,
         viewOnce: extra?.view_once === true,
