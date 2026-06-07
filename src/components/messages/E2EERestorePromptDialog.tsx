@@ -24,8 +24,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, KeyRound, Lock, ShieldCheck, Hash } from 'lucide-react';
+import { Loader2, KeyRound, Lock, ShieldCheck, Hash, QrCode, Copy, Download } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
+import { useDeviceLink } from '@/hooks/useDeviceLink';
 import {
   initAccountKeySync,
   restoreWithRecoveryKey,
@@ -36,13 +38,16 @@ import {
 
 export function E2EERestorePromptDialog() {
   const { user } = useAuth();
+  const deviceLink = useDeviceLink();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [password, setPassword] = useState('');
   const [recoveryKey, setRecoveryKey] = useState('');
   const [pin, setPin] = useState('');
-  const [tab, setTab] = useState<'password' | 'recovery' | 'pin'>('password');
+  const [tab, setTab] = useState<'password' | 'recovery' | 'pin' | 'device'>('password');
   const [pinAvailable, setPinAvailable] = useState(false);
+  const [linkQrData, setLinkQrData] = useState<string | null>(null);
+  const [linkInput, setLinkInput] = useState('');
 
   useEffect(() => {
     let disposed = false;
@@ -109,6 +114,7 @@ export function E2EERestorePromptDialog() {
     const onRestored = () => {
       setOpen(false);
       setPassword(''); setRecoveryKey(''); setPin('');
+      setLinkQrData(null); setLinkInput('');
       toast.success('Messages déverrouillés');
     };
     window.addEventListener('forsure-keys-restored', onRestored);
@@ -118,6 +124,7 @@ export function E2EERestorePromptDialog() {
   const finish = (origin: string) => {
     setOpen(false);
     setPassword(''); setRecoveryKey(''); setPin('');
+    setLinkQrData(null); setLinkInput('');
     window.dispatchEvent(new CustomEvent('forsure-keys-unlocked', { detail: { origin } }));
     window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail: { origin } }));
     window.dispatchEvent(new CustomEvent('forsure-keys-restored', { detail: { status: origin } }));
@@ -185,6 +192,50 @@ export function E2EERestorePromptDialog() {
     }
   };
 
+  const handleCreateDeviceLink = async () => {
+    setBusy(true);
+    try {
+      const result = await deviceLink.createLinkRequest();
+      if (!result) {
+        toast.error(deviceLink.error || 'Impossible de creer la demande de liaison');
+        return;
+      }
+      setLinkQrData(result.qrData);
+      setLinkInput(result.qrData);
+      toast.success('Demande de liaison creee. Approuve-la depuis un appareil deja connecte.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleClaimDeviceLink = async () => {
+    const code = linkInput.trim() || linkQrData || '';
+    if (!code) return;
+    setBusy(true);
+    try {
+      const ok = await deviceLink.claimApprovedLink(code);
+      if (ok) {
+        finish('device_link_restore');
+      } else if ((deviceLink.error || '').toLowerCase().includes('attente')) {
+        toast.info(deviceLink.error || 'En attente d approbation depuis un autre appareil');
+      } else {
+        toast.error(deviceLink.error || 'Transfert de cles indisponible');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyLinkCode = () => {
+    if (!linkQrData) return;
+    navigator.clipboard.writeText(linkQrData).then(
+      () => toast.success('Code de liaison copie'),
+      () => toast.error('Copie impossible'),
+    );
+  };
+
+  const tabGridClass = pinAvailable ? 'grid-cols-4' : 'grid-cols-3';
+
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!busy) setOpen(v); }}>
       <DialogContent className="sm:max-w-md">
@@ -206,7 +257,7 @@ export function E2EERestorePromptDialog() {
         </DialogHeader>
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-          <TabsList className={`grid w-full ${pinAvailable ? 'grid-cols-3' : 'grid-cols-2'}`}>
+          <TabsList className={`grid w-full ${tabGridClass}`}>
             <TabsTrigger value="password">
               <Lock className="w-4 h-4 mr-1" /> Mot de passe
             </TabsTrigger>
@@ -218,6 +269,9 @@ export function E2EERestorePromptDialog() {
                 <Hash className="w-4 h-4 mr-1" /> PIN
               </TabsTrigger>
             )}
+            <TabsTrigger value="device">
+              <QrCode className="w-4 h-4 mr-1" /> Appareil
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="password" className="space-y-3 pt-3">
@@ -285,6 +339,51 @@ export function E2EERestorePromptDialog() {
               </Button>
             </TabsContent>
           )}
+
+          <TabsContent value="device" className="space-y-3 pt-3">
+            <p className="text-xs text-muted-foreground">
+              Si cet iPhone a perdu son cache, cree une demande ici. Puis approuve-la depuis un
+              appareil deja connecte avec le QR/code ci-dessous.
+            </p>
+            <Button onClick={handleCreateDeviceLink} disabled={busy} className="w-full">
+              {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <QrCode className="w-4 h-4 mr-2" />}
+              Creer une demande de liaison
+            </Button>
+
+            {linkQrData && (
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-3">
+                <div className="flex justify-center">
+                  <div className="bg-white p-3 rounded-lg">
+                    <QRCodeSVG value={linkQrData} size={176} level="M" />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <code className="text-[10px] bg-background p-2 rounded flex-1 break-all max-h-16 overflow-auto">
+                    {linkQrData}
+                  </code>
+                  <Button type="button" variant="outline" size="icon" onClick={copyLinkCode}>
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <Label htmlFor="device-link-code">Code de liaison</Label>
+            <Input
+              id="device-link-code"
+              value={linkInput}
+              onChange={(e) => setLinkInput(e.target.value)}
+              placeholder="Colle le code si le QR a disparu"
+              disabled={busy}
+              autoComplete="off"
+              spellCheck={false}
+              className="font-mono text-xs"
+            />
+            <Button onClick={handleClaimDeviceLink} disabled={busy || (!linkInput.trim() && !linkQrData)} className="w-full">
+              {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+              Recuperer les cles approuvees
+            </Button>
+          </TabsContent>
         </Tabs>
 
         <DialogFooter className="text-xs text-muted-foreground">
