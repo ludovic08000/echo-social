@@ -10,26 +10,13 @@ import { repairCurrentDevicePrekeys } from './devicePrekeyRepair';
 
 export type PostRestoreSource = 'pin' | 'recovery_key' | 'passkey' | 'password' | 'unknown';
 
-async function bumpKeysEpochBestEffort(userId: string): Promise<number | null> {
+async function bumpKeysEpochBestEffort(userId: string, deviceId: string): Promise<number | null> {
   try {
-    const { data, error } = await (supabase as any).rpc('bump_keys_epoch', { p_user_id: userId });
+    const { data, error } = await (supabase as any).rpc('bump_device_keys_epoch', {
+      p_user_id: userId,
+      p_device_id: deviceId,
+    });
     if (!error && typeof data === 'number') return data;
-  } catch {}
-
-  try {
-    const { data } = await (supabase as any)
-      .from('user_public_keys')
-      .select('keys_epoch')
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .maybeSingle();
-    const next = Number(data?.keys_epoch ?? 0) + 1;
-    const { error } = await (supabase as any)
-      .from('user_public_keys')
-      .update({ keys_epoch: next, updated_at: new Date().toISOString() })
-      .eq('user_id', userId)
-      .eq('is_active', true);
-    if (!error) return next;
   } catch {}
 
   return null;
@@ -93,7 +80,7 @@ export async function runPostRestoreLifecycle(
 ): Promise<{ ok: true; deviceId: string; keysEpoch: number | null } | { ok: false; reason: string }> {
   try {
     const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
-    const keysEpoch = await bumpKeysEpochBestEffort(userId);
+    const keysEpoch = await bumpKeysEpochBestEffort(userId, deviceId);
 
     await revalidateCurrentDevicePrekeys(userId, deviceId);
     await refreshSignedDeviceListBestEffort(userId, deviceId);
