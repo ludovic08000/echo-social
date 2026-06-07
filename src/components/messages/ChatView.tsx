@@ -1218,6 +1218,28 @@ export function ChatView({ conversationId }: ChatViewProps) {
               </div>
             ))}
 
+            {/* Optimistic local-preview bubbles for media being compressed/encrypted/uploaded */}
+            {mediaPlaceholders.map(ph => (
+              <div key={ph.id} className="flex items-end gap-1.5 mt-2 flex-row-reverse">
+                <div className="w-7 flex-shrink-0 mb-0.5" />
+                <div className="max-w-[70%] flex flex-col items-end">
+                  <div className={cn(
+                    'px-1 py-1 rounded-[18px] overflow-hidden',
+                    ph.failed ? 'bg-destructive/20 border border-destructive/30' : 'bg-primary/70',
+                  )}>
+                    {ph.isVideo ? (
+                      <video src={ph.previewUrl} className="max-w-full max-h-[260px] rounded-[14px] object-cover opacity-80" muted playsInline />
+                    ) : (
+                      <img src={ph.previewUrl} alt="Envoi…" className="max-w-full max-h-[260px] rounded-[14px] object-cover opacity-80" />
+                    )}
+                  </div>
+                  <div className="text-[11px] mt-0.5 text-muted-foreground">
+                    {ph.failed ? 'Échec' : 'Envoi…'}
+                  </div>
+                </div>
+              </div>
+            ))}
+
             {/* Pending outbound messages from queue (exclude already-sent) */}
             {queue.pendingMessages
               .filter(pm => pm.status !== 'sent')
