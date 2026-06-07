@@ -231,6 +231,22 @@ export function ChatView({ conversationId }: ChatViewProps) {
     return () => window.removeEventListener('forsure-keys-restored', handler);
   }, [bumpCache]);
 
+  // Warm-up: prefetch the ffmpeg.wasm chunk (~25 MB) lazily when the chat
+  // opens, so the first video the user picks doesn't have to wait for the
+  // CDN round-trip + wasm compile. Uses requestIdleCallback to avoid stealing
+  // CPU from the chat mount. Safe: pure module prefetch, no side effects.
+  useEffect(() => {
+    const idle = (cb: () => void) => {
+      const ric = (window as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+      if (typeof ric === 'function') ric(cb);
+      else setTimeout(cb, 1500);
+    };
+    idle(() => {
+      void import('@/lib/messaging/compressVideo').catch(() => {});
+    });
+  }, []);
+
+
   // Message queue for encrypted sending.
   // STRICT: plaintext is allowed ONLY for the Zeus bot conversation.
   // Any peer conversation MUST go through E2EE — if encryption is not ready,
