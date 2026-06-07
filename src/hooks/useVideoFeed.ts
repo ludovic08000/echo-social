@@ -26,6 +26,33 @@ export interface ShortVideo {
   is_saved?: boolean;
 }
 
+type VideoSignalType = 'view' | 'dwell_long' | 'skip_fast' | 'like' | 'share' | 'save' | 'hide';
+
+type ServerVideoFeedBundle = {
+  videos?: Array<ShortVideo & { server_score?: number }>;
+  profiles?: Array<{ user_id: string; name: string; avatar_url: string | null }>;
+  liked_video_ids?: string[];
+  saved_video_ids?: string[];
+  next_cursor?: { score: number; created_at: string; id: string } | null;
+};
+
+function recordVideoLearningSignal(
+  userId: string | undefined,
+  videoId: string,
+  signalType: VideoSignalType,
+  weight: number,
+  dwellMs?: number
+) {
+  if (!userId || !videoId) return;
+  void supabase.from('ml_interactions').insert({
+    user_id: userId,
+    post_id: videoId,
+    signal_type: signalType,
+    weight: Math.max(-9.99, Math.min(9.99, weight)),
+    ...(typeof dwellMs === 'number' ? { dwell_ms: Math.max(0, Math.round(dwellMs)) } : {}),
+  });
+}
+
 interface AlgorithmWeights {
   watchTime: number;      // Poids du temps de visionnage
   completion: number;     // Poids du taux de complétion
@@ -94,6 +121,23 @@ function enforceVideoDiversity<T extends { user_id: string }>(videos: T[], maxCo
   return out;
 }
 
+function mapServerVideoBundle(bundle: ServerVideoFeedBundle, limit: number): ShortVideo[] | null {
+  if (!Array.isArray(bundle.videos)) return null;
+  const profiles = new Map(
+    (bundle.profiles || []).map(p => [p.user_id, { name: p.name, avatar_url: p.avatar_url }])
+  );
+  const liked = new Set((bundle.liked_video_ids || []).map(String));
+  const saved = new Set((bundle.saved_video_ids || []).map(String));
+
+  return bundle.videos.slice(0, limit).map(video => ({
+    ...video,
+    hashtags: video.hashtags || [],
+    author: profiles.get(video.user_id),
+    is_liked: liked.has(video.id),
+    is_saved: saved.has(video.id),
+  })) as ShortVideo[];
+}
+
 function calculateRelevanceScore(
   video: any,
   userInterests: string[],
@@ -157,6 +201,21 @@ export function useVideoFeed(limit: number = 10) {
     queryKey: ['video-feed', user?.id, limit],
     queryFn: async () => {
       if (!user) return [];
+
+      try {
+        const { data, error } = await supabase.rpc('short_video_feed_batch', {
+          p_user_id: user.id,
+          p_limit: limit,
+        });
+        if (!error) {
+          const mapped = mapServerVideoBundle((data || {}) as ServerVideoFeedBundle, limit);
+          if (mapped) return mapped;
+        } else if (error.code !== 'PGRST202') {
+          console.warn('[video-feed] server ranking unavailable, using client fallback', error.message);
+        }
+      } catch (error) {
+        console.warn('[video-feed] server ranking failed, using client fallback', error);
+      }
 
       const lightweightMode = limit <= 6;
       const poolSize = lightweightMode ? Math.max(limit, 6) : Math.min(40, Math.max(limit * 4, 16));
@@ -313,6 +372,13 @@ export function useRecordVideoView() {
 
       if (error) throw error;
 
+      recordVideoLearningSignal(user.id, videoId, 'view', 0.5);
+      if (completionRate >= 0.75 || watchTimeSeconds >= 8) {
+        recordVideoLearningSignal(user.id, videoId, 'dwell_long', 1.5, watchTimeSeconds * 1000);
+      } else if (completionRate < 0.15 && watchTimeSeconds <= 2) {
+        recordVideoLearningSignal(user.id, videoId, 'skip_fast', -1.0, watchTimeSeconds * 1000);
+      }
+
       // Mettre à jour les intérêts de l'utilisateur basé sur le visionnage
       if (completionRate > 0.5) {
         // Si l'utilisateur a regardé plus de 50%, inférer un intérêt
@@ -362,6 +428,7 @@ export function useToggleVideoLike() {
         await supabase
           .from('video_likes')
           .insert({ user_id: user.id, video_id: videoId });
+        recordVideoLearningSignal(user.id, videoId, 'like', 2.0);
       }
     },
     onSuccess: () => {
@@ -389,6 +456,7 @@ export function useToggleVideoSave() {
         await supabase
           .from('video_saves')
           .insert({ user_id: user.id, video_id: videoId });
+        recordVideoLearningSignal(user.id, videoId, 'save', 3.0);
       }
     },
     onSuccess: () => {
@@ -408,6 +476,22 @@ export function useShareVideo() {
       await supabase
         .from('video_shares')
         .insert({ user_id: user.id, video_id: videoId, share_type: shareType });
+      recordVideoLearningSignal(user.id, videoId, 'share', 4.0);
+    },
+  });
+}
+
+export function useMarkVideoNotInterested() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ videoId }: { videoId: string }) => {
+      if (!user) throw new Error('Not authenticated');
+      recordVideoLearningSignal(user.id, videoId, 'hide', -3.0);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['video-feed'] });
     },
   });
 }

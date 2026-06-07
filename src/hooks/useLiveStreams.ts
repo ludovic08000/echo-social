@@ -40,6 +40,23 @@ export interface LiveChatMessage {
   };
 }
 
+type ServerLiveFeedBundle = {
+  active?: Array<LiveStream & { server_score?: number }>;
+  profiles?: Array<{ user_id: string; name: string; avatar_url: string | null }>;
+};
+
+function mapServerLiveBundle(bundle: ServerLiveFeedBundle): LiveStream[] | null {
+  if (!Array.isArray(bundle.active)) return null;
+  const profiles = new Map(
+    (bundle.profiles || []).map(p => [p.user_id, { name: p.name, avatar_url: p.avatar_url }])
+  );
+  return bundle.active.map(live => ({
+    ...live,
+    hashtags: live.hashtags || [],
+    host: profiles.get(live.user_id),
+  })) as LiveStream[];
+}
+
 function stableHash(input: string): number {
   let hash = 2166136261;
   for (let i = 0; i < input.length; i++) {
@@ -106,6 +123,24 @@ export function useLiveStreams() {
   return useQuery({
     queryKey: ['live-streams', user?.id],
     queryFn: async () => {
+      if (user?.id) {
+        try {
+          const { data, error } = await supabase.rpc('live_feed_bundle', {
+            p_user_id: user.id,
+            p_active_limit: 80,
+            p_replay_limit: 0,
+          });
+          if (!error) {
+            const mapped = mapServerLiveBundle((data || {}) as ServerLiveFeedBundle);
+            if (mapped) return mapped;
+          } else if (error.code !== 'PGRST202') {
+            console.warn('[live-feed] server ranking unavailable, using client fallback', error.message);
+          }
+        } catch (error) {
+          console.warn('[live-feed] server ranking failed, using client fallback', error);
+        }
+      }
+
       // 1. Récupérer les lives actifs
       const { data: lives, error } = await supabase
         .from('live_streams')

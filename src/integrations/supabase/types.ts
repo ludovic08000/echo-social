@@ -7683,6 +7683,16 @@ export type Database = {
           score: number
         }[]
       }
+      short_video_feed_batch: {
+        Args: {
+          p_cursor_created_at?: string
+          p_cursor_id?: string
+          p_cursor_score?: number
+          p_limit?: number
+          p_user_id: string
+        }
+        Returns: Json
+      }
       mark_device_copy_retry_failed: {
         Args: { p_error?: string; p_request_id: string }
         Returns: Json
