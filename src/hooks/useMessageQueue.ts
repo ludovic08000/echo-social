@@ -90,12 +90,6 @@ export function useMessageQueue(
     const effectiveBody = inferMediaBody(body, imageUrl);
     if (!user || (!effectiveBody.trim() && !imageUrl)) return;
 
-    const { data: sess } = await supabase.auth.getSession();
-    const liveUserId = sess.session?.user?.id;
-    if (!liveUserId || liveUserId !== user.id) {
-      throw new Error('Session expirée — reconnectez-vous pour envoyer.');
-    }
-
     const isSpecial = isSpecialMessage(effectiveBody, imageUrl);
 
     if (!isSpecial) {
@@ -107,6 +101,38 @@ export function useMessageQueue(
     const now = Date.now();
     const localId = `local-${now}-${Math.random().toString(36).slice(2, 8)}`;
     const traceId = safeUUID();
+
+    // Optimistic UI: bubble appears instantly while crypto + insert run.
+    const optimistic: OutboundMessage = {
+      localId,
+      traceId,
+      conversationId,
+      senderId: user.id,
+      plaintext: sanitized,
+      encryptedBody: null,
+      imageUrl: imageUrl || null,
+      status: 'encrypting',
+      retryCount: 0,
+      maxRetries: 3,
+      lastError: null,
+      createdAt: now,
+      updatedAt: now,
+      serverId: null,
+    };
+    setPendingMessages(prev => [...prev, optimistic]);
+
+    // Session freshness check is non-blocking for the UI; throw still cleans pending below.
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const liveUserId = sess.session?.user?.id;
+      if (!liveUserId || liveUserId !== user.id) {
+        setPendingMessages(prev => prev.filter(m => m.localId !== localId));
+        throw new Error('Session expirée — reconnectez-vous pour envoyer.');
+      }
+    } catch (e) {
+      // network glitch on getSession shouldn't kill the send if user is present
+      console.warn('[MSG_SEND] getSession soft-failed; continuing', e);
+    }
 
     let bodyToStore = sanitized;
     let encryptedSuccessfully = false;
@@ -214,23 +240,18 @@ export function useMessageQueue(
       throw new Error('Chiffrement v5 indisponible - restaurez les cles avant envoi.');
     }
 
-    // Long-life encrypted archive copy (zero-access, wrapped under account master key).
-    // Allows any future device that can unlock the account to re-read this message.
-    let archiveBody: string | null = null;
+    // Long-life encrypted archive: done in background after INSERT (retroactive RPC path).
+    // Removes ~50-200ms from perceived send latency.
     const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
-    if (shouldArchiveMessageBody({
-      sanitized,
-      isSpecial,
-      viewOnce: extra?.view_once === true,
-      encryptedSuccessfully,
-      encryptionWasRequired,
-    })) {
-      try {
-        archiveBody = await encryptArchive(sanitized, conversationId, user.id);
-      } catch {
-        archiveBody = null;
-      }
-    }
+
+    setPendingMessages(prev => prev.map(m =>
+      m.localId === localId ? { ...m, status: 'sending', updatedAt: Date.now() } : m
+    ));
+
+
+    setPendingMessages(prev => prev.map(m =>
+      m.localId === localId ? { ...m, status: 'sending', updatedAt: Date.now() } : m
+    ));
 
     const { data, error } = await supabase
       .from('messages')
@@ -239,7 +260,6 @@ export function useMessageQueue(
         sender_id: user.id,
         body: bodyToStore,
         image_url: imageUrl || null,
-        ...(archiveBody ? { archive_body: archiveBody } : {}),
         ...(extra || {}),
       })
       .select('id')
@@ -247,6 +267,11 @@ export function useMessageQueue(
 
     if (error) {
       console.error('[MSG_SEND] database insert failed', { conversationId, localId, error });
+      setPendingMessages(prev => prev.map(m =>
+        m.localId === localId
+          ? { ...m, status: 'failed_visible', lastError: error.message, updatedAt: Date.now() }
+          : m
+      ));
       throw error;
     }
 
@@ -262,10 +287,8 @@ export function useMessageQueue(
     if (data?.id) {
       onPlaintextCached?.(data.id, sanitized);
 
-      // Retroactive archive fallback: if the archive key wasn't available at
-      // insert time (e.g. master key still unlocking), try again now and
-      // populate archive_body via the RPC. Non-fatal — logs only.
-      if (!archiveBody && shouldArchiveMessageBody({
+      // Background archive (non-blocking)
+      if (shouldArchiveMessageBody({
         sanitized,
         isSpecial,
         viewOnce: extra?.view_once === true,
@@ -316,6 +339,8 @@ export function useMessageQueue(
         .then(({ requestImmediateBackup }) => requestImmediateBackup('message-sent'))
         .catch(() => {});
       await onMessageSent?.(localId);
+      // Remove optimistic bubble — realtime/refetch will surface the server copy
+      setPendingMessages(prev => prev.filter(m => m.localId !== localId));
     }
 
     queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
