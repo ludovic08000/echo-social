@@ -27,6 +27,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { imagePresets } from '@/lib/imageOptimize';
 import { useMLTracking } from '@/hooks/useMLFeed';
 import { useMLViewTracker, trackMLSignal, cachePostAuthor } from '@/hooks/useMLTracker';
+import { useQualityTracker, trackQuality } from '@/hooks/useQualityTracker';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -85,6 +86,13 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
     mlRef.current = node;
   }, [mlRef]);
 
+  // Quality tracker (watch_time / completion / skip_fast / ios_perf)
+  const quality = useQualityTracker({
+    surface: 'post',
+    contentId: post.id,
+    authorId: post.user_id,
+  });
+
   // Legacy ML tracking (kept for back-compat with useMLFeed dashboard)
   useEffect(() => {
     const el = cardRef.current;
@@ -95,8 +103,10 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         if (entry.isIntersecting) {
           trackView(post.id, { content_type: contentType });
           startDwell(post.id);
+          quality.onEnter();
         } else {
           endDwell(post.id, { content_type: contentType });
+          quality.onLeave();
         }
       },
       { threshold: 0.5 }
@@ -268,7 +278,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                   className="w-full justify-start p-0"
                 />
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { setSaved(!saved); if (user) trackMLSignal(user.id, post.id, saved ? 'hide' : 'click'); }}>
+              <DropdownMenuItem onClick={() => { setSaved(!saved); if (user) trackMLSignal(user.id, post.id, saved ? 'hide' : 'click'); if (!saved) quality.onSave(); }}>
                 <Bookmark className={cn("w-4 h-4 mr-2", saved && "fill-current")} />
                 {saved ? 'Retirer' : 'Enregistrer'}
               </DropdownMenuItem>

@@ -6,8 +6,9 @@ import { useIsAdmin } from '@/hooks/useIsAdmin';
 import {
   Shield, Users, Activity, LayoutDashboard, FileText, Flag, BarChart3, CreditCard, Lock, Settings,
   Brain, Zap, Archive, Gauge, Monitor, ScrollText, ShieldAlert, ChevronDown, Menu, X, KeyRound, Sparkles,
-  MessageSquareWarning,
+  MessageSquareWarning, TrendingUp,
 } from 'lucide-react';
+import { QualityMetricsSection } from '@/components/admin/QualityMetricsSection';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -31,6 +32,7 @@ const NAV_GROUPS = [
       { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { key: 'health', label: 'Santé', icon: Activity },
       { key: 'stats', label: 'Statistiques', icon: BarChart3 },
+      { key: 'quality', label: 'Qualité', icon: TrendingUp },
       { key: 'monitoring', label: 'Monitoring', icon: Monitor },
     ],
   },
@@ -77,7 +79,7 @@ const NAV_GROUPS = [
   },
 ];
 
-type AdminSection = 'dashboard' | 'health' | 'stats' | 'monitoring' | 'users' | 'posts' | 'reports' | 'comment_alerts' | 'verifications' | 'archives' | 'subscriptions' | 'feed_intelligence' | 'ml_feed' | 'ai' | 'zeus' | 'security_ai' | 'security' | 'crypto_errors' | 'audit_logs' | 'settings';
+type AdminSection = 'dashboard' | 'health' | 'stats' | 'quality' | 'monitoring' | 'users' | 'posts' | 'reports' | 'comment_alerts' | 'verifications' | 'archives' | 'subscriptions' | 'feed_intelligence' | 'ml_feed' | 'ai' | 'zeus' | 'security_ai' | 'security' | 'crypto_errors' | 'audit_logs' | 'settings';
 
 export default function Admin() {
   const [section, setSection] = useState<AdminSection>('dashboard');
@@ -126,6 +128,7 @@ export default function Admin() {
       case 'verifications': return <VerificationsSection />;
       case 'archives': return <ArchivesSection />;
       case 'stats': return <StatsSection />;
+      case 'quality': return <QualityMetricsSection />;
       case 'subscriptions': return <SubscriptionsSection />;
       case 'ai': return <AISection />;
       case 'zeus': return <ZeusSection />;

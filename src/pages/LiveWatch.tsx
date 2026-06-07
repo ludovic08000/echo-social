@@ -18,6 +18,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { motion } from 'framer-motion';
+import { useQualityTracker } from '@/hooks/useQualityTracker';
 
 interface AllLiveItem {
   id: string;
@@ -112,13 +113,21 @@ function LiveSlide({ item, isVisible, backTo }: { item: AllLiveItem; isVisible: 
 
   const isHost = user?.id === item.user_id;
 
+  const quality = useQualityTracker({
+    surface: 'live',
+    contentId: item.id,
+    authorId: item.user_id,
+  });
+
   useEffect(() => {
     if (!isVisible || !item.is_active || isHost) return;
     joinLive.mutate(item.id);
     joinTimeRef.current = Date.now();
+    quality.onEnter();
     return () => {
       const watchTime = Math.floor((Date.now() - joinTimeRef.current) / 1000);
       leaveLive.mutate({ liveId: item.id, watchTimeSeconds: watchTime });
+      quality.onLeave();
     };
   }, [isVisible, item.id, item.is_active, isHost]);
 

@@ -4845,6 +4845,48 @@ export type Database = {
         }
         Relationships: []
       }
+      quality_events: {
+        Row: {
+          author_id: string | null
+          content_id: string
+          created_at: string
+          event_type: string
+          id: number
+          is_ios: boolean
+          metadata: Json
+          session_id: string
+          surface: string
+          user_id: string | null
+          value: number
+        }
+        Insert: {
+          author_id?: string | null
+          content_id: string
+          created_at?: string
+          event_type: string
+          id?: number
+          is_ios?: boolean
+          metadata?: Json
+          session_id: string
+          surface: string
+          user_id?: string | null
+          value?: number
+        }
+        Update: {
+          author_id?: string | null
+          content_id?: string
+          created_at?: string
+          event_type?: string
+          id?: number
+          is_ios?: boolean
+          metadata?: Json
+          session_id?: string
+          surface?: string
+          user_id?: string | null
+          value?: number
+        }
+        Relationships: []
+      }
       rate_limits: {
         Row: {
           action_count: number
@@ -7832,6 +7874,26 @@ export type Database = {
       purge_old_feed_score_tamper_events: { Args: never; Returns: undefined }
       purge_old_threat_decisions: { Args: never; Returns: undefined }
       push_my_fingerprint_to_peers: { Args: never; Returns: number }
+      quality_metrics_summary: {
+        Args: { p_author_id?: string; p_since?: string; p_surface?: string }
+        Returns: Json
+      }
+      quality_metrics_timeline: {
+        Args: {
+          p_author_id?: string
+          p_bucket?: string
+          p_since?: string
+          p_surface?: string
+        }
+        Returns: {
+          avg_completion: number
+          avg_watch_ms: number
+          bucket: string
+          ios_perf_ms: number
+          skip_fast: number
+          views: number
+        }[]
+      }
       quarantine_ghost_e2ee_devices: { Args: never; Returns: number }
       quarantine_own_invalid_device: {
         Args: { p_device_id: string; p_reason?: string }
