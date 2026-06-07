@@ -99,6 +99,8 @@ export async function compressVideoForChat(
       );
     }
 
+    const { videoBitrate, audioBitrate, height } = pickEncodeTargets();
+
     const inName = 'in.mp4';
     const outName = 'out.mp4';
     const buf = new Uint8Array(await input.arrayBuffer());
@@ -106,15 +108,15 @@ export async function compressVideoForChat(
 
     await ffmpeg.exec([
       '-i', inName,
-      '-vf', `scale='min(iw,trunc(oh*a/2)*2)':'min(${TARGET_HEIGHT},ih)'`,
+      '-vf', `scale='min(iw,trunc(oh*a/2)*2)':'min(${height},ih)'`,
       '-c:v', 'libx264',
       '-preset', 'veryfast',
-      '-b:v', TARGET_VIDEO_BITRATE,
-      '-maxrate', TARGET_VIDEO_BITRATE,
+      '-b:v', videoBitrate,
+      '-maxrate', videoBitrate,
       '-bufsize', '3000k',
       '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
-      '-b:a', TARGET_AUDIO_BITRATE,
+      '-b:a', audioBitrate,
       '-movflags', '+faststart',
       '-y', outName,
     ]);
