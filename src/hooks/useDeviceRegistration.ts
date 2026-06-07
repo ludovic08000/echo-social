@@ -35,6 +35,7 @@ import {
 import { repairCurrentDevicePrekeys } from '@/lib/crypto/devicePrekeyRepair';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
+import { ensureCurrentDevicePrimary } from '@/lib/crypto/devicePrimaryRepair';
 import {
   restoreAccountKeysFromActiveSession,
   restoreFromInMemoryMasterKey,
@@ -271,6 +272,20 @@ export function useDeviceRegistration() {
             }
             return;
           }
+        }
+
+        try {
+          const primary = await ensureCurrentDevicePrimary(user.id, deviceId);
+          if (primary.changed) {
+            console.info('[useDeviceRegistration] current device promoted as primary', {
+              deviceId: deviceId.slice(0, 8),
+              code: primary.code,
+            });
+          } else if (!primary.ok) {
+            console.warn('[useDeviceRegistration] current-device primary repair skipped:', primary);
+          }
+        } catch (primaryErr) {
+          console.warn('[useDeviceRegistration] current-device primary repair failed (non-fatal):', primaryErr);
         }
 
         // Mark stale/revoke old devices and delete our local sessions to

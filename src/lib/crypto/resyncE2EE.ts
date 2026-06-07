@@ -30,6 +30,7 @@ import {
   refillDeviceOneTimePrekeysIfNeeded,
 } from '@/lib/crypto/x3dh';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
+import { ensureCurrentDevicePrimary } from '@/lib/crypto/devicePrimaryRepair';
 import { clearAllDeviceSessions } from '@/lib/crypto/deviceRatchet';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
 import { syncBackupToServer, syncKeychainSnapshotFromLocal, hasLocalKeys } from '@/lib/crypto/accountKeyBackup';
@@ -377,6 +378,22 @@ async function republishDeviceIdentity(
     throw e;
   }
   result.identity = true;
+
+  try {
+    const primary = await ensureCurrentDevicePrimary(userId, deviceId);
+    if (primary.changed) {
+      diag?.push('identity', 'success', 'current device promoted as primary', {
+        deviceId: deviceId.slice(0, 8),
+        code: primary.code,
+      });
+    } else if (!primary.ok) {
+      diag?.push('identity', 'warn', 'current-device primary repair skipped', primary);
+    }
+  } catch (e) {
+    diag?.push('identity', 'warn', 'current-device primary repair failed', {
+      error: describeError(e),
+    });
+  }
 
   try {
     await refreshSignedPrekeyIfNeeded(userId, keys.signingPrivateKey);

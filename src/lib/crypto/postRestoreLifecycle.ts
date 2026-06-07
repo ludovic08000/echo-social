@@ -7,6 +7,7 @@ import {
   refillDeviceOneTimePrekeysIfNeeded,
 } from './x3dh';
 import { repairCurrentDevicePrekeys } from './devicePrekeyRepair';
+import { ensureCurrentDevicePrimary } from './devicePrimaryRepair';
 
 export type PostRestoreSource = 'pin' | 'recovery_key' | 'passkey' | 'password' | 'unknown';
 
@@ -82,6 +83,9 @@ export async function runPostRestoreLifecycle(
     const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
     const keysEpoch = await bumpKeysEpochBestEffort(userId, deviceId);
 
+    await ensureCurrentDevicePrimary(userId, deviceId).catch((err) => {
+      console.warn('[POST_RESTORE] current-device primary repair failed', err);
+    });
     await revalidateCurrentDevicePrekeys(userId, deviceId);
     await refreshSignedDeviceListBestEffort(userId, deviceId);
     await refreshSenderKeysBestEffort(userId, deviceId);

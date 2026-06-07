@@ -23,6 +23,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
 import { logCryptoError, logCryptoException } from './errorLogger';
+import { ensureCurrentDevicePrimary } from './devicePrimaryRepair';
 
 export type RestoreReason =
   | 'recovery_key'
@@ -46,6 +47,14 @@ export async function runPostRestoreSync(userId: string, reason: RestoreReason):
 
   // 1. Bump server-side epoch — contacts will see this via realtime.
   if (deviceId && !isDeviceIdTemporary()) {
+    await ensureCurrentDevicePrimary(userId, deviceId).catch((e) => {
+      logCryptoException('restore', e, {
+        severity: 'warning',
+        myDeviceId: deviceId,
+        metadata: { stage: 'ensure_current_device_primary', reason },
+      });
+    });
+
     try {
       const { data, error } = await (supabase as any).rpc('bump_device_keys_epoch', {
         p_user_id: userId,
