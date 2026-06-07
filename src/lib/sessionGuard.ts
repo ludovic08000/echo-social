@@ -80,13 +80,12 @@ export function startSessionGuard(): void {
     const existing = sessionStorage.getItem(GUARD_KEY);
     if (existing) {
       state = JSON.parse(existing);
-      // Fingerprint mismatch = possible session theft replay
+      // Fingerprint mismatch can happen after cache resets, browser upgrades,
+      // orientation changes, or PWA reinstall. Rebind instead of login-looping.
       if (state.fingerprint !== fp) {
-        console.error('[SessionGuard] Fingerprint mismatch — forcing re-auth');
+        console.warn('[SessionGuard] Fingerprint changed — rebinding guard for current signed-in session');
         sessionStorage.removeItem(GUARD_KEY);
-        supabase.auth.signOut();
-        window.location.href = '/login';
-        return;
+        state = { fingerprint: fp, lastActivity: Date.now(), bindTime: Date.now() };
       }
     } else {
       state = { fingerprint: fp, lastActivity: Date.now(), bindTime: Date.now() };

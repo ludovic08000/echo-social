@@ -7,7 +7,69 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 let last401At = 0;
 
-function clearStaleSupabaseAuthSession() {
+function readStoredAccessToken(storage: Storage): string | null {
+  try {
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (!key || (!key.startsWith('sb-') && !key.startsWith('supabase.auth.'))) continue;
+      const raw = storage.getItem(key);
+      if (!raw) continue;
+      try {
+        const parsed = JSON.parse(raw);
+        const token =
+          parsed?.access_token ??
+          parsed?.currentSession?.access_token ??
+          parsed?.session?.access_token;
+        if (typeof token === 'string' && token.length > 0) return token;
+      } catch {}
+    }
+  } catch {}
+  return null;
+}
+
+function currentStoredAccessToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return readStoredAccessToken(window.localStorage) ?? readStoredAccessToken(window.sessionStorage);
+}
+
+function requestBearerToken(input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]): string | null {
+  try {
+    const headers = new Headers(init?.headers ?? (
+      typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined
+    ));
+    const auth = headers.get('authorization');
+    const match = auth?.match(/^Bearer\s+(.+)$/i);
+    return match?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function isJwt401(response: Response): Promise<boolean> {
+  try {
+    const text = await response.clone().text();
+    const lower = text.toLowerCase();
+    return (
+      lower.includes('jwt') &&
+      (lower.includes('expired') || lower.includes('invalid') || lower.includes('malformed'))
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function shouldClearAuthFor401(
+  input: Parameters<typeof fetch>[0],
+  init: Parameters<typeof fetch>[1] | undefined,
+  response: Response,
+): Promise<boolean> {
+  const bearer = requestBearerToken(input, init);
+  const stored = currentStoredAccessToken();
+  if (!bearer || !stored || bearer !== stored) return false;
+  return isJwt401(response);
+}
+
+function clearStaleSupabaseAuthSession(reason: string) {
   if (typeof window === 'undefined') return;
   try {
     const purge = (storage: Storage) => {
@@ -21,7 +83,7 @@ function clearStaleSupabaseAuthSession() {
     purge(window.localStorage);
     purge(window.sessionStorage);
     window.dispatchEvent(new CustomEvent('forsure:auth-session-invalid', {
-      detail: { reason: 'supabase-rest-401' },
+      detail: { reason },
     }));
   } catch {}
 }
@@ -33,10 +95,10 @@ const guardedFetch: typeof fetch = async (input, init) => {
     const isSupabaseRest = typeof url === 'string' && url.includes('/rest/v1/');
     if (response.status === 401 && isSupabaseRest) {
       const now = Date.now();
-      if (now - last401At > 5_000) {
+      if (now - last401At > 5_000 && await shouldClearAuthFor401(input, init, response)) {
         last401At = now;
-        console.warn('[Supabase] REST 401 — stale auth session cleared, reconnect required');
-        clearStaleSupabaseAuthSession();
+        console.warn('[Supabase] REST 401 — invalid JWT session cleared, reconnect required');
+        clearStaleSupabaseAuthSession('supabase-rest-401-invalid-jwt');
       }
     }
   } catch {}
