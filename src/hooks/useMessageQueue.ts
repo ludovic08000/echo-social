@@ -261,6 +261,35 @@ export function useMessageQueue(
     if (!isSpecial) recordSentMessage(sanitized);
     if (data?.id) {
       onPlaintextCached?.(data.id, sanitized);
+
+      // Retroactive archive fallback: if the archive key wasn't available at
+      // insert time (e.g. master key still unlocking), try again now and
+      // populate archive_body via the RPC. Non-fatal — logs only.
+      if (!archiveBody && shouldArchiveMessageBody({
+        sanitized,
+        isSpecial,
+        viewOnce: extra?.view_once === true,
+        encryptedSuccessfully,
+        encryptionWasRequired,
+      })) {
+        void (async () => {
+          try {
+            const retroactive = await encryptArchive(sanitized, conversationId, user.id);
+            if (retroactive) {
+              const ok = await setMessageArchiveBody(data!.id, retroactive);
+              if (ok) {
+                console.info('[MSG_SEND] archive_body retroactively set via RPC', {
+                  messageId: data!.id,
+                  localId,
+                });
+              }
+            }
+          } catch (e) {
+            console.warn('[MSG_SEND] retroactive archive failed', { messageId: data!.id, localId, e });
+          }
+        })();
+      }
+
       // Multi-device fan-out: encrypt the plaintext per recipient device
       // (sender's other devices + each participant's devices) so iOS / Windows /
       // Android all receive a readable copy via message_device_copies.
