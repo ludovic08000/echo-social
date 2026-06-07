@@ -7441,6 +7441,10 @@ export type Database = {
         Args: { payload: Json; queue_name: string }
         Returns: number
       }
+      ensure_primary_device_exists: {
+        Args: { p_user_id: string }
+        Returns: undefined
+      }
       ensure_user_crypto_state: {
         Args: never
         Returns: {
