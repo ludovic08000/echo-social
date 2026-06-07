@@ -305,61 +305,108 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
     const label = isVideo ? '🎬 Vidéo' : '📷 Photo';
 
-    let prepared: File = file;
-    if (isVideo) {
-      try {
-        const { compressVideoForChat } = await import('@/lib/messaging/compressVideo');
-        const result = await compressVideoForChat(file);
-        prepared = result.compressed
-          ? new File([result.blob], file.name.replace(/\.[^.]+$/, '.mp4'), { type: 'video/mp4' })
-          : file;
-      } catch {
-        prepared = file;
+    // ── 1) Optimistic bubble: show the local file IMMEDIATELY ──
+    // WhatsApp/iMessage UX: the user sees their photo/video in the chat the
+    // millisecond they tap send, while compress + encrypt + upload run async.
+    const placeholderId = `ph-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const previewUrl = (() => {
+      try { return URL.createObjectURL(file); } catch { return ''; }
+    })();
+    if (previewUrl) {
+      setMediaPlaceholders(prev => [...prev, { id: placeholderId, previewUrl, isVideo }]);
+    }
+    const finishPlaceholder = (failed = false) => {
+      setMediaPlaceholders(prev => {
+        const next = failed
+          ? prev.map(p => p.id === placeholderId ? { ...p, failed: true } : p)
+          : prev.filter(p => p.id !== placeholderId);
+        if (!failed && previewUrl) { try { URL.revokeObjectURL(previewUrl); } catch {} }
+        return next;
+      });
+    };
+
+    // ── 2) Parallel pipeline: compression + media key generation in parallel ──
+    // The key generation (CSPRNG + WebCrypto importKey) runs while the canvas
+    // compression / ffmpeg.wasm transcode is busy on the main thread.
+    const compressP = (async (): Promise<File> => {
+      if (isVideo) {
+        try {
+          const { compressVideoForChat } = await import('@/lib/messaging/compressVideo');
+          const result = await compressVideoForChat(file);
+          return result.compressed
+            ? new File([result.blob], file.name.replace(/\.[^.]+$/, '.mp4'), { type: 'video/mp4' })
+            : file;
+        } catch { return file; }
       }
-    } else {
       const compressed = await compressImageForChat(file);
-      prepared = compressed instanceof File ? compressed : new File([compressed], file.name, { type: file.type });
+      return compressed instanceof File ? compressed : new File([compressed], file.name, { type: file.type });
+    })();
+
+    let prepared: File = file;
+    let mediaKey: { key: CryptoKey; keyB64: string } | null = null;
+    try {
+      const [c, k] = await Promise.all([
+        compressP,
+        isZeusConversation ? Promise.resolve(null) : generateMediaKey(),
+      ]);
+      prepared = c;
+      mediaKey = k as { key: CryptoKey; keyB64: string } | null;
+    } catch (err) {
+      finishPlaceholder(true);
+      logCryptoException('media', err, { severity: 'error', conversationId, metadata: { stage: 'compress_or_keygen', isVideo } });
+      toast.error('Erreur de préparation du média');
+      return;
     }
 
     if (isZeusConversation) {
       const url = await rawUpload(prepared);
       if (url) {
         botPlaintextSend.mutate({ conversationId, body: label, imageUrl: url });
+        finishPlaceholder();
+      } else {
+        finishPlaceholder(true);
       }
       return;
     }
 
     if (e2ee.peerKeyMissing) {
+      finishPlaceholder(true);
       toast.error('Clés du contact indisponibles — impossible d’envoyer un média pour le moment.');
       return;
     }
 
     if (e2ee.initError === 'pin_unlock_required') {
+      finishPlaceholder(true);
       toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer un média.');
       return;
     }
 
     if (e2ee.initError === 'identity_lost_backup_available') {
+      finishPlaceholder(true);
       toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer un média.');
       return;
     }
 
     const t0 = performance.now();
     try {
-      const { key, keyB64 } = await generateMediaKey();
+      if (!mediaKey) throw new Error('media key missing');
+      const { key, keyB64 } = mediaKey;
       const encryptedBlob = await encryptMedia(prepared, key);
       const encFile = new File([encryptedBlob], `${prepared.name}.enc`, { type: 'application/octet-stream' });
       const url = await rawUpload(encFile);
       if (url) {
         try {
-          const localUrl = URL.createObjectURL(prepared);
-          rememberDecryptedMedia(url, localUrl, isVideo);
+          // Cache decrypted media against the remote URL so it renders instantly.
+          rememberDecryptedMedia(url, previewUrl || URL.createObjectURL(prepared), isVideo);
         } catch { /* noop */ }
         const body = buildMediaMessageBody(label, keyB64);
-        queue.sendMessage(body, url, { view_once: armedVO }).catch((e) => {
-          logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send', isVideo } });
-          toast.error('Erreur envoi média');
-        });
+        queue.sendMessage(body, url, { view_once: armedVO })
+          .then(() => finishPlaceholder())
+          .catch((e) => {
+            finishPlaceholder(true);
+            logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send', isVideo } });
+            toast.error('Erreur envoi média');
+          });
         logCryptoError({
           severity: 'info', context: 'media', errorCode: 'MEDIA_ENCRYPT_OK',
           errorMessage: 'Media encrypted and uploaded',
@@ -367,6 +414,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
           metadata: { sizeBytes: prepared.size, mime: prepared.type, isVideo, durationMs: Math.round(performance.now() - t0), viewOnce: armedVO },
         });
       } else {
+        finishPlaceholder(true);
         logCryptoError({
           severity: 'error', context: 'media', errorCode: 'MEDIA_UPLOAD_FAILED',
           errorMessage: 'Encrypted media upload returned no URL',
@@ -375,6 +423,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         });
       }
     } catch (err) {
+      finishPlaceholder(true);
       console.error('Media encryption failed:', err);
       logCryptoException('media', err, {
         severity: 'error',
