@@ -111,6 +111,10 @@ function sanitizeInteraction(row: QueuedInteraction): QueuedInteraction {
     next.dwell_ms = Math.max(0, Math.min(24 * 60 * 60 * 1000, Math.round(row.dwell_ms)));
   }
 
+  if (typeof row.scroll_depth === "number" && Number.isFinite(row.scroll_depth)) {
+    next.scroll_depth = Math.max(0, Math.min(1, row.scroll_depth));
+  }
+
   return next;
 }
 

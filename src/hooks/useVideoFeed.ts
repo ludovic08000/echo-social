@@ -54,29 +54,66 @@ const ALGORITHM_WEIGHTS: AlgorithmWeights = {
 };
 
 // Calcule le score de pertinence d'une vidéo pour un utilisateur
+function stableHash(input: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function stableJitter(seed: string, range = 0.04): number {
+  return (stableHash(seed) / 0xffffffff) * range;
+}
+
+function engagementRate(video: any): number {
+  const views = Math.max(1, Number(video.view_count || 0));
+  const weighted =
+    Number(video.like_count || 0) * 1.0 +
+    Number(video.comment_count || 0) * 2.2 +
+    Number(video.share_count || 0) * 3.0;
+  return Math.min(1, Math.log1p(weighted) / Math.log1p(Math.max(10, views)));
+}
+
+function enforceVideoDiversity<T extends { user_id: string }>(videos: T[], maxConsecutiveSameAuthor = 2): T[] {
+  const out: T[] = [];
+  const remaining = [...videos];
+  while (remaining.length) {
+    let pick = 0;
+    if (out.length >= maxConsecutiveSameAuthor) {
+      const a = out[out.length - 1]?.user_id;
+      const b = out[out.length - 2]?.user_id;
+      if (a && a === b) {
+        const alt = remaining.findIndex(v => v.user_id !== a);
+        if (alt >= 0) pick = alt;
+      }
+    }
+    out.push(remaining.splice(pick, 1)[0]);
+  }
+  return out;
+}
+
 function calculateRelevanceScore(
   video: any,
   userInterests: string[],
-  followingIds: string[],
+  followingIds: Set<string>,
   viewHistory: Map<string, { watchTime: number; completion: number }>
 ): number {
   let score = 0;
 
   // 1. Engagement global de la vidéo (normaliser entre 0 et 1)
-  const engagementScore = Math.min(1, (
-    (video.like_count * 0.3) +
-    (video.comment_count * 0.4) +
-    (video.share_count * 0.5)
-  ) / 1000);
+  const engagementScore = engagementRate(video);
   score += engagementScore * ALGORITHM_WEIGHTS.likes;
+  score += Math.min(1, Number(video.share_count || 0) / Math.max(3, Number(video.view_count || 1))) * ALGORITHM_WEIGHTS.shares;
 
   // 2. Fraîcheur (videos récentes = boost)
   const ageHours = (Date.now() - new Date(video.created_at).getTime()) / (1000 * 60 * 60);
   const recencyScore = Math.max(0, 1 - (ageHours / 168)); // Décroît sur 7 jours
-  score += recencyScore * ALGORITHM_WEIGHTS.recency;
+  score += Math.exp(-ageHours / 72) * ALGORITHM_WEIGHTS.recency;
 
   // 3. Créateur suivi
-  if (followingIds.includes(video.user_id)) {
+  if (followingIds.has(video.user_id)) {
     score += ALGORITHM_WEIGHTS.following;
   }
 
@@ -95,16 +132,20 @@ function calculateRelevanceScore(
   const viewData = viewHistory.get(video.id);
   if (viewData) {
     // Pénaliser légèrement le contenu déjà vu, sauf si replay
-    score -= 0.1;
+    const completion = Math.max(0, Math.min(1, Number(viewData.completion || 0)));
+    const watchRatio = Math.min(1, Number(viewData.watchTime || 0) / Math.max(1, Number(video.duration_seconds || 1)));
+    score += completion * ALGORITHM_WEIGHTS.completion;
+    score += watchRatio * ALGORITHM_WEIGHTS.watchTime;
+    score -= completion >= 0.9 ? 0.04 : 0.18;
   }
 
   // 6. Bonus découverte (créateurs pas encore suivis avec bon engagement)
-  if (!followingIds.includes(video.user_id) && engagementScore > 0.3) {
+  if (!followingIds.has(video.user_id) && engagementScore > 0.25) {
     score += ALGORITHM_WEIGHTS.discovery * engagementScore;
   }
 
   // 7. Ajouter un peu de randomisation pour éviter les bulles de filtre
-  score += (Math.random() * 0.1);
+  score += stableJitter(`${video.id}:${new Date().toISOString().slice(0, 10)}`, 0.04);
 
   return Math.max(0, Math.min(1, score));
 }
@@ -167,9 +208,9 @@ export function useVideoFeed(limit: number = 10) {
         .eq('status', 'accepted')
         .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`);
 
-      const followingIds = (friendships || []).map(f => 
+      const followingIds = new Set((friendships || []).map(f =>
         f.requester_id === user.id ? f.addressee_id : f.requester_id
-      );
+      ));
 
       // 4. Récupérer l'historique de visionnage récent
       const { data: viewHistory } = await supabase
@@ -228,7 +269,9 @@ export function useVideoFeed(limit: number = 10) {
       // Trier par score et retourner le top
       scoredVideos.sort((a, b) => b._score - a._score);
 
-      return scoredVideos.slice(0, limit).map(({ _score, ...video }) => video) as ShortVideo[];
+      return enforceVideoDiversity(scoredVideos, 2)
+        .slice(0, limit)
+        .map(({ _score, ...video }) => video) as ShortVideo[];
     },
     enabled: !!user,
     staleTime: 2 * 60_000,   // 2 min cache — videos don't change fast
@@ -280,19 +323,17 @@ export function useRecordVideoView() {
           .single();
 
         if (video?.hashtags && video.hashtags.length > 0) {
-          for (const hashtag of video.hashtags) {
-            await supabase
-              .from('user_interests')
-              .upsert({
-                user_id: user.id,
-                interest_type: 'hashtag',
-                interest_value: hashtag,
-                weight: Math.min(5, completionRate * 2),
-                explicit: false,
-              }, { 
-                onConflict: 'user_id,interest_type,interest_value',
-              });
-          }
+          await supabase
+            .from('user_interests')
+            .upsert(video.hashtags.map((hashtag: string) => ({
+              user_id: user.id,
+              interest_type: 'hashtag',
+              interest_value: hashtag,
+              weight: Math.min(5, completionRate * 2),
+              explicit: false,
+            })), {
+              onConflict: 'user_id,interest_type,interest_value',
+            });
         }
       }
     },

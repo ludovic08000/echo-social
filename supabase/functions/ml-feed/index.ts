@@ -31,13 +31,43 @@ interface UserProfile {
   friendBias: number;
 }
 
+const ML_SIGNAL_WEIGHT: Record<string, number> = {
+  view: 0.5,
+  dwell: 1.5,
+  dwell_long: 1.5,
+  like: 2.0,
+  comment: 3.0,
+  share: 4.0,
+  save: 3.0,
+  click: 1.0,
+  click_profile: 1.0,
+  scroll_past: -1.0,
+  skip_fast: -1.0,
+  hide: -3.0,
+  report: -5.0,
+};
+
+function normalizeSignalType(signalType: string): string {
+  if (signalType === "dwell") return "dwell_long";
+  if (signalType === "scroll_past") return "skip_fast";
+  if (signalType === "click_profile") return "click";
+  return signalType;
+}
+
+function inferContentType(post: any): "text" | "image" | "video" {
+  const url = String(post?.image_url || "").toLowerCase();
+  if (url.includes("video") || /\.(mp4|mov|webm|m4v)(?:$|\?)/.test(url)) return "video";
+  if (url) return "image";
+  return "text";
+}
+
 async function buildUserProfile(supabase: any, userId: string): Promise<UserProfile> {
   const since = new Date(Date.now() - 14 * 24 * 3600_000).toISOString();
 
-  const [signalsRes, interestsRes, likesRes] = await Promise.all([
+  const [signalsRes, interestsRes, friendshipsRes] = await Promise.all([
     supabase
-      .from("user_behavior_signals")
-      .select("signal_type, value, metadata, created_at")
+      .from("ml_interactions")
+      .select("signal_type, weight, dwell_ms, hour_of_day, day_of_week, post_id, created_at")
       .eq("user_id", userId)
       .gte("created_at", since)
       .order("created_at", { ascending: false })
@@ -48,28 +78,38 @@ async function buildUserProfile(supabase: any, userId: string): Promise<UserProf
       .eq("user_id", userId)
       .limit(20),
     supabase
-      .from("likes")
-      .select("post_id, reaction_type, created_at")
-      .eq("user_id", userId)
-      .gte("created_at", since)
-      .order("created_at", { ascending: false })
-      .limit(100),
+      .from("friendships")
+      .select("requester_id, addressee_id")
+      .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
+      .eq("status", "accepted"),
   ]);
 
   const signals = signalsRes.data || [];
   const interests = (interestsRes.data || []).map((i: any) => i.interest_value);
-  const likes = likesRes.data || [];
+  const friendIds = new Set<string>();
+  (friendshipsRes.data || []).forEach((f: any) => {
+    friendIds.add(f.requester_id === userId ? f.addressee_id : f.requester_id);
+  });
+
+  const postIds = [...new Set(signals.map((s: any) => s.post_id).filter(Boolean))].slice(0, 500);
+  const { data: posts } = postIds.length
+    ? await supabase
+      .from("posts")
+      .select("id, user_id, image_url")
+      .in("id", postIds)
+    : { data: [] };
+  const postMap = new Map<string, any>((posts || []).map((p: any) => [p.id, p]));
 
   // Compute dwell time stats
-  const dwellSignals = signals.filter((s: any) => s.signal_type === "dwell");
+  const dwellSignals = signals.filter((s: any) => normalizeSignalType(s.signal_type) === "dwell_long");
   const avgDwellMs = dwellSignals.length > 0
-    ? dwellSignals.reduce((sum: number, s: any) => sum + Number(s.value), 0) / dwellSignals.length
+    ? Math.max(800, dwellSignals.reduce((sum: number, s: any) => sum + Number(s.dwell_ms || 0), 0) / dwellSignals.length)
     : 3000;
 
   // Compute engagement rate
   const viewSignals = signals.filter((s: any) => s.signal_type === "view");
   const interactionSignals = signals.filter((s: any) =>
-    ["like", "comment", "share", "click_profile"].includes(s.signal_type)
+    ["like", "comment", "share", "click", "save"].includes(normalizeSignalType(s.signal_type))
   );
   const engagementRate = viewSignals.length > 0
     ? interactionSignals.length / viewSignals.length
@@ -78,8 +118,8 @@ async function buildUserProfile(supabase: any, userId: string): Promise<UserProf
   // Detect preferred content types from high-dwell posts
   const mediaPrefs: Record<string, number> = { text: 0, image: 0, video: 0 };
   for (const s of dwellSignals) {
-    const type = s.metadata?.content_type || "text";
-    mediaPrefs[type] = (mediaPrefs[type] || 0) + Number(s.value);
+    const type = inferContentType(postMap.get(s.post_id));
+    mediaPrefs[type] = (mediaPrefs[type] || 0) + Number(s.dwell_ms || 1);
   }
   const preferredContentTypes = Object.entries(mediaPrefs)
     .sort((a, b) => b[1] - a[1])
@@ -98,7 +138,10 @@ async function buildUserProfile(supabase: any, userId: string): Promise<UserProf
     .map(h => h.hour);
 
   // Friend bias: ratio of friend interactions vs discovery
-  const friendInteractions = signals.filter((s: any) => s.metadata?.is_friend === true).length;
+  const friendInteractions = signals.filter((s: any) => {
+    const post = postMap.get(s.post_id);
+    return post?.user_id && friendIds.has(post.user_id);
+  }).length;
   const friendBias = signals.length > 0 ? friendInteractions / signals.length : 0.5;
 
   return {
@@ -369,20 +412,44 @@ Deno.serve(async (req) => {
         });
       }
 
-      const validSignals = ["view", "dwell", "scroll_past", "like", "comment", "share", "click_profile", "save"];
-      if (!validSignals.includes(signal_type)) {
+      const normalizedSignal = normalizeSignalType(String(signal_type));
+      const validSignals = new Set([
+        "view",
+        "dwell_long",
+        "skip_fast",
+        "like",
+        "comment",
+        "share",
+        "click",
+        "save",
+        "hide",
+        "report",
+      ]);
+      if (!validSignals.has(normalizedSignal)) {
         return new Response(JSON.stringify({ error: "Invalid signal_type" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      await supabase.from("user_behavior_signals").insert({
+      const rawValue = Number(value ?? 1);
+      const numericValue = Number.isFinite(rawValue) ? rawValue : 1;
+      const dwellMs = normalizedSignal === "dwell_long" || normalizedSignal === "skip_fast"
+        ? Math.max(0, Math.min(24 * 60 * 60 * 1000, Math.round(numericValue)))
+        : undefined;
+
+      const scrollDepth = typeof metadata?.scroll_depth === "number"
+        ? Math.max(0, Math.min(1, metadata.scroll_depth))
+        : undefined;
+
+      const { error: insertError } = await supabase.from("ml_interactions").insert({
         user_id: user.id,
         post_id,
-        signal_type,
-        value: value ?? 1,
-        metadata: metadata ?? {},
+        signal_type: normalizedSignal,
+        weight: Math.max(-9.99, Math.min(9.99, ML_SIGNAL_WEIGHT[normalizedSignal] ?? numericValue ?? 1)),
+        ...(dwellMs !== undefined ? { dwell_ms: dwellMs } : {}),
+        ...(scrollDepth !== undefined ? { scroll_depth: scrollDepth } : {}),
       });
+      if (insertError) throw insertError;
 
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -452,7 +519,7 @@ Deno.serve(async (req) => {
 
       // Get recent viewed post IDs
       const { data: recentViews } = await supabase
-        .from("user_behavior_signals")
+        .from("ml_interactions")
         .select("post_id")
         .eq("user_id", user.id)
         .eq("signal_type", "view")

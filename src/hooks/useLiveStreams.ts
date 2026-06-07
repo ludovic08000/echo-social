@@ -40,20 +40,35 @@ export interface LiveChatMessage {
   };
 }
 
+function stableHash(input: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function stableJitter(seed: string, range = 0.04): number {
+  return (stableHash(seed) / 0xffffffff) * range;
+}
+
 // Calcul du score de pertinence pour les lives
 function calculateLiveScore(
   live: any,
   userInterests: string[],
-  followingIds: string[]
+  followingIds: Set<string>
 ): number {
   let score = 0;
 
   // 1. Nombre de viewers actuels (popularité en temps réel)
-  const viewerScore = Math.min(1, live.viewer_count / 1000);
+  const viewerScore = Math.min(1, Math.log1p(Number(live.viewer_count || 0)) / Math.log1p(1000));
+  const momentumScore = Math.min(1, Number(live.viewer_count || 0) / Math.max(1, Number(live.peak_viewer_count || live.viewer_count || 1)));
   score += viewerScore * 0.35;
+  score += momentumScore * 0.08;
 
   // 2. Créateur suivi = boost important
-  if (followingIds.includes(live.user_id)) {
+  if (followingIds.has(live.user_id)) {
     score += 0.40;
   }
 
@@ -66,6 +81,9 @@ function calculateLiveScore(
   );
   const interestScore = Math.min(1, matchingInterests.length / Math.max(1, liveHashtags.length));
   score += interestScore * 0.20;
+  if (live.category && userInterests.some(interest => live.category.toLowerCase().includes(interest.toLowerCase()))) {
+    score += 0.12;
+  }
 
   // 4. Fraîcheur (lives qui viennent de commencer)
   if (live.started_at) {
@@ -76,7 +94,8 @@ function calculateLiveScore(
   }
 
   // 5. Un peu de randomisation
-  score += Math.random() * 0.05;
+  const hourBucket = new Date().toISOString().slice(0, 13);
+  score += stableJitter(`${live.id}:${hourBucket}`, 0.04);
 
   return Math.max(0, Math.min(1, score));
 }
@@ -110,22 +129,22 @@ export function useLiveStreams() {
 
       // 3. Si connecté, appliquer l'algorithme
       if (user) {
-        const { data: interests } = await supabase
-          .from('user_interests')
-          .select('interest_value')
-          .eq('user_id', user.id);
+        const [interestsRes, friendshipsRes] = await Promise.all([
+          supabase
+            .from('user_interests')
+            .select('interest_value')
+            .eq('user_id', user.id),
+          supabase
+            .from('friendships')
+            .select('requester_id, addressee_id')
+            .eq('status', 'accepted')
+            .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`),
+        ]);
 
-        const userInterests = (interests || []).map(i => i.interest_value);
-
-        const { data: friendships } = await supabase
-          .from('friendships')
-          .select('requester_id, addressee_id')
-          .eq('status', 'accepted')
-          .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`);
-
-        const followingIds = (friendships || []).map(f =>
+        const userInterests = (interestsRes.data || []).map(i => i.interest_value);
+        const followingIds = new Set((friendshipsRes.data || []).map(f =>
           f.requester_id === user.id ? f.addressee_id : f.requester_id
-        );
+        ));
 
         // Score et tri
         const scoredLives = lives.map(live => ({
