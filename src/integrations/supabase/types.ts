@@ -8053,6 +8053,16 @@ export type Database = {
         }
         Returns: Json
       }
+      video_score_batch: {
+        Args: { p_user_id: string; p_video_ids: string[] }
+        Returns: {
+          engagement_score: number
+          score: number
+          velocity_score: number
+          video_id: string
+          wellbeing_score: number
+        }[]
+      }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
