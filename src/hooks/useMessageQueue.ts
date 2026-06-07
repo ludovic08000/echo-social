@@ -240,28 +240,14 @@ export function useMessageQueue(
       throw new Error('Chiffrement v5 indisponible - restaurez les cles avant envoi.');
     }
 
-    // Long-life encrypted archive copy (zero-access, wrapped under account master key).
-    // Allows any future device that can unlock the account to re-read this message.
-    let archiveBody: string | null = null;
+    // Long-life encrypted archive: done in background after INSERT (retroactive RPC path).
+    // Removes ~50-200ms from perceived send latency.
     const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
-    if (shouldArchiveMessageBody({
-      sanitized,
-      isSpecial,
-      viewOnce: extra?.view_once === true,
-      encryptedSuccessfully,
-      encryptionWasRequired,
-    })) {
-      try {
-        archiveBody = await encryptArchive(sanitized, conversationId, user.id);
-      } catch {
-        archiveBody = null;
-      }
-    }
 
-    // Long-life encrypted archive: ALWAYS done in background after insert
-    // (retroactive RPC path below). This removes ~50-200ms from perceived send latency.
-    const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
-    const archiveBody: string | null = null;
+    setPendingMessages(prev => prev.map(m =>
+      m.localId === localId ? { ...m, status: 'sending', updatedAt: Date.now() } : m
+    ));
+
 
     setPendingMessages(prev => prev.map(m =>
       m.localId === localId ? { ...m, status: 'sending', updatedAt: Date.now() } : m
