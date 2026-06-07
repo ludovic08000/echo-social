@@ -338,7 +338,14 @@ export function useDeviceRegistration() {
           ranRef.current = false;
           console.warn('[useDeviceRegistration] PIN_REQUIRED — device publish paused until PIN unlock');
           try {
-            window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', { detail: { source: 'useDeviceRegistration' } }));
+            window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', {
+              detail: {
+                userId: user.id,
+                source: 'useDeviceRegistration',
+                reason: 'device_publish_identity_locked',
+                preferredMethod: 'pin',
+              },
+            }));
           } catch {}
           return;
         }

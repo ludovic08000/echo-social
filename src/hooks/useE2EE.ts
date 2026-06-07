@@ -300,9 +300,16 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
             initError: 'identity_lost_backup_available',
           }));
           // Dispatch event so UI can show restore dialog
-          window.dispatchEvent(new CustomEvent('forsure-identity-lost', {
-            detail: { hasBackup: true, serverFingerprint: existingServerKey.fingerprint }
-          }));
+          const detail = {
+            userId: user.id,
+            hasBackup: true,
+            serverFingerprint: existingServerKey.fingerprint,
+            reason: 'identity_lost_backup_available',
+            source: 'useE2EE',
+            preferredMethod: 'pin',
+          };
+          window.dispatchEvent(new CustomEvent('forsure-identity-lost', { detail }));
+          window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', { detail }));
           return;
         }
 
@@ -365,7 +372,14 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           ready: false,
           initError: 'pin_unlock_required',
         }));
-        window.dispatchEvent(new CustomEvent('forsure-pin-required-for-keys'));
+        const detail = {
+          userId: user.id,
+          reason: 'pin_unlock_required',
+          source: 'useE2EE',
+          preferredMethod: 'pin',
+        };
+        window.dispatchEvent(new CustomEvent('forsure-pin-required-for-keys', { detail }));
+        window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', { detail }));
         return;
       }
 

@@ -8,7 +8,7 @@
  *   2. 64-hex recovery key (if generated from Settings → Security)
  *   3. 6-digit backup PIN (L5 — WhatsApp-style, server-rate-limited 10/24h)
  *
- * Triggered by the `forsure:e2ee-restore-needed` window event.
+ * Triggered by E2EE restore/unlock window events.
  */
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
@@ -45,20 +45,63 @@ export function E2EERestorePromptDialog() {
   const [pinAvailable, setPinAvailable] = useState(false);
 
   useEffect(() => {
+    let disposed = false;
+
+    const prefersPin = (eventType: string, detail: Record<string, unknown>) => {
+      const haystack = [
+        eventType,
+        detail.reason,
+        detail.source,
+        detail.preferredMethod,
+        detail.status,
+        detail.initError,
+        ...(Array.isArray(detail.errors) ? detail.errors : []),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes('pin') || haystack.includes('unlock');
+    };
+
     const onNeeded = async (ev: Event) => {
       const detail = (ev as CustomEvent).detail || {};
+      const detailUserId = typeof detail.userId === 'string' ? detail.userId : null;
+      if (detailUserId && user?.id && detailUserId !== user.id) return;
       try {
         if (await hasLocalKeys()) return;
       } catch {}
       console.warn('[E2EERestore] prompting user to restore keys', detail);
-      // Probe whether a PIN backup exists so we show the tab.
+
       if (user?.id) {
-        try { setPinAvailable(await hasBackupPin(user.id)); } catch { setPinAvailable(false); }
+        try {
+          const hasPin = await hasBackupPin(user.id);
+          if (disposed) return;
+          setPinAvailable(hasPin);
+          if (hasPin && prefersPin(ev.type, detail)) {
+            setTab('pin');
+          }
+        } catch {
+          if (disposed) return;
+          setPinAvailable(false);
+        }
       }
       setOpen(true);
     };
-    window.addEventListener('forsure:e2ee-restore-needed', onNeeded as EventListener);
-    return () => window.removeEventListener('forsure:e2ee-restore-needed', onNeeded as EventListener);
+
+    const events = [
+      'forsure:e2ee-restore-needed',
+      'forsure:e2ee-pin-unlock-required',
+      'forsure-pin-required-for-keys',
+      'forsure-identity-lost',
+      'forsure:device-kx-restore-required',
+    ];
+
+    events.forEach((name) => window.addEventListener(name, onNeeded as EventListener));
+    return () => {
+      disposed = true;
+      events.forEach((name) => window.removeEventListener(name, onNeeded as EventListener));
+    };
   }, [user?.id]);
 
   useEffect(() => {

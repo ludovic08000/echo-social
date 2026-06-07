@@ -30,6 +30,29 @@ const SYNC_DEBOUNCE_MS = 5_000;
 // Mobile WebViews can be paused — poll a bit more aggressively when foregrounded.
 const POLL_INTERVAL_MS = isNativePlatform() ? 20_000 : 30_000;
 
+function dispatchRestoreNeeded(detail: Record<string, unknown>) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', { detail }));
+}
+
+function dispatchPinUnlockNeeded(detail: Record<string, unknown>) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', { detail }));
+}
+
+async function hasServerAccountBackup(userId: string): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('user_backups' as any)
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('backup_type', 'account');
+  if (error) {
+    console.warn('[messaging] server backup probe failed:', error);
+    return false;
+  }
+  return (count ?? 0) > 0;
+}
+
 export function useAccountKeySync() {
   const { user } = useAuth();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -127,6 +150,12 @@ export function useAccountKeySync() {
 
         if (wrappedKeysPresent) {
           console.warn('[messaging] local crypto exists but is locked behind PIN — waiting for unlock');
+          dispatchPinUnlockNeeded({
+            userId: user.id,
+            reason: 'local_wrapped_keys_locked',
+            source: 'useAccountKeySync',
+            preferredMethod: 'pin',
+          });
           return;
         }
 
@@ -171,6 +200,7 @@ export function useAccountKeySync() {
                   userId: user.id,
                   reason: 'cold_start_sentinel',
                   source: 'secure_sentinel',
+                  preferredMethod: 'pin',
                   lastSyncAt: sentinel.lastSyncAt,
                   native: isNativePlatform(),
                 },
@@ -187,6 +217,27 @@ export function useAccountKeySync() {
           }
         } catch (e) {
           console.warn('[messaging] sentinel cold-start check failed:', e);
+        }
+
+        try {
+          const backupExists = await hasServerAccountBackup(user.id);
+          if (cancelled) return;
+          if (backupExists) {
+            console.log('[messaging] server backup found without local sentinel — prompting restore', {
+              userId: user.id,
+              native: isNativePlatform(),
+            });
+            dispatchRestoreNeeded({
+              userId: user.id,
+              reason: 'server_backup_without_local_sentinel',
+              source: 'server_backup_probe',
+              preferredMethod: 'pin',
+              native: isNativePlatform(),
+            });
+            return;
+          }
+        } catch (e) {
+          console.warn('[messaging] server backup fallback probe failed:', e);
         }
 
         if (restoreStatus === 'unavailable') {
