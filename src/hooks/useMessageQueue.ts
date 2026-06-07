@@ -339,6 +339,8 @@ export function useMessageQueue(
         .then(({ requestImmediateBackup }) => requestImmediateBackup('message-sent'))
         .catch(() => {});
       await onMessageSent?.(localId);
+      // Remove optimistic bubble — realtime/refetch will surface the server copy
+      setPendingMessages(prev => prev.filter(m => m.localId !== localId));
     }
 
     queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
