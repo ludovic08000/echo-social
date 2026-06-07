@@ -13,6 +13,44 @@ import { peekDeviceSignedPrekey } from '@/lib/crypto/x3dh';
 import type { DeviceDescriptor, UserId, DeviceId } from './types';
 
 const MAX_DEVICE_STALE_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+const DEVICE_LIST_CACHE_TTL_MS = 8_000;
+
+type DeviceListCacheEntry = {
+  expiresAt: number;
+  promise: Promise<DeviceDescriptor[]>;
+};
+
+const deviceListCache = new Map<UserId, DeviceListCacheEntry>();
+let cacheInvalidationListenersInstalled = false;
+
+function cloneDevices(devices: DeviceDescriptor[]): DeviceDescriptor[] {
+  return devices.map(device => ({ ...device }));
+}
+
+export function clearDeviceRegistryCache(userId?: UserId): void {
+  if (userId) {
+    deviceListCache.delete(userId);
+    return;
+  }
+  deviceListCache.clear();
+}
+
+function installCacheInvalidationListeners(): void {
+  if (cacheInvalidationListenersInstalled || typeof window === 'undefined') return;
+  cacheInvalidationListenersInstalled = true;
+
+  const clearFromEvent = (event: Event) => {
+    const detail = event instanceof CustomEvent ? event.detail : undefined;
+    const userId = typeof detail?.userId === 'string' ? detail.userId : undefined;
+    clearDeviceRegistryCache(userId);
+  };
+
+  window.addEventListener('forsure:e2ee-device-list-invalidated', clearFromEvent);
+  window.addEventListener('forsure:e2ee-post-restore', clearFromEvent);
+  window.addEventListener('forsure:e2ee-purge', () => clearDeviceRegistryCache());
+  window.addEventListener('forsure-keys-restored', () => clearDeviceRegistryCache());
+  window.addEventListener('forsure-e2ee-identity-ready', () => clearDeviceRegistryCache());
+}
 
 /** Stable device id of the current installation. Persisted in Keychain on iOS. */
 export function selfDeviceId(): DeviceId {
@@ -90,7 +128,7 @@ async function hygieneFilterDevices(devices: DeviceDescriptor[]): Promise<Device
  * Never throws — returns [] on any error so the caller can fall back to the
  * single-device path.
  */
-export async function listDevicesForUser(userId: UserId): Promise<DeviceDescriptor[]> {
+async function fetchDevicesForUserUncached(userId: UserId): Promise<DeviceDescriptor[]> {
   // 1) Trusted (signed) list first.
   try {
     const verified = await fetchVerifiedDeviceList(userId);
@@ -141,6 +179,29 @@ export async function listDevicesForUser(userId: UserId): Promise<DeviceDescript
     return hygieneFilterDevices(mapped);
   } catch {
     return [];
+  }
+}
+
+export async function listDevicesForUser(userId: UserId): Promise<DeviceDescriptor[]> {
+  installCacheInvalidationListeners();
+
+  const now = Date.now();
+  const cached = deviceListCache.get(userId);
+  if (cached && cached.expiresAt > now) {
+    return cloneDevices(await cached.promise);
+  }
+
+  const promise = fetchDevicesForUserUncached(userId).then(cloneDevices);
+  deviceListCache.set(userId, {
+    expiresAt: now + DEVICE_LIST_CACHE_TTL_MS,
+    promise,
+  });
+
+  try {
+    return cloneDevices(await promise);
+  } catch (error) {
+    deviceListCache.delete(userId);
+    throw error;
   }
 }
 

@@ -30,10 +30,11 @@ vi.mock('@/lib/crypto/x3dh', () => ({
 }));
 
 import { supabase } from '@/integrations/supabase/client';
-import { listDevicesForUser } from '../deviceRegistry';
+import { clearDeviceRegistryCache, listDevicesForUser } from '../deviceRegistry';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearDeviceRegistryCache();
 });
 
 describe('Lot A1 — trust-gated device list', () => {
@@ -111,5 +112,42 @@ describe('Lot A1 — trust-gated device list', () => {
 
     expect(out).toEqual([]);
     expect(supabase.rpc).not.toHaveBeenCalledWith('list_active_devices_for_user', expect.anything());
+  });
+
+  it('caches verified device lists briefly', async () => {
+    fetchVerifiedMock.mockResolvedValue({
+      signedListPresent: true,
+      trusted: [{ deviceId: 'dev-cache', devicePublicKey: 'PUB_CACHE' }],
+      verifications: [{ deviceId: 'dev-cache', ok: true, reason: 'VALID' }],
+    });
+
+    const first = await listDevicesForUser('user-cache');
+    const second = await listDevicesForUser('user-cache');
+
+    expect(first.map(d => d.deviceId)).toEqual(['dev-cache']);
+    expect(second.map(d => d.deviceId)).toEqual(['dev-cache']);
+    expect(fetchVerifiedMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes cached lists after explicit invalidation', async () => {
+    fetchVerifiedMock
+      .mockResolvedValueOnce({
+        signedListPresent: true,
+        trusted: [{ deviceId: 'dev-old', devicePublicKey: 'PUB_OLD' }],
+        verifications: [{ deviceId: 'dev-old', ok: true, reason: 'VALID' }],
+      })
+      .mockResolvedValueOnce({
+        signedListPresent: true,
+        trusted: [{ deviceId: 'dev-new', devicePublicKey: 'PUB_NEW' }],
+        verifications: [{ deviceId: 'dev-new', ok: true, reason: 'VALID' }],
+      });
+
+    const first = await listDevicesForUser('user-cache');
+    clearDeviceRegistryCache('user-cache');
+    const second = await listDevicesForUser('user-cache');
+
+    expect(first.map(d => d.deviceId)).toEqual(['dev-old']);
+    expect(second.map(d => d.deviceId)).toEqual(['dev-new']);
+    expect(fetchVerifiedMock).toHaveBeenCalledTimes(2);
   });
 });

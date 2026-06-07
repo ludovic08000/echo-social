@@ -31,6 +31,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { messageQueue } from './messageQueue';
 import { getCurrentDeviceId } from './currentDevice';
 import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
+import { clearDeviceRegistryCache } from '@/e2ee-session/deviceRegistry';
 
 const KEY_TABLES = [
   'user_public_keys',
@@ -65,6 +66,12 @@ function scheduleResume(reason: string): void {
       console.log(`[RT_KEYS] resumeAll triggered by ${reason}`);
     }
   }, RESUME_DEBOUNCE_MS);
+}
+
+function clearDeviceCacheForPayload(payload: any): void {
+  const row = payload?.new ?? payload?.old;
+  const userId = typeof row?.user_id === 'string' ? row.user_id : undefined;
+  clearDeviceRegistryCache(userId);
 }
 
 /**
@@ -123,6 +130,7 @@ export function startRealtimeKeySync({ userId }: RealtimeKeySyncOptions): () => 
       'postgres_changes' as any,
       { event: '*', schema: 'public', table },
       (payload: any) => {
+        clearDeviceCacheForPayload(payload);
         scheduleResume(`${payload?.table ?? table}:${payload?.eventType ?? 'change'}`);
         // Epoch-aware session invalidation on peer SPK rotation/restore.
         if (table === 'device_signed_prekeys' && payload?.eventType === 'UPDATE') {

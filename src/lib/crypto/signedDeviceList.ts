@@ -52,6 +52,13 @@ function hasSignedDeviceTrustMaterial(list: SignedDeviceEntry[]): boolean {
   );
 }
 
+function emitDeviceListInvalidated(userId: string): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('forsure:e2ee-device-list-invalidated', {
+    detail: { userId },
+  }));
+}
+
 /**
  * Sign a companion device's public key with the primary device's Ed25519
  * private. Returns the row to insert into `user_device_signatures`.
@@ -107,6 +114,7 @@ export async function publishCompanionSignature(
     .from('user_device_signatures')
     .upsert(row, { onConflict: 'user_id,device_id,primary_device_id' });
   if (error) throw new Error(`UDS_PUBLISH_FAILED: ${error.message}`);
+  emitDeviceListInvalidated(row.user_id);
   try {
     await publishOwnSignedDeviceList({
       signerDeviceId: row.primary_device_id,
@@ -145,6 +153,9 @@ export async function publishOwnSignedDeviceList(args?: {
   });
   if (error) return { ok: false, error: error.message };
   const result = data as any;
+  if (result?.ok === true) {
+    emitDeviceListInvalidated(uid);
+  }
   return {
     ok: result?.ok === true,
     deviceCount: typeof result?.device_count === 'number' ? result.device_count : undefined,
@@ -276,6 +287,7 @@ export async function revokeCompanionSignature(args: {
     .eq('device_id', args.deviceId)
     .is('revoked_at', null);
   if (error) throw new Error(`UDS_REVOKE_FAILED: ${error.message}`);
+  emitDeviceListInvalidated(args.userId);
 }
 
 export const __test__ = { canonicalPayload, hasSignedDeviceTrustMaterial };
