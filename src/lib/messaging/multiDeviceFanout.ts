@@ -50,6 +50,7 @@ interface DeviceEncryptTargetInput {
 
 const X3DH_BOOTSTRAP_PREFIX_V5 = 'x3dh5.init.';
 const INVALID_DEVICE_STORE_KEY = 'forsure:invalid-device-spk-cache:v1';
+const FANOUT_ENCRYPT_CONCURRENCY = 3;
 
 type DeviceCopyPrefix = 'x3dh5.init' | 'x3dh5' | 'x3dh4' | 'unsupported';
 
@@ -129,6 +130,26 @@ function markInvalidDeviceId(deviceId: string | null | undefined): void {
 
 function isKnownInvalidDeviceId(deviceId: string | null | undefined): boolean {
   return !!deviceId && loadInvalidDeviceCache().has(deviceId);
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(limit, 1), items.length);
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }));
+
+  return results;
 }
 
 async function aesFromSecret(secret: ArrayBuffer): Promise<CryptoKey> {
@@ -402,62 +423,31 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
   );
   if (targets.length === 0) return { inserted: 0, multiDevice: false };
 
-  const rows: Array<Record<string, string>> = [];
-  for (const dev of targets) {
-    if (!dev.devicePublicKey || isKnownInvalidDeviceId(dev.deviceId)) continue;
+  const encryptedRows = await mapWithConcurrency(targets, FANOUT_ENCRYPT_CONCURRENCY, async (dev) => {
+    if (!dev.devicePublicKey || isKnownInvalidDeviceId(dev.deviceId)) return null;
 
-    try {
-      const cachedSpkId = await getSessionPeerSpkId(input.senderUserId, senderDeviceId, dev.userId, dev.deviceId);
-      if (cachedSpkId !== null) {
-        const spk = await peekDeviceSignedPrekey(dev.userId, dev.deviceId);
-        if (!spk) {
-          logCryptoError({
-            severity: 'warning',
-            context: 'fanout',
-            errorCode: 'DEVICE_PREKEY_BUNDLE_UNAVAILABLE',
-            errorMessage: 'Skipping SPK freshness check because peer v5 bundle is unavailable',
-            conversationId: input.conversationId,
-            myDeviceId: senderDeviceId,
-            peerUserId: dev.userId,
-            peerDeviceId: dev.deviceId,
-            metadata: { cachedSpkId },
-          });
-        } else if (spk.signedPrekeyId !== cachedSpkId) {
-          await invalidateDeviceSession(input.senderUserId, senderDeviceId, dev.userId, dev.deviceId);
-        }
-      }
-    } catch (e) {
-      if (isDevicePrekeyBundleError(e, 'DEVICE_SPK_SIGNATURE_INVALID')) {
-        markInvalidDeviceId(dev.deviceId);
-        logCryptoException('fanout', e, { severity: 'error', conversationId: input.conversationId, myDeviceId: senderDeviceId, peerUserId: dev.userId, peerDeviceId: dev.deviceId, metadata: { stage: 'spk_rotation_check', action: 'device_quarantined' } });
-        continue;
-      }
-      logCryptoException('fanout', e, { severity: 'warning', conversationId: input.conversationId, myDeviceId: senderDeviceId, peerUserId: dev.userId, peerDeviceId: dev.deviceId, metadata: { stage: 'spk_rotation_check' } });
-    }
+    const result = await encryptPlaintextForDeviceTarget({
+      conversationId: input.conversationId,
+      senderUserId: input.senderUserId,
+      senderDeviceId,
+      recipientUserId: dev.userId,
+      recipientDeviceId: dev.deviceId,
+      recipientDevicePublicKey: dev.devicePublicKey,
+      plaintext: input.plaintext,
+    });
+    if (!result) return null;
 
-    let encrypted: string | null = await ratchetEncrypt(input.senderUserId, senderDeviceId, dev.userId, dev.deviceId, input.plaintext);
-    if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V5)) encrypted = null;
-    if (!encrypted) {
-      encrypted = await x3dhWrapForDevice(input.plaintext, input.senderUserId, dev.userId, dev.deviceId);
-      if (!encrypted && isKnownInvalidDeviceId(dev.deviceId)) continue;
-    }
-    if (!encrypted) {
-      logCryptoError({
-        severity: 'warning',
-        context: 'fanout',
-        errorCode: 'E_FANOUT_NO_V5_PATH',
-        errorMessage: 'No v5 ratchet/bootstrap path for recipient device',
-        conversationId: input.conversationId,
-        myDeviceId: senderDeviceId,
-        peerUserId: dev.userId,
-        peerDeviceId: dev.deviceId,
-        metadata: { stage: 'all_paths_failed' },
-      });
-      continue;
-    }
+    return {
+      message_id: input.messageId,
+      recipient_user_id: dev.userId,
+      recipient_device_id: dev.deviceId,
+      sender_user_id: input.senderUserId,
+      sender_device_id: result.senderDeviceId,
+      encrypted_body: result.encryptedBody,
+    };
+  });
 
-    rows.push({ message_id: input.messageId, recipient_user_id: dev.userId, recipient_device_id: dev.deviceId, sender_user_id: input.senderUserId, sender_device_id: senderDeviceId, encrypted_body: encrypted });
-  }
+  const rows = encryptedRows.filter(Boolean) as Array<Record<string, string>>;
 
   if (!rows.length) return { inserted: 0, multiDevice: true };
 

@@ -146,4 +146,43 @@ describe('multiDeviceFanout trust gate', () => {
     expect(inserted[0].recipient_device_id).toBe('bob-signed-dev');
     expect(inserted[0].recipient_user_id).toBe(BOB);
   });
+
+  it('encrypts fanout copies in bounded parallel batches', async () => {
+    const inserted: any[] = [];
+    installSupabaseTables(inserted);
+    (listFanoutTargets as any).mockResolvedValue([
+      {
+        userId: ALICE,
+        deviceId: 'alice-dev-1',
+        devicePublicKey: 'SELF',
+      },
+      ...Array.from({ length: 6 }, (_, index) => ({
+        userId: BOB,
+        deviceId: `bob-dev-${index + 1}`,
+        devicePublicKey: `BOB_${index + 1}`,
+      })),
+    ]);
+
+    let active = 0;
+    let maxActive = 0;
+    (ratchetEncrypt as any).mockImplementation(async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise(resolve => setTimeout(resolve, 15));
+      active -= 1;
+      return 'x3dh5.session.peerDh.0.0.iv.ct';
+    });
+
+    const result = await fanoutMessageCopies({
+      messageId: 'msg-2',
+      conversationId: 'conv-1',
+      senderUserId: ALICE,
+      plaintext: 'photo-key-envelope',
+    });
+
+    expect(result).toEqual({ inserted: 6, multiDevice: true });
+    expect(inserted).toHaveLength(6);
+    expect(maxActive).toBeGreaterThan(1);
+    expect(maxActive).toBeLessThanOrEqual(3);
+  });
 });
