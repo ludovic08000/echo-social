@@ -11,10 +11,35 @@
  *
  * IMPORTANT: this module is browser-only. Never import it from edge code.
  */
-const TARGET_VIDEO_BITRATE = '1500k';
-const TARGET_AUDIO_BITRATE = '64k';
-const TARGET_HEIGHT = 720;
+// Default targets (good Wi-Fi / 4G+).
+const DEFAULT_VIDEO_BITRATE = '1500k';
+const DEFAULT_AUDIO_BITRATE = '64k';
+const DEFAULT_HEIGHT = 720;
+// Low-bandwidth targets (mobile data, downlink < 2 Mbps).
+const LOW_VIDEO_BITRATE = '600k';
+const LOW_AUDIO_BITRATE = '48k';
+const LOW_HEIGHT = 480;
 const MAX_INPUT_BYTES = 200 * 1024 * 1024; // refuse > 200 MB inputs outright
+
+interface EncodeTargets {
+  videoBitrate: string;
+  audioBitrate: string;
+  height: number;
+}
+
+function pickEncodeTargets(): EncodeTargets {
+  try {
+    const conn = (navigator as { connection?: { downlink?: number; effectiveType?: string; saveData?: boolean } }).connection;
+    const downlink = conn?.downlink ?? 10;
+    const effective = conn?.effectiveType ?? '4g';
+    const saveData = conn?.saveData === true;
+    // Drop to 480p/600k on slow networks or when the user has enabled Save-Data.
+    if (saveData || downlink < 2 || effective === '2g' || effective === 'slow-2g' || effective === '3g') {
+      return { videoBitrate: LOW_VIDEO_BITRATE, audioBitrate: LOW_AUDIO_BITRATE, height: LOW_HEIGHT };
+    }
+  } catch { /* ignore — fall through to defaults */ }
+  return { videoBitrate: DEFAULT_VIDEO_BITRATE, audioBitrate: DEFAULT_AUDIO_BITRATE, height: DEFAULT_HEIGHT };
+}
 
 let ffmpegSingleton: { ffmpeg: any; loaded: Promise<void> } | null = null;
 
@@ -74,6 +99,8 @@ export async function compressVideoForChat(
       );
     }
 
+    const { videoBitrate, audioBitrate, height } = pickEncodeTargets();
+
     const inName = 'in.mp4';
     const outName = 'out.mp4';
     const buf = new Uint8Array(await input.arrayBuffer());
@@ -81,15 +108,15 @@ export async function compressVideoForChat(
 
     await ffmpeg.exec([
       '-i', inName,
-      '-vf', `scale='min(iw,trunc(oh*a/2)*2)':'min(${TARGET_HEIGHT},ih)'`,
+      '-vf', `scale='min(iw,trunc(oh*a/2)*2)':'min(${height},ih)'`,
       '-c:v', 'libx264',
       '-preset', 'veryfast',
-      '-b:v', TARGET_VIDEO_BITRATE,
-      '-maxrate', TARGET_VIDEO_BITRATE,
+      '-b:v', videoBitrate,
+      '-maxrate', videoBitrate,
       '-bufsize', '3000k',
       '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
-      '-b:a', TARGET_AUDIO_BITRATE,
+      '-b:a', audioBitrate,
       '-movflags', '+faststart',
       '-y', outName,
     ]);
