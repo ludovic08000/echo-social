@@ -274,6 +274,7 @@ function AppContent() {
               <RecoveryFlowGuard />
               <AccountKeySyncRunner />
               <SafetyNumberRevalidationBanner />
+              <DevicePrimaryRepairDialog />
               <IncomingCallHandler />
               <RoutedErrorBoundary>
                 <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
