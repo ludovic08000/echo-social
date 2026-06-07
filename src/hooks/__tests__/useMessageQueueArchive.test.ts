@@ -1,11 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
-import { shouldArchiveMessageBody } from '../useMessageQueue';
+import { shouldArchiveMessageBody, waitForArchiveInline } from '../useMessageQueue';
 
 const MEDIA_KEY =
   'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 
 describe('useMessageQueue archive gating', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('archives normal encrypted text bodies', () => {
     expect(
       shouldArchiveMessageBody({
@@ -60,5 +64,24 @@ describe('useMessageQueue archive gating', () => {
         encryptionWasRequired: false,
       }),
     ).toBe(false);
+  });
+
+  it('keeps fast archive payloads inline', async () => {
+    await expect(waitForArchiveInline(Promise.resolve('archive-payload'), 25))
+      .resolves.toBe('archive-payload');
+  });
+
+  it('does not block send while a slow archive payload is still encrypting', async () => {
+    vi.useFakeTimers();
+    const slowArchive = new Promise<string>((resolve) => {
+      setTimeout(() => resolve('late-archive-payload'), 1000);
+    });
+    const inline = waitForArchiveInline(slowArchive, 25);
+
+    await vi.advanceTimersByTimeAsync(25);
+    await expect(inline).resolves.toBeNull();
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(slowArchive).resolves.toBe('late-archive-payload');
   });
 });

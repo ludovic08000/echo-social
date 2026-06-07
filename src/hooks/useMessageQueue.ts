@@ -11,6 +11,9 @@ import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
 import { encryptArchive } from '@/lib/messaging/archive/archiveKey';
 import { hasMediaKey } from '@/lib/crypto/mediaEncrypt';
 
+const ARCHIVE_INLINE_BUDGET_MS = 120;
+const OUTBOUND_FINGERPRINT_TTL_MS = 60_000;
+
 export interface OutboundMessage {
   localId: string;
   traceId: string;
@@ -26,6 +29,75 @@ export interface OutboundMessage {
   createdAt: number;
   updatedAt: number;
   serverId: string | null;
+}
+
+const outboundFingerprintCache = new Map<string, { fingerprint: string; expiresAt: number }>();
+let cacheInvalidationInstalled = false;
+
+function installOutboundCacheInvalidation(): void {
+  if (cacheInvalidationInstalled || typeof window === 'undefined') return;
+  cacheInvalidationInstalled = true;
+  const clear = () => outboundFingerprintCache.clear();
+  window.addEventListener('forsure:e2ee-purge', clear);
+  window.addEventListener('forsure:e2ee-restore-needed', clear);
+  window.addEventListener('forsure-keys-restored', clear);
+  window.addEventListener('forsure:e2ee-post-restore', clear);
+  window.addEventListener('forsure-e2ee-identity-ready', clear);
+}
+
+async function getCachedOutboundFingerprint(userId: string): Promise<string> {
+  installOutboundCacheInvalidation();
+  const cached = outboundFingerprintCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) return cached.fingerprint;
+
+  const identityKeys = await getOrCreateIdentityKeys(userId);
+  const publicBundle = await exportPublicKeyBundle(identityKeys);
+  outboundFingerprintCache.set(userId, {
+    fingerprint: publicBundle.fingerprint,
+    expiresAt: Date.now() + OUTBOUND_FINGERPRINT_TTL_MS,
+  });
+  return publicBundle.fingerprint;
+}
+
+export async function waitForArchiveInline(
+  archivePromise: Promise<string | null> | null,
+  budgetMs = ARCHIVE_INLINE_BUDGET_MS,
+): Promise<string | null> {
+  if (!archivePromise) return null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      archivePromise,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), budgetMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function scheduleArchiveBodyWrite(args: {
+  messageId: string;
+  archivePromise: Promise<string | null>;
+  localId: string;
+  conversationId: string;
+}): void {
+  void args.archivePromise.then(async (archiveBody) => {
+    if (!archiveBody) return;
+    const { error } = await (supabase as any).rpc('set_message_archive_body', {
+      p_message_id: args.messageId,
+      p_archive_body: archiveBody,
+    });
+    if (error) {
+      console.warn('[MSG_SEND] async archive write skipped', {
+        localId: args.localId,
+        conversationId: args.conversationId,
+        messageId: args.messageId,
+        error: error.message,
+      });
+    }
+  }).catch(() => {});
 }
 
 function inferMediaBody(body: string, imageUrl?: string | null): string {
@@ -134,11 +206,10 @@ export function useMessageQueue(
           const encryptedPayload = await encrypt(sanitized, localId);
           if (encryptedPayload && encryptedPayload !== sanitized) {
             try {
-              const identityKeys = await getOrCreateIdentityKeys(user.id);
-              const publicBundle = await exportPublicKeyBundle(identityKeys);
+              const fingerprint = await getCachedOutboundFingerprint(user.id);
               bodyToStore = await wrapOutboundSecureMessage({
                 userId: user.id,
-                fingerprint: publicBundle.fingerprint,
+                fingerprint,
                 encryptedBody: encryptedPayload,
                 conversationId,
                 localId,
@@ -216,21 +287,17 @@ export function useMessageQueue(
 
     // Long-life encrypted archive copy (zero-access, wrapped under account master key).
     // Allows any future device that can unlock the account to re-read this message.
-    let archiveBody: string | null = null;
     const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
-    if (shouldArchiveMessageBody({
+    const archivePromise = shouldArchiveMessageBody({
       sanitized,
       isSpecial,
       viewOnce: extra?.view_once === true,
       encryptedSuccessfully,
       encryptionWasRequired,
-    })) {
-      try {
-        archiveBody = await encryptArchive(sanitized, conversationId, user.id);
-      } catch {
-        archiveBody = null;
-      }
-    }
+    })
+      ? encryptArchive(sanitized, conversationId, user.id).catch(() => null)
+      : null;
+    const archiveBody = await waitForArchiveInline(archivePromise);
 
     const { data, error } = await supabase
       .from('messages')
@@ -260,6 +327,15 @@ export function useMessageQueue(
 
     if (!isSpecial) recordSentMessage(sanitized);
     if (data?.id) {
+      if (archivePromise && !archiveBody && extra?.view_once !== true) {
+        scheduleArchiveBodyWrite({
+          messageId: data.id,
+          archivePromise,
+          localId,
+          conversationId,
+        });
+      }
+
       onPlaintextCached?.(data.id, sanitized);
       // Multi-device fan-out: encrypt the plaintext per recipient device
       // (sender's other devices + each participant's devices) so iOS / Windows /
