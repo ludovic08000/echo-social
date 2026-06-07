@@ -108,6 +108,7 @@ const AIAgents = lazyWithOneRetry(() => import("./pages/AIAgents"), 'r-agents');
 const Admin = lazyWithOneRetry(() => import("./pages/Admin"), 'r-admin');
 const KeyTransparencyAudit = lazyWithOneRetry(() => import("./pages/KeyTransparencyAudit"), 'r-kt-audit');
 const CreatorUpgrade = lazyWithOneRetry(() => import("./pages/CreatorUpgrade"), 'r-creator');
+const CreatorQuality = lazyWithOneRetry(() => import("./pages/CreatorQuality"), 'r-creator-quality');
 const ForgotPassword = lazyWithOneRetry(() => import("./pages/ForgotPassword"), 'r-forgot');
 const ResetPassword = lazyWithOneRetry(() => import("./pages/ResetPassword"), 'r-reset');
 const Onboarding = lazyWithOneRetry(() => import("./pages/Onboarding"), 'r-onboard');
@@ -336,6 +337,8 @@ function AppContent() {
                     <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
                     <Route path="/settings/transparence-cles" element={<ProtectedRoute><KeyTransparencyAudit /></ProtectedRoute>} />
                     <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />
+                    <Route path="/creator/quality" element={<ProtectedRoute><CreatorQuality /></ProtectedRoute>} />
+                    <Route path="/quality" element={<ProtectedRoute><CreatorQuality /></ProtectedRoute>} />
                     <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                     <Route path="/unsubscribe" element={<Unsubscribe />} />
                     <Route path="*" element={<NotFound />} />
