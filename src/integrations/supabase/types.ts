@@ -7917,6 +7917,10 @@ export type Database = {
         Args: { p_fingerprints: string[]; p_platform?: string }
         Returns: string
       }
+      resolve_device_primary_repair_request: {
+        Args: { p_id: string }
+        Returns: boolean
+      }
       security_monitor_cron_tick: { Args: never; Returns: undefined }
       stripe_mark_event_processed: {
         Args: { p_event_id: string; p_event_type: string }
