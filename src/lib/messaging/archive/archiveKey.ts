@@ -279,3 +279,30 @@ export async function preloadAllArchiveKeys(userId: string): Promise<number> {
     return 0;
   }
 }
+
+/**
+ * Retroactively set archive_body on an existing message via the server-side
+ * RPC. This is necessary because RLS UPDATE policies on `messages` do not
+ * allow the sender to modify `archive_body` after insert.
+ *
+ * Returns true if the row was updated.
+ */
+export async function setMessageArchiveBody(
+  messageId: string,
+  archiveBody: string,
+): Promise<boolean> {
+  if (!archiveBody || !archiveBody.trim()) return false;
+  try {
+    const { data, error } = await supabase.rpc('set_message_archive_body' as any, {
+      p_message_id: messageId,
+      p_archive_body: archiveBody,
+    });
+    if (error) {
+      console.warn('[archive] setMessageArchiveBody RPC failed:', error.message);
+      return false;
+    }
+    return !!data;
+  } catch {
+    return false;
+  }
+}
