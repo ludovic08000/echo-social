@@ -401,11 +401,22 @@ export function useMessages(conversationId: string) {
             createdAt: newMsg.created_at,
           }]).catch(() => {});
 
-          // Proactively prime the e2ee-session router for incoming encrypted
-          // bodies. This catches out-of-order Double Ratchet deliveries before
-          // the user even mounts a `DecryptedMessageBody` for the row, so the
-          // retry budget starts ticking immediately on arrival.
-          if (
+          // Proactively prime incoming encrypted bodies before the user even
+          // mounts a `DecryptedMessageBody`. WhatsApp-style multi-device rows
+          // resolve through per-device copies/archive; strict ratchet rows go
+          // through the e2ee-session router.
+          if (user && newMsg.sender_id !== user.id && isMultiDeviceEnvelopeBody(newMsg.body)) {
+            void resolvePlaintext({
+              body: newMsg.body,
+              messageId: newMsg.id,
+              decrypt: async () => ({ text: '', incompatible: true }),
+            }).then((outcome) => {
+              if (outcome && !outcome.hidden) {
+                persistOutcome(newMsg.body, outcome);
+                try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
+              }
+            }).catch(() => {});
+          } else if (
             user &&
             newMsg.sender_id !== user.id &&
             isStrictRatchetEnvelopeBody(newMsg.body)
