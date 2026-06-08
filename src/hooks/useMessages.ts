@@ -585,7 +585,7 @@ export function useMessages(conversationId: string) {
               const outcome = await resolvePlaintext({
                 body: m.body,
                 messageId: m.id,
-                decrypt: async () => ({ text: '', incompatible: true }),
+                decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
               });
               if (outcome && !outcome.hidden) {
                 persistOutcome(m.body, outcome);
