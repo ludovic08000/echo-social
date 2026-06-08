@@ -409,6 +409,7 @@ export function useMessages(conversationId: string) {
             void resolvePlaintext({
               body: newMsg.body,
               messageId: newMsg.id,
+              senderUserId: newMsg.sender_id,
               decrypt: async () => ({ text: '', incompatible: true }),
             }).then((outcome) => {
               if (outcome && !outcome.hidden) {
@@ -591,6 +592,7 @@ export function useMessages(conversationId: string) {
               const outcome = await resolvePlaintext({
                 body: m.body,
                 messageId: m.id,
+                senderUserId: m.sender_id,
                 decrypt: async () => ({ text: '', incompatible: true }),
               });
               if (outcome && !outcome.hidden) {

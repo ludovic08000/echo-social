@@ -111,6 +111,13 @@ async function flushSenderBatch(): Promise<void> {
   const ids = Array.from(localWaiters.keys());
   if (ids.length === 0) return;
   try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      for (const id of ids) {
+        (localWaiters.get(id) ?? []).forEach((fn) => fn(null));
+      }
+      return;
+    }
     const { data } = await supabase
       .from('messages')
       .select('id,sender_id')
@@ -177,10 +184,11 @@ export function persistOutcome(body: string, outcome: DecryptionOutcome): string
 export async function resolvePlaintext(opts: {
   body: string;
   messageId?: string;
+  senderUserId?: string | null;
   isMe?: boolean;
   decrypt: (body: string) => Promise<DecryptResult>;
 }): Promise<DecryptionOutcome | null> {
-  const { body, messageId, isMe, decrypt } = opts;
+  const { body, messageId, senderUserId, isMe, decrypt } = opts;
 
   // Cleartext shortcut.
   if (!looksEncrypted(body)) return { text: body, mediaKeyB64: null, hidden: false };
@@ -210,7 +218,7 @@ export async function resolvePlaintext(opts: {
   let promise = inflight.get(key);
   if (!promise) {
     promise = (async (): Promise<DecryptionOutcome | null> => {
-      let senderId: string | null = null;
+      let senderId: string | null = senderUserId ?? null;
 
       // 1) Conversation-level Double Ratchet (primary). Multi-device-only
       // envelopes intentionally skip this path and resolve via device copies.
@@ -233,7 +241,7 @@ export async function resolvePlaintext(opts: {
 
       // 2) Per-message device-copy fan-out.
       if (messageId) {
-        senderId = await getSenderIdBatched(messageId);
+        if (!senderId) senderId = await getSenderIdBatched(messageId);
         if (senderId) {
           const copyText = await tryReadDeviceCopy(messageId, senderId).catch(() => null);
           if (copyText !== null) {

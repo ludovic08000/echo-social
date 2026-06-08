@@ -1,9 +1,9 @@
 /**
- * X3DH Anti-Replay Guard (Signal X3DH spec §4.6)
+ * X3DH anti-replay guard.
  *
  * Prevents replay of an X3DH initial message: even if the local OPK delete
- * silently fails, the same `(IKa, EKa, spkId, opkId)` tuple cannot be
- * processed twice by the responder.
+ * silently fails, the same (IKa, EKa, spkId, opkId) tuple cannot be processed
+ * twice by the responder.
  *
  * Storage: dedicated IndexedDB store via dbRegistry, TTL 7 days.
  * Cost: 1 SHA-256 + 1 IDB get/put per inbound X3DH message.
@@ -38,7 +38,7 @@ async function fingerprint(
 }
 
 /**
- * Throws `X3DH_REPLAY_DETECTED` if this initial message was already consumed.
+ * Throws X3DH_REPLAY_DETECTED if this initial message was already consumed.
  * Otherwise records it and returns. Best-effort GC of expired entries.
  */
 export async function assertNotReplayedAndRecord(params: {
@@ -50,23 +50,28 @@ export async function assertNotReplayedAndRecord(params: {
 }): Promise<void> {
   const id = await fingerprint(params.myUserId, params.ik, params.ek, params.spkId, params.opkId);
 
-  // ─── Server-side ledger first (authoritative, defeats local IDB wipe) ───
+  // Server-side ledger first: authoritative when available and protects
+  // against local IndexedDB wipes. Skip it while auth is still restoring so
+  // the decrypt path does not create noisy 400/401 REST calls on iOS.
   try {
-    const { data: claimed, error } = await supabase.rpc('claim_x3dh_initial', {
-      p_fingerprint: id,
-    });
-    if (error) {
-      console.warn('[X3DH][REPLAY][SERVER] RPC error — relying on local guard only', error.message);
-    } else if (claimed === false) {
-      console.error('[X3DH][REPLAY][SERVER] ⛔ duplicate initial message rejected by ledger', {
-        spkId: params.spkId,
-        opkId: params.opkId ?? null,
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      const { data: claimed, error } = await supabase.rpc('claim_x3dh_initial', {
+        p_fingerprint: id,
       });
-      throw new Error('X3DH_REPLAY_DETECTED');
+      if (error) {
+        console.warn('[X3DH][REPLAY][SERVER] RPC error - relying on local guard only', error.message);
+      } else if (claimed === false) {
+        console.error('[X3DH][REPLAY][SERVER] duplicate initial message rejected by ledger', {
+          spkId: params.spkId,
+          opkId: params.opkId ?? null,
+        });
+        throw new Error('X3DH_REPLAY_DETECTED');
+      }
     }
   } catch (err: any) {
     if (err?.message === 'X3DH_REPLAY_DETECTED') throw err;
-    console.warn('[X3DH][REPLAY][SERVER] ledger unavailable — local guard only', err?.message ?? err);
+    console.warn('[X3DH][REPLAY][SERVER] ledger unavailable - local guard only', err?.message ?? err);
   }
 
   let existing: ReplayRecord | undefined;
@@ -75,14 +80,14 @@ export async function assertNotReplayedAndRecord(params: {
       reqToPromise(tx.objectStore(STORE).get(id) as IDBRequest<ReplayRecord | undefined>),
     );
   } catch {
-    console.warn('[X3DH][REPLAY] IDB unavailable — server ledger is the only line of defense');
+    console.warn('[X3DH][REPLAY] IDB unavailable - server ledger is the only line of defense');
     return;
   }
 
   if (existing) {
     const ageMs = Date.now() - existing.consumedAt;
     if (ageMs < TTL_MS) {
-      console.error('[X3DH][REPLAY] ⛔ duplicate initial message rejected', {
+      console.error('[X3DH][REPLAY] duplicate initial message rejected', {
         spkId: params.spkId,
         opkId: params.opkId ?? null,
         ageMs,
@@ -95,7 +100,7 @@ export async function assertNotReplayedAndRecord(params: {
     tx.objectStore(STORE).put({ id, consumedAt: Date.now() } as ReplayRecord);
   });
 
-  // Best-effort GC (sample 1/10 to keep cost low)
+  // Best-effort GC, sampled to keep the hot path cheap.
   if (Math.random() < 0.1) {
     try {
       await runTxOn('x3dh-replay', [STORE], 'readwrite', (tx) => {
@@ -117,6 +122,8 @@ export async function assertNotReplayedAndRecord(params: {
           cursor.continue();
         };
       });
-    } catch { /* non-fatal */ }
+    } catch {
+      // Non-fatal.
+    }
   }
 }

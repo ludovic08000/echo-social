@@ -22,6 +22,7 @@ interface MessageMediaProps {
   isEncryptionActive: boolean;
   /** Message id — enables sharing the decrypted media key across components */
   messageId?: string;
+  senderUserId?: string | null;
   /** Plaintext already known by the parent, especially for our own just-sent media */
   cachedPlaintext?: string;
 }
@@ -32,6 +33,7 @@ export const MessageMedia = memo(function MessageMedia({
   decrypt,
   isEncryptionActive,
   messageId,
+  senderUserId,
   cachedPlaintext,
 }: MessageMediaProps) {
   // Try to extract a media key directly from the body — covers the case
@@ -151,7 +153,7 @@ export const MessageMedia = memo(function MessageMedia({
     const fallbackTimer = setTimeout(() => {
       if (cancelled) return;
       if (messageId && getMediaKey(messageId)) return;
-      resolvePlaintext({ body, messageId, decrypt }).then(result => {
+      resolvePlaintext({ body, messageId, senderUserId, decrypt }).then(result => {
         if (cancelled) return;
         if (result?.mediaKeyB64) {
           setMediaKey(result.mediaKeyB64);
@@ -164,7 +166,7 @@ export const MessageMedia = memo(function MessageMedia({
     }, 1000);
 
     return () => { cancelled = true; earlyUnsubscribe(); unsubscribe(); clearTimeout(fallbackTimer); };
-  }, [body, cachedPlaintext, decrypt, inlineMedia, isEncryptionActive, messageId, retryTick]);
+  }, [body, cachedPlaintext, decrypt, inlineMedia, isEncryptionActive, messageId, senderUserId, retryTick]);
 
   if (!resolved) return null;
 

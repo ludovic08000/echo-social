@@ -12,6 +12,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@/integrations/supabase/client', () => {
   return {
     supabase: {
+      auth: {
+        getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'test-token' } } }),
+      },
       rpc: vi.fn(),
     },
   };
@@ -21,6 +24,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { assertNotReplayedAndRecord } from '../x3dhReplayGuard';
 
 const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+const getSession = supabase.auth.getSession as unknown as ReturnType<typeof vi.fn>;
 
 let n = 0;
 function fresh() {
@@ -36,6 +40,7 @@ function fresh() {
 
 beforeEach(() => {
   rpc.mockReset();
+  getSession.mockResolvedValue({ data: { session: { access_token: 'test-token' } } });
 });
 
 describe('L3 — server replay ledger', () => {
@@ -50,6 +55,12 @@ describe('L3 — server replay ledger', () => {
   it('passes through when the server confirms first claim (claimed=true)', async () => {
     rpc.mockResolvedValueOnce({ data: true, error: null });
     await expect(assertNotReplayedAndRecord(fresh())).resolves.toBeUndefined();
+  });
+
+  it('skips the server ledger while auth is still restoring', async () => {
+    getSession.mockResolvedValueOnce({ data: { session: null } });
+    await expect(assertNotReplayedAndRecord(fresh())).resolves.toBeUndefined();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it('falls back to local IDB guard when the RPC errors (network down)', async () => {

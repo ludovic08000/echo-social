@@ -48,6 +48,7 @@ interface DecryptedMessageBodyProps {
   cachedPlaintext?: string;
   refreshKey?: string | number;
   messageId?: string;
+  senderUserId?: string | null;
   hasMedia?: boolean;
 }
 
@@ -60,6 +61,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   cachedPlaintext,
   refreshKey,
   messageId,
+  senderUserId,
   hasMedia,
 }: DecryptedMessageBodyProps) {
   // Synchronous initial state — uses RAM cache + cleartext shortcut so the
@@ -122,7 +124,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     }
 
     setPending(true);
-    void resolvePlaintext({ body, messageId, isMe, decrypt })
+    void resolvePlaintext({ body, messageId, senderUserId, isMe, decrypt })
       .then((next) => {
         if (cancelled) return;
         if (!next) {
@@ -156,7 +158,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     return () => { cancelled = true; };
     // retryTick + refreshKey force a re-attempt after key restoration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [body, messageId, cachedPlaintext, retryTick, refreshKey]);
+  }, [body, messageId, senderUserId, cachedPlaintext, retryTick, refreshKey]);
 
   if (outcome?.hidden) return null;
 

@@ -29,6 +29,7 @@ vi.mock('@/lib/messaging/archive/archiveKey', () => ({
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     auth: {
+      getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'test-token' } } }),
       getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'recipient-user' } } }),
     },
     from: vi.fn((table: string) => {
@@ -91,6 +92,26 @@ describe('decryptionService multi-device routing', () => {
 
     expect(mocks.tryReadDeviceCopy).toHaveBeenCalledWith('msg-missing-current-device-copy', 'sender-user');
     expect(mocks.routeIncoming).not.toHaveBeenCalled();
+  });
+
+  it('uses the known sender id directly for device-copy decrypts', async () => {
+    const body = JSON.stringify({
+      encryptionMode: 'multi_device',
+      v: 4,
+      ct: 'device_copies',
+      ts: Date.now(),
+    });
+    mocks.tryReadDeviceCopy.mockResolvedValue('clair direct');
+
+    const result = await resolvePlaintext({
+      body,
+      messageId: 'msg-known-sender',
+      senderUserId: 'sender-from-ui',
+      decrypt: vi.fn().mockResolvedValue({ text: '', incompatible: true }),
+    });
+
+    expect(result?.text).toBe('clair direct');
+    expect(mocks.tryReadDeviceCopy).toHaveBeenCalledWith('msg-known-sender', 'sender-from-ui');
   });
 
   it('uses encrypted archive fallback for multi-device parent envelopes when the device copy is missing', async () => {

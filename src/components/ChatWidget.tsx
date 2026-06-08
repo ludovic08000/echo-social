@@ -365,7 +365,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
-  const [lightboxMedia, setLightboxMedia] = useState<{ url: string; body: string; messageId: string } | null>(null);
+  const [lightboxMedia, setLightboxMedia] = useState<{ url: string; body: string; messageId: string; senderUserId?: string | null } | null>(null);
   // Persisted + realtime reactions (replaces local-only state)
   const [showAIMenu, setShowAIMenu] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
@@ -1316,7 +1316,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         {msg.image_url && !parseDocumentBody(msg.body) && (
                           <button
                             type="button"
-                            onClick={() => setLightboxMedia({ url: msg.image_url!, body: msg.body, messageId: msg.id })}
+                            onClick={() => setLightboxMedia({ url: msg.image_url!, body: msg.body, messageId: msg.id, senderUserId: msg.sender_id })}
                             className="block rounded-xl overflow-hidden mb-0.5 shadow-sm cursor-zoom-in hover:opacity-95 transition-opacity"
                             title="Agrandir"
                           >
@@ -1326,6 +1326,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                               decrypt={e2ee.decrypt}
                               isEncryptionActive={e2ee.encrypted && !isZeusConversation}
                               messageId={msg.id}
+                              senderUserId={msg.sender_id}
                               cachedPlaintext={decryptedCacheRef.current.get(msg.id)}
                             />
                           </button>
@@ -1419,6 +1420,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                               cachedPlaintext={decryptedCacheRef.current.get(msg.id)}
                               refreshKey={decryptRefreshKey}
                               messageId={msg.id}
+                              senderUserId={msg.sender_id}
                               hasMedia={!!msg.image_url}
                             />
                           </div>
@@ -1569,6 +1571,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               decrypt={e2ee.decrypt}
               isEncryptionActive={e2ee.encrypted && !isZeusConversation}
               messageId={lightboxMedia.messageId}
+              senderUserId={lightboxMedia.senderUserId}
               cachedPlaintext={lightboxMedia.messageId ? decryptedCacheRef.current.get(lightboxMedia.messageId) : undefined}
             />
           </div>
