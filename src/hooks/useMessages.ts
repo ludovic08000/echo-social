@@ -4,11 +4,10 @@ import { useAuth } from '@/lib/auth';
 import { useEffect } from 'react';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { messageQueue } from '@/lib/messaging/messageQueue';
-import { isCryptoJsonBody, isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import { isCryptoJsonBody, isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBody, isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { pendingMessageQueue, routeIncoming } from '@/e2ee-session';
 import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
-// v5: deviceCopyRetryProcessor removed
-import { clearNegativeCache } from '@/components/messages/decryptionService';
+import { clearNegativeCache, persistOutcome, resolvePlaintext } from '@/components/messages/decryptionService';
 
 async function hideMessagesForUser(userId: string, messageIds: string[]) {
   if (!userId || messageIds.length === 0) return;
@@ -575,6 +574,23 @@ export function useMessages(conversationId: string) {
         let anyDecrypted = false;
         for (const m of compatibleMessages) {
           if (m.sender_id === user.id) continue;
+          if (!m.body) continue;
+          if (isMultiDeviceEnvelopeBody(m.body)) {
+            try {
+              const outcome = await resolvePlaintext({
+                body: m.body,
+                messageId: m.id,
+                decrypt: async () => ({ text: '', incompatible: true }),
+              });
+              if (outcome && !outcome.hidden) {
+                persistOutcome(m.body, outcome);
+                anyDecrypted = true;
+              }
+            } catch {
+              /* device-copy retry/archive recovery handles misses */
+            }
+            continue;
+          }
           if (!isStrictRatchetEnvelopeBody(m.body)) continue;
           try {
             const r = await routeIncoming({
@@ -599,7 +615,6 @@ export function useMessages(conversationId: string) {
         if (anyDecrypted && typeof window !== 'undefined') {
           try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
         }
-        // v5: deviceCopyRetryProcessor removed
       }
 
       const senderIds = [...new Set(compatibleMessages.map(m => m.sender_id))];
