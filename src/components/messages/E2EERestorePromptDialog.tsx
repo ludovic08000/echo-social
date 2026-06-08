@@ -73,8 +73,9 @@ export function E2EERestorePromptDialog() {
       const detail = (ev as CustomEvent).detail || {};
       const detailUserId = typeof detail.userId === 'string' ? detail.userId : null;
       if (detailUserId && user?.id && detailUserId !== user.id) return;
+      const needsPinUnlock = prefersPin(ev.type, detail);
       try {
-        if (await hasLocalKeys()) return;
+        if (!needsPinUnlock && await hasLocalKeys()) return;
       } catch {}
       console.warn('[E2EERestore] prompting user to restore keys', detail);
 
@@ -83,7 +84,7 @@ export function E2EERestorePromptDialog() {
           const hasPin = await hasBackupPin(user.id);
           if (disposed) return;
           setPinAvailable(hasPin);
-          if (hasPin && prefersPin(ev.type, detail)) {
+          if (hasPin && needsPinUnlock) {
             setTab('pin');
           }
         } catch {

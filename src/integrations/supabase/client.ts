@@ -45,16 +45,17 @@ function requestBearerToken(input: Parameters<typeof fetch>[0], init?: Parameter
   }
 }
 
-async function isJwt401(response: Response): Promise<boolean> {
+async function jwt401Reason(response: Response): Promise<'expired' | 'invalid' | 'malformed' | null> {
   try {
     const text = await response.clone().text();
     const lower = text.toLowerCase();
-    return (
-      lower.includes('jwt') &&
-      (lower.includes('expired') || lower.includes('invalid') || lower.includes('malformed'))
-    );
+    if (!lower.includes('jwt')) return null;
+    if (lower.includes('malformed')) return 'malformed';
+    if (lower.includes('invalid')) return 'invalid';
+    if (lower.includes('expired')) return 'expired';
+    return null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -66,7 +67,11 @@ async function shouldClearAuthFor401(
   const bearer = requestBearerToken(input, init);
   const stored = currentStoredAccessToken();
   if (!bearer || !stored || bearer !== stored) return false;
-  return isJwt401(response);
+  const reason = await jwt401Reason(response);
+  // Supabase can briefly send an expired access token while its refresh flow is
+  // racing on mobile/PWA resumes. Let the auth client refresh instead of
+  // deleting the whole session. Invalid/malformed JWTs are still purged.
+  return reason === 'invalid' || reason === 'malformed';
 }
 
 function clearStaleSupabaseAuthSession(reason: string) {

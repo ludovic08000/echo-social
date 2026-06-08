@@ -97,6 +97,17 @@ export function transition(userId: string, to: CryptoState, reason: string): Mac
   const m = get(userId);
   const from = m.snapshot.state;
 
+  if (from === to) {
+    m.snapshot = {
+      ...m.snapshot,
+      reason,
+      changedAt: Date.now(),
+    };
+    console.log('[E2EE][state]', { userId: userId.slice(0, 8), from, to, reason, idempotent: true });
+    emit(userId, m.snapshot);
+    return { ...m.snapshot };
+  }
+
   if (!ALLOWED[from].includes(to)) {
     const err = new Error(`[CryptoStateMachine] illegal transition ${from} → ${to} (${reason})`);
     console.error(err.message);
