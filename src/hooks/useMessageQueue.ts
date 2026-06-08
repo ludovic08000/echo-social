@@ -6,6 +6,7 @@ import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/m
 import { safeUUID } from '@/e2ee-session';
 import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto';
+import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 import { wrapOutboundSecureMessage } from '@/lib/crypto/secureMessagePipeline';
 import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
 import { encryptArchive, setMessageArchiveBody } from '@/lib/messaging/archive/archiveKey';
@@ -26,6 +27,17 @@ export interface OutboundMessage {
   createdAt: number;
   updatedAt: number;
   serverId: string | null;
+}
+
+export function buildMultiDeviceParentEnvelope(localId: string, traceId?: string): string {
+  return JSON.stringify({
+    encryptionMode: 'multi_device',
+    v: PROTOCOL_VERSION,
+    ct: 'device_copies',
+    ts: Date.now(),
+    __lid: localId,
+    ...(traceId ? { __tid: traceId } : {}),
+  });
 }
 
 function inferMediaBody(body: string, imageUrl?: string | null): string {
@@ -136,6 +148,7 @@ export function useMessageQueue(
 
     let bodyToStore = sanitized;
     let encryptedSuccessfully = false;
+    let storedMultiDeviceEnvelope = false;
 
     if (isEncryptionActive && !allowPlaintext) {
       try {
@@ -217,9 +230,16 @@ export function useMessageQueue(
           }
 
           // For non-safety failures (missing peer bundle, transient ratchet
-          // bootstrap), attempt the fan-out path: store an empty placeholder
-          // body and rely on per-device copies for delivery.
-          bodyToStore = '';
+          // bootstrap), attempt the fan-out path: store a current-protocol
+          // multi-device parent envelope and rely on per-device copies for
+          // delivery. This is encrypted-only; no plaintext body is persisted.
+          bodyToStore = buildMultiDeviceParentEnvelope(localId, traceId);
+          storedMultiDeviceEnvelope = true;
+          setPendingMessages(prev => prev.map(m =>
+            m.localId === localId
+              ? { ...m, encryptedBody: bodyToStore, status: 'waiting_secure_channel', lastError: errMsg, updatedAt: Date.now() }
+              : m
+          ));
         }
       } else {
         console.warn('[MSG_SEND] encrypt handler missing; compatibility send will continue', {
@@ -230,7 +250,7 @@ export function useMessageQueue(
       }
     }
 
-    if (isEncryptionActive && !allowPlaintext && !encryptedSuccessfully) {
+    if (isEncryptionActive && !allowPlaintext && !encryptedSuccessfully && !storedMultiDeviceEnvelope) {
       console.warn('[MSG_SEND] blocked non-v5/plaintext fallback for E2EE conversation', {
         localId,
         conversationId,
@@ -243,11 +263,6 @@ export function useMessageQueue(
     // Long-life encrypted archive: done in background after INSERT (retroactive RPC path).
     // Removes ~50-200ms from perceived send latency.
     const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
-
-    setPendingMessages(prev => prev.map(m =>
-      m.localId === localId ? { ...m, status: 'sending', updatedAt: Date.now() } : m
-    ));
-
 
     setPendingMessages(prev => prev.map(m =>
       m.localId === localId ? { ...m, status: 'sending', updatedAt: Date.now() } : m
@@ -280,6 +295,7 @@ export function useMessageQueue(
       conversationId,
       serverId: data?.id,
       encryptedSuccessfully,
+      storedMultiDeviceEnvelope,
       hasMedia: !!imageUrl,
     });
 
