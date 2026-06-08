@@ -6,6 +6,7 @@ import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/m
 import { safeUUID } from '@/e2ee-session';
 import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto';
+import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 import { wrapOutboundSecureMessage } from '@/lib/crypto/secureMessagePipeline';
 import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
 import { encryptArchive } from '@/lib/messaging/archive/archiveKey';
@@ -33,6 +34,17 @@ export interface OutboundMessage {
 
 const outboundFingerprintCache = new Map<string, { fingerprint: string; expiresAt: number }>();
 let cacheInvalidationInstalled = false;
+
+export function buildMultiDeviceParentEnvelope(localId: string, traceId?: string): string {
+  return JSON.stringify({
+    encryptionMode: 'multi_device',
+    v: PROTOCOL_VERSION,
+    ct: 'device_copies',
+    ts: Date.now(),
+    __lid: localId,
+    ...(traceId ? { __tid: traceId } : {}),
+  });
+}
 
 function installOutboundCacheInvalidation(): void {
   if (cacheInvalidationInstalled || typeof window === 'undefined') return;
@@ -208,6 +220,7 @@ export function useMessageQueue(
 
     let bodyToStore = sanitized;
     let encryptedSuccessfully = false;
+    let storedMultiDeviceEnvelope = false;
 
     if (isEncryptionActive && !allowPlaintext) {
       patchPending({ status: 'encrypting' });
@@ -292,9 +305,12 @@ export function useMessageQueue(
           }
 
           // For non-safety failures (missing peer bundle, transient ratchet
-          // bootstrap), attempt the fan-out path: store an empty placeholder
-          // body and rely on per-device copies for delivery.
-          bodyToStore = '';
+          // bootstrap), attempt the fan-out path: store a current-protocol
+          // multi-device parent envelope and rely on per-device copies for
+          // delivery. This is encrypted-only; no plaintext body is persisted.
+          bodyToStore = buildMultiDeviceParentEnvelope(localId, traceId);
+          storedMultiDeviceEnvelope = true;
+          patchPending({ encryptedBody: bodyToStore, status: 'waiting_secure_channel', lastError: errMsg });
         }
       } else {
         console.warn('[MSG_SEND] encrypt handler missing; compatibility send will continue', {
@@ -305,7 +321,7 @@ export function useMessageQueue(
       }
     }
 
-    if (isEncryptionActive && !allowPlaintext && !encryptedSuccessfully) {
+    if (isEncryptionActive && !allowPlaintext && !encryptedSuccessfully && !storedMultiDeviceEnvelope) {
       console.warn('[MSG_SEND] blocked non-v5/plaintext fallback for E2EE conversation', {
         localId,
         conversationId,
@@ -356,6 +372,7 @@ export function useMessageQueue(
       conversationId,
       serverId: data?.id,
       encryptedSuccessfully,
+      storedMultiDeviceEnvelope,
       hasMedia: !!imageUrl,
     });
 

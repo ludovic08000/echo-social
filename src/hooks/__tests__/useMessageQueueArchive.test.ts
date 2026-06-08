@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
-import { shouldArchiveMessageBody, waitForArchiveInline } from '../useMessageQueue';
+import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
+import { isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import { buildMultiDeviceParentEnvelope, shouldArchiveMessageBody, waitForArchiveInline } from '../useMessageQueue';
 
 const MEDIA_KEY =
   'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
@@ -83,5 +85,20 @@ describe('useMessageQueue archive gating', () => {
 
     await vi.advanceTimersByTimeAsync(1000);
     await expect(slowArchive).resolves.toBe('late-archive-payload');
+  });
+
+  it('builds a valid encrypted-only multi-device parent envelope', () => {
+    const envelope = buildMultiDeviceParentEnvelope('local-1', 'trace-1');
+    const parsed = JSON.parse(envelope);
+
+    expect(isMultiDeviceEnvelopeBody(envelope)).toBe(true);
+    expect(parsed).toMatchObject({
+      encryptionMode: 'multi_device',
+      v: PROTOCOL_VERSION,
+      ct: 'device_copies',
+      __lid: 'local-1',
+      __tid: 'trace-1',
+    });
+    expect(envelope).not.toContain('hello');
   });
 });
