@@ -247,14 +247,10 @@ export async function resolvePlaintext(opts: {
       // WhatsApp-style multi-device parent envelopes are placeholders: the
       // real ciphertext lives in the per-device copy. Retrying legacy routes
       // here only duplicates refanout requests and can never decrypt the
-      // parent body itself.
-      if (isMultiDeviceEnvelopeBody(body)) {
-        negCache.set(key, Date.now());
-        return null;
-      }
+      // parent body itself. The encrypted archive fallback remains valid.
 
       // 3) e2ee-session façade (multi-session ratchet + queue).
-      if (messageId) {
+      if (messageId && !isMultiDeviceEnvelopeBody(body)) {
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (user && senderId) {
