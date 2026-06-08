@@ -1161,7 +1161,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
             {/* Pending outbound messages from queue (exclude already-sent) */}
             {queue.pendingMessages
-              .filter(pm => pm.status !== 'sent')
+              .filter(pm => pm.status !== 'sent' || !pm.serverId || !(messages ?? []).some(m => m.id === pm.serverId))
               .map(pm => (
               <div key={pm.localId} className="flex items-end gap-1.5 mt-2 flex-row-reverse">
                 <div className="w-7 flex-shrink-0 mb-0.5" />

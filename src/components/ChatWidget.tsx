@@ -1478,7 +1478,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           ))}
 
           {/* Pending outbound messages (local queue) */}
-          {queue.pendingMessages.map(pm => (
+          {queue.pendingMessages
+            .filter(pm => pm.status !== 'sent' || !pm.serverId || !(messages ?? []).some(m => m.id === pm.serverId))
+            .map(pm => (
             <div key={pm.localId} className="flex justify-start mt-1 px-2">
               <div className="max-w-[78%]">
               {(() => {

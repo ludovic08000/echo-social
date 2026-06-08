@@ -11,7 +11,7 @@ import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
 import { encryptArchive } from '@/lib/messaging/archive/archiveKey';
 import { hasMediaKey } from '@/lib/crypto/mediaEncrypt';
 
-const ARCHIVE_INLINE_BUDGET_MS = 120;
+const ARCHIVE_INLINE_BUDGET_MS = 0;
 const OUTBOUND_FINGERPRINT_TTL_MS = 60_000;
 
 export interface OutboundMessage {
@@ -64,6 +64,7 @@ export async function waitForArchiveInline(
   budgetMs = ARCHIVE_INLINE_BUDGET_MS,
 ): Promise<string | null> {
   if (!archivePromise) return null;
+  if (budgetMs <= 0) return null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
     return await Promise.race([
@@ -179,11 +180,37 @@ export function useMessageQueue(
     const now = Date.now();
     const localId = `local-${now}-${Math.random().toString(36).slice(2, 8)}`;
     const traceId = safeUUID();
+    const patchPending = (patch: Partial<OutboundMessage>) => {
+      setPendingMessages(prev => prev.map(m =>
+        m.localId === localId ? { ...m, ...patch, updatedAt: Date.now() } : m,
+      ));
+    };
+
+    setPendingMessages(prev => [
+      ...prev.filter(m => m.localId !== localId),
+      {
+        localId,
+        traceId,
+        conversationId,
+        senderId: user.id,
+        plaintext: sanitized,
+        encryptedBody: null,
+        imageUrl: imageUrl || null,
+        status: 'pending_local',
+        retryCount: 0,
+        maxRetries: 3,
+        lastError: null,
+        createdAt: now,
+        updatedAt: now,
+        serverId: null,
+      },
+    ]);
 
     let bodyToStore = sanitized;
     let encryptedSuccessfully = false;
 
     if (isEncryptionActive && !allowPlaintext) {
+      patchPending({ status: 'encrypting' });
       try {
         await ensureUserE2EEIdentity(user.id);
       } catch (error) {
@@ -215,6 +242,7 @@ export function useMessageQueue(
                 localId,
               });
               encryptedSuccessfully = true;
+              patchPending({ encryptedBody: bodyToStore });
             } catch (wrapError) {
               console.warn('[MSG_SEND] secure wrapper failed; using raw encrypted payload', {
                 localId,
@@ -223,6 +251,7 @@ export function useMessageQueue(
               });
               bodyToStore = encryptedPayload;
               encryptedSuccessfully = true;
+              patchPending({ encryptedBody: bodyToStore });
             }
           }
         } catch (encryptError) {
@@ -256,6 +285,7 @@ export function useMessageQueue(
                 detail: { conversationId, localId, reason: errMsg },
               }));
             } catch {}
+            patchPending({ status: 'failed_visible', lastError: errMsg });
             throw encryptError instanceof Error
               ? encryptError
               : new Error(errMsg);
@@ -282,7 +312,9 @@ export function useMessageQueue(
         isEncryptionReady,
         hasEncryptHandler: !!encrypt,
       });
-      throw new Error('Chiffrement v5 indisponible - restaurez les cles avant envoi.');
+      const err = new Error('Chiffrement v5 indisponible - restaurez les cles avant envoi.');
+      patchPending({ status: 'failed_visible', lastError: err.message });
+      throw err;
     }
 
     // Long-life encrypted archive copy (zero-access, wrapped under account master key).
@@ -299,6 +331,7 @@ export function useMessageQueue(
       : null;
     const archiveBody = await waitForArchiveInline(archivePromise);
 
+    patchPending({ status: 'sending', encryptedBody: bodyToStore });
     const { data, error } = await supabase
       .from('messages')
       .insert({
@@ -314,6 +347,7 @@ export function useMessageQueue(
 
     if (error) {
       console.error('[MSG_SEND] database insert failed', { conversationId, localId, error });
+      patchPending({ status: 'failed_visible', lastError: error.message });
       throw error;
     }
 
@@ -327,6 +361,7 @@ export function useMessageQueue(
 
     if (!isSpecial) recordSentMessage(sanitized);
     if (data?.id) {
+      patchPending({ status: 'sent', serverId: data.id });
       if (archivePromise && !archiveBody && extra?.view_once !== true) {
         scheduleArchiveBodyWrite({
           messageId: data.id,
@@ -363,6 +398,9 @@ export function useMessageQueue(
         .then(({ requestImmediateBackup }) => requestImmediateBackup('message-sent'))
         .catch(() => {});
       await onMessageSent?.(localId);
+      window.setTimeout(() => {
+        setPendingMessages(prev => prev.filter(m => m.localId !== localId));
+      }, 10_000);
     }
 
     queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
