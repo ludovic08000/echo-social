@@ -133,7 +133,15 @@ export function useMessageQueue(
     };
     setPendingMessages(prev => [...prev, optimistic]);
 
-    // Session freshness check is non-blocking for the UI; throw still cleans pending below.
+    const updatePending = (patch: Partial<OutboundMessage>) => {
+      setPendingMessages(prev => prev.map(m =>
+        m.localId === localId
+          ? { ...m, ...patch, updatedAt: Date.now() }
+          : m,
+      ));
+    };
+
+    // Session freshness must be confirmed before any encrypted send.
     try {
       const { data: sess } = await supabase.auth.getSession();
       const liveUserId = sess.session?.user?.id;
@@ -142,8 +150,14 @@ export function useMessageQueue(
         throw new Error('Session expirée — reconnectez-vous pour envoyer.');
       }
     } catch (e) {
-      // network glitch on getSession shouldn't kill the send if user is present
-      console.warn('[MSG_SEND] getSession soft-failed; continuing', e);
+      console.warn('[MSG_SEND] getSession failed; aborting encrypted send', e);
+      updatePending({
+        status: 'failed_visible',
+        lastError: 'Session expiree - reconnectez-vous pour envoyer.',
+      });
+      throw e instanceof Error
+        ? e
+        : new Error('Session expiree - reconnectez-vous pour envoyer.');
     }
 
     let bodyToStore = sanitized;
@@ -224,6 +238,7 @@ export function useMessageQueue(
                 detail: { conversationId, localId, reason: errMsg },
               }));
             } catch {}
+            updatePending({ status: 'failed_visible', lastError: errMsg });
             throw encryptError instanceof Error
               ? encryptError
               : new Error(errMsg);
@@ -235,11 +250,7 @@ export function useMessageQueue(
           // delivery. This is encrypted-only; no plaintext body is persisted.
           bodyToStore = buildMultiDeviceParentEnvelope(localId, traceId);
           storedMultiDeviceEnvelope = true;
-          setPendingMessages(prev => prev.map(m =>
-            m.localId === localId
-              ? { ...m, encryptedBody: bodyToStore, status: 'waiting_secure_channel', lastError: errMsg, updatedAt: Date.now() }
-              : m
-          ));
+          updatePending({ encryptedBody: bodyToStore, status: 'waiting_secure_channel', lastError: errMsg });
         }
       } else {
         console.warn('[MSG_SEND] encrypt handler missing; compatibility send will continue', {
@@ -257,6 +268,10 @@ export function useMessageQueue(
         isEncryptionReady,
         hasEncryptHandler: !!encrypt,
       });
+      updatePending({
+        status: 'failed_visible',
+        lastError: 'Chiffrement v5 indisponible - restaurez les cles avant envoi.',
+      });
       throw new Error('Chiffrement v5 indisponible - restaurez les cles avant envoi.');
     }
 
@@ -264,9 +279,7 @@ export function useMessageQueue(
     // Removes ~50-200ms from perceived send latency.
     const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
 
-    setPendingMessages(prev => prev.map(m =>
-      m.localId === localId ? { ...m, status: 'sending', updatedAt: Date.now() } : m
-    ));
+    updatePending({ status: 'sending' });
 
     const { data, error } = await supabase
       .from('messages')
@@ -282,11 +295,7 @@ export function useMessageQueue(
 
     if (error) {
       console.error('[MSG_SEND] database insert failed', { conversationId, localId, error });
-      setPendingMessages(prev => prev.map(m =>
-        m.localId === localId
-          ? { ...m, status: 'failed_visible', lastError: error.message, updatedAt: Date.now() }
-          : m
-      ));
+      updatePending({ status: 'failed_visible', lastError: error.message });
       throw error;
     }
 

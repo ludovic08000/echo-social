@@ -146,4 +146,38 @@ describe('multiDeviceFanout trust gate', () => {
     expect(inserted[0].recipient_device_id).toBe('bob-signed-dev');
     expect(inserted[0].recipient_user_id).toBe(BOB);
   });
+
+  it('does not let one broken device abort fan-out to the remaining devices', async () => {
+    const inserted: any[] = [];
+    installSupabaseTables(inserted);
+    (listFanoutTargets as any).mockResolvedValue([
+      {
+        userId: BOB,
+        deviceId: 'bob-broken-dev',
+        devicePublicKey: 'BOB_BROKEN',
+      },
+      {
+        userId: BOB,
+        deviceId: 'bob-good-dev',
+        devicePublicKey: 'BOB_GOOD',
+      },
+    ]);
+    (ratchetEncrypt as any).mockImplementation(
+      async (_senderUser: string, _senderDevice: string, _recipientUser: string, recipientDevice: string) => {
+        if (recipientDevice === 'bob-broken-dev') throw new Error('broken ratchet');
+        return 'x3dh5.session.peerDh.0.0.iv.ct';
+      },
+    );
+
+    const result = await fanoutMessageCopies({
+      messageId: 'msg-2',
+      conversationId: 'conv-1',
+      senderUserId: ALICE,
+      plaintext: 'hello',
+    });
+
+    expect(result).toEqual({ inserted: 1, multiDevice: true });
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0].recipient_device_id).toBe('bob-good-dev');
+  });
 });
