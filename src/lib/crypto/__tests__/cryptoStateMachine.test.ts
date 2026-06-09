@@ -32,6 +32,13 @@ describe('CryptoStateMachine', () => {
     expect(() => transition(USER, 'ready', 'jump')).toThrow(/illegal transition/);
   });
 
+  it('treats duplicate boot transitions as idempotent', () => {
+    transition(USER, 'storage_checking', 'boot');
+    expect(() => transition(USER, 'storage_checking', 'duplicate-boot')).not.toThrow();
+    expect(getSnapshot(USER).state).toBe('storage_checking');
+    expect(getSnapshot(USER).reason).toBe('duplicate-boot');
+  });
+
   it('NEVER allows identity_creating twice in the same session', () => {
     transition(USER, 'storage_checking', 'boot');
     transition(USER, 'identity_creating', 'no-backup-1');

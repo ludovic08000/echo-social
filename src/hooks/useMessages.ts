@@ -7,7 +7,6 @@ import { messageQueue } from '@/lib/messaging/messageQueue';
 import { isCryptoJsonBody, isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBody, isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { pendingMessageQueue, routeIncoming } from '@/e2ee-session';
 import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
-// v5: deviceCopyRetryProcessor removed
 import { clearNegativeCache, resolvePlaintext, persistOutcome } from '@/components/messages/decryptionService';
 
 async function hideMessagesForUser(userId: string, messageIds: string[]) {
@@ -406,22 +405,31 @@ export function useMessages(conversationId: string) {
           // bodies. This catches out-of-order Double Ratchet deliveries before
           // the user even mounts a `DecryptedMessageBody` for the row, so the
           // retry budget starts ticking immediately on arrival.
-          if (
-            user &&
-            newMsg.sender_id !== user.id &&
-            isStrictRatchetEnvelopeBody(newMsg.body)
-          ) {
-            void routeIncoming({
-              encryptedBody: newMsg.body,
-              recipientUserId: user.id,
-              senderUserId: newMsg.sender_id,
-              messageId: newMsg.id,
-            }).then((r) => {
-              if (r.ok && r.plaintext !== null) {
-                void savePlaintextForCiphertext(newMsg.body, r.plaintext);
-                try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
-              }
-            }).catch(() => {});
+          if (user && newMsg.sender_id !== user.id) {
+            if (isMultiDeviceEnvelopeBody(newMsg.body)) {
+              void resolvePlaintext({
+                body: newMsg.body,
+                messageId: newMsg.id,
+                decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
+              }).then((outcome) => {
+                if (outcome && !outcome.hidden) {
+                  persistOutcome(newMsg.body, outcome);
+                  try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
+                }
+              }).catch(() => {});
+            } else if (isStrictRatchetEnvelopeBody(newMsg.body)) {
+              void routeIncoming({
+                encryptedBody: newMsg.body,
+                recipientUserId: user.id,
+                senderUserId: newMsg.sender_id,
+                messageId: newMsg.id,
+              }).then((r) => {
+                if (r.ok && r.plaintext !== null) {
+                  void savePlaintextForCiphertext(newMsg.body, r.plaintext);
+                  try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
+                }
+              }).catch(() => {});
+            }
           }
         }
       )
@@ -619,7 +627,6 @@ export function useMessages(conversationId: string) {
         if (anyDecrypted && typeof window !== 'undefined') {
           try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
         }
-        // v5: deviceCopyRetryProcessor removed
       }
 
       const senderIds = [...new Set(compatibleMessages.map(m => m.sender_id))];

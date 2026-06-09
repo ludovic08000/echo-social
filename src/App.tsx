@@ -209,7 +209,69 @@ function AccountKeySyncRunner() {
     });
   }, [user?.id]);
 
-  // [v5] device-copy retry processor removed — refanout is now the single retry path.
+  // V5 retry/refanout worker: when another device asks for a fresh encrypted
+  // copy, the sender processes it from its local plaintext cache. No server
+  // plaintext, but active devices repair missing per-device copies quickly.
+  useEffect(() => {
+    if (!user?.id) return;
+    let stopped = false;
+    let inFlight = false;
+    let timer: ReturnType<typeof window.setTimeout> | null = null;
+
+    const schedule = (reason: string) => {
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (stopped || inFlight) return;
+        inFlight = true;
+        void import('@/lib/messaging/deviceCopyRetryProcessor')
+          .then(({ processDeviceCopyRetryRequests }) => processDeviceCopyRetryRequests(20))
+          .then((result) => {
+            if (result.completed > 0 || result.failed > 0) {
+              console.info('[device-copy-retry] processed pending requests', {
+                reason,
+                ...result,
+              });
+            }
+          })
+          .catch((err) => {
+            console.warn('[device-copy-retry] processor failed', err);
+          })
+          .finally(() => {
+            inFlight = false;
+          });
+      }, 700);
+    };
+
+    const initialTimer = window.setTimeout(() => schedule('mount'), 3000);
+    const onRefanoutScan = () => schedule('refanout-scan');
+    window.addEventListener('forsure:e2ee-request-refanout-scan', onRefanoutScan);
+    window.addEventListener('forsure-keys-restored', onRefanoutScan);
+    window.addEventListener('focus', onRefanoutScan);
+
+    const channel = supabase
+      .channel(`device-copy-retry:${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'device_copy_retry_requests',
+          filter: `sender_user_id=eq.${user.id}`,
+        },
+        () => schedule('retry-request-insert'),
+      )
+      .subscribe();
+
+    return () => {
+      stopped = true;
+      window.clearTimeout(initialTimer);
+      if (timer) window.clearTimeout(timer);
+      window.removeEventListener('forsure:e2ee-request-refanout-scan', onRefanoutScan);
+      window.removeEventListener('forsure-keys-restored', onRefanoutScan);
+      window.removeEventListener('focus', onRefanoutScan);
+      void supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
   // Keep the active-device list clean so stale iOS/Web devices with invalid SPKs
   // stop receiving new copies and stop producing repeated SPK invalid warnings.

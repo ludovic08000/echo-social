@@ -18,7 +18,10 @@ vi.mock('@/integrations/supabase/client', () => {
 });
 
 import { supabase } from '@/integrations/supabase/client';
-import { assertNotReplayedAndRecord } from '../x3dhReplayGuard';
+import {
+  assertNotReplayedAndRecord,
+  __resetReplayLedgerServerBackoffForTests,
+} from '../x3dhReplayGuard';
 
 const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
 
@@ -36,6 +39,7 @@ function fresh() {
 
 beforeEach(() => {
   rpc.mockReset();
+  __resetReplayLedgerServerBackoffForTests();
 });
 
 describe('L3 — server replay ledger', () => {
@@ -73,5 +77,12 @@ describe('L3 — server replay ledger', () => {
     const fp2 = rpc.mock.calls[0][1].p_fingerprint;
     expect(fp1).not.toBe(fp2);
     expect(fp1).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('backs off the server ledger after an RPC error to avoid repeated 400s', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'bad request' } });
+    await expect(assertNotReplayedAndRecord(fresh())).resolves.toBeUndefined();
+    await expect(assertNotReplayedAndRecord(fresh())).resolves.toBeUndefined();
+    expect(rpc).toHaveBeenCalledTimes(1);
   });
 });
