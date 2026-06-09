@@ -773,6 +773,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         <IdentityChangeBanner
           observerUserId={user.id}
           peerUserId={peerUserId}
+          conversationId={conversationId}
         />
       )}
 

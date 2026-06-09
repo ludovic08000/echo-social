@@ -18,11 +18,12 @@ import {
 interface Props {
   observerUserId: string | null;
   peerUserId: string | null;
+  conversationId?: string;
   onVerifyClick?: () => void;
   className?: string;
 }
 
-export function IdentityChangeBanner({ observerUserId, peerUserId, onVerifyClick, className }: Props) {
+export function IdentityChangeBanner({ observerUserId, peerUserId, conversationId, onVerifyClick, className }: Props) {
   const [events, setEvents] = useState<IdentityChangeEvent[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -111,6 +112,16 @@ export function IdentityChangeBanner({ observerUserId, peerUserId, onVerifyClick
             setBusy(true);
             try {
               await acknowledgeAllForPeer(observerUserId, peerUserId);
+              try {
+                window.dispatchEvent(new CustomEvent('forsure:e2ee-contact-verified', {
+                  detail: {
+                    conversationId,
+                    peerUserId,
+                    acceptedAt: Date.now(),
+                    source: 'identity-change-banner',
+                  },
+                }));
+              } catch {}
               setEvents([]);
             } finally {
               setBusy(false);
