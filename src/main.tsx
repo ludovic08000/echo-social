@@ -39,4 +39,7 @@ onAutoWipe(() => {
   window.location.href = '/login';
 });
 
+// ─── E2EE trusted browser/device bootstrap ───
+import '@/lib/security/e2eeDeviceTrustBootstrap';
+
 createRoot(document.getElementById("root")!).render(<App />);
