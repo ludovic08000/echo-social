@@ -2,9 +2,9 @@
  * Fingerprint tracker — extracted from useE2EE.ts.
  *
  * Local (localStorage) + server (`user_known_fingerprints`) tracking with a
- * 60s cache to avoid request storms. Implements silent trust-on-first-rotation
- * for benign rotations (peer reinstall) and a hard "changed" return when a
- * previously user-acknowledged fingerprint flips.
+ * 60s cache to avoid request storms. Automatic TOFU saves are only "seen",
+ * never user-verified. A hard "changed" return is reserved for fingerprints
+ * the user explicitly trusted (Signal/WhatsApp-style safety number semantics).
  */
 
 import { supabase } from '@/integrations/supabase/client';
@@ -43,11 +43,11 @@ const _fpSaveCache = new Map<string, number>();
 export async function saveKnownFingerprintServer(
   peerUserId: string,
   fp: string,
-  force = false,
+  verifiedByUser = false,
 ): Promise<void> {
   const cacheKey = `${peerUserId}:${fp}`;
   const lastSaved = _fpSaveCache.get(cacheKey);
-  if (!force && lastSaved && Date.now() - lastSaved < 60_000) return;
+  if (!verifiedByUser && lastSaved && Date.now() - lastSaved < 60_000) return;
   _fpSaveCache.set(cacheKey, Date.now());
 
   try {
@@ -61,7 +61,7 @@ export async function saveKnownFingerprintServer(
           peer_user_id: peerUserId,
           fingerprint: fp,
           last_seen_at: new Date().toISOString(),
-          acknowledged: true,
+          acknowledged: verifiedByUser,
         },
         { onConflict: 'user_id,peer_user_id' },
       );
@@ -120,13 +120,13 @@ export async function checkFingerprintChangeWithServer(
         _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
         return result;
       }
-      console.warn('[PEER_KEY] ⚠️ Server-side fingerprint mismatch for', peerUserId, '(was previously verified)');
+      let isRecovery = false;
       try {
         const [{ recordIdentityChange }, { peerHasRecentRecoveryMarker }] = await Promise.all([
           import('@/lib/crypto/identityChangeLedger'),
           import('@/lib/crypto/recoveryMarkers'),
         ]);
-        const isRecovery = await peerHasRecentRecoveryMarker(peerUserId, currentFp);
+        isRecovery = await peerHasRecentRecoveryMarker(peerUserId, currentFp);
         await recordIdentityChange({
           observerUserId: currentUserId,
           peerUserId,
@@ -137,6 +137,32 @@ export async function checkFingerprintChangeWithServer(
       } catch (e) {
         console.warn('[A4] recordIdentityChange failed', e);
       }
+
+      if (isRecovery) {
+        console.warn('[PEER_KEY] 🔄 Recovery fingerprint rotation for', peerUserId, '— continuing with revalidation banner');
+        try {
+          await supabase
+            .from('user_known_fingerprints')
+            .upsert(
+              {
+                user_id: currentUserId,
+                peer_user_id: peerUserId,
+                fingerprint: currentFp,
+                last_seen_at: new Date().toISOString(),
+                acknowledged: false,
+              },
+              { onConflict: 'user_id,peer_user_id' },
+            );
+        } catch (e) {
+          console.warn('[PEER_KEY] recovery auto-rotate save failed', e);
+        }
+        saveKnownFingerprint(peerUserId, currentFp);
+        const result = { changed: false, previousFp: data.fingerprint };
+        _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
+        return result;
+      }
+
+      console.warn('[PEER_KEY] ⚠️ Server-side fingerprint mismatch for', peerUserId, '(was previously verified)');
       const result = { changed: true, previousFp: data.fingerprint };
       _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
       return result;
