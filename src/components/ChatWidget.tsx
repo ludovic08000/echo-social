@@ -391,7 +391,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
   // E2EE integration — STRICT: plaintext allowed only for the Zeus bot.
   const e2ee = useE2EE(conversationId, peerUserId);
-  const isEncryptionActive = !isZeusConversation && e2ee.encrypted;
+  const isEncryptionActive = !isZeusConversation;
   const [cacheVersion, setCacheVersion] = useState(0);
   const bumpCache = useCallback(() => setCacheVersion(v => v + 1), []);
   const decryptRefreshKey = `${conversationId}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.encrypted)}:${cacheVersion}`;

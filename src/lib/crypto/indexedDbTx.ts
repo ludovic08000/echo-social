@@ -67,10 +67,12 @@ const TRANSIENT_BACKOFF_MS = [50, 150, 400];
 function isTransient(err: unknown): boolean {
   if (isIndexedDBClosingError(err)) return true;
   if (err instanceof DOMException) {
-    return err.name === 'InvalidStateError' || err.name === 'TransactionInactiveError';
+    return err.name === 'InvalidStateError' || err.name === 'TransactionInactiveError' || err.name === 'AbortError';
   }
   const msg = String((err as { message?: string } | undefined)?.message ?? err ?? '');
-  return msg.includes('database connection is closing') || msg.includes('transaction has finished');
+  return msg.includes('database connection is closing') ||
+    msg.includes('transaction has finished') ||
+    msg.includes('signal is aborted');
 }
 
 /**
@@ -118,7 +120,16 @@ export async function runTxOn<T>(
           tx.onerror = () => reject(tx.error);
           tx.onabort = () => reject(tx.error ?? new DOMException('Transaction aborted', 'AbortError'));
         });
-        const value = await Promise.resolve(fn(tx));
+        let value: T;
+        try {
+          value = await Promise.resolve(fn(tx));
+        } catch (fnErr) {
+          // Always observe the transaction completion promise. If an IDBRequest
+          // rejects first, Safari/Chromium may still fire `onabort` afterwards;
+          // leaving that promise unobserved becomes a global unhandledrejection.
+          await completion.catch(() => undefined);
+          throw fnErr;
+        }
         await completion;
         return value;
       } catch (err) {

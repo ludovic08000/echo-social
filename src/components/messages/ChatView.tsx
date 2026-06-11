@@ -251,7 +251,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   // STRICT: plaintext is allowed ONLY for the Zeus bot conversation.
   // Any peer conversation MUST go through E2EE — if encryption is not ready,
   // the message stays queued (never sent in clear).
-  const isEncryptionActive = !isZeusConversation && e2ee.encrypted;
+  const isEncryptionActive = !isZeusConversation;
 
   const queue = useMessageQueue(
     conversationId,
