@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 
+const db = supabase as any;
 const DEVICE_ID_STORAGE_KEY = 'echo_e2ee_browser_device_id';
 
 export type TrustStatus = 'pending' | 'trusted' | 'revoked' | 'blocked';
@@ -246,7 +247,7 @@ export function assessDeviceRisk(
 }
 
 export async function fetchTrustedDevice(userId: string, deviceId: string): Promise<TrustedDeviceRow | null> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('user_trusted_devices')
     .select('*')
     .eq('user_id', userId)
@@ -284,7 +285,7 @@ export async function registerOrUpdateTrustedDevice(input: RegisterTrustedDevice
     last_seen_at: new Date().toISOString(),
   };
 
-  const { error } = await supabase
+  const { error } = await db
     .from('user_trusted_devices')
     .upsert(payload, { onConflict: 'user_id,device_id' });
 
@@ -306,7 +307,7 @@ export async function assessCurrentBrowserDevice(
       trustStatus: 'pending',
     });
   } else {
-    await supabase
+    await db
       .from('user_trusted_devices')
       .update({
         risk_level: risk.riskLevel,
@@ -346,7 +347,7 @@ export async function trustCurrentDeviceAfterPin(input: {
     trustStatus: 'trusted',
   });
 
-  const { error } = await supabase
+  const { error } = await db
     .from('user_trusted_devices')
     .update({
       trust_status: 'trusted',
@@ -365,12 +366,12 @@ export async function trustCurrentDeviceAfterPin(input: {
 export async function revokeCurrentBrowserDevice(userId: string): Promise<void> {
   const deviceId = getOrCreateBrowserDeviceId();
 
-  const { error } = await supabase.rpc('revoke_my_trusted_device', {
+  const { error } = await db.rpc('revoke_my_trusted_device', {
     _device_id: deviceId,
   });
 
   if (error) {
-    await supabase
+    await db
       .from('user_trusted_devices')
       .update({
         trust_status: 'revoked',
