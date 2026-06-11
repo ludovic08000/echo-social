@@ -32,6 +32,19 @@ export {
   type RatchetReadiness,
 } from './ratchet';
 
+// Device-pair Double Ratchet (multi-device fan-out)
+export {
+  establishDeviceSession,
+  ratchetEncrypt as deviceRatchetEncrypt,
+  ratchetDecrypt as deviceRatchetDecrypt,
+  ratchetDecryptWithSession,
+  getSessionPeerSpkId,
+  invalidateDeviceSession,
+  listKnownSessionIds,
+  RATCHET_PREFIX_V3 as DEVICE_RATCHET_PREFIX_V3,
+  RATCHET_PREFIX_V4 as DEVICE_RATCHET_PREFIX_V4,
+} from './deviceRatchet';
+
 // KDF chains
 export { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
 
@@ -104,8 +117,13 @@ export {
   x3dhInitiate,
   x3dhRespond,
   fetchPrekeyBundle,
+  fetchPrekeyBundleForDevice,
+  peekDeviceSignedPrekey,
   generateAndUploadSignedPrekey,
   refreshSignedPrekeyIfNeeded,
+  generateAndUploadDeviceSignedPrekey,
+  refreshDeviceSignedPrekeyIfNeeded,
+  refillDeviceOneTimePrekeysIfNeeded,
   isPQXDHAvailable,
   type X3DHPrekeyBundle,
   type X3DHResult,
