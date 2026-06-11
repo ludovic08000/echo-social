@@ -6461,6 +6461,7 @@ export type Database = {
           last_seen_at: string
           peer_user_id: string
           user_id: string
+          verified_manually: boolean
         }
         Insert: {
           acknowledged?: boolean
@@ -6470,6 +6471,7 @@ export type Database = {
           last_seen_at?: string
           peer_user_id: string
           user_id: string
+          verified_manually?: boolean
         }
         Update: {
           acknowledged?: boolean
@@ -6479,6 +6481,7 @@ export type Database = {
           last_seen_at?: string
           peer_user_id?: string
           user_id?: string
+          verified_manually?: boolean
         }
         Relationships: []
       }

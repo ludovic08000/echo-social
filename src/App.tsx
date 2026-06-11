@@ -216,7 +216,7 @@ function AccountKeySyncRunner() {
     if (!user?.id) return;
     let stopped = false;
     let inFlight = false;
-    let timer: ReturnType<typeof window.setTimeout> | null = null;
+    let timer: number | null = null;
 
     const schedule = (reason: string) => {
       if (timer) window.clearTimeout(timer);
